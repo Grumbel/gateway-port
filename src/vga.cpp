@@ -1,0 +1,231 @@
+#include "vga.hpp"
+#include <algorithm>
+#include <stdexcept>
+
+namespace gateway {
+Vga::Vga() { set_mode(3); }
+void Vga::set_mode(std::uint8_t mode, bool clear) {
+    if (mode != 3 && mode != 0x0d && mode != 0x0e && mode != 0x10 && mode != 0x12 && mode != 0x13)
+        throw std::runtime_error("unsupported VGA mode");
+    mode_ = mode;
+    seq_.fill(0);
+    gc_.fill(0);
+    crtc_.fill(0);
+    attr_.fill(0);
+    seq_[2] = 15;
+    seq_[4] = mode == 0x13 ? 0x0e : 0x06;
+    gc_[7] = 15;
+    gc_[8] = 255;
+    crtc_[0x13] = width() / (mode == 0x13 ? 8 : 16);
+    attr_data_ = false;
+    for (auto &plane : planes_)
+        if (clear)
+            plane.fill(0);
+    latch_.fill(0);
+    for (unsigned i = 0; i < 64; ++i) {
+        dac_[i] = {static_cast<std::uint8_t>(((i & 4) ? 42 : 0) + ((i & 32) ? 21 : 0)),
+                   static_cast<std::uint8_t>(((i & 2) ? 42 : 0) + ((i & 16) ? 21 : 0)),
+                   static_cast<std::uint8_t>(((i & 1) ? 42 : 0) + ((i & 8) ? 21 : 0))};
+    }
+    constexpr std::array<std::uint8_t, 16> ega{0,  1,  2,  3,  4,  5,  20, 7,
+                                               56, 57, 58, 59, 60, 61, 62, 63};
+    std::copy(ega.begin(), ega.end(), attr_.begin());
+}
+int Vga::width() const { return mode_ == 0x0d || mode_ == 0x13 ? 320 : 640; }
+int Vga::height() const { return mode_ == 0x12 ? 480 : mode_ == 0x10 ? 350 : 200; }
+bool Vga::handles_port(std::uint16_t port) const {
+    switch (port) {
+    case 0x3c0:
+    case 0x3c1:
+    case 0x3c2:
+    case 0x3c4:
+    case 0x3c5:
+    case 0x3c6:
+    case 0x3c7:
+    case 0x3c8:
+    case 0x3c9:
+    case 0x3cc:
+    case 0x3ce:
+    case 0x3cf:
+    case 0x3d4:
+    case 0x3d5:
+    case 0x3da:
+        return true;
+    default:
+        return false;
+    }
+}
+std::uint8_t Vga::in(std::uint16_t port) {
+    switch (port) {
+    case 0x3c1:
+        return attr_[attr_index_];
+    case 0x3c4:
+        return seq_index_;
+    case 0x3c5:
+        return seq_[seq_index_];
+    case 0x3c6:
+        return dac_mask_;
+    case 0x3c8:
+        return dac_write_;
+    case 0x3c9: {
+        auto value = dac_[dac_read_][dac_component_++];
+        if (dac_component_ == 3) {
+            dac_component_ = 0;
+            ++dac_read_;
+        }
+        return value;
+    }
+    case 0x3cc:
+        return misc_;
+    case 0x3ce:
+        return gc_index_;
+    case 0x3cf:
+        return gc_[gc_index_];
+    case 0x3d4:
+        return crtc_index_;
+    case 0x3d5:
+        return crtc_[crtc_index_];
+    case 0x3da:
+        attr_data_ = false;
+        // Bounded synthetic retrace transitions until a guest timer is connected.
+        return (++status_reads_ & 1) ? 0 : 9;
+    default:
+        throw std::runtime_error("unsupported VGA port read");
+    }
+}
+void Vga::out(std::uint16_t port, std::uint8_t value) {
+    switch (port) {
+    case 0x3c0:
+        if (!attr_data_)
+            attr_index_ = value & 31;
+        else
+            attr_[attr_index_] = value;
+        attr_data_ = !attr_data_;
+        break;
+    case 0x3c2:
+        misc_ = value;
+        break;
+    case 0x3c4:
+        seq_index_ = value;
+        break;
+    case 0x3c5:
+        seq_[seq_index_] = value;
+        break;
+    case 0x3c6:
+        dac_mask_ = value;
+        break;
+    case 0x3c7:
+        dac_read_ = value;
+        dac_component_ = 0;
+        break;
+    case 0x3c8:
+        dac_write_ = value;
+        dac_component_ = 0;
+        break;
+    case 0x3c9:
+        dac_[dac_write_][dac_component_++] = value & 63;
+        if (dac_component_ == 3) {
+            dac_component_ = 0;
+            ++dac_write_;
+        }
+        break;
+    case 0x3ce:
+        gc_index_ = value;
+        break;
+    case 0x3cf:
+        gc_[gc_index_] = value;
+        break;
+    case 0x3d4:
+        crtc_index_ = value;
+        break;
+    case 0x3d5:
+        crtc_[crtc_index_] = value;
+        break;
+    default:
+        throw std::runtime_error("unsupported VGA port write");
+    }
+}
+std::uint8_t Vga::read(std::uint16_t offset) {
+    if (seq_[4] & 8)
+        return planes_[offset & 3][offset >> 2];
+    for (unsigned p = 0; p < 4; ++p)
+        latch_[p] = planes_[p][offset];
+    if (!(gc_[5] & 8))
+        return latch_[gc_[4] & 3];
+    std::uint8_t result = 255;
+    for (unsigned p = 0; p < 4; ++p) {
+        if (gc_[7] & (1 << p))
+            result &= latch_[p] ^ ((gc_[2] & (1 << p)) ? 0 : 255);
+    }
+    return result;
+}
+void Vga::write(std::uint16_t offset, std::uint8_t value) {
+    if (seq_[4] & 8) {
+        if (seq_[2] & (1 << (offset & 3)))
+            planes_[offset & 3][offset >> 2] = value;
+        return;
+    }
+    const auto rotated =
+        static_cast<std::uint8_t>((value >> (gc_[3] & 7)) | (value << ((8 - (gc_[3] & 7)) & 7)));
+    for (unsigned p = 0; p < 4; ++p) {
+        if (!(seq_[2] & (1 << p)))
+            continue;
+        const auto mode = gc_[5] & 3;
+        if (mode == 1) {
+            planes_[p][offset] = latch_[p];
+            continue;
+        }
+        const bool set = gc_[0] & (1 << p);
+        std::uint8_t source = mode == 2                            ? ((value & (1 << p)) ? 255 : 0)
+                              : (mode == 3 || (gc_[1] & (1 << p))) ? (set ? 255 : 0)
+                                                                   : rotated;
+        std::uint8_t mask = gc_[8];
+        if (mode == 3)
+            mask &= rotated;
+        switch ((gc_[3] >> 3) & 3) {
+        case 1:
+            source &= latch_[p];
+            break;
+        case 2:
+            source |= latch_[p];
+            break;
+        case 3:
+            source ^= latch_[p];
+            break;
+        }
+        planes_[p][offset] = (source & mask) | (latch_[p] & ~mask);
+    }
+}
+void Vga::palette(std::uint16_t index, std::uint8_t r, std::uint8_t g, std::uint8_t b) {
+    if (index >= dac_.size())
+        throw std::runtime_error("VGA palette index out of range");
+    dac_[index] = {static_cast<std::uint8_t>(r & 63), static_cast<std::uint8_t>(g & 63),
+                   static_cast<std::uint8_t>(b & 63)};
+}
+std::vector<std::uint32_t> Vga::pixels() const {
+    std::vector<std::uint32_t> output(width() * height());
+    const auto start = (std::uint16_t(crtc_[0x0c]) << 8) | crtc_[0x0d];
+    const auto stride = unsigned(crtc_[0x13]) * (mode_ == 0x13 ? 8 : 2);
+    for (int y = 0; y < height(); ++y)
+        for (int x = 0; x < width(); ++x) {
+            unsigned color = 0;
+            if (mode_ == 0x13) {
+                const auto offset = (start * 4 + y * stride + x) & 0xffff;
+                color = planes_[offset & 3][offset >> 2];
+            } else {
+                const auto offset = (start + y * stride + x / 8) & 0xffff;
+                for (unsigned p = 0; p < 4; ++p)
+                    color |= ((planes_[p][offset] >> (7 - (x & 7))) & 1) << p;
+                color = attr_[color] & 63;
+                if (attr_[0x10] & 0x80)
+                    color = (color & 15) | ((attr_[0x14] & 3) << 4);
+                color |= (attr_[0x14] & 12) << 4;
+            }
+            const auto &rgb = dac_[color & dac_mask_];
+            auto expand = [](unsigned v) { return (v << 2) | (v >> 4); };
+            output[y * width() + x] =
+                0xff000000 | (expand(rgb[0]) << 16) | (expand(rgb[1]) << 8) | expand(rgb[2]);
+        }
+    return output;
+}
+} // namespace gateway

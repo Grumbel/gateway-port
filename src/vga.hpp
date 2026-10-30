@@ -1,0 +1,35 @@
+#pragma once
+#include <array>
+#include <cstdint>
+#include <vector>
+
+namespace gateway {
+// Conventional VGA planar graphics subset. Timing and text rendering are separate.
+class Vga {
+  public:
+    Vga();
+    void set_mode(std::uint8_t mode, bool clear = true);
+    std::uint8_t mode() const { return mode_; }
+    int width() const;
+    int height() const;
+    bool handles_port(std::uint16_t port) const;
+    std::uint8_t in(std::uint16_t port);
+    void out(std::uint16_t port, std::uint8_t value);
+    std::uint8_t read(std::uint16_t offset);
+    void write(std::uint16_t offset, std::uint8_t value);
+    std::vector<std::uint32_t> pixels() const; // ARGB8888, opaque alpha.
+    void palette(std::uint16_t index, std::uint8_t r, std::uint8_t g, std::uint8_t b);
+
+  private:
+    std::uint8_t mode_ = 3;
+    std::array<std::array<std::uint8_t, 65536>, 4> planes_{};
+    std::array<std::uint8_t, 4> latch_{};
+    std::array<std::uint8_t, 256> seq_{}, gc_{}, crtc_{}, attr_{};
+    std::array<std::array<std::uint8_t, 3>, 256> dac_{};
+    std::uint8_t seq_index_ = 0, gc_index_ = 0, crtc_index_ = 0, attr_index_ = 0;
+    bool attr_data_ = false;
+    std::uint8_t dac_read_ = 0, dac_write_ = 0, dac_component_ = 0, dac_mask_ = 255;
+    std::uint8_t misc_ = 0x63;
+    unsigned status_reads_ = 0;
+};
+} // namespace gateway
