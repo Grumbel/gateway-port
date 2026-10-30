@@ -147,6 +147,25 @@ void test_gateway_entry() {
     require(byte_image.bits == 8 && byte_image.overlay && byte_image.pixels[0] == 'A',
             "size selects eight-bit depth and flag selects XOR");
 
+    Bytes frames;
+    for (std::uint16_t i = 0; i < 16; ++i)
+        put_u16(frames, 100 + i);
+    frames.insert(frames.end(), dcl_sample.begin(), dcl_sample.end());
+    gateway::PicEntry framed_entry{1, 0x2308, 13, 1, 0};
+    Bytes shifted{0};
+    shifted.insert(shifted.end(), frames.begin(), frames.end());
+    const auto first_frame =
+        gateway::decode_pic(shifted, framed_entry, gateway::PicDialect::gateway);
+    require(first_frame.x == 100 && first_frame.y == 101 && first_frame.pixels[0] == 'A',
+            "low flag byte counts four-byte frame positions");
+
+    Bytes class_4(1, 0);
+    class_4.resize(49);
+    class_4.insert(class_4.end(), dcl_sample.begin(), dcl_sample.end());
+    const auto wide = gateway::decode_pic(class_4, gateway::PicEntry{1, 0x1400, 26, 1, 0},
+                                          gateway::PicDialect::gateway);
+    require(wide.bits == 4 && wide.palette.size() == 16, "class 4 palette has 48 bytes");
+
     gateway::PicEntry wrong{12 + 4 + 16, 0x2300, 13, 2, 0};
     rejects([&] { gateway::decode_pic(file, wrong, gateway::PicDialect::gateway); },
             "mismatched Gateway size accepted");

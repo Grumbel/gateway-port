@@ -196,9 +196,12 @@ Layout gateway_layout(std::uint16_t flags) {
     if (!(flags & 0x1000))
         return {Codec::dcl, 0};
     switch ((flags >> 8) & 15) {
+    case 0:
+        return {Codec::dcl, 0};
     case 1:
         return {Codec::dcl, 16};
     case 2:
+    case 4:
         return {Codec::dcl, 48};
     case 3:
         return {Codec::dcl, 768};
@@ -445,15 +448,12 @@ PicImage decode_pic(Bytes file, const PicEntry &entry, PicDialect dialect) {
                           : dialect == PicDialect::s201 ? s201_layout(entry.flags, empty)
                                                         : gateway_layout(entry.flags);
     std::size_t at = entry.offset;
-    if (entry.flags & 0x0001) {
+    const std::size_t frames = entry.flags & 0xff;
+    if (frames) { // Each frame is a screen position for the same bitmap.
         image.x = u16(file, at);
         image.y = u16(file, at + 2);
-        at += 4;
     }
-    if (entry.flags & 0x0004)
-        at += 16;
-    if (entry.flags & 0x0002)
-        at += 8;
+    at += frames * 4;
     image.palette = decode_palette(bytes_at(file, at, layout.palette_bytes));
     at += layout.palette_bytes;
     if (empty)
