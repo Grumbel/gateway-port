@@ -42,6 +42,8 @@ queries, and file read/seek/close services, `GATE.EXE` loads `RTLINKST.COM`, ope
 This DOS memory-block resizing request (`AH=4ah`) is now implemented through
 [the conventional-memory arena](dos-memory.md). After resizing, startup obtains
 DOS version and vector 0, installs its divide-error handler, and reaches device
-information (`AX=4400`) at `12a5:0b1e`, currently unsupported.
+information (`AX=4400`) at `12a5:0b1e`. Handle attributes and DOS date/time
+queries are now implemented. Startup reaches VGA display-combination detection
+(`INT 10h AX=1a00`) at `242a:0076`; BIOS video services are the next boundary.
 The startup probe allows ten million instructions and a two-second Unicorn
 execution timeout; this is enough to reach that boundary in the supplied binary.

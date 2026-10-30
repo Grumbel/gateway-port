@@ -2,6 +2,8 @@
 #include "mz.hpp"
 #include <algorithm>
 #include <cctype>
+#include <chrono>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -79,6 +81,34 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             }
         } else if (number == 0x21 && (ax >> 8) == 0x19) {
             set(uc, UC_X86_REG_AX, (ax & 0xff00) | 2); // current drive C:
+        } else if (number == 0x21 && ((ax >> 8) == 0x2a || (ax >> 8) == 0x2c)) {
+            const auto now = std::chrono::system_clock::now();
+            const auto seconds = std::chrono::system_clock::to_time_t(now);
+            const auto *time = std::localtime(&seconds);
+            if (!time)
+                throw std::runtime_error("cannot read host calendar");
+            if ((ax >> 8) == 0x2a) {
+                set(uc, UC_X86_REG_CX, time->tm_year + 1900);
+                set(uc, UC_X86_REG_DX, ((time->tm_mon + 1) << 8) | time->tm_mday);
+                set(uc, UC_X86_REG_AX, (ax & 0xff00) | time->tm_wday);
+            } else {
+                const auto ms =
+                    std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch())
+                        .count();
+                set(uc, UC_X86_REG_CX, (time->tm_hour << 8) | time->tm_min);
+                set(uc, UC_X86_REG_DX, (time->tm_sec << 8) | ((ms % 1000) / 10));
+            }
+        } else if (number == 0x21 && ax == 0x4400) {
+            const auto handle = reg(uc, UC_X86_REG_BX);
+            const bool console = handle <= 2;
+            const bool valid = console || state.files.contains(handle);
+            if (valid) {
+                const std::uint16_t info = console ? 0x80d3 : 2;
+                set(uc, UC_X86_REG_DX, info);
+                set(uc, UC_X86_REG_AX, info);
+            } else
+                set(uc, UC_X86_REG_AX, 6);
+            set(uc, UC_X86_REG_FLAGS, (reg(uc, UC_X86_REG_FLAGS) & ~1) | !valid);
         } else if (number == 0x21 && (ax >> 8) == 0x47) {
             const char root = 0;
             check(uc_mem_write(

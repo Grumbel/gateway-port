@@ -1,7 +1,7 @@
 # Port milestones
 
-1. Implement DOS handle/device information (`AX=4400`), the current `GATE.EXE`
-   stopping point (`12a5:0b1e`). Continue the runtime startup contract. Keep each
+1. Implement BIOS VGA detection (`INT 10h AX=1a00`), the current `GATE.EXE`
+   stopping point (`242a:0076`). Continue the runtime startup contract. Keep each
    implemented service explicit and test it with a synthetic guest fixture.
 2. Recover RTL/OVL mapping and relocation behavior; document the module entry
    reached after the shared RTLink startup.

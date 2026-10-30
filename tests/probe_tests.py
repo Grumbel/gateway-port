@@ -1,5 +1,6 @@
 """Synthetic real-mode programs; no original game data required."""
 import pathlib
+import datetime
 import struct
 import subprocess
 import sys
@@ -46,6 +47,33 @@ class ProbeTests(unittest.TestCase):
         code = bytes.fromhex('b834128ec0b449cd21b44ccd21')
         result = self.run_guest(code)
         self.assertIn('DOS exit code: 9', result.stdout)
+
+    def test_console_device_info(self):
+        # Standard output is a character device; return its low attribute byte.
+        code = bytes.fromhex('bb0100b80044cd2189d0b44ccd21')
+        result = self.run_guest(code)
+        self.assertIn('DOS exit code: 211', result.stdout)
+
+    def test_invalid_device_handle(self):
+        code = bytes.fromhex('bbffffb80044cd21b44ccd21')
+        result = self.run_guest(code)
+        self.assertIn('DOS exit code: 6', result.stdout)
+
+    def test_calendar_year(self):
+        before = datetime.date.today().year
+        result = self.run_guest(bytes.fromhex('b42acd2189c8b44ccd21'))
+        after = datetime.date.today().year
+        self.assertTrue(any(f'DOS exit code: {year & 255}' in result.stdout
+                            for year in (before, after)), result.stderr)
+
+    def test_time_ranges(self):
+        # Return seconds; check the other fields with independent fixtures below.
+        for register_move, limit in [('88f0', 60), ('88d0', 100), ('88e8', 24), ('88c8', 60)]:
+            result = self.run_guest(bytes.fromhex('b42ccd21' + register_move + 'b44ccd21'))
+            self.assertIn('DOS exit code:', result.stdout, result.stderr)
+            value = int(result.stdout.split('DOS exit code: ')[1])
+            self.assertGreaterEqual(value, 0)
+            self.assertLess(value, limit)
 
     def test_drive(self):
         result = self.run_guest(bytes.fromhex('b419cd21b44ccd21'))
