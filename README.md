@@ -14,6 +14,7 @@ This is an initial research harness, **not yet a playable port**. It provides:
 - `gateway-probe`, a bounded Unicorn real-mode startup probe that traces DOS
   services and stops explicitly on unsupported calls.
 - `gateway-host`, an SDL3 graphics/audio diagnostic, separate from guest execution.
+- `gateway-extract`, which converts PIC files to indexed PNGs.
 
 Original game files remain external in `../gateway-dos/` and are never needed
 for package builds or unit tests. The probe opens game files read-only.
@@ -56,10 +57,25 @@ This checks initialization and submission, not audible output or visible pixels.
 The probe is limited to ten million instructions and two seconds of CPU execution.
 It reports unsupported services rather than silently returning fabricated success.
 
+## Extracting pictures
+
+`gateway-extract` writes `DIR/<file>/<entry>.png` and needs neither SDL3 nor Unicorn.
+It reads Gateway and the three Spellcasting games, and detects the format per file:
+
+```sh
+./build/gateway-extract -o build/pictures/gateway ../gateway-dos/*.PIC
+./build/gateway-extract -o build/pictures/s101 ../101/*.PIC
+```
+
+Pass all of a game's files together, because some rely on a palette from an earlier
+file. XOR overlays are merged onto their picture; `--raw-overlays` keeps the deltas.
+`--dialect s101|s201|gateway` overrides detection. The exit status is non-zero if any
+entry fails to decode.
+
 ## Research
 
 See [executable findings](docs/executable.md), [data file formats](docs/data-files.md),
-and [next steps](TODO.md).
+the [Spellcasting comparison](docs/spellcasting.md), and [next steps](TODO.md).
 The neighboring EF2000 port informs the external-data, system-boundary, and
 reference-testing approach. Its protected-mode native harness is not directly
 applicable to Gateway’s real-mode startup.
