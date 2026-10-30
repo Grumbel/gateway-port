@@ -5,8 +5,9 @@ unless noted. **Confirmed** means checked against every file of that type;
 **Hypothesis** means supported by evidence but not yet tied to game code. None
 of this has been traced through the original executable or compared with DOSBox.
 
-Checks used throwaway Python scripts and a PKWARE DCL decoder, which are not in
-this repository. Nothing here is implemented in the port yet.
+`gateway-extract` implements the PIC format. Checks of the other formats used
+throwaway Python scripts, which are not in this repository. See also the
+[Spellcasting comparison](spellcasting.md).
 
 | File | Size | SHA-256 |
 | --- | ---: | --- |
@@ -117,7 +118,8 @@ entries:
 | 8 | `u16` | Height in pixels |
 | 10 | `u16` | Unknown; often 0–4, and 1028 in 28 entries |
 
-The first offset equals the directory size, which gives the entry count. Of the
+The lowest non-zero offset equals the directory size, which gives the entry count.
+In Gateway that is always the first offset. Of the
 1519 entries, 15 have zero width or height and use at most four bytes.
 
 Each entry holds these fields in order, followed by the pixel stream:
@@ -159,6 +161,19 @@ Flag `0x4000` overlays are XORed onto the current image at their stored
 position. Applying `GATE_102` entries 1, 2, and 4–7 to entry 0 this way gives far
 fewer edge mismatches than a plain copy (60 versus 114 for entry 1), and the
 result looks seamless. Palette-index XOR therefore acts as a frame delta.
+
+Overlays do not name their picture, and a smaller plain image can sit between a
+picture and its overlays. Entry 3 of `GATE_102` does: entries 4–7 lie outside it
+and belong to entry 0. `gateway-extract` therefore uses the latest plain image that
+covers the overlay's rectangle. Of 686 Gateway overlays, 680 fit the immediately
+preceding plain image. Each overlay applies to the plain picture alone, not on top
+of the previous overlay. **Hypothesis:** this is what the game does; it matches the
+visible results but has not been traced. In Spellcasting 301, 16 of 467 overlays
+have no covering image and stay as raw deltas.
+
+Files without a palette of their own depend on another file loaded earlier. Give
+`gateway-extract` a whole game's files at once so that it can carry the latest
+256-color palette forward.
 
 ### Display classes
 
