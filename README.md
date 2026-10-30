@@ -58,11 +58,12 @@ It reports unsupported services rather than silently returning fabricated succes
 
 ## Research
 
-See [executable findings](docs/executable.md) and [next steps](TODO.md).
+See [executable findings](docs/executable.md), [data file formats](docs/data-files.md),
+and [next steps](TODO.md).
 The neighboring EF2000 port informs the external-data, system-boundary, and
 reference-testing approach. Its protected-mode native harness is not directly
 applicable to Gateway’s real-mode startup.
 
 [Risca’s Death Gate resource manager](https://github.com/Risca/dgate_resource_manager)
-is a potential format-research reference. Compatibility with Gateway has not
-been established; compare actual resource headers and decoding behavior first.
+is a format-research reference. Gateway shares its string compression and PIC
+directory layout but differs elsewhere; see [the comparison](docs/data-files.md#comparison-with-death-gate).
