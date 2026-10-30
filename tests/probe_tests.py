@@ -31,6 +31,22 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('DOS exit code: 0', result.stdout)
 
+    def test_resize_and_allocate(self):
+        # Shrink the PSP allocation to 100h paragraphs; next data segment is 10f1h.
+        code = bytes.fromhex('bb0001b44acd21bb2000b448cd21b44ccd21')
+        result = self.run_guest(code)
+        self.assertIn('DOS exit code: 241', result.stdout)
+
+    def test_failed_growth_sets_carry(self):
+        code = bytes.fromhex('bbffffb44acd219c58250100b44ccd21')
+        result = self.run_guest(code)
+        self.assertIn('DOS exit code: 1', result.stdout)
+
+    def test_invalid_free_returns_error(self):
+        code = bytes.fromhex('b834128ec0b449cd21b44ccd21')
+        result = self.run_guest(code)
+        self.assertIn('DOS exit code: 9', result.stdout)
+
     def test_drive(self):
         result = self.run_guest(bytes.fromhex('b419cd21b44ccd21'))
         self.assertEqual(result.returncode, 1)

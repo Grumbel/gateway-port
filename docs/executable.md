@@ -39,7 +39,9 @@ Without the PSP field RTLink reports `est0002` (insufficient free memory).
 With these fields, case-insensitive root-directory file access, DOS vector/version
 queries, and file read/seek/close services, `GATE.EXE` loads `RTLINKST.COM`, opens
 `GATE.RTL`, and reaches `INT 21h AX=4aff` at `12a5:0a10` (post-interrupt IP).
-This is DOS memory-block resizing (`AH=4ah`), which is deliberately unsupported.
-The next step is a tested DOS memory arena, not a success stub for this call.
+This DOS memory-block resizing request (`AH=4ah`) is now implemented through
+[the conventional-memory arena](dos-memory.md). After resizing, startup obtains
+DOS version and vector 0, installs its divide-error handler, and reaches device
+information (`AX=4400`) at `12a5:0b1e`, currently unsupported.
 The startup probe allows ten million instructions and a two-second Unicorn
 execution timeout; this is enough to reach that boundary in the supplied binary.

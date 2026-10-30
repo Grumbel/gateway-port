@@ -1,3 +1,4 @@
+#include "dos_memory.hpp"
 #include "mz.hpp"
 #include <algorithm>
 #include <cctype>
@@ -31,6 +32,7 @@ struct State {
     std::filesystem::path data_dir;
     std::map<unsigned, std::ifstream> files;
     unsigned next_handle = 5;
+    gateway::DosMemory arena{0x0ff0};
     bool exited = false;
     unsigned exit_code = 0;
     std::string failure;
@@ -56,6 +58,25 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             state.exited = true;
             state.exit_code = number == 0x20 ? 0 : ax & 255;
             check(uc_emu_stop(uc));
+        } else if (number == 0x21 && (ax >> 8) >= 0x48 && (ax >> 8) <= 0x4a) {
+            const auto operation = ax >> 8;
+            const auto result = operation == 0x48   ? state.arena.allocate(reg(uc, UC_X86_REG_BX))
+                                : operation == 0x49 ? state.arena.release(reg(uc, UC_X86_REG_ES))
+                                                    : state.arena.resize(reg(uc, UC_X86_REG_ES),
+                                                                         reg(uc, UC_X86_REG_BX));
+            if (result.error) {
+                set(uc, UC_X86_REG_AX, result.error);
+                if (result.error == 8)
+                    set(uc, UC_X86_REG_BX, result.available);
+            } else if (operation == 0x48)
+                set(uc, UC_X86_REG_AX, result.segment);
+            set(uc, UC_X86_REG_FLAGS, (reg(uc, UC_X86_REG_FLAGS) & ~1) | bool(result.error));
+            std::vector<std::uint8_t> memory(1024 * 1024);
+            state.arena.write_mcbs(memory);
+            for (const auto &block : state.arena.blocks()) {
+                const auto address = std::size_t(block.segment - 1) * 16;
+                check(uc_mem_write(uc, address, memory.data() + address, 16));
+            }
         } else if (number == 0x21 && (ax >> 8) == 0x19) {
             set(uc, UC_X86_REG_AX, (ax & 0xff00) | 2); // current drive C:
         } else if (number == 0x21 && (ax >> 8) == 0x47) {
@@ -197,7 +218,9 @@ int main(int argc, char **argv) {
         if (!file)
             throw std::runtime_error("cannot open executable");
         std::vector<std::uint8_t> bytes{std::istreambuf_iterator<char>(file), {}};
-        const auto image = gateway::load_mz(bytes);
+        auto image = gateway::load_mz(bytes);
+        State state;
+        state.arena.write_mcbs(image.memory);
         Engine engine;
         check(uc_mem_map(engine.uc, 0, image.memory.size(), UC_PROT_ALL));
         check(uc_mem_write(engine.uc, 0, image.memory.data(), image.memory.size()));
@@ -212,7 +235,6 @@ int main(int argc, char **argv) {
         set(engine.uc, UC_X86_REG_DS, image.ds);
         set(engine.uc, UC_X86_REG_ES, image.es);
         set(engine.uc, UC_X86_REG_FLAGS, 0x202);
-        State state;
         state.data_dir = std::filesystem::absolute(argv[1]).parent_path();
         uc_hook hook;
         check(uc_hook_add(engine.uc, &hook, UC_HOOK_INTR, reinterpret_cast<void *>(interrupt),
