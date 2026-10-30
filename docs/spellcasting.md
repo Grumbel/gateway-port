@@ -54,10 +54,10 @@ Every entry of every file decodes with `gateway-extract`:
 
 Entries without images are empty, or are palette-only in Spellcasting 201.
 
-The directory and the optional position fields (flags `0x0001`, `0x0004`,
-`0x0002`) match [Gateway](data-files.md#pic). Directories are not always sorted,
-so the lowest non-zero offset marks their end, not the first entry. The rest
-differs by game.
+The directory and the frame positions, whose count is the low flag byte, match
+[Gateway](data-files.md#pic). Spellcasting 101 uses counts of 0, 1, and 5, and
+Spellcasting 201 uses 0, 1, and 2. Directories are not always sorted, so the lowest
+non-zero offset marks their end, not the first entry. The rest differs by game.
 
 **Spellcasting 101.** Let `high = flags >> 8`. Bit 0 of `high` means there is no
 palette, and `high >> 1` selects the encoding:

@@ -7,7 +7,8 @@ of this has been traced through the original executable or compared with DOSBox.
 
 `gateway-extract` implements the PIC format. Checks of the other formats used
 throwaway Python scripts, which are not in this repository. See also the
-[Spellcasting comparison](spellcasting.md).
+[Spellcasting comparison](spellcasting.md) and the
+[ScummVM engine comparison](scummvm-legend.md), which resolved several unknowns.
 
 | File | Size | SHA-256 |
 | --- | ---: | --- |
@@ -74,7 +75,8 @@ The file holds 6013 strings. Size tables match the segment totals, and the
 335613 stream bytes end exactly at end of file. Stop at the first NUL, because
 leftover padding bits can decode to stray characters. Text uses `printf`-style
 `%s` and `%d` markers, `\n`, and `\t`. For example, string 0/1 is
-`Slot:    %d (%s)\n`. How the game addresses segments and strings is unknown.
+`Slot:    %d (%s)\n`. **Hypothesis:** the game addresses strings as `0xFsssnnnn`,
+with segment `sss` and string `nnnn`, as ScummVM's loader expects.
 
 ## VOCAB.DAT
 
@@ -82,22 +84,21 @@ leftover padding bits can decode to stray characters. Text uses `printf`-style
 
 1. `u16` tree word count (84), then a tree using the `GATESTR.DAT` scheme.
 2. `u16` compressed size (10125) at offset 170, then the compressed word list.
-3. 11784 bytes of tables from offset 10297.
+3. `u16` word count (2644) at offset 10297, then one `u16 word_offset, u16 flags`
+   pair per word. `word_offset` is a byte offset into the decompressed list.
+4. `u16` link group count (91). Each group is `u16 word, u16 count`, then `count`
+   pairs of `u16, u16` (210 in total). The file ends exactly after these.
 
 Unlike `GATESTR.DAT`, the word list is one continuous stream of NUL-terminated
 words, starting `_integer`, `_string`, `_time`, `a`, `again`. It holds 2644 words
 and decompresses to about 18840 bytes.
 
-The table section is a sequence of `u16` pairs:
+The pair table is sorted alphabetically by word and starts `&`, `'widow`, `_integer`.
+The layout comes from ScummVM and checks out against the file. The meaning of the
+link groups is not known; ScummVM keeps only the last pair of each.
 
-- The first pair is `(2644, 11261)`, the word count and an unexplained value.
-- The next 2644 pairs are `(class?, word_offset)`, sorted alphabetically by word.
-  `word_offset` is a byte offset into the decompressed list.
-- The remaining 301 pairs are not understood. They look like `(word, count)`
-  groups, such as `(2305, 5)` followed by entries with a second value of 1.
-
-**Hypothesis:** the first value is a word-class bit mask. Its most common values
-are 2, 4, 6, 1, and 66.
+**Hypothesis:** `flags` is a word-class bit mask. Its most common values are 2, 4,
+6, 1, and 66.
 
 ## OBJECT.DAT
 
@@ -113,10 +114,11 @@ entries:
 | Offset | Type | Meaning |
 | ---: | --- | --- |
 | 0 | `u32` | File offset of the entry |
-| 4 | `u16` | Flags |
+| 4 | `u8` | Frame count: 0, 1, 2, or 5 |
+| 5 | `u8` | Flags |
 | 6 | `u16` | Width in pixels |
 | 8 | `u16` | Height in pixels |
-| 10 | `u16` | Unknown; often 0–4, and 1028 in 28 entries |
+| 10 | 2 × `u8` | Unknown; often 0–4, and `04 04` in 28 entries |
 
 The lowest non-zero offset equals the directory size, which gives the entry count.
 In Gateway that is always the first offset. Of the
@@ -126,19 +128,22 @@ Each entry holds these fields in order, followed by the pixel stream:
 
 | Field | Present when | Size |
 | --- | --- | ---: |
-| Position `u16 x, u16 y` | Flag `0x0001` | 4 |
-| Four further positions | Flag `0x0004`, in addition to the position | 16 |
-| Unknown four `u16` values | Flag `0x0002`, one entry only (`GATE_101` #3) | 8 |
-| Palette | Flag `0x1000` | 16, 48, or 768 |
+| Frame positions `u16 x, u16 y` | Frame count above 0 | 4 per frame |
+| Palette | Flag `0x10` | 16, 48, or 768 |
 
-Flags `0x0001`, `0x1000`, and `0x4000` match Death Gate. Bits 8–11 identify a
-display class, described below. Top-level flag values are `0x2xxx` for plain
-images, `0x3xxx` for images with a palette, `0x4xxx` for XOR overlays, and
-`0x5xxx` for XOR overlays with a palette. Bit `0x2000` has no known meaning.
+Below, flags are written as the 16-bit value of offsets 4–5, with the frame count
+in the low byte, so `0x10` above appears as `0x1000`. Each frame places the same
+bitmap at another position, and `gateway-extract` uses the first.
+
+Bits `0x1000` and `0x4000` match Death Gate. Bits 8–11 identify a display class,
+described below. Top-level flag values are `0x2xxx` for plain images, `0x3xxx` for
+images with a palette, `0x4xxx` for XOR overlays, and `0x5xxx` for XOR overlays
+with a palette. Bit `0x2000` has no known meaning.
 
 The palette size follows the display class. Class 1 has 16 bytes, which look like
 EGA palette registers. Class 2 has 48 bytes (16 RGB entries) and class 3 has 768
-bytes (256 RGB entries). RGB components use the VGA 0–63 range.
+bytes (256 RGB entries). RGB components use the VGA 0–63 range. ScummVM also gives
+class 4 48 bytes, though no Gateway entry has one.
 
 Pixels are a PKWARE DCL "implode" stream, beginning with `00 06`: binary literals
 and a 4-KiB dictionary. All 1504 non-empty entries decompress, and every stream
@@ -198,7 +203,8 @@ The match is imperfect:
 - 2xx and 4xx hold only a few interface files, so scaled reuse of other series is
   likely. `GATE.RTL` contains `scale_pic : EGA -> VGA disabled`.
 
-Which series a `VGA` launch actually loads should be checked under DOSBox.
+Which series a `VGA` launch actually loads should be checked under DOSBox. ScummVM's
+[picture numbers](scummvm-legend.md#picture-numbers) suggest 1xx rooms and 2xx interface art.
 
 ## RGN
 
@@ -244,14 +250,17 @@ rectangles drive mouse selection of named objects.
 | 2 | `u8` | Bytes per glyph row |
 | 3 | `u8` | First character (`0x21`) |
 | 4 | `u8` | Last character (`0x7f`) |
-| 5 | `u8` | Unknown, 0–4; often larger for taller fonts |
+| 5 | `u8` | Unknown, 0–4; often larger for taller fonts; ScummVM calls it a line offset |
 | 6 | `u8` | Glyph height |
-| 7 | `u16` | Cell width, or `0xffff` if proportional |
+| 7 | `i8` | Fixed width, or −1 for a width table |
+| 8 | `i8` | Fixed spacing, or −1 for a spacing table |
 | 9 | `u8` | Always 0 |
 
-Proportional fonts then have a 256-byte advance table indexed by character code.
-In `GATE_001`, `i` has width 2, `W` has 14, and space has 4. Glyphs follow for
-each character in the range, top row first, with most significant bit at left.
+Proportional fonts then have 128 width bytes followed by 128 spacing bytes, each
+indexed by character code. A spacing byte holds left spacing in its low nibble and
+right spacing in its high nibble. In `GATE_001`, `i` has width 2 and spacing `0x11`,
+`W` has width 14, and space has width 4. Glyphs follow for each character in the
+range, top row first, with most significant bit at left.
 
 File size is therefore `10 + (proportional ? 256 : 0) + count * row_bytes * height`.
 

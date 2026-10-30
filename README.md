@@ -75,7 +75,8 @@ entry fails to decode.
 ## Research
 
 See [executable findings](docs/executable.md), [data file formats](docs/data-files.md),
-the [Spellcasting comparison](docs/spellcasting.md), and [next steps](TODO.md).
+the [Spellcasting comparison](docs/spellcasting.md), the
+[ScummVM engine comparison](docs/scummvm-legend.md), and [next steps](TODO.md).
 The neighboring EF2000 port informs the external-data, system-boundary, and
 reference-testing approach. Its protected-mode native harness is not directly
 applicable to Gateway’s real-mode startup.
