@@ -29,3 +29,23 @@ calibrates, and restores its clock during startup, so these setters are required
 even without gameplay. Invalid dates and times return AL=FFh and preserve the
 previous value; valid setters return AL=00h. Tests cover leap days, midnight
 rollover, invalid setters, and a guest set/get round trip. Host time is never set.
+
+## BIOS tick reads and Gateway II
+
+`INT 1Ah/AH=00h` returns the IRQ0-maintained BIOS tick counter at `0040:006C`
+through CX:DX and the midnight flag at `0040:0070` through AL, then clears the
+flag. The timer trampoline sets the flag when the counter wraps at 1800B0h.
+Dispatch uses AH, since Gateway II calls this service with AX=00EAh.
+Synthetic guests verify the returned words, flag consumption, and IRQ0 rollover.
+
+On Linux, the following 30-second headless SDL runtime check completed without
+an unsupported service after adding this handler (2026-10-31):
+
+```sh
+./build/gateway ../gateway2-dos/HOME.EXE --headless --milliseconds 30000 \
+  --read-only --dump-prefix build/home-long
+```
+
+The trace progresses from `LEGEND.PIC` to `GW2-LOGO.PIC`, `HOME_303.PIC`, and
+`HOME_301.FNT`. The earlier missing `HOME_200.FNT` lookup remains nonfatal.
+Interactive graphics, keyboard/mouse input, audio, and gameplay are unverified.

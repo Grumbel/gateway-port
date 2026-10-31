@@ -534,11 +534,25 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             }
         } else if (number == 0x16 && (ax >> 8) == 2) {
             set(uc, UC_X86_REG_AX, ax & 0xff00);
+        } else if (number == 0x1a && (ax >> 8) == 0) {
+            std::uint32_t ticks;
+            std::uint8_t midnight;
+            check(uc_mem_read(uc, 0x46c, &ticks, sizeof(ticks)));
+            check(uc_mem_read(uc, 0x470, &midnight, sizeof(midnight)));
+            set(uc, UC_X86_REG_CX, ticks >> 16);
+            set(uc, UC_X86_REG_DX, ticks & 0xffff);
+            set(uc, UC_X86_REG_AX, midnight);
+            midnight = 0;
+            check(uc_mem_write(uc, 0x470, &midnight, sizeof(midnight)));
         } else if (number == 0xf1 && reg(uc, UC_X86_REG_CS) == 0xf000) {
             std::uint32_t ticks;
             check(uc_mem_read(uc, 0x46c, &ticks, 4));
             ticks = (ticks + 1) % 0x1800b0;
             check(uc_mem_write(uc, 0x46c, &ticks, 4));
+            if (ticks == 0) {
+                const std::uint8_t midnight = 1;
+                check(uc_mem_write(uc, 0x470, &midnight, sizeof(midnight)));
+            }
         } else if (number == 0x10 && ax == 0x1a00) {
             set(uc, UC_X86_REG_AX, 0x1a);
             set(uc, UC_X86_REG_BX, 8); // VGA with an analog color display.

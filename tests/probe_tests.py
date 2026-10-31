@@ -384,6 +384,32 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(len(result.memory), 1024 * 1024)
         self.assertEqual(result.memory[0x10000:0x10000 + len(code)], code)
 
+    def test_bios_read_ticks_and_midnight(self):
+        # Seed the BIOS data area, read AH=00 with nonzero AL, then read again.
+        code = bytes.fromhex(
+            'fa31c08ec0'
+            '26c7066c04341226c7066e04010026c606700401'
+            'b8ea00cd1aa30003890e020389160403'
+            'b8ff00cd1aa30603b8004ccd21')
+        result = self.run_guest(code, dump=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(struct.unpack_from('<4H', result.memory, 0x0ff00 + 0x300),
+                         (1, 1, 0x1234, 0))
+        self.assertEqual(result.memory[0x470], 0)
+
+    def test_bios_tick_midnight_rollover(self):
+        # Let IRQ0 cross midnight, then consume the rollover flag through INT 1Ah.
+        code = bytes.fromhex(
+            'fa31c08ec0'
+            '26c7066c04af0026c7066e041800'
+            'fb26803e70040074f8fa'
+            '31c0cd1aa30003890e020389160403'
+            '31c0cd1aa30603b8004ccd21')
+        result = self.run_guest(code, dump=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(struct.unpack_from('<4H', result.memory, 0x0ff00 + 0x300),
+                         (1, 0, 0, 0))
+
     def test_guest_timer_handler(self):
         code = bytearray.fromhex(
             '0e1fba0000b81c25cd21fb803e00000074f9a00000b44ccd21fe060000cf00')
