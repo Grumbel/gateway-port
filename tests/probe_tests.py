@@ -39,6 +39,7 @@ class ProbeTests(unittest.TestCase):
                 result.memory = (root / 'snapshot.bin').read_bytes()
                 result.registers = dict(line.split('=') for line in
                                         (root / 'snapshot.regs').read_text().splitlines())
+            result.files = {name: (root / name).read_bytes() for name in (files or {})}
             return result
 
     def test_vga_detection(self):
@@ -207,6 +208,32 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(len(code), 43)
         result = self.run_guest(code + b'test.dat\0', {'TEST.DAT': b'ABC'})
         self.assertIn('DOS exit code: 67', result.stdout)
+
+    def test_missing_writable_file_reports_not_found(self):
+        for access in (1, 2):
+            with self.subTest(access=access):
+                code = bytes.fromhex('0e1fba0e00b8') + bytes([access, 0x3d]) + bytes.fromhex('cd21b44ccd21')
+                result = self.run_guest(code + b'RESTART.DAT\0')
+                self.assertIn('DOS exit code: 2', result.stdout, result.stderr)
+
+    def test_writable_asset_open_denied_and_preserved(self):
+        for access in (1, 2):
+            with self.subTest(access=access):
+                code = bytes.fromhex('0e1fba0e00b8') + bytes([access, 0x3d]) + bytes.fromhex('cd21b44ccd21')
+                result = self.run_guest(code + b'test.dat\0', {'TEST.DAT': b'original'})
+                self.assertIn('DOS exit code: 5', result.stdout, result.stderr)
+                self.assertEqual(result.files['TEST.DAT'], b'original')
+
+    def test_invalid_open_mode_reports_dos_error(self):
+        code = bytes.fromhex('0e1fba0e00b8033dcd21b44ccd21')
+        result = self.run_guest(code + b'RESTART.DAT\0')
+        self.assertIn('DOS exit code: 12', result.stdout, result.stderr)
+
+    def test_failed_writable_open_sets_carry(self):
+        code = bytes.fromhex('0e1fba1300b8013dcd219c58250100b44ccd21')
+        self.assertEqual(len(code), 19)
+        result = self.run_guest(code + b'RESTART.DAT\0')
+        self.assertIn('DOS exit code: 1', result.stdout, result.stderr)
 
     def test_missing_file_sets_error(self):
         code = bytes.fromhex('0e1fba0e00b8003dcd21b44ccd21')

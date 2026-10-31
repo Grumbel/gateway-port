@@ -2,8 +2,9 @@
 
 1. Add a writable guest-state overlay for `RESTART.DAT`. Direct main-program
    startup with the recovered numeric arguments now loads vocabulary and reaches
-   an `AH=3Dh` write-only open of that file. Copy writable state into an explicit
-   user directory; never modify `../gateway-dos/`.
+   a write-only open, receives DOS error 2 because the file is absent, then calls
+   `AH=3Ch` to create it. Implement creation in an explicit writable user directory;
+   never modify `../gateway-dos/`.
 2. Recover RTL/OVL mapping and relocation behavior; document the module entry
    reached after the shared RTLink startup.
 3. Implement guest file access beneath the supplied game directory, with writes

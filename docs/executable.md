@@ -96,5 +96,8 @@ height; this is a fallback, not an exact replacement for the VGA ROM font.
 The shared case-insensitive file resolver now handles read-only DOS file
 attributes as well as opens. With the recovered numeric arguments, main startup
 reads vocabulary and other tables, then requests write-only access to
-`RESTART.DAT` (`AX=3d01`). That request deliberately stops: guest-state writes
-need a separate overlay before they can be supported safely.
+`RESTART.DAT` (`AX=3d01`). Missing files now return DOS error 2, including for
+write-only and read/write opens. Main startup handles that failure and calls
+file creation (`AX=3ca4`, `CX=0`, at `1805:24f4`). This is the current stop;
+creation needs a separate writable state directory. Existing original files
+return access denied for writable opens and remain unchanged.

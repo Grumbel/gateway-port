@@ -375,18 +375,27 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
         } else if (number == 0x21 && (ax >> 8) == 0x3d) {
             const auto name = guest_filename(uc);
             std::cerr << "  open: " << name << '\n';
-            if ((ax & 3) != 0)
-                throw std::runtime_error("probe only supports read-only opens");
             const auto path = game_file(state, name);
-            auto flags = reg(uc, UC_X86_REG_FLAGS);
+            const auto flags = reg(uc, UC_X86_REG_FLAGS);
+            const auto access = ax & 3;
+            unsigned error = 0;
             std::ifstream input;
-            if (!std::filesystem::is_symlink(path))
+            if (access == 3)
+                error = 12; // Invalid DOS access mode.
+            else if (std::filesystem::is_symlink(path) || !std::filesystem::is_regular_file(path))
+                error = 2;
+            else if (access != 0)
+                error = 5; // Original assets are never writable.
+            else {
                 input.open(path, std::ios::binary);
-            if (!input.is_open()) {
-                set(uc, UC_X86_REG_AX, 2);
+                if (!input.is_open())
+                    error = 5;
+            }
+            if (error) {
+                set(uc, UC_X86_REG_AX, error);
                 set(uc, UC_X86_REG_FLAGS, flags | 1);
             } else {
-                auto handle = state.next_handle++;
+                const auto handle = state.next_handle++;
                 state.files.emplace(handle, std::move(input));
                 set(uc, UC_X86_REG_AX, handle);
                 set(uc, UC_X86_REG_FLAGS, flags & ~1);

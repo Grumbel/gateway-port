@@ -323,9 +323,11 @@ must be recovered from the driver or a DOSBox recording.
 
 - The executables name `engine.rs`, `sludge.rs`, `switch.rs`, and `tree.rs`, which
   are not in this distribution. All 31 present files are referenced.
-- `GATEMAIN.EXE` names `RESTART.DAT`, also absent. **Hypothesis:** the game
-  creates it at runtime. Run the game on a copy to check, since the original
-  directory must stay unchanged.
+- `GATEMAIN.EXE` names `RESTART.DAT`, which is absent from the original data.
+  **Confirmed creation attempt:** a main-program trace first requests a write-only
+  open (`AX=3d01`), then, after DOS error 2, file creation (`AX=3ca4`, `CX=0`).
+  Creation and contents remain unimplemented; use a separate writable state
+  directory when adding them. Original assets must stay unchanged.
 
 ## Next steps
 
