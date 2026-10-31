@@ -126,6 +126,14 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(int(result.registers['ES'], 16), 0x1000)
         self.assertEqual(int(result.registers['BX'], 16), 0x1234)
 
+    def test_dos_default_fcbs_from_numeric_command_tail(self):
+        code = bytearray.fromhex('0e1fbe0000bf5c00b80129cd21bf6c00b80129cd21b8004ccd21')
+        struct.pack_into('<H', code, 3, len(code))
+        result = self.run_guest(code + b' 0 258 9\r', dump=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.memory[0xff5c:0xff6c], b'\0' + b'0       ' + b'   ' + b'\0' * 4)
+        self.assertEqual(result.memory[0xff6c:0xff7c], b'\0' + b'258     ' + b'   ' + b'\0' * 4)
+
     def test_vga_detection(self):
         result = self.run_guest(bytes.fromhex('b8001acd1089d8b44ccd21'))
         self.assertIn('DOS exit code: 8', result.stdout)

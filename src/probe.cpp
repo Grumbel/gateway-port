@@ -1,4 +1,5 @@
 #include "dos_clock.hpp"
+#include "dos_fcb.hpp"
 #include "dos_memory.hpp"
 #include "mz.hpp"
 #include "opl.hpp"
@@ -355,6 +356,24 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             state.exited = true;
             state.exit_code = number == 0x20 ? 0 : ax & 255;
             check(uc_emu_stop(uc));
+        } else if (number == 0x21 && (ax >> 8) == 0x29) {
+            const auto input_segment = reg(uc, UC_X86_REG_DS), offset = reg(uc, UC_X86_REG_SI);
+            std::string input;
+            for (unsigned i = 0; i < 260; ++i) {
+                char c;
+                check(uc_mem_read(uc, std::size_t(input_segment) * 16 + std::uint16_t(offset + i),
+                                  &c, 1));
+                input += c;
+                if (!c || c == '\r')
+                    break;
+            }
+            const auto address = std::size_t(reg(uc, UC_X86_REG_ES)) * 16 + reg(uc, UC_X86_REG_DI);
+            std::array<std::uint8_t, 16> previous{};
+            check(uc_mem_read(uc, address, previous.data(), previous.size()));
+            const auto fcb = gateway::parse_fcb(input, ax & 255, previous);
+            check(uc_mem_write(uc, address, fcb.bytes.data(), fcb.bytes.size()));
+            set(uc, UC_X86_REG_SI, offset + fcb.consumed);
+            set(uc, UC_X86_REG_AX, (ax & 0xff00) | fcb.status);
         } else if (number == 0x21 && (ax >> 8) == 0x1a) {
             state.dta_segment = reg(uc, UC_X86_REG_DS);
             state.dta_offset = reg(uc, UC_X86_REG_DX);
