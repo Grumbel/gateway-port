@@ -23,7 +23,7 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-The flake provides SDL3, Unicorn, and development tools. See `README.md` for executable invocation and game-data paths. The startup probe and SDL diagnostic are separate; the game is not playable yet.
+The flake provides SDL3, Unicorn, and development tools. See `README.md` for executable invocation and game-data paths. The `gateway` runtime connects guest execution to SDL3 video/audio; the separate probe and host diagnostic support research. Full gameplay is not verified yet.
 
 ## Coding Style & Testing Guidelines
 

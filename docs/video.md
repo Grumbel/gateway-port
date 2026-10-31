@@ -20,3 +20,8 @@ Unit tests exercise independent plane/color output, pitch, latch copies,
 set/reset masks, read comparison, write mode 3, DAC access, display offsets, and
 chain-four addressing. These tests verify the model's contracts; comparisons
 with original DOSBox captures are still required for game-output accuracy.
+
+The `gateway` SDL runtime updates an ARGB8888 texture from these pixels and queues
+stereo PCM to an SDL audio stream. The intro's initial Legend title text has been
+observed in a bounded capture. A synthetic guest integration test exercises plane
+writes, SDL rendering/audio submission, and the final framebuffer snapshot.

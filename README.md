@@ -7,14 +7,15 @@ formats and replacing the original interpreter is the long-term goal.
 
 ## Current status
 
-This is an initial research harness, **not yet a playable port**. It provides:
+This is an original-code runtime, **not yet a playable port**. It provides:
 
 - A checked DOS MZ loader with segment relocation and initial register setup.
 - `gateway-inspect`, which reports loaded image and entry information.
 - `gateway-probe`, a bounded Unicorn real-mode startup probe that traces DOS
   services and stops explicitly on unsupported calls.
 - A tested DOS memory arena and planar VGA model with framebuffer dumps.
-- `gateway-host`, an SDL3 graphics/audio diagnostic, separate from guest execution.
+- `gateway`, an SDL3 runtime presenting guest VGA output and streaming AdLib PCM.
+- `gateway-host`, a separate SDL3 graphics/audio diagnostic.
 - `gateway-extract`, which converts PIC files to indexed PNGs.
 
 Original game files remain external in `../gateway-dos/` and are never needed
@@ -25,7 +26,7 @@ for package builds or unit tests. The probe opens game files read-only.
 From this directory:
 
 ```sh
-nix develop path:.
+nix develop
 cmake -S . -B build
 cmake --build build
 ctest --test-dir build --output-on-failure
@@ -34,9 +35,8 @@ ctest --test-dir build --output-on-failure
 ./build/gateway-host
 ```
 
-`path:.` includes new files in this initially uncommitted repository. Once files
-are tracked, normal `nix develop` and `nix build` work as well. Build a package
-with `nix build path:.`; check it with `nix flake check path:.`. The flake locks
+Build a package with `nix build`; check it with `nix flake check`. Use `path:.`
+while testing new untracked files that Git-backed flakes would otherwise omit. The flake locks
 nixpkgs and provides SDL3, Unicorn, the compiler, CMake, and research tools.
 
 For loader-only development without SDL3 or Unicorn:
@@ -95,3 +95,27 @@ To retain a snapshot at the startup boundary:
 This writes `build/gate.bin` (guest memory) and `build/gate.ppm` (VGA pixels),
 including on unsupported-service stops. These are diagnostic artifacts, not
 proof that the rendered game output is correct.
+
+## Running original code with SDL3
+
+```sh
+./build/gateway ../gateway-dos/GATE.EXE
+# Or, from the installed Nix package:
+nix run . -- ../gateway-dos/GATE.EXE
+```
+
+Close the window to stop. Escape, Space, Enter, letters, digits, arrow keys,
+and common punctuation are forwarded to the guest BIOS keyboard queue. Mouse
+input, DOS child EXEC, and broader gameplay remain pending. The intro reaches
+its initial Legend title text; this does not establish complete intro playback.
+
+For a bounded capture (1–60000 ms of virtual guest time):
+
+```sh
+./build/gateway ../gateway-dos/GATE.EXE --milliseconds 5000 --dump-prefix build/intro
+./build/gateway ../gateway-dos/GATE.EXE --headless --milliseconds 5000 --dump-prefix build/intro
+```
+
+The scheduler currently advances 1 ms per 5,000 guest instructions (5 MIPS),
+using 16 ms presentation/audio blocks. Timing remains provisional. Dummy-driver
+integration tests exercise real guest VGA instructions through the SDL runtime.

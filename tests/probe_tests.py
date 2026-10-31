@@ -71,6 +71,11 @@ class ProbeTests(unittest.TestCase):
         result = self.run_guest(code)
         self.assertIn('DOS exit code: 232', result.stdout, result.stderr)
 
+    def test_empty_keyboard_poll(self):
+        # BIOS AH=01h must set ZF when no key is available.
+        result = self.run_guest(bytes.fromhex('b401cd169c58c1e806250100b44ccd21'))
+        self.assertIn('DOS exit code: 1', result.stdout, result.stderr)
+
     def test_exit(self):
         result = self.run_guest(bytes.fromhex('b8004ccd21'))
         self.assertEqual(result.returncode, 0, result.stderr)

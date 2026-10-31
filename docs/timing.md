@@ -1,7 +1,7 @@
 # Timer interrupt bridge
 
-The probe executes up to 50,000 instructions per quantum, advancing device time
-by 1 ms after each completed quantum. This is a provisional 50 MIPS schedule,
+The probe executes up to 5,000 instructions per quantum, advancing device time
+by 1 ms after each completed quantum. This is a provisional 5 MIPS schedule,
 not a calibrated CPU model. Headless execution remains bounded by ten million
 instructions and a two-second wall-clock deadline.
 

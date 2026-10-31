@@ -4,19 +4,26 @@
 #include "opl.hpp"
 #include "pit.hpp"
 #include "vga.hpp"
+#ifdef GATEWAY_SDL
+#include "sdl_host.hpp"
+#endif
 #include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <chrono>
 #include <ctime>
+#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <iterator>
 #include <map>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <unicorn/unicorn.h>
 
 namespace {
@@ -44,6 +51,8 @@ struct State {
     gateway::Opl opl;
     gateway::Pit pit;
     gateway::DosClock clock;
+    std::deque<std::uint16_t> keys;
+    std::set<unsigned> polled_services;
     std::uint8_t pic_mask = 0;
     bool irq_in_service = false;
     bool exited = false;
@@ -162,11 +171,31 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
     auto &state = *static_cast<State *>(opaque);
     try {
         auto ax = reg(uc, UC_X86_REG_AX);
-        std::cerr << "INT " << std::hex << number << " AX=" << std::setw(4) << std::setfill('0')
-                  << ax << " BX=" << reg(uc, UC_X86_REG_BX) << " CX=" << reg(uc, UC_X86_REG_CX)
-                  << " DX=" << reg(uc, UC_X86_REG_DX) << " at " << reg(uc, UC_X86_REG_CS) << ':'
-                  << reg(uc, UC_X86_REG_IP) << '\n';
-        if (number == 0xf1 && reg(uc, UC_X86_REG_CS) == 0xf000) {
+        const bool frequent = number == 0x16 || number == 0xf1 || number == 0x1c ||
+                              (number == 0x21 && ((ax >> 8) == 0x2a || (ax >> 8) == 0x2c));
+        const bool first =
+            !frequent || state.polled_services.insert((number << 8) | (ax >> 8)).second;
+        if (first)
+            std::cerr << "INT " << std::hex << number << " AX=" << std::setw(4) << std::setfill('0')
+                      << ax << " BX=" << reg(uc, UC_X86_REG_BX) << " CX=" << reg(uc, UC_X86_REG_CX)
+                      << " DX=" << reg(uc, UC_X86_REG_DX) << " at " << reg(uc, UC_X86_REG_CS) << ':'
+                      << reg(uc, UC_X86_REG_IP) << '\n';
+        if (number == 0x16 && ((ax >> 8) == 1 || (ax >> 8) == 0x11)) {
+            const bool empty = state.keys.empty();
+            set(uc, UC_X86_REG_FLAGS, (reg(uc, UC_X86_REG_FLAGS) & ~0x40) | (empty ? 0x40 : 0));
+            if (!empty)
+                set(uc, UC_X86_REG_AX, state.keys.front());
+        } else if (number == 0x16 && ((ax >> 8) == 0 || (ax >> 8) == 0x10)) {
+            if (state.keys.empty()) {
+                set(uc, UC_X86_REG_IP, reg(uc, UC_X86_REG_IP) - 2);
+                check(uc_emu_stop(uc));
+            } else {
+                set(uc, UC_X86_REG_AX, state.keys.front());
+                state.keys.pop_front();
+            }
+        } else if (number == 0x16 && (ax >> 8) == 2) {
+            set(uc, UC_X86_REG_AX, ax & 0xff00);
+        } else if (number == 0xf1 && reg(uc, UC_X86_REG_CS) == 0xf000) {
             std::uint32_t ticks;
             check(uc_mem_read(uc, 0x46c, &ticks, 4));
             ticks = (ticks + 1) % 0x1800b0;
@@ -368,11 +397,39 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
 }
 } // namespace
 int main(int argc, char **argv) {
-    const bool dump = argc == 4 && std::string(argv[2]) == "--dump-prefix";
-    if ((argc != 2 && !dump) || std::string(argv[1]) == "--help") {
-        std::cout << "Usage: gateway-probe <DOS executable> [--dump-prefix PATH]\n"
-                     "Bounded real-mode startup trace; unsupported services stop execution.\n";
-        return argc == 2 ? 0 : 2;
+    bool interactive = false;
+#ifdef GATEWAY_SDL
+    interactive = true;
+#endif
+    unsigned milliseconds = 0;
+    std::string dump_prefix;
+    auto usage = [] {
+        std::cout << "Usage: gateway[-probe] <DOS executable> [--headless] "
+                     "[--milliseconds N] [--dump-prefix PATH]\n";
+    };
+    if (argc < 2 || std::string(argv[1]) == "--help") {
+        usage();
+        return argc < 2 ? 2 : 0;
+    }
+    for (int i = 2; i < argc; ++i) {
+        const std::string option = argv[i];
+        if (option == "--headless")
+            interactive = false;
+        else if (option == "--dump-prefix" && i + 1 < argc)
+            dump_prefix = argv[++i];
+        else if (option == "--milliseconds" && i + 1 < argc) {
+            const std::string value = argv[++i];
+            const auto result =
+                std::from_chars(value.data(), value.data() + value.size(), milliseconds);
+            if (result.ec != std::errc{} || result.ptr != value.data() + value.size() ||
+                !milliseconds || milliseconds > 60000) {
+                usage();
+                return 2;
+            }
+        } else {
+            usage();
+            return 2;
+        }
     }
     try {
         std::ifstream file(argv[1], std::ios::binary);
@@ -421,12 +478,26 @@ int main(int argc, char **argv) {
         uc_hook video_hook;
         check(uc_hook_add(engine.uc, &video_hook, UC_HOOK_MEM_READ | UC_HOOK_MEM_WRITE,
                           reinterpret_cast<void *>(video_memory), &state, 0xa0000, 0xaffff));
+#ifdef GATEWAY_SDL
+        std::unique_ptr<gateway::SdlHost> host;
+        if (interactive)
+            host = std::make_unique<gateway::SdlHost>();
+#endif
+        bool requested_stop = false;
         uc_err status = UC_ERR_OK;
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
-        for (unsigned instructions = 0; instructions < 10000000; instructions += 50000) {
+        const auto started = std::chrono::steady_clock::now();
+        unsigned steps = 0;
+        while (true) {
+#ifdef GATEWAY_SDL
+            if (host && !host->poll(state.keys)) {
+                requested_stop = true;
+                break;
+            }
+#endif
             const auto pc =
                 std::size_t(reg(engine.uc, UC_X86_REG_CS)) * 16 + reg(engine.uc, UC_X86_REG_IP);
-            status = uc_emu_start(engine.uc, pc, 0x100000, 100000, 50000);
+            status = uc_emu_start(engine.uc, pc, 0x100000, 100000, 5000);
             if (status != UC_ERR_OK || state.exited || !state.failure.empty())
                 break;
             state.clock.advance(1000);
@@ -439,16 +510,28 @@ int main(int argc, char **argv) {
                 if (!dispatch(engine.uc, 8))
                     throw std::runtime_error("missing IRQ0 vector");
             }
-            if (std::chrono::steady_clock::now() >= deadline)
+            ++steps;
+#ifdef GATEWAY_SDL
+            if (host && steps % 16 == 0) {
+                host->present(state.vga, state.opl.render(768));
+                std::this_thread::sleep_until(started + std::chrono::milliseconds(steps));
+            }
+#endif
+            if (milliseconds && steps >= milliseconds) {
+                requested_stop = true;
+                break;
+            }
+            if (!interactive && !milliseconds &&
+                (steps >= 2000 || std::chrono::steady_clock::now() >= deadline))
                 break;
         }
-        if (dump) {
+        if (!dump_prefix.empty()) {
             std::vector<std::uint8_t> memory(1024 * 1024);
             check(uc_mem_read(engine.uc, 0, memory.data(), memory.size()));
-            std::ofstream binary(std::string(argv[3]) + ".bin", std::ios::binary);
+            std::ofstream binary(dump_prefix + ".bin", std::ios::binary);
             binary.write(reinterpret_cast<const char *>(memory.data()), memory.size());
             binary.close();
-            std::ofstream picture(std::string(argv[3]) + ".ppm", std::ios::binary);
+            std::ofstream picture(dump_prefix + ".ppm", std::ios::binary);
             picture << "P6\n" << state.vga.width() << ' ' << state.vga.height() << "\n255\n";
             for (auto pixel : state.vga.pixels()) {
                 const char rgb[]{static_cast<char>(pixel >> 16), static_cast<char>(pixel >> 8),
@@ -462,6 +545,8 @@ int main(int argc, char **argv) {
         check(status);
         if (!state.failure.empty())
             throw std::runtime_error(state.failure);
+        if (requested_stop)
+            return 0;
         if (!state.exited) {
             std::cerr << "Stopped at " << std::hex << reg(engine.uc, UC_X86_REG_CS) << ':'
                       << reg(engine.uc, UC_X86_REG_IP) << '\n';

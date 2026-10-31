@@ -63,5 +63,18 @@ if(GATEWAY_WITH_UNICORN)
     add_test(NAME real-mode-probe COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/probe_tests.py $<TARGET_FILE:gateway-probe>)
   endif()
+  if(GATEWAY_WITH_SDL)
+    add_executable(gateway src/probe.cpp src/sdl_host.cpp)
+    target_compile_definitions(gateway PRIVATE GATEWAY_SDL=1)
+    target_include_directories(gateway PRIVATE ${UNICORN_INCLUDE_DIR})
+    target_link_libraries(gateway PRIVATE gateway_core ${UNICORN_LIBRARY} SDL3::SDL3)
+    if(BUILD_TESTING)
+      add_test(NAME sdl-runtime COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/sdl_runtime_test.py $<TARGET_FILE:gateway>)
+      set_tests_properties(sdl-runtime PROPERTIES
+        ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy" TIMEOUT 20)
+    endif()
+    install(TARGETS gateway RUNTIME DESTINATION bin)
+  endif()
   install(TARGETS gateway-probe RUNTIME DESTINATION bin)
 endif()

@@ -24,6 +24,9 @@
             doCheck = true;
           };
         });
+      apps = eachSystem (system: {
+        default = { type = "app"; program = "${self.packages.${system}.default}/bin/gateway"; };
+      });
       checks = eachSystem (system: { build = self.packages.${system}.default; });
       devShells = eachSystem (system:
         let pkgs = import nixpkgs { inherit system; }; in {
