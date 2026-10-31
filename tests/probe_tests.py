@@ -49,6 +49,22 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(len(result.memory), 1024 * 1024)
         self.assertEqual(result.memory[0x10000:0x10000 + len(code)], code)
 
+    def test_guest_timer_handler(self):
+        code = bytearray.fromhex(
+            '0e1fba0000b81c25cd21fb803e00000074f9a00000b44ccd21fe060000cf00')
+        handler = len(code) - 6
+        counter = len(code) - 1
+        struct.pack_into('<H', code, 3, handler)
+        for address in (13, 19, handler + 2):
+            struct.pack_into('<H', code, address, counter)
+        result = self.run_guest(code)
+        self.assertIn('DOS exit code: 1', result.stdout, result.stderr)
+
+    def test_invalid_calendar_probe(self):
+        # DESQview-style installation probe uses an invalid DOS calendar year.
+        result = self.run_guest(bytes.fromhex('b90144ba5153b8012bcd21b44ccd21'))
+        self.assertIn('DOS exit code: 255', result.stdout, result.stderr)
+
     def test_exit(self):
         result = self.run_guest(bytes.fromhex('b8004ccd21'))
         self.assertEqual(result.returncode, 0, result.stderr)

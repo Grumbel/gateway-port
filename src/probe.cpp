@@ -1,6 +1,7 @@
 #include "dos_memory.hpp"
 #include "mz.hpp"
 #include "opl.hpp"
+#include "pit.hpp"
 #include "vga.hpp"
 #include <algorithm>
 #include <cctype>
@@ -40,6 +41,9 @@ struct State {
     gateway::DosMemory arena{0x0ff0};
     gateway::Vga vga;
     gateway::Opl opl;
+    gateway::Pit pit;
+    std::uint8_t pic_mask = 0;
+    bool irq_in_service = false;
     bool exited = false;
     unsigned exit_code = 0;
     std::string failure;
@@ -53,6 +57,14 @@ std::uint32_t port_in(uc_engine *uc, std::uint32_t port, int size, void *opaque)
     try {
         std::uint32_t value = 0;
         for (int i = 0; i < size; ++i) {
+            if (state.pit.handles_port(port + i)) {
+                value |= std::uint32_t(state.pit.in(port + i)) << (8 * i);
+                continue;
+            }
+            if (port + i == 0x21) {
+                value |= std::uint32_t(state.pic_mask) << (8 * i);
+                continue;
+            }
             if (state.opl.handles_port(port + i)) {
                 value |= std::uint32_t(state.opl.in(port + i)) << (8 * i);
                 continue;
@@ -75,6 +87,19 @@ void port_out(uc_engine *uc, std::uint32_t port, int size, std::uint32_t value,
     auto &state = *static_cast<State *>(opaque);
     try {
         for (int i = 0; i < size; ++i) {
+            const std::uint8_t byte = (value >> (8 * i)) & 255;
+            if (state.pit.handles_port(port + i)) {
+                state.pit.out(port + i, byte);
+                continue;
+            }
+            if (port + i == 0x21) {
+                state.pic_mask = byte;
+                continue;
+            }
+            if (port + i == 0x20 && byte == 0x20) {
+                state.irq_in_service = false;
+                continue;
+            }
             if (state.opl.handles_port(port + i)) {
                 state.opl.out(port + i, (value >> (8 * i)) & 255);
                 continue;
@@ -113,14 +138,38 @@ void video_memory(uc_engine *uc, uc_mem_type type, std::uint64_t address, int si
     }
 }
 
+bool dispatch(uc_engine *uc, unsigned number) {
+    std::uint16_t vector[2]{};
+    check(uc_mem_read(uc, number * 4, vector, sizeof(vector)));
+    if (!vector[0] && !vector[1])
+        return false;
+    auto sp = reg(uc, UC_X86_REG_SP);
+    const auto base = std::size_t(reg(uc, UC_X86_REG_SS)) * 16;
+    for (auto value : {reg(uc, UC_X86_REG_FLAGS), reg(uc, UC_X86_REG_CS), reg(uc, UC_X86_REG_IP)}) {
+        sp -= 2;
+        check(uc_mem_write(uc, base + sp, &value, 2));
+    }
+    set(uc, UC_X86_REG_SP, sp);
+    set(uc, UC_X86_REG_FLAGS, reg(uc, UC_X86_REG_FLAGS) & ~0x300);
+    set(uc, UC_X86_REG_CS, vector[1]);
+    set(uc, UC_X86_REG_IP, vector[0]);
+    return true;
+}
+
 void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
     auto &state = *static_cast<State *>(opaque);
     try {
         auto ax = reg(uc, UC_X86_REG_AX);
         std::cerr << "INT " << std::hex << number << " AX=" << std::setw(4) << std::setfill('0')
-                  << ax << " at " << reg(uc, UC_X86_REG_CS) << ':' << reg(uc, UC_X86_REG_IP)
-                  << '\n';
-        if (number == 0x10 && ax == 0x1a00) {
+                  << ax << " BX=" << reg(uc, UC_X86_REG_BX) << " CX=" << reg(uc, UC_X86_REG_CX)
+                  << " DX=" << reg(uc, UC_X86_REG_DX) << " at " << reg(uc, UC_X86_REG_CS) << ':'
+                  << reg(uc, UC_X86_REG_IP) << '\n';
+        if (number == 0xf1 && reg(uc, UC_X86_REG_CS) == 0xf000) {
+            std::uint32_t ticks;
+            check(uc_mem_read(uc, 0x46c, &ticks, 4));
+            ticks = (ticks + 1) % 0x1800b0;
+            check(uc_mem_write(uc, 0x46c, &ticks, 4));
+        } else if (number == 0x10 && ax == 0x1a00) {
             set(uc, UC_X86_REG_AX, 0x1a);
             set(uc, UC_X86_REG_BX, 8); // VGA with an analog color display.
         } else if (number == 0x10 && (ax >> 8) == 0x0f) {
@@ -159,6 +208,13 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             }
         } else if (number == 0x21 && (ax >> 8) == 0x19) {
             set(uc, UC_X86_REG_AX, (ax & 0xff00) | 2); // current drive C:
+        } else if (number == 0x21 && (ax >> 8) == 0x2b) {
+            const auto year = reg(uc, UC_X86_REG_CX);
+            const auto date = reg(uc, UC_X86_REG_DX);
+            if (year >= 1980 && year <= 2099 && (date >> 8) >= 1 && (date >> 8) <= 12 &&
+                (date & 255) >= 1 && (date & 255) <= 31)
+                throw std::runtime_error("setting a virtual DOS calendar is unsupported");
+            set(uc, UC_X86_REG_AX, (ax & 0xff00) | 0xff);
         } else if (number == 0x21 && ((ax >> 8) == 0x2a || (ax >> 8) == 0x2c)) {
             const auto now = std::chrono::system_clock::now();
             const auto seconds = std::chrono::system_clock::to_time_t(now);
@@ -306,6 +362,8 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             if (!terminated)
                 throw std::runtime_error("unterminated DOS output string");
         } else {
+            if (number != 0x21 && dispatch(uc, number))
+                return;
             state.failure = "unsupported interrupt/service (see trace)";
             check(uc_emu_stop(uc));
         }
@@ -330,6 +388,19 @@ int main(int argc, char **argv) {
         auto image = gateway::load_mz(bytes);
         State state;
         state.arena.write_mcbs(image.memory);
+        // BIOS timer trampoline: update tick count, call user INT 1Ch, then EOI/IRET.
+        const std::uint8_t timer_code[]{0xcd, 0xf1, 0xcd, 0x1c, 0x50, 0xb0,
+                                        0x20, 0xe6, 0x20, 0x58, 0xcf};
+        std::copy(std::begin(timer_code), std::end(timer_code), image.memory.begin() + 0xf0100);
+        image.memory[0xf0200] = 0xcf;
+        auto vector = [&](unsigned number, std::uint16_t offset) {
+            image.memory[number * 4] = offset & 255;
+            image.memory[number * 4 + 1] = offset >> 8;
+            image.memory[number * 4 + 2] = 0;
+            image.memory[number * 4 + 3] = 0xf0;
+        };
+        vector(8, 0x100);
+        vector(0x1c, 0x200);
         Engine engine;
         check(uc_mem_map(engine.uc, 0, image.memory.size(), UC_PROT_ALL));
         check(uc_mem_write(engine.uc, 0, image.memory.data(), image.memory.size()));
@@ -356,8 +427,26 @@ int main(int argc, char **argv) {
         uc_hook video_hook;
         check(uc_hook_add(engine.uc, &video_hook, UC_HOOK_MEM_READ | UC_HOOK_MEM_WRITE,
                           reinterpret_cast<void *>(video_memory), &state, 0xa0000, 0xaffff));
-        const auto status = uc_emu_start(engine.uc, std::size_t(image.cs) * 16 + image.ip, 0x100000,
-                                         2000000, 10000000);
+        uc_err status = UC_ERR_OK;
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        for (unsigned instructions = 0; instructions < 10000000; instructions += 50000) {
+            const auto pc =
+                std::size_t(reg(engine.uc, UC_X86_REG_CS)) * 16 + reg(engine.uc, UC_X86_REG_IP);
+            status = uc_emu_start(engine.uc, pc, 0x100000, 100000, 50000);
+            if (status != UC_ERR_OK || state.exited || !state.failure.empty())
+                break;
+            state.pit.advance(1000);
+            state.opl.advance(1000);
+            if (state.pit.pending() && !(state.pic_mask & 1) && !state.irq_in_service &&
+                (reg(engine.uc, UC_X86_REG_FLAGS) & 0x200)) {
+                state.pit.acknowledge();
+                state.irq_in_service = true;
+                if (!dispatch(engine.uc, 8))
+                    throw std::runtime_error("missing IRQ0 vector");
+            }
+            if (std::chrono::steady_clock::now() >= deadline)
+                break;
+        }
         if (dump) {
             std::vector<std::uint8_t> memory(1024 * 1024);
             check(uc_mem_read(engine.uc, 0, memory.data(), memory.size()));
