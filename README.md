@@ -166,3 +166,15 @@ This compares native, verification, and HLE runs using separate writable state
 and matching final framebuffers. See [engine boundaries](docs/engine-boundary.md)
 for recovered dispatch tables, call contracts, research options, and limits.
 The replacement is experimental and disabled during normal play.
+
+The extended experiment also replaces flag setters and direct object locations,
+compares all 734 final object records, and exports native handler mappings:
+
+```sh
+python3 tools/trace_game_logic.py --scenario objects --services state
+python3 tools/inspect_object_state.py build/game-logic/hle \
+  --names ../gateway-dos/OBJECT.DAT > build/object-handlers.json
+```
+
+See [object-state findings](docs/object-state.md) for the 696 recovered handler
+entry points, service contracts, name mapping, and validation limits.

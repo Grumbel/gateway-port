@@ -74,6 +74,8 @@ if(GATEWAY_WITH_UNICORN)
   target_link_libraries(gateway-probe PRIVATE gateway_core ${UNICORN_LIBRARY})
   if(BUILD_TESTING)
     find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    add_test(NAME object-state-export COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/object_state_export_tests.py)
     add_test(NAME real-mode-probe COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/probe_tests.py $<TARGET_FILE:gateway-probe>)
   endif()

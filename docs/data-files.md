@@ -110,6 +110,12 @@ link groups is not known; ScummVM keeps only the last pair of each.
 `Blast Zone`, `Gray Plain`, `Plateau`, and so on. RGN files use zero-based
 indexes into this list.
 
+The native object table has 734 engine IDs, distinct from those string-list
+indexes. Its primary and secondary name words are one-based byte offsets into
+the OBJECT.DAT payload. The [object-state exporter](object-state.md#recovered-handler-and-name-inventory)
+resolves 730 primary plus 55 secondary tokens to all 785 names. Zero means no name.
+
+
 ## PIC
 
 **Confirmed for all 40 files.** A PIC file starts with a directory of 12-byte

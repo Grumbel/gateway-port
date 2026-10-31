@@ -163,3 +163,12 @@ Keep the original parser, RTLink loader, and guest memory until their dependenci
 are mapped. The successful flag query is evidence for incremental native-game
 execution with replaced services; it does not yet justify dropping the original
 resident engine.
+
+## Follow-up: writes, locations, and handler inventory
+
+The [object-state investigation](object-state.md) now adds flag set/clear and
+direct location read/write HLE, exports all 734 object records and 696 native
+handler entry points, and resolves all 785 name tokens. Taking/dropping the book
+and closing the drawer pass 1434 service comparisons with identical final object
+records and images. Use `--object-state verify|hle` for the extended experiment;
+`--object-flags` retains the query-only mode documented above.

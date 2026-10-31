@@ -11,10 +11,11 @@
    original game. Investigate the first click consumed after mode entry.
 3. Extend the [first engine/story boundary](docs/engine-boundary.md): `look` now
    traces through action and room handler tables, and an opt-in object-flag HLE
-   matches the native query across opening the drawer. Recover handler-index
-   mapping, flag setters, object locations, and RTLink module directories.
-   DOS reads can load
-   executable overlay sections; invalidate Unicorn's translated blocks after
+   matches native execution across opening/closing the drawer and taking/dropping
+   the book. [Object-state services](docs/object-state.md) now cover flag writes,
+   locations, all 734 object records and 696 handler entry points. Recover RTLink
+   section directories and the remaining engine calls.
+   DOS reads can load executable overlay sections; invalidate Unicorn's translated blocks after
    these writes. Keep regression coverage for replacement code execution.
 4. Validate AdLib playback and scheduler timing against DOSBox recordings.
    SDL audio submission is tested and the user confirms audible output works.
@@ -47,7 +48,9 @@ Next, in order:
    story routines in `GATEMAIN.OVL` and six text references using
    `0xf0000000 | (segment << 10) | string_index`. The text lookup routine now
    confirms that split.
-   Map the remaining handler/state tables; no story-bytecode VM has been identified.
+   The [object-state inventory](docs/object-state.md) now maps the 696 handler
+   entries and all name tokens. Map RTLink extents and remaining shared services;
+   no story-bytecode VM has been identified.
 2. Find what uses the 91 `VOCAB.DAT` link groups; they may tie words to actions.
 3. Compare extracted colors, overlays, and the series used in each display mode
    with DOSBox. Trace overlay selection and what frames 2–5 mean.
