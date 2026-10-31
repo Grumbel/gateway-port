@@ -9,7 +9,8 @@ formats and replacing the original interpreter is the long-term goal.
 
 The original-code runtime reaches **Your Quarters**, renders the first room, and
 accepts keyboard commands. Keyboard input, save/restore, and audio have also been
-confirmed working by the user. Broader gameplay remains under validation. It provides:
+confirmed working by the user. Spellcasting 301 also reaches its first room,
+Beach; its broader gameplay remains unverified. It provides:
 
 - A checked DOS MZ loader with segment relocation and initial register setup.
 - `gateway-inspect`, which reports loaded image and entry information.
@@ -141,3 +142,13 @@ For a probe with local state:
 ./build/gateway-probe ../gateway-dos/GATE.EXE --press escape \
   --state-dir build/runtime-state --milliseconds 22000 --dump-prefix build/main
 ```
+
+Spellcasting 301 uses the same runtime with its own fonts and resources:
+
+```sh
+./build/gateway ../301/S301.EXE --state-dir build/s301-state
+```
+
+Keep different games' state directories separate. See the
+[runtime findings](docs/spellcasting.md#spellcasting-301-runtime-check-2026-10-31)
+for the verified startup path and current limits.

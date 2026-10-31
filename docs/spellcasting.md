@@ -112,3 +112,33 @@ A record of length 0 is a single symbol with no bits at all, which fills the ima
 - Raw entries that end a file are followed by unexplained bytes, for example
   `S101_C2` #41 has 658 bytes available and needs 364.
 - RGN contents have not been matched to pictures in these games.
+
+## Spellcasting 301 runtime check (2026-10-31)
+
+The same real-mode/SDL runtime now reaches **Beach** through the original
+`S301.EXE` launcher and `S301MAIN.EXE` overlay handoff. Previously BIOS `AH=09h`
+stopped at `2b9e:5216` because the fallback font lookup required `GATE_000.FNT`.
+S301 has no such file. Its fixed `S301_100.FNT` (8×14) and `S301_200.FNT` (8×16)
+share the checked fixed-width layout and now supply native-height BIOS glyphs.
+The lookup uses the executable's prefix and case-insensitive DOS resolution;
+no Gateway files need to be copied into `301/`.
+
+```sh
+./build/gateway ../301/S301.EXE --state-dir build/s301-state
+./build/gateway-probe ../301/S301.EXE --press escape \
+  --state-dir build/s301-state --milliseconds 22000 --dump-prefix build/s301-main
+```
+
+Use separate state directories for different games because generated filenames
+such as `RESTART.DAT` overlap. The probe capture shows the Beach scene, menus,
+and opening description. This establishes startup compatibility; full gameplay,
+save/restore, mouse behavior, and audible sound in S301 still need validation.
+The packaged `LEGEND.BAT` requests SVGA and Sound Blaster; those command-line
+options are not established by this default-launch test.
+
+SHA-256 identities:
+
+- `S301.EXE`: `31f3f72072fe56c2b627a0e176f217f04bcd68d4935da44ee5889c2dff19e66a`
+- `S301MAIN.EXE`: `cbbc752eaa659dd0970b1526616ba79ec6021243e36828af67c756f2c155d8b8`
+- `S301_100.FNT`: `4022e6ad5fa68117db52601e87757b000a0c77a9de0b93394b27c04bfbf0631a`
+- `S301_200.FNT`: `66392db21a0fc7db5d423962c2524edc05521cf927509a4bc4fb9819d3cea93b`

@@ -88,8 +88,10 @@ To reproduce the launcher snapshot:
 
 Snapshots include `.regs` alongside `.bin` and `.ppm`. The PSP now names a tracked
 DOS environment block with `PATH=C:\` and the executable filename. BIOS loading
-text uses the original game's fixed 8×8 font scaled to the graphics mode's cell
-height; this is a fallback, not an exact replacement for the VGA ROM font.
+text uses fixed 8-pixel-wide fonts from the launched game's resource prefix
+(`GATE` or `S301`, also when launching `*MAIN.EXE`). Native 8/14/16-row variants
+are preferred for the mode's cell height; available alternatives are scaled.
+This remains a fallback rather than an exact replacement for the VGA ROM font.
 
 ## Main-program startup
 
