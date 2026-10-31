@@ -20,3 +20,12 @@ synthetic guest receiving its own timer handler before completing. Mode-3 reads
 currently expose the modeled remaining count rather than the exact square-wave
 counter sequence. One-shot, BCD, read-back, speaker synthesis, PIC initialization,
 and exact ISA/CPU timing remain unsupported.
+
+## Virtual calendar
+
+DOS date and time start from the host local clock, then advance with guest device
+time. Set-date/time requests modify only this virtual clock. Gateway saves,
+calibrates, and restores its clock during startup, so these setters are required
+even without gameplay. Invalid dates and times return AL=FFh and preserve the
+previous value; valid setters return AL=00h. Tests cover leap days, midnight
+rollover, invalid setters, and a guest set/get round trip. Host time is never set.

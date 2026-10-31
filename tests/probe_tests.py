@@ -65,6 +65,12 @@ class ProbeTests(unittest.TestCase):
         result = self.run_guest(bytes.fromhex('b90144ba5153b8012bcd21b44ccd21'))
         self.assertIn('DOS exit code: 255', result.stdout, result.stderr)
 
+    def test_virtual_calendar_set_get(self):
+        # Change only the guest's date, then read it back as a year low byte.
+        code = bytes.fromhex('b9e807ba1d02b42bcd21b42acd2189c8b44ccd21')
+        result = self.run_guest(code)
+        self.assertIn('DOS exit code: 232', result.stdout, result.stderr)
+
     def test_exit(self):
         result = self.run_guest(bytes.fromhex('b8004ccd21'))
         self.assertEqual(result.returncode, 0, result.stderr)

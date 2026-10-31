@@ -1,3 +1,4 @@
+#include "dos_clock.hpp"
 #include "dos_memory.hpp"
 #include "mz.hpp"
 #include "opl.hpp"
@@ -42,6 +43,7 @@ struct State {
     gateway::Vga vga;
     gateway::Opl opl;
     gateway::Pit pit;
+    gateway::DosClock clock;
     std::uint8_t pic_mask = 0;
     bool irq_in_service = false;
     bool exited = false;
@@ -208,29 +210,21 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             }
         } else if (number == 0x21 && (ax >> 8) == 0x19) {
             set(uc, UC_X86_REG_AX, (ax & 0xff00) | 2); // current drive C:
-        } else if (number == 0x21 && (ax >> 8) == 0x2b) {
-            const auto year = reg(uc, UC_X86_REG_CX);
-            const auto date = reg(uc, UC_X86_REG_DX);
-            if (year >= 1980 && year <= 2099 && (date >> 8) >= 1 && (date >> 8) <= 12 &&
-                (date & 255) >= 1 && (date & 255) <= 31)
-                throw std::runtime_error("setting a virtual DOS calendar is unsupported");
-            set(uc, UC_X86_REG_AX, (ax & 0xff00) | 0xff);
+        } else if (number == 0x21 && ((ax >> 8) == 0x2b || (ax >> 8) == 0x2d)) {
+            const auto cx = reg(uc, UC_X86_REG_CX), dx = reg(uc, UC_X86_REG_DX);
+            const bool valid = (ax >> 8) == 0x2b
+                                   ? state.clock.set_date(cx, dx >> 8, dx & 255)
+                                   : state.clock.set_time(cx >> 8, cx & 255, dx >> 8, dx & 255);
+            set(uc, UC_X86_REG_AX, (ax & 0xff00) | (valid ? 0 : 255));
         } else if (number == 0x21 && ((ax >> 8) == 0x2a || (ax >> 8) == 0x2c)) {
-            const auto now = std::chrono::system_clock::now();
-            const auto seconds = std::chrono::system_clock::to_time_t(now);
-            const auto *time = std::localtime(&seconds);
-            if (!time)
-                throw std::runtime_error("cannot read host calendar");
+            const auto time = state.clock.local();
             if ((ax >> 8) == 0x2a) {
-                set(uc, UC_X86_REG_CX, time->tm_year + 1900);
-                set(uc, UC_X86_REG_DX, ((time->tm_mon + 1) << 8) | time->tm_mday);
-                set(uc, UC_X86_REG_AX, (ax & 0xff00) | time->tm_wday);
+                set(uc, UC_X86_REG_CX, time.tm_year + 1900);
+                set(uc, UC_X86_REG_DX, ((time.tm_mon + 1) << 8) | time.tm_mday);
+                set(uc, UC_X86_REG_AX, (ax & 0xff00) | time.tm_wday);
             } else {
-                const auto ms =
-                    std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch())
-                        .count();
-                set(uc, UC_X86_REG_CX, (time->tm_hour << 8) | time->tm_min);
-                set(uc, UC_X86_REG_DX, (time->tm_sec << 8) | ((ms % 1000) / 10));
+                set(uc, UC_X86_REG_CX, (time.tm_hour << 8) | time.tm_min);
+                set(uc, UC_X86_REG_DX, (time.tm_sec << 8) | state.clock.hundredths());
             }
         } else if (number == 0x21 && ax == 0x4400) {
             const auto handle = reg(uc, UC_X86_REG_BX);
@@ -435,6 +429,7 @@ int main(int argc, char **argv) {
             status = uc_emu_start(engine.uc, pc, 0x100000, 100000, 50000);
             if (status != UC_ERR_OK || state.exited || !state.failure.empty())
                 break;
+            state.clock.advance(1000);
             state.pit.advance(1000);
             state.opl.advance(1000);
             if (state.pit.pending() && !(state.pic_mask & 1) && !state.irq_in_service &&
