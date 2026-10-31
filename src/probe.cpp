@@ -72,6 +72,13 @@ struct State {
     std::set<unsigned> polled_services;
     std::uint8_t pic_mask = 0;
     bool irq_in_service = false;
+    struct BlockTrace {
+        std::uint64_t address;
+        std::uint32_t size;
+        std::uint16_t cs, ss, sp, bp, flags;
+    };
+    std::array<BlockTrace, 256> blocks{};
+    std::size_t block_count = 0;
     bool breakpoint_hit = false;
     bool exited = false;
     unsigned exit_code = 0;
@@ -229,6 +236,21 @@ bool dispatch(uc_engine *uc, unsigned number) {
     set(uc, UC_X86_REG_CS, vector[1]);
     set(uc, UC_X86_REG_IP, vector[0]);
     return true;
+}
+
+void trace_block(uc_engine *uc, std::uint64_t address, std::uint32_t size, void *opaque) noexcept {
+    auto &state = *static_cast<State *>(opaque);
+    try {
+        state.blocks[state.block_count++ % state.blocks.size()] = {address,
+                                                                   size,
+                                                                   reg(uc, UC_X86_REG_CS),
+                                                                   reg(uc, UC_X86_REG_SS),
+                                                                   reg(uc, UC_X86_REG_SP),
+                                                                   reg(uc, UC_X86_REG_BP),
+                                                                   reg(uc, UC_X86_REG_FLAGS)};
+    } catch (const std::exception &e) {
+        hardware_failure(uc, state, e.what());
+    }
 }
 
 void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
@@ -552,10 +574,13 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
                 throw gateway::DosIoError(6, "invalid DOS read handle");
             std::vector<std::uint8_t> buffer(reg(uc, UC_X86_REG_CX));
             const auto count = found->second.read(buffer);
-            if (count)
-                check(uc_mem_write(
-                    uc, std::size_t(reg(uc, UC_X86_REG_DS)) * 16 + reg(uc, UC_X86_REG_DX),
-                    buffer.data(), count));
+            if (count) {
+                const auto address =
+                    std::size_t(reg(uc, UC_X86_REG_DS)) * 16 + reg(uc, UC_X86_REG_DX);
+                check(uc_mem_write(uc, address, buffer.data(), count));
+                // RTLink also loads executable overlays through ordinary DOS reads.
+                check(uc_ctl_remove_cache(uc, address, address + count));
+            }
             set(uc, UC_X86_REG_AX, count);
             set(uc, UC_X86_REG_FLAGS, reg(uc, UC_X86_REG_FLAGS) & ~1);
         } else if (number == 0x21 && (ax >> 8) == 0x42) {
@@ -639,14 +664,14 @@ int main(int argc, char **argv) {
 #endif
     std::filesystem::path state_directory;
     unsigned milliseconds = 0;
-    std::string dump_prefix;
+    std::string dump_prefix, block_trace_path;
     std::string game_args;
     std::uint16_t injected_key = 0;
     std::uint64_t breakpoint = 0;
     auto usage = [] {
         std::cout << "Usage: gateway[-probe] <DOS executable> [--headless] "
                      "[--milliseconds N] [--dump-prefix PATH] [--game-args TEXT] [--press KEY] "
-                     "[--break-at HEX] [--state-dir DIR | --read-only]\n";
+                     "[--break-at HEX] [--state-dir DIR | --read-only] [--trace-blocks FILE]\n";
     };
     if (argc < 2 || std::string(argv[1]) == "--help") {
         usage();
@@ -656,6 +681,8 @@ int main(int argc, char **argv) {
         const std::string option = argv[i];
         if (option == "--headless")
             interactive = false;
+        else if (option == "--trace-blocks" && i + 1 < argc)
+            block_trace_path = argv[++i];
         else if (option == "--read-only") {
             writable_state = false;
             state_directory.clear();
@@ -803,6 +830,10 @@ int main(int argc, char **argv) {
             check(uc_hook_add(engine.uc, &break_hook, UC_HOOK_CODE,
                               reinterpret_cast<void *>(callback), &state, breakpoint, breakpoint));
         }
+        uc_hook block_hook;
+        if (!block_trace_path.empty())
+            check(uc_hook_add(engine.uc, &block_hook, UC_HOOK_BLOCK,
+                              reinterpret_cast<void *>(trace_block), &state, 1, 0));
         uc_hook video_hook;
         check(uc_hook_add(engine.uc, &video_hook, UC_HOOK_MEM_READ | UC_HOOK_MEM_WRITE,
                           reinterpret_cast<void *>(video_memory), &state, 0xa0000, 0xaffff));
@@ -857,6 +888,21 @@ int main(int argc, char **argv) {
             if (!interactive && !milliseconds &&
                 (steps >= 2000 || std::chrono::steady_clock::now() >= deadline))
                 break;
+        }
+        if (!block_trace_path.empty()) {
+            std::ofstream trace(block_trace_path);
+            const auto begin = state.block_count > state.blocks.size()
+                                   ? state.block_count - state.blocks.size()
+                                   : 0;
+            for (auto i = begin; i < state.block_count; ++i) {
+                const auto &block = state.blocks[i % state.blocks.size()];
+                trace << std::hex << block.address << " size=" << block.size << " CS=" << block.cs
+                      << " SS:SP=" << block.ss << ':' << block.sp << " BP=" << block.bp
+                      << " FLAGS=" << block.flags << '\n';
+            }
+            trace.close();
+            if (!trace)
+                throw std::runtime_error("cannot write guest block trace");
         }
         if (!dump_prefix.empty()) {
             text_snapshot(engine.uc, state);

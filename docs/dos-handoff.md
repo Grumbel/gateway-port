@@ -44,3 +44,21 @@ reuse. Reopened standard slots are treated as regular files rather than consoles
 This matters when the intro opens and closes many picture/music files before the
 main overlay load. Exhaustion returns DOS error 4 instead of allocating handles
 beyond the default table. Extended DOS handle tables are not implemented yet.
+
+## RTLink overlay reads and translated-code coherence
+
+The initial `4B03h` image load is not the only executable replacement. RTLink
+subsequently reads sections of `GATEMAIN.OVL` through ordinary DOS `AH=3Fh` into
+previously executed addresses. Host-side Unicorn memory writes do not invalidate
+its translated blocks. Every successful DOS read now invalidates translations
+for the bytes it wrote, just as the initial overlay loader does.
+
+A regression first executes a routine returning 1, loads raw replacement bytes
+through DOS read, and calls it again; the correct result is 42. Without the cache
+invalidation it returned 1. In the real game, stale blocks eventually returned
+through incompatible stack layouts and ran into low DOS memory. With invalidation,
+a bounded Escape replay reaches the first room, **Your Quarters**, with the scene,
+interface, object lists, and initial description visible.
+
+`--trace-blocks FILE` optionally records the last 256 guest basic blocks with
+stack/frame registers. It is disabled by default and keeps diagnostics bounded.

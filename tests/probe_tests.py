@@ -262,6 +262,14 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.memory[0x10200 + 30:0x10200 + 43].split(b'\0')[0], b'GATE002.SAV')
 
+    def test_dos_code_read_invalidates_translation(self):
+        prefix = bytes.fromhex('b800208ec026c7060000b80126c706020000cb9a00000020')
+        code = bytearray.fromhex('0e1fba0000b8003dcd2189c3b800208ed831d2b90400b43fcd21'
+                                 '9a00000020b44ccd21')
+        struct.pack_into('<H', code, 3, len(prefix) + len(code))
+        result = self.run_guest(prefix + code + b'CODE.BIN\0', {'CODE.BIN': bytes.fromhex('b82a00cb')})
+        self.assertIn('DOS exit code: 42', result.stdout, result.stderr)
+
     def test_vga_detection(self):
         result = self.run_guest(bytes.fromhex('b8001acd1089d8b44ccd21'))
         self.assertIn('DOS exit code: 8', result.stdout)
