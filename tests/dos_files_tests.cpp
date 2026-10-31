@@ -1,4 +1,5 @@
 #include "dos_files.hpp"
+#include <algorithm>
 #include <array>
 #include <cstdlib>
 #include <fstream>
@@ -102,6 +103,23 @@ int main() {
         error(5, [&] { drive.create("../escape", 0); });
         error(5, [&] { drive.create("C:\\sub\\escape", 0); });
         error(12, [&] { drive.open("DATA.DAT", 3); });
+        store(assets / "Gate001.Sav", "original");
+        store(assets / "GATE002.SAV", "two");
+        store(assets / "PLAIN", "no extension");
+        store(state / "GATE001.SAV", "saved");
+        store(state / "gate003.sav", "third");
+        const auto saves = drive.list("gate*.sav", 0);
+        require(saves.size() == 3 && saves[0].name == "GATE001.SAV" && saves[0].size == 5 &&
+                    saves[0].attributes == 0x20 && saves[1].attributes == 0x21 &&
+                    saves[2].name == "GATE003.SAV",
+                "merged wildcard search incorrect");
+        require(drive.list("GATE00?.SAV", 0).size() == 3 && drive.list("MISSING*.SAV", 0).empty(),
+                "DOS wildcard/no-match behavior incorrect");
+        const auto all = drive.list("*.*", 0);
+        require(
+            std::any_of(all.begin(), all.end(), [](const auto &e) { return e.name == "PLAIN"; }),
+            "DOS *.* omitted extensionless file");
+        require(contents(assets / "Gate001.Sav") == "original", "search changed original save");
         store(fixture.root / "outside", "untouched");
         fs::create_symlink(fixture.root / "outside", state / "LINK.DAT");
         error(5, [&] { drive.create("LINK.DAT", 0); });

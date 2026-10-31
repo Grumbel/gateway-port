@@ -1,8 +1,12 @@
 #include "dos_files.hpp"
+#include "dos_fcb.hpp"
+#include <algorithm>
 #include <array>
 #include <cerrno>
+#include <ctime>
 #include <fcntl.h>
 #include <limits>
+#include <map>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <utility>
@@ -219,6 +223,73 @@ unsigned DosDrive::attributes(std::string_view input) const {
         throw DosIoError(5, "not a regular DOS file");
     return state && info.st_nlink == 1 && (info.st_mode & 0222) ? 0x20 : 0x21;
 }
+std::vector<DosDirectoryEntry> DosDrive::list(std::string_view input,
+                                              unsigned search_attributes) const {
+    auto pattern = key(input);
+    if (pattern == "*")
+        pattern = "*.*";
+    if (search_attributes & 8)
+        return {}; // No volume-label entry in the virtual drive.
+    const auto wildcard = parse_fcb(pattern, 0, {});
+    std::map<std::string, std::filesystem::path> merged;
+    for (const auto &root : {assets_, state_}) {
+        if (root.empty())
+            continue;
+        std::error_code error;
+        if (!std::filesystem::exists(root, error)) {
+            if (error)
+                throw DosIoError(5, "cannot inspect DOS search directory");
+            continue;
+        }
+        for (const auto &entry : std::filesystem::directory_iterator(root)) {
+            auto name = entry.path().filename().string();
+            if (name.empty() || name[0] == '.')
+                continue;
+            for (auto &c : name)
+                if (c >= 'a' && c <= 'z')
+                    c -= 32;
+            merged[name] = entry.path();
+        }
+    }
+    std::vector<DosDirectoryEntry> result;
+    for (const auto &[name, path] : merged) {
+        const auto dot = name.find('.');
+        const auto base = name.substr(0, dot);
+        const auto extension = dot == name.npos ? std::string{} : name.substr(dot + 1);
+        if (base.empty() || base.size() > 8 || extension.size() > 3 ||
+            extension.find('.') != extension.npos)
+            continue;
+        const auto candidate = parse_fcb(name, 0, {});
+        if (candidate.consumed != name.size())
+            continue;
+        bool match = true;
+        for (unsigned i = 1; i < 12; ++i)
+            if (wildcard.bytes[i] != '?' && wildcard.bytes[i] != candidate.bytes[i])
+                match = false;
+        if (!match)
+            continue;
+        struct stat info{};
+        if (::lstat(path.c_str(), &info))
+            io_error();
+        if (!S_ISREG(info.st_mode))
+            continue;
+        const auto *local = std::localtime(&info.st_mtime);
+        std::uint16_t date = 0x21, time = 0; // 1980-01-01 fallback.
+        if (local) {
+            const auto year = std::clamp(local->tm_year + 1900, 1980, 2107);
+            date = ((year - 1980) << 9) | ((local->tm_mon + 1) << 5) | local->tm_mday;
+            time = (local->tm_hour << 11) | (local->tm_min << 5) | (local->tm_sec / 2);
+        }
+        const bool in_state = path.parent_path() == state_;
+        const std::uint8_t attr =
+            in_state && info.st_nlink == 1 && (info.st_mode & 0222) ? 0x20 : 0x21;
+        result.push_back(
+            {name, static_cast<std::uint32_t>(std::min<std::uint64_t>(info.st_size, 0xffffffff)),
+             date, time, attr});
+    }
+    return result;
+}
+
 std::vector<std::uint8_t> DosDrive::read_all(std::string_view name) const {
     auto file = open(name, 0);
     const auto size = file.seek(0, 2);

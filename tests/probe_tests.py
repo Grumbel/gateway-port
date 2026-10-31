@@ -230,6 +230,38 @@ class ProbeTests(unittest.TestCase):
         self.assertIn('DOS exit code: 5', result.stdout, result.stderr)
         self.assertEqual(result.state_files, {})
 
+    def test_dos_find_first_next_merged_state(self):
+        code = bytearray.fromhex('0e1fba000031c9b44ecd21b44fcd21b8004ccd21')
+        struct.pack_into('<H', code, 3, len(code))
+        result = self.run_guest(code + b'GATE*.SAV\0', files={'GATE001.SAV': b'original', 'GATE002.SAV': b'two'},
+                                state_files={'GATE001.SAV': b'saved'}, dump=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        dta = result.memory[0xff80:0xff80 + 43]
+        self.assertEqual(dta[30:].split(b'\0')[0], b'GATE002.SAV')
+        self.assertEqual(struct.unpack_from('<I', dta, 26)[0], 3)
+        self.assertEqual(dta[21], 0x21)
+        self.assertEqual(result.files['GATE001.SAV'], b'original')
+
+    def test_dos_find_first_reports_no_matches(self):
+        code = bytearray.fromhex('0e1fba000031c9b44ecd21b44ccd21')
+        struct.pack_into('<H', code, 3, len(code))
+        result = self.run_guest(code + b'GATE*.SAV\0', state=True)
+        self.assertIn('DOS exit code: 18', result.stdout, result.stderr)
+
+    def test_dos_find_next_exhaustion(self):
+        code = bytearray.fromhex('0e1fba000031c9b44ecd21b44fcd21b44ccd21')
+        struct.pack_into('<H', code, 3, len(code))
+        result = self.run_guest(code + b'GATE*.SAV\0', state_files={'GATE001.SAV': b'saved'})
+        self.assertIn('DOS exit code: 18', result.stdout, result.stderr)
+
+    def test_dos_search_resumes_from_copied_dta(self):
+        code = bytearray.fromhex('0e1fba000031c9b44ecd21b8f00f8ed8be80000e07bf0002b92b00f3a4'
+                                 '0e1fba0002b41acd21b44fcd21b8004ccd21')
+        struct.pack_into('<H', code, 3, len(code))
+        result = self.run_guest(code + b'GATE*.SAV\0', files={'GATE001.SAV': b'one', 'GATE002.SAV': b'two'}, dump=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.memory[0x10200 + 30:0x10200 + 43].split(b'\0')[0], b'GATE002.SAV')
+
     def test_vga_detection(self):
         result = self.run_guest(bytes.fromhex('b8001acd1089d8b44ccd21'))
         self.assertIn('DOS exit code: 8', result.stdout)

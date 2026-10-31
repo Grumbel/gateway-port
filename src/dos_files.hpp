@@ -4,6 +4,7 @@
 #include <span>
 #include <stdexcept>
 #include <string_view>
+#include <string>
 #include <vector>
 namespace gateway {
 struct DosIoError : std::runtime_error {
@@ -26,6 +27,12 @@ class DosFile {
     int fd_;
     unsigned access_;
 };
+struct DosDirectoryEntry {
+    std::string name;
+    std::uint32_t size;
+    std::uint16_t date, time;
+    std::uint8_t attributes;
+};
 // Flat, case-insensitive DOS drive: immutable assets plus an optional writable layer.
 class DosDrive {
   public:
@@ -33,6 +40,7 @@ class DosDrive {
     DosFile open(std::string_view name, unsigned access) const;
     DosFile create(std::string_view name, unsigned attributes) const;
     unsigned attributes(std::string_view name) const;
+    std::vector<DosDirectoryEntry> list(std::string_view pattern, unsigned attributes) const;
     std::vector<std::uint8_t> read_all(std::string_view name) const;
     const std::filesystem::path &state_directory() const { return state_; }
 

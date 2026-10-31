@@ -50,6 +50,12 @@ struct State {
     std::filesystem::path data_dir;
     std::unique_ptr<gateway::DosDrive> drive;
     std::map<unsigned, gateway::DosFile> files;
+    struct Search {
+        std::vector<gateway::DosDirectoryEntry> entries;
+        std::size_t next = 0;
+    };
+    std::map<std::uint32_t, Search> searches;
+    std::uint32_t next_search = 1;
     std::array<bool, 5> standard_open{true, true, true, true, true};
     gateway::DosMemory arena{0x0ff0, 0xa000, 0x0fd0};
     gateway::Vga vga;
@@ -346,6 +352,48 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             state.exited = true;
             state.exit_code = number == 0x20 ? 0 : ax & 255;
             check(uc_emu_stop(uc));
+        } else if (number == 0x21 && ((ax >> 8) == 0x4e || (ax >> 8) == 0x4f)) {
+            const auto dta = std::size_t(state.dta_segment) * 16 + state.dta_offset;
+            std::array<std::uint8_t, 43> block{};
+            std::uint32_t id = 0;
+            if ((ax >> 8) == 0x4e) {
+                const auto pattern = guest_filename(uc);
+                std::cerr << "  find: " << pattern << '\n';
+                auto entries = state.drive->list(pattern, reg(uc, UC_X86_REG_CX));
+                check(uc_mem_write(uc, dta, block.data(), block.size()));
+                if (entries.empty())
+                    throw gateway::DosIoError(18, "no matching DOS files");
+                id = state.next_search++;
+                state.searches.emplace(id, State::Search{std::move(entries), 0});
+            } else {
+                check(uc_mem_read(uc, dta, block.data(), block.size()));
+                if (!std::equal(block.begin(), block.begin() + 4, "GWFS"))
+                    throw gateway::DosIoError(18, "no active DOS search");
+                for (unsigned i = 0; i < 4; ++i)
+                    id |= std::uint32_t(block[4 + i]) << (8 * i);
+            }
+            auto search = state.searches.find(id);
+            if (search == state.searches.end() ||
+                search->second.next >= search->second.entries.size()) {
+                state.searches.erase(id);
+                throw gateway::DosIoError(18, "no more DOS files");
+            }
+            const auto &entry = search->second.entries[search->second.next++];
+            block.fill(0);
+            std::copy_n("GWFS", 4, block.begin());
+            for (unsigned i = 0; i < 4; ++i) {
+                block[4 + i] = id >> (8 * i);
+                block[26 + i] = entry.size >> (8 * i);
+            }
+            block[21] = entry.attributes;
+            block[22] = entry.time & 255;
+            block[23] = entry.time >> 8;
+            block[24] = entry.date & 255;
+            block[25] = entry.date >> 8;
+            std::copy(entry.name.begin(), entry.name.end(), block.begin() + 30);
+            check(uc_mem_write(uc, dta, block.data(), block.size()));
+            set(uc, UC_X86_REG_AX, 0);
+            set(uc, UC_X86_REG_FLAGS, reg(uc, UC_X86_REG_FLAGS) & ~1);
         } else if (number == 0x21 && ax == 0x4b03) {
             const auto name = guest_filename(uc);
             const auto parameters =

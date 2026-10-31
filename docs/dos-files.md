@@ -42,3 +42,16 @@ emulation. Executable overlay reads also see the same state-first drive view.
 An original Escape-to-main replay creates a 21,757-byte `RESTART.DAT` in the
 explicit state directory, then reaches DOS find-first (`AH=4Eh`). This confirms
 runtime state generation; the restart-file schema is not yet decoded.
+
+## Save-file searches
+
+Find-first/find-next (`AH=4Eh/4Fh`) merge original assets and state files with
+case-insensitive 8.3 wildcard matching. State names shadow originals and results
+are returned in name order. The DTA contains attributes, packed host modification
+date/time, size, and the NUL-terminated DOS filename. Its reserved bytes hold an
+opaque search cookie, allowing a copied DTA to resume a search. No-match and
+exhausted searches return error 18.
+
+The current subset enumerates regular files only; DOS directories, volume
+labels, hidden/system attribute persistence, and long filename aliases are not
+modeled. Gateway's observed startup request is `GATE*.SAV` with attributes zero.
