@@ -43,3 +43,26 @@ is shown steadily, not interpreted as graphics XOR. This is not a pixel-exact
 Regression fixtures cover the reported mode-12h → mode-03h → cursor query →
 character write sequence, page selection, repeated writes across a row boundary,
 and direct text-memory writes.
+
+## BIOS font fallback without fixed game fonts
+
+Gateway II supplies proportional `HOME_201.FNT` and other fonts, but no fixed
+`HOME_000/100/200.FNT`. A failed `HOME_200.FNT` open precedes BIOS character
+output. The runtime now uses the vendored public-domain font8x8 basic Latin
+font when no fixed game font is available. Rows are reversed to VGA bit order
+and scaled to the selected cell height; available fixed game fonts keep their
+existing priority. Extended CP437 characters and exact native VGA ROM shapes
+remain unsupported. Attribution is in `third_party/font8x8/`.
+
+On Linux (2026-10-31), this 22-second headless check passed the reported font
+failure, loaded `HOMEMAIN.EXE`, and captured the Living Room with readable menus
+and opening description:
+
+```sh
+./build/gateway ../gateway2-dos/HOME.EXE --headless --press escape \
+  --milliseconds 22000 --state-dir build/home-font-state \
+  --dump-prefix build/home-font
+```
+
+All 17 CTest targets pass, including synthetic BIOS glyph checks without game
+fonts in modes 10h and 12h. Interactive input and audible sound remain unverified.

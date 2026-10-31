@@ -118,6 +118,23 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(struct.unpack_from('<7H', result.memory, base+4),
                          (0xffff, 3, 0, 100, 20, 0, 0))
 
+    def test_bios_font_without_game_font(self):
+        for mode, height, width in ((0x10, 14, 640), (0x12, 16, 640)):
+            with self.subTest(mode=mode):
+                # Draw L in white through AH=09h without any external resources.
+                code = bytes([0xb8, mode, 0]) + bytes.fromhex(
+                    'cd10bb0f00b90100b84c09cd10b8004ccd21')
+                result = self.run_guest(code, dump=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('built-in ASCII', result.stderr)
+                _, pixels = result.picture.split(b'255\n', 1)
+                # L begins with bits 0..3 set in the source; reverse for VGA.
+                for row in range(height):
+                    source = (0x0f, 0x06, 0x06, 0x06, 0x46, 0x66, 0x7f, 0)[row * 8 // height]
+                    for x in range(8):
+                        pixel = pixels[(row * width + x) * 3:(row * width + x + 1) * 3]
+                        self.assertEqual(any(pixel), bool(source & (1 << x)))
+
     def test_bios_font_uses_executable_prefix_and_native_height(self):
         # No Gateway assets: a mixed-case TEST_200 font has distinct adjacent rows.
         font = bytearray(10 + 95 * 16)
