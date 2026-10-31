@@ -44,6 +44,8 @@ This DOS memory-block resizing request (`AH=4ah`) is now implemented through
 DOS version and vector 0, installs its divide-error handler, and reaches device
 information (`AX=4400`) at `12a5:0b1e`. Handle attributes and DOS date/time
 queries are now implemented. Startup reaches VGA display-combination detection
-(`INT 10h AX=1a00`) at `242a:0076`; BIOS video services are the next boundary.
+(`INT 10h AX=1a00`) at `242a:0076`, selects mode `12h`, installs break/error/timer
+vectors, and allocates two DOS blocks. BIOS mode state and VGA plane accesses
+are implemented. The next stop is an AdLib register write at port `388h`.
 The startup probe allows ten million instructions and a two-second Unicorn
 execution timeout; this is enough to reach that boundary in the supplied binary.

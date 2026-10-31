@@ -11,7 +11,7 @@ PROBE = sys.argv.pop(1)
 
 
 class ProbeTests(unittest.TestCase):
-    def run_guest(self, code, files=None):
+    def run_guest(self, code, files=None, dump=False):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             for name, data in (files or {}).items():
@@ -24,8 +24,30 @@ class ProbeTests(unittest.TestCase):
                              (len(code) + 15) // 16, 256, 0, 0, 0, 28, 0)
             exe = root / 'TEST.EXE'
             exe.write_bytes(header + code)
-            return subprocess.run([PROBE, str(exe)], text=True,
-                                  capture_output=True, timeout=10)
+            command = [PROBE, str(exe)]
+            if dump:
+                command += ['--dump-prefix', str(root / 'snapshot')]
+            result = subprocess.run(command, text=True, capture_output=True, timeout=15)
+            if dump:
+                result.picture = (root / 'snapshot.ppm').read_bytes()
+                result.memory = (root / 'snapshot.bin').read_bytes()
+            return result
+
+    def test_vga_detection(self):
+        result = self.run_guest(bytes.fromhex('b8001acd1089d8b44ccd21'))
+        self.assertIn('DOS exit code: 8', result.stdout)
+
+    def test_vga_plane_output_and_snapshot(self):
+        # Select mode 12h, enable plane 0, and set the leftmost pixel.
+        code = bytes.fromhex('b81200cd10bac403b80201efb800a08ec026c606000080b8004ccd21')
+        result = self.run_guest(code, dump=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        header, pixels = result.picture.split(b'255\n', 1)
+        self.assertEqual(header, b'P6\n640 480\n')
+        self.assertEqual(pixels[:6], bytes([0, 0, 170, 0, 0, 0]))
+        self.assertEqual(len(pixels), 640 * 480 * 3)
+        self.assertEqual(len(result.memory), 1024 * 1024)
+        self.assertEqual(result.memory[0x10000:0x10000 + len(code)], code)
 
     def test_exit(self):
         result = self.run_guest(bytes.fromhex('b8004ccd21'))

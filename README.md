@@ -13,6 +13,7 @@ This is an initial research harness, **not yet a playable port**. It provides:
 - `gateway-inspect`, which reports loaded image and entry information.
 - `gateway-probe`, a bounded Unicorn real-mode startup probe that traces DOS
   services and stops explicitly on unsupported calls.
+- A tested DOS memory arena and planar VGA model with framebuffer dumps.
 - `gateway-host`, an SDL3 graphics/audio diagnostic, separate from guest execution.
 - `gateway-extract`, which converts PIC files to indexed PNGs.
 
@@ -84,3 +85,13 @@ applicable to Gateway’s real-mode startup.
 [Risca’s Death Gate resource manager](https://github.com/Risca/dgate_resource_manager)
 is a format-research reference. Gateway shares its string compression and PIC
 directory layout but differs elsewhere; see [the comparison](docs/data-files.md#comparison-with-death-gate).
+
+To retain a snapshot at the startup boundary:
+
+```sh
+./build/gateway-probe ../gateway-dos/GATE.EXE --dump-prefix build/gate
+```
+
+This writes `build/gate.bin` (guest memory) and `build/gate.ppm` (VGA pixels),
+including on unsupported-service stops. These are diagnostic artifacts, not
+proof that the rendered game output is correct.

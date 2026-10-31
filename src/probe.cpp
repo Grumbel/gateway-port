@@ -1,5 +1,6 @@
 #include "dos_memory.hpp"
 #include "mz.hpp"
+#include "vga.hpp"
 #include <algorithm>
 #include <cctype>
 #include <chrono>
@@ -10,6 +11,7 @@
 #include <iostream>
 #include <iterator>
 #include <map>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <unicorn/unicorn.h>
@@ -35,18 +37,70 @@ struct State {
     std::map<unsigned, std::ifstream> files;
     unsigned next_handle = 5;
     gateway::DosMemory arena{0x0ff0};
+    gateway::Vga vga;
     bool exited = false;
     unsigned exit_code = 0;
     std::string failure;
 };
-std::uint32_t port_in(uc_engine *uc, std::uint32_t, int, void *opaque) noexcept {
-    static_cast<State *>(opaque)->failure = "unsupported hardware port read";
+void hardware_failure(uc_engine *uc, State &state, const std::string &message) {
+    state.failure = message;
     uc_emu_stop(uc);
-    return 0;
 }
-void port_out(uc_engine *uc, std::uint32_t, int, std::uint32_t, void *opaque) noexcept {
-    static_cast<State *>(opaque)->failure = "unsupported hardware port write";
-    uc_emu_stop(uc);
+std::uint32_t port_in(uc_engine *uc, std::uint32_t port, int size, void *opaque) noexcept {
+    auto &state = *static_cast<State *>(opaque);
+    try {
+        std::uint32_t value = 0;
+        for (int i = 0; i < size; ++i) {
+            if (!state.vga.handles_port(port + i)) {
+                std::ostringstream message;
+                message << "unsupported hardware port read: " << std::hex << port + i;
+                throw std::runtime_error(message.str());
+            }
+            value |= std::uint32_t(state.vga.in(port + i)) << (8 * i);
+        }
+        return value;
+    } catch (const std::exception &e) {
+        hardware_failure(uc, state, e.what());
+        return 0;
+    }
+}
+void port_out(uc_engine *uc, std::uint32_t port, int size, std::uint32_t value,
+              void *opaque) noexcept {
+    auto &state = *static_cast<State *>(opaque);
+    try {
+        for (int i = 0; i < size; ++i) {
+            if (!state.vga.handles_port(port + i)) {
+                std::ostringstream message;
+                message << "unsupported hardware port write: " << std::hex << port + i;
+                throw std::runtime_error(message.str());
+            }
+            state.vga.out(port + i, (value >> (8 * i)) & 255);
+        }
+    } catch (const std::exception &e) {
+        hardware_failure(uc, state, e.what());
+    }
+}
+void video_memory(uc_engine *uc, uc_mem_type type, std::uint64_t address, int size,
+                  std::int64_t value, void *opaque) noexcept {
+    auto &state = *static_cast<State *>(opaque);
+    if (state.vga.mode() == 3)
+        return;
+    try {
+        if (size > 8)
+            throw std::runtime_error("unsupported VGA access width");
+        std::array<std::uint8_t, 8> data{};
+        for (int i = 0; i < size; ++i) {
+            const auto offset = static_cast<std::uint16_t>(address - 0xa0000 + i);
+            if (type == UC_MEM_READ)
+                data[i] = state.vga.read(offset);
+            else
+                state.vga.write(offset, (static_cast<std::uint64_t>(value) >> (8 * i)) & 255);
+        }
+        if (type == UC_MEM_READ)
+            check(uc_mem_write(uc, address, data.data(), size));
+    } catch (const std::exception &e) {
+        hardware_failure(uc, state, e.what());
+    }
 }
 
 void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
@@ -56,7 +110,21 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
         std::cerr << "INT " << std::hex << number << " AX=" << std::setw(4) << std::setfill('0')
                   << ax << " at " << reg(uc, UC_X86_REG_CS) << ':' << reg(uc, UC_X86_REG_IP)
                   << '\n';
-        if (number == 0x20 || (number == 0x21 && (ax >> 8) == 0x4c)) {
+        if (number == 0x10 && ax == 0x1a00) {
+            set(uc, UC_X86_REG_AX, 0x1a);
+            set(uc, UC_X86_REG_BX, 8); // VGA with an analog color display.
+        } else if (number == 0x10 && (ax >> 8) == 0x0f) {
+            set(uc, UC_X86_REG_AX, 0x5000 | state.vga.mode());
+            set(uc, UC_X86_REG_BX, reg(uc, UC_X86_REG_BX) & 255);
+        } else if (number == 0x10 && (ax >> 8) == 0) {
+            const auto mode = ax & 0x7f;
+            if (mode != 3 && mode != 0x0d && mode != 0x0e && mode != 0x10 && mode != 0x12 &&
+                mode != 0x13)
+                throw std::runtime_error("unsupported VGA mode");
+            state.vga.set_mode(mode, !(ax & 0x80));
+            const std::uint8_t value = mode;
+            check(uc_mem_write(uc, 0x449, &value, 1));
+        } else if (number == 0x20 || (number == 0x21 && (ax >> 8) == 0x4c)) {
             state.exited = true;
             state.exit_code = number == 0x20 ? 0 : ax & 255;
             check(uc_emu_stop(uc));
@@ -238,8 +306,9 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
 }
 } // namespace
 int main(int argc, char **argv) {
-    if (argc != 2 || std::string(argv[1]) == "--help") {
-        std::cout << "Usage: gateway-probe <DOS executable>\n"
+    const bool dump = argc == 4 && std::string(argv[2]) == "--dump-prefix";
+    if ((argc != 2 && !dump) || std::string(argv[1]) == "--help") {
+        std::cout << "Usage: gateway-probe <DOS executable> [--dump-prefix PATH]\n"
                      "Bounded real-mode startup trace; unsupported services stop execution.\n";
         return argc == 2 ? 0 : 2;
     }
@@ -274,8 +343,29 @@ int main(int argc, char **argv) {
                           &state, 1, 0, UC_X86_INS_IN));
         check(uc_hook_add(engine.uc, &out_hook, UC_HOOK_INSN, reinterpret_cast<void *>(port_out),
                           &state, 1, 0, UC_X86_INS_OUT));
-        check(uc_emu_start(engine.uc, std::size_t(image.cs) * 16 + image.ip, 0x100000, 2000000,
-                           10000000));
+        uc_hook video_hook;
+        check(uc_hook_add(engine.uc, &video_hook, UC_HOOK_MEM_READ | UC_HOOK_MEM_WRITE,
+                          reinterpret_cast<void *>(video_memory), &state, 0xa0000, 0xaffff));
+        const auto status = uc_emu_start(engine.uc, std::size_t(image.cs) * 16 + image.ip, 0x100000,
+                                         2000000, 10000000);
+        if (dump) {
+            std::vector<std::uint8_t> memory(1024 * 1024);
+            check(uc_mem_read(engine.uc, 0, memory.data(), memory.size()));
+            std::ofstream binary(std::string(argv[3]) + ".bin", std::ios::binary);
+            binary.write(reinterpret_cast<const char *>(memory.data()), memory.size());
+            binary.close();
+            std::ofstream picture(std::string(argv[3]) + ".ppm", std::ios::binary);
+            picture << "P6\n" << state.vga.width() << ' ' << state.vga.height() << "\n255\n";
+            for (auto pixel : state.vga.pixels()) {
+                const char rgb[]{static_cast<char>(pixel >> 16), static_cast<char>(pixel >> 8),
+                                 static_cast<char>(pixel)};
+                picture.write(rgb, 3);
+            }
+            picture.close();
+            if (!binary || !picture)
+                throw std::runtime_error("cannot write diagnostic dumps");
+        }
+        check(status);
         if (!state.failure.empty())
             throw std::runtime_error(state.failure);
         if (!state.exited) {

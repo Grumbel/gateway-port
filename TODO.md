@@ -1,7 +1,7 @@
 # Port milestones
 
-1. Implement BIOS VGA detection (`INT 10h AX=1a00`), the current `GATE.EXE`
-   stopping point (`242a:0076`). Continue the runtime startup contract. Keep each
+1. Implement AdLib port `388h` audio initialization, the current `GATE.EXE`
+   stopping point after VGA mode `12h` setup. Continue the startup contract. Keep each
    implemented service explicit and test it with a synthetic guest fixture.
 2. Recover RTL/OVL mapping and relocation behavior; document the module entry
    reached after the shared RTLink startup.
