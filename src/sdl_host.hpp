@@ -24,6 +24,7 @@ class SdlHost {
     SDL_Texture *texture_ = nullptr;
     SDL_AudioStream *audio_ = nullptr;
     int width_ = 0, height_ = 0;
+    bool fullscreen_ = false;
     void close();
 };
 } // namespace gateway

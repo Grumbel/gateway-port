@@ -188,6 +188,16 @@ bool SdlHost::poll(std::deque<std::uint16_t> &keys, Mouse &mouse, const Vga &vga
         if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST)
             for (unsigned i = 0; i < 3; ++i)
                 mouse.button(i, false);
+        if (event.type == SDL_EVENT_KEY_DOWN &&
+            (event.key.key == SDLK_F11 ||
+             ((event.key.key == SDLK_RETURN || event.key.key == SDLK_KP_ENTER) &&
+              (event.key.mod & SDL_KMOD_ALT)))) {
+            if (!event.key.repeat) {
+                checked(SDL_SetWindowFullscreen(window_, !fullscreen_));
+                fullscreen_ = !fullscreen_;
+            }
+            continue;
+        }
         if (event.type == SDL_EVENT_KEY_DOWN && keys.size() < 16) {
             const auto key = bios_key(event.key);
             if (key)

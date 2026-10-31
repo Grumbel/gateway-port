@@ -26,6 +26,28 @@ int main() {
         require(windows && count == 1, "runtime window");
         const auto window_id = SDL_GetWindowID(windows[0]);
         SDL_free(windows);
+        auto toggle = [&](SDL_Keycode key, SDL_Keymod modifiers, bool repeat, bool expected) {
+            SDL_Event shortcut{};
+            shortcut.type = SDL_EVENT_KEY_DOWN;
+            shortcut.key.windowID = window_id;
+            shortcut.key.key = key;
+            shortcut.key.mod = modifiers;
+            shortcut.key.repeat = repeat;
+            require(SDL_PushEvent(&shortcut), "push fullscreen shortcut");
+            host.poll(keys, mouse, vga);
+            auto window = SDL_GetWindowFromID(window_id);
+            require(SDL_SyncWindow(window), "sync fullscreen request");
+            require(bool(SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) == expected,
+                    "fullscreen shortcut state");
+            require(keys.empty(), "fullscreen shortcut leaked into guest input");
+        };
+        toggle(SDLK_F11, SDL_KMOD_NONE, false, true);
+        toggle(SDLK_F11, SDL_KMOD_NONE, true, true);
+        toggle(SDLK_RETURN, SDL_KMOD_LALT, false, false);
+        toggle(SDLK_KP_ENTER, SDL_KMOD_RALT, false, true);
+        toggle(SDLK_KP_ENTER, SDL_KMOD_RALT, true, true);
+        toggle(SDLK_F11, SDL_KMOD_NONE, false, false);
+        host.present(vga, {});
         SDL_Event event{};
         event.type = SDL_EVENT_MOUSE_MOTION;
         event.motion.windowID = window_id;

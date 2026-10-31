@@ -107,7 +107,8 @@ proof that the rendered game output is correct.
 nix run . -- ../gateway-dos/GATE.EXE
 ```
 
-Close the window to stop. Escape, Space, Enter, letters, digits, arrow keys,
+F11 or Alt-Enter toggles desktop fullscreen; these shortcuts are handled by
+the host. Close the window to stop. Escape, Space, Enter, letters, digits, arrow keys,
 and common punctuation are forwarded to the guest BIOS keyboard queue. Mouse
 motion and left/right/middle buttons reach the DOS mouse driver, with scaling
 for resized windows. **Press Escape at the command prompt to enter mouse mode**
