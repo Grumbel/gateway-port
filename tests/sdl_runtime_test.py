@@ -40,7 +40,7 @@ font[10 + (ord('G') - 0x21) * 8] = 0x80
 code = bytes.fromhex(
     'b81200cd1031c08ed8833e6c040074f9'
     'b80300cd10bb0f00b90100b84709cd10ebfe')
-picture = run_guest(code, milliseconds=96, files={'GATE_000.FNT': bytes(font)})
+picture = run_guest(code, milliseconds=96, files={'VIDEO_000.FNT': bytes(font)})
 if not picture.startswith(b'P6\n640 400\n255\n\xff\xff\xff\x00\x00\x00'):
     raise RuntimeError('SDL graphics-to-text transition produced the wrong text framebuffer')
 print('SDL guest graphics/text transition and audio-stream checks passed')

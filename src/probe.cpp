@@ -65,8 +65,14 @@ struct State {
     gateway::Pit pit;
     gateway::DosClock clock;
     std::array<std::uint16_t, 8> cursor{};
-    std::array<std::array<std::uint8_t, 8>, 256> bios_font{};
-    bool font_loaded = false;
+    using BiosFont = std::array<std::array<std::uint8_t, 16>, 256>;
+    std::map<unsigned, BiosFont> bios_fonts;
+    auto font_for(unsigned height) const {
+        return std::min_element(
+            bios_fonts.begin(), bios_fonts.end(), [height](const auto &a, const auto &b) {
+                return std::abs(int(a.first) - int(height)) < std::abs(int(b.first) - int(height));
+            });
+    }
     std::uint16_t cursor_shape = 0x0607;
     std::uint16_t dta_segment = 0x0ff0, dta_offset = 0x80;
     std::uint8_t pending_dos_scan = 0;
@@ -371,11 +377,14 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
                 const unsigned height = state.vga.mode() == 0x12   ? 16
                                         : state.vga.mode() == 0x10 ? 14
                                                                    : 8;
-                if (!state.font_loaded && character != ' ')
-                    throw std::runtime_error("BIOS glyph needs game font GATE_000.FNT");
+                const auto font = state.font_for(height);
+                if (font == state.bios_fonts.end() && character != ' ')
+                    throw std::runtime_error(
+                        "BIOS glyph needs a fixed 8-pixel game font (*_000/100/200.FNT)");
                 std::array<std::uint8_t, 16> glyph{};
-                for (unsigned i = 0; i < height; ++i)
-                    glyph[i] = state.bios_font[character][i * 8 / height];
+                if (font != state.bios_fonts.end())
+                    for (unsigned i = 0; i < height; ++i)
+                        glyph[i] = font->second[character][i * font->first / height];
                 for (unsigned i = 0; i < reg(uc, UC_X86_REG_CX); ++i)
                     state.vga.draw_glyph(column + i, row, std::span(glyph).first(height), bx & 255);
             }
@@ -854,18 +863,34 @@ int main(int argc, char **argv) {
         state.drive = std::make_unique<gateway::DosDrive>(state.data_dir, state_directory);
         if (writable_state)
             std::cerr << "DOS state directory: " << state.drive->state_directory() << '\n';
-        std::ifstream font_file(state.data_dir / "GATE_000.FNT", std::ios::binary);
-        if (font_file) {
-            std::vector<std::uint8_t> font{std::istreambuf_iterator<char>(font_file), {}};
-            if (font.size() != 770 || font[2] != 1 || font[3] != 0x21 || font[4] != 0x7f ||
-                font[6] != 8)
-                throw std::runtime_error("unexpected BIOS fallback game font layout");
-            for (unsigned c = 0x21; c <= 0x7f; ++c) {
-                std::copy_n(font.begin() + 10 + (c - 0x21) * 8, 8, state.bios_font[c].begin());
-                state.vga.text_font(c, state.bios_font[c]);
+        auto font_prefix = std::filesystem::path(argv[1]).stem().string();
+        std::transform(font_prefix.begin(), font_prefix.end(), font_prefix.begin(),
+                       [](unsigned char c) { return std::toupper(c); });
+        if (font_prefix.ends_with("MAIN"))
+            font_prefix.resize(font_prefix.size() - 4);
+        for (const auto suffix : {"_000.FNT", "_100.FNT", "_200.FNT"}) {
+            const auto name = font_prefix + suffix;
+            std::vector<std::uint8_t> font;
+            try {
+                font = state.drive->read_all(name);
+            } catch (const gateway::DosIoError &e) {
+                if (e.code == 2)
+                    continue;
+                throw;
             }
-            state.font_loaded = true;
+            if (font.size() < 10 || font[0] != 1 || font[1] != 1 || font[2] != 1 ||
+                font[3] != 0x21 || font[4] != 0x7f || !font[6] || font[6] > 16 || font[7] != 8 ||
+                font[8] != 0 || font[9] != 0 || font.size() != 10u + 95u * font[6])
+                throw std::runtime_error("unexpected BIOS fallback font layout: " + name);
+            const unsigned height = font[6];
+            auto &glyphs = state.bios_fonts[height];
+            for (unsigned c = 0x21; c <= 0x7f; ++c)
+                std::copy_n(font.begin() + 10 + (c - 0x21) * height, height, glyphs[c].begin());
+            std::cerr << "BIOS fallback font: " << name << " (8x" << std::dec << height << ")\n";
         }
+        if (const auto font = state.font_for(16); font != state.bios_fonts.end())
+            for (unsigned c = 0x21; c <= 0x7f; ++c)
+                state.vga.text_font(c, std::span(font->second[c]).first(font->first));
         uc_hook hook;
         check(uc_hook_add(engine.uc, &hook, UC_HOOK_INTR, reinterpret_cast<void *>(interrupt),
                           &state, 1, 0));

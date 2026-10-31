@@ -90,12 +90,33 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(struct.unpack_from('<7H', result.memory, base+4),
                          (0xffff, 3, 0, 100, 20, 0, 0))
 
+    def test_bios_font_uses_executable_prefix_and_native_height(self):
+        # No Gateway assets: a mixed-case TEST_200 font has distinct adjacent rows.
+        font = bytearray(10 + 95 * 16)
+        font[:10] = bytes.fromhex('010101217f0010080000')
+        offset = 10 + (ord('L') - 0x21) * 16
+        font[offset] = 0x80
+        font[offset + 1] = 0x40
+        code = bytes.fromhex('b81200cd10bb0f00b90100b84c09cd10b8004ccd21')
+        result = self.run_guest(code, {'test_200.fnt': bytes(font)}, dump=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        _, pixels = result.picture.split(b'255\n', 1)
+        self.assertEqual(pixels[:6], b'\xff\xff\xff\0\0\0')
+        self.assertEqual(pixels[640*3:640*3+6], b'\0\0\0\xff\xff\xff')
+
+    def test_bios_font_rejects_truncated_native_height(self):
+        font = bytearray(self.text_font_fixture())
+        font[6] = 16
+        result = self.run_guest(bytes.fromhex('b8004ccd21'), {'TEST_200.FNT': bytes(font)})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('unexpected BIOS fallback font layout', result.stderr)
+
     def test_graphics_to_text_bios_character(self):
         # Reproduce the reported mode-12 -> mode-3 -> cursor query -> AH=09h sequence.
         code = bytes.fromhex(
             'b81200cd10ba4e01b402cd10b80300cd1031dbb403cd10'
             'b84709bb0f00b90200cd10b8004ccd21')
-        result = self.run_guest(code, {'GATE_000.FNT': self.text_font_fixture()}, dump=True)
+        result = self.run_guest(code, {'TEST_000.FNT': self.text_font_fixture()}, dump=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.memory[0xb8000:0xb8006], b'G\x0fG\x0f \x07')
         self.assertEqual(result.memory[0x450:0x452], b'\0\0')  # Mode reset; AH=09h does not move cursor.
@@ -112,7 +133,7 @@ class ProbeTests(unittest.TestCase):
         code = bytes.fromhex(
             'b80300cd10bb0002ba4f00b402cd10b84709bb0f02b90200cd10'
             'b408cd10b80205cd10b8004ccd21')
-        result = self.run_guest(code, {'GATE_000.FNT': self.text_font_fixture()}, dump=True)
+        result = self.run_guest(code, {'TEST_000.FNT': self.text_font_fixture()}, dump=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.memory[0xba09e:0xba0a2], b'G\x0fG\x0f')
         self.assertEqual(result.memory[0xb8000:0xb8002], b' \x07')
@@ -123,7 +144,7 @@ class ProbeTests(unittest.TestCase):
 
     def test_text_memory_written_by_guest_is_presented(self):
         code = bytes.fromhex('b80300cd10b800b88ec026c7060000470fb8004ccd21')
-        result = self.run_guest(code, {'GATE_000.FNT': self.text_font_fixture()}, dump=True)
+        result = self.run_guest(code, {'TEST_000.FNT': self.text_font_fixture()}, dump=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         _, pixels = result.picture.split(b'255\n', 1)
         self.assertEqual(pixels[:3], b'\xff\xff\xff')
