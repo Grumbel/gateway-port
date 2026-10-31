@@ -161,6 +161,9 @@ bool SdlHost::poll(std::deque<std::uint16_t> &keys, Mouse &mouse, const Vga &vga
             const float y = motion ? event.motion.y : event.button.y;
             const int rows = vga.mode() == 3 ? 200 : vga.height();
             mouse.move(int(x * 640 / vga.width()), int(y * rows / vga.height()));
+            const bool outside = x < 0 || y < 0 || x >= vga.width() || y >= vga.height();
+            if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && outside)
+                continue;
             if (!motion) {
                 const auto button = event.button.button;
                 const unsigned index = button == SDL_BUTTON_LEFT    ? 0

@@ -44,6 +44,27 @@ int main() {
                 "short click retains press/release history");
         require(mouse.history[0].press_x == 320 && mouse.history[0].press_y == 240,
                 "press coordinates");
+        require(SDL_SetWindowSize(SDL_GetWindowFromID(window_id), 1280, 720), "resize");
+        SDL_PumpEvents();
+        host.present(vga, {});
+        host.poll(keys, mouse, vga);
+        event = {};
+        event.type = SDL_EVENT_MOUSE_MOTION;
+        event.motion.windowID = window_id;
+        event.motion.x = 310;
+        event.motion.y = 150;
+        require(SDL_PushEvent(&event), "push letterboxed motion");
+        host.poll(keys, mouse, vga);
+        require(mouse.x == 100 && mouse.y == 100, "letterbox offset and scaling");
+        event = {};
+        event.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+        event.button.windowID = window_id;
+        event.button.button = SDL_BUTTON_LEFT;
+        event.button.x = 20;
+        event.button.y = 150;
+        require(SDL_PushEvent(&event), "push click in black bar");
+        host.poll(keys, mouse, vga);
+        require(mouse.buttons == 0, "black-bar click reached guest UI");
         mouse.button(1, true);
         event = {};
         event.type = SDL_EVENT_WINDOW_FOCUS_LOST;
@@ -51,6 +72,7 @@ int main() {
         host.poll(keys, mouse, vga);
         require(mouse.buttons == 0 && mouse.history[1].releases == 1,
                 "focus loss releases held buttons");
+        mouse.motion_x = mouse.motion_y = 0;
         mouse.min_x = 10;
         mouse.max_x = 100;
         mouse.position(500, 0);
