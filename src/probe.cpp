@@ -56,6 +56,7 @@ struct State {
     std::array<std::array<std::uint8_t, 8>, 256> bios_font{};
     bool font_loaded = false;
     std::uint16_t cursor_shape = 0x0607;
+    std::uint16_t dta_segment = 0x0ff0, dta_offset = 0x80;
     std::uint8_t pending_dos_scan = 0;
     std::deque<std::uint16_t> keys;
     std::set<unsigned> polled_services;
@@ -354,6 +355,12 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             state.exited = true;
             state.exit_code = number == 0x20 ? 0 : ax & 255;
             check(uc_emu_stop(uc));
+        } else if (number == 0x21 && (ax >> 8) == 0x1a) {
+            state.dta_segment = reg(uc, UC_X86_REG_DS);
+            state.dta_offset = reg(uc, UC_X86_REG_DX);
+        } else if (number == 0x21 && (ax >> 8) == 0x2f) {
+            set(uc, UC_X86_REG_ES, state.dta_segment);
+            set(uc, UC_X86_REG_BX, state.dta_offset);
         } else if (number == 0x21 && (ax >> 8) == 0x52) {
             // DOS 5 list-of-lists subset: the first MCB segment is at ES:[BX-2].
             // Keep the information block below the process/environment allocations.

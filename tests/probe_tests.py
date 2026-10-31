@@ -116,6 +116,16 @@ class ProbeTests(unittest.TestCase):
         result = self.run_guest(code)
         self.assertIn('DOS exit code: 77', result.stdout, result.stderr)  # First MCB is 'M'.
 
+    def test_dos_dta_default_and_round_trip(self):
+        result = self.run_guest(bytes.fromhex('b42fcd21b8004ccd21'), dump=True)
+        self.assertEqual(int(result.registers['ES'], 16), 0x0ff0)
+        self.assertEqual(int(result.registers['BX'], 16), 0x80)
+        code = bytes.fromhex('0e1fba3412b41acd2131dbb42fcd21b8004ccd21')
+        result = self.run_guest(code, dump=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(int(result.registers['ES'], 16), 0x1000)
+        self.assertEqual(int(result.registers['BX'], 16), 0x1234)
+
     def test_vga_detection(self):
         result = self.run_guest(bytes.fromhex('b8001acd1089d8b44ccd21'))
         self.assertIn('DOS exit code: 8', result.stdout)
