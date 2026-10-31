@@ -189,3 +189,13 @@ python3 tools/trace_game_logic.py --scenario objects --services state --verify-o
 
 The [RTLink findings](docs/rtlink.md) describe all 58 sections, 13,947 fixups,
 parent/residency rules, and the live comparison against 187 native section loads.
+
+To supply section bytes and relocations from C++ while preserving native RTLink
+residency and returns, use the experimental host-loading replay:
+
+```sh
+python3 tools/trace_game_logic.py --scenario objects --services state --hle-overlays
+```
+
+It matches native execution while replacing all 187 section fills in that replay;
+see [host loading limits](docs/rtlink.md#opt-in-host-loading-step).

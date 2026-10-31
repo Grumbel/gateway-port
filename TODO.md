@@ -15,8 +15,10 @@
    the book. [Object-state services](docs/object-state.md) now cover flag writes,
    locations, all 734 object records and 696 handler entry points. Recover the
    remaining engine calls. [RTLink parsing](docs/rtlink.md) now maps all 58
-   section extents/fixups and verifies 187 native loads. Preserve parent, bank
-   residency and return-stack semantics before replacing the native manager.
+   section extents/fixups, verifies 187 native loads, and replaces their data/fixup
+   step under `--hle-overlays`. Parent, bank residency and return-stack handling
+   remain native. Trace remaining handler-to-engine calls and extend replay to
+   movement/save/restore before replacing the manager.
    DOS reads can load executable overlay sections; invalidate Unicorn's translated blocks after
    these writes. Keep regression coverage for replacement code execution.
 4. Validate AdLib playback and scheduler timing against DOSBox recordings.

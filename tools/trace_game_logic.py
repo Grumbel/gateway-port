@@ -13,7 +13,10 @@ parser.add_argument('--output', type=pathlib.Path, default=pathlib.Path('build/g
 parser.add_argument('--scenario', choices=['look', 'drawer', 'objects'], default='look')
 parser.add_argument('--services', choices=['flags', 'state'], default='flags')
 parser.add_argument('--verify-overlays', action='store_true')
+parser.add_argument('--hle-overlays', action='store_true', help='host section loading in HLE mode')
 args = parser.parse_args()
+if args.hle_overlays:
+    args.verify_overlays = True
 args.output.mkdir(parents=True, exist_ok=True)
 keys = [(10000, 0x3920), (11000, 0x3920), (12000, 0x3920)]
 keys += [(14000, 0x266c), (14100, 0x186f), (14200, 0x186f),
@@ -46,6 +49,8 @@ for mode in ['native', 'verify', 'hle']:
         command += ['--key-at', f'{time}:{key:04x}']
     if args.verify_overlays:
         command += ['--verify-overlays']
+    if args.hle_overlays and mode == 'hle':
+        command += ['--hle-overlays']
     if mode != 'native':
         command += ['--object-state' if args.services == 'state' else '--object-flags', mode]
     with prefix.with_suffix('.out').open('w') as out, prefix.with_suffix('.dos').open('w') as err:
@@ -56,6 +61,16 @@ for mode in ['native', 'verify', 'hle']:
         if not summary or int(summary[-1].split()[3]) == 0:
             raise RuntimeError('no supported RTLink loads verified')
         print(summary[-1])
+        if args.hle_overlays and mode == 'hle':
+            host = [line for line in lines if line.startswith('RTLink host loads: ')]
+            if not host or int(host[-1].split()[3]) == 0:
+                raise RuntimeError('no sections loaded through the host')
+            print(host[-1])
+        if args.hle_overlays and mode == 'hle':
+            trace_lines = prefix.with_suffix('.trace').read_text().splitlines()
+            if any(line.startswith('read ') and 'file=C:\\GATEMAIN.OVL ' in line
+                   for line in trace_lines):
+                raise RuntimeError('native DOS overlay reads remain in the host-loading replay')
         overlay_sequences.append([line.split(' section=', 1)[1]
                                   for line in prefix.with_suffix('.trace').read_text().splitlines()
                                   if line.startswith('overlay-load ')])

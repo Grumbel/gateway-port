@@ -13,7 +13,7 @@ An opt-in verifier compares that reconstruction with the bytes produced by the
 original RTLink loader after each native load.
 
 This supplies section images and relocation metadata suitable for disassembly
-and a future host loader. It does not replace RTLink residency/return-stack
+and an experimental host replacement for reading/relocating sections. It does not replace RTLink residency/return-stack
 management or produce independent story-only binaries. Engine and story code
 remain mixed within the overlay file, and handlers still call resident services
 and access the guest data segment.
@@ -102,8 +102,8 @@ bounded first-room replay.
 `apply_rtlink()` in [rtlink.cpp](../src/rtlink.cpp) validates before writing,
 loads relocated file bytes, preserves the absent tail, and clears only BSS.
 It deliberately leaves parent loading, residency bits, return-stack management,
-and Unicorn code-cache invalidation to its caller. It is not wired in as a host
-replacement for the original manager yet.
+and Unicorn code-cache invalidation to its caller. It is used by the opt-in host loading step described below; the surrounding
+manager still runs in x86.
 
 ## Parent sections and lifetime
 
@@ -235,7 +235,71 @@ or save/restore, or execute independently extracted handlers.
 Trace the calls leaving the mapped handlers and identify the remaining resident
 service contracts. With stable `(section ID, entry offset)` identities, traces
 can distinguish a handler across bank reloads instead of confusing the same
-linear address with whichever module happens to occupy it. A host section loader
-can then replace native file reads/fixups while preserving residency, parent and
-return-frame semantics; dropping the original manager before that would lose
-required call/return behavior.
+linear address with whichever module happens to occupy it. The host loading step below replaces native file reads/fixups while preserving
+the surrounding manager. Replacing that manager itself still requires its
+residency, parent and return-frame semantics.
+
+## Opt-in host loading step
+
+A follow-up now uses `apply_rtlink()` to supply section contents during gameplay:
+
+```sh
+python3 tools/trace_game_logic.py --scenario objects --services state \
+  --hle-overlays --output build/rtlink-host-replay
+```
+
+The tool runs native loading in its native/verification modes and host loading
+in its HLE mode. It enables the completion verifier in all three. The underlying
+runtime flag `--hle-overlays` is also available on `gateway` and `gateway-probe`;
+it is disabled by default and automatically enables `--verify-overlays`.
+
+The host hook uses the same 605-byte native-loader fingerprint. It intercepts
+linear **`0x2c516`**, after the original file helper returns and before the code
+read/zero-fill/fixup body. At this point the native manager has already handled
+conflicting residency and file-handle setup. The host:
+
+1. Resolves the current section through the native directory record and checks
+   that its runtime destination matches the fixed linked segment plus `1000`.
+2. Reads the existing destination bytes, applies the checked section image,
+   relocations and BSS clearing, and writes the resulting reservation to Unicorn.
+   Keeping the old reservation preserves any absent paragraph tail.
+3. Invalidates translated code for the touched interval.
+4. Stops execution and resumes at `2c24:0447` (linear `0x2c687`), where the
+   completion verifier runs and the native manager marks residency, handles
+   parent loading and returns through its original machinery.
+
+The skipped body balances its own temporary pushes, so the entry frame is also
+the frame expected at the resume point. Native prologue/epilogue register saves
+and the overlay return stack stay in place. Native file opening/cache lookup,
+section eviction, parent loads, return-address rewriting and caller reloads
+remain native; parent section contents are filled by the same host hook when
+those native recursive calls reach it. This is a replacement of the loading
+body, **not the whole RTLink manager**.
+
+The original overlay DOS handle remains open, but its file position is no longer
+advanced by the skipped reads. The observed manager uses absolute seeks when
+it reads section data, and the bounded replay succeeds, but this is not a claim
+of equality of all DOS handle state or cache-driver behavior. Remapped section
+destinations fail rather than being treated as supported.
+
+Results for `look/open drawer/look/take book/inventory/drop book/close drawer/look`:
+
+| Measurement | Native / verification | Host-loading HLE |
+| --- | ---: | ---: |
+| Completed section loads | 187 | 187 |
+| Distinct loaded sections | 9 | 9 |
+| Native DOS reads from GATEMAIN.OVL | 711 | 0 |
+| Host section fills | 0 | 187 |
+| Object-service calls | 1434 | 1434 |
+
+Every completion passes the reconstructed-byte/BSS check. All three modes have
+the same section-load sequence, service-call sequence, all 734 object records,
+handler mappings, and final PPM hash reported above. The original x86 story and
+engine routines therefore run successfully with both object services and section
+contents supplied by C++ in this replay. All 17 CTest targets still pass.
+
+This does not validate a standalone story VM, replacement return-stack manager,
+all 58 sections in gameplay, save/restore, room movement, audible output, or
+cycle-accurate timing. Further work should trace remaining handler-to-engine
+calls using stable section/offset identities and expand the replay to movement
+and save/restore before enabling broader host replacement.
