@@ -1,5 +1,6 @@
 #include "dos_clock.hpp"
 #include "dos_fcb.hpp"
+#include "dos_files.hpp"
 #include "dos_memory.hpp"
 #include "mz.hpp"
 #include "opl.hpp"
@@ -12,6 +13,7 @@
 #include <cctype>
 #include <charconv>
 #include <chrono>
+#include <cstdlib>
 #include <ctime>
 #include <deque>
 #include <filesystem>
@@ -20,6 +22,7 @@
 #include <iostream>
 #include <iterator>
 #include <map>
+#include <memory>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -45,7 +48,8 @@ std::uint16_t reg(uc_engine *uc, int id) {
 void set(uc_engine *uc, int id, std::uint16_t value) { check(uc_reg_write(uc, id, &value)); }
 struct State {
     std::filesystem::path data_dir;
-    std::map<unsigned, std::ifstream> files;
+    std::unique_ptr<gateway::DosDrive> drive;
+    std::map<unsigned, gateway::DosFile> files;
     std::array<bool, 5> standard_open{true, true, true, true, true};
     gateway::DosMemory arena{0x0ff0, 0xa000, 0x0fd0};
     gateway::Vga vga;
@@ -79,25 +83,12 @@ std::string guest_filename(uc_engine *uc) {
     }
     throw std::runtime_error("unterminated DOS filename");
 }
-std::filesystem::path game_file(const State &state, std::string name) {
-    if (name.size() >= 2 && (name[0] == 'C' || name[0] == 'c') && name[1] == ':')
-        name.erase(0, 2);
-    if (!name.empty() && name[0] == '\\')
-        name.erase(0, 1);
-    if (name.empty() || name == "." || name == ".." ||
-        name.find_first_of("/\\:") != std::string::npos)
-        throw std::runtime_error("probe requires a flat game-directory filename");
-    auto upper = [](std::string text) {
-        for (auto &c : text)
-            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-        return text;
-    };
-    for (const auto &entry : std::filesystem::directory_iterator(state.data_dir)) {
-        if (upper(entry.path().filename().string()) == upper(name) && !entry.is_symlink() &&
-            entry.is_regular_file())
-            return entry.path();
-    }
-    return state.data_dir / name;
+unsigned free_file_handle(const State &state) {
+    for (unsigned handle = 0; handle < 20; ++handle)
+        if (!(handle < state.standard_open.size() && state.standard_open[handle]) &&
+            !state.files.contains(handle))
+            return handle;
+    throw gateway::DosIoError(4, "DOS handle table is full");
 }
 
 void hardware_failure(uc_engine *uc, State &state, const std::string &message) {
@@ -357,7 +348,6 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             check(uc_emu_stop(uc));
         } else if (number == 0x21 && ax == 0x4b03) {
             const auto name = guest_filename(uc);
-            const auto path = game_file(state, name);
             const auto parameters =
                 std::size_t(reg(uc, UC_X86_REG_ES)) * 16 + reg(uc, UC_X86_REG_BX);
             std::array<std::uint8_t, 4> block{};
@@ -367,28 +357,19 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             std::cerr << "  overlay: " << name << " load=" << std::hex << load_segment
                       << " relocation=" << relocation << '\n';
             unsigned error = 0;
-            if (std::filesystem::is_symlink(path) || !std::filesystem::is_regular_file(path))
-                error = 2;
-            else {
-                std::ifstream input(path, std::ios::binary);
-                if (!input)
-                    error = 5;
-                else {
-                    std::vector<std::uint8_t> bytes{std::istreambuf_iterator<char>(input), {}};
-                    std::vector<std::uint8_t> image;
-                    try {
-                        image = gateway::load_mz_overlay(bytes, load_segment, relocation);
-                    } catch (const std::out_of_range &) {
-                        error = 8;
-                    } catch (const std::runtime_error &) {
-                        error = 11;
-                    }
-                    if (!error && !image.empty()) {
-                        const auto base = std::size_t(load_segment) * 16;
-                        check(uc_mem_write(uc, base, image.data(), image.size()));
-                        check(uc_ctl_remove_cache(uc, base, base + image.size()));
-                    }
-                }
+            const auto bytes = state.drive->read_all(name);
+            std::vector<std::uint8_t> image;
+            try {
+                image = gateway::load_mz_overlay(bytes, load_segment, relocation);
+            } catch (const std::out_of_range &) {
+                error = 8;
+            } catch (const std::runtime_error &) {
+                error = 11;
+            }
+            if (!error && !image.empty()) {
+                const auto base = std::size_t(load_segment) * 16;
+                check(uc_mem_write(uc, base, image.data(), image.size()));
+                check(uc_ctl_remove_cache(uc, base, base + image.size()));
             }
             set(uc, UC_X86_REG_FLAGS, (reg(uc, UC_X86_REG_FLAGS) & ~1) | bool(error));
             set(uc, UC_X86_REG_AX, error);
@@ -483,85 +464,46 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
                 uc, std::size_t(reg(uc, UC_X86_REG_DS)) * 16 + reg(uc, UC_X86_REG_SI), &root, 1));
             set(uc, UC_X86_REG_FLAGS, reg(uc, UC_X86_REG_FLAGS) & ~1);
         } else if (number == 0x21 && (ax >> 8) == 0x43) {
-            unsigned error = 0;
             if ((ax & 255) == 1)
-                error = 5; // External original assets remain read-only.
-            else if ((ax & 255) != 0)
+                throw gateway::DosIoError(5, "setting file attributes is unsupported");
+            if ((ax & 255) != 0)
                 throw std::runtime_error("unsupported DOS attribute operation");
-            else {
-                const auto path = game_file(state, guest_filename(uc));
-                if (std::filesystem::is_symlink(path) || !std::filesystem::is_regular_file(path))
-                    error = 2;
-                else
-                    set(uc, UC_X86_REG_CX, 0x21); // Read-only, archive.
-            }
-            if (error)
-                set(uc, UC_X86_REG_AX, error);
-            set(uc, UC_X86_REG_FLAGS, (reg(uc, UC_X86_REG_FLAGS) & ~1) | bool(error));
-        } else if (number == 0x21 && (ax >> 8) == 0x3d) {
+            set(uc, UC_X86_REG_CX, state.drive->attributes(guest_filename(uc)));
+            set(uc, UC_X86_REG_FLAGS, reg(uc, UC_X86_REG_FLAGS) & ~1);
+        } else if (number == 0x21 && ((ax >> 8) == 0x3d || (ax >> 8) == 0x3c)) {
             const auto name = guest_filename(uc);
-            std::cerr << "  open: " << name << '\n';
-            const auto path = game_file(state, name);
-            const auto flags = reg(uc, UC_X86_REG_FLAGS);
-            const auto access = ax & 3;
-            unsigned error = 0;
-            std::ifstream input;
-            if (access == 3)
-                error = 12; // Invalid DOS access mode.
-            else if (std::filesystem::is_symlink(path) || !std::filesystem::is_regular_file(path))
-                error = 2;
-            else if (access != 0)
-                error = 5; // Original assets are never writable.
-            else {
-                input.open(path, std::ios::binary);
-                if (!input.is_open())
-                    error = 5;
-            }
-            if (error) {
-                set(uc, UC_X86_REG_AX, error);
-                set(uc, UC_X86_REG_FLAGS, flags | 1);
-            } else {
-                unsigned handle = 0;
-                // DOS's default job-file table has 20 slots, including standard handles.
-                while (handle < 20 &&
-                       ((handle < state.standard_open.size() && state.standard_open[handle]) ||
-                        state.files.contains(handle)))
-                    ++handle;
-                if (handle == 20) {
-                    set(uc, UC_X86_REG_AX, 4); // Too many open files.
-                    set(uc, UC_X86_REG_FLAGS, flags | 1);
-                } else {
-                    state.files.emplace(handle, std::move(input));
-                    set(uc, UC_X86_REG_AX, handle);
-                    set(uc, UC_X86_REG_FLAGS, flags & ~1);
-                }
-            }
+            const bool create = (ax >> 8) == 0x3c;
+            std::cerr << (create ? "  create: " : "  open: ") << name << '\n';
+            const auto handle = free_file_handle(state);
+            state.files.emplace(handle, create ? state.drive->create(name, reg(uc, UC_X86_REG_CX))
+                                               : state.drive->open(name, ax & 3));
+            set(uc, UC_X86_REG_AX, handle);
+            set(uc, UC_X86_REG_FLAGS, reg(uc, UC_X86_REG_FLAGS) & ~1);
         } else if (number == 0x21 && (ax >> 8) == 0x40) {
             const auto handle = reg(uc, UC_X86_REG_BX);
-            const auto count = reg(uc, UC_X86_REG_CX);
-            if ((handle != 1 && handle != 2) || !state.standard_open[handle]) {
-                const bool valid =
-                    state.files.contains(handle) ||
-                    (handle < state.standard_open.size() && state.standard_open[handle]);
-                set(uc, UC_X86_REG_AX, valid ? 5 : 6);
-                set(uc, UC_X86_REG_FLAGS, reg(uc, UC_X86_REG_FLAGS) | 1);
-            } else {
-                std::vector<char> buffer(count);
-                if (count)
-                    check(uc_mem_read(
-                        uc, std::size_t(reg(uc, UC_X86_REG_DS)) * 16 + reg(uc, UC_X86_REG_DX),
-                        buffer.data(), count));
-                (handle == 1 ? std::cout : std::cerr).write(buffer.data(), count);
-                set(uc, UC_X86_REG_AX, count);
-                set(uc, UC_X86_REG_FLAGS, reg(uc, UC_X86_REG_FLAGS) & ~1);
-            }
+            auto found = state.files.find(handle);
+            const bool console = (handle == 1 || handle == 2) && state.standard_open[handle];
+            if (found == state.files.end() && !console)
+                throw gateway::DosIoError(6, "invalid DOS write handle");
+            std::vector<std::uint8_t> buffer(reg(uc, UC_X86_REG_CX));
+            if (!buffer.empty())
+                check(uc_mem_read(uc,
+                                  std::size_t(reg(uc, UC_X86_REG_DS)) * 16 + reg(uc, UC_X86_REG_DX),
+                                  buffer.data(), buffer.size()));
+            std::size_t count = buffer.size();
+            if (found != state.files.end())
+                count = found->second.write(buffer);
+            else
+                (handle == 1 ? std::cout : std::cerr)
+                    .write(reinterpret_cast<const char *>(buffer.data()), count);
+            set(uc, UC_X86_REG_AX, count);
+            set(uc, UC_X86_REG_FLAGS, reg(uc, UC_X86_REG_FLAGS) & ~1);
         } else if (number == 0x21 && (ax >> 8) == 0x3f) {
             auto found = state.files.find(reg(uc, UC_X86_REG_BX));
             if (found == state.files.end())
-                throw std::runtime_error("invalid read handle");
-            std::vector<char> buffer(reg(uc, UC_X86_REG_CX));
-            found->second.read(buffer.data(), buffer.size());
-            auto count = found->second.gcount();
+                throw gateway::DosIoError(6, "invalid DOS read handle");
+            std::vector<std::uint8_t> buffer(reg(uc, UC_X86_REG_CX));
+            const auto count = found->second.read(buffer);
             if (count)
                 check(uc_mem_write(
                     uc, std::size_t(reg(uc, UC_X86_REG_DS)) * 16 + reg(uc, UC_X86_REG_DX),
@@ -570,18 +512,11 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             set(uc, UC_X86_REG_FLAGS, reg(uc, UC_X86_REG_FLAGS) & ~1);
         } else if (number == 0x21 && (ax >> 8) == 0x42) {
             auto found = state.files.find(reg(uc, UC_X86_REG_BX));
-            if (found == state.files.end() || (ax & 255) > 2)
-                throw std::runtime_error("invalid seek handle or origin");
+            if (found == state.files.end())
+                throw gateway::DosIoError(6, "invalid DOS seek handle");
             const auto offset = static_cast<std::int32_t>(
                 (std::uint32_t(reg(uc, UC_X86_REG_CX)) << 16) | reg(uc, UC_X86_REG_DX));
-            const auto origin = (ax & 255) == 0   ? std::ios::beg
-                                : (ax & 255) == 1 ? std::ios::cur
-                                                  : std::ios::end;
-            found->second.clear();
-            found->second.seekg(offset, origin);
-            if (!found->second)
-                throw std::runtime_error("DOS seek failed");
-            const auto position = static_cast<std::uint32_t>(found->second.tellg());
+            const auto position = found->second.seek(offset, ax & 255);
             set(uc, UC_X86_REG_AX, position & 65535);
             set(uc, UC_X86_REG_DX, position >> 16);
             set(uc, UC_X86_REG_FLAGS, reg(uc, UC_X86_REG_FLAGS) & ~1);
@@ -630,6 +565,15 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             state.failure = "unsupported interrupt/service (see trace)";
             check(uc_emu_stop(uc));
         }
+    } catch (const gateway::DosIoError &e) {
+        std::cerr << "  DOS file error " << std::dec << e.code << ": " << e.what() << std::hex
+                  << '\n';
+        try {
+            set(uc, UC_X86_REG_AX, e.code);
+            set(uc, UC_X86_REG_FLAGS, reg(uc, UC_X86_REG_FLAGS) | 1);
+        } catch (const std::exception &failure) {
+            hardware_failure(uc, state, failure.what());
+        }
     } catch (const std::exception &e) {
         state.failure = e.what();
         uc_emu_stop(uc);
@@ -641,6 +585,11 @@ int main(int argc, char **argv) {
 #ifdef GATEWAY_SDL
     interactive = true;
 #endif
+    bool writable_state = false;
+#ifdef GATEWAY_SDL
+    writable_state = true;
+#endif
+    std::filesystem::path state_directory;
     unsigned milliseconds = 0;
     std::string dump_prefix;
     std::string game_args;
@@ -649,7 +598,7 @@ int main(int argc, char **argv) {
     auto usage = [] {
         std::cout << "Usage: gateway[-probe] <DOS executable> [--headless] "
                      "[--milliseconds N] [--dump-prefix PATH] [--game-args TEXT] [--press KEY] "
-                     "[--break-at HEX]\n";
+                     "[--break-at HEX] [--state-dir DIR | --read-only]\n";
     };
     if (argc < 2 || std::string(argv[1]) == "--help") {
         usage();
@@ -659,7 +608,17 @@ int main(int argc, char **argv) {
         const std::string option = argv[i];
         if (option == "--headless")
             interactive = false;
-        else if (option == "--break-at" && i + 1 < argc) {
+        else if (option == "--read-only") {
+            writable_state = false;
+            state_directory.clear();
+        } else if (option == "--state-dir" && i + 1 < argc) {
+            state_directory = argv[++i];
+            if (state_directory.empty()) {
+                usage();
+                return 2;
+            }
+            writable_state = true;
+        } else if (option == "--break-at" && i + 1 < argc) {
             const std::string value = argv[++i];
             const auto result =
                 std::from_chars(value.data(), value.data() + value.size(), breakpoint, 16);
@@ -755,6 +714,18 @@ int main(int argc, char **argv) {
         set(engine.uc, UC_X86_REG_ES, image.es);
         set(engine.uc, UC_X86_REG_FLAGS, 0x202);
         state.data_dir = std::filesystem::absolute(argv[1]).parent_path();
+        if (writable_state && state_directory.empty()) {
+            const auto xdg = std::getenv("XDG_STATE_HOME"), home = std::getenv("HOME");
+            if (xdg && *xdg && std::filesystem::path(xdg).is_absolute())
+                state_directory = std::filesystem::path(xdg) / "gateway-port";
+            else if (home && *home)
+                state_directory = std::filesystem::path(home) / ".local/state/gateway-port";
+            else
+                throw std::runtime_error("set --state-dir when HOME/XDG_STATE_HOME is unavailable");
+        }
+        state.drive = std::make_unique<gateway::DosDrive>(state.data_dir, state_directory);
+        if (writable_state)
+            std::cerr << "DOS state directory: " << state.drive->state_directory() << '\n';
         std::ifstream font_file(state.data_dir / "GATE_000.FNT", std::ios::binary);
         if (font_file) {
             std::vector<std::uint8_t> font{std::istreambuf_iterator<char>(font_file), {}};

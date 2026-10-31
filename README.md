@@ -19,7 +19,8 @@ This is an original-code runtime, **not yet a playable port**. It provides:
 - `gateway-extract`, which converts PIC files to indexed PNGs.
 
 Original game files remain external in `../gateway-dos/` and are never needed
-for package builds or unit tests. The probe opens game files read-only.
+for package builds or unit tests. The probe opens game files read-only unless given `--state-dir`; the SDL runtime
+keeps writes in a separate persistent state directory.
 
 ## Build and run
 
@@ -108,7 +109,7 @@ Close the window to stop. Escape, Space, Enter, letters, digits, arrow keys,
 and common punctuation are forwarded to the guest BIOS keyboard queue. Mouse
 input, normal DOS child EXEC, and broader gameplay remain pending. Escape now
 loads the main executable through the original overlay trampoline; main startup
-still stops at `RESTART.DAT` creation until writable guest state is implemented. The intro reaches
+creates `RESTART.DAT` in writable state and currently reaches DOS file enumeration. The intro reaches
 its initial Legend title text; this does not establish complete intro playback.
 
 For a bounded capture (1–60000 ms of virtual guest time):
@@ -121,3 +122,14 @@ For a bounded capture (1–60000 ms of virtual guest time):
 The scheduler currently advances 1 ms per 5,000 guest instructions (5 MIPS),
 using 16 ms presentation/audio blocks. Timing remains provisional. Dummy-driver
 integration tests exercise real guest VGA instructions through the SDL runtime.
+
+Writable game state defaults to `$XDG_STATE_HOME/gateway-port`, or
+`$HOME/.local/state/gateway-port` when XDG state is unset. Override it with
+`--state-dir DIR`; use `--read-only` for a run without guest writes. Original
+assets remain unchanged, including when a writable name shadows an asset.
+For a probe with local state:
+
+```sh
+./build/gateway-probe ../gateway-dos/GATE.EXE --press escape \
+  --state-dir build/runtime-state --milliseconds 18000 --dump-prefix build/main
+```

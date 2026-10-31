@@ -25,3 +25,20 @@ DOS subdirectories, and file locking are not modeled yet.
 Backend tests use temporary directories and cover copy-on-write, persistent
 read precedence, creation/truncation/extension, mixed read/write positioning,
 case-insensitive lookup, access modes, and preservation of linked/original files.
+
+## Runtime integration
+
+`gateway` enables persistent state by default at `$XDG_STATE_HOME/gateway-port`
+or, when unset, `$HOME/.local/state/gateway-port`. `--state-dir DIR` selects an
+explicit directory, and `--read-only` disables guest file creation/modification.
+`gateway-probe` stays read-only unless `--state-dir` is supplied. Neither runtime
+creates a state directory until a writable file is requested.
+
+DOS create/open/read/write/seek/close and attribute queries use this backend.
+Create returns a read/write handle; zero-length file writes resize at the current
+position. Expected I/O failures return DOS carry/error results instead of stopping
+emulation. Executable overlay reads also see the same state-first drive view.
+
+An original Escape-to-main replay creates a 21,757-byte `RESTART.DAT` in the
+explicit state directory, then reaches DOS find-first (`AH=4Eh`). This confirms
+runtime state generation; the restart-file schema is not yet decoded.

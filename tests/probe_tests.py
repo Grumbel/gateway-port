@@ -11,20 +11,28 @@ PROBE = sys.argv.pop(1)
 
 
 class ProbeTests(unittest.TestCase):
-    def run_guest(self, code, files=None, dump=False, game_args=None, press=None, break_at=None):
+    def run_guest(self, code, files=None, dump=False, game_args=None, press=None, break_at=None, state=False, state_files=None):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
+            assets = root / 'assets'
+            assets.mkdir()
             for name, data in (files or {}).items():
-                (root / name).write_bytes(data)
+                (assets / name).write_bytes(data)
+            if state_files is not None:
+                (root / 'state').mkdir()
+                for name, data in state_files.items():
+                    (root / 'state' / name).write_bytes(data)
             # 32-byte MZ header, one paragraph of code padding, 256-byte stack.
             header = bytearray(32)
             total = 32 + len(code)
             struct.pack_into('<14H', header, 0, 0x5A4D, total % 512,
                              (total + 511) // 512, 0, 2, 32, 0xFFFF,
                              (len(code) + 15) // 16, 256, 0, 0, 0, 28, 0)
-            exe = root / 'TEST.EXE'
+            exe = assets / 'TEST.EXE'
             exe.write_bytes(header + code)
             command = [PROBE, str(exe)]
+            if state or state_files is not None:
+                command += ['--state-dir', str(root / 'state')]
             if break_at is not None:
                 command += ['--break-at', break_at]
             if press is not None:
@@ -39,7 +47,9 @@ class ProbeTests(unittest.TestCase):
                 result.memory = (root / 'snapshot.bin').read_bytes()
                 result.registers = dict(line.split('=') for line in
                                         (root / 'snapshot.regs').read_text().splitlines())
-            result.files = {name: (root / name).read_bytes() for name in (files or {})}
+            result.files = {name: (assets / name).read_bytes() for name in (files or {})}
+            result.state_files = {path.name: path.read_bytes() for path in (root / 'state').glob('*')
+                                  if path.is_file()}
             return result
 
     @staticmethod
@@ -183,6 +193,42 @@ class ProbeTests(unittest.TestCase):
         result = self.run_guest(code + b'TEST.DAT\0', {'TEST.DAT': b'original'})
         self.assertIn('DOS exit code: 5', result.stdout, result.stderr)
         self.assertEqual(result.files['TEST.DAT'], b'original')
+
+    def test_dos_create_write_seek_read_state(self):
+        code = bytearray.fromhex('0e1f31c9ba0000b43ccd2189c3b90500ba0000b440cd21'
+                                 'b8004231c931d2cd21b90500ba0002b43fcd21b43ecd21b8004ccd21')
+        name, data = b'RESTART.DAT\0', b'hello'
+        struct.pack_into('<H', code, 5, len(code))
+        struct.pack_into('<H', code, 17, len(code) + len(name))
+        result = self.run_guest(code + name + data, state=True, dump=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.state_files['RESTART.DAT'], b'hello')
+        self.assertEqual(result.memory[0x10200:0x10205], b'hello')
+        self.assertNotIn('RESTART.DAT', result.files)
+
+    def test_dos_zero_write_truncates_saved_state(self):
+        code = bytearray.fromhex('0e1fba0000b8023dcd2189c3b8004231c9ba0200cd2131c9b440cd21b8004ccd21')
+        struct.pack_into('<H', code, 3, len(code))
+        result = self.run_guest(code + b'RESTART.DAT\0', state_files={'RESTART.DAT': b'hello'})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.state_files['RESTART.DAT'], b'he')
+
+    def test_dos_write_copies_asset_to_state(self):
+        code = bytearray.fromhex('0e1fba0000b8023dcd2189c3b90100ba0000b440cd21b43ecd21b8004ccd21')
+        name = b'data.dat\0'
+        struct.pack_into('<H', code, 3, len(code))
+        struct.pack_into('<H', code, 16, len(code) + len(name))
+        result = self.run_guest(code + name + b'Z', files={'Data.DAT': b'ABCDE'}, state=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.files['Data.DAT'], b'ABCDE')
+        self.assertEqual(result.state_files['DATA.DAT'], b'ZBCDE')
+
+    def test_dos_create_without_state_reports_access_denied(self):
+        code = bytearray.fromhex('0e1f31c9ba0000b43ccd21b44ccd21')
+        struct.pack_into('<H', code, 5, len(code))
+        result = self.run_guest(code + b'RESTART.DAT\0')
+        self.assertIn('DOS exit code: 5', result.stdout, result.stderr)
+        self.assertEqual(result.state_files, {})
 
     def test_vga_detection(self):
         result = self.run_guest(bytes.fromhex('b8001acd1089d8b44ccd21'))

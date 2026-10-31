@@ -9,15 +9,17 @@ import tempfile
 def run_guest(code, milliseconds=32, files=None):
     with tempfile.TemporaryDirectory() as directory:
         root = pathlib.Path(directory)
+        assets = root / 'assets'
+        assets.mkdir()
         for name, data in (files or {}).items():
-            (root / name).write_bytes(data)
+            (assets / name).write_bytes(data)
         header = bytearray(32)
         struct.pack_into('<14H', header, 0, 0x5A4D, 32 + len(code), 1, 0, 2, 32,
                          0xFFFF, 2, 256, 0, 0, 0, 28, 0)
-        exe = root / 'VIDEO.EXE'
+        exe = assets / 'VIDEO.EXE'
         exe.write_bytes(header + code)
         prefix = root / 'frame'
-        result = subprocess.run([sys.argv[1], str(exe), '--milliseconds', str(milliseconds),
+        result = subprocess.run([sys.argv[1], str(exe), '--state-dir', str(root / 'state'), '--milliseconds', str(milliseconds),
                                  '--dump-prefix', str(prefix)], capture_output=True,
                                 text=True, timeout=15)
         if result.returncode:
