@@ -5,7 +5,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'tools'))
-from inspect_object_state import inspect_objects, HANDLER_FIELDS
+from inspect_object_state import inspect_objects, map_handler_entries, HANDLER_FIELDS
 
 
 class ObjectStateExportTests(unittest.TestCase):
@@ -47,6 +47,22 @@ class ObjectStateExportTests(unittest.TestCase):
         self.assertNotIn('handler_entry', objects[2])
         self.assertNotIn('location', objects[0])
         self.assertIn('location', objects[1])
+
+    def test_handler_file_mapping_and_rejected_targets(self):
+        objects = inspect_objects(self.memory, self.ds)
+        manifest = dict(sections=[dict(id=0x26, runtime_segment=0x4990,
+                        filename='TEST.OVL', image_file_offset=0x51480, file_bytes=0x100)])
+        mapped = map_handler_entries(objects, manifest)
+        self.assertEqual(mapped[0]['native_code']['file_offset'], 0x514b5)
+        self.assertNotIn('native_code', mapped[2])
+        self.assertNotIn('native_code', objects[0])
+        manifest['sections'][0]['file_bytes'] = 0x35
+        with self.assertRaises(ValueError):
+            map_handler_entries(objects, manifest)
+        with self.assertRaises(ValueError):
+            map_handler_entries(objects, dict(sections=[]))
+        with self.assertRaises(ValueError):
+            map_handler_entries(objects, dict(sections=manifest['sections'] * 2))
 
     def test_changed_record_is_visible_in_export(self):
         before = inspect_objects(self.memory, self.ds)

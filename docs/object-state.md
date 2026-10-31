@@ -185,3 +185,11 @@ trace calls leaving those handlers to enumerate the remaining service ABI.
 Keeping the guest state and original loader remains necessary until that mapping
 is complete. Room movement and save/restore should be added to the comparison
 suite before enabling a broader host-state replacement.
+
+## Follow-up: section extents and fixups
+
+The [RTLink investigation](rtlink.md) now maps all 696 handler entries to exact
+OVL file offsets, extracts all 58 section images, and checks all 13,947 fixups.
+The same replay verifies 187 live native loads across nine sections with no
+byte differences. Use `--overlay-map build/rtlink-manifest.json` with the object
+exporter to include `native_code` file/section/entry fields in its JSON.

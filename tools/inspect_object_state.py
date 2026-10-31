@@ -72,10 +72,36 @@ def inspect_objects(memory, ds, names=None):
     return result
 
 
+def map_handler_entries(objects, manifest):
+    sections = {s['id']: s for s in manifest['sections']}
+    if len(sections) != len(manifest['sections']):
+        raise ValueError('duplicate RTLink section IDs')
+    mapped = []
+    for obj in objects:
+        item = dict(obj)
+        if item['handler']:
+            if 'rtlink_stub' not in item:
+                raise ValueError('handler has no recognized RTLink trampoline')
+            stub = item['rtlink_stub']
+            section = sections.get(stub['section_word'])
+            if section is None:
+                raise ValueError('handler section absent from overlay manifest')
+            image_offset = ((stub['target_segment'] - section['runtime_segment']) * 16 +
+                            stub['target_offset'])
+            if not 0 <= image_offset < section['file_bytes']:
+                raise ValueError('handler target outside file-backed section bytes')
+            item['native_code'] = dict(section=section['id'], filename=section['filename'],
+                                       image_offset=image_offset,
+                                       file_offset=section['image_file_offset'] + image_offset)
+        mapped.append(item)
+    return mapped
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('snapshot', type=pathlib.Path, help='probe dump prefix, without .bin')
     parser.add_argument('--names', type=pathlib.Path, help='optional original OBJECT.DAT')
+    parser.add_argument('--overlay-map', type=pathlib.Path, help='gateway-overlay JSON manifest')
     args = parser.parse_args()
     regs = dict(line.split('=') for line in args.snapshot.with_suffix('.regs').read_text().splitlines())
     names = None
@@ -85,6 +111,8 @@ def main():
             raise ValueError('invalid OBJECT.DAT size header')
         names = file[2:]
     objects = inspect_objects(args.snapshot.with_suffix('.bin').read_bytes(), int(regs['DS'], 16), names)
+    if args.overlay_map:
+        objects = map_handler_entries(objects, json.loads(args.overlay_map.read_text()))
     print(json.dumps(dict(objects=objects, object_count=len(objects),
                           handler_count=len({o['handler'] for o in objects if o['handler']})), indent=2))
 

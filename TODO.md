@@ -13,8 +13,10 @@
    traces through action and room handler tables, and an opt-in object-flag HLE
    matches native execution across opening/closing the drawer and taking/dropping
    the book. [Object-state services](docs/object-state.md) now cover flag writes,
-   locations, all 734 object records and 696 handler entry points. Recover RTLink
-   section directories and the remaining engine calls.
+   locations, all 734 object records and 696 handler entry points. Recover the
+   remaining engine calls. [RTLink parsing](docs/rtlink.md) now maps all 58
+   section extents/fixups and verifies 187 native loads. Preserve parent, bank
+   residency and return-stack semantics before replacing the native manager.
    DOS reads can load executable overlay sections; invalidate Unicorn's translated blocks after
    these writes. Keep regression coverage for replacement code execution.
 4. Validate AdLib playback and scheduler timing against DOSBox recordings.
@@ -49,7 +51,9 @@ Next, in order:
    `0xf0000000 | (segment << 10) | string_index`. The text lookup routine now
    confirms that split.
    The [object-state inventory](docs/object-state.md) now maps the 696 handler
-   entries and all name tokens. Map RTLink extents and remaining shared services;
+   entries and all name tokens. [RTLink extraction](docs/rtlink.md) now resolves
+   all handler file offsets, section images and relocation sites. Trace calls
+   leaving handlers to identify the remaining shared services;
    no story-bytecode VM has been identified.
 2. Find what uses the 91 `VOCAB.DAT` link groups; they may tie words to actions.
 3. Compare extracted colors, overlays, and the series used in each display mode

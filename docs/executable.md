@@ -115,3 +115,13 @@ A replay with `--press escape --milliseconds 18000` now completes the
 [list-of-lists, DTA, FCB, and overlay-load handoff](dos-handoff.md). Original
 trampoline code transfers execution into `GATEMAIN.EXE`; its startup creates
 `RESTART.DAT` in writable state and reaches Your Quarters.
+
+## RTLink section directory and fixups
+
+[RTLink section analysis](rtlink.md) now locates the main manager at EXE file
+`0xa020`; its directory starts at `0xac3f` and holds 58 populated records plus
+an empty sentinel. The external
+OVL contains 13,947 relocation records despite the zero MZ relocation count.
+A checked parser reconstructs all sections, and an opt-in live verifier matches
+187 native loads during the object-state replay. Engine/story handler pointers
+can now be mapped to exact OVL file offsets instead of transient bank addresses.

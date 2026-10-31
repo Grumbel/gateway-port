@@ -12,6 +12,7 @@ parser.add_argument('--data', type=pathlib.Path, default=pathlib.Path('../gatewa
 parser.add_argument('--output', type=pathlib.Path, default=pathlib.Path('build/game-logic'))
 parser.add_argument('--scenario', choices=['look', 'drawer', 'objects'], default='look')
 parser.add_argument('--services', choices=['flags', 'state'], default='flags')
+parser.add_argument('--verify-overlays', action='store_true')
 args = parser.parse_args()
 args.output.mkdir(parents=True, exist_ok=True)
 keys = [(10000, 0x3920), (11000, 0x3920), (12000, 0x3920)]
@@ -32,6 +33,7 @@ if args.scenario == 'objects':
 hashes = []
 service_sequences = []
 object_states = []
+overlay_sequences = []
 for mode in ['native', 'verify', 'hle']:
     prefix = args.output / mode
     command = [str(args.probe.resolve()), str(args.data.resolve() / 'GATE.EXE'),
@@ -42,10 +44,21 @@ for mode in ['native', 'verify', 'hle']:
                '--dump-prefix', str(prefix)]
     for time, key in sorted(keys):
         command += ['--key-at', f'{time}:{key:04x}']
+    if args.verify_overlays:
+        command += ['--verify-overlays']
     if mode != 'native':
         command += ['--object-state' if args.services == 'state' else '--object-flags', mode]
     with prefix.with_suffix('.out').open('w') as out, prefix.with_suffix('.dos').open('w') as err:
         subprocess.run(command, stdout=out, stderr=err, check=True, timeout=180)
+    if args.verify_overlays:
+        lines = prefix.with_suffix('.dos').read_text().splitlines()
+        summary = [line for line in lines if line.startswith('RTLink verified loads: ')]
+        if not summary or int(summary[-1].split()[3]) == 0:
+            raise RuntimeError('no supported RTLink loads verified')
+        print(summary[-1])
+        overlay_sequences.append([line.split(' section=', 1)[1]
+                                  for line in prefix.with_suffix('.trace').read_text().splitlines()
+                                  if line.startswith('overlay-load ')])
     if mode != 'native':
         log = prefix.with_suffix('.dos').read_text()
         summary = [line for line in log.splitlines() if line.startswith('Object flag ')]
@@ -66,6 +79,8 @@ for mode in ['native', 'verify', 'hle']:
     regs = dict(line.split('=') for line in prefix.with_suffix('.regs').read_text().splitlines())
     object_states.append(inspect_objects(prefix.with_suffix('.bin').read_bytes(), int(regs['DS'], 16)))
     print(f'{mode} framebuffer SHA-256: {digest}')
+if args.verify_overlays and not overlay_sequences[0] == overlay_sequences[1] == overlay_sequences[2]:
+    raise RuntimeError('native, verification and HLE overlay-load sequences differ')
 if object_states[0] != object_states[1] or object_states[0] != object_states[2]:
     raise RuntimeError('final object records or handler mappings differ')
 if len(set(hashes)) != 1:

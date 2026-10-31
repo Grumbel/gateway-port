@@ -178,3 +178,14 @@ python3 tools/inspect_object_state.py build/game-logic/hle \
 
 See [object-state findings](docs/object-state.md) for the 696 recovered handler
 entry points, service contracts, name mapping, and validation limits.
+
+RTLink sections and all handler entry file offsets can now be extracted:
+
+```sh
+./build/gateway-overlay ../gateway-dos/GATEMAIN.EXE ../gateway-dos/GATEMAIN.OVL \
+  --output build/rtlink-sections --fixups > build/rtlink-manifest.json
+python3 tools/trace_game_logic.py --scenario objects --services state --verify-overlays
+```
+
+The [RTLink findings](docs/rtlink.md) describe all 58 sections, 13,947 fixups,
+parent/residency rules, and the live comparison against 187 native section loads.

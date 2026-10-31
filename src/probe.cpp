@@ -8,6 +8,7 @@
 #include "object_flags.hpp"
 #include "opl.hpp"
 #include "pit.hpp"
+#include "rtlink.hpp"
 #include "vga.hpp"
 #ifdef GATEWAY_SDL
 #include "sdl_host.hpp"
@@ -57,6 +58,9 @@ struct State {
     std::map<unsigned, std::string> file_names;
     std::ofstream research_trace;
     unsigned elapsed_ms = 0;
+    bool overlays_active = false;
+    std::optional<gateway::RtlinkDirectory> overlays;
+    std::vector<unsigned> overlay_loads;
     std::string object_flags_mode;
     bool object_state_services = false;
     std::array<unsigned, 5> object_service_calls{};
@@ -265,6 +269,60 @@ bool dispatch(uc_engine *uc, unsigned number) {
     set(uc, UC_X86_REG_CS, vector[1]);
     set(uc, UC_X86_REG_IP, vector[0]);
     return true;
+}
+
+// Native load completion: code read, BSS cleared, and all RTLink fixups applied.
+void verify_overlay(uc_engine *uc, std::uint64_t, std::uint32_t, void *opaque) noexcept {
+    auto &state = *static_cast<State *>(opaque);
+    try {
+        std::array<std::uint8_t, 605> code{};
+        check(uc_mem_read(uc, 0x2c45c, code.data(), code.size()));
+        std::uint64_t hash = 14695981039346656037ull;
+        for (auto byte : code)
+            hash = (hash ^ byte) * 1099511628211ull;
+        if (hash != 0xce5135d0c5b49771ull || reg(uc, UC_X86_REG_CS) != 0x2c24 ||
+            reg(uc, UC_X86_REG_DS) != 0x2c24) {
+            if (state.overlays_active)
+                throw std::runtime_error("RTLink loader fingerprint changed");
+            return; // Intro code may use the same linear address before main loads.
+        }
+        state.overlays_active = true;
+        if (!state.overlays) {
+            state.overlays = gateway::parse_rtlink(state.drive->read_all("GATEMAIN.EXE"),
+                                                   state.drive->read_all("GATEMAIN.OVL"));
+            state.overlay_loads.resize(state.overlays->sections.size());
+        }
+        std::uint16_t record;
+        check(uc_mem_read(uc, 0x2c240 + 0xa8a, &record, 2));
+        if (record < 0xc1f || (record - 0xc1f) % 18)
+            throw std::runtime_error("invalid live RTLink section record");
+        const auto id = unsigned(record - 0xc1f) / 18;
+        if (id >= state.overlays->sections.size())
+            throw std::runtime_error("live RTLink section index outside directory");
+        const auto &section = state.overlays->sections[id];
+        const auto expected = gateway::relocate_rtlink(section, 0x1000);
+        const auto base = std::size_t(section.linked_segment + 0x1000) * 16;
+        if (base + section.memory_size() > 0xa0000)
+            throw std::runtime_error("live RTLink section outside conventional memory");
+        std::vector<std::uint8_t> actual(section.memory_size());
+        check(uc_mem_read(uc, base, actual.data(), actual.size()));
+        for (std::size_t i = 0; i < expected.size(); ++i)
+            if (expected[i] != actual[i])
+                throw std::runtime_error("RTLink relocated byte mismatch in section " +
+                                         std::to_string(id) + " at offset " + std::to_string(i));
+        for (auto i = section.initialized_size(); i < section.memory_size(); ++i)
+            if (actual[i] != 0)
+                throw std::runtime_error("RTLink BSS mismatch in section " + std::to_string(id));
+        ++state.overlay_loads[id];
+        if (state.research_trace.is_open())
+            state.research_trace << "overlay-load ms=" << std::dec << state.elapsed_ms << std::hex
+                                 << " section=" << id << " address=" << base
+                                 << " file_offset=" << section.image_file_offset
+                                 << " size=" << expected.size()
+                                 << " relocations=" << section.fixups.size() << '\n';
+    } catch (const std::exception &e) {
+        hardware_failure(uc, state, e.what());
+    }
 }
 
 enum class ObjectService { Flag, SetFlag, ClearFlag, Location, SetLocation };
@@ -930,16 +988,18 @@ int main(int argc, char **argv) {
     std::string dump_prefix, block_trace_path;
     std::string game_args, research_path, object_flags_mode;
     bool object_state_services = false;
+    bool verify_overlays = false;
     std::vector<std::uint64_t> entry_addresses;
     std::multimap<unsigned, std::uint16_t> scheduled_keys;
     std::uint16_t injected_key = 0;
     std::uint64_t breakpoint = 0;
     auto usage = [] {
-        std::cout << "Usage: gateway[-probe] <DOS executable> [--headless] "
-                     "[--milliseconds N] [--dump-prefix PATH] [--game-args TEXT] [--press KEY] "
-                     "[--break-at HEX] [--state-dir DIR | --read-only] [--trace-blocks FILE] "
-                     "[--trace-research FILE --trace-entry HEX ...] [--key-at MS:BIOSHEX ...] "
-                     "[--object-flags verify|hle | --object-state verify|hle]\n";
+        std::cout
+            << "Usage: gateway[-probe] <DOS executable> [--headless] "
+               "[--milliseconds N] [--dump-prefix PATH] [--game-args TEXT] [--press KEY] "
+               "[--break-at HEX] [--state-dir DIR | --read-only] [--trace-blocks FILE] "
+               "[--trace-research FILE --trace-entry HEX ...] [--key-at MS:BIOSHEX ...] "
+               "[--object-flags verify|hle | --object-state verify|hle] [--verify-overlays]\n";
     };
     if (argc < 2 || std::string(argv[1]) == "--help") {
         usage();
@@ -947,7 +1007,9 @@ int main(int argc, char **argv) {
     }
     for (int i = 2; i < argc; ++i) {
         const std::string option = argv[i];
-        if ((option == "--object-flags" || option == "--object-state") && i + 1 < argc) {
+        if (option == "--verify-overlays")
+            verify_overlays = true;
+        else if ((option == "--object-flags" || option == "--object-state") && i + 1 < argc) {
             if (!object_flags_mode.empty()) {
                 usage();
                 return 2;
@@ -1192,6 +1254,10 @@ int main(int argc, char **argv) {
                                       object_services[i].exit, object_services[i].exit));
             }
         }
+        uc_hook overlay_hook;
+        if (verify_overlays)
+            check(uc_hook_add(engine.uc, &overlay_hook, UC_HOOK_CODE,
+                              reinterpret_cast<void *>(verify_overlay), &state, 0x2c687, 0x2c687));
         uc_hook video_hook;
         check(uc_hook_add(engine.uc, &video_hook, UC_HOOK_MEM_READ | UC_HOOK_MEM_WRITE,
                           reinterpret_cast<void *>(video_memory), &state, 0xa0000, 0xaffff));
@@ -1339,6 +1405,15 @@ int main(int argc, char **argv) {
             for (std::size_t i = 0; i < object_services.size(); ++i)
                 std::cerr << "Object service " << object_services[i].name
                           << " calls: " << state.object_service_calls[i] << '\n';
+        if (verify_overlays) {
+            unsigned total = 0, distinct = 0;
+            for (auto loads : state.overlay_loads) {
+                total += loads;
+                distinct += loads != 0;
+            }
+            std::cerr << "RTLink verified loads: " << std::dec << total << " sections: " << distinct
+                      << '\n';
+        }
         check(status);
         if (!state.failure.empty())
             throw std::runtime_error(state.failure);
