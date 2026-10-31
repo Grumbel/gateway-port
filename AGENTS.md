@@ -8,7 +8,7 @@ The long-term goal is to reverse engineer the game’s resource formats and inte
 
 ## Project Structure & Module Organization
 
-Work inside `gateway-port/`, the actual Git repository. The sibling `../gateway-dos/` contains original DOS executables and resources for analysis and runtime input. Preserve these files unchanged; `.RS` files are game assets, not Rust source. The sibling `../FredPohlsGateway/` provides a packaged DOSBox reference.
+Work inside `gateway-port/`, the actual Git repository. The sibling `../gateway-dos/` contains original DOS executables and resources for analysis and runtime input. Preserve these files unchanged; `.RS` files are game assets, not Rust source. The sibling `../FredPohlsGateway/` provides a packaged DOSBox reference. Comparative assets are in `../101/`, `../201/`, and `../301/` (Spellcasting 101, 201, and 301); preserve these originals too.
 
 Use `src/` for C++, `tests/` for automated checks, and `docs/` for reverse-engineering notes. Keep generated artifacts under `build/` and original game data outside the source tree.
 
@@ -32,6 +32,8 @@ Format C++ with `clang-format -i src/*.cpp src/*.hpp tests/*.cpp` using `.clang-
 Add focused tests for parsers, emulated instructions, and HLE contracts using CTest. Compare behavior against the original game under DOSBox. For runtime changes, check graphics, input, and audio, and record reproducible steps. No coverage threshold is established.
 
 ## Research & Contribution Guidelines
+
+Read `docs/data-files.md`, `docs/spellcasting.md`, and `docs/scummvm-legend.md` before extending parsers or HLE. Spellcasting 301 shares Gateway's format generation; 101/201 use different picture codecs. Reuse only verified layouts and distinguish format compatibility from runtime compatibility.
 
 [Risca/dgate_resource_manager](https://github.com/Risca/dgate_resource_manager) explores Death Gate resources. Treat it as a research lead; verify format similarities against Gateway data before reuse.
 
