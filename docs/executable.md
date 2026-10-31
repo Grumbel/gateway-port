@@ -47,9 +47,10 @@ queries are now implemented. Startup reaches VGA display-combination detection
 (`INT 10h AX=1a00`) at `242a:0076`, selects mode `12h`, installs break/error/timer
 vectors, and allocates two DOS blocks. BIOS mode state and VGA plane accesses
 are implemented. The AdLib register path is now implemented with Nuked OPL3 synthesis. Startup
-then queries DOS time and programs the PIT control port `43h`, currently unsupported.
-The startup probe allows ten million instructions and a two-second Unicorn
-execution timeout; this is enough to reach that boundary in the supplied binary.
+then queries DOS time and programs the PIT. The timer bridge, virtual calendar,
+and BIOS/DOS keyboard input now support bounded intro playback. Default headless
+execution is limited to ten million instructions and two seconds of wall time;
+`--milliseconds` explicitly selects a longer bounded virtual-time run.
 
 ## Intro and main-program startup
 
@@ -58,10 +59,9 @@ input. The intro gets through picture/music loading and displays the initial
 Legend text. `--press escape` is a deterministic startup-input probe; `--game-args`
 provides a DOS PSP command tail (with the conventional leading space).
 
-Direct `GATEMAIN.EXE` execution loads `GATEMAIN.OVL`, but currently exits with DOS
-status 1 before graphics initialization. This is not yet evidence that it requires
-an undocumented argument: the PSP/environment and parent EXEC contracts remain
-incomplete. Cursor-position BIOS services, console output, and standard-handle
+Direct `GATEMAIN.EXE` execution with friendly launcher options exits with DOS
+status 1. The numeric handoff recovered below allows it to continue into game
+data loading. Parent EXEC is still incomplete. Cursor-position BIOS services, console output, and standard-handle
 cleanup are implemented so startup diagnostics can proceed.
 
 ## Recovered launcher arguments
@@ -90,3 +90,11 @@ Snapshots include `.regs` alongside `.bin` and `.ppm`. The PSP now names a track
 DOS environment block with `PATH=C:\` and the executable filename. BIOS loading
 text uses the original game's fixed 8×8 font scaled to the graphics mode's cell
 height; this is a fallback, not an exact replacement for the VGA ROM font.
+
+## Current main-program boundary
+
+The shared case-insensitive file resolver now handles read-only DOS file
+attributes as well as opens. With the recovered numeric arguments, main startup
+reads vocabulary and other tables, then requests write-only access to
+`RESTART.DAT` (`AX=3d01`). That request deliberately stops: guest-state writes
+need a separate overlay before they can be supported safely.

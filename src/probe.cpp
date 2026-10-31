@@ -66,6 +66,39 @@ struct State {
     unsigned exit_code = 0;
     std::string failure;
 };
+std::string guest_filename(uc_engine *uc) {
+    std::string name;
+    const auto address = std::size_t(reg(uc, UC_X86_REG_DS)) * 16 + reg(uc, UC_X86_REG_DX);
+    for (unsigned i = 0; i < 260; ++i) {
+        char c;
+        check(uc_mem_read(uc, address + i, &c, 1));
+        if (!c)
+            return name;
+        name += c;
+    }
+    throw std::runtime_error("unterminated DOS filename");
+}
+std::filesystem::path game_file(const State &state, std::string name) {
+    if (name.size() >= 2 && (name[0] == 'C' || name[0] == 'c') && name[1] == ':')
+        name.erase(0, 2);
+    if (!name.empty() && name[0] == '\\')
+        name.erase(0, 1);
+    if (name.empty() || name == "." || name == ".." ||
+        name.find_first_of("/\\:") != std::string::npos)
+        throw std::runtime_error("probe requires a flat game-directory filename");
+    auto upper = [](std::string text) {
+        for (auto &c : text)
+            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        return text;
+    };
+    for (const auto &entry : std::filesystem::directory_iterator(state.data_dir)) {
+        if (upper(entry.path().filename().string()) == upper(name) && !entry.is_symlink() &&
+            entry.is_regular_file())
+            return entry.path();
+    }
+    return state.data_dir / name;
+}
+
 void hardware_failure(uc_engine *uc, State &state, const std::string &message) {
     state.failure = message;
     uc_emu_stop(uc);
@@ -323,45 +356,28 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             check(uc_mem_write(
                 uc, std::size_t(reg(uc, UC_X86_REG_DS)) * 16 + reg(uc, UC_X86_REG_SI), &root, 1));
             set(uc, UC_X86_REG_FLAGS, reg(uc, UC_X86_REG_FLAGS) & ~1);
+        } else if (number == 0x21 && (ax >> 8) == 0x43) {
+            unsigned error = 0;
+            if ((ax & 255) == 1)
+                error = 5; // External original assets remain read-only.
+            else if ((ax & 255) != 0)
+                throw std::runtime_error("unsupported DOS attribute operation");
+            else {
+                const auto path = game_file(state, guest_filename(uc));
+                if (std::filesystem::is_symlink(path) || !std::filesystem::is_regular_file(path))
+                    error = 2;
+                else
+                    set(uc, UC_X86_REG_CX, 0x21); // Read-only, archive.
+            }
+            if (error)
+                set(uc, UC_X86_REG_AX, error);
+            set(uc, UC_X86_REG_FLAGS, (reg(uc, UC_X86_REG_FLAGS) & ~1) | bool(error));
         } else if (number == 0x21 && (ax >> 8) == 0x3d) {
+            const auto name = guest_filename(uc);
+            std::cerr << "  open: " << name << '\n';
             if ((ax & 3) != 0)
                 throw std::runtime_error("probe only supports read-only opens");
-            std::string name;
-            bool terminated = false;
-            auto address = std::size_t(reg(uc, UC_X86_REG_DS)) * 16 + reg(uc, UC_X86_REG_DX);
-            for (unsigned i = 0; i < 260; ++i) {
-                char c;
-                check(uc_mem_read(uc, address + i, &c, 1));
-                if (!c) {
-                    terminated = true;
-                    break;
-                }
-                name += c;
-            }
-            if (!terminated)
-                throw std::runtime_error("unterminated DOS filename");
-            std::cerr << "  open: " << name << '\n';
-            // Map only C:\root files; never expose arbitrary host paths.
-            if (name.size() >= 2 && (name[0] == 'C' || name[0] == 'c') && name[1] == ':')
-                name.erase(0, 2);
-            if (!name.empty() && name[0] == '\\')
-                name.erase(0, 1);
-            if (name.empty() || name == "." || name == ".." ||
-                name.find_first_of("/\\:") != std::string::npos)
-                throw std::runtime_error("probe requires a flat game-directory filename");
-            auto upper = [](std::string text) {
-                for (auto &c : text)
-                    c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-                return text;
-            };
-            auto path = state.data_dir / name;
-            for (const auto &entry : std::filesystem::directory_iterator(state.data_dir)) {
-                if (upper(entry.path().filename().string()) == upper(name) &&
-                    entry.is_regular_file() && !entry.is_symlink()) {
-                    path = entry.path();
-                    break;
-                }
-            }
+            const auto path = game_file(state, name);
             auto flags = reg(uc, UC_X86_REG_FLAGS);
             std::ifstream input;
             if (!std::filesystem::is_symlink(path))
@@ -483,7 +499,8 @@ int main(int argc, char **argv) {
     std::uint64_t breakpoint = 0;
     auto usage = [] {
         std::cout << "Usage: gateway[-probe] <DOS executable> [--headless] "
-                     "[--milliseconds N] [--dump-prefix PATH] [--game-args TEXT] [--press KEY] [--break-at HEX]\n";
+                     "[--milliseconds N] [--dump-prefix PATH] [--game-args TEXT] [--press KEY] "
+                     "[--break-at HEX]\n";
     };
     if (argc < 2 || std::string(argv[1]) == "--help") {
         usage();

@@ -1,15 +1,18 @@
 # Port milestones
 
-1. Implement PIT control port `43h` and guest timer interrupt dispatch, the
-   current `GATE.EXE` stopping point after AdLib initialization. Continue the startup contract. Keep each
-   implemented service explicit and test it with a synthetic guest fixture.
+1. Add a writable guest-state overlay for `RESTART.DAT`. Direct main-program
+   startup with the recovered numeric arguments now loads vocabulary and reaches
+   an `AH=3Dh` write-only open of that file. Copy writable state into an explicit
+   user directory; never modify `../gateway-dos/`.
 2. Recover RTL/OVL mapping and relocation behavior; document the module entry
    reached after the shared RTLink startup.
 3. Implement guest file access beneath the supplied game directory, with writes
    redirected to a separate user directory. Add a proper PSP, environment, DOS
-   memory-block model, command line (`VGA BLASTER 7 220`), and child EXEC handling.
-4. Reach graphics initialization and identify BIOS, VGA, and game-routine HLE
-   boundaries. Connect guest display output and keyboard/mouse to SDL3.
+   child EXEC handling and complete PSP semantics. A tracked environment, DOS
+   memory arena, command tail, and timer interrupt bridge are already implemented.
+4. Complete the intro-to-main handoff and mouse input. Guest VGA, AdLib PCM, and
+   BIOS/DOS keyboard input now connect to the `gateway` SDL3 runtime. Identify
+   further game-routine HLE boundaries from actual execution.
 5. Identify sound-driver calls and replace them with SDL3 audio. Validate timing
    and playback against DOSBox recordings.
 6. Compare startup, menu, save/load, and a short gameplay sequence against DOSBox.

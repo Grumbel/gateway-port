@@ -120,6 +120,12 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(int(result.registers['AX'], 16), 0x1234)
         self.assertEqual(int(result.registers['IP'], 16), 3)
 
+    def test_read_only_file_attributes(self):
+        code = bytes.fromhex('0e1fba1000b80043cd2189c8b44ccd21')
+        self.assertEqual(len(code), 16)
+        result = self.run_guest(code + b'test.dat\0', files={'TEST.DAT': b'data'})
+        self.assertIn('DOS exit code: 33', result.stdout, result.stderr)
+
     def test_exit(self):
         result = self.run_guest(bytes.fromhex('b8004ccd21'))
         self.assertEqual(result.returncode, 0, result.stderr)
