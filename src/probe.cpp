@@ -929,7 +929,9 @@ int main(int argc, char **argv) {
 #ifdef GATEWAY_SDL
             if (host && steps % 16 == 0) {
                 text_snapshot(engine.uc, state);
-                host->present(state.vga, state.opl.render(768));
+                auto samples = state.opl.render(768);
+                state.pit.mix_speaker(samples);
+                host->present(state.vga, samples);
                 std::this_thread::sleep_until(started + std::chrono::milliseconds(steps));
             }
 #endif

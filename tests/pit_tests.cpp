@@ -32,6 +32,28 @@ int main() {
         pit.out(0x40, 0);
         pit.advance(54000);
         require(!pit.pending(), "zero reload not 65536");
+        gateway::Pit speaker;
+        speaker.out(0x43, 0xb6);
+        speaker.out(0x42, 0xa9);
+        speaker.out(0x42, 4); // Approximately 1 kHz.
+        speaker.out(0x61, 3);
+        speaker.advance(1000);
+        speaker.out(0x61, 0);
+        require((speaker.in(0x61) & 3) == 0, "speaker control readback");
+        std::array<std::int16_t, 96> samples{};
+        speaker.mix_speaker(samples);
+        bool positive = false, negative = false;
+        for (unsigned i = 0; i < samples.size(); i += 2) {
+            positive |= samples[i] > 0;
+            negative |= samples[i] < 0;
+            require(samples[i] == samples[i + 1], "speaker stereo mismatch");
+        }
+        require(positive && negative, "short beep lost before audio submission");
+        speaker.advance(1000);
+        samples.fill(0);
+        speaker.mix_speaker(samples);
+        for (auto sample : samples)
+            require(sample == 0, "disabled speaker is not silent");
         std::cout << "PIT checks passed\n";
     } catch (const std::exception &e) {
         std::cerr << e.what() << '\n';
