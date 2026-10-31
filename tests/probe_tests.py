@@ -59,6 +59,17 @@ class ProbeTests(unittest.TestCase):
         font[10 + (ord('G') - 0x21) * 8] = 0x80
         return bytes(font)
 
+    def test_mouse_far_call_through_driver_vector(self):
+        # DOS clients may PUSHF/CALL FAR the vector instead of executing INT 33h.
+        code = bytes.fromhex(
+            'b83335cd21891e20038c062203'
+            '31c09cff1e2003a32403891e2603'
+            'b8004ccd21')
+        result = self.run_guest(code, dump=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        base = 0x0ff0 * 16 + 0x324
+        self.assertEqual(struct.unpack_from('<2H', result.memory, base), (0xffff, 3))
+
     def test_mouse_detection_position_and_ranges(self):
         # Discover non-null/non-IRET driver entry, reset, then clamp a position.
         code = bytes.fromhex(
