@@ -75,8 +75,11 @@ The file holds 6013 strings. Size tables match the segment totals, and the
 335613 stream bytes end exactly at end of file. Stop at the first NUL, because
 leftover padding bits can decode to stray characters. Text uses `printf`-style
 `%s` and `%d` markers, `\n`, and `\t`. For example, string 0/1 is
-`Slot:    %d (%s)\n`. **Hypothesis:** the game addresses strings as `0xFsssnnnn`,
-with segment `sss` and string `nnnn`, as ScummVM's loader expects.
+`Slot:    %d (%s)\n`. Native story routines select six checked strings with
+`0xf0000000 | (segment << 10) | string_index`; see
+[game-logic evidence](game-logic.md#text-tokens-correction-to-the-earlier-hypothesis).
+This corrects the earlier `0xFsssnnnn` hypothesis. The text lookup routine itself
+still needs tracing.
 
 ## VOCAB.DAT
 
@@ -331,8 +334,8 @@ must be recovered from the driver or a DOSBox recording.
 
 ## Next steps
 
-Trace how the interpreter in `GATEMAIN.OVL` selects strings, objects, and series.
-It holds no obvious script file; game logic appears to be compiled into the
-executables and overlay, so a replacement interpreter needs code analysis as well
-as these formats. Decoders should be added as tested `src/` parsers using
+Native story routines in `GATEMAIN.OVL` now demonstrate state tests, updates,
+and text selection; see [game logic](game-logic.md). No story-bytecode VM has
+been identified. Recover RTLink mappings and command/handler dispatch next; a
+replacement engine needs code analysis as well as these resource formats. Decoders should be added as tested `src/` parsers using
 synthetic fixtures, with original data kept external.

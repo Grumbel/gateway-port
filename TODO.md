@@ -37,9 +37,11 @@ logic has to be recovered from the binaries.
 
 Next, in order:
 
-1. Find out whether game logic in `GATE.EXE`, `GATE.RTL`, and `GATEMAIN.OVL` is
-   native code or embedded bytecode, starting with how the code selects strings.
-   Test the `0xFsssnnnn` message number hypothesis there.
+1. Map RTLink sections and trace parser-to-handler dispatch.
+   [Game-logic investigation](docs/game-logic.md) now demonstrates native x86
+   story routines in `GATEMAIN.OVL` and six text references using
+   `0xf0000000 | (segment << 10) | string_index`. Trace the text lookup routine
+   and map handler/state tables; no story-bytecode VM has been identified.
 2. Find what uses the 91 `VOCAB.DAT` link groups; they may tie words to actions.
 3. Compare extracted colors, overlays, and the series used in each display mode
    with DOSBox. Trace overlay selection and what frames 2–5 mean.

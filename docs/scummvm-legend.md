@@ -66,6 +66,8 @@ not in that directory. Their source in the original executable is unknown.
 - **Message numbers:** `getMessage` accepts `0xFsssnnnn`, with section `sss` and
   string `nnnn`. **Hypothesis** for Gateway: nothing in the branch calls it with a
   real number, and it has an infinite loop for non-zero string numbers.
+  [Native Gateway references](game-logic.md#text-tokens-correction-to-the-earlier-hypothesis)
+  instead support `0xf0000000 | (segment << 10) | string_index` for six checked uses.
 - **`PIC_40`:** this is decimal 40, or `0x28`, but is tested against the flags byte
   to set a mode of 3. **Hypothesis:** `0x40` was meant, which is our XOR overlay bit,
   and 3 is the VGA graphics controller's XOR function. The value is never used.
