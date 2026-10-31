@@ -1,31 +1,26 @@
 # Port milestones
 
-1. Add a writable guest-state overlay for `RESTART.DAT`. Direct main-program
-   startup with the recovered numeric arguments now loads vocabulary and reaches
-   a write-only open, receives DOS error 2 because the file is absent, then calls
-   `AH=3Ch` to create it. Implement creation in an explicit writable user directory;
-   never modify `../gateway-dos/`.
-2. Recover RTL/OVL mapping and relocation behavior; document the module entry
-   reached after the shared RTLink startup.
-3. Extend DOS process/file support as required. Escape now traverses the MCB
-   chain, prepares DTA/FCBs, and uses `AH=4Bh/AL=03h` to load the main executable
-   through the original high-memory trampoline. Normal child EXEC is not yet
-   implemented. Continue preserving original assets and writing state separately.
-4. Complete main-program startup and mouse input. Guest VGA, AdLib PCM, and
-   BIOS/DOS keyboard input now connect to the `gateway` SDL3 runtime. Identify
-   further game-routine HLE boundaries from actual execution.
-5. Identify sound-driver calls and replace them with SDL3 audio. Validate timing
-   and playback against DOSBox recordings.
-6. Compare startup, menu, save/load, and a short gameplay sequence against DOSBox.
-7. Extract tested resource parsers and interpreter components as formats become
+1. Validate a short keyboard gameplay sequence and save/restore against DOSBox.
+   Escape now reaches Your Quarters; SDL keyboard pagination and `look` work.
+   Startup creates `RESTART.DAT` in separate writable state. Add further DOS file
+   services only as actual game execution requires them.
+2. Implement mouse input and compare pointer/button behavior with DOSBox.
+3. Recover RTLink module mapping and game-routine boundaries. DOS reads can load
+   executable overlay sections; invalidate Unicorn's translated blocks after
+   these writes. Keep regression coverage for replacement code execution.
+4. Validate AdLib playback and scheduler timing against DOSBox recordings.
+   SDL audio submission is tested; audible output remains unverified.
+5. Compare startup, menus, scene palettes, and transitions with DOSBox. Full intro
+   playback and normal DOS child EXEC are not yet verified/implemented.
+6. Extract tested resource parsers and interpreter components as formats become
    understood; replace guest routines incrementally.
 
 Keep original assets unchanged and external. Store generated traces, screenshots,
 and memory dumps under ignored `build*/` directories. Record file hashes and
-addresses for every binary-specific observation. Current tests cover MZ loading,
-synthetic DOS startup calls, unsupported-service stops, execution limits, and an
-SDL3 dummy-driver diagnostic, plus the PIC decoder and PNG writer. Interactive
-gameplay still needs validation.
+addresses for every binary-specific observation. Tests cover loaders, DOS memory
+and file services, overlay cache invalidation, VGA, timing/audio models, resource
+parsing, and SDL integration. First-room interaction does not establish complete
+playability.
 
 ## Research handoff
 

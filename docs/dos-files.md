@@ -40,8 +40,9 @@ position. Expected I/O failures return DOS carry/error results instead of stoppi
 emulation. Executable overlay reads also see the same state-first drive view.
 
 An original Escape-to-main replay creates a 21,757-byte `RESTART.DAT` in the
-explicit state directory, then reaches DOS find-first (`AH=4Eh`). This confirms
-runtime state generation; the restart-file schema is not yet decoded.
+explicit state directory. Save-file enumeration and overlay execution now
+complete, reaching Your Quarters. An SDL keyboard run advances MORE prompts and
+executes `look`. The restart-file schema and save/restore remain unverified.
 
 ## Save-file searches
 

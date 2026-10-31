@@ -91,16 +91,15 @@ DOS environment block with `PATH=C:\` and the executable filename. BIOS loading
 text uses the original game's fixed 8×8 font scaled to the graphics mode's cell
 height; this is a fallback, not an exact replacement for the VGA ROM font.
 
-## Current main-program boundary
+## Main-program startup
 
-The shared case-insensitive file resolver now handles read-only DOS file
-attributes as well as opens. With the recovered numeric arguments, main startup
-reads vocabulary and other tables, then requests write-only access to
-`RESTART.DAT` (`AX=3d01`). Missing files now return DOS error 2, including for
-write-only and read/write opens. Main startup handles that failure and calls
-file creation (`AX=3ca4`, `CX=0`, at `1805:24f4`). This is the current stop;
-creation needs a separate writable state directory. Existing original files
-return access denied for writable opens and remain unchanged.
+Main startup requests write-only `RESTART.DAT` (`AX=3d01`), then creates it
+(`AX=3ca4`, `CX=0`, at `1805:24f4`) when absent. The separate writable
+[state layer](dos-files.md) now supports this sequence and produces 21,757 bytes.
+Save-file enumeration also completes. Invalidation of translated code after DOS
+reads into overlay memory resolves the subsequent RTLink execution fault; see
+[handoff findings](dos-handoff.md). Escape now reaches the first room, Your
+Quarters, through the original launcher and main executable.
 
 ## Intro return to text mode
 
@@ -112,5 +111,5 @@ cursor positions.
 
 A replay with `--press escape --milliseconds 18000` now completes the
 [list-of-lists, DTA, FCB, and overlay-load handoff](dos-handoff.md). Original
-trampoline code transfers execution into `GATEMAIN.EXE`; its startup reaches
-`RESTART.DAT` creation, matching the direct-main boundary above.
+trampoline code transfers execution into `GATEMAIN.EXE`; its startup creates
+`RESTART.DAT` in writable state and reaches Your Quarters.
