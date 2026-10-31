@@ -60,6 +60,14 @@ class ProbeTests(unittest.TestCase):
                                   if path.is_file()}
             return result
 
+    def test_word_operand_crosses_segment_offset_boundary(self):
+        # The effective offset is 16-bit, but a word uses consecutive linear bytes.
+        code = bytes.fromhex('b800408ec0bbffff26c707cdabb8004ccd21')
+        result = self.run_guest(code, dump=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.memory[0x4ffff:0x50001], bytes.fromhex('cdab'))
+        self.assertEqual(result.memory[0x40000], 0)
+
     def test_timed_keyboard_and_entry_trace(self):
         # Poll until a scheduled BIOS key arrives, read it, then exit.
         code = bytes.fromhex('b401cd1674fa31c0cd16a30003b8004ccd21')

@@ -57,9 +57,16 @@ struct State {
     std::ofstream research_trace;
     unsigned elapsed_ms = 0;
     std::string object_flags_mode;
+    bool object_state_services = false;
+    std::array<unsigned, 5> object_service_calls{};
     unsigned object_flags_calls = 0;
     bool object_flags_active = false;
-    bool flag_expected = false, flag_verifying = false;
+    struct ObjectVerification {
+        std::uint64_t exit;
+        std::optional<std::uint16_t> result;
+        std::optional<gateway::GuestWrite> write;
+    };
+    std::optional<ObjectVerification> object_verification;
     struct FarReturn {
         std::uint16_t ip, cs, sp, value;
     };
@@ -259,56 +266,126 @@ bool dispatch(uc_engine *uc, unsigned number) {
     return true;
 }
 
-// Fixed addresses are experimental and guarded by the complete three-routine fingerprint.
+enum class ObjectService { Flag, SetFlag, ClearFlag, Location, SetLocation };
+struct ObjectServiceSpec {
+    std::uint64_t entry, exit;
+    const char *name;
+};
+constexpr std::array<ObjectServiceSpec, 5> object_services{
+    {{0x11916, 0x1194c, "object-flag"},
+     {0x11950, 0x1197f, "object-flag-set"},
+     {0x11983, 0x119b4, "object-flag-clear"},
+     {0x11ab6, 0x11b2c, "object-location"},
+     {0x11bbb, 0x11c36, "object-location-set"}}};
+
+// Fixed addresses are opt-in and guarded by fingerprints of the complete routines.
 void object_flags_hook(uc_engine *uc, std::uint64_t address, std::uint32_t, void *opaque) noexcept {
     auto &state = *static_cast<State *>(opaque);
     try {
-        if (address == 0x1194c) {
-            if (state.flag_verifying) {
-                state.flag_verifying = false;
-                if (reg(uc, UC_X86_REG_AX) != state.flag_expected)
-                    throw std::runtime_error("object flag HLE disagrees with native result");
-            }
-            return;
-        }
-        std::array<std::uint8_t, 323> code{};
-        check(uc_mem_read(uc, 0x1180d, code.data(), code.size()));
-        std::uint64_t hash = 14695981039346656037ull;
-        for (auto byte : code)
-            hash = (hash ^ byte) * 1099511628211ull;
-        if (hash != 0x2865a272e07a21e5ull || reg(uc, UC_X86_REG_CS) != 0x1157) {
-            if (state.object_flags_active)
-                throw std::runtime_error("object flag routine fingerprint changed");
-            return; // Intro code can occupy this address before GATEMAIN is loaded.
-        }
-        state.object_flags_active = true;
-        const gateway::GuestByteReader read = [uc](std::uint16_t segment, std::uint16_t offset) {
+        const gateway::GuestByteReader read = [uc](std::uint16_t segment, std::uint32_t offset) {
             const auto address = std::size_t(segment) * 16 + offset;
             if (address >= 0xa0000)
-                throw std::runtime_error("object flag read outside conventional memory");
+                throw std::runtime_error("object state read outside conventional memory");
             std::uint8_t byte;
             check(uc_mem_read(uc, address, &byte, 1));
             return byte;
         };
+        const auto spec = std::find_if(
+            object_services.begin(), object_services.end(),
+            [address](const auto &spec) { return spec.entry == address || spec.exit == address; });
+        if (spec == object_services.end())
+            throw std::runtime_error("unknown object service hook");
+        if (address == spec->exit) {
+            if (state.object_verification) {
+                const auto expected = *state.object_verification;
+                state.object_verification.reset();
+                if (expected.exit != address ||
+                    (expected.result && reg(uc, UC_X86_REG_AX) != *expected.result))
+                    throw std::runtime_error("object service HLE disagrees with native result");
+                if (expected.write)
+                    for (unsigned i = 0; i < expected.write->size; ++i)
+                        if (read(expected.write->segment, std::uint32_t(expected.write->offset) +
+                                                              i) != expected.write->bytes[i])
+                            throw std::runtime_error(
+                                "object service HLE disagrees with native write");
+            }
+            return;
+        }
+        std::array<std::uint8_t, 1070> code{};
+        const auto size = state.object_state_services ? code.size() : 323;
+        check(uc_mem_read(uc, 0x1180d, code.data(), size));
+        std::uint64_t hash = 14695981039346656037ull;
+        for (std::size_t i = 0; i < size; ++i)
+            hash = (hash ^ code[i]) * 1099511628211ull;
+        const auto expected_hash =
+            state.object_state_services ? 0xd7176aec031d44a3ull : 0x2865a272e07a21e5ull;
+        if (hash != expected_hash || reg(uc, UC_X86_REG_CS) != 0x1157) {
+            if (state.object_flags_active)
+                throw std::runtime_error("object service routine fingerprint changed");
+            return; // Intro code can occupy this address before GATEMAIN is loaded.
+        }
+        state.object_flags_active = true;
         const auto ss = reg(uc, UC_X86_REG_SS), sp = reg(uc, UC_X86_REG_SP);
         const auto word = [&](unsigned offset) {
             return std::uint16_t(read(ss, std::uint16_t(sp + offset)) |
                                  (std::uint16_t(read(ss, std::uint16_t(sp + offset + 1))) << 8));
         };
-        const auto object = word(4), property = word(6);
-        const auto value = gateway::object_flag(read, reg(uc, UC_X86_REG_DS), object, property);
-        ++state.object_flags_calls;
-        if (state.research_trace.is_open())
-            state.research_trace << "object-flag ms=" << std::dec << state.elapsed_ms << std::hex
-                                 << " object=" << object << " property=" << property
-                                 << " result=" << value << " return=" << word(2) << ':' << word(0)
-                                 << '\n';
+        const auto object = word(4);
+        const auto ds = reg(uc, UC_X86_REG_DS);
+        const auto index = std::size_t(spec - object_services.begin());
+        const auto service = static_cast<ObjectService>(index);
+        // Location has one argument; do not interpret the next caller stack word as an argument.
+        const auto argument = service == ObjectService::Location ? 0 : word(6);
+        std::optional<std::uint16_t> result;
+        std::optional<gateway::GuestWrite> write;
+        switch (service) {
+        case ObjectService::Flag:
+            result = gateway::object_flag(read, ds, object, argument);
+            break;
+        case ObjectService::SetFlag:
+        case ObjectService::ClearFlag:
+            write = gateway::object_flag_write(read, ds, object, argument,
+                                               service == ObjectService::SetFlag);
+            break;
+        case ObjectService::Location:
+            result = gateway::object_location(read, ds, object);
+            break;
+        case ObjectService::SetLocation:
+            write = gateway::object_location_write(read, ds, object, argument);
+            break;
+        }
+        ++state.object_service_calls[index];
+        if (service == ObjectService::Flag)
+            ++state.object_flags_calls;
+        if (state.research_trace.is_open()) {
+            auto &out = state.research_trace;
+            out << spec->name << " ms=" << std::dec << state.elapsed_ms << std::hex
+                << " object=" << object;
+            if (service != ObjectService::Location)
+                out << (service == ObjectService::SetLocation ? " location=" : " property=")
+                    << argument;
+            if (result)
+                out << " result=" << *result;
+            if (write) {
+                out << " write=" << write->segment << ':' << write->offset << ':';
+                for (unsigned i = 0; i < write->size; ++i)
+                    out << unsigned(write->bytes[i]) << ',';
+            }
+            out << " return=" << word(2) << ':' << word(0) << '\n';
+        }
         if (state.object_flags_mode == "verify") {
-            state.flag_expected = value;
-            state.flag_verifying = true;
+            if (state.object_verification)
+                throw std::runtime_error("nested object service verification is unsupported");
+            state.object_verification = State::ObjectVerification{spec->exit, result, write};
         } else {
-            state.hle_return =
-                State::FarReturn{word(0), word(2), std::uint16_t(sp + 4), std::uint16_t(value)};
+            if (write) {
+                const auto address = std::size_t(write->segment) * 16 + write->offset;
+                if (address + write->size > 0xa0000)
+                    throw std::runtime_error("object state write outside conventional memory");
+                check(uc_mem_write(uc, address, write->bytes.data(), write->size));
+            }
+            state.hle_return = State::FarReturn{word(0), word(2), std::uint16_t(sp + 4),
+                                                result.value_or(reg(uc, UC_X86_REG_AX))};
             check(uc_emu_stop(uc));
         }
     } catch (const std::exception &e) {
@@ -837,6 +914,7 @@ int main(int argc, char **argv) {
     unsigned milliseconds = 0;
     std::string dump_prefix, block_trace_path;
     std::string game_args, research_path, object_flags_mode;
+    bool object_state_services = false;
     std::vector<std::uint64_t> entry_addresses;
     std::multimap<unsigned, std::uint16_t> scheduled_keys;
     std::uint16_t injected_key = 0;
@@ -846,7 +924,7 @@ int main(int argc, char **argv) {
                      "[--milliseconds N] [--dump-prefix PATH] [--game-args TEXT] [--press KEY] "
                      "[--break-at HEX] [--state-dir DIR | --read-only] [--trace-blocks FILE] "
                      "[--trace-research FILE --trace-entry HEX ...] [--key-at MS:BIOSHEX ...] "
-                     "[--object-flags verify|hle]\n";
+                     "[--object-flags verify|hle | --object-state verify|hle]\n";
     };
     if (argc < 2 || std::string(argv[1]) == "--help") {
         usage();
@@ -854,7 +932,12 @@ int main(int argc, char **argv) {
     }
     for (int i = 2; i < argc; ++i) {
         const std::string option = argv[i];
-        if (option == "--object-flags" && i + 1 < argc) {
+        if ((option == "--object-flags" || option == "--object-state") && i + 1 < argc) {
+            if (!object_flags_mode.empty()) {
+                usage();
+                return 2;
+            }
+            object_state_services = option == "--object-state";
             object_flags_mode = argv[++i];
             if (object_flags_mode != "verify" && object_flags_mode != "hle") {
                 usage();
@@ -959,6 +1042,7 @@ int main(int argc, char **argv) {
         auto image = gateway::load_mz(bytes);
         State state;
         state.object_flags_mode = object_flags_mode;
+        state.object_state_services = object_state_services;
         if (!research_path.empty()) {
             state.research_trace.open(research_path);
             if (!state.research_trace)
@@ -1080,15 +1164,18 @@ int main(int argc, char **argv) {
             check(uc_hook_add(engine.uc, &entry_hooks[i], UC_HOOK_CODE,
                               reinterpret_cast<void *>(trace_entry), &state, entry_addresses[i],
                               entry_addresses[i]));
-        uc_hook object_entry_hook, object_exit_hook;
+        std::array<uc_hook, 10> object_hooks{};
         if (!object_flags_mode.empty()) {
-            check(uc_hook_add(engine.uc, &object_entry_hook, UC_HOOK_CODE,
-                              reinterpret_cast<void *>(object_flags_hook), &state, 0x11916,
-                              0x11916));
-            if (object_flags_mode == "verify")
-                check(uc_hook_add(engine.uc, &object_exit_hook, UC_HOOK_CODE,
-                                  reinterpret_cast<void *>(object_flags_hook), &state, 0x1194c,
-                                  0x1194c));
+            const auto count = object_state_services ? object_services.size() : 1;
+            for (std::size_t i = 0; i < count; ++i) {
+                check(uc_hook_add(engine.uc, &object_hooks[i * 2], UC_HOOK_CODE,
+                                  reinterpret_cast<void *>(object_flags_hook), &state,
+                                  object_services[i].entry, object_services[i].entry));
+                if (object_flags_mode == "verify")
+                    check(uc_hook_add(engine.uc, &object_hooks[i * 2 + 1], UC_HOOK_CODE,
+                                      reinterpret_cast<void *>(object_flags_hook), &state,
+                                      object_services[i].exit, object_services[i].exit));
+            }
         }
         uc_hook video_hook;
         check(uc_hook_add(engine.uc, &video_hook, UC_HOOK_MEM_READ | UC_HOOK_MEM_WRITE,
@@ -1222,6 +1309,10 @@ int main(int argc, char **argv) {
         if (!object_flags_mode.empty())
             std::cerr << "Object flag " << object_flags_mode << " calls: " << std::dec
                       << state.object_flags_calls << '\n';
+        if (object_state_services)
+            for (std::size_t i = 0; i < object_services.size(); ++i)
+                std::cerr << "Object service " << object_services[i].name
+                          << " calls: " << state.object_service_calls[i] << '\n';
         check(status);
         if (!state.failure.empty())
             throw std::runtime_error(state.failure);

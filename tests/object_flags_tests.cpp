@@ -14,7 +14,7 @@ int main() {
             memory.at(segment * 16 + offset) = value & 255;
             memory.at(segment * 16 + std::uint16_t(offset + 1)) = value >> 8;
         };
-        const gateway::GuestByteReader read = [&](std::uint16_t segment, std::uint16_t offset) {
+        const gateway::GuestByteReader read = [&](std::uint16_t segment, std::uint32_t offset) {
             return memory.at(segment * 16 + offset);
         };
         constexpr unsigned ds = 0x1000, directory = 0x2000, properties = 0x3000, data = 0x4000;
@@ -51,7 +51,53 @@ int main() {
         put(directory, 2 * 6 + 0xbc, 0xfffc);
         memory[data * 16 + 1] = 0x20;
         require(gateway::object_flag(read, ds, 2, 3), "far offset wrap changed segment");
-        std::cout << "Object flag layout checks passed\n";
+        const auto apply = [&](const std::optional<gateway::GuestWrite> &write) {
+            require(write.has_value(), "valid write rejected");
+            for (unsigned i = 0; i < write->size; ++i)
+                memory.at(write->segment * 16 + write->offset + i) = write->bytes[i];
+        };
+        // Set/clear must preserve all unrelated flag bits, including repeated writes.
+        memory[data * 16 + 1] = 0x85;
+        apply(gateway::object_flag_write(read, ds, 2, 3, true));
+        require(memory[data * 16 + 1] == 0xa5, "flag set damaged neighboring bits");
+        apply(gateway::object_flag_write(read, ds, 2, 3, true));
+        apply(gateway::object_flag_write(read, ds, 2, 3, false));
+        require(memory[data * 16 + 1] == 0x85, "flag clear damaged neighboring bits");
+        require(!gateway::object_flag_write(read, ds, 0, 3, true), "invalid object write accepted");
+        require(!gateway::object_flag_write(read, ds, 2, 0, true),
+                "invalid property write accepted");
+        put(properties, 3 * 4 + 0x16, 0);
+        require(!gateway::object_flag_write(read, ds, 2, 3, true),
+                "masked property write accepted");
+        // Location fields vary by type. Full 16-bit values must survive writes and reads.
+        put(directory, 2 * 6 + 0xbc, 0x120);
+        for (unsigned type = 1; type <= 8; ++type) {
+            memory[directory * 16 + 2 * 6 + 0xba] = type;
+            const bool supported = type == 2 || type == 6 || type == 7 || type == 8;
+            const auto write = gateway::object_location_write(read, ds, 2, 0x8123);
+            require(bool(write) == supported, "location type applicability incorrect");
+            if (supported) {
+                const unsigned offset = type == 2 ? 0x0e : type == 6 ? 0x0a : 0x0c;
+                require(write->offset == 0x120 + offset && write->size == 2,
+                        "wrong location field");
+                apply(write);
+                require(gateway::object_location(read, ds, 2) == 0x8123,
+                        "location write truncated");
+            } else
+                require(gateway::object_location(read, ds, 2) == 0, "unsupported location read");
+        }
+        require(!gateway::object_location_write(read, ds, 11, 1),
+                "invalid location object accepted");
+        memory[directory * 16 + 2 * 6 + 0xba] = 2;
+        put(directory, 2 * 6 + 0xbc,
+            0xfff1); // Location low byte at ffff, high byte at the next linear byte.
+        const auto wrapped = gateway::object_location_write(read, ds, 2, 0xabcd);
+        apply(wrapped);
+        require(memory[data * 16 + 0xffff] == 0xcd && memory[data * 16 + 0x10000] == 0xab,
+                "location word write did not use contiguous bytes");
+        require(gateway::object_location(read, ds, 2) == 0xabcd,
+                "location word read did not use contiguous bytes");
+        std::cout << "Object flag and location layout checks passed\n";
     } catch (const std::exception &e) {
         std::cerr << e.what() << '\n';
         return 1;
