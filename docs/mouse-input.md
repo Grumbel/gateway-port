@@ -31,7 +31,11 @@ state can still miss such clicks. Guest positioning requests warp the host curso
    keyboard input. Also check a resized window with black side margins.
 
 An isolated Xvfb/X11 run verified Inventory clicks at 1280×720, including the
-160-pixel side margins and 1.5× content scale. Synthetic CTest checks cover driver
+160-pixel side margins and 1.5× content scale. A subsequent sequence of ordinary
+200-ms left clicks selected `Take`, then `off` from the updated verb menu. The
+first click after entering mouse mode did not select a word in that sequence;
+compare this mode-entry behavior with DOSBox before changing the guest API.
+Synthetic CTest checks cover driver
 presence, coordinate ranges, SDL conversion, button history, focus loss, and
 cursor visibility. Keyboard, save/restore, and audible audio were separately
 confirmed by the user on 2026-10-31.

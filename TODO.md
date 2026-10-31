@@ -7,7 +7,8 @@
    services only as actual game execution requires them.
 2. Compare mouse behavior with DOSBox across scenes and dialogs. SDL motion,
    buttons, cursor visibility, and resized-window mapping are implemented;
-   Escape enters mouse mode and Inventory clicks work in the original game.
+   Escape enters mouse mode; Inventory and command-word clicks work in the
+   original game. Investigate the first click consumed after mode entry.
 3. Recover RTLink module mapping and game-routine boundaries. DOS reads can load
    executable overlay sections; invalidate Unicorn's translated blocks after
    these writes. Keep regression coverage for replacement code execution.
