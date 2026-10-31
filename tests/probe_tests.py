@@ -87,6 +87,35 @@ class ProbeTests(unittest.TestCase):
         _, pixels = result.picture.split(b'255\n', 1)
         self.assertEqual(pixels[:3], b'\xff\xff\xff')
 
+    def test_dos_list_of_lists_exposes_live_mcb_chain(self):
+        for prefix, expected_blocks in [('', 2), ('bb0001b44acd21', 3)]:
+            with self.subTest(blocks=expected_blocks):
+                code = bytes.fromhex(prefix + 'b452cd21b8004ccd21')
+                result = self.run_guest(code, dump=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                address = int(result.registers['ES'], 16) * 16 + int(result.registers['BX'], 16)
+                segment = struct.unpack_from('<H', result.memory, address - 2)[0]
+                self.assertLess(address, segment * 16)
+                blocks = []
+                while True:
+                    signature, owner, size = struct.unpack_from('<BHH', result.memory, segment * 16)
+                    self.assertIn(signature, (ord('M'), ord('Z')))
+                    blocks.append((segment, owner, size))
+                    self.assertLessEqual(len(blocks), expected_blocks)
+                    if signature == ord('Z'):
+                        self.assertEqual(segment + size + 1, 0xa000)
+                        break
+                    segment += size + 1
+                self.assertEqual(len(blocks), expected_blocks)
+                self.assertEqual(blocks[0], (0x0fcf, 0x0ff0, 31))
+                if prefix:
+                    self.assertEqual(blocks[-1][1], 0)  # New free tail after PSP shrink.
+
+    def test_dos_list_pointer_guest_dereference(self):
+        code = bytes.fromhex('b452cd21268b47fe8ed8a00000b44ccd21')
+        result = self.run_guest(code)
+        self.assertIn('DOS exit code: 77', result.stdout, result.stderr)  # First MCB is 'M'.
+
     def test_vga_detection(self):
         result = self.run_guest(bytes.fromhex('b8001acd1089d8b44ccd21'))
         self.assertIn('DOS exit code: 8', result.stdout)

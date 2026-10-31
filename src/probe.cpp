@@ -354,6 +354,14 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             state.exited = true;
             state.exit_code = number == 0x20 ? 0 : ax & 255;
             check(uc_emu_stop(uc));
+        } else if (number == 0x21 && (ax >> 8) == 0x52) {
+            // DOS 5 list-of-lists subset: the first MCB segment is at ES:[BX-2].
+            // Keep the information block below the process/environment allocations.
+            constexpr std::uint16_t segment = 0x0800, offset = 0x0020;
+            const std::uint16_t first_mcb = state.arena.blocks().front().segment - 1;
+            check(uc_mem_write(uc, std::size_t(segment) * 16 + offset - 2, &first_mcb, 2));
+            set(uc, UC_X86_REG_ES, segment);
+            set(uc, UC_X86_REG_BX, offset);
         } else if (number == 0x21 && (ax >> 8) >= 0x48 && (ax >> 8) <= 0x4a) {
             const auto operation = ax >> 8;
             const auto result = operation == 0x48   ? state.arena.allocate(reg(uc, UC_X86_REG_BX))

@@ -36,3 +36,16 @@ resize/allocation register results and failure carry semantics.
 The implementation was checked against the control flow of
 [DOSBox Staging's memory manager](https://github.com/dosbox-staging/dosbox-staging/blob/main/src/dos/dos_memory.cpp).
 Differential tests against an executing DOS reference remain future work.
+
+## List-of-lists memory-chain field
+
+DOS `AH=52h` returns `ES:BX = 0800:0020`. The word at `ES:[BX-2]` points to the
+first live MCB, including the environment allocation. This is the only
+list-of-lists field implemented so far; it is not a full DOS kernel structure.
+The information block lies below the process/environment arena.
+
+The original Escape-skip path dereferences that word at `12a5:42c6`, walks the
+MCB chain by size/type, frees process-owned blocks except the PSP and handoff
+scratch allocation, then resizes the retained PSP allocation. It now reaches
+`AH=1Ah` disk-transfer-address setup. Synthetic guests check the pointer and
+walk the actual serialized chain before and after shrinking an allocation.
