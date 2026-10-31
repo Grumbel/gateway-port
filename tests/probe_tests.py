@@ -42,6 +42,51 @@ class ProbeTests(unittest.TestCase):
             result.files = {name: (root / name).read_bytes() for name in (files or {})}
             return result
 
+    @staticmethod
+    def text_font_fixture():
+        font = bytearray(770)
+        font[:10] = bytes.fromhex('010101217f0008080000')
+        font[10 + (ord('G') - 0x21) * 8] = 0x80
+        return bytes(font)
+
+    def test_graphics_to_text_bios_character(self):
+        # Reproduce the reported mode-12 -> mode-3 -> cursor query -> AH=09h sequence.
+        code = bytes.fromhex(
+            'b81200cd10ba4e01b402cd10b80300cd1031dbb403cd10'
+            'b84709bb0f00b90200cd10b8004ccd21')
+        result = self.run_guest(code, {'GATE_000.FNT': self.text_font_fixture()}, dump=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.memory[0xb8000:0xb8006], b'G\x0fG\x0f \x07')
+        self.assertEqual(result.memory[0x450:0x452], b'\0\0')  # Mode reset; AH=09h does not move cursor.
+        self.assertEqual(result.memory[0x449], 3)
+        self.assertEqual(struct.unpack_from('<H', result.memory, 0x44a)[0], 80)
+        self.assertEqual(result.memory[0x484], 24)
+        self.assertEqual(struct.unpack_from('<H', result.memory, 0x485)[0], 16)
+        header, pixels = result.picture.split(b'255\n', 1)
+        self.assertEqual(header, b'P6\n640 400\n')
+        self.assertEqual(pixels[:6], b'\xff\xff\xff\0\0\0')
+
+    def test_text_page_repeat_read_and_direct_memory(self):
+        # Page 2, last column; repeated AH=09h must wrap to the next row without moving cursor.
+        code = bytes.fromhex(
+            'b80300cd10bb0002ba4f00b402cd10b84709bb0f02b90200cd10'
+            'b408cd10b80205cd10b8004ccd21')
+        result = self.run_guest(code, {'GATE_000.FNT': self.text_font_fixture()}, dump=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.memory[0xba09e:0xba0a2], b'G\x0fG\x0f')
+        self.assertEqual(result.memory[0xb8000:0xb8002], b' \x07')
+        self.assertEqual(result.memory[0x462], 2)
+        self.assertEqual(result.memory[0x454:0x456], b'\x4f\0')
+        _, pixels = result.picture.split(b'255\n', 1)
+        self.assertEqual(pixels[632 * 3:633 * 3], b'\xff\xff\xff')
+
+    def test_text_memory_written_by_guest_is_presented(self):
+        code = bytes.fromhex('b80300cd10b800b88ec026c7060000470fb8004ccd21')
+        result = self.run_guest(code, {'GATE_000.FNT': self.text_font_fixture()}, dump=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        _, pixels = result.picture.split(b'255\n', 1)
+        self.assertEqual(pixels[:3], b'\xff\xff\xff')
+
     def test_vga_detection(self):
         result = self.run_guest(bytes.fromhex('b8001acd1089d8b44ccd21'))
         self.assertIn('DOS exit code: 8', result.stdout)

@@ -189,6 +189,32 @@ void video_memory(uc_engine *uc, uc_mem_type type, std::uint64_t address, int si
     }
 }
 
+void text_mode_state(uc_engine *uc, State &state, bool clear) {
+    state.cursor.fill(0);
+    state.cursor_shape = 0x0607;
+    const std::uint16_t columns = 80, page_size = 4096, start = 0, shape = 0x0607, height = 16;
+    const std::uint8_t mode = 3, page = 0, rows = 24;
+    check(uc_mem_write(uc, 0x449, &mode, 1));
+    check(uc_mem_write(uc, 0x44a, &columns, 2));
+    check(uc_mem_write(uc, 0x44c, &page_size, 2));
+    check(uc_mem_write(uc, 0x44e, &start, 2));
+    check(uc_mem_write(uc, 0x450, state.cursor.data(), sizeof(state.cursor)));
+    check(uc_mem_write(uc, 0x460, &shape, 2));
+    check(uc_mem_write(uc, 0x462, &page, 1));
+    check(uc_mem_write(uc, 0x484, &rows, 1));
+    check(uc_mem_write(uc, 0x485, &height, 2));
+    if (clear)
+        check(uc_mem_write(uc, 0xb8000, state.vga.text_memory().data(),
+                           state.vga.text_memory().size()));
+}
+void text_snapshot(uc_engine *uc, State &state) {
+    if (state.vga.mode() != 3)
+        return;
+    std::array<std::uint8_t, 32768> memory;
+    check(uc_mem_read(uc, 0xb8000, memory.data(), memory.size()));
+    state.vga.text_snapshot(memory);
+}
+
 bool dispatch(uc_engine *uc, unsigned number) {
     std::uint16_t vector[2]{};
     check(uc_mem_read(uc, number * 4, vector, sizeof(vector)));
@@ -262,24 +288,48 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             set(uc, UC_X86_REG_BX, 8); // VGA with an analog color display.
         } else if (number == 0x10 && (ax >> 8) == 9) {
             const auto bx = reg(uc, UC_X86_REG_BX);
-            const auto position = state.cursor[(bx >> 8) & 7];
+            const auto page = (bx >> 8) & 7;
+            const auto position = state.cursor[page];
             const unsigned row = position >> 8, column = position & 255;
             const auto character = ax & 255;
-            const unsigned height = state.vga.mode() == 0x12   ? 16
-                                    : state.vga.mode() == 0x10 ? 14
-                                                               : 8;
-            if (!state.font_loaded && character != ' ')
-                throw std::runtime_error("BIOS glyph needs game font GATE_000.FNT");
-            std::array<std::uint8_t, 16> glyph{};
-            for (unsigned i = 0; i < height; ++i)
-                glyph[i] = state.bios_font[character][i * 8 / height];
-            for (unsigned i = 0; i < reg(uc, UC_X86_REG_CX); ++i)
-                state.vga.draw_glyph(column + i, row, std::span(glyph).first(height), bx & 255);
+            if (state.vga.mode() == 3) {
+                const std::uint8_t cell[]{static_cast<std::uint8_t>(character),
+                                          static_cast<std::uint8_t>(bx)};
+                const auto first = row * 80 + column;
+                for (unsigned i = 0; i < reg(uc, UC_X86_REG_CX) && first + i < 2000; ++i)
+                    check(uc_mem_write(uc, 0xb8000 + page * 4096 + (first + i) * 2, cell, 2));
+            } else {
+                const unsigned height = state.vga.mode() == 0x12   ? 16
+                                        : state.vga.mode() == 0x10 ? 14
+                                                                   : 8;
+                if (!state.font_loaded && character != ' ')
+                    throw std::runtime_error("BIOS glyph needs game font GATE_000.FNT");
+                std::array<std::uint8_t, 16> glyph{};
+                for (unsigned i = 0; i < height; ++i)
+                    glyph[i] = state.bios_font[character][i * 8 / height];
+                for (unsigned i = 0; i < reg(uc, UC_X86_REG_CX); ++i)
+                    state.vga.draw_glyph(column + i, row, std::span(glyph).first(height), bx & 255);
+            }
+        } else if (number == 0x10 && (ax >> 8) == 8 && state.vga.mode() == 3) {
+            const auto page = (reg(uc, UC_X86_REG_BX) >> 8) & 7;
+            const auto position = state.cursor[page];
+            const auto cell = (position >> 8) * 80 + (position & 255);
+            std::uint16_t value = 0;
+            if (cell < 2000)
+                check(uc_mem_read(uc, 0xb8000 + page * 4096 + cell * 2, &value, 2));
+            set(uc, UC_X86_REG_AX, value);
+        } else if (number == 0x10 && (ax >> 8) == 5 && state.vga.mode() == 3) {
+            const std::uint8_t page = ax & 7;
+            state.vga.text_page(page);
+            const std::uint16_t start = page * 4096;
+            check(uc_mem_write(uc, 0x44e, &start, 2));
+            check(uc_mem_write(uc, 0x462, &page, 1));
         } else if (number == 0x10 && ((ax >> 8) == 2 || (ax >> 8) == 3)) {
             const auto page = (reg(uc, UC_X86_REG_BX) >> 8) & 7;
-            if ((ax >> 8) == 2)
+            if ((ax >> 8) == 2) {
                 state.cursor[page] = reg(uc, UC_X86_REG_DX);
-            else {
+                check(uc_mem_write(uc, 0x450 + page * 2, &state.cursor[page], 2));
+            } else {
                 set(uc, UC_X86_REG_DX, state.cursor[page]);
                 set(uc, UC_X86_REG_CX, state.cursor_shape);
             }
@@ -287,13 +337,17 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             state.cursor_shape = reg(uc, UC_X86_REG_CX);
         } else if (number == 0x10 && (ax >> 8) == 0x0f) {
             set(uc, UC_X86_REG_AX, 0x5000 | state.vga.mode());
-            set(uc, UC_X86_REG_BX, reg(uc, UC_X86_REG_BX) & 255);
+            set(uc, UC_X86_REG_BX,
+                (reg(uc, UC_X86_REG_BX) & 255) |
+                    (state.vga.mode() == 3 ? state.vga.text_page() << 8 : 0));
         } else if (number == 0x10 && (ax >> 8) == 0) {
             const auto mode = ax & 0x7f;
             if (mode != 3 && mode != 0x0d && mode != 0x0e && mode != 0x10 && mode != 0x12 &&
                 mode != 0x13)
                 throw std::runtime_error("unsupported VGA mode");
             state.vga.set_mode(mode, !(ax & 0x80));
+            if (mode == 3)
+                text_mode_state(uc, state, !(ax & 0x80));
             const std::uint8_t value = mode;
             check(uc_mem_write(uc, 0x449, &value, 1));
         } else if (number == 0x20 || (number == 0x21 && (ax >> 8) == 0x4c)) {
@@ -602,6 +656,7 @@ int main(int argc, char **argv) {
         Engine engine;
         check(uc_mem_map(engine.uc, 0, image.memory.size(), UC_PROT_ALL));
         check(uc_mem_write(engine.uc, 0, image.memory.data(), image.memory.size()));
+        text_mode_state(engine.uc, state, true);
         const std::uint16_t top = 0xa000;
         check(uc_mem_write(engine.uc, std::size_t(image.ds) * 16 + 2, &top, 2));
         const std::uint16_t conventional_kb = 640;
@@ -620,8 +675,10 @@ int main(int argc, char **argv) {
             if (font.size() != 770 || font[2] != 1 || font[3] != 0x21 || font[4] != 0x7f ||
                 font[6] != 8)
                 throw std::runtime_error("unexpected BIOS fallback game font layout");
-            for (unsigned c = 0x21; c <= 0x7f; ++c)
+            for (unsigned c = 0x21; c <= 0x7f; ++c) {
                 std::copy_n(font.begin() + 10 + (c - 0x21) * 8, 8, state.bios_font[c].begin());
+                state.vga.text_font(c, state.bios_font[c]);
+            }
             state.font_loaded = true;
         }
         uc_hook hook;
@@ -683,6 +740,7 @@ int main(int argc, char **argv) {
             ++steps;
 #ifdef GATEWAY_SDL
             if (host && steps % 16 == 0) {
+                text_snapshot(engine.uc, state);
                 host->present(state.vga, state.opl.render(768));
                 std::this_thread::sleep_until(started + std::chrono::milliseconds(steps));
             }
@@ -696,6 +754,7 @@ int main(int argc, char **argv) {
                 break;
         }
         if (!dump_prefix.empty()) {
+            text_snapshot(engine.uc, state);
             std::vector<std::uint8_t> memory(1024 * 1024);
             check(uc_mem_read(engine.uc, 0, memory.data(), memory.size()));
             std::ofstream registers(dump_prefix + ".regs");

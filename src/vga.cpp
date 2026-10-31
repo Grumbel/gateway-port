@@ -8,6 +8,13 @@ void Vga::set_mode(std::uint8_t mode, bool clear) {
     if (mode != 3 && mode != 0x0d && mode != 0x0e && mode != 0x10 && mode != 0x12 && mode != 0x13)
         throw std::runtime_error("unsupported VGA mode");
     mode_ = mode;
+    text_page_ = 0;
+    if (mode == 3 && clear) {
+        for (std::size_t i = 0; i < text_.size(); i += 2) {
+            text_[i] = ' ';
+            text_[i + 1] = 7;
+        }
+    }
     seq_.fill(0);
     gc_.fill(0);
     crtc_.fill(0);
@@ -32,7 +39,9 @@ void Vga::set_mode(std::uint8_t mode, bool clear) {
     std::copy(ega.begin(), ega.end(), attr_.begin());
 }
 int Vga::width() const { return mode_ == 0x0d || mode_ == 0x13 ? 320 : 640; }
-int Vga::height() const { return mode_ == 0x12 ? 480 : mode_ == 0x10 ? 350 : 200; }
+int Vga::height() const {
+    return mode_ == 3 ? 400 : mode_ == 0x12 ? 480 : mode_ == 0x10 ? 350 : 200;
+}
 bool Vga::handles_port(std::uint16_t port) const {
     switch (port) {
     case 0x3c0:
@@ -223,6 +232,23 @@ void Vga::draw_glyph(unsigned column, unsigned row, std::span<const std::uint8_t
         }
 }
 
+void Vga::text_font(unsigned character, std::span<const std::uint8_t> bitmap) {
+    if (character >= text_font_.size() || bitmap.empty() || bitmap.size() > 16)
+        throw std::runtime_error("invalid text glyph");
+    for (unsigned row = 0; row < 16; ++row)
+        text_font_[character][row] = bitmap[row * bitmap.size() / 16];
+}
+void Vga::text_snapshot(std::span<const std::uint8_t> memory) {
+    if (memory.size() != text_.size())
+        throw std::runtime_error("invalid text memory snapshot");
+    std::copy(memory.begin(), memory.end(), text_.begin());
+}
+void Vga::text_page(unsigned page) {
+    if (page >= 8)
+        throw std::runtime_error("invalid text page");
+    text_page_ = page;
+}
+
 void Vga::palette(std::uint16_t index, std::uint8_t r, std::uint8_t g, std::uint8_t b) {
     if (index >= dac_.size())
         throw std::runtime_error("VGA palette index out of range");
@@ -236,7 +262,12 @@ std::vector<std::uint32_t> Vga::pixels() const {
     for (int y = 0; y < height(); ++y)
         for (int x = 0; x < width(); ++x) {
             unsigned color = 0;
-            if (mode_ == 0x13) {
+            if (mode_ == 3) {
+                const auto cell = text_page_ * 4096 + ((y / 16) * 80 + x / 8) * 2;
+                const auto character = text_[cell], attribute = text_[cell + 1];
+                const bool ink = text_font_[character][y % 16] & (0x80 >> (x % 8));
+                color = attr_[ink ? attribute & 15 : (attribute >> 4) & 7] & 63;
+            } else if (mode_ == 0x13) {
                 const auto offset = (start * 4 + y * stride + x) & 0xffff;
                 color = planes_[offset & 3][offset >> 2];
             } else {

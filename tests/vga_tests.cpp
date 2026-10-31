@@ -82,6 +82,28 @@ int main() {
         vga.write(1, 2);
         pixels = vga.pixels();
         require(pixels[0] == 0xffaa0000 && pixels[1] == 0xff00aa00, "chain-four addressing failed");
+        vga.set_mode(3);
+        require(vga.width() == 640 && vga.height() == 400, "80x25 text dimensions");
+        std::array<std::uint8_t, 8> font{};
+        font[0] = 0x80;
+        vga.text_font('G', font);
+        std::array<std::uint8_t, 32768> text{};
+        text[0] = 'G';
+        text[1] = 0x14;
+        text[4096] = 'G';
+        text[4097] = 0x8f;
+        vga.text_snapshot(text);
+        pixels = vga.pixels();
+        require(pixels[0] == 0xffaa0000 && pixels[640] == 0xffaa0000 && pixels[1] == 0xff0000aa,
+                "text font scaling or foreground/background failed");
+        vga.text_page(1);
+        require(vga.pixels()[0] == 0xffffffff && vga.pixels()[1] == 0xff000000,
+                "text page or blink attribute treated as graphics XOR");
+        vga.set_mode(3, false);
+        require(vga.text_memory()[0] == 'G', "no-clear mode set erased text");
+        vga.set_mode(3);
+        require(vga.text_memory()[0] == ' ' && vga.text_memory()[1] == 7,
+                "text clear did not restore blank cells");
         std::cout << "VGA checks passed\n";
     } catch (const std::exception &e) {
         std::cerr << e.what() << '\n';

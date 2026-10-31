@@ -5,7 +5,7 @@
 #include <vector>
 
 namespace gateway {
-// Conventional VGA planar graphics subset. Timing and text rendering are separate.
+// Conventional VGA planar graphics and 80x25 text presentation.
 class Vga {
   public:
     Vga();
@@ -21,10 +21,18 @@ class Vga {
     std::vector<std::uint32_t> pixels() const; // ARGB8888, opaque alpha.
     void draw_glyph(unsigned column, unsigned row, std::span<const std::uint8_t> bitmap,
                     std::uint8_t attribute);
+    void text_font(unsigned character, std::span<const std::uint8_t> bitmap);
+    void text_snapshot(std::span<const std::uint8_t> memory);
+    std::span<const std::uint8_t> text_memory() const { return text_; }
+    void text_page(unsigned page);
+    unsigned text_page() const { return text_page_; }
     void palette(std::uint16_t index, std::uint8_t r, std::uint8_t g, std::uint8_t b);
 
   private:
     std::uint8_t mode_ = 3;
+    unsigned text_page_ = 0;
+    std::array<std::uint8_t, 32768> text_{};
+    std::array<std::array<std::uint8_t, 16>, 256> text_font_{};
     std::array<std::array<std::uint8_t, 65536>, 4> planes_{};
     std::array<std::uint8_t, 4> latch_{};
     std::array<std::uint8_t, 256> seq_{}, gc_{}, crtc_{}, attr_{};
