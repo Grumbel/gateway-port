@@ -134,6 +134,31 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(result.memory[0xff5c:0xff6c], b'\0' + b'0       ' + b'   ' + b'\0' * 4)
         self.assertEqual(result.memory[0xff6c:0xff7c], b'\0' + b'258     ' + b'   ' + b'\0' * 4)
 
+    def test_overlay_exec_replaces_cached_code_and_preserves_psp(self):
+        # Execute an old target first, then replace it with an MZ overlay at the same address.
+        prefix = bytes.fromhex('b800208ec026c7060000b80126c706020000cb9a00000020')
+        code = bytearray.fromhex('0e1f1e07ba0000bb0000b8034bcd219a00000020b44ccd21')
+        name = b'CHILD.EXE\0'
+        struct.pack_into('<H', code, 5, len(prefix) + len(code))
+        struct.pack_into('<H', code, 8, len(prefix) + len(code) + len(name))
+        overlay_code = bytes.fromhex('b82a00cb')
+        header = bytearray(32)
+        struct.pack_into('<14H', header, 0, 0x5a4d, 36, 1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 28, 0)
+        result = self.run_guest(prefix + code + name + struct.pack('<HH', 0x2000, 0x1111),
+                                {'CHILD.EXE': header + overlay_code}, dump=True)
+        self.assertIn('DOS exit code: 42', result.stdout, result.stderr)
+        self.assertEqual(result.memory[0x20000:0x20004], overlay_code)
+        self.assertEqual(result.memory[0xff00:0xff02], b'\xcd\x20')
+
+    def test_overlay_exec_format_error(self):
+        code = bytearray.fromhex('0e1f1e07ba0000bb0000b8034bcd21b44ccd21')
+        name = b'BAD.EXE\0'
+        struct.pack_into('<H', code, 5, len(code))
+        struct.pack_into('<H', code, 8, len(code) + len(name))
+        result = self.run_guest(code + name + struct.pack('<HH', 0x2000, 0),
+                                {'BAD.EXE': b'not an executable'})
+        self.assertIn('DOS exit code: 11', result.stdout, result.stderr)
+
     def test_vga_detection(self):
         result = self.run_guest(bytes.fromhex('b8001acd1089d8b44ccd21'))
         self.assertIn('DOS exit code: 8', result.stdout)

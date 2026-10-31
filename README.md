@@ -106,7 +106,9 @@ nix run . -- ../gateway-dos/GATE.EXE
 
 Close the window to stop. Escape, Space, Enter, letters, digits, arrow keys,
 and common punctuation are forwarded to the guest BIOS keyboard queue. Mouse
-input, DOS child EXEC, and broader gameplay remain pending. The intro reaches
+input, normal DOS child EXEC, and broader gameplay remain pending. Escape now
+loads the main executable through the original overlay trampoline; main startup
+still stops at `RESTART.DAT` creation until writable guest state is implemented. The intro reaches
 its initial Legend title text; this does not establish complete intro playback.
 
 For a bounded capture (1–60000 ms of virtual guest time):

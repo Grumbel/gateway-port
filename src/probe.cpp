@@ -356,6 +356,45 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             state.exited = true;
             state.exit_code = number == 0x20 ? 0 : ax & 255;
             check(uc_emu_stop(uc));
+        } else if (number == 0x21 && ax == 0x4b03) {
+            const auto name = guest_filename(uc);
+            const auto path = game_file(state, name);
+            const auto parameters =
+                std::size_t(reg(uc, UC_X86_REG_ES)) * 16 + reg(uc, UC_X86_REG_BX);
+            std::array<std::uint8_t, 4> block{};
+            check(uc_mem_read(uc, parameters, block.data(), block.size()));
+            const std::uint16_t load_segment = block[0] | (std::uint16_t(block[1]) << 8);
+            const std::uint16_t relocation = block[2] | (std::uint16_t(block[3]) << 8);
+            std::cerr << "  overlay: " << name << " load=" << std::hex << load_segment
+                      << " relocation=" << relocation << '\n';
+            unsigned error = 0;
+            if (std::filesystem::is_symlink(path) || !std::filesystem::is_regular_file(path))
+                error = 2;
+            else {
+                std::ifstream input(path, std::ios::binary);
+                if (!input)
+                    error = 5;
+                else {
+                    std::vector<std::uint8_t> bytes{std::istreambuf_iterator<char>(input), {}};
+                    std::vector<std::uint8_t> image;
+                    try {
+                        image = gateway::load_mz_overlay(bytes, load_segment, relocation);
+                    } catch (const std::out_of_range &) {
+                        error = 8;
+                    } catch (const std::runtime_error &) {
+                        error = 11;
+                    }
+                    if (!error && !image.empty()) {
+                        const auto base = std::size_t(load_segment) * 16;
+                        check(uc_mem_write(uc, base, image.data(), image.size()));
+                        check(uc_ctl_remove_cache(uc, base, base + image.size()));
+                    }
+                }
+            }
+            set(uc, UC_X86_REG_FLAGS, (reg(uc, UC_X86_REG_FLAGS) & ~1) | bool(error));
+            set(uc, UC_X86_REG_AX, error);
+            if (!error)
+                set(uc, UC_X86_REG_DX, 0);
         } else if (number == 0x21 && (ax >> 8) == 0x29) {
             const auto input_segment = reg(uc, UC_X86_REG_DS), offset = reg(uc, UC_X86_REG_SI);
             std::string input;

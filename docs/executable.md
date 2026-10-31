@@ -110,7 +110,7 @@ this sequence previously raised `unsupported BIOS glyph mode`. Restoring text
 mode also resets the cursor and BIOS text geometry instead of reusing graphics
 cursor positions.
 
-A replay with `--press escape --milliseconds 18000` now reads the main executable,
-prepares DOS memory for the handoff, and stops at `INT 21h AH=52h` (DOS list of
-lists, `12a5:42c6`). This separate launcher boundary is still unsupported. It is
-independent of the direct main-program `RESTART.DAT` creation boundary above.
+A replay with `--press escape --milliseconds 18000` now completes the
+[list-of-lists, DTA, FCB, and overlay-load handoff](dos-handoff.md). Original
+trampoline code transfers execution into `GATEMAIN.EXE`; its startup reaches
+`RESTART.DAT` creation, matching the direct-main boundary above.
