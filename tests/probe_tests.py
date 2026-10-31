@@ -11,7 +11,7 @@ PROBE = sys.argv.pop(1)
 
 
 class ProbeTests(unittest.TestCase):
-    def run_guest(self, code, files=None, dump=False, game_args=None, press=None, break_at=None, state=False, state_files=None):
+    def run_guest(self, code, files=None, dump=False, game_args=None, press=None, break_at=None, state=False, state_files=None, exe_name="TEST.EXE"):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             assets = root / 'assets'
@@ -28,7 +28,7 @@ class ProbeTests(unittest.TestCase):
             struct.pack_into('<14H', header, 0, 0x5A4D, total % 512,
                              (total + 511) // 512, 0, 2, 32, 0xFFFF,
                              (len(code) + 15) // 16, 256, 0, 0, 0, 28, 0)
-            exe = assets / 'TEST.EXE'
+            exe = assets / exe_name
             exe.write_bytes(header + code)
             command = [PROBE, str(exe)]
             if state or state_files is not None:
@@ -103,6 +103,24 @@ class ProbeTests(unittest.TestCase):
         _, pixels = result.picture.split(b'255\n', 1)
         self.assertEqual(pixels[:6], b'\xff\xff\xff\0\0\0')
         self.assertEqual(pixels[640*3:640*3+6], b'\0\0\0\xff\xff\xff')
+
+    def test_bios_font_uses_main_prefix_and_ega_height(self):
+        ega = bytearray(10 + 95 * 14)
+        ega[:10] = bytes.fromhex('010101217f000e080000')
+        offset = 10 + (ord('L') - 0x21) * 14
+        ega[offset] = 0x40
+        ega[offset + 1] = 0x20
+        vga = bytearray(10 + 95 * 16)
+        vga[:10] = bytes.fromhex('010101217f0010080000')
+        vga[10 + (ord('L') - 0x21) * 16] = 0x80
+        code = bytes.fromhex('b81000cd10bb0f00b90100b84c09cd10b8004ccd21')
+        result = self.run_guest(code, {'TEST_100.FNT': bytes(ega), 'TEST_200.FNT': bytes(vga)},
+                                dump=True, exe_name='TESTMAIN.EXE')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        header, pixels = result.picture.split(b'255\n', 1)
+        self.assertEqual(header, b'P6\n640 350\n')
+        self.assertEqual(pixels[:6], b'\0\0\0\xff\xff\xff')
+        self.assertEqual(pixels[640*3:640*3+9], b'\0\0\0' * 2 + b'\xff\xff\xff')
 
     def test_bios_font_rejects_truncated_native_height(self):
         font = bytearray(self.text_font_fixture())
