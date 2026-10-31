@@ -42,6 +42,29 @@ int main() {
         require(image.memory[0x10002] == 0x34 && image.memory[0x10003] == 0x22,
                 "segment relocation not applied");
         require(image.memory[0x10020] == 0, "allocation not zero initialized");
+        const auto overlay = gateway::load_mz_overlay(b, 0x2000, 0x1111);
+        require(overlay.size() == 32 && overlay[2] == 0x45 && overlay[3] == 0x23,
+                "overlay load address incorrectly used as relocation factor");
+        auto overlay_header = b;
+        put(overlay_header, 10, 65535);
+        put(overlay_header, 14, 65535);
+        put(overlay_header, 20, 65535);
+        require(gateway::load_mz_overlay(overlay_header, 0x2000, 0).size() == 32,
+                "overlay imposed process allocation/entry requirements");
+        try {
+            gateway::load_mz_overlay(b, 0x9fff, 0);
+            throw std::runtime_error("overlay overflow accepted");
+        } catch (const std::out_of_range &) {
+        }
+        auto bad_overlay = b;
+        put(bad_overlay, 28, 31);
+        bool rejected = false;
+        try {
+            gateway::load_mz_overlay(bad_overlay, 0x1000, 0);
+        } catch (const std::runtime_error &) {
+            rejected = true;
+        }
+        require(rejected, "overlay relocation outside image accepted");
         rejects({});
         b = fixture();
         b.resize(40);

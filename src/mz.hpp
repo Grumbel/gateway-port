@@ -11,4 +11,7 @@ struct MzImage {
 };
 // A DOS-style allocation: PSP immediately before load_segment, no environment yet.
 MzImage load_mz(std::span<const std::uint8_t> file, std::uint16_t load_segment = 0x1000);
+// Overlay loading changes only the image bytes; the caller retains PSP/register ownership.
+std::vector<std::uint8_t> load_mz_overlay(std::span<const std::uint8_t> file,
+                                          std::uint16_t load_segment, std::uint16_t relocation);
 } // namespace gateway
