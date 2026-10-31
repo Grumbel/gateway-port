@@ -156,6 +156,8 @@ DosFile DosDrive::open(std::string_view input, unsigned access) const {
     if (access > 2)
         throw DosIoError(12, "invalid DOS access mode");
     const auto name = key(input);
+    if (name.find_first_of("*?") != name.npos)
+        throw DosIoError(5, "wildcards are not file names");
     auto path = find(state_, name);
     const int modes[]{O_RDONLY, O_WRONLY, O_RDWR};
     if (!path.empty())
@@ -194,6 +196,8 @@ DosFile DosDrive::open(std::string_view input, unsigned access) const {
 }
 DosFile DosDrive::create(std::string_view input, unsigned attributes) const {
     const auto name = key(input);
+    if (name.find_first_of("*?") != name.npos)
+        throw DosIoError(5, "wildcards are not file names");
     if (attributes & ~0x21u)
         throw DosIoError(5, "unsupported DOS create attributes");
     prepare_state();

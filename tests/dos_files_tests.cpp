@@ -103,6 +103,8 @@ int main() {
         error(5, [&] { drive.create("../escape", 0); });
         error(5, [&] { drive.create("C:\\sub\\escape", 0); });
         error(12, [&] { drive.open("DATA.DAT", 3); });
+        error(5, [&] { drive.create("GATE*.SAV", 0); });
+        error(5, [&] { drive.open("GATE?.SAV", 1); });
         store(assets / "Gate001.Sav", "original");
         store(assets / "GATE002.SAV", "two");
         store(assets / "PLAIN", "no extension");
