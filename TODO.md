@@ -7,7 +7,9 @@
    never modify `../gateway-dos/`.
 2. Recover RTL/OVL mapping and relocation behavior; document the module entry
    reached after the shared RTLink startup.
-3. Implement guest file access beneath the supplied game directory, with writes
+3. Complete launcher DOS process support. An intro-skip replay reaches `AH=52h`
+   (list of lists) at `12a5:42c6`; child EXEC is still pending. Implement guest file
+   access beneath the supplied game directory, with writes
    redirected to a separate user directory. Add a proper PSP, environment, DOS
    child EXEC handling and complete PSP semantics. A tracked environment, DOS
    memory arena, command tail, and timer interrupt bridge are already implemented.

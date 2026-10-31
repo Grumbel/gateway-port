@@ -101,3 +101,16 @@ write-only and read/write opens. Main startup handles that failure and calls
 file creation (`AX=3ca4`, `CX=0`, at `1805:24f4`). This is the current stop;
 creation needs a separate writable state directory. Existing original files
 return access denied for writable opens and remain unchanged.
+
+## Intro return to text mode
+
+The intro may restore mode `03h` while reporting a launch failure. Its cursor
+queries and `AH=09h` character writes now update text cells and render normally;
+this sequence previously raised `unsupported BIOS glyph mode`. Restoring text
+mode also resets the cursor and BIOS text geometry instead of reusing graphics
+cursor positions.
+
+A replay with `--press escape --milliseconds 18000` now reads the main executable,
+prepares DOS memory for the handoff, and stops at `INT 21h AH=52h` (DOS list of
+lists, `12a5:42c6`). This separate launcher boundary is still unsupported. It is
+independent of the direct main-program `RESTART.DAT` creation boundary above.
