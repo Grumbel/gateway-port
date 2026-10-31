@@ -3,9 +3,15 @@
 #include <stdexcept>
 
 namespace gateway {
-DosMemory::DosMemory(std::uint16_t psp, std::uint16_t end) : owner_(psp) {
+DosMemory::DosMemory(std::uint16_t psp, std::uint16_t end, std::uint16_t environment)
+    : owner_(psp) {
     if (!psp || psp >= end || end > 0xa000)
         throw std::runtime_error("invalid DOS conventional-memory arena");
+    if (environment) {
+        if (environment >= psp)
+            throw std::runtime_error("invalid DOS environment segment");
+        blocks_.push_back({environment, static_cast<std::uint16_t>(psp - environment - 1), psp});
+    }
     blocks_.push_back({psp, static_cast<std::uint16_t>(end - psp), psp});
 }
 void DosMemory::coalesce() {

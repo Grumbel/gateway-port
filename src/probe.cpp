@@ -47,18 +47,21 @@ struct State {
     std::map<unsigned, std::ifstream> files;
     unsigned next_handle = 5;
     std::array<bool, 5> standard_open{true, true, true, true, true};
-    gateway::DosMemory arena{0x0ff0};
+    gateway::DosMemory arena{0x0ff0, 0xa000, 0x0fd0};
     gateway::Vga vga;
     gateway::Opl opl;
     gateway::Pit pit;
     gateway::DosClock clock;
     std::array<std::uint16_t, 8> cursor{};
+    std::array<std::array<std::uint8_t, 8>, 256> bios_font{};
+    bool font_loaded = false;
     std::uint16_t cursor_shape = 0x0607;
     std::uint8_t pending_dos_scan = 0;
     std::deque<std::uint16_t> keys;
     std::set<unsigned> polled_services;
     std::uint8_t pic_mask = 0;
     bool irq_in_service = false;
+    bool breakpoint_hit = false;
     bool exited = false;
     unsigned exit_code = 0;
     std::string failure;
@@ -224,6 +227,21 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
         } else if (number == 0x10 && ax == 0x1a00) {
             set(uc, UC_X86_REG_AX, 0x1a);
             set(uc, UC_X86_REG_BX, 8); // VGA with an analog color display.
+        } else if (number == 0x10 && (ax >> 8) == 9) {
+            const auto bx = reg(uc, UC_X86_REG_BX);
+            const auto position = state.cursor[(bx >> 8) & 7];
+            const unsigned row = position >> 8, column = position & 255;
+            const auto character = ax & 255;
+            const unsigned height = state.vga.mode() == 0x12   ? 16
+                                    : state.vga.mode() == 0x10 ? 14
+                                                               : 8;
+            if (!state.font_loaded && character != ' ')
+                throw std::runtime_error("BIOS glyph needs game font GATE_000.FNT");
+            std::array<std::uint8_t, 16> glyph{};
+            for (unsigned i = 0; i < height; ++i)
+                glyph[i] = state.bios_font[character][i * 8 / height];
+            for (unsigned i = 0; i < reg(uc, UC_X86_REG_CX); ++i)
+                state.vga.draw_glyph(column + i, row, std::span(glyph).first(height), bx & 255);
         } else if (number == 0x10 && ((ax >> 8) == 2 || (ax >> 8) == 3)) {
             const auto page = (reg(uc, UC_X86_REG_BX) >> 8) & 7;
             if ((ax >> 8) == 2)
@@ -462,9 +480,10 @@ int main(int argc, char **argv) {
     std::string dump_prefix;
     std::string game_args;
     std::uint16_t injected_key = 0;
+    std::uint64_t breakpoint = 0;
     auto usage = [] {
         std::cout << "Usage: gateway[-probe] <DOS executable> [--headless] "
-                     "[--milliseconds N] [--dump-prefix PATH] [--game-args TEXT]\n";
+                     "[--milliseconds N] [--dump-prefix PATH] [--game-args TEXT] [--press KEY] [--break-at HEX]\n";
     };
     if (argc < 2 || std::string(argv[1]) == "--help") {
         usage();
@@ -474,7 +493,16 @@ int main(int argc, char **argv) {
         const std::string option = argv[i];
         if (option == "--headless")
             interactive = false;
-        else if (option == "--press" && i + 1 < argc) {
+        else if (option == "--break-at" && i + 1 < argc) {
+            const std::string value = argv[++i];
+            const auto result =
+                std::from_chars(value.data(), value.data() + value.size(), breakpoint, 16);
+            if (result.ec != std::errc{} || result.ptr != value.data() + value.size() ||
+                !breakpoint || breakpoint > 0xfffff) {
+                usage();
+                return 2;
+            }
+        } else if (option == "--press" && i + 1 < argc) {
             const std::string key = argv[++i];
             if (key == "escape")
                 injected_key = 0x011b;
@@ -521,6 +549,16 @@ int main(int argc, char **argv) {
         image.memory[tail] = game_args.size();
         std::copy(game_args.begin(), game_args.end(), image.memory.begin() + tail + 1);
         image.memory[tail + 1 + game_args.size()] = 13;
+        const std::uint16_t environment = 0x0fd0;
+        const auto env_address = std::size_t(environment) * 16;
+        image.memory[std::size_t(image.ds) * 16 + 0x2c] = environment & 255;
+        image.memory[std::size_t(image.ds) * 16 + 0x2d] = environment >> 8;
+        const std::string variables("PATH=C:\\\0\0", 10);
+        std::copy(variables.begin(), variables.end(), image.memory.begin() + env_address);
+        const auto filename = "C:\\" + std::filesystem::path(argv[1]).filename().string();
+        const auto filename_address = env_address + variables.size();
+        image.memory[filename_address] = 1;
+        std::copy(filename.begin(), filename.end(), image.memory.begin() + filename_address + 2);
         state.arena.write_mcbs(image.memory);
         // BIOS timer trampoline: update tick count, call user INT 1Ch, then EOI/IRET.
         const std::uint8_t timer_code[]{0xcd, 0xf1, 0xcd, 0x1c, 0x50, 0xb0,
@@ -550,6 +588,16 @@ int main(int argc, char **argv) {
         set(engine.uc, UC_X86_REG_ES, image.es);
         set(engine.uc, UC_X86_REG_FLAGS, 0x202);
         state.data_dir = std::filesystem::absolute(argv[1]).parent_path();
+        std::ifstream font_file(state.data_dir / "GATE_000.FNT", std::ios::binary);
+        if (font_file) {
+            std::vector<std::uint8_t> font{std::istreambuf_iterator<char>(font_file), {}};
+            if (font.size() != 770 || font[2] != 1 || font[3] != 0x21 || font[4] != 0x7f ||
+                font[6] != 8)
+                throw std::runtime_error("unexpected BIOS fallback game font layout");
+            for (unsigned c = 0x21; c <= 0x7f; ++c)
+                std::copy_n(font.begin() + 10 + (c - 0x21) * 8, 8, state.bios_font[c].begin());
+            state.font_loaded = true;
+        }
         uc_hook hook;
         check(uc_hook_add(engine.uc, &hook, UC_HOOK_INTR, reinterpret_cast<void *>(interrupt),
                           &state, 1, 0));
@@ -558,6 +606,15 @@ int main(int argc, char **argv) {
                           &state, 1, 0, UC_X86_INS_IN));
         check(uc_hook_add(engine.uc, &out_hook, UC_HOOK_INSN, reinterpret_cast<void *>(port_out),
                           &state, 1, 0, UC_X86_INS_OUT));
+        uc_hook break_hook;
+        if (breakpoint) {
+            const auto callback = +[](uc_engine *uc, std::uint64_t, std::uint32_t, void *opaque) {
+                static_cast<State *>(opaque)->breakpoint_hit = true;
+                uc_emu_stop(uc);
+            };
+            check(uc_hook_add(engine.uc, &break_hook, UC_HOOK_CODE,
+                              reinterpret_cast<void *>(callback), &state, breakpoint, breakpoint));
+        }
         uc_hook video_hook;
         check(uc_hook_add(engine.uc, &video_hook, UC_HOOK_MEM_READ | UC_HOOK_MEM_WRITE,
                           reinterpret_cast<void *>(video_memory), &state, 0xa0000, 0xaffff));
@@ -581,6 +638,10 @@ int main(int argc, char **argv) {
             const auto pc =
                 std::size_t(reg(engine.uc, UC_X86_REG_CS)) * 16 + reg(engine.uc, UC_X86_REG_IP);
             status = uc_emu_start(engine.uc, pc, 0x100000, 100000, 5000);
+            if (state.breakpoint_hit) {
+                requested_stop = true;
+                break;
+            }
             if (status != UC_ERR_OK || state.exited || !state.failure.empty())
                 break;
             state.clock.advance(1000);
@@ -611,6 +672,22 @@ int main(int argc, char **argv) {
         if (!dump_prefix.empty()) {
             std::vector<std::uint8_t> memory(1024 * 1024);
             check(uc_mem_read(engine.uc, 0, memory.data(), memory.size()));
+            std::ofstream registers(dump_prefix + ".regs");
+            for (const auto &[name, id] :
+                 std::initializer_list<std::pair<const char *, int>>{{"AX", UC_X86_REG_AX},
+                                                                     {"BX", UC_X86_REG_BX},
+                                                                     {"CX", UC_X86_REG_CX},
+                                                                     {"DX", UC_X86_REG_DX},
+                                                                     {"CS", UC_X86_REG_CS},
+                                                                     {"IP", UC_X86_REG_IP},
+                                                                     {"SS", UC_X86_REG_SS},
+                                                                     {"SP", UC_X86_REG_SP},
+                                                                     {"DS", UC_X86_REG_DS},
+                                                                     {"ES", UC_X86_REG_ES},
+                                                                     {"BP", UC_X86_REG_BP},
+                                                                     {"FLAGS", UC_X86_REG_FLAGS}})
+                registers << name << '=' << std::hex << reg(engine.uc, id) << '\n';
+            registers.close();
             std::ofstream binary(dump_prefix + ".bin", std::ios::binary);
             binary.write(reinterpret_cast<const char *>(memory.data()), memory.size());
             binary.close();
@@ -622,7 +699,7 @@ int main(int argc, char **argv) {
                 picture.write(rgb, 3);
             }
             picture.close();
-            if (!binary || !picture)
+            if (!binary || !picture || !registers)
                 throw std::runtime_error("cannot write diagnostic dumps");
         }
         check(status);

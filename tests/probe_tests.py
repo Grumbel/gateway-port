@@ -11,7 +11,7 @@ PROBE = sys.argv.pop(1)
 
 
 class ProbeTests(unittest.TestCase):
-    def run_guest(self, code, files=None, dump=False, game_args=None, press=None):
+    def run_guest(self, code, files=None, dump=False, game_args=None, press=None, break_at=None):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             for name, data in (files or {}).items():
@@ -25,6 +25,8 @@ class ProbeTests(unittest.TestCase):
             exe = root / 'TEST.EXE'
             exe.write_bytes(header + code)
             command = [PROBE, str(exe)]
+            if break_at is not None:
+                command += ['--break-at', break_at]
             if press is not None:
                 command += ['--press', press]
             if game_args is not None:
@@ -35,6 +37,8 @@ class ProbeTests(unittest.TestCase):
             if dump:
                 result.picture = (root / 'snapshot.ppm').read_bytes()
                 result.memory = (root / 'snapshot.bin').read_bytes()
+                result.registers = dict(line.split('=') for line in
+                                        (root / 'snapshot.regs').read_text().splitlines())
             return result
 
     def test_vga_detection(self):
@@ -102,6 +106,19 @@ class ProbeTests(unittest.TestCase):
     def test_close_standard_handle(self):
         result = self.run_guest(bytes.fromhex('31dbb43ecd219c58250100b44ccd21'))
         self.assertIn('DOS exit code: 0', result.stdout, result.stderr)
+
+    def test_environment_layout(self):
+        result = self.run_guest(bytes.fromhex('b8004ccd21'), dump=True)
+        segment = struct.unpack_from('<H', result.memory, 0xff00 + 0x2c)[0]
+        self.assertEqual(result.memory[segment * 16:segment * 16 + 24],
+                         b'PATH=C:\\\0\0\x01\0C:\\TEST.EXE\0')
+        self.assertEqual(result.memory[(segment - 1) * 16], ord('M'))
+
+    def test_breakpoint_snapshot(self):
+        result = self.run_guest(bytes.fromhex('b83412b8004ccd21'), dump=True, break_at='10003')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(int(result.registers['AX'], 16), 0x1234)
+        self.assertEqual(int(result.registers['IP'], 16), 3)
 
     def test_exit(self):
         result = self.run_guest(bytes.fromhex('b8004ccd21'))

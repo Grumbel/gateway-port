@@ -196,6 +196,33 @@ void Vga::write(std::uint16_t offset, std::uint8_t value) {
         planes_[p][offset] = (source & mask) | (latch_[p] & ~mask);
     }
 }
+void Vga::draw_glyph(unsigned column, unsigned row, std::span<const std::uint8_t> bitmap,
+                     std::uint8_t attribute) {
+    if (mode_ == 3 || mode_ == 0x13)
+        throw std::runtime_error("unsupported BIOS glyph mode");
+    const auto start = (std::uint16_t(crtc_[0x0c]) << 8) | crtc_[0x0d];
+    const auto stride = unsigned(crtc_[0x13]) * 2;
+    for (unsigned y = 0; y < bitmap.size(); ++y)
+        for (unsigned x = 0; x < 8; ++x) {
+            const unsigned px = column * 8 + x, py = row * bitmap.size() + y;
+            if (px >= unsigned(width()) || py >= unsigned(height()))
+                continue;
+            const auto offset = (start + py * stride + px / 8) & 0xffff;
+            const std::uint8_t bit = 0x80 >> (px & 7);
+            const bool ink = bitmap[y] & (0x80 >> x);
+            for (unsigned p = 0; p < 4; ++p) {
+                if (attribute & 0x80) {
+                    if (ink && (attribute & (1 << p)))
+                        planes_[p][offset] ^= bit;
+                } else {
+                    planes_[p][offset] &= ~bit;
+                    if (ink && (attribute & (1 << p)))
+                        planes_[p][offset] |= bit;
+                }
+            }
+        }
+}
+
 void Vga::palette(std::uint16_t index, std::uint8_t r, std::uint8_t g, std::uint8_t b) {
     if (index >= dac_.size())
         throw std::runtime_error("VGA palette index out of range");

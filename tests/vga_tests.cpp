@@ -70,6 +70,13 @@ int main() {
         vga.out(0x3d4, 0x0d);
         vga.out(0x3d5, 1);
         require(vga.pixels()[0] == 0xffff0000, "display start ignored");
+        std::array<std::uint8_t, 16> glyph{};
+        glyph[0] = 0x80;
+        vga.draw_glyph(2, 0, glyph, 4);
+        require(vga.pixels()[16] == 0xffaa0000 && vga.pixels()[17] == 0xff000000,
+                "BIOS glyph foreground/background failed");
+        vga.draw_glyph(2, 0, glyph, 0x84);
+        require(vga.pixels()[16] == 0xff000000, "BIOS XOR glyph failed");
         vga.set_mode(0x13);
         vga.write(0, 4);
         vga.write(1, 2);

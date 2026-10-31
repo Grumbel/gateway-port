@@ -8,6 +8,10 @@ void require(bool condition, const char *message) {
 }
 int main() {
     try {
+        gateway::DosMemory process(0x1000, 0x1100, 0x0fe0);
+        require(process.blocks().front().paragraphs == 31 && process.release(0x0fe0).error == 0 &&
+                    process.allocate(16).segment == 0x0fe0,
+                "environment block not tracked/reusable");
         gateway::DosMemory arena(0x1000, 0x1100);
         require(arena.allocate(1).error == 8, "initial block must occupy arena");
         require(arena.resize(0x1234, 1).error == 9, "invalid resize accepted");

@@ -17,7 +17,8 @@ struct MemoryBlock {
 class DosMemory {
   public:
     // Initially the process owns all conventional memory above its PSP.
-    explicit DosMemory(std::uint16_t psp, std::uint16_t end = 0xa000);
+    explicit DosMemory(std::uint16_t psp, std::uint16_t end = 0xa000,
+                       std::uint16_t environment = 0);
     MemoryResult allocate(std::uint16_t paragraphs);
     MemoryResult release(std::uint16_t segment);
     MemoryResult resize(std::uint16_t segment, std::uint16_t paragraphs);

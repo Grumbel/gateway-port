@@ -63,3 +63,30 @@ status 1 before graphics initialization. This is not yet evidence that it requir
 an undocumented argument: the PSP/environment and parent EXEC contracts remain
 incomplete. Cursor-position BIOS services, console output, and standard-handle
 cleanup are implemented so startup diagnostics can proceed.
+
+## Recovered launcher arguments
+
+A breakpoint at linear `1026a` in the supplied intro, immediately before the
+far call at `1000:026a`, exposes its spawn arguments on `SS:SP`. With default
+settings the argument vector is:
+
+```
+GATEMAIN.EXE 0 258 9 2 816 1 7 544
+```
+
+These are observed numeric initialization fields, not yet a fully decoded API.
+Passing them through `--game-args` allows direct main-program execution to reach
+`VOCAB.DAT` loading and DOS file-attribute query `AX=4300`. Friendly strings such
+as `VGA ADLIB` are not equivalent to this internal handoff.
+
+To reproduce the launcher snapshot:
+
+```sh
+./build/gateway-probe ../gateway-dos/GATE.EXE --press escape \
+  --break-at 1026a --milliseconds 12000 --dump-prefix build/spawn
+```
+
+Snapshots include `.regs` alongside `.bin` and `.ppm`. The PSP now names a tracked
+DOS environment block with `PATH=C:\` and the executable filename. BIOS loading
+text uses the original game's fixed 8×8 font scaled to the graphics mode's cell
+height; this is a fallback, not an exact replacement for the VGA ROM font.

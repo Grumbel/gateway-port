@@ -1,6 +1,7 @@
 #pragma once
 #include <array>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 namespace gateway {
@@ -18,6 +19,8 @@ class Vga {
     std::uint8_t read(std::uint16_t offset);
     void write(std::uint16_t offset, std::uint8_t value);
     std::vector<std::uint32_t> pixels() const; // ARGB8888, opaque alpha.
+    void draw_glyph(unsigned column, unsigned row, std::span<const std::uint8_t> bitmap,
+                    std::uint8_t attribute);
     void palette(std::uint16_t index, std::uint8_t r, std::uint8_t g, std::uint8_t b);
 
   private:
