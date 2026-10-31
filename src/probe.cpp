@@ -1238,6 +1238,17 @@ int main(int argc, char **argv) {
                 std::copy_n(font.begin() + 10 + (c - 0x21) * height, height, glyphs[c].begin());
             std::cerr << "BIOS fallback font: " << name << " (8x" << std::dec << height << ")\n";
         }
+        if (state.bios_fonts.empty()) {
+            auto &glyphs = state.bios_fonts[8];
+            for (unsigned c = 0; c < 128; ++c)
+                for (unsigned row = 0; row < 8; ++row) {
+                    // font8x8 stores the leftmost pixel in bit 0; VGA uses bit 7.
+                    const auto bits = font8x8_basic[c][row];
+                    for (unsigned bit = 0; bit < 8; ++bit)
+                        glyphs[c][row] |= ((bits >> bit) & 1) << (7 - bit);
+                }
+            std::cerr << "BIOS fallback font: built-in ASCII (8x8)\n";
+        }
         if (const auto font = state.font_for(16); font != state.bios_fonts.end())
             for (unsigned c = 0x21; c <= 0x7f; ++c)
                 state.vga.text_font(c, std::span(font->second[c]).first(font->first));
@@ -1309,17 +1320,6 @@ int main(int argc, char **argv) {
                 state.keys.push_back(key);
                 if (state.research_trace.is_open())
                     state.research_trace << "key ms=" << std::dec << steps << std::hex
-        if (state.bios_fonts.empty()) {
-            auto &glyphs = state.bios_fonts[8];
-            for (unsigned c = 0; c < 128; ++c)
-                for (unsigned row = 0; row < 8; ++row) {
-                    // font8x8 stores the leftmost pixel in bit 0; VGA uses bit 7.
-                    const auto bits = font8x8_basic[c][row];
-                    for (unsigned bit = 0; bit < 8; ++bit)
-                        glyphs[c][row] |= ((bits >> bit) & 1) << (7 - bit);
-                }
-            std::cerr << "BIOS fallback font: built-in ASCII (8x8)\n";
-        }
                                          << " value=" << key << '\n';
                 scheduled_keys.erase(scheduled_keys.begin());
             }
