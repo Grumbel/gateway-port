@@ -1,4 +1,5 @@
 #pragma once
+#include "mouse.hpp"
 #include "vga.hpp"
 #include <cstdint>
 #include <deque>
@@ -14,7 +15,7 @@ class SdlHost {
     ~SdlHost();
     SdlHost(const SdlHost &) = delete;
     SdlHost &operator=(const SdlHost &) = delete;
-    bool poll(std::deque<std::uint16_t> &keys);
+    bool poll(std::deque<std::uint16_t> &keys, Mouse &mouse, const Vga &vga);
     void present(const Vga &vga, std::span<const std::int16_t> samples);
 
   private:

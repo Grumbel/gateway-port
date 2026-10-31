@@ -2,6 +2,7 @@
 #include "dos_fcb.hpp"
 #include "dos_files.hpp"
 #include "dos_memory.hpp"
+#include "mouse.hpp"
 #include "mz.hpp"
 #include "opl.hpp"
 #include "pit.hpp"
@@ -59,6 +60,7 @@ struct State {
     std::array<bool, 5> standard_open{true, true, true, true, true};
     gateway::DosMemory arena{0x0ff0, 0xa000, 0x0fd0};
     gateway::Vga vga;
+    gateway::Mouse mouse;
     gateway::Opl opl;
     gateway::Pit pit;
     gateway::DosClock clock;
@@ -257,16 +259,62 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
     auto &state = *static_cast<State *>(opaque);
     try {
         auto ax = reg(uc, UC_X86_REG_AX);
-        const bool frequent = number == 0x16 || number == 0xf1 || number == 0x1c ||
+        const bool frequent = number == 0x33 || number == 0x16 || number == 0xf1 ||
+                              number == 0x1c ||
                               (number == 0x21 && ((ax >> 8) == 0x2a || (ax >> 8) == 0x2c));
         const bool first =
-            !frequent || state.polled_services.insert((number << 8) | (ax >> 8)).second;
+            !frequent ||
+            state.polled_services.insert((number << 16) | (number == 0x33 ? ax : ax >> 8)).second;
         if (first)
             std::cerr << "INT " << std::hex << number << " AX=" << std::setw(4) << std::setfill('0')
                       << ax << " BX=" << reg(uc, UC_X86_REG_BX) << " CX=" << reg(uc, UC_X86_REG_CX)
                       << " DX=" << reg(uc, UC_X86_REG_DX) << " at " << reg(uc, UC_X86_REG_CS) << ':'
                       << reg(uc, UC_X86_REG_IP) << '\n';
-        if (number == 0x21 && ((ax >> 8) == 7 || (ax >> 8) == 8 || (ax >> 8) == 1)) {
+        if (number == 0x33) {
+            auto &mouse = state.mouse;
+            if (ax == 0 || ax == 0x21) {
+                mouse = gateway::Mouse{};
+                mouse.max_y = state.vga.mode() == 3 ? 199 : state.vga.height() - 1;
+                mouse.y = (mouse.max_y + 1) / 2;
+                set(uc, UC_X86_REG_AX, 0xffff);
+                set(uc, UC_X86_REG_BX, 3);
+            } else if (ax == 0x20) {
+                // Enable driver after a previous disable. Input is serviced by SDL.
+            } else if (ax == 1) {
+                mouse.visibility = std::min(0, mouse.visibility + 1);
+            } else if (ax == 2) {
+                --mouse.visibility;
+            } else if (ax == 3) {
+                set(uc, UC_X86_REG_BX, mouse.buttons);
+                set(uc, UC_X86_REG_CX, mouse.x);
+                set(uc, UC_X86_REG_DX, mouse.y);
+            } else if (ax == 4) {
+                mouse.position(reg(uc, UC_X86_REG_CX), reg(uc, UC_X86_REG_DX));
+            } else if (ax == 5 || ax == 6) {
+                const auto button = reg(uc, UC_X86_REG_BX);
+                if (button >= mouse.history.size())
+                    throw std::runtime_error("unsupported mouse button");
+                auto &entry = mouse.history[button];
+                set(uc, UC_X86_REG_AX, mouse.buttons);
+                set(uc, UC_X86_REG_BX, ax == 5 ? entry.presses : entry.releases);
+                set(uc, UC_X86_REG_CX, ax == 5 ? entry.press_x : entry.release_x);
+                set(uc, UC_X86_REG_DX, ax == 5 ? entry.press_y : entry.release_y);
+                (ax == 5 ? entry.presses : entry.releases) = 0;
+            } else if (ax == 7 || ax == 8) {
+                int low = reg(uc, UC_X86_REG_CX), high = reg(uc, UC_X86_REG_DX);
+                if (low > high)
+                    std::swap(low, high);
+                (ax == 7 ? mouse.min_x : mouse.min_y) = low;
+                (ax == 7 ? mouse.max_x : mouse.max_y) = high;
+                mouse.position(mouse.x, mouse.y);
+            } else if (ax == 0xb) {
+                set(uc, UC_X86_REG_CX, mouse.motion_x);
+                set(uc, UC_X86_REG_DX, mouse.motion_y);
+                mouse.motion_x = mouse.motion_y = 0;
+            } else {
+                throw std::runtime_error("unsupported mouse service (see trace)");
+            }
+        } else if (number == 0x21 && ((ax >> 8) == 7 || (ax >> 8) == 8 || (ax >> 8) == 1)) {
             if (state.pending_dos_scan) {
                 set(uc, UC_X86_REG_AX, (ax & 0xff00) | state.pending_dos_scan);
                 state.pending_dos_scan = 0;
@@ -773,6 +821,10 @@ int main(int argc, char **argv) {
         };
         vector(8, 0x100);
         vector(0x1c, 0x200);
+        // Non-IRET entry lets DOS applications detect the HLE mouse driver.
+        vector(0x33, 0x300);
+        const std::uint8_t mouse_code[]{0xcd, 0x33, 0xcf};
+        std::copy(std::begin(mouse_code), std::end(mouse_code), image.memory.begin() + 0xf0300);
         Engine engine;
         check(uc_mem_map(engine.uc, 0, image.memory.size(), UC_PROT_ALL));
         check(uc_mem_write(engine.uc, 0, image.memory.data(), image.memory.size()));
@@ -849,7 +901,7 @@ int main(int argc, char **argv) {
         unsigned steps = 0;
         while (true) {
 #ifdef GATEWAY_SDL
-            if (host && !host->poll(state.keys)) {
+            if (host && !host->poll(state.keys, state.mouse, state.vga)) {
                 requested_stop = true;
                 break;
             }

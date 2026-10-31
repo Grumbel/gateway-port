@@ -21,6 +21,11 @@ if(GATEWAY_WITH_SDL)
   add_executable(gateway-host src/host.cpp)
   target_link_libraries(gateway-host PRIVATE SDL3::SDL3)
   if(BUILD_TESTING)
+    add_executable(sdl-input-tests tests/sdl_input_tests.cpp src/sdl_host.cpp)
+    target_link_libraries(sdl-input-tests PRIVATE gateway_core SDL3::SDL3)
+    add_test(NAME sdl-input COMMAND sdl-input-tests)
+    set_tests_properties(sdl-input PROPERTIES
+      ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy" TIMEOUT 10)
     add_test(NAME sdl-host COMMAND gateway-host --smoke-test)
     set_tests_properties(sdl-host PROPERTIES
       ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy" TIMEOUT 10)

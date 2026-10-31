@@ -59,6 +59,26 @@ class ProbeTests(unittest.TestCase):
         font[10 + (ord('G') - 0x21) * 8] = 0x80
         return bytes(font)
 
+    def test_mouse_detection_position_and_ranges(self):
+        # Discover non-null/non-IRET driver entry, reset, then clamp a position.
+        code = bytes.fromhex(
+            'b83335cd218cc0a30003'  # DOS get vector; save segment at DS:0300.
+            '268a07883e0203'        # Save entry opcode at DS:0302.
+            'b81200cd1031c0cd33a30403891e0603'
+            'b80700b90a00ba6400cd33'
+            'b80800b91400bac800cd33'
+            'b80400b9ff7fba0000cd33'
+            'b80300cd33891e0803890e0a0389160c03'
+            'b80b00cd33890e0e0389161003'
+            'b8004ccd21')
+        result = self.run_guest(code, dump=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        base = 0x0ff0 * 16 + 0x300
+        self.assertEqual(result.memory[base:base+2], b'\x00\xf0')
+        self.assertNotEqual(result.memory[base+2], 0xcf)
+        self.assertEqual(struct.unpack_from('<7H', result.memory, base+4),
+                         (0xffff, 3, 0, 100, 20, 0, 0))
+
     def test_graphics_to_text_bios_character(self):
         # Reproduce the reported mode-12 -> mode-3 -> cursor query -> AH=09h sequence.
         code = bytes.fromhex(

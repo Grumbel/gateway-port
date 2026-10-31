@@ -148,11 +148,32 @@ void SdlHost::close() {
     window_ = nullptr;
     SDL_Quit();
 }
-bool SdlHost::poll(std::deque<std::uint16_t> &keys) {
+bool SdlHost::poll(std::deque<std::uint16_t> &keys, Mouse &mouse, const Vga &vga) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_EVENT_QUIT)
             return false;
+        if (event.type == SDL_EVENT_MOUSE_MOTION || event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+            event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+            checked(SDL_ConvertEventToRenderCoordinates(renderer_, &event));
+            const bool motion = event.type == SDL_EVENT_MOUSE_MOTION;
+            const float x = motion ? event.motion.x : event.button.x;
+            const float y = motion ? event.motion.y : event.button.y;
+            const int rows = vga.mode() == 3 ? 200 : vga.height();
+            mouse.move(int(x * 640 / vga.width()), int(y * rows / vga.height()));
+            if (!motion) {
+                const auto button = event.button.button;
+                const unsigned index = button == SDL_BUTTON_LEFT    ? 0
+                                       : button == SDL_BUTTON_RIGHT ? 1
+                                                                    : 2;
+                if (button == SDL_BUTTON_LEFT || button == SDL_BUTTON_RIGHT ||
+                    button == SDL_BUTTON_MIDDLE)
+                    mouse.button(index, event.type == SDL_EVENT_MOUSE_BUTTON_DOWN);
+            }
+        }
+        if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST)
+            for (unsigned i = 0; i < 3; ++i)
+                mouse.button(i, false);
         if (event.type == SDL_EVENT_KEY_DOWN && keys.size() < 16) {
             const auto key = bios_key(event.key);
             if (key)
