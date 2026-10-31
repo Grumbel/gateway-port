@@ -11,7 +11,7 @@ PROBE = sys.argv.pop(1)
 
 
 class ProbeTests(unittest.TestCase):
-    def run_guest(self, code, files=None, dump=False):
+    def run_guest(self, code, files=None, dump=False, game_args=None, press=None):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             for name, data in (files or {}).items():
@@ -25,6 +25,10 @@ class ProbeTests(unittest.TestCase):
             exe = root / 'TEST.EXE'
             exe.write_bytes(header + code)
             command = [PROBE, str(exe)]
+            if press is not None:
+                command += ['--press', press]
+            if game_args is not None:
+                command += ['--game-args', game_args]
             if dump:
                 command += ['--dump-prefix', str(root / 'snapshot')]
             result = subprocess.run(command, text=True, capture_output=True, timeout=15)
@@ -75,6 +79,29 @@ class ProbeTests(unittest.TestCase):
         # BIOS AH=01h must set ZF when no key is available.
         result = self.run_guest(bytes.fromhex('b401cd169c58c1e806250100b44ccd21'))
         self.assertIn('DOS exit code: 1', result.stdout, result.stderr)
+
+    def test_psp_command_tail(self):
+        result = self.run_guest(bytes.fromhex('a08000b44ccd21'), game_args='VGA')
+        self.assertIn('DOS exit code: 4', result.stdout, result.stderr)
+
+    def test_console_write(self):
+        code = bytes.fromhex('0e1fbb0100b90500ba1400b440cd21b8004ccd21')
+        self.assertEqual(len(code), 20)
+        result = self.run_guest(code + b'hello')
+        self.assertIn('hello', result.stdout, result.stderr)
+
+    def test_bios_cursor_round_trip(self):
+        result = self.run_guest(bytes.fromhex('31dbba0705b402cd10b403cd1088d0b44ccd21'))
+        self.assertIn('DOS exit code: 7', result.stdout, result.stderr)
+
+    def test_dos_input_consumes_bios_polled_key(self):
+        code = bytes.fromhex('b401cd16b407cd21b44ccd21')
+        result = self.run_guest(code, press='escape')
+        self.assertIn('DOS exit code: 27', result.stdout, result.stderr)
+
+    def test_close_standard_handle(self):
+        result = self.run_guest(bytes.fromhex('31dbb43ecd219c58250100b44ccd21'))
+        self.assertIn('DOS exit code: 0', result.stdout, result.stderr)
 
     def test_exit(self):
         result = self.run_guest(bytes.fromhex('b8004ccd21'))

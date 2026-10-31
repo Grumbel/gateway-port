@@ -46,11 +46,15 @@ struct State {
     std::filesystem::path data_dir;
     std::map<unsigned, std::ifstream> files;
     unsigned next_handle = 5;
+    std::array<bool, 5> standard_open{true, true, true, true, true};
     gateway::DosMemory arena{0x0ff0};
     gateway::Vga vga;
     gateway::Opl opl;
     gateway::Pit pit;
     gateway::DosClock clock;
+    std::array<std::uint16_t, 8> cursor{};
+    std::uint16_t cursor_shape = 0x0607;
+    std::uint8_t pending_dos_scan = 0;
     std::deque<std::uint16_t> keys;
     std::set<unsigned> polled_services;
     std::uint8_t pic_mask = 0;
@@ -180,7 +184,24 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
                       << ax << " BX=" << reg(uc, UC_X86_REG_BX) << " CX=" << reg(uc, UC_X86_REG_CX)
                       << " DX=" << reg(uc, UC_X86_REG_DX) << " at " << reg(uc, UC_X86_REG_CS) << ':'
                       << reg(uc, UC_X86_REG_IP) << '\n';
-        if (number == 0x16 && ((ax >> 8) == 1 || (ax >> 8) == 0x11)) {
+        if (number == 0x21 && ((ax >> 8) == 7 || (ax >> 8) == 8 || (ax >> 8) == 1)) {
+            if (state.pending_dos_scan) {
+                set(uc, UC_X86_REG_AX, (ax & 0xff00) | state.pending_dos_scan);
+                state.pending_dos_scan = 0;
+            } else if (state.keys.empty()) {
+                set(uc, UC_X86_REG_IP, reg(uc, UC_X86_REG_IP) - 2);
+                check(uc_emu_stop(uc));
+            } else {
+                const auto key = state.keys.front();
+                state.keys.pop_front();
+                const auto ascii = key & 255;
+                if (!ascii)
+                    state.pending_dos_scan = key >> 8;
+                set(uc, UC_X86_REG_AX, (ax & 0xff00) | ascii);
+                if ((ax >> 8) == 1 && ascii)
+                    std::cout.put(ascii);
+            }
+        } else if (number == 0x16 && ((ax >> 8) == 1 || (ax >> 8) == 0x11)) {
             const bool empty = state.keys.empty();
             set(uc, UC_X86_REG_FLAGS, (reg(uc, UC_X86_REG_FLAGS) & ~0x40) | (empty ? 0x40 : 0));
             if (!empty)
@@ -203,6 +224,16 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
         } else if (number == 0x10 && ax == 0x1a00) {
             set(uc, UC_X86_REG_AX, 0x1a);
             set(uc, UC_X86_REG_BX, 8); // VGA with an analog color display.
+        } else if (number == 0x10 && ((ax >> 8) == 2 || (ax >> 8) == 3)) {
+            const auto page = (reg(uc, UC_X86_REG_BX) >> 8) & 7;
+            if ((ax >> 8) == 2)
+                state.cursor[page] = reg(uc, UC_X86_REG_DX);
+            else {
+                set(uc, UC_X86_REG_DX, state.cursor[page]);
+                set(uc, UC_X86_REG_CX, state.cursor_shape);
+            }
+        } else if (number == 0x10 && (ax >> 8) == 1) {
+            state.cursor_shape = reg(uc, UC_X86_REG_CX);
         } else if (number == 0x10 && (ax >> 8) == 0x0f) {
             set(uc, UC_X86_REG_AX, 0x5000 | state.vga.mode());
             set(uc, UC_X86_REG_BX, reg(uc, UC_X86_REG_BX) & 255);
@@ -257,10 +288,13 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             }
         } else if (number == 0x21 && ax == 0x4400) {
             const auto handle = reg(uc, UC_X86_REG_BX);
-            const bool console = handle <= 2;
+            const bool console = handle < state.standard_open.size() && state.standard_open[handle];
             const bool valid = console || state.files.contains(handle);
             if (valid) {
-                const std::uint16_t info = console ? 0x80d3 : 2;
+                const std::uint16_t info = !console      ? 2
+                                           : handle <= 2 ? 0x80d3
+                                           : handle == 3 ? 0x80c0
+                                                         : 0x80a0;
                 set(uc, UC_X86_REG_DX, info);
                 set(uc, UC_X86_REG_AX, info);
             } else
@@ -323,6 +357,22 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
                 set(uc, UC_X86_REG_AX, handle);
                 set(uc, UC_X86_REG_FLAGS, flags & ~1);
             }
+        } else if (number == 0x21 && (ax >> 8) == 0x40) {
+            const auto handle = reg(uc, UC_X86_REG_BX);
+            const auto count = reg(uc, UC_X86_REG_CX);
+            if (handle != 1 && handle != 2) {
+                set(uc, UC_X86_REG_AX, 5);
+                set(uc, UC_X86_REG_FLAGS, reg(uc, UC_X86_REG_FLAGS) | 1);
+            } else {
+                std::vector<char> buffer(count);
+                if (count)
+                    check(uc_mem_read(
+                        uc, std::size_t(reg(uc, UC_X86_REG_DS)) * 16 + reg(uc, UC_X86_REG_DX),
+                        buffer.data(), count));
+                (handle == 1 ? std::cout : std::cerr).write(buffer.data(), count);
+                set(uc, UC_X86_REG_AX, count);
+                set(uc, UC_X86_REG_FLAGS, reg(uc, UC_X86_REG_FLAGS) & ~1);
+            }
         } else if (number == 0x21 && (ax >> 8) == 0x3f) {
             auto found = state.files.find(reg(uc, UC_X86_REG_BX));
             if (found == state.files.end())
@@ -354,9 +404,16 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             set(uc, UC_X86_REG_DX, position >> 16);
             set(uc, UC_X86_REG_FLAGS, reg(uc, UC_X86_REG_FLAGS) & ~1);
         } else if (number == 0x21 && (ax >> 8) == 0x3e) {
-            if (!state.files.erase(reg(uc, UC_X86_REG_BX)))
-                throw std::runtime_error("invalid close handle");
-            set(uc, UC_X86_REG_FLAGS, reg(uc, UC_X86_REG_FLAGS) & ~1);
+            const auto handle = reg(uc, UC_X86_REG_BX);
+            bool valid = false;
+            if (handle < state.standard_open.size()) {
+                valid = state.standard_open[handle];
+                state.standard_open[handle] = false;
+            } else
+                valid = state.files.erase(handle);
+            if (!valid)
+                set(uc, UC_X86_REG_AX, 6);
+            set(uc, UC_X86_REG_FLAGS, (reg(uc, UC_X86_REG_FLAGS) & ~1) | !valid);
         } else if (number == 0x21 && (ax >> 8) == 0x35) {
             std::uint16_t vector[2]{};
             check(uc_mem_read(uc, (ax & 255) * 4, vector, sizeof(vector)));
@@ -403,9 +460,11 @@ int main(int argc, char **argv) {
 #endif
     unsigned milliseconds = 0;
     std::string dump_prefix;
+    std::string game_args;
+    std::uint16_t injected_key = 0;
     auto usage = [] {
         std::cout << "Usage: gateway[-probe] <DOS executable> [--headless] "
-                     "[--milliseconds N] [--dump-prefix PATH]\n";
+                     "[--milliseconds N] [--dump-prefix PATH] [--game-args TEXT]\n";
     };
     if (argc < 2 || std::string(argv[1]) == "--help") {
         usage();
@@ -415,7 +474,25 @@ int main(int argc, char **argv) {
         const std::string option = argv[i];
         if (option == "--headless")
             interactive = false;
-        else if (option == "--dump-prefix" && i + 1 < argc)
+        else if (option == "--press" && i + 1 < argc) {
+            const std::string key = argv[++i];
+            if (key == "escape")
+                injected_key = 0x011b;
+            else if (key == "space")
+                injected_key = 0x3920;
+            else if (key == "enter")
+                injected_key = 0x1c0d;
+            else {
+                usage();
+                return 2;
+            }
+        } else if (option == "--game-args" && i + 1 < argc) {
+            game_args = " " + std::string(argv[++i]);
+            if (game_args.size() > 126) {
+                usage();
+                return 2;
+            }
+        } else if (option == "--dump-prefix" && i + 1 < argc)
             dump_prefix = argv[++i];
         else if (option == "--milliseconds" && i + 1 < argc) {
             const std::string value = argv[++i];
@@ -438,6 +515,12 @@ int main(int argc, char **argv) {
         std::vector<std::uint8_t> bytes{std::istreambuf_iterator<char>(file), {}};
         auto image = gateway::load_mz(bytes);
         State state;
+        if (injected_key)
+            state.keys.push_back(injected_key);
+        const auto tail = std::size_t(image.ds) * 16 + 0x80;
+        image.memory[tail] = game_args.size();
+        std::copy(game_args.begin(), game_args.end(), image.memory.begin() + tail + 1);
+        image.memory[tail + 1 + game_args.size()] = 13;
         state.arena.write_mcbs(image.memory);
         // BIOS timer trampoline: update tick count, call user INT 1Ch, then EOI/IRET.
         const std::uint8_t timer_code[]{0xcd, 0xf1, 0xcd, 0x1c, 0x50, 0xb0,

@@ -50,3 +50,16 @@ are implemented. The AdLib register path is now implemented with Nuked OPL3 synt
 then queries DOS time and programs the PIT control port `43h`, currently unsupported.
 The startup probe allows ten million instructions and a two-second Unicorn
 execution timeout; this is enough to reach that boundary in the supplied binary.
+
+## Intro and main-program startup
+
+The SDL runtime can run bounded intro sequences and forward BIOS/DOS keyboard
+input. The intro gets through picture/music loading and displays the initial
+Legend text. `--press escape` is a deterministic startup-input probe; `--game-args`
+provides a DOS PSP command tail (with the conventional leading space).
+
+Direct `GATEMAIN.EXE` execution loads `GATEMAIN.OVL`, but currently exits with DOS
+status 1 before graphics initialization. This is not yet evidence that it requires
+an undocumented argument: the PSP/environment and parent EXEC contracts remain
+incomplete. Cursor-position BIOS services, console output, and standard-handle
+cleanup are implemented so startup diagnostics can proceed.
