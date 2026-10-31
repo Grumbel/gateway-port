@@ -159,6 +159,31 @@ class ProbeTests(unittest.TestCase):
                                 {'BAD.EXE': b'not an executable'})
         self.assertIn('DOS exit code: 11', result.stdout, result.stderr)
 
+    def test_closed_dos_handles_are_reused(self):
+        code = bytearray.fromhex('0e1fba0000b91900b8003dcd2189c3b43ecd21e2f3b8003dcd21b44ccd21')
+        struct.pack_into('<H', code, 3, len(code))
+        result = self.run_guest(code + b'TEST.DAT\0', {'TEST.DAT': b'data'})
+        self.assertIn('DOS exit code: 5', result.stdout, result.stderr)
+
+    def test_dos_handle_exhaustion(self):
+        code = bytearray.fromhex('0e1fba0000b91000b8003dcd21e2f9b44ccd21')
+        struct.pack_into('<H', code, 3, len(code))
+        result = self.run_guest(code + b'TEST.DAT\0', {'TEST.DAT': b'data'})
+        self.assertIn('DOS exit code: 4', result.stdout, result.stderr)
+
+    def test_file_reusing_standard_slot_can_be_closed(self):
+        code = bytearray.fromhex('0e1fba000031dbb43ecd21b8003dcd2189c3b43ecd21b8003dcd21b44ccd21')
+        struct.pack_into('<H', code, 3, len(code))
+        result = self.run_guest(code + b'TEST.DAT\0', {'TEST.DAT': b'data'})
+        self.assertIn('DOS exit code: 0', result.stdout, result.stderr)
+
+    def test_read_only_file_in_stdout_slot_is_not_console(self):
+        code = bytearray.fromhex('0e1fba0000bb0100b43ecd21b8003dcd2189c3b90100b440cd21b44ccd21')
+        struct.pack_into('<H', code, 3, len(code))
+        result = self.run_guest(code + b'TEST.DAT\0', {'TEST.DAT': b'original'})
+        self.assertIn('DOS exit code: 5', result.stdout, result.stderr)
+        self.assertEqual(result.files['TEST.DAT'], b'original')
+
     def test_vga_detection(self):
         result = self.run_guest(bytes.fromhex('b8001acd1089d8b44ccd21'))
         self.assertIn('DOS exit code: 8', result.stdout)

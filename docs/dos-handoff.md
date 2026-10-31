@@ -35,3 +35,12 @@ and execution of replacement code at a previously translated address.
 Reference behavior was checked against the primary DOSBox Staging
 [DOS API](https://github.com/dosbox-staging/dosbox-staging/blob/main/src/dos/dos.cpp)
 and [overlay loader](https://github.com/dosbox-staging/dosbox-staging/blob/main/src/dos/dos_execute.cpp).
+
+## File handles while advancing the intro
+
+The default DOS handle pool has twenty slots including standard handles.
+Successful opens take the lowest free slot, and closing a file releases it for
+reuse. Reopened standard slots are treated as regular files rather than consoles.
+This matters when the intro opens and closes many picture/music files before the
+main overlay load. Exhaustion returns DOS error 4 instead of allocating handles
+beyond the default table. Extended DOS handle tables are not implemented yet.

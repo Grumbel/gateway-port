@@ -46,7 +46,6 @@ void set(uc_engine *uc, int id, std::uint16_t value) { check(uc_reg_write(uc, id
 struct State {
     std::filesystem::path data_dir;
     std::map<unsigned, std::ifstream> files;
-    unsigned next_handle = 5;
     std::array<bool, 5> standard_open{true, true, true, true, true};
     gateway::DosMemory arena{0x0ff0, 0xa000, 0x0fd0};
     gateway::Vga vga;
@@ -522,16 +521,29 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
                 set(uc, UC_X86_REG_AX, error);
                 set(uc, UC_X86_REG_FLAGS, flags | 1);
             } else {
-                const auto handle = state.next_handle++;
-                state.files.emplace(handle, std::move(input));
-                set(uc, UC_X86_REG_AX, handle);
-                set(uc, UC_X86_REG_FLAGS, flags & ~1);
+                unsigned handle = 0;
+                // DOS's default job-file table has 20 slots, including standard handles.
+                while (handle < 20 &&
+                       ((handle < state.standard_open.size() && state.standard_open[handle]) ||
+                        state.files.contains(handle)))
+                    ++handle;
+                if (handle == 20) {
+                    set(uc, UC_X86_REG_AX, 4); // Too many open files.
+                    set(uc, UC_X86_REG_FLAGS, flags | 1);
+                } else {
+                    state.files.emplace(handle, std::move(input));
+                    set(uc, UC_X86_REG_AX, handle);
+                    set(uc, UC_X86_REG_FLAGS, flags & ~1);
+                }
             }
         } else if (number == 0x21 && (ax >> 8) == 0x40) {
             const auto handle = reg(uc, UC_X86_REG_BX);
             const auto count = reg(uc, UC_X86_REG_CX);
-            if (handle != 1 && handle != 2) {
-                set(uc, UC_X86_REG_AX, 5);
+            if ((handle != 1 && handle != 2) || !state.standard_open[handle]) {
+                const bool valid =
+                    state.files.contains(handle) ||
+                    (handle < state.standard_open.size() && state.standard_open[handle]);
+                set(uc, UC_X86_REG_AX, valid ? 5 : 6);
                 set(uc, UC_X86_REG_FLAGS, reg(uc, UC_X86_REG_FLAGS) | 1);
             } else {
                 std::vector<char> buffer(count);
@@ -576,11 +588,12 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
         } else if (number == 0x21 && (ax >> 8) == 0x3e) {
             const auto handle = reg(uc, UC_X86_REG_BX);
             bool valid = false;
-            if (handle < state.standard_open.size()) {
+            if (state.files.erase(handle))
+                valid = true;
+            else if (handle < state.standard_open.size()) {
                 valid = state.standard_open[handle];
                 state.standard_open[handle] = false;
-            } else
-                valid = state.files.erase(handle);
+            }
             if (!valid)
                 set(uc, UC_X86_REG_AX, 6);
             set(uc, UC_X86_REG_FLAGS, (reg(uc, UC_X86_REG_FLAGS) & ~1) | !valid);
