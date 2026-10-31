@@ -109,8 +109,12 @@ nix run . -- ../gateway-dos/GATE.EXE
 
 Close the window to stop. Escape, Space, Enter, letters, digits, arrow keys,
 and common punctuation are forwarded to the guest BIOS keyboard queue. Mouse
-input is being validated; normal DOS child EXEC remains unimplemented. Escape
-loads the main executable through the original overlay trampoline; startup
+motion and left/right/middle buttons reach the DOS mouse driver, with scaling
+for resized windows. **Press Escape at the command prompt to enter mouse mode**
+and activate the clickable controls; typing returns to keyboard input. Inventory
+clicks have been verified in the original game. Normal DOS child EXEC remains
+unimplemented. Escape during the intro loads the main executable through the
+original overlay trampoline; startup
 creates `RESTART.DAT` in writable state and reaches Your Quarters. Space advances
 MORE prompts; typing `look` and Enter redraws the room description in the tested
 SDL session. Complete intro playback and reference timing still need validation.

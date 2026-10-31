@@ -283,13 +283,14 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             } else if (ax == 1) {
                 mouse.visibility = std::min(0, mouse.visibility + 1);
             } else if (ax == 2) {
-                --mouse.visibility;
+                mouse.visibility = std::max(-32768, mouse.visibility - 1);
             } else if (ax == 3) {
                 set(uc, UC_X86_REG_BX, mouse.buttons);
                 set(uc, UC_X86_REG_CX, mouse.x);
                 set(uc, UC_X86_REG_DX, mouse.y);
             } else if (ax == 4) {
                 mouse.position(reg(uc, UC_X86_REG_CX), reg(uc, UC_X86_REG_DX));
+                mouse.warp_pending = true;
             } else if (ax == 5 || ax == 6) {
                 const auto button = reg(uc, UC_X86_REG_BX);
                 if (button >= mouse.history.size())

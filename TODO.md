@@ -5,7 +5,9 @@
    Escape reaches Your Quarters; automated SDL keyboard pagination and `look` work.
    Startup creates `RESTART.DAT` in separate writable state. Add further DOS file
    services only as actual game execution requires them.
-2. Implement mouse input and compare pointer/button behavior with DOSBox.
+2. Compare mouse behavior with DOSBox across scenes and dialogs. SDL motion,
+   buttons, cursor visibility, and resized-window mapping are implemented;
+   Escape enters mouse mode and Inventory clicks work in the original game.
 3. Recover RTLink module mapping and game-routine boundaries. DOS reads can load
    executable overlay sections; invalidate Unicorn's translated blocks after
    these writes. Keep regression coverage for replacement code execution.

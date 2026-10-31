@@ -17,6 +17,10 @@ int main() {
         gateway::Mouse mouse;
         std::deque<std::uint16_t> keys;
         host.poll(keys, mouse, vga);
+        require(!SDL_CursorVisible(), "hidden DOS cursor");
+        mouse.visibility = 0;
+        host.poll(keys, mouse, vga);
+        require(SDL_CursorVisible(), "visible DOS cursor");
         int count = 0;
         auto windows = SDL_GetWindows(&count);
         require(windows && count == 1, "runtime window");

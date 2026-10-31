@@ -149,6 +149,17 @@ void SdlHost::close() {
     SDL_Quit();
 }
 bool SdlHost::poll(std::deque<std::uint16_t> &keys, Mouse &mouse, const Vga &vga) {
+    const bool show = mouse.visibility >= 0;
+    if (show != SDL_CursorVisible())
+        checked(show ? SDL_ShowCursor() : SDL_HideCursor());
+    if (mouse.warp_pending && texture_) {
+        float x, y;
+        const int rows = vga.mode() == 3 ? 200 : vga.height();
+        checked(SDL_RenderCoordinatesToWindow(renderer_, float(mouse.x) * vga.width() / 640,
+                                              float(mouse.y) * vga.height() / rows, &x, &y));
+        SDL_WarpMouseInWindow(window_, x, y);
+        mouse.warp_pending = false;
+    }
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_EVENT_QUIT)
