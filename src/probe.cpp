@@ -1,5 +1,6 @@
 #include "dos_memory.hpp"
 #include "mz.hpp"
+#include "opl.hpp"
 #include "vga.hpp"
 #include <algorithm>
 #include <cctype>
@@ -38,6 +39,7 @@ struct State {
     unsigned next_handle = 5;
     gateway::DosMemory arena{0x0ff0};
     gateway::Vga vga;
+    gateway::Opl opl;
     bool exited = false;
     unsigned exit_code = 0;
     std::string failure;
@@ -51,6 +53,10 @@ std::uint32_t port_in(uc_engine *uc, std::uint32_t port, int size, void *opaque)
     try {
         std::uint32_t value = 0;
         for (int i = 0; i < size; ++i) {
+            if (state.opl.handles_port(port + i)) {
+                value |= std::uint32_t(state.opl.in(port + i)) << (8 * i);
+                continue;
+            }
             if (!state.vga.handles_port(port + i)) {
                 std::ostringstream message;
                 message << "unsupported hardware port read: " << std::hex << port + i;
@@ -69,6 +75,10 @@ void port_out(uc_engine *uc, std::uint32_t port, int size, std::uint32_t value,
     auto &state = *static_cast<State *>(opaque);
     try {
         for (int i = 0; i < size; ++i) {
+            if (state.opl.handles_port(port + i)) {
+                state.opl.out(port + i, (value >> (8 * i)) & 255);
+                continue;
+            }
             if (!state.vga.handles_port(port + i)) {
                 std::ostringstream message;
                 message << "unsupported hardware port write: " << std::hex << port + i;

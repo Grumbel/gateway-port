@@ -46,6 +46,7 @@ information (`AX=4400`) at `12a5:0b1e`. Handle attributes and DOS date/time
 queries are now implemented. Startup reaches VGA display-combination detection
 (`INT 10h AX=1a00`) at `242a:0076`, selects mode `12h`, installs break/error/timer
 vectors, and allocates two DOS blocks. BIOS mode state and VGA plane accesses
-are implemented. The next stop is an AdLib register write at port `388h`.
+are implemented. The AdLib register path is now implemented with Nuked OPL3 synthesis. Startup
+then queries DOS time and programs the PIT control port `43h`, currently unsupported.
 The startup probe allows ten million instructions and a two-second Unicorn
 execution timeout; this is enough to reach that boundary in the supplied binary.

@@ -1,7 +1,7 @@
 # Port milestones
 
-1. Implement AdLib port `388h` audio initialization, the current `GATE.EXE`
-   stopping point after VGA mode `12h` setup. Continue the startup contract. Keep each
+1. Implement PIT control port `43h` and guest timer interrupt dispatch, the
+   current `GATE.EXE` stopping point after AdLib initialization. Continue the startup contract. Keep each
    implemented service explicit and test it with a synthetic guest fixture.
 2. Recover RTL/OVL mapping and relocation behavior; document the module entry
    reached after the shared RTLink startup.
@@ -46,5 +46,4 @@ Next, in order:
 Smaller open items: the `S101STR.DAT` tree, Spellcasting 201 `VOCAB.DAT` tables
 (they do not parse with Gateway's layout), S101 `.RS` headers, and RGN contents in
 the Spellcasting games. Spellcasting data is in `../101/`, `../201/`, and `../301/`.
-`src/probe.cpp`, `tests/probe_tests.py`, and `third_party/` have uncommitted work
-that is separate from this research.
+Runtime/video/audio work continues separately from these format findings.
