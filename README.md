@@ -8,7 +8,8 @@ formats and replacing the original interpreter is the long-term goal.
 ## Current status
 
 The original-code runtime reaches **Your Quarters**, renders the first room, and
-accepts keyboard commands. Full gameplay and save/restore remain unverified. It provides:
+accepts keyboard commands. Keyboard input, save/restore, and audio have also been
+confirmed working by the user. Broader gameplay remains under validation. It provides:
 
 - A checked DOS MZ loader with segment relocation and initial register setup.
 - `gateway-inspect`, which reports loaded image and entry information.
@@ -108,11 +109,11 @@ nix run . -- ../gateway-dos/GATE.EXE
 
 Close the window to stop. Escape, Space, Enter, letters, digits, arrow keys,
 and common punctuation are forwarded to the guest BIOS keyboard queue. Mouse
-input, normal DOS child EXEC, and broader gameplay remain pending. Escape
+input is being validated; normal DOS child EXEC remains unimplemented. Escape
 loads the main executable through the original overlay trampoline; startup
 creates `RESTART.DAT` in writable state and reaches Your Quarters. Space advances
 MORE prompts; typing `look` and Enter redraws the room description in the tested
-SDL session. Complete intro playback and audible output still need validation.
+SDL session. Complete intro playback and reference timing still need validation.
 
 For a bounded capture (1–60000 ms of virtual guest time):
 

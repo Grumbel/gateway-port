@@ -1,7 +1,8 @@
 # Port milestones
 
-1. Validate a short keyboard gameplay sequence and save/restore against DOSBox.
-   Escape now reaches Your Quarters; SDL keyboard pagination and `look` work.
+1. Compare a short gameplay sequence and save/restore against DOSBox.
+   The user confirms keyboard input, save/restore, and audio work under SDL.
+   Escape reaches Your Quarters; automated SDL keyboard pagination and `look` work.
    Startup creates `RESTART.DAT` in separate writable state. Add further DOS file
    services only as actual game execution requires them.
 2. Implement mouse input and compare pointer/button behavior with DOSBox.
@@ -9,7 +10,7 @@
    executable overlay sections; invalidate Unicorn's translated blocks after
    these writes. Keep regression coverage for replacement code execution.
 4. Validate AdLib playback and scheduler timing against DOSBox recordings.
-   SDL audio submission is tested; audible output remains unverified.
+   SDL audio submission is tested and the user confirms audible output works.
 5. Compare startup, menus, scene palettes, and transitions with DOSBox. Full intro
    playback and normal DOS child EXEC are not yet verified/implemented.
 6. Extract tested resource parsers and interpreter components as formats become
