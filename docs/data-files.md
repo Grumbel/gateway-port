@@ -78,8 +78,9 @@ leftover padding bits can decode to stray characters. Text uses `printf`-style
 `Slot:    %d (%s)\n`. Native story routines select six checked strings with
 `0xf0000000 | (segment << 10) | string_index`; see
 [game-logic evidence](game-logic.md#text-tokens-correction-to-the-earlier-hypothesis).
-This corrects the earlier `0xFsssnnnn` hypothesis. The text lookup routine itself
-still needs tracing.
+This corrects the earlier `0xFsssnnnn` hypothesis. A subsequent
+[lookup-routine trace](engine-boundary.md#traced-look-path) directly confirms
+the segment/index split.
 
 ## VOCAB.DAT
 

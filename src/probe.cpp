@@ -4,6 +4,7 @@
 #include "dos_memory.hpp"
 #include "mouse.hpp"
 #include "mz.hpp"
+#include "object_flags.hpp"
 #include "opl.hpp"
 #include "pit.hpp"
 #include "vga.hpp"
@@ -24,6 +25,7 @@
 #include <iterator>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -51,6 +53,17 @@ struct State {
     std::filesystem::path data_dir;
     std::unique_ptr<gateway::DosDrive> drive;
     std::map<unsigned, gateway::DosFile> files;
+    std::map<unsigned, std::string> file_names;
+    std::ofstream research_trace;
+    unsigned elapsed_ms = 0;
+    std::string object_flags_mode;
+    unsigned object_flags_calls = 0;
+    bool object_flags_active = false;
+    bool flag_expected = false, flag_verifying = false;
+    struct FarReturn {
+        std::uint16_t ip, cs, sp, value;
+    };
+    std::optional<FarReturn> hle_return;
     struct Search {
         std::vector<gateway::DosDirectoryEntry> entries;
         std::size_t next = 0;
@@ -244,6 +257,97 @@ bool dispatch(uc_engine *uc, unsigned number) {
     set(uc, UC_X86_REG_CS, vector[1]);
     set(uc, UC_X86_REG_IP, vector[0]);
     return true;
+}
+
+// Fixed addresses are experimental and guarded by the complete three-routine fingerprint.
+void object_flags_hook(uc_engine *uc, std::uint64_t address, std::uint32_t, void *opaque) noexcept {
+    auto &state = *static_cast<State *>(opaque);
+    try {
+        if (address == 0x1194c) {
+            if (state.flag_verifying) {
+                state.flag_verifying = false;
+                if (reg(uc, UC_X86_REG_AX) != state.flag_expected)
+                    throw std::runtime_error("object flag HLE disagrees with native result");
+            }
+            return;
+        }
+        std::array<std::uint8_t, 323> code{};
+        check(uc_mem_read(uc, 0x1180d, code.data(), code.size()));
+        std::uint64_t hash = 14695981039346656037ull;
+        for (auto byte : code)
+            hash = (hash ^ byte) * 1099511628211ull;
+        if (hash != 0x2865a272e07a21e5ull || reg(uc, UC_X86_REG_CS) != 0x1157) {
+            if (state.object_flags_active)
+                throw std::runtime_error("object flag routine fingerprint changed");
+            return; // Intro code can occupy this address before GATEMAIN is loaded.
+        }
+        state.object_flags_active = true;
+        const gateway::GuestByteReader read = [uc](std::uint16_t segment, std::uint16_t offset) {
+            const auto address = std::size_t(segment) * 16 + offset;
+            if (address >= 0xa0000)
+                throw std::runtime_error("object flag read outside conventional memory");
+            std::uint8_t byte;
+            check(uc_mem_read(uc, address, &byte, 1));
+            return byte;
+        };
+        const auto ss = reg(uc, UC_X86_REG_SS), sp = reg(uc, UC_X86_REG_SP);
+        const auto word = [&](unsigned offset) {
+            return std::uint16_t(read(ss, std::uint16_t(sp + offset)) |
+                                 (std::uint16_t(read(ss, std::uint16_t(sp + offset + 1))) << 8));
+        };
+        const auto object = word(4), property = word(6);
+        const auto value = gateway::object_flag(read, reg(uc, UC_X86_REG_DS), object, property);
+        ++state.object_flags_calls;
+        if (state.research_trace.is_open())
+            state.research_trace << "object-flag ms=" << std::dec << state.elapsed_ms << std::hex
+                                 << " object=" << object << " property=" << property
+                                 << " result=" << value << " return=" << word(2) << ':' << word(0)
+                                 << '\n';
+        if (state.object_flags_mode == "verify") {
+            state.flag_expected = value;
+            state.flag_verifying = true;
+        } else {
+            state.hle_return =
+                State::FarReturn{word(0), word(2), std::uint16_t(sp + 4), std::uint16_t(value)};
+            check(uc_emu_stop(uc));
+        }
+    } catch (const std::exception &e) {
+        hardware_failure(uc, state, e.what());
+    }
+}
+
+// Opt-in entry snapshots: stack words retain far return addresses and arguments.
+void trace_entry(uc_engine *uc, std::uint64_t address, std::uint32_t, void *opaque) noexcept {
+    auto &state = *static_cast<State *>(opaque);
+    try {
+        auto &out = state.research_trace;
+        out << "entry ms=" << std::dec << state.elapsed_ms << std::hex << " pc=" << address
+            << " cs=" << reg(uc, UC_X86_REG_CS) << " ds=" << reg(uc, UC_X86_REG_DS)
+            << " es=" << reg(uc, UC_X86_REG_ES) << " ax=" << reg(uc, UC_X86_REG_AX)
+            << " dx=" << reg(uc, UC_X86_REG_DX) << " ss=" << reg(uc, UC_X86_REG_SS)
+            << " sp=" << reg(uc, UC_X86_REG_SP) << " bp=" << reg(uc, UC_X86_REG_BP) << " stack=";
+        const auto base = std::size_t(reg(uc, UC_X86_REG_SS)) * 16;
+        for (unsigned i = 0; i < 32; ++i) {
+            std::uint16_t word;
+            check(uc_mem_read(uc, base + std::uint16_t(reg(uc, UC_X86_REG_SP) + i * 2), &word, 2));
+            out << word << ',';
+        }
+        out << " frames=";
+        auto bp = reg(uc, UC_X86_REG_BP);
+        for (unsigned i = 0; i < 8 && bp <= 0xfff9; ++i) {
+            std::array<std::uint16_t, 3> words{};
+            check(uc_mem_read(uc, base + bp, words.data(), 6));
+            out << bp << ':' << words[0] << ':' << words[1] << ':' << words[2] << ',';
+            if (words[0] <= bp)
+                break;
+            bp = words[0];
+        }
+        out << '\n';
+        if (!out)
+            throw std::runtime_error("cannot write research trace");
+    } catch (const std::exception &e) {
+        hardware_failure(uc, state, e.what());
+    }
 }
 
 void trace_block(uc_engine *uc, std::uint64_t address, std::uint32_t size, void *opaque) noexcept {
@@ -605,6 +709,7 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             const auto handle = free_file_handle(state);
             state.files.emplace(handle, create ? state.drive->create(name, reg(uc, UC_X86_REG_CX))
                                                : state.drive->open(name, ax & 3));
+            state.file_names[handle] = name;
             set(uc, UC_X86_REG_AX, handle);
             set(uc, UC_X86_REG_FLAGS, reg(uc, UC_X86_REG_FLAGS) & ~1);
         } else if (number == 0x21 && (ax >> 8) == 0x40) {
@@ -631,7 +736,14 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             if (found == state.files.end())
                 throw gateway::DosIoError(6, "invalid DOS read handle");
             std::vector<std::uint8_t> buffer(reg(uc, UC_X86_REG_CX));
+            const auto source = state.research_trace.is_open() ? found->second.seek(0, 1) : 0;
             const auto count = found->second.read(buffer);
+            if (state.research_trace.is_open())
+                state.research_trace
+                    << "read ms=" << std::dec << state.elapsed_ms << std::hex
+                    << " file=" << state.file_names[reg(uc, UC_X86_REG_BX)] << " offset=" << source
+                    << " size=" << count << " address="
+                    << std::size_t(reg(uc, UC_X86_REG_DS)) * 16 + reg(uc, UC_X86_REG_DX) << '\n';
             if (count) {
                 const auto address =
                     std::size_t(reg(uc, UC_X86_REG_DS)) * 16 + reg(uc, UC_X86_REG_DX);
@@ -654,6 +766,7 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
         } else if (number == 0x21 && (ax >> 8) == 0x3e) {
             const auto handle = reg(uc, UC_X86_REG_BX);
             bool valid = false;
+            state.file_names.erase(handle);
             if (state.files.erase(handle))
                 valid = true;
             else if (handle < state.standard_open.size()) {
@@ -723,13 +836,17 @@ int main(int argc, char **argv) {
     std::filesystem::path state_directory;
     unsigned milliseconds = 0;
     std::string dump_prefix, block_trace_path;
-    std::string game_args;
+    std::string game_args, research_path, object_flags_mode;
+    std::vector<std::uint64_t> entry_addresses;
+    std::multimap<unsigned, std::uint16_t> scheduled_keys;
     std::uint16_t injected_key = 0;
     std::uint64_t breakpoint = 0;
     auto usage = [] {
         std::cout << "Usage: gateway[-probe] <DOS executable> [--headless] "
                      "[--milliseconds N] [--dump-prefix PATH] [--game-args TEXT] [--press KEY] "
-                     "[--break-at HEX] [--state-dir DIR | --read-only] [--trace-blocks FILE]\n";
+                     "[--break-at HEX] [--state-dir DIR | --read-only] [--trace-blocks FILE] "
+                     "[--trace-research FILE --trace-entry HEX ...] [--key-at MS:BIOSHEX ...] "
+                     "[--object-flags verify|hle]\n";
     };
     if (argc < 2 || std::string(argv[1]) == "--help") {
         usage();
@@ -737,7 +854,43 @@ int main(int argc, char **argv) {
     }
     for (int i = 2; i < argc; ++i) {
         const std::string option = argv[i];
-        if (option == "--headless")
+        if (option == "--object-flags" && i + 1 < argc) {
+            object_flags_mode = argv[++i];
+            if (object_flags_mode != "verify" && object_flags_mode != "hle") {
+                usage();
+                return 2;
+            }
+        } else if (option == "--trace-research" && i + 1 < argc)
+            research_path = argv[++i];
+        else if (option == "--trace-entry" && i + 1 < argc) {
+            const std::string value = argv[++i];
+            std::uint64_t address = 0;
+            const auto result =
+                std::from_chars(value.data(), value.data() + value.size(), address, 16);
+            if (result.ec != std::errc{} || result.ptr != value.data() + value.size() ||
+                address > 0xfffff) {
+                usage();
+                return 2;
+            }
+            entry_addresses.push_back(address);
+        } else if (option == "--key-at" && i + 1 < argc) {
+            const std::string value = argv[++i];
+            const auto colon = value.find(':');
+            unsigned time = 0, key = 0;
+            if (colon == std::string::npos) {
+                usage();
+                return 2;
+            }
+            const auto a = std::from_chars(value.data(), value.data() + colon, time);
+            const auto b =
+                std::from_chars(value.data() + colon + 1, value.data() + value.size(), key, 16);
+            if (a.ec != std::errc{} || a.ptr != value.data() + colon || b.ec != std::errc{} ||
+                b.ptr != value.data() + value.size() || time > 60000 || key > 65535) {
+                usage();
+                return 2;
+            }
+            scheduled_keys.emplace(time, key);
+        } else if (option == "--headless")
             interactive = false;
         else if (option == "--trace-blocks" && i + 1 < argc)
             block_trace_path = argv[++i];
@@ -794,6 +947,10 @@ int main(int argc, char **argv) {
             return 2;
         }
     }
+    if (!entry_addresses.empty() && research_path.empty()) {
+        usage();
+        return 2;
+    }
     try {
         std::ifstream file(argv[1], std::ios::binary);
         if (!file)
@@ -801,6 +958,12 @@ int main(int argc, char **argv) {
         std::vector<std::uint8_t> bytes{std::istreambuf_iterator<char>(file), {}};
         auto image = gateway::load_mz(bytes);
         State state;
+        state.object_flags_mode = object_flags_mode;
+        if (!research_path.empty()) {
+            state.research_trace.open(research_path);
+            if (!state.research_trace)
+                throw std::runtime_error("cannot open research trace");
+        }
         if (injected_key)
             state.keys.push_back(injected_key);
         const auto tail = std::size_t(image.ds) * 16 + 0x80;
@@ -912,6 +1075,21 @@ int main(int argc, char **argv) {
         if (!block_trace_path.empty())
             check(uc_hook_add(engine.uc, &block_hook, UC_HOOK_BLOCK,
                               reinterpret_cast<void *>(trace_block), &state, 1, 0));
+        std::vector<uc_hook> entry_hooks(entry_addresses.size());
+        for (std::size_t i = 0; i < entry_addresses.size(); ++i)
+            check(uc_hook_add(engine.uc, &entry_hooks[i], UC_HOOK_CODE,
+                              reinterpret_cast<void *>(trace_entry), &state, entry_addresses[i],
+                              entry_addresses[i]));
+        uc_hook object_entry_hook, object_exit_hook;
+        if (!object_flags_mode.empty()) {
+            check(uc_hook_add(engine.uc, &object_entry_hook, UC_HOOK_CODE,
+                              reinterpret_cast<void *>(object_flags_hook), &state, 0x11916,
+                              0x11916));
+            if (object_flags_mode == "verify")
+                check(uc_hook_add(engine.uc, &object_exit_hook, UC_HOOK_CODE,
+                                  reinterpret_cast<void *>(object_flags_hook), &state, 0x1194c,
+                                  0x1194c));
+        }
         uc_hook video_hook;
         check(uc_hook_add(engine.uc, &video_hook, UC_HOOK_MEM_READ | UC_HOOK_MEM_WRITE,
                           reinterpret_cast<void *>(video_memory), &state, 0xa0000, 0xaffff));
@@ -926,6 +1104,15 @@ int main(int argc, char **argv) {
         const auto started = std::chrono::steady_clock::now();
         unsigned steps = 0;
         while (true) {
+            state.elapsed_ms = steps;
+            while (!scheduled_keys.empty() && scheduled_keys.begin()->first <= steps) {
+                const auto key = scheduled_keys.begin()->second;
+                state.keys.push_back(key);
+                if (state.research_trace.is_open())
+                    state.research_trace << "key ms=" << std::dec << steps << std::hex
+                                         << " value=" << key << '\n';
+                scheduled_keys.erase(scheduled_keys.begin());
+            }
 #ifdef GATEWAY_SDL
             if (host && !host->poll(state.keys, state.mouse, state.vga)) {
                 requested_stop = true;
@@ -935,6 +1122,15 @@ int main(int argc, char **argv) {
             const auto pc =
                 std::size_t(reg(engine.uc, UC_X86_REG_CS)) * 16 + reg(engine.uc, UC_X86_REG_IP);
             status = uc_emu_start(engine.uc, pc, 0x100000, 100000, 5000);
+            if (state.hle_return && state.failure.empty() && status == UC_ERR_OK) {
+                const auto result = *state.hle_return;
+                state.hle_return.reset();
+                set(engine.uc, UC_X86_REG_AX, result.value);
+                set(engine.uc, UC_X86_REG_SP, result.sp);
+                set(engine.uc, UC_X86_REG_CS, result.cs);
+                set(engine.uc, UC_X86_REG_IP, result.ip);
+                continue;
+            }
             if (state.breakpoint_hit) {
                 requested_stop = true;
                 break;
@@ -1018,6 +1214,14 @@ int main(int argc, char **argv) {
             if (!binary || !picture || !registers)
                 throw std::runtime_error("cannot write diagnostic dumps");
         }
+        if (state.research_trace.is_open()) {
+            state.research_trace.close();
+            if (!state.research_trace)
+                throw std::runtime_error("cannot write research trace");
+        }
+        if (!object_flags_mode.empty())
+            std::cerr << "Object flag " << object_flags_mode << " calls: " << std::dec
+                      << state.object_flags_calls << '\n';
         check(status);
         if (!state.failure.empty())
             throw std::runtime_error(state.failure);

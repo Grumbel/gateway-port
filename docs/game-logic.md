@@ -133,3 +133,12 @@ a loaded snapshot, and trace a simple command from parser output through handler
 dispatch to state changes and text. Map room/object/action tables and native
 handler pointers before designing a replacement interpreter. Asset decoding
 alone will not recover the demonstrated story routines.
+
+## Follow-up: traced dispatch and first host replacement
+
+[Engine-boundary investigation](engine-boundary.md) now traces a typed `look`
+through action and room-handler dispatch, confirms the text-token split in the
+lookup routine, and replaces the shared object-flag query in a bounded replay.
+The original and host query agree on 620 calls across `look`, `open drawer`, and
+`look`, with identical final framebuffers in native, verification, and HLE modes.
+The remaining work is mapping the rest of the handler/state ABI and RTLink data.

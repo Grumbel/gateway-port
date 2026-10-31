@@ -152,3 +152,17 @@ Spellcasting 301 uses the same runtime with its own fonts and resources:
 Keep different games' state directories separate. See the
 [runtime findings](docs/spellcasting.md#spellcasting-301-runtime-check-2026-10-31)
 for the verified startup path and current limits.
+
+## Native game-logic research
+
+A traced `look` → `open drawer` → `look` sequence now exercises the native room
+handler with an optional C++ replacement for the shared object-flag query:
+
+```sh
+python3 tools/trace_game_logic.py --scenario drawer
+```
+
+This compares native, verification, and HLE runs using separate writable state
+and matching final framebuffers. See [engine boundaries](docs/engine-boundary.md)
+for recovered dispatch tables, call contracts, research options, and limits.
+The replacement is experimental and disabled during normal play.

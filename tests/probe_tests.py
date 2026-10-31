@@ -11,7 +11,7 @@ PROBE = sys.argv.pop(1)
 
 
 class ProbeTests(unittest.TestCase):
-    def run_guest(self, code, files=None, dump=False, game_args=None, press=None, break_at=None, state=False, state_files=None, exe_name="TEST.EXE"):
+    def run_guest(self, code, files=None, dump=False, game_args=None, press=None, break_at=None, state=False, state_files=None, exe_name="TEST.EXE", research_entries=None, scheduled_keys=None):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             assets = root / 'assets'
@@ -31,6 +31,12 @@ class ProbeTests(unittest.TestCase):
             exe = assets / exe_name
             exe.write_bytes(header + code)
             command = [PROBE, str(exe)]
+            if research_entries is not None:
+                command += ['--trace-research', str(root / 'research.trace')]
+                for address in research_entries:
+                    command += ['--trace-entry', address]
+            for key in scheduled_keys or []:
+                command += ['--key-at', key]
             if state or state_files is not None:
                 command += ['--state-dir', str(root / 'state')]
             if break_at is not None:
@@ -42,6 +48,8 @@ class ProbeTests(unittest.TestCase):
             if dump:
                 command += ['--dump-prefix', str(root / 'snapshot')]
             result = subprocess.run(command, text=True, capture_output=True, timeout=15)
+            if research_entries is not None:
+                result.research_trace = (root / 'research.trace').read_text()
             if dump:
                 result.picture = (root / 'snapshot.ppm').read_bytes()
                 result.memory = (root / 'snapshot.bin').read_bytes()
@@ -51,6 +59,18 @@ class ProbeTests(unittest.TestCase):
             result.state_files = {path.name: path.read_bytes() for path in (root / 'state').glob('*')
                                   if path.is_file()}
             return result
+
+    def test_timed_keyboard_and_entry_trace(self):
+        # Poll until a scheduled BIOS key arrives, read it, then exit.
+        code = bytes.fromhex('b401cd1674fa31c0cd16a30003b8004ccd21')
+        result = self.run_guest(code, dump=True, research_entries=['1000a'],
+                                scheduled_keys=['3:1e61'])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(struct.unpack_from('<H', result.memory, 0x0ff00 + 0x300)[0], 0x1e61)
+        self.assertIn('key ms=3 value=1e61', result.research_trace)
+        self.assertIn('pc=1000a', result.research_trace)
+        self.assertIn('ax=1e61', result.research_trace)
+        self.assertIn('stack=', result.research_trace)
 
     @staticmethod
     def text_font_fixture():
