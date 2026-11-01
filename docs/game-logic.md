@@ -183,3 +183,7 @@ manifest, identify the event switch, follow all state reads/writes and story
 tokens, then replay the same player command to validate the C-like translation.
 This is an incremental translation of native routines, not extraction of a
 standalone script language.
+
+The first full room-event table and partial `look` translation are now recorded
+in [Your Quarters](room-your-quarters.md), including confirmed text 3/0–3/5,
+all 24 jump destinations, object flag reads/writes and outstanding field names.

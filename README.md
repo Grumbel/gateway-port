@@ -396,6 +396,9 @@ python3 tools/disassemble_story.py ../gateway-dos/GATEMAIN.OVL \
 
 See [native story disassembly](docs/game-logic.md#first-reproducible-annotated-disassembly)
 for an initial C-like translation and its limitations.
+The [Your Quarters case study](docs/room-your-quarters.md) follows the first
+complete 24-entry room-event jump table, annotates story text, and partially
+reconstructs the `look` handler in C-like pseudocode.
 
 RTLink sections and all handler entry file offsets can now be extracted:
 
