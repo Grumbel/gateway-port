@@ -65,6 +65,8 @@ struct State {
     std::unique_ptr<gateway::DebugSceneTracker> debug_scene;
     std::vector<std::uint8_t> debug_object_dat;
     std::optional<std::uint16_t> debug_object_ds;
+    std::optional<std::size_t> debug_other_object_directory;
+    bool debug_other_names = false;
     std::string debug_status;
     std::ofstream research_trace;
     unsigned elapsed_ms = 0;
@@ -1220,8 +1222,11 @@ void dump_guest(uc_engine *uc, State &state, const std::string &prefix) {
              << '\n' << "region_x=scene-local pixels (packed coordinates already doubled)\n"
              << "region_geometry=rectangles or ordered Gateway II polygon vertices\n"
              << "region_object_id=native engine object ID, NOT OBJECT.DAT list index\n";
-    auto objects = gateway::inspect_gateway_state(memory, reg(uc, UC_X86_REG_DS));
-    if ((!objects || objects->objects.size() != 734) && state.debug_object_ds)
+    auto objects = state.debug_other_names ? std::optional<gateway::DebugGameState>{}
+                                           : gateway::inspect_gateway_state(
+                                                 memory, reg(uc, UC_X86_REG_DS));
+    if ((!objects || objects->objects.size() != 734) && !state.debug_other_names &&
+        state.debug_object_ds)
         objects = gateway::inspect_gateway_state(memory, *state.debug_object_ds);
     if (objects && objects->objects.size() == 734) {
         std::ofstream records(prefix + ".objects.tsv");
@@ -1235,6 +1240,27 @@ void dump_guest(uc_engine *uc, State &state, const std::string &prefix) {
             metadata << "book_location=" << std::dec << *objects->book_location << '\n';
         if (objects->drawer_open)
             metadata << "drawer_open=" << *objects->drawer_open << '\n';
+    } else if (state.debug_other_names && !state.debug_object_dat.empty()) {
+        unsigned required_id = 0;
+        for (const auto &box : scene.boxes)
+            required_id = std::max(required_id, unsigned(box.object_id));
+        if (auto table = gateway::inspect_legend_name_table(
+                memory, state.debug_object_dat, required_id,
+                state.debug_other_object_directory)) {
+            std::ofstream names(prefix + ".names.tsv");
+            names << "engine_id\tname\n";
+            for (std::size_t id = 1; id < table->names.size(); ++id)
+                names << id << '\t' << table->names[id] << '\n';
+            if (!names)
+                throw std::runtime_error("cannot write native object name dump");
+            metadata << "object_count=" << table->names.size() - 1 << '\n'
+                     << "object_directory_linear=" << std::hex << table->directory_address
+                     << '\n';
+        } else {
+            metadata << "object_count=unknown (native name table not detected)\n";
+        }
+    } else if (state.debug_object_dat.empty()) {
+        metadata << "object_names=unavailable (no OBJECT.DAT resource)\n";
     } else {
         metadata << "object_count=unknown (Gateway object table not detected at DS)\n";
     }
@@ -1517,6 +1543,10 @@ int main(int argc, char **argv) {
             std::cerr << "DOS state directory: " << state.drive->state_directory() << '\n';
         if (interactive) {
             state.debug_scene = std::make_unique<gateway::DebugSceneTracker>();
+            const auto executable = gateway::DebugSceneTracker::canonical_file(argv[1]);
+            state.debug_other_names = executable.starts_with("S201") ||
+                                      executable.starts_with("S301") ||
+                                      executable.starts_with("HOME");
             try {
                 state.debug_object_dat = state.drive->read_all("OBJECT.DAT");
                 // Validate the resource, but do NOT use its sequential string
@@ -1793,10 +1823,15 @@ int main(int argc, char **argv) {
                         last_debug_inspection = state.elapsed_ms;
                         std::vector<std::uint8_t> memory(1024 * 1024);
                         check(uc_mem_read(engine.uc, 0, memory.data(), memory.size()));
-                        auto objects = gateway::inspect_gateway_state(
-                            memory, reg(engine.uc, UC_X86_REG_DS));
-                        if ((!objects || objects->objects.size() != 734) && state.debug_object_ds)
-                            objects = gateway::inspect_gateway_state(memory, *state.debug_object_ds);
+                        std::optional<gateway::DebugGameState> objects;
+                        if (!state.debug_other_names) {
+                            objects = gateway::inspect_gateway_state(
+                                memory, reg(engine.uc, UC_X86_REG_DS));
+                            if ((!objects || objects->objects.size() != 734) &&
+                                state.debug_object_ds)
+                                objects = gateway::inspect_gateway_state(
+                                    memory, *state.debug_object_ds);
+                        }
                         if (objects && objects->objects.size() == 734) {
                             state.debug_object_ds = objects->ds;
                             if (state.debug_scene)
@@ -1810,6 +1845,25 @@ int main(int argc, char **argv) {
                             if (objects->drawer_open)
                                 summary << " drawer " << (*objects->drawer_open ? "open" : "closed");
                             debug_overlay.object_summary = summary.str();
+                        } else if (state.debug_other_names && !state.debug_object_dat.empty()) {
+                            unsigned required_id = 0;
+                            if (state.debug_scene)
+                                for (const auto &box : state.debug_scene->view().boxes)
+                                    required_id = std::max(required_id, unsigned(box.object_id));
+                            if (auto names = gateway::inspect_legend_name_table(
+                                    memory, state.debug_object_dat, required_id,
+                                    state.debug_other_object_directory)) {
+                                state.debug_other_object_directory = names->directory_address;
+                                const auto count = names->names.size() - 1;
+                                if (state.debug_scene)
+                                    state.debug_scene->set_object_names(std::move(names->names));
+                                debug_overlay.object_summary =
+                                    "Native names: " + std::to_string(count) + " objects";
+                            } else {
+                                debug_overlay.object_summary = "Names: unresolved; press D to dump";
+                            }
+                        } else if (state.debug_object_dat.empty()) {
+                            debug_overlay.object_summary = "Names: no OBJECT.DAT resource";
                         } else {
                             debug_overlay.object_summary = "Objects: not detected at DS";
                         }
