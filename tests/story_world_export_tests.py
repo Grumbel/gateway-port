@@ -1,0 +1,134 @@
+"""Snapshot-to-world export: ordered mixed-type ownership without DOS assets."""
+import json
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'tools'))
+from export_story_world import export_world, markdown_world
+from child_chain_inspect_tests import first_room_snapshot
+
+TOOL = ROOT / 'tools' / 'export_story_world.py'
+
+
+class StoryWorldExportTests(unittest.TestCase):
+    def test_original_mixed_type_room_tree_and_inventory(self):
+        world = export_world(first_room_snapshot())
+        self.assertEqual(world['schema_version'], 1)
+        self.assertEqual(world['counts']['records'], 16)
+        self.assertEqual(world['counts']['indexed_children'], 15)
+        self.assertEqual(world['counts']['roots'], 1)
+        self.assertEqual(world['counts']['room_candidates'], 1)
+        self.assertEqual(world['counts']['populated_roots'], 1)
+        self.assertEqual(world['counts']['max_depth'], 2)
+        self.assertEqual(world['room_candidate_ids'], [0xee])
+        room = world['roots'][0]
+        self.assertEqual(room['name'], 'Your Quarters')
+        self.assertEqual(room['descendant_count'], 15)
+        children = room['child_slots'][0]['objects']
+        self.assertEqual([entry['id'] for entry in children],
+                         [0x175, 0x16f, 0x150, 0x14f, 0x14e, 0x131, 0x125, 0xd3])
+        self.assertEqual(children[0]['native_type'], 8)
+        self.assertEqual(children[-1]['native_type'], 7)
+        pv = next(entry for entry in children if entry['id'] == 0x131)
+        self.assertEqual(pv['child_slots'][2]['objects'][0]['id'], 0x170)
+        desk = next(entry for entry in children if entry['id'] == 0x125)
+        self.assertEqual(desk['child_slots'][1]['objects'][0]['id'], 0x126)
+        self.assertEqual(desk['child_slots'][2]['objects'][0]['id'], 0x124)
+        player = children[-1]
+        self.assertEqual(player['child_slots'][0]['objects'][0]['id'], 0x123)
+        self.assertEqual([entry['id'] for entry in player['child_slots'][1]['objects']],
+                         [0xd7, 0xd5, 0xd4])
+        self.assertNotIn('raw_state', str(world))
+        report = markdown_world(world)
+        self.assertIn('| `0x0ee` | Your Quarters | 8 | 15 |', report)
+        self.assertIn('Type-1 room candidates', report)
+
+    def test_detached_records_and_native_handler_metadata_survive(self):
+        objects = first_room_snapshot()
+        objects[1]['handler'] = 471
+        objects[1]['native_code'] = dict(section=4, filename='GATEMAIN.OVL',
+                                         file_offset=0xc879)
+        objects.append(dict(object=0xbb, type=2, name='dike leak',
+                            location=0x95, child_slot=0, next_sibling=0,
+                            child_links=[0, 0, 0]))
+        world = export_world(objects)
+        self.assertEqual(world['counts']['roots'], 2)
+        self.assertEqual(world['counts']['records'], 17)
+        self.assertEqual(world['counts']['indexed_children'], 15)
+        self.assertEqual(world['unattached_with_location'], [
+            dict(id=0xbb, name='dike leak', native_type=2, native_location=0x95)])
+        self.assertEqual(world['roots'][1]['id'], 0xee)
+        picture = world['roots'][1]['child_slots'][0]['objects'][0]
+        self.assertEqual(picture['native_handler'], 471)
+        self.assertEqual(picture['native_code']['file_offset'], 0xc879)
+        self.assertIn('dike leak', markdown_world(world))
+
+    def test_repeated_type_one_head_alias_does_not_duplicate_children(self):
+        objects = first_room_snapshot()
+        objects[0]['child_links'] = [0x175, 0x175]
+        world = export_world(objects)
+        self.assertEqual(world['counts']['indexed_children'], 15)
+        self.assertEqual(world['counts']['max_depth'], 2)
+        slots = world['roots'][0]['child_slots']
+        self.assertEqual(slots[1]['alias_of'], 0)
+        self.assertEqual(slots[1]['objects'], [])
+
+    def test_invalid_or_ambiguous_chains_fail_instead_of_becoming_world_data(self):
+        objects = first_room_snapshot()
+        with self.assertRaisesRegex(ValueError, 'duplicate or invalid'):
+            export_world(objects + [objects[0]])
+        objects = first_room_snapshot()
+        objects[0]['child_links'][0] = 0x999
+        with self.assertRaisesRegex(ValueError, 'dangling child'):
+            export_world(objects)
+        objects = first_room_snapshot()
+        objects[1]['next_sibling'] = 0x175
+        with self.assertRaisesRegex(ValueError, 'sibling cycle'):
+            export_world(objects)
+        objects = first_room_snapshot()
+        objects[1]['location'] = 0xd3
+        with self.assertRaisesRegex(ValueError, 'location differs'):
+            export_world(objects)
+        objects = first_room_snapshot()
+        del objects[1]['next_sibling']
+        with self.assertRaisesRegex(ValueError, 'sibling accessor not decoded'):
+            export_world(objects)
+        objects = first_room_snapshot()
+        objects[8]['child_links'][0] = 0x175
+        with self.assertRaisesRegex(ValueError, 'multiple indexed owners'):
+            export_world(objects)
+        objects = first_room_snapshot()
+        player = next(obj for obj in objects if obj['object'] == 0xd3)
+        player['child_links'][2] = 0xee
+        room = objects[0]
+        room['location'] = 0xd3
+        room['child_slot'] = 2
+        room['next_sibling'] = 0
+        with self.assertRaisesRegex(ValueError, 'no containment root'):
+            export_world(objects)
+
+    def test_cli_exports_machine_readable_json_or_human_room_inventory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'objects.json'
+            source.write_text(json.dumps({'objects': first_room_snapshot()}))
+            command = [sys.executable, str(TOOL), str(source)]
+            report = subprocess.run(command, text=True, capture_output=True)
+            self.assertEqual(report.returncode, 0, report.stderr)
+            self.assertIn('| `0x0ee` | Your Quarters | 8 | 15 |', report.stdout)
+            structured = subprocess.run(command + ['--format', 'json'],
+                                        text=True, capture_output=True)
+            self.assertEqual(structured.returncode, 0, structured.stderr)
+            self.assertEqual(json.loads(structured.stdout)['counts']['indexed_children'], 15)
+            source.write_text(json.dumps({'objects': [{'object': 1, 'type': 1,
+                                                       'child_links': [123]}]}))
+            broken = subprocess.run(command, text=True, capture_output=True)
+            self.assertEqual(broken.returncode, 2)
+            self.assertIn('dangling child', broken.stderr)
+
+
+if __name__ == '__main__':
+    unittest.main()

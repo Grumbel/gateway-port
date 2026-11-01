@@ -117,6 +117,8 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/object_write_trace_tests.py)
     add_test(NAME story-child-chain COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/child_chain_inspect_tests.py)
+    add_test(NAME story-world-export COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/story_world_export_tests.py)
     add_test(NAME object-state-export COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/object_state_export_tests.py)
     add_test(NAME story-replay-driver COMMAND ${Python3_EXECUTABLE}
