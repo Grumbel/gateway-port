@@ -91,6 +91,7 @@ struct State {
     bool trace_video = false;
     bool probe_adlib = false;
     std::uint64_t adlib_calls = 0;
+    std::uint16_t adlib_mode = 0, adlib_voice = 0;
     gateway::Mouse mouse;
     gateway::Opl opl;
     gateway::Pit pit;
@@ -1068,8 +1069,26 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
                                          << unsigned(byte);
                 state.research_trace << '\n';
             }
-            // Discovery-only interface: do not pretend to play music or claim
-            // that the undocumented driver buffer semantics are implemented.
+            // Implement only documented control/query semantics. No event
+            // queue exists yet, so GetState must report idle in AX; leaving
+            // AX unchanged makes games poll forever for completed playback.
+            if (function == 0) {
+                state.adlib_mode = state.adlib_voice = 0;
+            } else if (function == 4) {
+                set(uc, UC_X86_REG_AX, 0);
+            } else if (function == 6 || function == 0x0c) {
+                std::uint16_t value = 0;
+                check(uc_mem_read(uc, args, &value, sizeof(value)));
+                if (function == 6)
+                    state.adlib_mode = value;
+                else
+                    state.adlib_voice = value;
+            } else if (function == 7 || function == 0x0d) {
+                set(uc, UC_X86_REG_AX,
+                    function == 7 ? state.adlib_mode : state.adlib_voice);
+            }
+            // Discovery-only interface: queued notes and FM synthesis are
+            // deliberately not yet implemented.
         } else if (number == 0x21 && (ax >> 8) == 0x35) {
             std::uint16_t vector[2]{};
             check(uc_mem_read(uc, (ax & 255) * 4, vector, sizeof(vector)));

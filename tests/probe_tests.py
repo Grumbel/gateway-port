@@ -646,6 +646,15 @@ class ProbeTests(unittest.TestCase):
         self.assertIn('si=5', result.research_trace)
         self.assertIn('AdLib interface calls: 1', result.stderr)
 
+    def test_adlib_probe_reports_idle_state_and_configured_mode(self):
+        # ES:0400 contains mode 1; GET MODE and GET STATE return values in AX.
+        code = bytes.fromhex('31c08ec0bb000426c7070100be0600cd65'
+                             'be0700cd6526a30204be0400cd6526a30404'
+                             'b8004ccd21')
+        result = self.run_guest(code, dump=True, probe_adlib=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.memory[0x402:0x406], bytes.fromhex('01000000'))
+
     def test_mode_2_exit_restores_text_display(self):
         # Spellcasting 101 selects 80x25 B/W mode 2 while shutting down.
         result = self.run_guest(bytes.fromhex('b80200cd10b8004ccd21'), dump=True)

@@ -261,6 +261,16 @@ a music implementation: it makes no claims about playback state, queues,
 instruments, or sound output. Keep it opt-in until the actual call sequence
 has been traced and a proper driver HLE is implemented.
 
+The first probe trace shows 101 invoking functions `05h`, `00h`, `17h`,
+`0Ah`, `06h`, `12h`, `02h`, `09h`, `0Ch`, `10h`, `03h`, and then repeatedly
+`10h`/`04h`. The documented `04h` GetState function returns status in `AX`
+(`0` means playback finished), not in the `ES:BX` argument buffer. The
+initial discovery stub failed to set `AX`, leaving the game's polling loop
+unable to observe completion. The probe now implements the documented mode
+and voice configuration/query calls and reports idle playback status until
+an actual queued-event scheduler exists. This should expose more of 101's
+music call sequence, but will not yet generate music.
+
 - Colors have not been compared with the running games under DOSBox.
 - Spellcasting 101 and 201 mono entries are shown as black and white.
 - Some Spellcasting 101 1-bit entries, such as `S101_C2` #19 and #40, look like
