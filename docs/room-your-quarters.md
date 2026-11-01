@@ -311,9 +311,11 @@ python3 tools/inspect_action_dispatch.py build/story-commands-043/native
 
 The output selects the six action IDs confirmed in the command replay. Use
 `--all` for all 195 entries, or repeat `--action 0x71 --action 0x1d` for a
-subset. This can identify the shared open/close entry points and is the next
-step before a replacement native action implementation. Addresses from this
-memory table are **runtime far pointers**, not overlay file offsets.
+subset. Most of these pointers lead to **RTLink reference metadata, not
+necessarily generic action implementations**. See the
+[action reference mapping](action-dispatch.md). The shared OPEN/CLOSE
+implementations remain unidentified. Addresses from this memory table are
+runtime far pointers, not overlay file offsets.
 
 ## Next decompilation boundary
 
@@ -321,8 +323,8 @@ memory table are **runtime far pointers**, not overlay file offsets.
    to give the cases semantic names and validate the event-8/9/11 equivalence.
 2. Determine the meaning of property 7 and the state word read via
    `[DS:9476] : 393e` by comparing snapshots before/after room entry.
-3. Use the action-directory exporter and a new shared-action entry trace to
-   identify the **generic** open/close implementations. Do not emulate them
+3. Trace the runtime action references and dispatcher fallback to identify
+   the **generic** open/close implementations. Do not emulate them
    in the drawer handler: it returns zero for both observed command values.
    Resolve the forwarded services separately, then compare a host translation
    against the `look`, `open drawer`, `look` replay.
