@@ -1110,6 +1110,7 @@ int main(int argc, char **argv) {
     std::string game_args, research_path, object_flags_mode;
     bool object_state_services = false;
     bool verify_overlays = false, hle_overlays = false, trace_video = false;
+    bool trace_timing = false;
     unsigned aspect_width = 4, aspect_height = 3;
     std::vector<std::uint64_t> entry_addresses;
     std::multimap<unsigned, std::uint16_t> scheduled_keys;
@@ -1121,7 +1122,8 @@ int main(int argc, char **argv) {
                      "[--break-at HEX] [--state-dir DIR | --read-only] [--trace-blocks FILE] "
                      "[--trace-research FILE --trace-entry HEX ...] [--key-at MS:BIOSHEX ...] "
                      "[--object-flags verify|hle | --object-state verify|hle] [--verify-overlays] "
-                     "[--hle-overlays] [--trace-video] [--aspect-ratio native|W:H]\n";
+                     "[--hle-overlays] [--trace-video] [--trace-timing] "
+                     "[--aspect-ratio native|W:H]\n";
     };
     if (argc < 2 || std::string(argv[1]) == "--help") {
         usage();
@@ -1134,6 +1136,8 @@ int main(int argc, char **argv) {
             verify_overlays = true;
         } else if (option == "--trace-video")
             trace_video = true;
+        else if (option == "--trace-timing")
+            trace_timing = true;
         else if (option == "--aspect-ratio" && i + 1 < argc) {
             const std::string value = argv[++i];
             if (value == "native") {
@@ -1527,6 +1531,16 @@ int main(int argc, char **argv) {
                 state.keyboard_irq_pending = false;
             }
             elapsed_us += slice_us;
+            if (trace_timing && elapsed_us % 1000000 == 0) {
+                const auto wall_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                         std::chrono::steady_clock::now() - started)
+                                         .count();
+                std::cerr << "TIMING guest_ms=" << elapsed_us / 1000
+                          << " wall_ms=" << wall_ms << " speed=" << std::fixed
+                          << std::setprecision(2)
+                          << (wall_ms ? double(elapsed_us) / (wall_ms * 1000.0) : 0.0)
+                          << "x\n";
+            }
 #ifdef GATEWAY_SDL
             if (host && elapsed_us % 16000 == 0) {
                 text_snapshot(engine.uc, state);
