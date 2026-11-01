@@ -99,3 +99,14 @@ whenever page 1 was selected. BIOS page sizes are now mode-specific:
 
 The BIOS data area's page-size and page-start values are also updated on mode
 and page changes. Unit tests verify that mode 10h page 1 starts at 32 KiB.
+
+## BIOS graphics text and page flipping
+
+`INT 10h AH=09h` uses `BH` to select the page receiving the glyph; that page
+may be different from the one currently displayed by the CRTC. Previously,
+the software glyph renderer used the current display start instead and could
+draw character pixels onto the wrong buffer. The destination now uses the
+mode's BIOS page allocation and `BH`, independently of the scanout address.
+Tests draw on hidden and visible mode-10h pages and verify isolation. This
+could explain intermittently missing interface text when a game flips pages;
+live verification is still required.

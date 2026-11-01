@@ -722,7 +722,8 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
                     for (unsigned i = 0; i < height; ++i)
                         glyph[i] = font->second[character][i * font->first / height];
                 for (unsigned i = 0; i < reg(uc, UC_X86_REG_CX); ++i)
-                    state.vga.draw_glyph(column + i, row, std::span(glyph).first(height), bx & 255);
+                    state.vga.draw_glyph(column + i, row, std::span(glyph).first(height),
+                                         bx & 255, page);
             }
         } else if (number == 0x10 && (ax >> 8) == 8 && state.vga.mode() == 3) {
             const auto page = (reg(uc, UC_X86_REG_BX) >> 8) & 7;

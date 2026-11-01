@@ -70,6 +70,7 @@ int main() {
         vga.out(0x3d4, 0x0d);
         vga.out(0x3d5, 1);
         require(vga.pixels()[0] == 0xffff0000, "display start ignored");
+        vga.out(0x3d5, 0);
         std::array<std::uint8_t, 16> glyph{};
         glyph[0] = 0x80;
         vga.draw_glyph(2, 0, glyph, 4);
@@ -90,6 +91,14 @@ int main() {
         vga.graphics_page(1);
         require(vga.graphics_page() == 1 && vga.pixels()[0] == 0xff0000aa,
                 "graphics page selection ignored");
+        std::array<std::uint8_t, 14> page_glyph{};
+        page_glyph[0] = 0x80;
+        vga.draw_glyph(1, 0, page_glyph, 4, 0);
+        require(vga.pixels()[8] == 0xff000000,
+                "hidden-page BIOS glyph leaked onto displayed page");
+        vga.draw_glyph(1, 0, page_glyph, 4, 1);
+        require(vga.pixels()[8] == 0xffaa0000,
+                "BIOS glyph was not drawn to requested graphics page");
         vga.write(32928, 0x80);
         // Compare at scanline 1: the next line must restart at address zero,
         // rather than continue two scanlines into page one.

@@ -211,10 +211,14 @@ void Vga::write(std::uint16_t offset, std::uint8_t value) {
     }
 }
 void Vga::draw_glyph(unsigned column, unsigned row, std::span<const std::uint8_t> bitmap,
-                     std::uint8_t attribute) {
+                     std::uint8_t attribute, unsigned page) {
     if (mode_ == 3 || mode_ == 0x13)
         throw std::runtime_error("unsupported BIOS glyph mode");
-    const auto start = ((std::uint16_t(crtc_[0x0c]) << 8) | crtc_[0x0d]) * 2u;
+    if (page >= 65536 / page_size())
+        throw std::runtime_error("invalid BIOS graphics glyph page");
+    // BIOS character output addresses BH, even when another graphics page is
+    // currently displayed. The CRTC start controls scanout, not the target.
+    const auto start = page * page_size();
     const auto stride = unsigned(crtc_[0x13]) * 2;
     for (unsigned y = 0; y < bitmap.size(); ++y)
         for (unsigned x = 0; x < 8; ++x) {

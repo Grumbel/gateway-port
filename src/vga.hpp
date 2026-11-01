@@ -20,7 +20,7 @@ class Vga {
     void write(std::uint16_t offset, std::uint8_t value);
     std::vector<std::uint32_t> pixels() const; // ARGB8888, opaque alpha.
     void draw_glyph(unsigned column, unsigned row, std::span<const std::uint8_t> bitmap,
-                    std::uint8_t attribute);
+                    std::uint8_t attribute, unsigned page = 0);
     void text_font(unsigned character, std::span<const std::uint8_t> bitmap);
     void text_snapshot(std::span<const std::uint8_t> memory);
     std::span<const std::uint8_t> text_memory() const { return text_; }
