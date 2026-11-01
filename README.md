@@ -558,7 +558,13 @@ from the type-2 drawer's first child-list head at offset `+0x14`. Original
 translated for type-2 records into the standalone `StoryLinkedChildren`
 research model. Use `--trace-object-writes 124 --trace-visibility` with the
 object scenario and `tools/summarize_object_writes.py --child-only` to inspect
-the actual writer and its far return address.
+the actual writer and its far return address. The saved trace returns to
+`4319:169e`, resolved through RTLink section 4 to the direct far call at
+`GATEMAIN.OVL:0xc879`. Optional `--overlay-map` and `--overlay-file`
+arguments check original call bytes before reporting source offsets (important
+because multiple RTLink sections share a runtime bank). `--all-setters`
+lists *every* child setter call recorded during the same run, including
+destination containers and subsequent actions; it requires no new replay.
 See [the child-list writer research](docs/action-dispatch.md#identify-the-native-child-list-writer)
 for the complete command and the distinction between observed writes and
 verified changes.

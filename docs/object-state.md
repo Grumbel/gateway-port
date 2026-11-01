@@ -191,6 +191,8 @@ time 28,356 ms. The generic move helper at `GATEMAIN.OVL:0xc830` maintains
 these lists as *heads of next-sibling chains*, not flat arrays of all
 contained objects. For type 2, offset `+0x10` is a byte slot index and
 `+0x12` is the next-sibling word; `+0x14` begins the child-head words.
+The child setter returns to live `4319:169e`, identified by verified RTLink
+section 4 as original OVL `0xc87e` (immediately after its call at `0xc879`).
 See [child-list relocation](action-dispatch.md#the-shared-child-list-relocation-routine)
 for the original control flow and bounded C++ model.
 

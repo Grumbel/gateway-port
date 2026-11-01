@@ -858,8 +858,8 @@ linear `0x11e6c`), immediately after the accessor at `0157:0825`. It accepts
 accessor reads. The store for type 2, for example, is at file `0x2ec9`:
 `mov es:[bx+si+0x14],ax`, with `SI=2*slot`. Type 1 writes its fixed `+0x0c`
 word; types 3 and 8 write nothing. The separate direct-location setter at
-file `0x2b89` contains no child-list write. **We have not yet observed which
-native caller invokes the indexed setter during TAKE.**
+file `0x2b89` contains no child-list write. The later native trace identified
+the exact caller; see the resolved return address below.
 
 Trace a single object's native writes without a global memory-write hook.
 The probe installs a narrow Unicorn write hook once verified object services
@@ -889,22 +889,49 @@ A child-pointer write near TAKE still requires inspecting the caller and
 post-write state before generalizing to other containers. Replay with other
 object IDs when investigating nested structures.
 
+To map the captured return address back to original code using the existing
+trace and the verified RTLink directory:
+
+```sh
+"${GATEWAY_BUILD_DIR:-build}/gateway-overlay" \
+  ../gateway-dos/GATEMAIN.EXE ../gateway-dos/GATEMAIN.OVL \
+  > build/rtlink-manifest.json
+python3 tools/summarize_object_writes.py \
+  build/parser-child-writes/native.trace --child-only --all-setters \
+  --overlay-map build/rtlink-manifest.json \
+  --overlay-file ../gateway-dos/GATEMAIN.OVL
+```
+
+Several RTLink sections overlap at `4319:xxxx`. The analyzer therefore
+requires the **original direct far-CALL opcode and target bytes** immediately
+before the saved return PC before claiming an overlay file address. An
+indirect or unknown caller is explicitly left unresolved.
+`--all-setters` includes every native `0157:08fc` call in that **same trace**,
+not only writes to the watched drawer. This can reveal the destination
+insertion and later DROP path without another replay. The memory-write table
+still covers the single watched object; setter calls for other objects do
+**not** independently prove those other records were changed.
+
 The supplied **seven-command replay** now confirms the central write:
 
 ```text
 Object 0x124: native type 2, 36 bytes at 343b:0758, 3 child slots
 28356  take book   pc=0011efb  offset=0014  2301 -> 0000  slot 0
 28356  child setter 0157:08fc  object=0124  slot=0  value=0000
+       returns to 4319:169e -> section 4 GATEMAIN.OVL:0xc879 (call)
 ```
 
 Thus TAKE uses the real indexed setter, and the type-2 record's first head
 changes from book `0x123` to zero. It is **not** an inferred lookup result or
 a simple clearing of the drawer-open property. The guest write PC `0x11efb`
 is exactly the type-2 `mov es:[bx+si+0x14],ax` instruction at original EXE
-file `0x2ec9` (`0157:098b`). We have not yet seen the
-setter's exact far return address in this summary; the expanded report now
-prints it from the existing raw `entry ... stack=` record, without needing a
-new replay.
+file `0x2ec9` (`0157:098b`). The follow-up identifies the setter's far
+return address as `4319:169e`. The verified RTLink manifest places section 4 at runtime
+segment `0x4319`, with image bytes starting at OVL file `0xb1e0`. Thus
+`0xb1e0 + 0x169e = 0xc87e`, the return immediately after the direct far call
+at `0xc879`. The on-disk bytes `9a fc 08 57 01` encode
+`call 0157:08fc`. The **head-removal path of the shared relocation helper is
+now confirmed for TAKE**, not merely suggested by matching static code.
 
 ### The shared child-list relocation routine
 

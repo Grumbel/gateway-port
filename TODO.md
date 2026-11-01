@@ -41,10 +41,10 @@ emulation. Keep the original executable as a behavioral reference while mapping:
 - The first-room drawer is confirmed type 2; TAKE calls the indexed child
   setter (`0157:08fc`) to clear slot-0 head `0x123` at `+0x14`. The common
   child-list relocation routine at OVL `0xc830` has been disassembled, and
-  a type-2 linked-chain model is independently tested. Next match the
-  setter's far return address from the **existing** native trace to the
-  relocation helper's runtime address, then extend traces to nested objects
-  and other record types. Establish which callers enable the gate's
+  a type-2 linked-chain model is independently tested. Its far return address
+  `4319:169e` maps to section-4 OVL `0xc879`, confirming the helper's head
+  unlink path during TAKE. Next extend traces to nested objects and other
+  record types; establish which callers enable the gate's
   restriction parameter.
   The child accessor (`0157:0825`) is distinct
   from DROP's recursive relationship helper (`0157:00c5`); both are decoded,
