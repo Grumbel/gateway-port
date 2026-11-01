@@ -52,9 +52,14 @@ emulation. Keep the original executable as a behavioral reference while mapping:
   tree. The research model reproduces these final links and DROP/TAKE head
   transitions; its non-head move test remains synthetic. The first global
   audit found 182 nonzero child heads, 404 distinct linked objects and **zero**
-  inconsistencies. Next classify the 330 unlinked records using the new
-  audit's per-type/root reports, trace actual non-head sibling and nested
-  moves, extend to other record types, and establish which callers enable
+  inconsistencies. The follow-up classified 110 type-1 room candidates and 94
+  populated ownership trees, with nesting depth up to six; all type-3/4/5
+  objects are outside indexed child lists, and the unlinked `0x0bb` dike leak
+  still has a direct location word. The new `export_story_world.py` writes
+  a conservative JSON ownership forest and Markdown room inventory from this
+  snapshot. Next examine those exported room candidates, correlate room IDs
+  with scene image selection and exit transitions, trace real non-head sibling
+  and nested moves, extend to other record types, and establish which callers enable
   the gate's restriction parameter. The child accessor (`0157:0825`) is distinct
   from DROP's recursive relationship helper (`0157:00c5`); both are decoded,
   but their complete role in parser visibility and spatial containment is

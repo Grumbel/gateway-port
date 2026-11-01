@@ -282,6 +282,41 @@ is the current scene or that a missing parent is a bug. In particular, only
 observed child links are used to calculate roots and depth—direct-location
 words are *checked*, never inserted as guessed graph edges.
 
+#### Export an initial typed world snapshot for a native renderer
+
+`tools/export_story_world.py` makes an immutable, normalized ownership forest
+from the same already-decoded `objects.json`. It requires no DOS execution or
+additional game assets and strictly checks that each referenced child has one
+parent/slot, the sibling chain can be followed, and the resulting containment
+graph is rooted and acyclic. Type-1 roots are marked as **room candidates**;
+this is based on the native record type and supplied names, not a verified
+navigation, scene-selection, or rendering ABI.
+
+```sh
+python3 tools/export_story_world.py build/parser-child-writes/objects.json \
+  --format markdown > build/parser-child-writes/world.md
+python3 tools/export_story_world.py build/parser-child-writes/objects.json \
+  --format json > build/parser-child-writes/world.json
+```
+
+The Markdown inventory lists type-1 rooms with direct and nested contents,
+other nonempty roots, and the few unattached records that nevertheless have
+nonzero native locations (such as `0x0bb` dike leak at `0x095`). The JSON
+forest has `schema_version: 1` and supplies integer IDs, record types, names,
+native handler indices and available RTLink file references, original
+location/slot/sibling fields, and ordered `child_slots[].objects` children.
+It includes all 734 records, including roots with no active children, without
+copying the opaque `raw_state` bytes into a purported gameplay schema.
+
+The supplied audit shows 110 type-1 roots among 330 unlinked records; those
+root records and their 404 linked descendants provide a candidate scene/object
+hierarchy for a modern client. This exporter does **not** reconstruct scripts,
+object visibility, exit connections, mutable flags, text selection, picture
+composition, or transitions. Inactive objects with location zero remain in
+the snapshot as records, not automatically assigned to rooms. The complete
+Markdown/JSON outputs still need to be generated and inspected against the
+original game data; the asset-free tests cover the supplied first room.
+
 #### Decoded Your Quarters hierarchy from the supplied native replay
 
 The user ran the inspector against the repeated-action native snapshot after
