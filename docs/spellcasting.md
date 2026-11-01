@@ -279,10 +279,8 @@ calls, 1,045 active-voice selections, and smaller numbers of `08h` volume,
 `10h` timbre, and `11h` pitch events. This confirms that 101 supplies music
 through the AdLib driver, not a Sound Blaster DSP sample stream.
 
-The current `--adlib-driver` queues these events in guest beat time (the TSR's
-controller timestamps are relative to `RelTimeStart`, but delayed note
-timestamps are absolute), handles tempo changes, translates 56-byte AdLib INS
-timbres to OPL2 registers, and
+The current `--adlib-driver` queues these events in guest beat time, handles
+tempo changes, translates 56-byte AdLib INS timbres to OPL2 registers, and
 synthesizes notes through the existing Nuked OPL backend. It includes the
 driver's 11 voices with percussion-mode mapping and returns queue acceptance
 in `AL`. The final diagnostic reports the number of synthesized notes and
@@ -290,6 +288,28 @@ remaining events. A synthetic regression test checks event timing and a
 non-silent FM waveform, but **actual 101 intro playback still needs a DOSBox
 listening comparison**; pitch, volume and rhythm subtleties are not yet
 validated against the real TSR.
+
+The first full 101 listening test found the intro runs in roughly 15 seconds,
+but FM music plays only about three notes. The attached `s101-adlib-027.log`
+confirms the error was in our interpretation of the `INT 65h` arguments. The
+two 16-bit words passed to the driver for a time value are a **rational number
+of beats** (numerator, denominator), not an integer and a fixed-point fraction.
+For example, `01 00 08 00` means `1/8` beat, not `8 + 1/65536` beats.
+Disassembly of `SB-SOUND.COM` at resident routine `0D79h` confirms the integer
+division and fractional-remainder conversion. `SI=02h` with `00 00 08 00`
+therefore establishes beat zero, not beat eight.
+
+There is a second important distinction: `SI=0Eh` (PlayNoteDel) receives a
+note number, then the note's **held duration** and its **total step until the
+next note**. These are not absolute onset and release timestamps. The driver
+maintains an independent queue and timing cursor per active voice. A hold of
+`0/8` with a step of `16/8` produces a two-beat rest. The recorded 1,096
+PlayNoteDel calls include 303 such zero-duration rests. The scheduler now
+advances each of the 11 voice cursors independently and queues note-on/off
+and rest events accordingly. Controller changes remain relative to the
+`RelTimeStart` origin. Unit tests reproduce the fractional timing, rests,
+per-voice independence and tempo changes; another live listening pass is
+still required.
 
 - Colors have not been compared with the running games under DOSBox.
 - Spellcasting 101 and 201 mono entries are shown as black and white.

@@ -25,7 +25,7 @@ class AdlibDriver {
     std::uint64_t played_notes() const { return played_notes_; }
 
   private:
-    enum class Kind { note, off, timbre, volume, tempo, pitch };
+    enum class Kind { note, off, rest, timbre, volume, tempo, pitch };
     struct Event {
         double tick = 0;
         std::uint64_t order = 0;
@@ -68,6 +68,7 @@ class AdlibDriver {
     std::uint64_t next_order_ = 0, played_notes_ = 0;
     double current_tick_ = 0;
     double relative_origin_ = 0;
+    std::array<double, 11> next_voice_tick_{};
     double tempo_ = 90;
     unsigned ticks_per_beat_ = 32;
     unsigned active_voice_ = 0;

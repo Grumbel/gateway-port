@@ -1558,8 +1558,15 @@ int main(int argc, char **argv) {
             state.clock.advance(slice_us);
             state.pit.advance(slice_us);
             state.opl.advance(slice_us);
-            if (probe_adlib)
+            if (probe_adlib) {
+                const auto notes_before = state.adlib.played_notes();
                 state.adlib.advance(slice_us);
+                if (state.research_trace.is_open() &&
+                    state.adlib.played_notes() != notes_before)
+                    state.research_trace << "adlib-play ms=" << std::dec << elapsed_us / 1000
+                                         << " notes=" << state.adlib.played_notes()
+                                         << " pending=" << state.adlib.pending_events() << '\n';
+            }
             if (state.pit.pending() && !(state.pic_mask & 1) && !state.irq_in_service &&
                 (reg(engine.uc, UC_X86_REG_FLAGS) & 0x200)) {
                 state.pit.acknowledge();

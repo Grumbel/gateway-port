@@ -21,9 +21,11 @@ std::uint16_t AdlibDriver::word(std::span<const std::uint8_t> data, unsigned off
 }
 
 double AdlibDriver::ticks(std::span<const std::uint8_t> args, unsigned offset) const {
-    // SOUND.COM's fixed-point beat time is [fraction:16, integer:16].
-    return (double(word(args, offset + 2)) + double(word(args, offset)) / 65536.0) *
-           ticks_per_beat_;
+    // SB-SOUND.COM's d79h routine converts the TWO words to a rational
+    // beat count, numerator / denominator; they are not 16.16 fixed-point.
+    // For example 01 00 08 00 is one eighth of a beat, not eight beats.
+    const auto denominator = word(args, offset + 2);
+    return denominator ? double(word(args, offset)) / denominator * ticks_per_beat_ : 0;
 }
 
 void AdlibDriver::write(unsigned reg, unsigned value) {
@@ -52,6 +54,7 @@ void AdlibDriver::reset() {
     ticks_per_beat_ = 32;
     current_tick_ = 0;
     relative_origin_ = 0;
+    next_voice_tick_.fill(0);
     active_voice_ = 0;
     next_order_ = played_notes_ = 0;
     events_ = {};
@@ -166,6 +169,7 @@ void AdlibDriver::process(const Event &event) {
         if (voice.note_order == event.note_order)
             stop(event.voice);
         break;
+    case Kind::rest: break;
     case Kind::timbre: timbre(event.voice, event.patch); break;
     case Kind::volume:
         voice.volume = std::clamp(event.value / 65535.0, 0.0, 1.0);
@@ -196,6 +200,7 @@ std::uint16_t AdlibDriver::call(std::uint16_t function, std::span<const std::uin
     case 0x00: reset(); break;
     case 0x02:
         relative_origin_ = current_tick_ = ticks(args, 0);
+        next_voice_tick_.fill(current_tick_);
         break;
     case 0x03:
         playing_ = word(args, 0) != 0;
@@ -227,25 +232,59 @@ std::uint16_t AdlibDriver::call(std::uint16_t function, std::span<const std::uin
     case 0x0c: active_voice_ = word(args, 0); break;
     case 0x0d: return active_voice_;
     case 0x0e: {
-        Event note;
-        note.kind = Kind::note;
-        note.voice = active_voice_;
-        note.tick = ticks(args, 2);
-        note.value = std::int16_t(word(args, 0));
-        const auto note_order = enqueue(std::move(note));
-        Event off;
-        off.kind = Kind::off;
-        off.voice = active_voice_;
-        off.tick = ticks(args, 6);
-        off.note_order = note_order;
-        // A delayed note's second time is its absolute release time.
-        if (off.tick > ticks(args, 2))
+        if (active_voice_ >= voices_.size())
+            return accepted();
+        const auto duration = ticks(args, 2);
+        const auto step = ticks(args, 6);
+        const auto start_at = next_voice_tick_[active_voice_];
+        // PlayNoteDel's first rational time is how long the note is held;
+        // its second is the total interval until this voice's next note.
+        // A zero hold is a rest, which still advances that voice's clock.
+        if (duration > 0) {
+            Event note;
+            note.kind = Kind::note;
+            note.voice = active_voice_;
+            note.tick = start_at;
+            note.value = std::int16_t(word(args, 0));
+            const auto note_order = enqueue(std::move(note));
+            Event off;
+            off.kind = Kind::off;
+            off.voice = active_voice_;
+            off.tick = start_at + duration;
+            off.note_order = note_order;
             enqueue(std::move(off));
+        }
+        if (step > duration) {
+            Event rest;
+            rest.kind = Kind::rest;
+            rest.voice = active_voice_;
+            rest.tick = start_at + step;
+            enqueue(std::move(rest));
+        }
+        next_voice_tick_[active_voice_] += step;
         return accepted();
     }
-    case 0x0f:
-        event(Kind::note, 2, std::int16_t(word(args, 0)));
+    case 0x0f: {
+        if (active_voice_ >= voices_.size())
+            return accepted();
+        const auto duration = ticks(args, 2);
+        if (duration > 0) {
+            Event note;
+            note.kind = Kind::note;
+            note.voice = active_voice_;
+            note.tick = next_voice_tick_[active_voice_];
+            note.value = std::int16_t(word(args, 0));
+            const auto note_order = enqueue(std::move(note));
+            Event off;
+            off.kind = Kind::off;
+            off.voice = active_voice_;
+            off.tick = next_voice_tick_[active_voice_] + duration;
+            off.note_order = note_order;
+            enqueue(std::move(off));
+            next_voice_tick_[active_voice_] += duration;
+        }
         return accepted();
+    }
     case 0x10: {
         Event item;
         item.kind = Kind::timbre;
