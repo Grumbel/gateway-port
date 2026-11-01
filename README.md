@@ -513,6 +513,16 @@ index, raw return AX, and subsequent action dispatch for each guest command
 slot. See [the action research notes](docs/action-dispatch.md#trace-the-earlier-selector-callback-separately-from-action-dispatch)
 for the bounded three-scenario replay; the selector's meaning remains unknown.
 
+That three-scenario replay has now identified **actual TAKE/DROP pre-action
+handlers**, originally at `GATEMAIN.OVL:0xfbaf` and `0xd804`. For the first
+room, repeated TAKE when the book is held and repeated DROP when it is not
+held return `AX=1` and intercept the action; successful commands return zero
+from the selector and proceed to the ordinary handler. A hidden book in a
+closed drawer never reaches the selector at all. The C++ first-room model
+reproduces all nine supplied scenarios and their selector observations; nested
+containers and general parser visibility remain unimplemented. See
+[the callback disassembly](docs/action-dispatch.md#verified-takedrop-pre-action-callbacks).
+
 RTLink sections and all handler entry file offsets can now be extracted:
 
 ```sh
