@@ -3,7 +3,9 @@
 Mission Critical (1995) uses a different generation of Legend's PIC format.
 These findings were checked against four external samples: `MC040.PIC`,
 `MC041.PIC`, `MC051.PIC`, and `MC101.PIC`. They are not part of the repository.
-No `MISSION.EXE` or decompressed reference images were available for testing.
+The bundled Crusher! decoder was reconstructed from a separately supplied
+`MISSION.EXE`. The game executable and the compressed sample data are not
+distributed with this project.
 
 ## Directory and payloads
 
@@ -57,19 +59,56 @@ replace 96 bytes (32 RGB colors) starting at palette byte offsets 480, 192,
 the same position and dimensions. They resemble animation or layered image
 records, but their exact rendering semantics remain **unverified**.
 
-## Compression and extracting streams
+## Native Crusher! 3.0 decompression
 
 The native PKWARE DCL decoder used for Gateway cannot decode these pixels.
 [QUFB's Mission Critical research](https://qufb.gitlab.io/writeups/2021/01/22/Decrushing-DOS-Doodads)
 reports that `MISSION.EXE` identifies the **Crusher! Data Compression Toolkit
-Version 3.0** and demonstrates successful decompression. The researcher's
-[crusher_cli](https://gitlab.com/qufb/crusher_cli) calls the proprietary
-32-bit `CrusherS.dll` through Wine; it is a wrapper, **not** a portable
-native decoder. The DLL is neither distributed nor linked by this project.
+Version 3.0**. The researcher's [crusher_cli](https://gitlab.com/qufb/crusher_cli)
+calls a proprietary `CrusherS.dll` through Wine; this project instead has an
+independent native implementation in `src/crusher.cpp` and does not use that DLL.
 
-`gateway-extract` detects this directory automatically or accepts
-`--dialect mc`. Without a Crusher implementation it reports unsupported
-compression instead of guessing at another codec. To extract the known parts:
+The relevant routines in the bound DOS/4GW LE image of `MISSION.EXE` were
+located through the game's PIC directory loader at virtual address `0x85420`.
+That loader opens resource type zero and reads exactly `0x1400` directory bytes.
+The decoder call at `0x8cb08` reaches Crusher at `0x9a524`; the bitstream
+implementation is around `0xaf640`–`0xaf914`. The format has:
+
+- An MSB-first bitstream with repeated blocks; each block starts with a 16-bit
+  token count followed by three Huffman descriptions.
+- A meta-code tree (up to 19 code-length symbols), a literal/match tree (510
+  symbols), and a distance-class tree (13 symbols). Lengths are canonical
+  Huffman codes; a zero-count tree can specify a single fixed symbol.
+- Literal symbols `0`–`255`, followed by matches of length `symbol - 253`.
+  The distance class supplies a variable-length offset into a rolling
+  4096-byte dictionary.
+- No embedded uncompressed-size field; the PIC directory width and height
+  determine the expected number of output pixels.
+
+For all **55** image streams in the four sample archives, decoding produced
+exactly `width * height` pixels, consumed the compressed data except for 0–7
+padding bits, and generated a valid indexed PNG. A second exploratory Python
+implementation was compared byte-for-byte with all 55 C++ PNGs. The USS
+Lexington communications screen and mission background images were visually
+inspected. No game resources are embedded in the tests.
+
+## Extracting PNGs and raw streams
+
+`gateway-extract` detects the newer directory automatically or accepts
+`--dialect mc`. Normal extraction now creates `NNN.png` files:
+
+```sh
+gateway-extract -o /tmp/mc-pics ../MissionCritical/*.PIC
+```
+
+The current palette is retained across records and input files in the order
+provided. VGA six-bit DAC channels are expanded to eight-bit PNG palette
+entries. When the first image is encountered before any palette update, a
+greyscale fallback makes the indexed pixels inspectable but does **not**
+reconstruct their intended colors. Flags `0003h` may refer to animations or
+layers; each entry is exported separately, without unverified composition.
+
+For format inspection, the original chunk export still works:
 
 ```sh
 gateway-extract --raw-chunks -o /tmp/mc-pics ../MissionCritical/*.PIC
@@ -82,9 +121,7 @@ This writes per-file directories containing:
   a palette is known, including updates from earlier entries or input files;
 - `index.tsv`: decimal directory fields, palette range and compressed size.
 
-With the four samples, **55 streams** export successfully. These are not
-viewable PNGs: decompression, transparency/masks, palette application, and
-composition still require validation. Synthetic unit tests cover bounds,
-palette ranges, offsets, and truncated files without including copyrighted
-game assets. A portable Crusher decoder or disassembly/reference data from
-`MISSION.EXE` is the next prerequisite for producing images.
+Synthetic unit tests cover directory bounds, palettes, fixed-symbol and
+canonical Huffman tables, LZ copies, and truncated streams without including
+any copyrighted game assets. Full PIC frame composition and rendering semantics
+inside *Mission Critical* are still open questions.

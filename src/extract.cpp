@@ -1,3 +1,4 @@
+#include "crusher.hpp"
 #include "pic.hpp"
 #include <algorithm>
 #include <array>
@@ -163,28 +164,26 @@ int main(int argc, char **argv) try {
                 std::count_if(entries.begin(), entries.end(), [](const auto &e) { return e.offset; });
             const std::size_t chunks = std::count_if(entries.begin(), entries.end(),
                                                      [](const auto &e) { return e.compressed_size; });
-            if (!raw_chunks) {
-                failed += chunks;
-                std::cerr << input.filename().string() << ": Mission Critical PIC (" << populated
-                          << " entries, " << chunks << " Crusher-compressed images); native Crusher "
-                             "decoding unavailable. Use --raw-chunks to export streams.\n";
-                continue;
-            }
             const auto directory = output / input.stem();
             fs::create_directories(directory);
-            std::ofstream manifest(directory / "index.tsv");
-            if (!manifest)
-                throw std::runtime_error("cannot write Mission Critical manifest");
-            manifest << "index\toffset\tcompressed_size\tflags\tx\ty\twidth\theight\textra"
-                        "\tpalette_start\tpalette_size\n";
+            std::ofstream manifest;
+            if (raw_chunks) {
+                manifest.open(directory / "index.tsv");
+                if (!manifest)
+                    throw std::runtime_error("cannot write Mission Critical manifest");
+                manifest << "index\toffset\tcompressed_size\tflags\tx\ty\twidth\theight\textra"
+                            "\tpalette_start\tpalette_size\n";
+            }
+            std::size_t images = 0, file_failed = 0;
             for (std::size_t i = 0; i < entries.size(); ++i) {
                 const auto &entry = entries[i];
                 if (!entry.offset)
                     continue;
-                manifest << i << '\t' << entry.offset << '\t' << entry.compressed_size << '\t'
-                         << entry.flags << '\t' << entry.x << '\t' << entry.y << '\t'
-                         << entry.width << '\t' << entry.height << '\t' << entry.extra << '\t'
-                         << entry.palette_start << '\t' << entry.palette_size << '\n';
+                if (raw_chunks)
+                    manifest << i << '\t' << entry.offset << '\t' << entry.compressed_size << '\t'
+                             << entry.flags << '\t' << entry.x << '\t' << entry.y << '\t'
+                             << entry.width << '\t' << entry.height << '\t' << entry.extra << '\t'
+                             << entry.palette_start << '\t' << entry.palette_size << '\n';
                 if (entry.flags == 0xff00 && entry.palette_size) {
                     std::copy_n(file.begin() + entry.offset + 4, entry.palette_size,
                                 mc_palette.begin() + entry.palette_start);
@@ -192,21 +191,53 @@ int main(int argc, char **argv) try {
                 }
                 char name[32];
                 if (entry.compressed_size) {
-                    std::snprintf(name, sizeof name, "%03zu.crusher", i);
-                    write_file(directory / name,
-                               std::span<const std::uint8_t>(file).subspan(entry.data_offset,
-                                                                           entry.compressed_size));
-                    ++raw_written;
+                    const auto stream = std::span<const std::uint8_t>(file).subspan(
+                        entry.data_offset, entry.compressed_size);
+                    if (raw_chunks) {
+                        std::snprintf(name, sizeof name, "%03zu.crusher", i);
+                        write_file(directory / name, stream);
+                        ++raw_written;
+                    } else {
+                        try {
+                            const auto pixels = gateway::decode_crusher(
+                                stream, static_cast<std::size_t>(entry.width) * entry.height);
+                            std::vector<Rgb8> palette = have_mc_palette ? std::vector<Rgb8>(256)
+                                                                        : grey_palette();
+                            if (have_mc_palette) {
+                                for (std::size_t color = 0; color < 256; ++color) {
+                                    const auto dac = [&](std::size_t component) {
+                                        const auto v = mc_palette[color * 3 + component] & 63;
+                                        return std::uint8_t((v << 2) | (v >> 4));
+                                    };
+                                    palette[color] = {dac(0), dac(1), dac(2)};
+                                }
+                            } else {
+                                ++unpaletted;
+                            }
+                            std::snprintf(name, sizeof name, "%03zu.png", i);
+                            write_file(directory / name, gateway::encode_indexed_png(
+                                entry.width, entry.height, 8, pixels, palette));
+                            ++images;
+                        } catch (const std::runtime_error &error) {
+                            ++file_failed;
+                            std::cerr << input.filename().string() << ": entry " << i << ": "
+                                      << error.what() << '\n';
+                        }
+                    }
                 }
-                if (have_mc_palette) {
+                if (raw_chunks && have_mc_palette) {
                     std::snprintf(name, sizeof name, "%03zu.pal", i);
                     write_file(directory / name, mc_palette);
                 }
             }
-            if (!manifest)
+            if (raw_chunks && !manifest)
                 throw std::runtime_error("cannot write Mission Critical manifest");
+            written += images;
+            failed += file_failed;
             std::cout << input.filename().string() << ": mission-critical, " << populated
-                      << " entries, " << chunks << " compressed streams exported (not decoded)\n";
+                      << " entries, " << (raw_chunks ? chunks : images)
+                      << (raw_chunks ? " streams exported" : " images")
+                      << (raw_chunks ? "" : ", " + std::to_string(file_failed) + " failed") << '\n';
             continue;
         }
         if (raw_chunks)

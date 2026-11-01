@@ -61,7 +61,7 @@ because their engine descends from Legend's earlier adventures.
 | 1993 | *Companions of Xanth* | **Not tested:** no game files available. |
 | 1994 | *Death Gate* | **Not tested:** no game files available; resource formats are related but differ from Gateway's. |
 | 1994 | *Superhero League of Hoboken* | **Not tested:** no game files available. |
-| 1995 | *Mission Critical* | **Resource research only:** four PIC files indexed and raw compressed streams extracted; image decoding and executable startup untested. |
+| 1995 | *Mission Critical* | **PIC extraction works:** native Crusher! decoder produced 55 indexed PNGs from four tested archives. Executable startup and image layering untested. |
 | 1995 | *Shannara* | **Not tested:** no game files available. |
 | 1997 | *Callahan's Crosstime Saloon* | **Not tested:** no game files available. |
 
@@ -189,10 +189,19 @@ file. XOR overlays are merged onto their picture; `--raw-overlays` keeps the del
 `--dialect s101|s201|gateway` overrides detection. The exit status is non-zero if any
 entry fails to decode.
 
-Mission Critical uses a newer 20-byte PIC directory and the **Crusher!** compression
-format, which the native extractor cannot yet decompress. Instead, export its
-compressed image chunks, the current 768-byte VGA palette at each entry, and a
-tab-separated metadata index:
+Mission Critical uses a newer 20-byte PIC directory and **Crusher! 3.0**
+compression. The native decoder reconstructs the indexed pixels, applies the
+latest VGA palette update, and writes a PNG for each image entry:
+
+```sh
+./build/gateway-extract -o build/pictures/mc ../MissionCritical/*.PIC
+```
+
+Pass files in game order to preserve palette updates across files. If no palette
+has been seen, images use a grey ramp; records with flags `0003h` are exported
+as separate images (their animation/layer-composition semantics are still under
+investigation). To inspect the original compressed streams instead, export their
+current 768-byte VGA palette snapshots and a tab-separated metadata index:
 
 ```sh
 ./build/gateway-extract --raw-chunks -o build/pictures/mc ../MissionCritical/*.PIC
@@ -200,8 +209,8 @@ tab-separated metadata index:
 
 Files are `DIR/<file>/<entry>.crusher`, `<entry>.pal` (when a palette has been
 encountered), and `index.tsv`. The `.pal` bytes are RGB triples with 6-bit VGA
-components, not PNGs. Without `--raw-chunks`, these files report the unsupported
-codec and return a non-zero status. See [Mission Critical's format notes](docs/mission-critical.md).
+components. All 55 streams in four supplied sample archives were decoded and
+visually checked. See [Mission Critical's format notes](docs/mission-critical.md).
 
 ## Research
 

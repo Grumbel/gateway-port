@@ -19,8 +19,8 @@ struct PicEntry {
     std::uint16_t reserved = 0;
 };
 
-// Mission Critical has a different 256-slot, 20-byte PIC directory. Its image streams use the
-// proprietary Crusher! codec; the metadata and palette updates can be extracted without it.
+// Mission Critical has a different 256-slot, 20-byte PIC directory. Its image streams use
+// Crusher! compression and may update the palette independently of pixel data.
 struct McPicEntry {
     std::uint32_t offset = 0;
     std::uint32_t compressed_size = 0;
