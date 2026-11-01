@@ -91,12 +91,11 @@ actual mouse-selection priority and object labels in the other titles.
 The Gateway 1 DS offsets and handler-layout assumptions are intentionally not
 applied to them.
 
-### Experimental native object-name lookup
+### Native object-name lookup across games
 
 Gateway 1's RGN IDs differ from sequential `OBJECT.DAT` string indexes (the
 drawer counterexample above). The other games can have the same ambiguity.
-Spellcasting 201, Spellcasting 301, and Gateway II include `OBJECT.DAT`, but
-their live object-directory addresses have not yet been recovered. Their F10
+Spellcasting 201, Spellcasting 301, and Gateway II include `OBJECT.DAT`. Their F10
 debugger now searches conventional guest memory for a six-byte native object
 directory (`type, reserved, record offset, record segment`) independent of DS.
 It requires the first object's primary name token to point at the first string
@@ -106,13 +105,23 @@ At least three-quarters of these records must have valid names; the table must
 also cover all IDs in the selected hitbox frame. A successful candidate is
 revalidated on each refresh, with its address retained as a search hint.
 
-This is a **hypothesis about shared native record layouts**, supported by
-synthetic tests, not a verified discovery in each game's runtime memory. It
-may fail to identify a different layout; in that case F10 continues showing
+**Gateway II is now confirmed against a live 1 MiB guest snapshot** taken at
+guest time 49329 ms. The object directory begins at linear `0x38b1d`, an odd
+address; our initial even-only scanner silently missed it. The corrected scan
+decodes all **521 objects** with valid token boundaries in the original
+`gateway2-dos/OBJECT.DAT` resource. Among the checked mappings, native ID 7 is
+`ground`, 377 is `windows`, 385 is `stair door`, and 520 is `laser rifle`.
+The regression test uses that snapshot only when explicitly supplied as an
+external fixture, without adding the proprietary game files to the repository.
+
+Whether Spellcasting 201 and 301 share the exact directory layout is still
+a **hypothesis** supported only by synthetic tests; their live memory needs
+checking. The corrected bytewise scanner handles both even and odd starts.
+If a game uses a different layout, F10 continues showing
 object IDs and allows a D snapshot for analysis. A successful lookup exports
 the ID/name mapping in `.names.tsv` and its directory's linear address in
-`.debug.txt`. The mapping must be visually checked against the game before
-being treated as confirmed. Spellcasting 101 lacks `OBJECT.DAT` entirely, so
+`.debug.txt`. Object-name labels should still be visually checked against the
+game's current scene. Spellcasting 101 lacks `OBJECT.DAT` entirely, so
 the new lookup does not apply to it; its embedded object-name storage remains
 to be located.
 

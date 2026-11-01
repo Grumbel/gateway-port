@@ -151,8 +151,9 @@ packed rectangles; Gateway II uses polygon vertices (and two-point boxes),
 shown with the same merged outlines and translucent fills. All coordinates
 are relative to the room picture in the right-hand panel. The new dialects
 pass resource-fixture tests but need a live visual/alignment check. Gateway 1
-object names are confirmed against its native state. Spellcasting 201/301 and
-Gateway II now attempt a conservative lookup of native object records: names
+object names are confirmed against its native state. Gateway II's 521-object
+name table was also recovered from a live guest memory snapshot. Spellcasting
+201/301 and Gateway II use a conservative lookup of native object records: names
 appear only after hundreds of records and their `OBJECT.DAT` tokens validate.
 If the layout is not recognized, numeric IDs remain visible. Spellcasting 101
 has no `OBJECT.DAT` and still needs a separate name-source investigation.
