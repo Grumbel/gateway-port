@@ -409,7 +409,7 @@ python3 tools/trace_game_logic.py --scenario objects --services state \
 python3 tools/summarize_story_trace.py build/story-commands/native.trace --actions
 ```
 
-The resulting raw command codes are not yet mapped to their typed verbs;
+Six observed top-level action codes are now associated with typed commands;
 see [story command tracing](docs/room-your-quarters.md#mapping-the-parsers-numeric-command-codes).
 The summarizer accepts older unannotated entry traces too; use `--details` to
 see each room/drawer event with the nearest recently completed typed input.
@@ -423,10 +423,12 @@ To inspect the native action-table pointers from the existing replay dump:
 python3 tools/inspect_action_dispatch.py build/story-commands-043/native
 ```
 
-Most action-table pointers actually address **six-byte RTLink references**
-inside ten-byte trampolines, rather than executable instructions. See
-[native action reference mapping](docs/action-dispatch.md) for the linked
-section IDs, original overlay file offsets and dynamic-tracing caveats.
+The five observed nonresident action-table pointers address **executable
+ten-byte RTLink trampolines**, not embedded reference operands. OPEN and
+CLOSE enter shared section-5 routines that respectively contain property-12
+set and clear operations. See [native action dispatch](docs/action-dispatch.md)
+for their exact runtime addresses, original overlay file offsets, and the
+remaining branch-verification work.
 
 RTLink sections and all handler entry file offsets can now be extracted:
 

@@ -25,55 +25,86 @@ The old inspector reported a third `u16` at `0x2c + 6*action_id`, labelled
 current entry with the selector byte of the *next* entry. The revised inspector
 displays `selector` and `trailer` as separate, unclassified bytes, and no
 longer implies there is a third word in a six-byte action record.
+
 The `look` action `0x5f` points directly to resident code at `148e:0b90`.
 The other five actions exercised in the replay instead point into the RTLink
 manager segment `2c24`.
 
-These `2c24` pointers do **not** point to runnable instruction starts. They
-point to a **six-byte RTLink reference** embedded after the `e8 disp16; ea`
-prefix of a ten-byte trampoline. The reference consists of a far destination
-offset, far destination segment, and section ID. The manager's EXE image starts
-at file offset `0xa020` and has linked segment `1c24`; the observed runtime
-load adds `0x1000` to both manager and referenced overlay segments.
+**Correction after live tracing:** these `2c24` pointers are executable
+**ten-byte RTLink trampoline starts**, not six-byte reference operands. Each
+starts with `e8 disp16` (near CALL to manager `2c24:058d`), followed by
+`ea` (far JMP), target IP/CS, and a trailing section word. The reference
+begins four bytes *after* the action table pointer.
 
-One directly checked example from the original EXE:
+Live OPEN example, taken at `1476:0060` just before its indirect far call:
 
 ```text
-action 0x71 table pointer = 2c24:1c59
-GATEMAIN.EXE file offset 0xa020 + 0x1c59 = 0xbc79
-bytes there: 11 1a 61 36 07 00
-   target offset = 0x1a11, linked segment = 0x3661, RTLink section = 7
-   observed runtime target = 4661:1a11 (linear 0x48021)
+action 0x71 pointer = 2c24:1c59 (linear 0x2de99)
+live bytes: e8 31 e9 ea 72 15 61 46 05 00
+   near CALL: 2c24:058d
+   far JMP:   4661:1572
+   section:   5
+   source EXE sequence at file offset 0xbd33:
+   e8 31 e9 ea 72 15 61 36 05 00 (before +0x1000 relocation)
 ```
 
-Reading the on-disk RTLink directory (`0xac3f + 18*section_id`) and applying
-the verified image mapping in [rtlink.md](rtlink.md#directory-layout) gives:
+Similarly, CLOSE's live trampoline bytes are
+`e8 91 ed ea 9b 02 61 46 05 00`, matching EXE file `0xb8d3` after
+relocation. Both byte windows remained **identical before, during and after**
+the calls. The calls executed at the two table pointers and returned `AX=1`.
+Neither target was transiently patched.
 
-| Typed input / action | Table pointer | RTLink reference (linked segment:IP, section) | OVL file offset |
+Earlier analysis incorrectly used EXE file offset `0xa020 + action_pointer_offset`
+to read the stubs. The actual source-file trampoline locations for these five
+entries agree with `0xa0da + action_pointer_offset`—a difference of `0xba`
+bytes. The reason for this placement difference is not established; it is
+**not** a general conversion rule for the manager's directory or other code.
+The original section directory remains at `0xac3f` as documented in
+[rtlink.md](rtlink.md#directory-layout).
+
+With the correct ten-byte trampoline layout and the section-5 RTLink directory
+record (initialized image begins at OVL file `0xd3d0`), the action mapping is:
+
+| Typed input / action | Table pointer | RTLink far target (runtime CS:IP) | OVL file offset |
 | --- | --- | --- | ---: |
-| `close drawer` / `0x1d` | `2c24:17f9` | `3661:0cf7`, section 7 | `0x14e47` |
-| `drop book` / `0x32` | `2c24:1727` | `3661:08b4`, section 6 | `0x11454` |
-| `take book` / `0x46` | `2c24:165f` | `3990:1da1`, section 9 | `0x1a831` |
-| `inventory` / `0x53` | `2c24:15dd` | `399f:2437`, section 15 | `0x22357` |
-| `look` / `0x5f` | `148e:0b90` | Resident entry, no RTLink reference | — |
-| `open drawer` / `0x71` | `2c24:1c59` | `3661:1a11`, section 7 | `0x15b61` |
+| `close drawer` / `0x1d` | `2c24:17f9` | `4661:029b`, section 5 | `0xd66b` |
+| `drop book` / `0x32` | `2c24:1727` | `4661:05d7`, section 5 | `0xd9a7` |
+| `take book` / `0x46` | `2c24:165f` | `4661:2b11`, section 5 | `0xfee1` |
+| `inventory` / `0x53` | `2c24:15dd` | `4661:14f4`, section 5 | `0xe8c4` |
+| `look` / `0x5f` | `148e:0b90` | Resident entry, no RTLink trampoline | — |
+| `open drawer` / `0x71` | `2c24:1c59` | `4661:1572`, section 5 | `0xe942` |
 
-These mappings are directly checked against the original EXE records and
-section directory. They identify **referenced code**, not necessarily the
-shared implementation that actually performs the requested operation. The
-contents demonstrate why that distinction matters: the candidate target at
-`0x14e47` discusses drinking, while the one at `0x15b61` discusses beds and
-sleeping. Neither resembles a general drawer open/close routine. The roles of
-the selector and trailing bytes are not fully understood. An action
-reference alone does not establish which branch was executed, whether it ran
-before/after generic handling, or which service ultimately changed the world
-state.
+OPEN and CLOSE have verified live callsite/target bytes. The remaining three
+section-5 references are consistent with uniquely matching ten-byte original
+EXE trampolines; their actual execution addresses have not yet been hooked.
+The original replay loaded section 5 once, consistent with shared actions
+remaining resident. The old inferred section-6/7/9/15 mappings were artifacts
+of reading unrelated EXE bytes and are **withdrawn**.
 
-To inspect the decoded code and text at one of these references:
+Unlike the old speculative destinations, these overlay offsets really contain
+shared action logic. Static disassembly shows:
+
+- OPEN at `0xe942` eventually checks object property `0x0e` and then invokes
+  the verified property setter `0157:03e0` with property **`0x0c`** at
+  OVL file `0xeb04` (among other state updates and text handling).
+- CLOSE at `0xd66b` has a branch that invokes the verified property clearer
+  `0157:0413` with property **`0x0c`** at OVL file `0xd7cc`.
+- Both have `mov ax,1; retf` return paths (`0xebfd` and `0xd7fd`), matching
+  the live dispatcher return `AX=1` for the two typed commands.
+
+This matches the drawer's known open-state property and explains why the
+drawer-specific event-6 handler can return zero: a **separate shared section-5
+action** performs the state change. The exact branches exercised during the
+replay still require callsite-level verification; other flags and conditional
+side effects in these routines remain unclassified.
+
+To inspect the two shared functions:
 
 ```sh
 python3 tools/disassemble_story.py ../gateway-dos/GATEMAIN.OVL \
-  --start 0x14e47 --size 0x170 --strings ../gateway-dos/GATESTR.DAT
+  --start 0xd66b --size 0x198 --strings ../gateway-dos/GATESTR.DAT
+python3 tools/disassemble_story.py ../gateway-dos/GATEMAIN.OVL \
+  --start 0xe942 --size 0x2c2 --strings ../gateway-dos/GATESTR.DAT
 ```
 
 ## Reproduce the mapping from a native snapshot
@@ -87,69 +118,45 @@ python3 tools/inspect_action_dispatch.py build/story-commands-043/native \
   --overlay-map build/rtlink-manifest.json
 ```
 
-The inspector now reads the six-byte references from *live* guest memory,
-recognizes records in the known `2c24` manager segment, and optionally maps
-each to its original overlay file offset using the manifest. It leaves the
-resident `look` action as a direct pointer. Do not disassemble at the `2c24`
-table pointer: it is metadata, not the first instruction of the action handler.
+The corrected inspector validates an executable `e8 disp16; ea` trampoline
+at each nonresident table pointer and checks that its near CALL resolves to
+manager `2c24:058d`. It decodes the following six-byte reference from **+4**
+and maps the target to its original OVL file offset using the manifest. It
+leaves resident `look` as a direct pointer. A malformed or nonmatching
+trampoline is left unclassified rather than guessed.
 
-## Outcome of candidate-target replay, and next dynamic check
+## Native replay evidence and next checks
 
-The user ran `--scenario objects --services state --verify-overlays` with
-the initial two candidate hooks, and **neither target was entered**. All three
-replays completed with 187 verified loads across nine sections, identical
-734-object state, service-call sequences, and framebuffer hashes. The
-verified loaded sections were `0–5`, `37`, `38` and `56`; **section 7 never
-loaded**. Its `0x47307` and `0x48021` addresses are not reliable function
-entry points in that execution. A successful OPEN/CLOSE therefore need not
-pass through the two inferred section-7 bodies. We cannot yet tell whether
-the far pointers themselves are replaced at dispatch time, whether a separate
-selector path is used, or precisely where the shared OPEN/CLOSE state change
-is implemented.
+The original three-way `objects` replay verified 187 RTLink loads spanning
+nine sections (`0–5`, `37`, `38`, `56`), matching all 734 object records,
+service sequences, and framebuffer hashes. Earlier entry hooks placed on
+the incorrectly inferred section-7 targets `0x47307` and `0x48021` did not
+fire—unsurprisingly, section 7 was not loaded. This was a **mapping error**,
+not evidence that the shared OPEN/CLOSE path was absent.
 
-The next native replay instead hooks `1476:0046` (entry), `1476:0060`
-(expected `call far es:[bx+28]`), and `1476:0065` (expected post-call). The
-research trace records live opcode bytes at these addresses; the callsite
-hook also reports the **runtime far pointer actually being called**, if its
-instruction signature matches. This checks our proposed file-to-runtime
-mapping rather than assuming that table entries are callable code.
-
-A subsequent `--native-only` replay from the user **did** reach the callsite
-for both operations: OPEN (`0x71`) entered at 18,392 ms and returned with
-`AX=1` at 18,416 ms; CLOSE (`0x1d`) entered at 34,422 ms and returned with
-`AX=1` at 34,443 ms. The trace contained no `action_code=` or `action_target=`
-and also omitted the newly added `BX`/`CX` fields, so the C++
-`gateway-probe` executable was an older build. The entry hook was accidentally
-installed twice for `147a6` by the Python driver, explaining its duplicate
-lines. Neither result identifies the live far-call destination yet.
-
-The next rebuilt-probe trace resolved the live pointers unambiguously:
+The native replay hooked the resident action dispatcher `1476:0046` (entry),
+`1476:0060` (indirect CALL through `ES:[BX+28]`), and `1476:0065`
+(return). It observed:
 
 | Typed command | Time at `1476:0060` | Live far-call target | Time at `1476:0065` | Return AX |
 | --- | ---: | --- | ---: | ---: |
 | `open drawer` | 18,392 ms | `2c24:1c59` | 18,417 ms | `1` |
 | `close drawer` | 34,422 ms | `2c24:17f9` | 34,443 ms | `1` |
 
-The opcode at the callsite was verified as `26 ff 9f 28 00` in both cases,
-with `ES=3bc5`, `BX=6*action_id`. The live pointer is thus genuinely read
-from the action table and **called**, rather than merely stored as an inert
-lookup reference. But the original EXE puts these exact offsets four bytes
-*into* the ten-byte RTLink trampolines (`e8 disp16; ea far-pointer; section`),
-and the native replay did not load section 7. It is not yet established what
-code the guest actually executes there. In particular, do not assume the
-initial six-byte on-disk reference is what occupies that memory during the
-call, or that the section-7 handler was entered.
+The callsite bytes `26 ff 9f 28 00` and `ES=3bc5`, `BX=6*action_id`
+confirm a real far CALL through the action table. The following three live
+memory samples independently established the valid section-5 trampolines:
 
-The opt-in entry trace now captures a 16-byte memory window beginning four
-bytes before each target, at three observation points:
-
-- `action_target_context=` immediately **before** the far call;
-- `action_callee_context=` if execution reaches `2c24:1c59` or `2c24:17f9`;
+- `action_target_context=` immediately before the far call;
+- `action_callee_context=` on entry at `2c24:1c59` or `2c24:17f9`;
 - `action_target_after_context=` after returning to `1476:0065`.
 
-This should distinguish transient patching of the reference from a direct
-dispatch into the bytes observed in the final snapshot. Any differences are
-data to investigate; the probe does not modify guest memory.
+For OPEN, all three fields were
+`61460700e831e9ea721561460500e827`; for CLOSE they were
+`61460700e891edea9b0261460500e887`. Skipping the four context bytes gives
+the ten-byte trampolines decoded above. This is positive proof of execution
+at each target and of unchanged code across the call, not a self-modifying
+RTLink reference.
 
 The replay script now prefers `$GATEWAY_BUILD_DIR/gateway-probe` under
 `nix develop` (falling back to `build/gateway-probe` elsewhere) and checks the
@@ -159,20 +166,29 @@ trace without the necessary fields.
 
 ```sh
 gateway-build  # in nix develop; builds $GATEWAY_BUILD_DIR/gateway-probe
-python3 tools/trace_game_logic.py --scenario objects --native-only \
-  --verify-overlays --output build/action-dispatch-check
-rg '^entry .*pc=(147c0|147c5|2de99|2da39)\b' build/action-dispatch-check/native.trace \
-  | rg 'ms=(18[0-9]{3}|34[0-9]{3})\b'
+python3 tools/inspect_action_dispatch.py build/action-dispatch-check/native \
+  --overlay-map build/rtlink-manifest.json
 ```
 
-Compare the three `action_*_context=` hex strings for each action. An absent
-callee hook is also useful evidence: the host may have redirected execution
-between the far call and the guest's next code block.
-`--native-only` avoids rerunning verification/HLE during this diagnostic;
-omit it to repeat the full three-way regression check.
+This first check uses the **existing native snapshot**; rerunning the game is
+unnecessary. Generate the manifest first (command above) if it is missing.
+The full replay can then confirm the corrected OPEN/CLOSE overlay entries and
+the property-12 mutation branches using the additional entry hooks:
 
-To build a replacement action layer, we still need the dispatcher path that
-handles an object's **unhandled** result. Opening and closing the drawer both
-return zero from the object-specific event-6 handler, and a separate shared
-path must account for the observed property-12 mutation. The references above
-are candidates to inspect, not yet established generic action implementations.
+```sh
+python3 tools/trace_game_logic.py --scenario objects --native-only \
+  --verify-overlays --output build/action-section5-check
+rg '^entry .*pc=(468ab|47b82|46a0c|47d44)\b' \
+  build/action-section5-check/native.trace
+```
+
+`--native-only` avoids two additional HLE comparison replays; omit it for the
+full three-way regression check. Guest addresses are specific to the known
+Gateway launch layout, and sections loaded in the same bank may require
+residency checks when analyzing other games or actions.
+
+For the modern replacement action layer, we can now distinguish the global
+OPEN/CLOSE routines from object-specific event-6 handlers and reuse the
+verified object-flag service ABI. Next steps are to trace the live branches,
+recover the full condition/state semantics, and identify reusable contracts
+for the other actions before replacing native execution.

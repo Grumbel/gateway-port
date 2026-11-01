@@ -23,6 +23,13 @@ and access the guest data segment.
 The manager's linked segment is `1c24`. In the EXE file, its segment bytes start
 at **`0xa020`**; in the observed default replay they run at `2c24:0000`, after
 adding load segment `0x1000`. EXE file offsets are not runtime linear addresses.
+The offset `0xa020` is validated for the manager directory and loader bytes;
+it must **not** be applied blindly to every manager-segment thunk. Five
+action-table trampolines in the original EXE correspond to offsets obtained
+from `0xa0da + runtime_thunk_offset`, a `0xba`-byte difference whose precise
+linker/startup origin remains to be explained. See the
+[live action trace](action-dispatch.md) and decode their targets from the
+*runtime trampoline bytes* rather than from a guessed EXE offset.
 
 | Manager-relative offset | EXE file offset | Meaning |
 | --- | --- | --- |

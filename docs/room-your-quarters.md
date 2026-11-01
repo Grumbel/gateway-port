@@ -294,10 +294,11 @@ AX value with `0x61` and dispatches through other tests at `0x51a9d` and
 `0x51b69`. The handled command values are `0x3a`, `0x46`, `0x61`, `0x65`,
 `0x7b`, `0x7c`, and `0x85`. Neither observed byte matches. Both paths therefore
 reach the default at `0x51b7d` (`sub ax,ax; pop bp; retf`): **the drawer-specific
-handler returns zero for ordinary OPEN and CLOSE**. The action dispatcher or
-another shared routine must implement those actions' actual effects; the
-earlier conjecture that the drawer handler performs ordinary open/close was
-incorrect. The generic action path itself has not yet been traced.
+handler returns zero for ordinary OPEN and CLOSE**. Later tracing identified
+the shared OPEN/CLOSE routines in RTLink section 5 (OVL `0xe942` and `0xd66b`),
+including property-12 set/clear calls. The earlier conjecture that the
+drawer-specific handler performs ordinary open/close was incorrect; see
+[action dispatch](action-dispatch.md) for the corrected paths.
 
 The existing `trace_game_logic.py` replay leaves the guest's native action
 directory in its final `.bin` and `.regs` dump. The engine-boundary trace
@@ -315,11 +316,10 @@ python3 tools/inspect_action_dispatch.py build/story-commands-043/native
 
 The output selects the six action IDs confirmed in the command replay. Use
 `--all` for all 195 entries, or repeat `--action 0x71 --action 0x1d` for a
-subset. Most of these pointers lead to **RTLink reference metadata, not
-necessarily generic action implementations**. See the
-[action reference mapping](action-dispatch.md). The shared OPEN/CLOSE
-implementations remain unidentified. Addresses from this memory table are
-runtime far pointers, not overlay file offsets.
+subset. Five observed pointers lead to **RTLink trampoline starts**, whose
+references identify genuine section-5 action implementations. See the
+[corrected mapping](action-dispatch.md). Addresses from this memory table
+are runtime far pointers, not overlay file offsets.
 
 ## Next decompilation boundary
 
@@ -327,11 +327,11 @@ runtime far pointers, not overlay file offsets.
    to give the cases semantic names and validate the event-8/9/11 equivalence.
 2. Determine the meaning of property 7 and the state word read via
    `[DS:9476] : 393e` by comparing snapshots before/after room entry.
-3. Trace the runtime action references and dispatcher fallback to identify
-   the **generic** open/close implementations. Do not emulate them
-   in the drawer handler: it returns zero for both observed command values.
-   Resolve the forwarded services separately, then compare a host translation
-   against the `look`, `open drawer`, `look` replay.
+3. Verify which branches run inside the mapped **shared** OPEN/CLOSE routines
+   at OVL `0xe942` and `0xd66b`, and fully classify their non-flag side effects.
+   Do not emulate them in the drawer handler: it returns zero for both
+   observed command values. Compare a host translation against the
+   `look`, `open drawer`, `look` replay.
 4. Preserve the native interpreter/overlay path as the correctness oracle until
    each replacement is tested against the same commands and state transitions.
 

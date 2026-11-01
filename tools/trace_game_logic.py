@@ -71,7 +71,11 @@ for mode in (['native'] if args.native_only else ['native', 'verify', 'hle']):
                     '--trace-entry', '147c0', '--trace-entry', '147c5',
                     # Actual OPEN/CLOSE far-call operands in the RTLink manager.
                     # The callee hook and callsite record live code bytes.
-                    '--trace-entry', '2de99', '--trace-entry', '2da39']
+                    '--trace-entry', '2de99', '--trace-entry', '2da39',
+                    # Section-5 shared action entry points and the property-12
+                    # SET/CLEAR call instructions recovered from GATEMAIN.OVL.
+                    '--trace-entry', '47b82', '--trace-entry', '468ab',
+                    '--trace-entry', '47d44', '--trace-entry', '46a0c']
     for time, key in sorted(keys):
         command += ['--key-at', f'{time}:{key:04x}']
     if args.verify_overlays:
