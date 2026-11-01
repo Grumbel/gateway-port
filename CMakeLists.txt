@@ -93,6 +93,8 @@ if(BUILD_TESTING)
   if(Python3_Interpreter_FOUND)
     add_test(NAME pic-extract COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/extract_pic_tests.py $<TARGET_FILE:gateway-extract>)
+    add_test(NAME story-disassembly COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/disassemble_story_tests.py)
   endif()
 endif()
 install(TARGETS gateway-inspect gateway-extract gateway-overlay RUNTIME DESTINATION bin)
@@ -109,8 +111,6 @@ if(GATEWAY_WITH_UNICORN)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/overlay_tool_tests.py $<TARGET_FILE:gateway-overlay>)
     add_test(NAME object-state-export COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/object_state_export_tests.py)
-    add_test(NAME story-disassembly COMMAND ${Python3_EXECUTABLE}
-      ${CMAKE_CURRENT_SOURCE_DIR}/tests/disassemble_story_tests.py)
     add_test(NAME real-mode-probe COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/probe_tests.py $<TARGET_FILE:gateway-probe>)
   endif()

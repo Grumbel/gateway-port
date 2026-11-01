@@ -7,7 +7,10 @@ research view, not a recursive disassembler or a C decompiler.
 import argparse
 import pathlib
 import re
+import struct
 import subprocess
+
+from gateway_strings import GatewayStrings
 
 
 INSTRUCTION = re.compile(r'^\s*([0-9a-f]+):\s+(?:(?:[0-9a-f]{2})\s+)+\s*(.*?)\s*$')
@@ -25,7 +28,7 @@ def text_id(ax, dx):
     return ax >> 10, ax & 0x3ff
 
 
-def annotate(lines):
+def annotate(lines, strings=None):
     """Identify contiguous immediate-load/push/call text references.
 
     Do not attribute a token to a call when a branch, register write, or other
@@ -47,8 +50,25 @@ def annotate(lines):
             continue
         token = text_id(int(ax.group(1), 16), int(dx.group(1), 16))
         if token is not None:
-            labels[window[4][0]] = f'  ; possible story text segment={token[0]} string={token[1]}'
+            label = f'  ; possible story text segment={token[0]} string={token[1]}'
+            if strings is not None:
+                try:
+                    value = strings.get(*token)
+                except (IndexError, ValueError):
+                    value = '<invalid text reference>'
+                label += ' ' + repr(value[:160]) + ('...' if len(value) > 160 else '')
+            labels[window[4][0]] = label
     return [line + labels.get(index, '') for index, line in enumerate(lines)]
+
+
+def event_targets(data, section_base, table_offset, count):
+    """Decode known near-offset jump tables; values are relative to section base."""
+    if section_base < 0 or table_offset < 0 or count < 1 or count > 1024:
+        raise ValueError('invalid event table parameters')
+    if table_offset + count * 2 > len(data):
+        raise ValueError('event table extends past file')
+    return [(event + 1, section_base + struct.unpack_from('<H', data, table_offset + event * 2)[0])
+            for event in range(count)]
 
 
 def main():
@@ -56,6 +76,10 @@ def main():
     parser.add_argument('overlay', type=pathlib.Path)
     parser.add_argument('--start', required=True, type=lambda s: int(s, 0), help='file offset')
     parser.add_argument('--size', type=lambda s: int(s, 0), default=0x100, help='byte count')
+    parser.add_argument('--strings', type=pathlib.Path, help='GATESTR.DAT (Gateway only)')
+    parser.add_argument('--section-base', type=lambda s: int(s, 0), help='file offset of section code')
+    parser.add_argument('--event-table', type=lambda s: int(s, 0), help='file offset of near jump table')
+    parser.add_argument('--events', type=int, help='number of event entries')
     args = parser.parse_args()
     if args.start < 0 or args.size <= 0 or args.start + args.size > args.overlay.stat().st_size:
         parser.error('requested range is outside the overlay')
@@ -63,7 +87,19 @@ def main():
                f'--start-address={args.start}', f'--stop-address={args.start + args.size}',
                str(args.overlay)]
     result = subprocess.run(command, capture_output=True, text=True, check=True)
-    print('\n'.join(annotate(result.stdout.splitlines())))
+    strings = GatewayStrings(args.strings.read_bytes()) if args.strings else None
+    print('\n'.join(annotate(result.stdout.splitlines(), strings)))
+    if any(value is not None for value in (args.section_base, args.event_table, args.events)):
+        if any(value is None for value in (args.section_base, args.event_table, args.events)):
+            parser.error('--section-base, --event-table and --events must be used together')
+        print('\nEvent jump-table entries (not executable instructions):')
+        try:
+            targets = event_targets(args.overlay.read_bytes(), args.section_base,
+                                    args.event_table, args.events)
+        except ValueError as error:
+            parser.error(str(error))
+        for event, target in targets:
+            print(f'  event {event:2} -> file 0x{target:05x}')
     print('\nNote: linear sweep can decode embedded data as instructions; far-call targets'
           ' and relocation must be confirmed in a live overlay before translating to C.')
 
