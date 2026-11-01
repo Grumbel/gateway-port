@@ -52,6 +52,9 @@ if(BUILD_TESTING)
   add_executable(story-model-tests tests/story_model_tests.cpp)
   target_link_libraries(story-model-tests PRIVATE gateway_core)
   add_test(NAME story-model COMMAND story-model-tests)
+  add_executable(story-child-link-tests tests/story_child_link_tests.cpp)
+  target_link_libraries(story-child-link-tests PRIVATE gateway_core)
+  add_test(NAME story-child-links COMMAND story-child-link-tests)
   add_test(NAME story-action-matrix COMMAND gateway-story-check
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/gateway-action-matrix.md)
   add_test(NAME story-action-admission COMMAND gateway-story-check

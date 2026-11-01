@@ -55,8 +55,8 @@ int main() {
         // The recorded 7864–37404 ms candidate trace distinguishes two
         // independent facts: a slot can be gated off while its child pointer
         // still contains the book, and an open drawer can have an empty slot
-        // after TAKE. Type 2 here stands for any non-exempt native type; the
-        // actual drawer type has not yet been established from a snapshot.
+        // after TAKE. A subsequent watched native replay established that
+        // the actual drawer type is 2 and its child slot zero is at +0x14.
         // Supply observed child words; do not invent pointer mutations.
         constexpr std::array<gateway::StoryObjectId, 3> with_book{book, 0, 0};
         constexpr std::array<gateway::StoryObjectId, 3> without_book{0, 0, 0};

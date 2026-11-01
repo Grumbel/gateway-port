@@ -193,4 +193,80 @@ std::vector<StoryMutation> StoryModel::observe(std::span<const StoryObjectId> ob
     return changes;
 }
 
+void StoryLinkedChildren::define(StoryObjectId object, std::uint16_t child_slots,
+                                 StoryObjectId location, std::uint8_t slot,
+                                 StoryObjectId next) {
+    if (!object || !nodes_.emplace(object, Node{location, next, slot,
+                                               std::vector<StoryObjectId>(child_slots, 0)}).second)
+        throw std::invalid_argument("invalid or duplicate linked story object");
+}
+
+void StoryLinkedChildren::initial_head(StoryObjectId parent, std::uint16_t slot,
+                                       StoryObjectId child) {
+    nodes_.at(parent).heads.at(slot) = child;
+}
+
+StoryObjectId StoryLinkedChildren::head(StoryObjectId parent, std::uint16_t slot) const {
+    if (!parent)
+        return 0;
+    const auto &heads = nodes_.at(parent).heads;
+    return slot < heads.size() ? heads[slot] : 0;
+}
+
+StoryObjectId StoryLinkedChildren::next(StoryObjectId object) const {
+    return nodes_.at(object).next;
+}
+
+StoryObjectId StoryLinkedChildren::location(StoryObjectId object) const {
+    return nodes_.at(object).location;
+}
+
+std::uint8_t StoryLinkedChildren::slot(StoryObjectId object) const {
+    return nodes_.at(object).slot;
+}
+
+std::vector<StoryObjectId> StoryLinkedChildren::heads(StoryObjectId parent) const {
+    return nodes_.at(parent).heads;
+}
+
+void StoryLinkedChildren::move(StoryObjectId object, StoryObjectId destination,
+                               std::uint8_t new_slot) {
+    auto &entry = nodes_.at(object);
+    if (destination)
+        (void)nodes_.at(destination);
+    const auto old_parent = entry.location;
+    const auto old_slot = entry.slot;
+    const auto old_head = head(old_parent, old_slot);
+    if (old_head == object) {
+        // OVL 0xc869–0xc87e: replace old head with the removed object's next.
+        auto &heads = nodes_.at(old_parent).heads;
+        heads.at(old_slot) = entry.next;
+    } else {
+        // OVL 0xc883–0xc8b6: walk the next-sibling chain until the object is
+        // found, then splice its successor into its predecessor's next word.
+        std::set<StoryObjectId> visited;
+        for (auto current = old_head; current;) {
+            if (!visited.insert(current).second)
+                throw std::logic_error("cyclic native child-sibling list");
+            auto &predecessor = nodes_.at(current);
+            if (predecessor.next == object) {
+                predecessor.next = entry.next;
+                break;
+            }
+            current = predecessor.next;
+        }
+    }
+    // OVL 0xc8bc–0xc90b: direct location and byte slot are independent of
+    // the old/new parents' child-head words.
+    entry.location = destination;
+    entry.slot = new_slot;
+    if (destination) {
+        const auto former_head = head(destination, new_slot);
+        auto &heads = nodes_.at(destination).heads;
+        if (new_slot < heads.size())
+            heads[new_slot] = object;
+        entry.next = former_head;
+    }
+}
+
 } // namespace gateway
