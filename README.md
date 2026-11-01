@@ -12,7 +12,9 @@ accepts keyboard commands. Keyboard input, save/restore, and audio have also bee
 confirmed working by the user. Spellcasting 101 reaches gameplay, and its intro
 music now plays correctly; Spellcasting 201 starts and renders its game interface
 correctly in user testing. Spellcasting 301 reaches its first room, Beach, in a
-headless run. No title has been verified through a complete playthrough. It provides:
+headless run. Gateway 1's F10 debugger has been user-tested: automatic scene
+selection, merged hitbox highlighting, and object labels work as expected.
+No title has been verified through a complete playthrough. It provides:
 
 - A checked DOS MZ loader with segment relocation and initial register setup.
 - `gateway-inspect`, which reports loaded image and entry information.
@@ -45,7 +47,7 @@ path are available in the current test archive.
 | 1990 | *Spellcasting 101: Sorcerers Get All the Girls* | `../101/S101.EXE` | **User-tested:** intro sound and keyboard skipping work; reached gameplay. Full playthrough unverified. |
 | 1991 | *Timequest* | — | **Not tested:** no game files available. |
 | 1991 | *Spellcasting 201: The Sorcerer's Appliance* | `../201/S201.EXE` | **User-tested:** starts, displays graphics, verbs, objects, and story text correctly. Full playthrough unverified. |
-| 1992 | *Frederik Pohl's Gateway* | `../gateway-dos/GATE.EXE` | **User-tested:** reaches Your Quarters; keyboard, mouse controls, save/restore, and audio work. Full playthrough unverified. |
+| 1992 | *Frederik Pohl's Gateway* | `../gateway-dos/GATE.EXE` | **User-tested:** reaches Your Quarters; keyboard, mouse controls, save/restore, and audio work. F10 scene hitboxes merge correctly and show matching object names. Full playthrough unverified. |
 | 1992 | *Spellcasting 301: Spring Break* | `../301/S301.EXE` | **Headless-tested:** reaches Beach and renders the opening screen. Interactive gameplay and audio unverified. |
 | 1993 | *Eric the Unready* | — | **Not tested:** no game files available. |
 | 1993 | *Gateway II: Homeworld* | `../gateway2-dos/HOME.EXE` | **Headless-tested:** reaches the Living Room with readable menus and opening text. Interactive input and audio unverified. |
@@ -156,6 +158,9 @@ validated at DS; it includes object IDs, types, handler indices, name tokens,
 locations and raw state bytes. An unrecognized state is reported, not guessed.
 RGN hotspot numbers **are engine object IDs**, but are **not** indexes into the
 `OBJECT.DAT` string list. Labels are resolved through the live engine table.
+The user confirms that merged regions render correctly and that their names now
+match objects in the scene. The automatic scene heuristic also works in the
+tested rooms; it is not yet proven accurate for every transition.
 See [the debugger's evidence and limits](docs/debugger.md) before using these
 observations to design a native story interpreter.
 
