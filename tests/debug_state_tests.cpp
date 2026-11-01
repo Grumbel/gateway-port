@@ -54,6 +54,54 @@ int main() try {
     memory[dir * 16 + 0xc0] = 9;
     require(!gateway::inspect_gateway_state(memory, ds), "invalid object type accepted");
     require(!gateway::inspect_gateway_state(memory, 0), "unrelated DS recognized as Gateway");
+
+    // A newer/older Legend game may relocate the whole directory and DS
+    // globals. Resolve ID->name tokens from a validated directory rather than
+    // indexing OBJECT.DAT strings directly (aliases shift those indexes).
+    std::vector<std::uint8_t> other_memory(0xa0000);
+    std::vector<std::uint8_t> other_names(2);
+    constexpr unsigned other_dir = 0x18000, other_record_seg = 0x3000;
+    auto absolute_word = [&](unsigned at, unsigned value) {
+        other_memory.at(at) = value & 255;
+        other_memory.at(at + 1) = value >> 8;
+    };
+    for (unsigned id = 1; id <= 320; ++id) {
+        const auto entry = other_dir + 6 * (id - 1);
+        const auto record = 0x200 + 8 * id;
+        const unsigned token = other_names.size() - 1;
+        const auto label = "Object " + std::to_string(id);
+        other_names.insert(other_names.end(), label.begin(), label.end());
+        other_names.push_back(0);
+        unsigned alias = 0;
+        if (id == 1) {
+            alias = other_names.size() - 1;
+            const std::string also = "first alias";
+            other_names.insert(other_names.end(), also.begin(), also.end());
+            other_names.push_back(0);
+        }
+        other_memory[entry] = 2;
+        absolute_word(entry + 2, record);
+        absolute_word(entry + 4, other_record_seg);
+        absolute_word(other_record_seg * 16 + record, token);
+        absolute_word(other_record_seg * 16 + record + 2, alias);
+    }
+    other_names[0] = (other_names.size() - 2) & 255;
+    other_names[1] = (other_names.size() - 2) >> 8;
+    const auto found = gateway::inspect_legend_name_table(other_memory, other_names, 300);
+    require(found && found->directory_address == other_dir && found->names.size() == 321 &&
+                found->names[1] == "Object 1" && found->names[2] == "Object 2" &&
+                found->names[292] == "Object 292",
+            "relocated Legend directory maps IDs through name tokens despite extra aliases");
+    require(gateway::inspect_legend_name_table(other_memory, other_names, 300,
+                                               found->directory_address)->names[292] ==
+                "Object 292",
+            "reusing a validated directory hint");
+    require(!gateway::inspect_legend_name_table(other_memory, other_names, 321) &&
+                !gateway::inspect_legend_name_table(other_memory, {}),
+            "invalid ID range or missing name resource must not produce labels");
+    absolute_word(other_record_seg * 16 + 0x200 + 8 * 100, 0xffff);
+    require(!gateway::inspect_legend_name_table(other_memory, other_names, 300),
+            "partial/untrusted name directory must not produce misleading labels");
     std::cout << "Gateway live object snapshot checks passed\n";
 } catch (const std::exception &error) {
     std::cerr << error.what() << '\n';

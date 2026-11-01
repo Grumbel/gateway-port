@@ -1,5 +1,6 @@
 #include "debug_state.hpp"
 #include "object_flags.hpp"
+#include <algorithm>
 #include <array>
 #include <iomanip>
 #include <sstream>
@@ -124,5 +125,83 @@ std::vector<std::string> debug_engine_object_names(
             names[object.id] = token_name(object_dat, object.secondary_name_token);
     }
     return names;
+}
+
+std::optional<DebugNameTable> inspect_legend_name_table(
+    std::span<const std::uint8_t> memory, std::span<const std::uint8_t> object_dat,
+    unsigned required_id, std::optional<std::size_t> directory_hint) {
+    constexpr std::size_t limit = 0xa0000;
+    constexpr unsigned minimum_objects = 256;
+    if (memory.size() < limit || object_dat.size() < 4 ||
+        (object_dat[0] | unsigned(object_dat[1]) << 8) != object_dat.size() - 2 ||
+        required_id > 2048)
+        return {};
+
+    // Store only NUL-delimited starts. A random word in guest RAM must not be
+    // accepted merely because it happens to lie somewhere inside OBJECT.DAT.
+    std::vector<std::string> token_names(65536);
+    for (std::size_t at = 2; at < object_dat.size();) {
+        const auto start = at;
+        while (at < object_dat.size() && object_dat[at])
+            ++at;
+        if (at == object_dat.size() || start - 1 >= token_names.size())
+            return {};
+        token_names[start - 1] = token_name(object_dat, std::uint16_t(start - 1));
+        ++at;
+    }
+    if (token_names[1].empty())
+        return {};
+
+    const auto read_word = [&](std::size_t at) -> unsigned {
+        return memory[at] | unsigned(memory[at + 1]) << 8;
+    };
+    const auto valid_token = [&](unsigned token) {
+        return token == 0 || (token < token_names.size() && !token_names[token].empty());
+    };
+    const auto inspect = [&](std::size_t directory) -> std::optional<DebugNameTable> {
+        DebugNameTable result;
+        result.directory_address = directory;
+        result.names.push_back({});
+        unsigned with_names = 0;
+        for (unsigned id = 1; id <= 2048; ++id) {
+            const auto at = directory + (id - 1) * 6;
+            if (at + 6 > limit || memory[at] < 1 || memory[at] > 8)
+                break;
+            const auto record = std::size_t(read_word(at + 4)) * 16 + read_word(at + 2);
+            if (record + 4 > limit)
+                break;
+            const auto primary = read_word(record);
+            const auto secondary = read_word(record + 2);
+            if (!valid_token(primary) || !valid_token(secondary))
+                break;
+            if (id == 1 && primary != 1)
+                break; // Anchor the beginning of the object ID sequence.
+            const auto token = primary ? primary : secondary;
+            result.names.push_back(token ? token_names[token] : std::string{});
+            with_names += token != 0;
+        }
+        const auto count = result.names.size() - 1;
+        if (count < minimum_objects || count < required_id || with_names < count * 3 / 4)
+            return {};
+        return result;
+    };
+
+    if (directory_hint && *directory_hint < limit) {
+        if (auto found = inspect(*directory_hint))
+            return found;
+    }
+    // The directory can live in any conventional-memory segment. Two-byte
+    // alignment reduces the scan; a successful hit still validates hundreds
+    // of consecutive pointers and NUL-delimited name tokens.
+    for (std::size_t at = 0x10000; at < limit - minimum_objects * 6; at += 2) {
+        if (memory[at] < 1 || memory[at] > 8)
+            continue;
+        const auto record = std::size_t(read_word(at + 4)) * 16 + read_word(at + 2);
+        if (record + 4 > limit || read_word(record) != 1)
+            continue;
+        if (auto found = inspect(at))
+            return found;
+    }
+    return {};
 }
 } // namespace gateway
