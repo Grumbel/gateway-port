@@ -454,6 +454,12 @@ python3 tools/summarize_action_effects.py \
 ```
 
 This traces native object-state writes without replacing the game's routines.
+In the original room, the trace found actual transitions for the drawer's
+open/interaction flags (`0x0c`, `0x02`), the newly exposed book's `0x07`, and
+the book's location/interaction flags when taken and dropped. Repeated LOOK
+and INVENTORY commands made **no additional flag changes**. The
+[action-dispatch notes](docs/action-dispatch.md#which-service-calls-actually-changed-state)
+give a controlled `--command-sequence` replay for testing repeated actions.
 
 RTLink sections and all handler entry file offsets can now be extracted:
 

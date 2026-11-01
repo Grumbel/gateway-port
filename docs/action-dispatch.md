@@ -314,6 +314,52 @@ The native verification mode does **not** replace or modify the guest's own
 service implementation. `--changed-only` requires this new annotation and
 rejects older traces rather than silently dropping their calls.
 
+### Which service calls actually changed state?
+
+The next user-supplied `--trace-state-writes` replay had the **same** final
+framebuffer hash and overlay verification count as the original scenario.
+Filtering to real byte changes produced:
+
+| Action | Changed object state | Calls that did not change bytes |
+| --- | --- | --- |
+| First LOOK and later LOOKs | None during the recorded commands | Repeated property-`0x07` setters |
+| OPEN drawer | Drawer `0x0c=1`, `0x02=1`; book `0x07=1` | Drawer `0x07` already set |
+| TAKE book | Book location `0xd3`, book `0x02=1` | Book/drawer `0x07` already set; clearing book `0x08` and `0x0a` had no effect |
+| INVENTORY | None | Repeated property-`0x07` setters |
+| DROP book | Book location `0xee` | Book `0x07` already set |
+| CLOSE drawer | Drawer `0x0c=0` | Drawer `0x07` already set |
+
+That strongly supports—but does not establish—a persistent *seen/known*
+meaning for `0x07`: the book first acquires the bit when the drawer exposes
+it, whereas looking again at already-known room contents does not change it.
+Flag `0x02` changes on initial OPEN and TAKE, possibly tracking interaction,
+but this is still only a hypothesis. The two TAKE clear calls prove their
+functions execute but do **not** demonstrate a meaningful transition for
+flags `0x08` and `0x0a` in this particular state.
+
+The replay driver now supports replacing the seven later commands while
+preserving their original time slots, the initial room LOOK, and pagination
+keystrokes. This allows controlled repeated-action experiments without
+modifying game data or the DOS executable:
+
+```sh
+python3 tools/trace_game_logic.py --scenario objects --native-only \
+  --verify-overlays --trace-state-writes \
+  --command-sequence 'open drawer,close drawer,open drawer,take book,drop book,take book,inventory' \
+  --output build/action-repeat-check
+python3 tools/summarize_action_effects.py \
+  build/action-repeat-check/native.trace --changed-only
+```
+
+The seven slots begin at guest milliseconds `18000`, `21000`, `25000`,
+`28000`, `31000`, `34000`, and `37000`. The default command sequence remains
+byte-for-byte equivalent to the original scripted replay. A repeated action
+is particularly useful for checking whether `0x02` and `0x07` remain set
+after their first successful use, rather than being cleared somewhere in a
+later handler. Commands that fail parser validation or are blocked by the
+game's own state rules are not necessarily comparable; inspect the action
+rows and on-screen results before interpreting absent writes.
+
 `--native-only` avoids two additional HLE comparison replays; omit it for the
 full three-way regression check. Guest addresses are specific to the known
 Gateway launch layout, and sections loaded in the same bank may require
@@ -322,6 +368,6 @@ residency checks when analyzing other games or actions.
 For the modern replacement action layer, we can now distinguish the global
 OPEN/CLOSE routines from object-specific event-6 handlers and reuse the
 verified object-flag service ABI. Next steps are to distinguish redundant
-`0x07` writes from state transitions, recover mode guards and other state
-semantics, and identify reusable contracts for TAKE/DROP/INVENTORY before
-replacing native execution.
+`0x02` and `0x07` persistence across repeated actions, recover mode guards
+and other state semantics, and identify reusable contracts for
+TAKE/DROP/INVENTORY before replacing native execution.
