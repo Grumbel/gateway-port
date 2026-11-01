@@ -7,6 +7,9 @@ Headless execution remains bounded by two seconds of simulated time and a
 two-second wall-clock deadline unless an explicit duration is requested.
 `--trace-timing` reports achieved simulated-time versus wall-time speed once
 per simulated second, to help diagnose audio underruns from slow emulation.
+It also reports cumulative `irq0` (delivered timer interrupts), `pit_edges`
+(channel-0 hardware expirations), and `speaker_writes` (channel-2 data writes)
+in decimal, distinguishing dropped/coalesced IRQs from slow host execution.
 
 `Pit` supports binary periodic modes 2 and 3, low/high counter programming,
 zero-as-65536 reloads, counter latching, and IRQ0 cadence. The master PIC subset

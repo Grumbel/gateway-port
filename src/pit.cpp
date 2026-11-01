@@ -78,8 +78,11 @@ void Pit::advance(std::uint64_t microseconds) {
         if (!ticks)
             continue;
         if (ticks >= c.remaining) {
-            if (i == 0 && !c.terminal)
+            if (i == 0 && !c.terminal) {
                 pending_ = true;
+                const auto period = c.mode == 2 || c.mode == 3 ? c.reload : 0;
+                irq0_edges_ += period ? 1 + (ticks - c.remaining) / period : 1;
+            }
             if (c.mode == 0 || c.mode == 1 || c.mode == 4 || c.mode == 5) {
                 c.terminal = true;
                 c.remaining = 1;
@@ -126,6 +129,8 @@ void Pit::out(std::uint16_t port, std::uint8_t value) {
     }
     if (port < 0x40 || port > 0x42)
         throw std::runtime_error("invalid PIT write port");
+    if (port == 0x42)
+        ++speaker_writes_;
     auto &c = channels_[port - 0x40];
     if (c.access == 1)
         c.write = value;

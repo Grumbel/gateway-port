@@ -230,6 +230,37 @@ To distinguish slow guest emulation from bad audio synthesis, run 101 with
 `wall_ms`, and an effective `speed` ratio. A sustained ratio below `1.00x`
 means the emulator cannot provide audio as quickly as SDL consumes it.
 
+The next report shows the title/intro is still rough and takes over a minute,
+whereas DOSBox plays it in roughly 15 seconds. Measured emulation speed falls
+from `0.95x` to `0.76x`, which alone cannot account for the whole duration
+difference. The timing trace now also reports cumulative IRQ0 deliveries,
+hardware PIT edges, and speaker-channel programming writes, all in decimal.
+Compare `irq0` and `pit_edges` during the title sound to determine whether
+timer events are being coalesced or the guest sound driver is itself advancing
+too slowly. The audio heard at the initial Legend logo is also missing and
+requires separate sound-device investigation.
+
+### Sound Blaster startup configuration
+
+The reference DOSBox startup executes `SB-SOUND.COM` before `S101.EXE`.
+The game's bundled `READ.ME` recommends this driver for AdLib-compatible
+music on a Sound Blaster. The COM binary is a resident implementation of the
+AdLib `SOUND.COM` interface: it contains the 24-byte signature
+`51 01 "SOUND-DRIVER-AD-LIB" 01 01 00` immediately before its entry point.
+The interface is installed on interrupt `65h`, with a function selected by
+`SI` and arguments at `ES:BX`. It is distinct from the Sound Blaster DSP;
+music is ultimately played through the OPL FM synthesizer. The original 101
+manual distinguishes the AdLib/MT-32 music backend from the PC-speaker
+RealSound effects and fallback title track.
+
+The single-executable port does not run DOS TSR programs before the game.
+Use `--probe-adlib --trace-research /tmp/s101-adlib.log` to advertise a
+compatible installation signature and record `adlib` calls with function
+number and the first 16 argument bytes. This is deliberately a **probe**, not
+a music implementation: it makes no claims about playback state, queues,
+instruments, or sound output. Keep it opt-in until the actual call sequence
+has been traced and a proper driver HLE is implemented.
+
 - Colors have not been compared with the running games under DOSBox.
 - Spellcasting 101 and 201 mono entries are shown as black and white.
 - Some Spellcasting 101 1-bit entries, such as `S101_C2` #19 and #40, look like

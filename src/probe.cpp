@@ -89,6 +89,8 @@ struct State {
     gateway::DosMemory arena{0x0ff0, 0xa000, 0x0fd0};
     gateway::Vga vga;
     bool trace_video = false;
+    bool probe_adlib = false;
+    std::uint64_t adlib_calls = 0;
     gateway::Mouse mouse;
     gateway::Opl opl;
     gateway::Pit pit;
@@ -556,12 +558,14 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
     auto &state = *static_cast<State *>(opaque);
     try {
         auto ax = reg(uc, UC_X86_REG_AX);
-        const bool frequent = number == 0x33 || number == 0x16 || number == 0xf1 ||
+        const bool frequent = number == 0x33 || number == 0x16 || number == 0x65 ||
+                              number == 0xf1 ||
                               number == 0x1c ||
                               (number == 0x21 && ((ax >> 8) == 0x2a || (ax >> 8) == 0x2c));
+        const auto service = number == 0x33 ? ax : number == 0x65 ? reg(uc, UC_X86_REG_SI)
+                                                               : ax >> 8;
         const bool first =
-            !frequent ||
-            state.polled_services.insert((number << 16) | (number == 0x33 ? ax : ax >> 8)).second;
+            !frequent || state.polled_services.insert((number << 16) | service).second;
         if (first)
             std::cerr << "INT " << std::hex << number << " AX=" << std::setw(4) << std::setfill('0')
                       << ax << " BX=" << reg(uc, UC_X86_REG_BX) << " CX=" << reg(uc, UC_X86_REG_CX)
@@ -1047,6 +1051,25 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             if (!valid)
                 set(uc, UC_X86_REG_AX, 6);
             set(uc, UC_X86_REG_FLAGS, (reg(uc, UC_X86_REG_FLAGS) & ~1) | !valid);
+        } else if (number == 0x65 && state.probe_adlib) {
+            const auto function = reg(uc, UC_X86_REG_SI);
+            const auto args = std::size_t(reg(uc, UC_X86_REG_ES)) * 16 +
+                              reg(uc, UC_X86_REG_BX);
+            ++state.adlib_calls;
+            if (state.research_trace.is_open()) {
+                std::array<std::uint8_t, 16> data{};
+                check(uc_mem_read(uc, args, data.data(), data.size()));
+                state.research_trace << "adlib ms=" << std::dec << state.elapsed_ms
+                                     << " si=" << std::hex << function << " es:bx="
+                                     << reg(uc, UC_X86_REG_ES) << ':' << reg(uc, UC_X86_REG_BX)
+                                     << " args=";
+                for (auto byte : data)
+                    state.research_trace << std::setw(2) << std::setfill('0')
+                                         << unsigned(byte);
+                state.research_trace << '\n';
+            }
+            // Discovery-only interface: do not pretend to play music or claim
+            // that the undocumented driver buffer semantics are implemented.
         } else if (number == 0x21 && (ax >> 8) == 0x35) {
             std::uint16_t vector[2]{};
             check(uc_mem_read(uc, (ax & 255) * 4, vector, sizeof(vector)));
@@ -1111,6 +1134,7 @@ int main(int argc, char **argv) {
     bool object_state_services = false;
     bool verify_overlays = false, hle_overlays = false, trace_video = false;
     bool trace_timing = false;
+    bool probe_adlib = false;
     unsigned aspect_width = 4, aspect_height = 3;
     std::vector<std::uint64_t> entry_addresses;
     std::multimap<unsigned, std::uint16_t> scheduled_keys;
@@ -1122,7 +1146,7 @@ int main(int argc, char **argv) {
                      "[--break-at HEX] [--state-dir DIR | --read-only] [--trace-blocks FILE] "
                      "[--trace-research FILE --trace-entry HEX ...] [--key-at MS:BIOSHEX ...] "
                      "[--object-flags verify|hle | --object-state verify|hle] [--verify-overlays] "
-                     "[--hle-overlays] [--trace-video] [--trace-timing] "
+                     "[--hle-overlays] [--trace-video] [--trace-timing] [--probe-adlib] "
                      "[--aspect-ratio native|W:H]\n";
     };
     if (argc < 2 || std::string(argv[1]) == "--help") {
@@ -1138,6 +1162,8 @@ int main(int argc, char **argv) {
             trace_video = true;
         else if (option == "--trace-timing")
             trace_timing = true;
+        else if (option == "--probe-adlib")
+            probe_adlib = true;
         else if (option == "--aspect-ratio" && i + 1 < argc) {
             const std::string value = argv[++i];
             if (value == "native") {
@@ -1272,6 +1298,7 @@ int main(int argc, char **argv) {
         auto image = gateway::load_mz(bytes);
         State state;
         state.trace_video = trace_video;
+        state.probe_adlib = probe_adlib;
         state.object_flags_mode = object_flags_mode;
         state.object_state_services = object_state_services;
         if (!research_path.empty()) {
@@ -1313,6 +1340,22 @@ int main(int argc, char **argv) {
         vector(0x33, 0x300);
         const std::uint8_t mouse_code[]{0xcd, 0x33, 0xcf};
         std::copy(std::begin(mouse_code), std::end(mouse_code), image.memory.begin() + 0xf0300);
+        if (probe_adlib) {
+            // SOUND.COM's installation check looks for this 24-byte block
+            // immediately before the INT 65h handler entry point.
+            std::array<std::uint8_t, 24> signature{};
+            signature[0] = 0x51;
+            signature[1] = 0x01;
+            std::copy_n("SOUND-DRIVER-AD-LIB", 19, signature.begin() + 2);
+            signature[21] = signature[22] = 1;
+            std::copy(signature.begin(), signature.end(), image.memory.begin() + 0xf03e8);
+            const std::uint8_t driver_code[]{0xcd, 0x65, 0xcf};
+            std::copy(std::begin(driver_code), std::end(driver_code),
+                      image.memory.begin() + 0xf0400);
+            vector(0x65, 0x400);
+            std::cerr << "AdLib interface probe enabled: INT 65h calls are traced, "
+                         "music synthesis is not implemented\n";
+        }
         Engine engine;
         check(uc_mem_map(engine.uc, 0, image.memory.size(), UC_PROT_ALL));
         check(uc_mem_write(engine.uc, 0, image.memory.data(), image.memory.size()));
@@ -1454,6 +1497,7 @@ int main(int argc, char **argv) {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
         const auto started = std::chrono::steady_clock::now();
         std::uint64_t elapsed_us = 0;
+        std::uint64_t delivered_irq0 = 0;
         while (true) {
             state.elapsed_ms = elapsed_us / 1000;
             while (!scheduled_keys.empty() && scheduled_keys.begin()->first <= state.elapsed_ms) {
@@ -1511,6 +1555,7 @@ int main(int argc, char **argv) {
                 state.irq_in_service = true;
                 if (!dispatch(engine.uc, 8))
                     throw std::runtime_error("missing IRQ0 vector");
+                ++delivered_irq0;
             }
             // Games such as Spellcasting 101 install a raw IRQ1 handler and
             // read keyboard scan codes from port 60h instead of INT 16h.
@@ -1535,11 +1580,13 @@ int main(int argc, char **argv) {
                 const auto wall_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                                          std::chrono::steady_clock::now() - started)
                                          .count();
-                std::cerr << "TIMING guest_ms=" << elapsed_us / 1000
+                std::cerr << std::dec << "TIMING guest_ms=" << elapsed_us / 1000
                           << " wall_ms=" << wall_ms << " speed=" << std::fixed
                           << std::setprecision(2)
                           << (wall_ms ? double(elapsed_us) / (wall_ms * 1000.0) : 0.0)
-                          << "x\n";
+                          << "x irq0=" << delivered_irq0
+                          << " pit_edges=" << state.pit.irq0_edges()
+                          << " speaker_writes=" << state.pit.speaker_writes() << '\n';
             }
 #ifdef GATEWAY_SDL
             if (host && elapsed_us % 16000 == 0) {
@@ -1630,6 +1677,8 @@ int main(int argc, char **argv) {
         }
         if (hle_overlays)
             std::cerr << "RTLink host loads: " << std::dec << state.overlay_host_loads << '\n';
+        if (probe_adlib)
+            std::cerr << "AdLib interface calls: " << std::dec << state.adlib_calls << '\n';
         check(status);
         if (!state.failure.empty())
             throw std::runtime_error(state.failure);

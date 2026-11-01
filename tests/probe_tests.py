@@ -11,7 +11,7 @@ PROBE = sys.argv.pop(1)
 
 
 class ProbeTests(unittest.TestCase):
-    def run_guest(self, code, files=None, dump=False, game_args=None, press=None, break_at=None, state=False, state_files=None, exe_name="TEST.EXE", research_entries=None, scheduled_keys=None):
+    def run_guest(self, code, files=None, dump=False, game_args=None, press=None, break_at=None, state=False, state_files=None, exe_name="TEST.EXE", research_entries=None, scheduled_keys=None, probe_adlib=False):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             assets = root / 'assets'
@@ -31,6 +31,8 @@ class ProbeTests(unittest.TestCase):
             exe = assets / exe_name
             exe.write_bytes(header + code)
             command = [PROBE, str(exe)]
+            if probe_adlib:
+                command += ['--probe-adlib']
             if research_entries is not None:
                 command += ['--trace-research', str(root / 'research.trace')]
                 for address in research_entries:
@@ -631,6 +633,18 @@ class ProbeTests(unittest.TestCase):
         result = self.run_guest(bytes.fromhex('e460b44ccd21'))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('DOS exit code: 0', result.stdout)
+
+    def test_adlib_interface_probe_installs_signature_and_logs_calls(self):
+        code = bytes.fromhex('be0500cd65b8004ccd21')
+        result = self.run_guest(code, dump=True, research_entries=[], probe_adlib=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(struct.unpack_from('<2H', result.memory, 0x65 * 4),
+                         (0x400, 0xf000))
+        self.assertEqual(result.memory[0xf03e8:0xf0400],
+                         b'\x51\x01SOUND-DRIVER-AD-LIB\x01\x01\x00')
+        self.assertIn('adlib ms=', result.research_trace)
+        self.assertIn('si=5', result.research_trace)
+        self.assertIn('AdLib interface calls: 1', result.stderr)
 
     def test_mode_2_exit_restores_text_display(self):
         # Spellcasting 101 selects 80x25 B/W mode 2 while shutting down.

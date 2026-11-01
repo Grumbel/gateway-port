@@ -18,6 +18,8 @@ class Pit {
     void mix_speaker(std::span<std::int16_t> stereo);
     bool pending() const { return pending_; }
     void acknowledge() { pending_ = false; }
+    std::uint64_t irq0_edges() const { return irq0_edges_; }
+    std::uint64_t speaker_writes() const { return speaker_writes_; }
 
   private:
     struct Channel {
@@ -36,6 +38,7 @@ class Pit {
     unsigned audio_ticks_ = 0;
     std::array<std::int16_t, 768> speaker_audio_{};
     unsigned audio_next_ = 0, audio_count_ = 0;
+    std::uint64_t irq0_edges_ = 0, speaker_writes_ = 0;
     bool speaker_output(std::uint64_t ticks) const;
 };
 } // namespace gateway

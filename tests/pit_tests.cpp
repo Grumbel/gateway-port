@@ -53,6 +53,7 @@ int main() {
             }
         }
         require(edges >= 165 && edges <= 166, "high-frequency timer edges were lost");
+        require(fast.irq0_edges() == edges, "PIT hardware edge count is inaccurate");
         // Software-triggered one-shot counter must not retrigger every period.
         gateway::Pit one_shot;
         one_shot.out(0x43, 0x30); // channel 0, low/high, mode 0
@@ -108,6 +109,7 @@ int main() {
         gateway::Pit pwm;
         pwm.out(0x43, 0x90);
         pwm.out(0x42, 10);
+        require(pwm.speaker_writes() == 1, "speaker programming count is inaccurate");
         pwm.out(0x61, 3);
         pwm.advance(1000);
         std::array<std::int16_t, 96> pwm_audio{};
