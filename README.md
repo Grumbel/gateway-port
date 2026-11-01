@@ -411,6 +411,10 @@ python3 tools/summarize_story_trace.py build/story-commands/native.trace
 
 The resulting raw command codes are not yet mapped to their typed verbs;
 see [story command tracing](docs/room-your-quarters.md#mapping-the-parsers-numeric-command-codes).
+The summarizer accepts older unannotated entry traces too; use `--details` to
+see each room/drawer event with the nearest recently completed typed input.
+New traces also capture the drawer's command byte directly from AX at its
+native comparison site (`0x4a390`), avoiding the original pointer-probe gap.
 
 RTLink sections and all handler entry file offsets can now be extracted:
 

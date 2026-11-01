@@ -217,6 +217,46 @@ and the original game resources; the probes were **not** run in this analysis
 environment, where Unicorn and CMake are unavailable. Command meanings remain
 unverified until those replay results are collected.
 
+### Follow-up: real trace and recovered events (2026-11-01)
+
+A native trace supplied from the 42,000 ms `objects` replay confirmed that
+**both verified handler entry hooks fired**, but the first version of the
+additional `story_command` annotation was absent. The previous summarizer
+incorrectly rejected this trace outright. The updated tool also recognizes
+ordinary `entry` lines at the two known `CS:IP` locations and reads the event
+argument from the third `stack` word (the far-call frame's `[SS:SP+4]`).
+
+These observations come directly from that supplied trace:
+
+| Last completed typed input | Handler entry time | Native object | Native event |
+| --- | ---: | ---: | ---: |
+| `open drawer` | 18,392 virtual ms | `0x124` (drawer) | 6 |
+| `take book` | 25,333 virtual ms | `0x124` (drawer) | 5 |
+| `close drawer` | 34,422 virtual ms | `0x124` (drawer) | 6 |
+
+The typed-input association is from the recent Enter key and call timing; it
+does not prove that an event ID is itself a verb ID. Event 5 reaches the drawer
+handler but its code only processes event 6; it need not modify the drawer.
+
+The next capture uses a stronger observation point for the command itself.
+At *file offset* `0x51a8a` the drawer handler loads the command byte into AL;
+at `0x51a8e` it clears AH; and at **`0x51a90`** it compares AX with `0x61`.
+That last instruction is at guest **`49d8:0610` / linear `0x4a390`**. An
+opt-in code hook there can read the command straight from AX, avoiding the
+unverified DS-pointer/prologue conditions that suppressed the earlier
+annotation. `trace_game_logic.py` now hooks this point as well, and the
+summarizer attaches its AX value to the preceding drawer entry. No fixed
+translation from the command values to verb names is assumed.
+
+For an already captured bundle-042 trace, the same summarizer now works:
+
+```sh
+python3 tools/summarize_story_trace.py build/story-commands/native.trace --details
+```
+
+It shows events even when their command byte is unavailable (`?`); a newly
+captured trace using the `0x4a390` hook can fill in the exact byte.
+
 ## Next decompilation boundary
 
 1. Trace all calls into handler 233, with event IDs and register/stack state,
