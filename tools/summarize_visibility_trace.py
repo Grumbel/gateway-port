@@ -26,14 +26,21 @@ def parse_visibility(line):
                 int(fields['pc'], 16) != SITES[stage]:
             raise ValueError('visibility annotation does not match resident callsite')
         if 'visibility_probe' in fields:
-            raise ValueError('candidate probe code signature mismatch')
+            if fields['visibility_probe'] != 'code-mismatch':
+                raise ValueError('unknown candidate probe diagnostic')
+            # The launcher occupies 1000:xxxx early in the run. An address
+            # alone does not identify the final resident game code; these
+            # hits must never be interpreted as visibility decisions.
+            return dict(ms=int(fields['ms']), stage=stage, unverified=True,
+                        code=fields.get('visibility_code'))
         result_key = {'gate-return': 'visibility_result',
                       'child-return': 'visibility_child'}.get(stage)
         return dict(ms=int(fields['ms']), stage=stage,
                     object=int(fields['visibility_object'], 16),
                     slot=int(fields['visibility_slot'], 16),
                     restricted=int(fields['visibility_restricted'], 16),
-                    result=int(fields[result_key], 16) if result_key else None)
+                    result=int(fields[result_key], 16) if result_key else None,
+                    unverified=False)
     except (KeyError, ValueError) as error:
         raise ValueError(f'invalid visibility entry: {error}: {line[:160]}') from error
 
@@ -44,9 +51,13 @@ def summarize(lines, commands=DEFAULT_OBJECT_COMMANDS, focus=None):
     grouped = defaultdict(lambda: dict(gate_calls=0, gate_0=0, gate_1=0,
                                        child_calls=0, children=set()))
     total = 0
+    unverified = []
     for line in lines:
         event = parse_visibility(line)
         if not event:
+            continue
+        if event['unverified']:
+            unverified.append(event)
             continue
         total += 1
         if focus is not None and event['object'] != focus:
@@ -65,11 +76,22 @@ def summarize(lines, commands=DEFAULT_OBJECT_COMMANDS, focus=None):
         else:
             group['children'].add(event['result'])
     if not total:
-        raise ValueError('no candidate child-slot entries: check --trace-visibility and build')
+        detail = (f'; skipped {len(unverified)} code-signature mismatches '
+                  f'(first ms={unverified[0]["ms"]}, last ms={unverified[-1]["ms"]})'
+                  if unverified else '')
+        if unverified and unverified[-1]['code']:
+            detail += f'; last mismatched bytes={unverified[-1]["code"]}'
+        raise ValueError('no verified candidate child-slot entries' + detail +
+                         '; check whether the resident code matches the expected addresses')
     if not grouped:
         raise ValueError('no child-slot entries for requested object')
-    result = ["phase          object  slot  restricted  gate (deny/allow)  child IDs (returned)",
-              "--------------  ------  ----  ----------  -----------------  --------------------"]
+    result = []
+    if unverified:
+        result.append(f'Skipped {len(unverified)} unverified code-address hits '
+                      f'(ms={unverified[0]["ms"]}–{unverified[-1]["ms"]}); '
+                      'these are not parser decisions.')
+    result += ["phase          object  slot  restricted  gate (deny/allow)  child IDs (returned)",
+               "--------------  ------  ----  ----------  -----------------  --------------------"]
     for (phase, obj, slot, restricted), group in sorted(grouped.items()):
         label = 'startup/LOOK' if phase == 0 else commands[phase - 1]
         children = ', '.join(f'0x{x:03x}' for x in sorted(group['children'])) or '-'

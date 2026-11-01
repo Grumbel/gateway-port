@@ -756,8 +756,12 @@ For fine-grained inspection, `rg 'visibility_stage=' .../native.trace` shows
 the raw `gate-call` (`1000:0063`), `gate-return` (`1000:0068`), `child-call`
 (`1000:0075`) and `child-return` (`1000:007a`) entries. The probe verifies
 the expected instruction bytes before interpreting local variables; a
-`visibility_probe=code-mismatch` must be investigated, **not** treated as
-a valid deny decision. The summary groups the gate result and returned
+`visibility_probe=code-mismatch` is **not** a valid deny decision: the same
+linear addresses can contain different code early in launcher startup. The
+summarizer skips these unverified hits and reports how many it skipped; an
+all-mismatched trace still fails explicitly. Newer traces also capture
+`visibility_code` for diagnosing a persistent mismatch. The summary groups
+the gate result and returned
 children by *scripted time window*, not by proven command ownership. It
 does not assert that a particular child was accepted as a verb's target.
 

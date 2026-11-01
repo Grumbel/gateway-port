@@ -25,7 +25,8 @@ def entry(ms, site, obj='124', slot='0', restricted='1', value=None):
 
 class VisibilityTraceTests(unittest.TestCase):
     def test_gate_returns_are_separate_from_child_results_and_grouped_by_phase(self):
-        lines = [entry(17000, 'gate-call'), entry(17000, 'gate-return', value='0'),
+        lines = [entry(288, 'gate-call') + ' visibility_probe=code-mismatch',
+                 entry(17000, 'gate-call'), entry(17000, 'gate-return', value='0'),
                  entry(18393, 'gate-call'), entry(18394, 'gate-return', value='1'),
                  entry(18394, 'child-call'), entry(18394, 'child-return', value='123'),
                  entry(21443, 'gate-call'), entry(21444, 'gate-return', value='0'),
@@ -34,6 +35,7 @@ class VisibilityTraceTests(unittest.TestCase):
                  entry(31443, 'gate-call', obj='ff'),
                  entry(31443, 'gate-return', obj='ff', value='1')]
         report = summarize(lines, focus=0x124)
+        self.assertIn('Skipped 1 unverified code-address hits (ms=288–288)', report)
         self.assertIn('startup/LOOK', report)
         self.assertIn('open drawer', report)
         self.assertIn('0x123', report)
@@ -43,12 +45,21 @@ class VisibilityTraceTests(unittest.TestCase):
         self.assertIn('gate is only called on restricted traversals', report)
         self.assertEqual(parse_visibility('read ms=2 file=x'), None)
 
-    def test_reject_signature_mismatch_absent_trace_and_invalid_results(self):
-        with self.assertRaisesRegex(ValueError, 'code signature mismatch'):
-            summarize([entry(18, 'gate-call') + ' visibility_probe=code-mismatch'])
+    def test_skip_early_signature_mismatch_but_reject_unverified_only(self):
+        mismatch = entry(288, 'gate-call') + ' visibility_probe=code-mismatch'
+        self.assertTrue(parse_visibility(mismatch)['unverified'])
+        with self.assertRaisesRegex(ValueError, 'no verified candidate child-slot entries'):
+            summarize([mismatch])
+        with self.assertRaisesRegex(ValueError, 'skipped 2 code-signature mismatches'):
+            summarize([mismatch, entry(600, 'child-call') +
+                       ' visibility_probe=code-mismatch visibility_code=0000000000'])
+
+    def test_reject_invalid_probe_and_missing_or_nonboolean_results(self):
+        with self.assertRaisesRegex(ValueError, 'unknown candidate probe diagnostic'):
+            summarize([entry(18, 'gate-call') + ' visibility_probe=other'])
         with self.assertRaisesRegex(ValueError, 'non-Boolean'):
             summarize([entry(18, 'gate-return', value='2')])
-        with self.assertRaisesRegex(ValueError, 'no candidate child-slot entries'):
+        with self.assertRaisesRegex(ValueError, 'no verified candidate child-slot entries'):
             summarize(['entry ms=1 pc=147c0 cs=1476'])
         with self.assertRaisesRegex(ValueError, 'no child-slot entries for requested'):
             summarize([entry(18, 'gate-call')], focus=0x123)

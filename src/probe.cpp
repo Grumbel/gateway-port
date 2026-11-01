@@ -597,7 +597,10 @@ void trace_entry(uc_engine *uc, std::uint64_t address, std::uint32_t, void *opaq
                 if (address == 0x1007a)
                     out << " visibility_child=" << reg(uc, UC_X86_REG_AX);
             } else {
-                out << " visibility_probe=code-mismatch";
+                out << " visibility_probe=code-mismatch visibility_code=";
+                for (const auto byte : code)
+                    out << std::setw(2) << std::setfill('0') << unsigned(byte);
+                out << std::setfill(' ');
             }
         }
         // A far-call target may be altered during RTLink dispatch. Capture
