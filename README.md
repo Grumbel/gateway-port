@@ -573,11 +573,16 @@ that a head word points into a sibling chain rather than representing the
 room's entire object list. The saved native snapshot confirms that `0x175`
 is the **picture**, followed by the plant, furniture, desk and player, and
 that the book is once again inside the player. `inspect_object_state.py` now
-exports original
-`child_slot`/`next_sibling` fields; `tools/inspect_child_chains.py` follows
+exports original `child_slot`/`next_sibling` fields;
+`tools/inspect_child_chains.py` follows
 complete ordered child lists from a snapshot and checks inconsistent links.
 Its `--audit` option scans every decoded container for dangling children,
-metadata disagreements, repeated references and cycles. The C++ linked-child
+metadata disagreements, repeated references and cycles. The supplied full
+snapshot contained 182 nonzero heads, 404 distinct linked objects and no
+consistency findings. The remaining 330 records can now be classified by
+native type, owning-root ancestry and their direct-location fields using
+`--audit --list-unlinked`; a missing indexed parent is not necessarily an error.
+The C++ linked-child
 research model now tests the actual mixed-type room hierarchy (type 1 room,
 type 8 picture/plant, type 2 furniture, type 7 player), including the
 picture-head restoration after DROP/TAKE.

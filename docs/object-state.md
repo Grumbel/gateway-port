@@ -245,6 +245,43 @@ as an **undecoded tail**, not silently treated as proof that its list ends.
 It cannot establish a complete world graph for types with unknown fields, and
 does not infer parser visibility from the absence of link inconsistencies.
 
+#### Whole-snapshot audit: 734 records
+
+The user ran this against the final `parser-child-writes/native` snapshot:
+
+| Native structural measurement | Result |
+| --- | ---: |
+| All records | **734** |
+| Nonzero indexed child heads | **182** |
+| Child links traversed | **404** |
+| Distinct referenced children | **404** |
+| Linked-list tails with no decoded sibling accessor | **0** |
+| Dangling, duplicated or inconsistent links detected | **0** |
+| Records **not referenced** by these indexed heads | **330** |
+
+This is stronger than validating one room: all encountered children have
+consistent native parent/slot metadata and no observed linked-list sharing
+or dangling successors. But the other 330 records are *not necessarily*
+orphaned game objects: root rooms, unused definitions, other record kinds
+and special storage may not appear as an indexed child. The audit has not
+proven every object must have such an owner.
+
+The inspector now also prints a type-by-type split of linked/unlinked records,
+counts unlinked objects with a nonzero direct location, and identifies root
+containers with the most descendants. It checks cycles through **nested
+ownership** separately from sibling cycles. To inspect specific unlinked
+classes without dumping hundreds of records:
+
+```sh
+python3 tools/inspect_child_chains.py build/parser-child-writes/objects.json \
+  --audit --list-unlinked --unlinked-type 2 --limit 60
+```
+
+The output remains a snapshot graph classification, not a claim that a root
+is the current scene or that a missing parent is a bug. In particular, only
+observed child links are used to calculate roots and depth—direct-location
+words are *checked*, never inserted as guessed graph edges.
+
 #### Decoded Your Quarters hierarchy from the supplied native replay
 
 The user ran the inspector against the repeated-action native snapshot after
@@ -265,8 +302,9 @@ by the guest's second TAKE is specifically the *picture*, not an unnamed
 special room entry. Type 8 pictures and plants participate in the same
 next-sibling chain as type 2 furniture, while the enclosing room is type 1.
 The scene-specific hierarchy is regression-tested with an asset-free fixture.
-No whole-snapshot `--audit` output or DOSBox comparison has yet been supplied;
-the table establishes this one final snapshot, not every intermediary state.
+The whole-snapshot audit above validates the decoded link structure, but a
+DOSBox comparison has not yet been supplied and the table establishes this
+one final snapshot, not every intermediary state.
 
 ## State-changing replay
 
