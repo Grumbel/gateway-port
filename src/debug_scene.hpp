@@ -14,12 +14,14 @@ struct DebugHitbox {
     unsigned x0, y0, x1, y1;
     std::uint16_t object_id;
     std::string name;
+    std::vector<RegionPoint> polygon{};
 };
 struct DebugSceneView {
     std::string picture;
     std::string region_file;
     std::size_t entry = 0, entry_count = 0;
     bool auto_follow = true;
+    unsigned x_extent = 2; // Packed rectangles include two screen pixels per X unit.
     std::vector<DebugHitbox> boxes;
 };
 
@@ -43,6 +45,7 @@ class DebugSceneTracker {
   private:
     struct Picture {
         std::string region_file;
+        RegionFormat format = RegionFormat::rectangles;
         std::vector<PicEntry> entries;
         std::vector<RegionFrame> regions;
     };

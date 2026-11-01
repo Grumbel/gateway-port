@@ -19,15 +19,24 @@ std::string DebugSceneTracker::canonical_file(std::string file) {
 
 std::string DebugSceneTracker::matching_rgn(const std::string &picture) {
     const auto file = canonical_file(picture);
-    if (file.size() != 12 || file.substr(0, 5) != "GATE_" ||
-        file.substr(8) != ".PIC" || !std::isdigit(file[5]) || !std::isdigit(file[6]) ||
-        !std::isdigit(file[7]))
-        return {};
-    const int number = (file[5] - '0') * 100 + (file[6] - '0') * 10 + file[7] - '0';
-    const int candidate = number >= 100 && number < 200 ? number - 100 : number;
-    char name[16];
-    std::snprintf(name, sizeof name, "GATE_%03d.RGN", candidate);
-    return name;
+    if (file.size() == 12 && file.substr(8) == ".PIC" &&
+        (file.substr(0, 5) == "GATE_" || file.substr(0, 5) == "HOME_" ||
+         file.substr(0, 5) == "S301_") &&
+        std::isdigit(static_cast<unsigned char>(file[5])) &&
+        std::isdigit(static_cast<unsigned char>(file[6])) &&
+        std::isdigit(static_cast<unsigned char>(file[7]))) {
+        const int number = (file[5] - '0') * 100 + (file[6] - '0') * 10 + file[7] - '0';
+        const int candidate = number >= 100 && number < 200 ? number - 100 : number;
+        char name[16];
+        std::snprintf(name, sizeof name, "%s%03d.RGN", file.substr(0, 5).c_str(), candidate);
+        return name;
+    }
+    if (file.size() == 11 && file[0] == 'S' &&
+        (file.substr(0, 4) == "S101" || file.substr(0, 4) == "S201") &&
+        file[4] == '_' && (file[5] == 'E' || file[5] == 'C') &&
+        std::isdigit(static_cast<unsigned char>(file[6])) && file.substr(7) == ".PIC")
+        return file.substr(0, 5) + 'R' + file[6] + ".RGN";
+    return {};
 }
 
 bool DebugSceneTracker::add_picture(const std::string &name, std::span<const std::uint8_t> pic,
@@ -37,8 +46,13 @@ bool DebugSceneTracker::add_picture(const std::string &name, std::span<const std
     if (region_file.empty())
         return false;
     auto entries = parse_pic_directory(pic);
-    auto regions = parse_regions(rgn, entries.size());
-    pictures_.insert_or_assign(file, Picture{region_file, std::move(entries), std::move(regions)});
+    const auto format = file.starts_with("HOME_") ? RegionFormat::polygons
+                        : (file.starts_with("S101_") || file.starts_with("S201_"))
+                            ? RegionFormat::early_rectangles
+                            : RegionFormat::rectangles;
+    auto regions = parse_regions(rgn, entries.size(), format);
+    pictures_.insert_or_assign(file,
+                               Picture{region_file, format, std::move(entries), std::move(regions)});
     return true;
 }
 
@@ -91,12 +105,13 @@ DebugSceneView DebugSceneTracker::view() const {
         return view;
     view.picture = found->first;
     view.region_file = found->second.region_file;
+    view.x_extent = found->second.format == RegionFormat::polygons ? 1 : 2;
     view.entry = entry_;
     view.entry_count = found->second.regions.size();
     for (const auto &region : found->second.regions[entry_].boxes) {
         const auto id = region.object_id;
         view.boxes.push_back({region.x0, region.y0, region.x1, region.y1, id,
-                              id && id < names_.size() ? names_[id] : ""});
+                              id && id < names_.size() ? names_[id] : "", region.polygon});
     }
     return view;
 }

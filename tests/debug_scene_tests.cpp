@@ -46,6 +46,14 @@ int main(int argc, char **argv) try {
             "Gateway room-picture RGN mapping");
     require(gateway::DebugSceneTracker::matching_rgn("GATE_315.PIC") == "GATE_315.RGN",
             "non-1xx RGN mapping");
+    require(gateway::DebugSceneTracker::matching_rgn("C:S301_107.PIC") == "S301_007.RGN" &&
+                gateway::DebugSceneTracker::matching_rgn("HOME_115.PIC") == "HOME_015.RGN" &&
+                gateway::DebugSceneTracker::matching_rgn("HOME_304.PIC") == "HOME_304.RGN",
+            "Spellcasting 301 and Gateway II numbered room mapping");
+    require(gateway::DebugSceneTracker::matching_rgn("S101_E3.PIC") == "S101_R3.RGN" &&
+                gateway::DebugSceneTracker::matching_rgn("s201_c7.pic") == "S201_R7.RGN" &&
+                gateway::DebugSceneTracker::matching_rgn("INTRO.PIC").empty(),
+            "early Spellcasting VGA/CGA room mapping and unrelated PIC rejection");
     require(tracker.add_picture("C:\\GATE_102.PIC", pic, rgn), "register Gateway picture");
     tracker.note_read("c:\\gate_102.pic", 0, 36);
     require(tracker.view().picture.empty(), "reading PIC directory chose a scene");
@@ -107,6 +115,63 @@ int main(int argc, char **argv) try {
         require(room.entry == 15 && drawer != room.boxes.end() && drawer->name == "drawer" &&
                     drawer->x0 == 90 && drawer->y0 == 162,
                 "Gateway room 15 drawer is native object 292, not OBJECT.DAT name index 292");
+    }
+    if (argc > 2) {
+        // Optional real game tree, e.g. the contents of games.zip. This also
+        // verifies that every supported dialect's PIC and RGN agree on the
+        // frame indices: a parser-only test cannot detect a bad file mapping.
+        const auto root = std::filesystem::path(argv[2]);
+        auto read = [&](const std::string &file) {
+            std::ifstream stream(root / file, std::ios::binary);
+            require(bool(stream), "cannot open optional other-game fixture");
+            return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(stream), {});
+        };
+        gateway::DebugSceneTracker other;
+        unsigned checked = 0, rooms = 0, polygons = 0;
+        auto check_pair = [&](const std::string &folder, const std::string &pic) {
+            const auto region = gateway::DebugSceneTracker::matching_rgn(pic);
+            const auto picture_data = read(folder + '/' + pic);
+            require(other.add_picture(pic, picture_data, read(folder + '/' + region)),
+                    "cannot register real other-game PIC/RGN pair");
+            ++checked;
+            const auto entries = gateway::parse_pic_directory(picture_data);
+            for (std::size_t i = 0; i < entries.size(); ++i) {
+                const auto &entry = entries[i];
+                if (!entry.offset || (entry.flags & 0x4000) ||
+                    entry.width < 260 || entry.height < 150)
+                    continue;
+                other.note_read(pic, entry.offset + 1, 1);
+                const auto view = other.view();
+                require(view.picture == pic && view.entry == i &&
+                            view.entry_count == entries.size(),
+                        "real other-game room PIC read did not select matching RGN slot");
+                if (view.boxes.empty())
+                    continue;
+                ++rooms;
+                for (const auto &box : view.boxes)
+                    if (!box.polygon.empty())
+                        ++polygons;
+            }
+        };
+        for (int n = 1; n <= 6; ++n) {
+            check_pair("101", "S101_E" + std::to_string(n) + ".PIC");
+            check_pair("101", "S101_C" + std::to_string(n) + ".PIC");
+        }
+        for (int n = 1; n <= 7; ++n) {
+            check_pair("201", "S201_E" + std::to_string(n) + ".PIC");
+            check_pair("201", "S201_C" + std::to_string(n) + ".PIC");
+        }
+        for (int n = 2; n <= 7; ++n)
+            check_pair("301", "S301_10" + std::to_string(n) + ".PIC");
+        for (int n = 2; n <= 7; ++n)
+            check_pair("gateway2-dos", "HOME_10" + std::to_string(n) + ".PIC");
+        check_pair("gateway2-dos", "HOME_115.PIC");
+        check_pair("gateway2-dos", "HOME_304.PIC");
+        check_pair("gateway2-dos", "HOME_315.PIC");
+        require(checked == 41 && rooms > 100 && polygons > 100,
+                "too few real other-game region frames decoded");
+        std::cout << "Other-game region fixtures: " << checked << " pairs, " << rooms
+                  << " room frames, " << polygons << " polygons\n";
     }
     std::cout << "Gateway scene-tracking checks passed\n";
 } catch (const std::exception &error) {
