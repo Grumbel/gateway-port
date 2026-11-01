@@ -122,22 +122,55 @@ class StoryDisassemblyTests(unittest.TestCase):
         self.assertEqual(entries[0]['handler_offset'], 0x0102)
         self.assertEqual(entries[0]['handler_segment'], 0x3040)
 
-    def test_action_rtlink_reference_is_data_not_trampoline_start(self):
+    def test_action_rtlink_reference_comes_from_trampoline_operands(self):
         memory = bytearray(0x40000)
         struct.pack_into('<H', memory, 0x10000 + 0x8da8, 0x1200)
         struct.pack_into('<3H', memory, 0x12000 + 0x28 + 6 * 0x1d,
                          0x17f9, 0x2c24, 3)
-        struct.pack_into('<3H', memory, 0x2c240 + 0x17f9, 0x0cf7, 0x4661, 7)
+        code = 0x2c240 + 0x17f9
+        struct.pack_into('<BhB3H', memory, code, 0xe8, 0x058d - (0x17f9 + 3),
+                         0xea, 0x029b, 0x4661, 5)
         entries = inspect_actions(memory, 0x1000, [0x1d])
         self.assertEqual(entries[0]['rtlink_reference'],
-                         dict(section=7, target_segment=0x4661, target_offset=0x0cf7))
-        manifest = {'sections': [dict(id=7, filename='GATEMAIN.OVL',
-                                     runtime_segment=0x4661, file_bytes=0x32f0,
-                                     image_file_offset=0x14150)]}
+                         dict(section=5, target_segment=0x4661, target_offset=0x029b))
+        manifest = {'sections': [dict(id=5, filename='GATEMAIN.OVL',
+                                     runtime_segment=0x4661, file_bytes=0x30a0,
+                                     image_file_offset=0xd3d0)]}
         mapped = map_action_entries(entries, manifest)
-        self.assertEqual(mapped[0]['native_code']['file_offset'], 0x14e47)
+        self.assertEqual(mapped[0]['native_code']['file_offset'], 0xd66b)
         with self.assertRaises(ValueError):
             map_action_entries(entries, {'sections': []})
+
+        # An apparent IP/CS/section triple at the pointer is not enough:
+        # without the executable CALL/JMP prefix this is NOT a trampoline.
+        struct.pack_into('<3H', memory, code, 0x0cf7, 0x4661, 7)
+        self.assertNotIn('rtlink_reference', inspect_actions(memory, 0x1000, [0x1d])[0])
+
+    def test_action_trampoline_requires_rtlink_manager_gate(self):
+        memory = bytearray(0x40000)
+        struct.pack_into('<H', memory, 0x10000 + 0x8da8, 0x1200)
+        struct.pack_into('<2H', memory, 0x12000 + 0x28 + 6 * 0x71,
+                         0x1c59, 0x2c24)
+        code = 0x2c240 + 0x1c59
+        struct.pack_into('<BhB3H', memory, code, 0xe8, -3, 0xea,
+                         0x1572, 0x4661, 5)
+        self.assertNotIn('rtlink_reference', inspect_actions(memory, 0x1000, [0x71])[0])
+
+    def test_five_observed_actions_share_section_five(self):
+        memory = bytearray(0x40000)
+        struct.pack_into('<H', memory, 0x10000 + 0x8da8, 0x1200)
+        entries = [(0x1d, 0x17f9, 0x029b), (0x32, 0x1727, 0x05d7),
+                   (0x46, 0x165f, 0x2b11), (0x53, 0x15dd, 0x14f4),
+                   (0x71, 0x1c59, 0x1572)]
+        for action, pointer, target in entries:
+            struct.pack_into('<2H', memory, 0x12000 + 0x28 + 6 * action,
+                             pointer, 0x2c24)
+            struct.pack_into('<BhB3H', memory, 0x2c240 + pointer, 0xe8,
+                             0x058d - (pointer + 3), 0xea, target, 0x4661, 5)
+        records = inspect_actions(memory, 0x1000, [action for action, _, _ in entries])
+        self.assertEqual([(record['action'], record['rtlink_reference']['section'],
+                           record['rtlink_reference']['target_offset']) for record in records],
+                         [(action, 5, target) for action, _, target in entries])
 
 
 if __name__ == '__main__':

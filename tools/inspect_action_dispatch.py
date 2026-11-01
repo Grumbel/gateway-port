@@ -4,7 +4,9 @@
 Gateway's resident dispatch code reads a selector byte at 0x27 + 6*action
 and a far handler pointer at 0x28 + 6*action. The following byte is separate:
 reading a 16-bit "other" word there mixes it with the next action's selector.
-A far pointer may lead to RTLink reference metadata rather than code.
+A nonresident action's pointer leads to the START of a ten-byte RTLink
+trampoline (near CALL to the manager gate, followed by a far JMP and section
+ID), not the embedded reference at offset +4.
 """
 import argparse
 import json
@@ -46,15 +48,19 @@ def inspect_actions(memory, ds, action_ids):
         trailer = byte(directory_segment, offset + 4)
         entry = dict(action=action, handler_segment=cs, handler_offset=ip,
                      selector=selector, trailer=trailer)
-        # Most nonresident action entries point to the *six-byte reference*
-        # stored at +4 inside an RTLink call/jump trampoline.  These six bytes
-        # are target IP, target CS, and section ID; they are NOT executable
-        # instructions at the directory pointer itself.
+        # These action pointers point to *executable trampoline starts*.
+        # The reference is at +4 (after e8 disp16; ea), and the near call
+        # resolves to the original Gateway RTLink manager gate at 2c24:058d.
         reference_address = cs * 16 + ip
-        if cs == 0x2c24 and reference_address + 6 <= min(len(memory), 0xa0000):
-            target_ip, target_cs, section_id = struct.unpack_from('<3H', memory,
-                                                                   reference_address)
-            if section_id < 58:
+        if cs == 0x2c24 and reference_address + 10 <= min(len(memory), 0xa0000):
+            displacement = struct.unpack_from('<h', memory, reference_address + 1)[0]
+            gate = (ip + 3 + displacement) & 0xffff
+            if (memory[reference_address] == 0xe8 and
+                    memory[reference_address + 3] == 0xea and gate == 0x058d):
+                target_ip, target_cs, section_id = struct.unpack_from('<3H', memory,
+                                                                       reference_address + 4)
+                if section_id >= 58:
+                    raise ValueError('invalid section ID in action RTLink trampoline')
                 entry['rtlink_reference'] = dict(section=section_id,
                                                  target_segment=target_cs,
                                                  target_offset=target_ip)
@@ -117,7 +123,7 @@ def main():
             print(f" file={record['native_code']['filename']}:"
                   f"0x{record['native_code']['file_offset']:x}", end='')
         print(f"  {KNOWN_ACTIONS.get(action, '')}")
-    print('Table pointers may reference six-byte RTLink metadata, not executable code; '
+    print('Nonresident action pointers address executable RTLink trampolines; '
           'the selector and trailer bytes have not been assigned semantics.')
 
 
