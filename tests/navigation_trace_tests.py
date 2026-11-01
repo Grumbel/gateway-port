@@ -8,7 +8,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
-from summarize_navigation_trace import location_events, room_names, summarize
+from summarize_navigation_trace import (location_events, map_location_setter_return,
+                                        room_names, summarize)
 
 TOOL = ROOT / 'tools' / 'summarize_navigation_trace.py'
 WATCH = 'object-watch ms=11100 object=d3 type=7 at=1e4c:1234 size=20 child_count=3'
@@ -21,6 +22,18 @@ SET_OUT = ('object-location-set ms=18130 object=d3 location=f1 '
 SET_BACK = ('object-location-set ms=21130 object=d3 location=ee '
             'write=1e4c:1240:ee,0, changed=1 return=4319:1123')
 COMMANDS = ('east', 'west', 'east', 'west', 'look', 'inventory', 'look')
+SECTION_4 = dict(id=4, runtime_segment=0x4319, image_file_offset=0xb1e0,
+                 file_bytes=0x1ac0, filename='GATEMAIN.OVL')
+
+
+def overlay_fixture():
+    """Include a false same-segment match in section 3, as with real RTLink."""
+    manifest = {'sections': [
+        dict(id=3, runtime_segment=0x4319, image_file_offset=0x9300,
+             file_bytes=0x1c80, filename='GATEMAIN.OVL'), SECTION_4]}
+    overlay = bytearray(0xd000)
+    overlay[0xc8c2:0xc8c7] = bytes.fromhex('9a4b065701')
+    return manifest, overlay
 
 
 class NavigationTraceTests(unittest.TestCase):
@@ -90,6 +103,50 @@ class NavigationTraceTests(unittest.TestCase):
             bad = subprocess.run(command[:-1] + ['east'], capture_output=True, text=True)
             self.assertEqual(bad.returncode, 2)
             self.assertIn('expected 7', bad.stderr)
+
+    def test_direct_location_setter_far_call_requires_original_bytes(self):
+        manifest, overlay = overlay_fixture()
+        self.assertEqual(map_location_setter_return('4319:16e7', manifest, overlay),
+                         (4, 0xc8c2))
+        self.assertIsNone(map_location_setter_return('4319:16e8', manifest, overlay))
+        self.assertIsNone(map_location_setter_return('4319:1122', manifest, overlay))
+        events = location_events([WATCH, SET_OUT, WRITE_OUT])
+        unmatched = summarize(events, manifest=manifest, overlay=overlay)
+        self.assertIn('original=unresolved (no matching direct call)', unmatched)
+        expected = SET_OUT.replace('return=4319:1122', 'return=4319:16e7')
+        report = summarize(location_events([WATCH, expected, WRITE_OUT]),
+                           manifest=manifest, overlay=overlay)
+        self.assertIn('original=section=4 GATEMAIN.OVL:0xc8c2', report)
+        overlay[0xc8c2] = 0x90
+        self.assertIsNone(map_location_setter_return('4319:16e7', manifest, overlay))
+        with self.assertRaisesRegex(ValueError, 'supplied together'):
+            summarize(events, manifest=manifest)
+        overlay[0xc8c2] = 0x9a
+        manifest['sections'].append(dict(SECTION_4, id=5))
+        with self.assertRaisesRegex(ValueError, 'ambiguous'):
+            map_location_setter_return('4319:16e7', manifest, overlay)
+
+    def test_cli_overlay_verification_and_pair_requirement(self):
+        manifest, overlay = overlay_fixture()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            trace = root / 'native.trace'
+            trace.write_text('\n'.join([
+                WATCH, SET_OUT.replace('return=4319:1122', 'return=4319:16e7'),
+                WRITE_OUT]))
+            manifest_path = root / 'manifest.json'
+            manifest_path.write_text(json.dumps(manifest))
+            overlay_path = root / 'GATEMAIN.OVL'
+            overlay_path.write_bytes(overlay)
+            command = [sys.executable, str(TOOL), str(trace),
+                       '--overlay-map', str(manifest_path), '--overlay-file',
+                       str(overlay_path)]
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('section=4 GATEMAIN.OVL:0xc8c2', result.stdout)
+            missing = subprocess.run(command[:-2], capture_output=True, text=True)
+            self.assertEqual(missing.returncode, 2)
+            self.assertIn('--overlay-map and --overlay-file', missing.stderr)
 
 
 if __name__ == '__main__':
