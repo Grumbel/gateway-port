@@ -53,7 +53,7 @@ path are available in the current test archive.
 ### Later graphical adventures in the same lineage
 
 These titles have increasingly different interfaces and data formats. **None
-has been tested with this port**; they should not be considered supported merely
+has been run with this port**; they should not be considered supported merely
 because their engine descends from Legend's earlier adventures.
 
 | Year | Game | Status |
@@ -61,7 +61,7 @@ because their engine descends from Legend's earlier adventures.
 | 1993 | *Companions of Xanth* | **Not tested:** no game files available. |
 | 1994 | *Death Gate* | **Not tested:** no game files available; resource formats are related but differ from Gateway's. |
 | 1994 | *Superhero League of Hoboken* | **Not tested:** no game files available. |
-| 1995 | *Mission Critical* | **Not tested:** no game files available. |
+| 1995 | *Mission Critical* | **Resource research only:** four PIC files indexed and raw compressed streams extracted; image decoding and executable startup untested. |
 | 1995 | *Shannara* | **Not tested:** no game files available. |
 | 1997 | *Callahan's Crosstime Saloon* | **Not tested:** no game files available. |
 
@@ -72,7 +72,8 @@ games, are outside this port's established engine scope. For the game catalog
 and engine history, see [IFWiki's Legend list](https://www.ifwiki.org/Legend_Entertainment),
 [MobyGames' Legend catalog](https://www.mobygames.com/company/117/legend-entertainment-company/games/),
 and [The Digital Antiquarian's engine history](https://www.filfre.net/2025/06/the-last-adventures-of-legend/).
-For detailed local checks, see [Spellcasting research](docs/spellcasting.md) and
+For detailed local checks, see [Spellcasting research](docs/spellcasting.md),
+[Mission Critical PIC research](docs/mission-critical.md), and
 [Gateway II's headless startup](docs/video.md#bios-font-fallback-without-fixed-game-fonts).
 
 ## Build and run
@@ -176,7 +177,7 @@ It reports unsupported services rather than silently returning fabricated succes
 ## Extracting pictures
 
 `gateway-extract` writes `DIR/<file>/<entry>.png` and needs neither SDL3 nor Unicorn.
-It reads Gateway and the three Spellcasting games, and detects the format per file:
+It decodes Gateway and the three Spellcasting games, and detects the format per file:
 
 ```sh
 ./build/gateway-extract -o build/pictures/gateway ../gateway-dos/*.PIC
@@ -187,6 +188,20 @@ Pass all of a game's files together, because some rely on a palette from an earl
 file. XOR overlays are merged onto their picture; `--raw-overlays` keeps the deltas.
 `--dialect s101|s201|gateway` overrides detection. The exit status is non-zero if any
 entry fails to decode.
+
+Mission Critical uses a newer 20-byte PIC directory and the **Crusher!** compression
+format, which the native extractor cannot yet decompress. Instead, export its
+compressed image chunks, the current 768-byte VGA palette at each entry, and a
+tab-separated metadata index:
+
+```sh
+./build/gateway-extract --raw-chunks -o build/pictures/mc ../MissionCritical/*.PIC
+```
+
+Files are `DIR/<file>/<entry>.crusher`, `<entry>.pal` (when a palette has been
+encountered), and `index.tsv`. The `.pal` bytes are RGB triples with 6-bit VGA
+components, not PNGs. Without `--raw-chunks`, these files report the unsupported
+codec and return a non-zero status. See [Mission Critical's format notes](docs/mission-critical.md).
 
 ## Research
 
