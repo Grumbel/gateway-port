@@ -621,9 +621,16 @@ class ProbeTests(unittest.TestCase):
         self.assertIn('unsupported interrupt/service', result.stderr)
 
     def test_hardware_access_stops(self):
-        result = self.run_guest(bytes.fromhex('e460'))
+        # Port 60h is now the keyboard scan-code data port; 62h remains
+        # unsupported and must still stop execution rather than return junk.
+        result = self.run_guest(bytes.fromhex('e462'))
         self.assertEqual(result.returncode, 1)
         self.assertIn('unsupported hardware port read', result.stderr)
+
+    def test_keyboard_data_port_is_readable(self):
+        result = self.run_guest(bytes.fromhex('e460b44ccd21'))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('DOS exit code: 0', result.stdout)
 
     def test_execution_is_bounded(self):
         result = self.run_guest(bytes.fromhex('ebfe'))
