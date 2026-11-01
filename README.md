@@ -594,8 +594,13 @@ for use against room, drawer, or inventory.
 `tools/export_story_world.py` can now turn a checked native object snapshot
 into a JSON containment forest or a Markdown list of type-1 room candidates,
 their scene objects, nested contents, and separately identified unattached
-records. This preserves ordered siblings, object types, names and handler IDs
-as a starting point for a future native renderer, **not** a claim to have
+records. Schema 2 additionally preserves native relation words and presents
+type-6 door/archway *connector candidates*, with referenced object names and
+types. The captured full snapshot includes 110 type-1 room candidates, but
+only 50 have direct type-8 children; those children are often scenery and
+cannot be assumed to select the background image. This preserves ordered
+siblings, object types, names, handler IDs, and separate relation fields as
+a starting point for a future native renderer, **not** a claim to have
 recovered the room-transition graph or the game scripts. See
 [the world-snapshot export](docs/object-state.md#export-an-initial-typed-world-snapshot-for-a-native-renderer)
 for example commands and limitations.

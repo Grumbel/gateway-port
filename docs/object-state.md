@@ -300,22 +300,58 @@ python3 tools/export_story_world.py build/parser-child-writes/objects.json \
 ```
 
 The Markdown inventory lists type-1 rooms with direct and nested contents,
-other nonempty roots, and the few unattached records that nevertheless have
-nonzero native locations (such as `0x0bb` dike leak at `0x095`). The JSON
-forest has `schema_version: 1` and supplies integer IDs, record types, names,
-native handler indices and available RTLink file references, original
-location/slot/sibling fields, and ordered `child_slots[].objects` children.
-It includes all 734 records, including roots with no active children, without
-copying the opaque `raw_state` bytes into a purported gameplay schema.
+**direct type-8 child counts**, other nonempty roots, and unattached records
+that nevertheless have nonzero native locations (such as `0x0bb` dike leak at
+`0x095`). The JSON forest has `schema_version: 2` and supplies integer IDs,
+record types, names, native handler indices and available RTLink file
+references, original location/slot/sibling fields, and ordered
+`child_slots[].objects` children. It includes all 734 records, including
+roots with no active children, without copying opaque `raw_state` bytes into a
+purported gameplay schema.
 
-The supplied audit shows 110 type-1 roots among 330 unlinked records; those
-root records and their 404 linked descendants provide a candidate scene/object
-hierarchy for a modern client. This exporter does **not** reconstruct scripts,
-object visibility, exit connections, mutable flags, text selection, picture
-composition, or transitions. Inactive objects with location zero remain in
-the snapshot as records, not automatically assigned to rooms. The complete
-Markdown/JSON outputs still need to be generated and inspected against the
-original game data; the asset-free tests cover the supplied first room.
+Schema 2 also preserves the *separate* original `relation_count` and
+`relation_links` words (`native_relation_count`, `native_relation_links`)
+where present. A `connector_candidates` section resolves every **type-6**
+direct-location and multi-slot relation word against names and record types
+in the same snapshot. A pair of
+two distinct references to type-1 objects is labeled a *two-room candidate*,
+never an established exit or traversable edge. Missing relation arrays in
+older inspector records are explicitly marked unavailable.
+The type-6 relation accessor belongs to the recursive relationship helper;
+its meaning must not be conflated with parser child lists, scene selection,
+or movement directions.
+
+The supplied **full exported snapshot** has 110 type-1 roots among 330
+unlinked records; those roots and 404 linked descendants provide a candidate
+scene/object hierarchy for a modern client. Only **50 of the 110** type-1
+roots have direct type-8 children (107 such children altogether), and **36**
+rooms have no descendants. The type-8 names include furniture/scene features
+like plants and controls, with only one literally called `picture`; a rule
+such as “choose the first type-8 child as the room's background image” would
+be unsupported. The captured schema-1 export also has 15 unattached type-6
+objects named like doors, archways, stairs and bridges; eight have nonzero
+direct-location words to type-1 rooms. Their *other* relation words were lost
+from that older world export, so it cannot establish room-to-room links.
+
+| Type-6 record | Resolved direct location (type-1 record) |
+| --- | --- |
+| `0x020` door | `0x013` Travel Pod |
+| `0x1b7` cabin hatch | `0x0fe` Dock |
+| `0x225` archway | `0x1ba` Mountain Plateau |
+| `0x226` rope ladder | `0x1c3` Garden |
+| `0x227` rope bridge | `0x1c9` Pinnacles |
+| `0x24d` archway | `0x232` City Center |
+| `0x24e` spiral staircase | `0x233` Temple Court |
+| `0x259` door | `0x257` Plaza |
+
+To inspect those missing fields, regenerate schema 2 **from the original
+`objects.json`** with the commands above, then examine the
+`Type-6 connector / multi-relation candidates` section of `world.md` or
+`connector_candidates` of `world.json`. A candidate pair would justify
+tracing the native room-change path, not hard-coding a map edge. This exporter
+still does **not** reconstruct scripts, object visibility, exit connections,
+mutable flags, text selection, picture composition, or transitions. Inactive
+objects with location zero remain records, not automatically assigned rooms.
 
 #### Decoded Your Quarters hierarchy from the supplied native replay
 
