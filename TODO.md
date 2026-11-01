@@ -28,6 +28,34 @@
 6. Extract tested resource parsers and interpreter components as formats become
    understood; replace guest routines incrementally.
 
+## Toward a native Gateway engine
+
+The goal is to eventually render Gateway with modern, configurable fonts and
+layout, higher-resolution/upscaled pictures, and native input rather than VGA
+emulation. Keep the original executable as a behavioral reference while mapping:
+
+- The current room, visible picture/frame, and active clickable regions. Do not
+  mistake resource IDs or `OBJECT.DAT` name indexes for engine object IDs.
+- Which guest variables encode room and action state; which native handlers
+  update them; and how object flag/location changes map to player actions.
+- The parser's action/argument representation, handler dispatch, text formatting
+  and rendering calls, with reproducible before/after state dumps.
+- Save/restore state boundaries before designing a standalone data model or
+  translating native story handlers into portable rules.
+
+The initial F10 debugger is intended to expose current knowledge and capture
+evidence. Its scene/region inference is provisional, not a recovered game API.
+
+## Other Legend formats
+
+Mission Critical PIC decompression succeeds, and complete `0003h` XOR frames
+can be composed with a previous full picture. **Still unresolved:** smaller
+`0003h` records mix scene-dependent animation/layer deltas and independent
+sprites; the files do not identify the screen state or base picture to which
+every delta applies. Trace the original renderer and RGN-to-PIC/animation
+selection before automatically composing them. See
+[Mission Critical PIC research](docs/mission-critical.md#xor-frame-deltas).
+
 Keep original assets unchanged and external. Store generated traces, screenshots,
 and memory dumps under ignored `build*/` directories. Record file hashes and
 addresses for every binary-specific observation. Tests cover loaders, DOS memory
@@ -60,8 +88,9 @@ Next, in order:
 2. Find what uses the 91 `VOCAB.DAT` link groups; they may tie words to actions.
 3. Compare extracted colors, overlays, and the series used in each display mode
    with DOSBox. Trace overlay selection and what frames 2–5 mean.
-4. Add tested parsers for strings, vocabulary, objects, fonts, and regions. No
-   decoder other than PIC is in `src/` yet, and the others ran only in throwaway scripts.
+4. Add tested parsers for strings, vocabulary, object state, and fonts. The
+   new RGN rectangle and `OBJECT.DAT` name readers are in `src/` with synthetic
+   tests; full room/hotspot semantics still need executable traces.
 
 Smaller open items: the `S101STR.DAT` tree, Spellcasting 201 `VOCAB.DAT` tables
 (they do not parse with Gateway's layout), S101 `.RS` headers, and RGN contents in

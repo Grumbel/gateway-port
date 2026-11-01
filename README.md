@@ -114,6 +114,48 @@ gateway-run ../201/S201.EXE --aspect-ratio 16:10
 The image is scaled by SDL; the guest framebuffer resolution and DOS mouse
 coordinates remain unchanged. This option does not change headless dump sizes.
 
+### In-game Gateway debugger (F10)
+
+Launch the original Gateway 1 executable, enter a room, then press **F10**:
+
+```sh
+gateway-run ../gateway-dos/GATE.EXE
+# Or choose an explicit location for snapshots:
+gateway-run ../gateway-dos/GATE.EXE --debug-dir build/gateway-snapshots
+```
+
+The host-drawn menu does not modify guest VGA memory. Its keyboard shortcuts
+are reserved by the host and never sent to DOS; ordinary game input resumes
+when the menu closes. Use Up/Down and Enter to select a menu item, or:
+
+| Key | Debug action |
+| --- | --- |
+| **F10**, **Esc** | Open/close the menu (Esc only when the menu is open) |
+| **H** | Toggle colored scene hitbox outlines; hover to identify an object name |
+| **A** | Toggle automatic scene selection from recent PIC reads |
+| **Left/Right** (or PageUp/PageDown) | Examine previous/next RGN frame manually |
+| **D** | Dump guest registers, memory, framebuffer, regions and object state |
+
+Hitbox outlines stay on screen after closing the menu until toggled off. The
+current file and RGN entry, guest CS:IP/DS, and recognized Gateway object count
+are shown in the panel. The hitboxes come from the original `GATE_*.RGN`
+resources; their coordinates are relative to the picture in the right-hand
+panel. Auto-selected scenes are **only an estimate** based on which picture
+was recently read, and can lag, select transitional art, or fail to identify a
+scene. Use manual frame selection to compare frames if that happens.
+
+Dumping writes numbered `gateway-<guest-ms>-<sequence>` files under the DOS
+state directory's `debug/` folder (or under `build/debug/` in read-only mode).
+Override the destination with `--debug-dir DIR`. Every dump includes `.regs`
+(CPU registers), `.bin` (1 MiB guest memory), `.ppm` (undecorated framebuffer),
+`.regions.tsv` (visible hitboxes) and `.debug.txt` (selection provenance). A
+`.objects.tsv` is also saved when the *Gateway 1* 734-object live table can be
+validated at DS; it includes object IDs, types, handler indices, name tokens,
+locations and raw state bytes. An unrecognized state is reported, not guessed.
+The region name index and the game engine's object ID are **different**.
+See [the debugger's evidence and limits](docs/debugger.md) before using these
+observations to design a native story interpreter.
+
 `gateway-configure` configures an out-of-tree Ninja Debug build (default
 `/tmp/gateway-port-build`, override with `GATEWAY_BUILD_DIR`),
 `gateway-build` builds it, and both run commands build before launching. The
