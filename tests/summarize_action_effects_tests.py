@@ -47,6 +47,48 @@ class ActionEffectsTests(unittest.TestCase):
         self.assertEqual(records[0]['handler'], '4661:1572')
         self.assertEqual(records[0]['effects'], [(4, 'set', 0x124, 2)])
 
+    def test_native_service_entries_cover_nested_helpers_without_duplicates(self):
+        lines = [
+            'entry ms=18 pc=147c0 cs=1476 stack=0,0,0,71,',
+            'entry ms=19 pc=47b82 cs=4661 stack=0,0,',
+            'entry ms=19 pc=47d44 cs=4661 stack=124,c,',
+            'entry ms=19 pc=11950 cs=1157 stack=eb09,4661,124,c,',
+            'entry ms=19 pc=47d59 cs=4661 stack=124,2,',
+            'entry ms=19 pc=11950 cs=1157 stack=eb1e,4661,124,2,',
+            'entry ms=21 pc=147c5 cs=1476 ax=1 stack=0,0,0,71,',
+            'entry ms=25 pc=147c0 cs=1476 stack=0,0,0,46,',
+            'entry ms=25 pc=49121 cs=4661 stack=0,0,',
+            'entry ms=26 pc=11950 cs=1157 stack=beef,1157,123,2,',
+            'entry ms=26 pc=11983 cs=1157 stack=beef,1157,123,8,',
+            'entry ms=27 pc=11bbb cs=1157 stack=beef,1157,123,d3,',
+            'entry ms=28 pc=147c5 cs=1476 ax=1 stack=0,0,0,46,',
+            'entry ms=31 pc=147c0 cs=1476 stack=0,0,0,32,',
+            'entry ms=31 pc=46be7 cs=4661 stack=0,0,',
+            'entry ms=32 pc=11bbb cs=1157 stack=beef,1157,123,ee,',
+            'entry ms=33 pc=147c5 cs=1476 ax=1 stack=0,0,0,32,',
+            'entry ms=34 pc=11950 cs=1157 stack=beef,1157,123,2,',
+        ]
+        records = collect_effects(lines)
+        self.assertEqual([(r['action'], r['handler'], r['effects']) for r in records], [
+            (0x71, '4661:1572', [(19, 'set', 0x124, 0xc), (19, 'set', 0x124, 2)]),
+            (0x46, '4661:2b11', [(26, 'set', 0x123, 2),
+                                  (26, 'clear', 0x123, 8),
+                                  (27, 'location-set', 0x123, 0xd3)]),
+            (0x32, '4661:05d7', [(32, 'location-set', 0x123, 0xee)]),
+        ])
+
+    def test_wrong_service_segment_and_stack_are_ignored(self):
+        lines = [
+            'entry ms=1 pc=147c0 cs=1476 stack=0,0,0,53,',
+            'entry ms=2 pc=47b04 cs=4661 stack=0,0,',
+            'entry ms=3 pc=11950 cs=2157 stack=beef,1157,123,2,',
+            'entry ms=4 pc=11950 cs=1157 stack=beef,1157,123,',
+            'entry ms=5 pc=147c5 cs=1476 ax=1 stack=0,0,0,53,',
+        ]
+        records = collect_effects(lines)
+        self.assertEqual(records[0]['handler'], '4661:14f4')
+        self.assertEqual(records[0]['effects'], [])
+
     def test_missing_or_malformed_entry(self):
         self.assertIsNone(parse_entry('key ms=42 value=1c0d'))
         self.assertIsNone(parse_entry('entry ms=abc pc=47d44 cs=4661 stack=124,c,'))
@@ -67,7 +109,7 @@ class ActionEffectsTests(unittest.TestCase):
             self.assertIn('open drawer', result.stdout)
             self.assertIn('set(0x124,0x0c)@18393', result.stdout)
             self.assertNotIn('set(0x124,0x02)', result.stdout)
-            self.assertIn('not a complete side-effect list', result.stdout)
+            self.assertIn('not proof of changed bytes', result.stdout)
 
 
 if __name__ == '__main__':

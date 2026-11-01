@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Correlate native Gateway action dispatches with verified section-5 flag calls.
+"""Correlate Gateway actions with native object-state service calls.
 
 Addresses are specific to the original Gateway replay, not a Legend-wide ABI.
-Only explicitly hooked mutation callsites are classified; an absent effect
-does not establish that an action made no other state changes.
+The original trace has three verified section-5 callsites; newer traces also
+hook shared state-service entries to capture changes inside nested helpers.
+These are calls, not proof that an object record changed (a setter can no-op).
+An absent effect does not establish that the action made no other changes.
 """
 import argparse
 from pathlib import Path
@@ -14,12 +16,17 @@ from inspect_action_dispatch import KNOWN_ACTIONS
 DISPATCH_CALL = 0x147c0
 DISPATCH_RETURN = 0x147c5
 SHARED_HANDLERS = {0x468ab: (0x1d, '4661:029b'),
+                   0x46be7: (0x32, '4661:05d7'),
+                   0x49121: (0x46, '4661:2b11'),
+                   0x47b04: (0x53, '4661:14f4'),
                    0x47b82: (0x71, '4661:1572')}
-# The second OPEN setter (47d59) was recovered from OVL file offset eb19.
-# It was not included in the original native trace: a new replay is needed.
+# Verified static OVL callsites, available in traces made before service hooks.
 MUTATION_SITES = {0x46a0c: (0x1d, 'clear'),
                   0x47d44: (0x71, 'set'),
                   0x47d59: (0x71, 'set')}
+# Native far-call service entry: stack starts with return IP, CS, object, arg.
+STATE_SERVICE_ENTRIES = {0x11950: 'set', 0x11983: 'clear',
+                         0x11bbb: 'location-set'}
 
 
 def parse_entry(line):
@@ -36,13 +43,16 @@ def parse_entry(line):
 
 
 def collect_effects(lines):
-    """Return action records with only source-verified flag mutation callsites."""
+    """Associate native state calls with the current action dispatch frame."""
+    entries = [entry for line in lines if (entry := parse_entry(line))]
+    # A new trace provides service-entry hooks; avoid reporting the same call
+    # twice from the OVL instruction and from the far-called service entry.
+    has_service_hooks = any(entry['pc'] in STATE_SERVICE_ENTRIES and
+                            entry['cs'] == 0x1157 and len(entry['stack']) >= 4
+                            for entry in entries)
     active = []
     records = []
-    for line in lines:
-        entry = parse_entry(line)
-        if not entry:
-            continue
+    for entry in entries:
         pc, cs, stack = entry['pc'], entry['cs'], entry['stack']
         if pc == DISPATCH_CALL and cs == 0x1476 and len(stack) >= 4:
             record = dict(ms=entry['ms'], action=stack[3], target=entry['target'],
@@ -58,7 +68,11 @@ def collect_effects(lines):
             action, handler = SHARED_HANDLERS[pc]
             if active[-1]['action'] == action:
                 active[-1]['handler'] = handler
-        elif active and pc in MUTATION_SITES and cs == 0x4661 and len(stack) >= 2:
+        elif active and pc in STATE_SERVICE_ENTRIES and cs == 0x1157 and len(stack) >= 4:
+            active[-1]['effects'].append((entry['ms'], STATE_SERVICE_ENTRIES[pc],
+                                          stack[2], stack[3]))
+        elif (active and not has_service_hooks and pc in MUTATION_SITES and
+              cs == 0x4661 and len(stack) >= 2):
             action, operation = MUTATION_SITES[pc]
             if active[-1]['action'] == action and active[-1]['handler']:
                 active[-1]['effects'].append((entry['ms'], operation,
@@ -83,7 +97,8 @@ def main():
         print(f"{record['ms']:6}  0x{action:02x}    "
               f"{KNOWN_ACTIONS.get(action, '?'):<14} "
               f"{(record['handler'] or '-'):>16}  {effects:<33} {returned}")
-    print('Effects are callsite observations, not a complete side-effect list; '
+    print('Effects are observed service invocations (or legacy OVL callsites), '
+          'not proof of changed bytes or a complete side-effect list; '
           'input labels come from the bounded scripted replay.')
 
 

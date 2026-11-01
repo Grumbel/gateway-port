@@ -72,11 +72,17 @@ for mode in (['native'] if args.native_only else ['native', 'verify', 'hle']):
                     # Actual OPEN/CLOSE far-call operands in the RTLink manager.
                     # The callee hook and callsite record live code bytes.
                     '--trace-entry', '2de99', '--trace-entry', '2da39',
-                    # Section-5 shared action entry points and flag mutation
-                    # callsites: OPEN sets properties 0x0c and 0x02; CLOSE
-                    # clears property 0x0c. Verify the second OPEN setter in
-                    # the next native replay (OVL file offset 0xeb19).
+                    # All five nonresident section-5 action entry points.
+                    # Their overlay offsets were mapped from RTLink trampolines.
                     '--trace-entry', '47b82', '--trace-entry', '468ab',
+                    '--trace-entry', '46be7', '--trace-entry', '49121',
+                    '--trace-entry', '47b04',
+                    # Native object-state service entries: flag set/clear and
+                    # direct location set, including calls from nested helpers.
+                    '--trace-entry', '11950', '--trace-entry', '11983',
+                    '--trace-entry', '11bbb',
+                    # Keep specific OVL mutation hooks for source correlation
+                    # and compatibility with old traces.
                     '--trace-entry', '47d44', '--trace-entry', '47d59',
                     '--trace-entry', '46a0c']
     for time, key in sorted(keys):
