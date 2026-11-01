@@ -991,6 +991,34 @@ if (new_parent) {
 }
 ```
 
+#### First native compass moves through the location setter
+
+The first bounded EAST/WEST replay provided an independent test of this
+helper outside inventory actions. Four **verified** native location-set
+services for the player (type-7 object `0x0d3`, location at `+0x0c`) switched
+between Your Quarters (`0x0ee`) and Heecheetown (`0x0f1`), twice in each
+direction. Each returned to `4319:16e7`; the native writer was `0x11c32`,
+inside resident `0157:064b`. With the verified section-4 RTLink mapping,
+that far return corresponds to OVL file offset `0xc8c7`, immediately after
+a **predicted** five-byte call at `0xc8c2` in this shared helper.
+
+The optional original-overlay validation in
+`tools/summarize_navigation_trace.py` checks that `0xc8c2` really contains
+the direct `CALL 0157:064b` (`9a 4b 06 57 01`) before assigning this
+file offset. The user's observed return address by itself does not verify
+the on-disk opcode. The move destination choice is still unknown; these
+events reveal the *state-update mechanism*, not the code that selects the
+Heecheetown destination. See
+[the native navigation evidence](gateway-map-reference.md#verified-ordinary-first-room-movement).
+
+The player initially lies in the **middle** of Your Quarters' linked child
+list. Consequently, on travel the removal path may call the *sibling setter*
+`0157:0a4b`, not the indexed-head setter `0157:08fc`. The existing
+`summarize_object_writes.py --all-setters --relocations` report therefore
+cannot be used as a complete account of player list changes. Its positive
+original-byte-verified head insertions remain useful; a missing adjacent
+head-unlink pair is expected for middle-sibling removal.
+
 The two unlink cases are visible at OVL `0xc869–0xc87e` (head) and
 `0xc883–0xc8b6` (middle). The new-head insertion is at `0xc8de–0xc90b`.
 `StoryLinkedChildren` now models the **logical head/sibling operations**

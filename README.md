@@ -618,11 +618,16 @@ planetary locations and both endgame phases. All eight populated type-6
 endpoint pairs occur on those maps. The research notes cross-reference the
 printed room names with native object-ID ranges and distinguish up/down
 arrows and puzzle-gated passages; no copyrighted map scans are bundled.
-The same notes describe a scripted EAST/WEST replay using the existing
-native player-object write watch. `tools/summarize_navigation_trace.py`
-correlates verified `0x0d3` location-set calls, potential direct record
-writes and their guest return addresses, ready for tracing the ordinary
-navigation path before reconstructing a modern map.
+The scripted EAST/WEST replay has now **verified four native player moves**:
+`0x0ee` Your Quarters → `0x0f1` Heecheetown → `0x0ee`, repeated twice.
+`tools/summarize_navigation_trace.py` correlates those `0x0d3` location-set
+services with direct record writes, their guest return addresses, and—when
+given the original `GATEMAIN.OVL` and RTLink manifest—**byte-verified**
+original far-call sites. All four calls returned to `4319:16e7`, placing
+the predicted original location-setter call at OVL `0xc8c2` inside the
+same shared object-move helper used by TAKE/DROP. This original callsite
+still needs checking against the on-disk bytes; see
+[the navigation trace and next probes](docs/gateway-map-reference.md#verified-ordinary-first-room-movement).
 
 The standalone C++ model exposes the corresponding *local slot-filtering*
 stage, but it still does not perform parser traversal or name resolution.

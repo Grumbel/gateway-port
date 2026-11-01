@@ -73,12 +73,10 @@ state at every point in the story.
 
 ## Next native probes
 
-1. Start with an accessible Gateway Station connection such as Heecheetown ↔
-   Your Quarters, **which has no type-6 pair**. Trace the current-room word
-   and the code that handles a cardinal movement command. The first-room
-   snapshot puts player `0x0d3` inside room `0x0ee` (Your Quarters). For native
-   type 7, the player's direct-location word is at record offset `+0x0c`;
-   watching it tests whether a compass move also changes that field.
+1. The ordinary **Your Quarters ↔ Heecheetown** connection is now native-
+   observed without a type-6 pair; see below. Verify the source callsite
+   against the original overlay and capture the corresponding child-list
+   mutations. A general direction-to-room lookup is still unrecovered.
 2. Separately observe a named type-6 passage (e.g. the Dock's cabin hatch) to
    see where its two relation words enter the room-change decision. Test both
    directions without assuming the hintbook arrow is a one-way constraint.
@@ -106,15 +104,69 @@ python3 tools/trace_game_logic.py \
 python3 tools/summarize_navigation_trace.py \
   build/room-navigation/native.trace \
   --world build/parser-child-writes/world.json \
-  --commands 'east,west,east,west,look,inventory,look'
+  --commands 'east,west,east,west,look,inventory,look' \
+  --overlay-map build/rtlink-manifest.json \
+  --overlay-file ../gateway-dos/GATEMAIN.OVL
 ```
 
 The report shows candidate player-location changes, the native far-return
 address of each location setter, and the code PC of any matching watched
 write. Native service `changed=1` calls are verified by the probe; watched
 memory-write entries alone occur **before guest execution** and are labelled
-*attempts*, not established changes. Command names are assigned by scheduled
-time windows, not by recovered parser semantics.
+*attempts*, not established changes. With both `--overlay-*` inputs, the
+original caller is displayed **only** when the five unrelocated bytes before
+the native return are a direct far `CALL 0157:064b`. RTLink sections may
+overlap in guest memory, so address arithmetic alone does not identify the
+original code. Without original assets, omit the two `--overlay-*` arguments;
+the report remains useful but its source callsite is unverified. Command names
+are assigned by scheduled time windows, not by recovered parser semantics.
+
+### Verified ordinary first-room movement
+
+The user's native `--trace-state-writes --trace-object-writes d3` replay
+produced four changed player-location services. The matched watched writes
+recorded the old and new words at type-7 object `0x0d3`, record offset
+`+0x0c`:
+
+| Guest ms | Timed input | Player location before | After | Native setter return | Writer PC |
+| ---: | --- | --- | --- | --- | --- |
+| 18,266 | EAST | `0x0ee` Your Quarters | `0x0f1` Heecheetown | `4319:16e7` | `0x11c32` |
+| 21,177 | WEST | `0x0f1` Heecheetown | `0x0ee` Your Quarters | `4319:16e7` | `0x11c32` |
+| 25,261 | EAST | `0x0ee` Your Quarters | `0x0f1` Heecheetown | `4319:16e7` | `0x11c32` |
+| 28,177 | WEST | `0x0f1` Heecheetown | `0x0ee` Your Quarters | `4319:16e7` | `0x11c32` |
+
+These are **verified native service deltas**, not inferred from the published
+map. The direction labels remain timed associations; testing both directions
+twice and observing the expected inverse writes supports this Gateway Station
+edge. It does **not** establish that every game room uses this path.
+
+All four setter calls return to `4319:16e7`. Under the verified section-4
+RTLink base (`0x4319` maps to OVL file offset `0xb1e0`), the return maps to
+OVL `0xc8c7`; a direct five-byte far call would begin at **`0xc8c2`**. That
+falls inside the already disassembled shared child-list relocation helper
+`GATEMAIN.OVL:0xc830–0xc911`, whose location-setter call targets
+`0157:064b`. This is compelling evidence that cardinal travel reuses the
+same object-move machinery as TAKE and DROP, but **the caller byte signature
+has not yet been checked against the original OVL**. The optional mapping
+above makes that check; it reports `unresolved` if the opcode/target doesn't
+match, rather than silently accepting this arithmetic inference.
+
+The player is a **middle member** of the original room's linked child list,
+so a move may use a sibling setter for unlinking rather than the child-head
+setter. To inspect the native child-head setter calls captured in this same
+replay, including source-verified original head-set callsites, run:
+
+```sh
+python3 tools/summarize_object_writes.py \
+  build/room-navigation/native.trace \
+  --child-only --all-setters --relocations \
+  --overlay-map build/rtlink-manifest.json \
+  --overlay-file ../gateway-dos/GATEMAIN.OVL
+```
+
+`--relocations` reports only *adjacent old-head/new-head setter pairs*;
+it cannot capture a non-head removal on its own. A missing relocation pair
+is therefore not evidence that the player did not move between child lists.
 
 If nothing is reported, check whether the commands actually reached normal
 gameplay and whether another state variable tracks the current room. A

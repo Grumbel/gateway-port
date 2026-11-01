@@ -66,14 +66,17 @@ emulation. Keep the original executable as a behavioral reference while mapping:
   These are **candidate passage endpoints, not verified exits**. Graphviz DOT
   export draws just these candidates. The original hintbook's eleven map
   panels now independently confirm all eight pairs and locate most other
-  rooms; see `docs/gateway-map-reference.md`. Next trace a **normal** compass
-  transition not represented by a type-6 record (e.g. Your Quarters to
-  Heecheetown), then a named passage (Dock/cabin hatch), to identify the
-  current-room variable and movement handler. The scripted EAST/WEST replay
-  and `summarize_navigation_trace.py` now watch player `0x0d3`'s native
-  location word and capture setter returns/writer PCs; run them against the
-  actual game and inspect the results before claiming this is the current-room
-  variable. Verify passage restrictions,
+  rooms; see `docs/gateway-map-reference.md`. The first ordinary compass
+  replay now verifies four player `0x0d3` location changes: EAST moves
+  Your Quarters (`0x0ee`) → Heecheetown (`0x0f1`), WEST moves back, and
+  both repeat. Every setter returns to `4319:16e7`, arithmetically pointing
+  to the shared relocation helper's direct CALL at original OVL `0xc8c2`.
+  `summarize_navigation_trace.py --overlay-map ... --overlay-file ...` must
+  **byte-verify** that call before the original offset can be confirmed.
+  Inspect middle-sibling unlink and child-head insertion during these moves;
+  the player starts in the room's *middle* child list, so head-only pairing
+  is incomplete. Next trace a named passage (Dock/cabin hatch) and recover
+  the actual direction-to-room decision. Verify passage restrictions,
   bidirectionality, and actual PIC selection independently of map arrows.
   Also trace real non-head sibling and nested moves, extend to other record
   types, and establish which callers enable
