@@ -62,6 +62,21 @@ int main() try {
     require(relocated[50 * 640 + 40] == 0xff75aaff &&
                 relocated[232 * 640 + 500] == 0xff123456,
             "menu position must be movable without leaving another panel behind");
+    gateway::DebugOverlayData polygon_debug;
+    polygon_debug.scene.x_extent = 1;
+    polygon_debug.scene.boxes.push_back({0, 0, 20, 20, 42, "polygon",
+                                         {{0, 0}, {20, 0}, {20, 10},
+                                          {10, 10}, {10, 20}, {0, 20}}});
+    polygon_debug.scene.boxes.push_back({30, 0, 35, 5, 43, "two-point box"});
+    std::vector<std::uint32_t> polygon_pixels(640 * 480, 0xff123456);
+    gateway::draw_debug_overlay(polygon_pixels, 640, 480, mouse, polygon_debug, false, true, 0);
+    require(polygon_pixels[15 * 640 + 265] != 0xff123456 &&
+                polygon_pixels[15 * 640 + 275] == 0xff123456 &&
+                polygon_pixels[5 * 640 + 275] != 0xff123456,
+            "concave Gateway II polygon must not fill its missing corner");
+    require(polygon_pixels[3 * 640 + 295] != 0xff123456 &&
+                polygon_pixels[3 * 640 + 296] == 0xff123456,
+            "Gateway II two-point region uses single-pixel X units");
     std::cout << "Gateway merged hotspot and draggable debug-menu raster checks passed\n";
 } catch (const std::exception &error) {
     std::cerr << error.what() << '\n';

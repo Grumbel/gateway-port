@@ -1197,11 +1197,18 @@ void dump_guest(uc_engine *uc, State &state, const std::string &prefix) {
         return;
     const auto scene = state.debug_scene->view();
     std::ofstream regions(prefix + ".regions.tsv");
-    regions << "picture\tregion_file\tentry\tengine_object_id\tname\tx0\ty0\tx1\ty1\n";
-    for (const auto &box : scene.boxes)
+    regions << "picture\tregion_file\tentry\tengine_object_id\tname\tx0\ty0\tx1\ty1\tvertices\n";
+    for (const auto &box : scene.boxes) {
         regions << scene.picture << '\t' << scene.region_file << '\t' << scene.entry << '\t'
                 << box.object_id << '\t' << box.name << '\t' << box.x0 << '\t' << box.y0
-                << '\t' << box.x1 << '\t' << box.y1 << '\n';
+                << '\t' << box.x1 << '\t' << box.y1 << '\t';
+        for (std::size_t i = 0; i < box.polygon.size(); ++i) {
+            if (i)
+                regions << ';';
+            regions << box.polygon[i].x << ',' << box.polygon[i].y;
+        }
+        regions << '\n';
+    }
     regions.close();
     std::ofstream metadata(prefix + ".debug.txt");
     metadata << "guest_ms=" << std::dec << state.elapsed_ms << '\n'
@@ -1210,7 +1217,8 @@ void dump_guest(uc_engine *uc, State &state, const std::string &prefix) {
              << "rgn_entry=" << scene.entry << '\n'
              << "rgn_entry_count=" << scene.entry_count << '\n'
              << "scene_selection=" << (scene.auto_follow ? "DOS PIC read estimate" : "manual")
-             << '\n' << "region_x=scene-local in two-pixel units (already doubled here)\n"
+             << '\n' << "region_x=scene-local pixels (packed coordinates already doubled)\n"
+             << "region_geometry=rectangles or ordered Gateway II polygon vertices\n"
              << "region_object_id=native engine object ID, NOT OBJECT.DAT list index\n";
     auto objects = gateway::inspect_gateway_state(memory, reg(uc, UC_X86_REG_DS));
     if ((!objects || objects->objects.size() != 734) && state.debug_object_ds)

@@ -2,6 +2,7 @@
 #include "../third_party/font8x8/font8x8_basic.h"
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdio>
 #include <string_view>
 #include <vector>
@@ -101,7 +102,7 @@ void draw_debug_overlay(std::span<std::uint32_t> image, int width, int height,
         return;
     if (show_hitboxes) {
         // The picture occupies columns 260..639 and rows 0..231 in Gateway.
-        // Raster ownership merges touching/overlapping rectangles belonging to
+        // Raster ownership merges touching/overlapping shapes belonging to
         // the same engine object, so shared interior edges are never drawn.
         const int left = 260 * width / 640;
         const int area_width = width - left;
@@ -110,17 +111,51 @@ void draw_debug_overlay(std::span<std::uint32_t> image, int width, int height,
         constexpr std::uint32_t unnamed_base = 65536;
         for (std::size_t i = 0; i < data.scene.boxes.size(); ++i) {
             const auto &box = data.scene.boxes[i];
+            const auto id = box.object_id ? std::uint32_t(box.object_id) : unnamed_base + i;
+            if (box.polygon.size() >= 3) {
+                // Gateway II stores explicit vertices. Scanline filling keeps
+                // concave shapes intact without testing every pixel against
+                // every polygon edge.
+                const int y0 = std::clamp(int(box.y0), 0, area_height);
+                const int y1 = std::clamp(int(box.y1 + 1), 0, area_height);
+                std::vector<double> crossings;
+                crossings.reserve(box.polygon.size());
+                for (int y = y0; y < y1; ++y) {
+                    crossings.clear();
+                    const double scan = y + 0.5;
+                    for (std::size_t j = 0; j < box.polygon.size(); ++j) {
+                        const auto &a = box.polygon[j];
+                        const auto &b = box.polygon[(j + 1) % box.polygon.size()];
+                        if ((a.y > scan) == (b.y > scan))
+                            continue;
+                        const double ratio = (scan - a.y) / (double(b.y) - a.y);
+                        const double x = a.x + ratio * (double(b.x) - a.x);
+                        crossings.push_back((260 + x) * width / 640.0 - left);
+                    }
+                    std::sort(crossings.begin(), crossings.end());
+                    for (std::size_t k = 1; k < crossings.size(); k += 2) {
+                        const int x0 = std::clamp(int(std::ceil(crossings[k - 1] - 0.5)),
+                                                  0, area_width);
+                        const int x1 = std::clamp(int(std::ceil(crossings[k] - 0.5)),
+                                                  0, area_width);
+                        for (int x = x0; x < x1; ++x)
+                            owner[std::size_t(y) * area_width + x] = id;
+                    }
+                }
+                continue;
+            }
             const int x0 = std::clamp(int((260 + box.x0) * width / 640), left, width);
-            // X is in *two*-pixel units, so the final column includes both pixels.
-            const int x1 = std::clamp(int((262 + box.x1) * width / 640), left, width);
+            // Packed rectangles cover both pixels in their final X unit;
+            // Gateway II's two-vertex boxes use one-pixel units.
+            const int x1 = std::clamp(int((260 + data.scene.x_extent + box.x1) * width / 640),
+                                      left, width);
             const int y0 = std::clamp(int(box.y0), 0, area_height);
             const int y1 = std::clamp(int(box.y1 + 1), 0, area_height);
             for (int y = y0; y < y1; ++y)
                 for (int x = x0; x < x1; ++x)
                     // Object 0 has no identity: keep such rectangles separate
                     // rather than merging unrelated anonymous regions.
-                    owner[std::size_t(y) * area_width + x - left] =
-                        box.object_id ? box.object_id : unnamed_base + i;
+                    owner[std::size_t(y) * area_width + x - left] = id;
         }
         std::uint32_t hovered = 0;
         const int mx = mouse.x * width / 640;
@@ -147,7 +182,7 @@ void draw_debug_overlay(std::span<std::uint32_t> image, int width, int height,
         rect(image, width, height, 2, height - 23, std::min(width, 310), height - 2, panel,
              true);
         char info[128];
-        std::snprintf(info, sizeof info, "RGN %s #%zu (%zu rectangles)",
+        std::snprintf(info, sizeof info, "RGN %s #%zu (%zu regions)",
                       data.scene.region_file.c_str(), data.scene.entry, data.scene.boxes.size());
         text(image, width, height, 8, height - 18, info, white, 37);
         if (hovered) {
