@@ -1,4 +1,5 @@
 #include "../third_party/font8x8/font8x8_basic.h"
+#include "adlib_driver.hpp"
 #include "bios_text.hpp"
 #include "dos_clock.hpp"
 #include "dos_fcb.hpp"
@@ -91,9 +92,9 @@ struct State {
     bool trace_video = false;
     bool probe_adlib = false;
     std::uint64_t adlib_calls = 0;
-    std::uint16_t adlib_mode = 0, adlib_voice = 0;
     gateway::Mouse mouse;
     gateway::Opl opl;
+    gateway::AdlibDriver adlib{opl};
     gateway::Pit pit;
     gateway::DosClock clock;
     std::array<std::uint16_t, 8> cursor{};
@@ -1057,9 +1058,9 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             const auto args = std::size_t(reg(uc, UC_X86_REG_ES)) * 16 +
                               reg(uc, UC_X86_REG_BX);
             ++state.adlib_calls;
+            std::array<std::uint8_t, 16> data{};
+            check(uc_mem_read(uc, args, data.data(), data.size()));
             if (state.research_trace.is_open()) {
-                std::array<std::uint8_t, 16> data{};
-                check(uc_mem_read(uc, args, data.data(), data.size()));
                 state.research_trace << "adlib ms=" << std::dec << state.elapsed_ms
                                      << " si=" << std::hex << function << " es:bx="
                                      << reg(uc, UC_X86_REG_ES) << ':' << reg(uc, UC_X86_REG_BX)
@@ -1069,32 +1070,16 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
                                          << unsigned(byte);
                 state.research_trace << '\n';
             }
-            // Implement only documented control/query semantics. No event
-            // queue exists yet, so GetState must report idle in AX; leaving
-            // AX unchanged makes games poll forever for completed playback.
-            if (function == 0) {
-                state.adlib_mode = state.adlib_voice = 0;
-            } else if (function == 4) {
-                set(uc, UC_X86_REG_AX, 0);
-            } else if (function == 0x10) {
-                // The bundled SB-SOUND.COM returns AL=FFh when it accepts a
-                // SetTimbre event (AL=00h if its event buffer is full).
-                // Accept in discovery mode so the game can reveal subsequent
-                // calls; no sound is synthesized from the event yet.
-                set(uc, UC_X86_REG_AX, (ax & 0xff00) | 0xff);
-            } else if (function == 6 || function == 0x0c) {
-                std::uint16_t value = 0;
-                check(uc_mem_read(uc, args, &value, sizeof(value)));
-                if (function == 6)
-                    state.adlib_mode = value;
-                else
-                    state.adlib_voice = value;
-            } else if (function == 7 || function == 0x0d) {
-                set(uc, UC_X86_REG_AX,
-                    function == 7 ? state.adlib_mode : state.adlib_voice);
+            std::array<std::uint8_t, 56> instrument{};
+            if ((function & 255) == 0x10) {
+                const std::size_t address =
+                    (std::size_t(data[2] | (unsigned(data[3]) << 8)) << 4) +
+                    (data[0] | (unsigned(data[1]) << 8));
+                // A guest may pass an invalid instrument during interface
+                // detection; keep the event contract without crashing.
+                uc_mem_read(uc, address, instrument.data(), instrument.size());
             }
-            // Discovery-only interface: queued notes and FM synthesis are
-            // deliberately not yet implemented.
+            set(uc, UC_X86_REG_AX, state.adlib.call(function, data, ax, instrument));
         } else if (number == 0x21 && (ax >> 8) == 0x35) {
             std::uint16_t vector[2]{};
             check(uc_mem_read(uc, (ax & 255) * 4, vector, sizeof(vector)));
@@ -1171,7 +1156,7 @@ int main(int argc, char **argv) {
                      "[--break-at HEX] [--state-dir DIR | --read-only] [--trace-blocks FILE] "
                      "[--trace-research FILE --trace-entry HEX ...] [--key-at MS:BIOSHEX ...] "
                      "[--object-flags verify|hle | --object-state verify|hle] [--verify-overlays] "
-                     "[--hle-overlays] [--trace-video] [--trace-timing] [--probe-adlib] "
+                     "[--hle-overlays] [--trace-video] [--trace-timing] [--adlib-driver] "
                      "[--aspect-ratio native|W:H]\n";
     };
     if (argc < 2 || std::string(argv[1]) == "--help") {
@@ -1187,7 +1172,7 @@ int main(int argc, char **argv) {
             trace_video = true;
         else if (option == "--trace-timing")
             trace_timing = true;
-        else if (option == "--probe-adlib")
+        else if (option == "--probe-adlib" || option == "--adlib-driver")
             probe_adlib = true;
         else if (option == "--aspect-ratio" && i + 1 < argc) {
             const std::string value = argv[++i];
@@ -1378,8 +1363,7 @@ int main(int argc, char **argv) {
             std::copy(std::begin(driver_code), std::end(driver_code),
                       image.memory.begin() + 0xf0400);
             vector(0x65, 0x400);
-            std::cerr << "AdLib interface probe enabled: INT 65h calls are traced, "
-                         "music synthesis is not implemented\n";
+            std::cerr << "AdLib SOUND.COM interface enabled: timed OPL2 music events\n";
         }
         Engine engine;
         check(uc_mem_map(engine.uc, 0, image.memory.size(), UC_PROT_ALL));
@@ -1574,6 +1558,8 @@ int main(int argc, char **argv) {
             state.clock.advance(slice_us);
             state.pit.advance(slice_us);
             state.opl.advance(slice_us);
+            if (probe_adlib)
+                state.adlib.advance(slice_us);
             if (state.pit.pending() && !(state.pic_mask & 1) && !state.irq_in_service &&
                 (reg(engine.uc, UC_X86_REG_FLAGS) & 0x200)) {
                 state.pit.acknowledge();
@@ -1703,7 +1689,9 @@ int main(int argc, char **argv) {
         if (hle_overlays)
             std::cerr << "RTLink host loads: " << std::dec << state.overlay_host_loads << '\n';
         if (probe_adlib)
-            std::cerr << "AdLib interface calls: " << std::dec << state.adlib_calls << '\n';
+            std::cerr << "AdLib interface calls: " << std::dec << state.adlib_calls
+                      << ", synthesized notes: " << state.adlib.played_notes()
+                      << ", pending events: " << state.adlib.pending_events() << '\n';
         check(status);
         if (!state.failure.empty())
             throw std::runtime_error(state.failure);

@@ -254,31 +254,40 @@ manual distinguishes the AdLib/MT-32 music backend from the PC-speaker
 RealSound effects and fallback title track.
 
 The single-executable port does not run DOS TSR programs before the game.
-Use `--probe-adlib --trace-research /tmp/s101-adlib.log` to advertise a
+Use `--adlib-driver --trace-research /tmp/s101-adlib.log` to advertise a
 compatible installation signature and record `adlib` calls with function
-number and the first 16 argument bytes. This is deliberately a **probe**, not
-a music implementation: it makes no claims about playback state, queues,
-instruments, or sound output. Keep it opt-in until the actual call sequence
-has been traced and a proper driver HLE is implemented.
+number and the first 16 argument bytes. `--probe-adlib` remains an alias for
+existing trace scripts. This option is still opt-in: the emulator provides a
+high-level music driver instead of executing the original DOS TSR.
 
 The first probe trace shows 101 invoking functions `05h`, `00h`, `17h`,
 `0Ah`, `06h`, `12h`, `02h`, `09h`, `0Ch`, `10h`, `03h`, and then repeatedly
 `10h`/`04h`. The documented `04h` GetState function returns status in `AX`
 (`0` means playback finished), not in the `ES:BX` argument buffer. The
 initial discovery stub failed to set `AX`, leaving the game's polling loop
-unable to observe completion. The probe now implements the documented mode
-and voice configuration/query calls and reports idle playback status until
-an actual queued-event scheduler exists. This should expose more of 101's
-music call sequence, but will not yet generate music.
+unable to observe completion. That early probe returned idle status to expose
+the next part of the game's musical call sequence.
 
 The next trace still repeats `SI=10h` (SetTimbre) and `SI=04h` (GetState)
 over nine thousand times. Disassembly of the bundled 7123-byte `SB-SOUND.COM`
 at resident offset `0FD0h` shows why: SetTimbre writes a success flag into
 the saved `AL` slot before returning (`FFh` after accepting an event,
 `00h` before acceptance). A probe that leaves `AL` unchanged is interpreted
-as a permanently full event buffer. The discovery handler now returns
-`AL=FFh` for SetTimbre, preserving `AH`. This is only a queue-acceptance
-contract for tracing; queued event playback and timing are not implemented.
+as a permanently full event buffer. Returning `AL=FFh` for SetTimbre,
+preserving `AH`, exposed the remainder of the score: 1,096 `0Eh` (PlayNoteDel)
+calls, 1,045 active-voice selections, and smaller numbers of `08h` volume,
+`10h` timbre, and `11h` pitch events. This confirms that 101 supplies music
+through the AdLib driver, not a Sound Blaster DSP sample stream.
+
+The current `--adlib-driver` queues these events in guest beat time, handles
+tempo changes, translates 56-byte AdLib INS timbres to OPL2 registers, and
+synthesizes notes through the existing Nuked OPL backend. It includes the
+driver's 11 voices with percussion-mode mapping and returns queue acceptance
+in `AL`. The final diagnostic reports the number of synthesized notes and
+remaining events. A synthetic regression test checks event timing and a
+non-silent FM waveform, but **actual 101 intro playback still needs a DOSBox
+listening comparison**; pitch, volume and rhythm subtleties are not yet
+validated against the real TSR.
 
 - Colors have not been compared with the running games under DOSBox.
 - Spellcasting 101 and 201 mono entries are shown as black and white.
