@@ -162,7 +162,7 @@ std::uint32_t port_in(uc_engine *uc, std::uint32_t port, int size, void *opaque)
             }
             // No Sound Blaster DSP is installed. Return an empty/status-high bus
             // on its probe registers so installers can fall back to AdLib.
-            if (port + i >= 0x220 && port + i <= 0x22f) {
+            if (port + i >= 0x210 && port + i <= 0x26f) {
                 value |= 0xffu << (8 * i);
                 continue;
             }
@@ -201,8 +201,9 @@ void port_out(uc_engine *uc, std::uint32_t port, int size, std::uint32_t value,
                 state.opl.out(port + i, (value >> (8 * i)) & 255);
                 continue;
             }
-            if (port + i >= 0x220 && port + i <= 0x22f) {
-                // Absent Sound Blaster/Game Blaster at base 220h. Old
+            if (port + i >= 0x210 && port + i <= 0x26f) {
+                // Absent Sound Blaster/Game Blaster at scanned bases 210h
+                // through 260h (each device occupies 16 ports). Old
                 // detection code also writes to otherwise read-only ports;
                 // an unpopulated I/O range simply ignores those writes.
                 continue;
@@ -664,6 +665,22 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
         } else if (number == 0x10 && ax == 0xef00) {
             // Nonstandard video BIOS extension queried by Spellcasting 101.
             // On an ordinary VGA BIOS, unknown functions return unchanged.
+        } else if (number == 0x10 && ax == 0x1130) {
+            // Get BIOS font information. Fixed ROM-like font tables are
+            // installed in guest memory during initialization below.
+            const auto selector = reg(uc, UC_X86_REG_BX) >> 8;
+            const std::uint16_t font_segment =
+                selector == 2 || selector == 5 ? 0xf500 : selector == 1 || selector == 6
+                                                              ? 0xf600
+                                                              : 0xf400;
+            if (selector > 6)
+                throw std::runtime_error("unsupported BIOS font selector");
+            set(uc, UC_X86_REG_ES, font_segment);
+            set(uc, UC_X86_REG_BP, selector == 4 ? 128 * 8 : 0);
+            set(uc, UC_X86_REG_CX, state.vga.mode() == 3 ? 16 :
+                                    state.vga.mode() == 0x12 ? 16 :
+                                    state.vga.mode() == 0x10 ? 14 : 8);
+            set(uc, UC_X86_REG_DX, (reg(uc, UC_X86_REG_DX) & 0xff00) | 24);
         } else if (number == 0x10 && (ax >> 8) == 9) {
             const auto bx = reg(uc, UC_X86_REG_BX);
             const auto page = (bx >> 8) & 7;
@@ -1274,6 +1291,18 @@ int main(int argc, char **argv) {
                         glyphs[c][row] |= ((bits >> bit) & 1) << (7 - bit);
                 }
             std::cerr << "BIOS fallback font: built-in ASCII (8x8)\n";
+        }
+        // Expose the same fallback glyphs to guests using INT 10h/1130h.
+        // Each segment has space for 256 glyphs of the specified height.
+        for (const auto [height, segment] :
+             {std::pair{8u, 0xf400u}, {14u, 0xf500u}, {16u, 0xf600u}}) {
+            const auto source = state.font_for(height);
+            std::vector<std::uint8_t> table(256 * height);
+            for (unsigned c = 0; c < 256; ++c)
+                for (unsigned row = 0; row < height; ++row)
+                    table[c * height + row] =
+                        source->second[c][row * source->first / height];
+            check(uc_mem_write(engine.uc, segment * 16, table.data(), table.size()));
         }
         if (const auto font = state.font_for(16); font != state.bios_fonts.end())
             for (unsigned c = 0x21; c <= 0x7f; ++c)

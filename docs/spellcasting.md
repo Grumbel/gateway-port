@@ -139,6 +139,14 @@ the entire unpopulated `220h`–`22Fh` Sound Blaster/Game Blaster I/O window:
 reads return `FFh`, and writes have no effect. This does not emulate any
 digital or CMS audio hardware.
 
+The next logs show 101 reaching `INT 10h AX=1130h` (BIOS font pointer query)
+with `BH=0`. The runtime now exposes its initialized fallback font through
+guest-visible 8x8, 8x14, and 8x16 tables and returns a pointer, character
+height, and screen row count. In 201, the next failing write was to `236h`,
+the DSP reset register for a card at base `230h`. The absent-card model now
+covers the successive 16-port base ranges `210h` through `260h`, instead of
+only `220h`. The actual game startup beyond these points is unverified.
+
 - Colors have not been compared with the running games under DOSBox.
 - Spellcasting 101 and 201 mono entries are shown as black and white.
 - Some Spellcasting 101 1-bit entries, such as `S101_C2` #19 and #40, look like
