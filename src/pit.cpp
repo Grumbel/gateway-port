@@ -37,31 +37,43 @@ unsigned Pit::microseconds_until_irq() const {
     return std::max<std::uint64_t>(1, (needed + 1193181) / 1193182);
 }
 void Pit::advance(std::uint64_t microseconds) {
-    // Preserve sub-block beeps even if the guest switches the speaker off before
-    // the next 16-ms SDL audio submission. Retain at most one presentation block.
-    const auto initial_audio_fraction = audio_fraction_;
-    const auto scaled_audio = microseconds * 48000 + initial_audio_fraction;
-    const auto frames = scaled_audio / 1000000;
-    audio_fraction_ = scaled_audio % 1000000;
-    for (auto frame = frames > 768 ? frames - 768 : 0; frame < frames; ++frame) {
-        // Locate the sample's actual time within this (possibly 60-us) PIT
-        // slice. Restarting the speaker phase at sample zero on every slice
-        // produces severe jitter during high-rate PC-speaker playback.
-        const auto sample_phase = (frame + 1) * 1000000 - initial_audio_fraction;
-        const auto ticks = (sample_phase * 1193182 + fraction_ * 48000) /
-                           (48000ull * 1000000);
-        speaker_audio_[audio_next_] =
-            (speaker_control_ & 3) == 3 ? (speaker_output(ticks) ? 1800 : -1800) : 0;
-        audio_next_ = (audio_next_ + 1) % speaker_audio_.size();
-        audio_count_ = std::min<unsigned>(speaker_audio_.size(), audio_count_ + 1);
-    }
     const auto scaled = microseconds * 1193182 + fraction_;
     const auto ticks = scaled / 1000000;
     fraction_ = scaled % 1000000;
     refresh_ticks_ += ticks;
+    // The title soundtrack uses PIT channel 2 as a pulse-width DAC. A single
+    // instantaneous sample at 48 kHz aliases the narrow (~60-us) pulses.
+    // Integrate the speaker level at the PIT's 1.193-MHz clock instead, then
+    // average each output sample. Carry the fractional phase across slices.
+    auto &speaker = channels_[2];
+    for (std::uint64_t tick = 0; tick < ticks; ++tick) {
+        audio_sum_ += (speaker_control_ & 3) == 3
+                          ? (speaker_output(0) ? 1800 : -1800)
+                          : 0;
+        ++audio_ticks_;
+        if (speaker_control_ & 1) {
+            if (speaker.remaining > 1)
+                --speaker.remaining;
+            else if (speaker.mode == 0 || speaker.mode == 1 || speaker.mode == 4 ||
+                     speaker.mode == 5) {
+                speaker.terminal = true;
+                speaker.remaining = 1;
+            } else
+                speaker.remaining = speaker.reload;
+        }
+        audio_fraction_ += 48000;
+        if (audio_fraction_ >= 1193182) {
+            audio_fraction_ -= 1193182;
+            speaker_audio_[audio_next_] = audio_sum_ / audio_ticks_;
+            audio_next_ = (audio_next_ + 1) % speaker_audio_.size();
+            audio_count_ = std::min<unsigned>(speaker_audio_.size(), audio_count_ + 1);
+            audio_sum_ = 0;
+            audio_ticks_ = 0;
+        }
+    }
     for (unsigned i = 0; i < channels_.size(); ++i) {
         auto &c = channels_[i];
-        if (i == 2 && !(speaker_control_ & 1))
+        if (i == 2)
             continue;
         if (!ticks)
             continue;
@@ -79,6 +91,10 @@ void Pit::advance(std::uint64_t microseconds) {
 }
 void Pit::out(std::uint16_t port, std::uint8_t value) {
     if (port == 0x61) {
+        if ((speaker_control_ & 3) != (value & 3)) {
+            audio_sum_ = 0;
+            audio_ticks_ = 0;
+        }
         if (!(speaker_control_ & 1) && (value & 1))
             channels_[2].remaining = channels_[2].reload;
         speaker_control_ = value & 0x0f;

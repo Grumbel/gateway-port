@@ -213,6 +213,23 @@ supports mode 2 throughout BIOS text operations, video-memory snapshots,
 and SDL presentation. Tests cover switching to mode 2 and restoring the
 text display on exit. Distorted intro audio remains unresolved.
 
+### PC-speaker playback quality
+
+The 101 title uses PIT channel 2 as a one-shot pulse-width DAC, updating its
+width from a roughly 16.6-kHz IRQ0 stream. Sampling the speaker's instantaneous
+logic level only once per 48-kHz output frame aliases short pulses into harsh,
+incorrect amplitudes. The host now integrates the speaker's high/low output
+over individual 1.193-MHz PIT ticks, accumulating an average for each 48-kHz
+sample. Fractional phase persists across timer slices; tests compare bulk and
+fine-grained renders and confirm that a sub-sample pulse yields an intermediate
+amplitude. This models pulse-width averaging, not full physical speaker
+response. Live listening remains necessary.
+
+To distinguish slow guest emulation from bad audio synthesis, run 101 with
+`--trace-timing`. Once per guest second, the runtime prints `TIMING guest_ms`,
+`wall_ms`, and an effective `speed` ratio. A sustained ratio below `1.00x`
+means the emulator cannot provide audio as quickly as SDL consumes it.
+
 - Colors have not been compared with the running games under DOSBox.
 - Spellcasting 101 and 201 mono entries are shown as black and white.
 - Some Spellcasting 101 1-bit entries, such as `S101_C2` #19 and #40, look like

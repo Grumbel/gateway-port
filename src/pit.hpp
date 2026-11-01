@@ -32,6 +32,8 @@ class Pit {
     bool pending_ = false;
     std::uint8_t speaker_control_ = 0;
     std::uint64_t audio_fraction_ = 0, refresh_ticks_ = 0;
+    std::int64_t audio_sum_ = 0;
+    unsigned audio_ticks_ = 0;
     std::array<std::int16_t, 768> speaker_audio_{};
     unsigned audio_next_ = 0, audio_count_ = 0;
     bool speaker_output(std::uint64_t ticks) const;

@@ -103,6 +103,17 @@ int main() {
         bulk.mix_speaker(bulk_audio);
         sliced.mix_speaker(sliced_audio);
         require(bulk_audio == sliced_audio, "PC speaker depends on timer slice size");
+        // Mode-0 one-shot PWM pulses shorter than a 48-kHz output sample must
+        // contribute their duty cycle, rather than alias to a full-scale bit.
+        gateway::Pit pwm;
+        pwm.out(0x43, 0x90);
+        pwm.out(0x42, 10);
+        pwm.out(0x61, 3);
+        pwm.advance(1000);
+        std::array<std::int16_t, 96> pwm_audio{};
+        pwm.mix_speaker(pwm_audio);
+        require(pwm_audio[0] > -1800 && pwm_audio[0] < 1800,
+                "PC speaker PWM was not averaged at the PIT clock rate");
         speaker.advance(1000);
         samples.fill(0);
         speaker.mix_speaker(samples);
