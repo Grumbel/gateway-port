@@ -122,6 +122,20 @@ class StoryDisassemblyTests(unittest.TestCase):
         self.assertEqual(entries[0]['handler_offset'], 0x0102)
         self.assertEqual(entries[0]['handler_segment'], 0x3040)
 
+    def test_selector_callback_is_a_separate_far_pointer_table(self):
+        memory = bytearray(0x20000)
+        struct.pack_into('<H', memory, 0x10000 + 0x8da8, 0x1200)
+        action_pointer = 0x12000 + 0x28 + 6 * 0x46
+        memory[action_pointer - 1] = 8
+        struct.pack_into('<2H', memory, action_pointer, 0x165f, 0x2c24)
+        # BX=4*8 at callback site; CALL far ES:[BX-4] => table byte 0x1c.
+        struct.pack_into('<2H', memory, 0x12000 + 0x1c, 0x0456, 0x1234)
+        record, = inspect_actions(memory, 0x1000, [0x46])
+        self.assertEqual(record['selector_callback'], {'segment': 0x1234, 'offset': 0x0456})
+        memory[action_pointer - 1] = 0
+        record, = inspect_actions(memory, 0x1000, [0x46])
+        self.assertNotIn('selector_callback', record)
+
     def test_action_rtlink_reference_comes_from_trampoline_operands(self):
         memory = bytearray(0x40000)
         struct.pack_into('<H', memory, 0x10000 + 0x8da8, 0x1200)

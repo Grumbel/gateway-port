@@ -504,6 +504,15 @@ command reachability. A mismatch is useful evidence for refining that logic,
 not proof that the native engine or the original game is faulty. See
 [action-dispatch.md](docs/action-dispatch.md#results-of-the-first-complete-six-scenario-batch).
 
+The two follow-up visibility scenarios both matched the C++ model. Further
+investigation now targets a **separate, earlier action-selector callback** in
+the original executable. TAKE and DROP have different nonzero selector bytes
+(`0x08` and `0x04`) while OPEN/CLOSE have zero. Add `--trace-admission` to
+`tools/run_action_matrix.py` to collect the live callback pointer, selector
+index, raw return AX, and subsequent action dispatch for each guest command
+slot. See [the action research notes](docs/action-dispatch.md#trace-the-earlier-selector-callback-separately-from-action-dispatch)
+for the bounded three-scenario replay; the selector's meaning remains unknown.
+
 RTLink sections and all handler entry file offsets can now be extracted:
 
 ```sh

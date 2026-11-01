@@ -48,6 +48,14 @@ def inspect_actions(memory, ds, action_ids):
         trailer = byte(directory_segment, offset + 4)
         entry = dict(action=action, handler_segment=cs, handler_offset=ip,
                      selector=selector, trailer=trailer)
+        if selector:
+            # GATEMAIN.EXE file 0x5981–0x5987: BX=selector*4 then indirect
+            # CALL ES:[BX-4]. The table lives in the same segment as actions.
+            # Preserve this raw live far pointer; it is not yet a proven
+            # permission check or an RTLink reference.
+            callback_offset = 4 * (selector - 1)
+            entry['selector_callback'] = dict(segment=word(directory_segment, callback_offset + 2),
+                                              offset=word(directory_segment, callback_offset))
         # These action pointers point to *executable trampoline starts*.
         # The reference is at +4 (after e8 disp16; ea), and the near call
         # resolves to the original Gateway RTLink manager gate at 2c24:058d.
@@ -122,7 +130,10 @@ def main():
         if 'native_code' in record:
             print(f" file={record['native_code']['filename']}:"
                   f"0x{record['native_code']['file_offset']:x}", end='')
-        print(f"  {KNOWN_ACTIONS.get(action, '')}")
+        print(f"  {KNOWN_ACTIONS.get(action, '')}", end='')
+        if callback := record.get('selector_callback'):
+            print(f"  callback={callback['segment']:04x}:{callback['offset']:04x}", end='')
+        print()
     print('Nonresident action pointers address executable RTLink trampolines; '
           'the selector and trailer bytes have not been assigned semantics.')
 

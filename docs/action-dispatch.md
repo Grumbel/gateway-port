@@ -505,6 +505,93 @@ model predicts** no dispatch for the first, and a successful location change
 for the second. A failed checker run is an informative counterexample to
 investigate, not necessarily a regression in DOS emulation.
 
+The user ran both follow-up scenarios under Nix: each finished successfully,
+and `gateway-story-check` reported **two matching native scenarios**. This
+supports the first-room rule that a previously seen book inside a *closed*
+drawer is not currently available, whereas a book moved into the room remains
+available after the drawer closes. It still does not prove which original
+routine enforces the restriction. The full follow-up trace was not supplied.
+
+### Trace the earlier selector callback separately from action dispatch
+
+The original `GATEMAIN.EXE` contains a resident selector routine at *file*
+`0x5956`, loaded at `1476:0008`, distinct from the action dispatcher at file
+`0x5994` / `1476:0046`. The selector routine:
+
+1. Checks the action byte passed on the stack against `1..0xc3`.
+2. Reads a **selector byte** from `ES:[0x27 + 6*action]`, where
+   `ES = [DS:8da8]` points to the action table.
+3. Returns `AX=0` immediately when the selector is zero; otherwise indexes
+   a **four-byte callback table** with `4*(selector-1)`, calls the far pointer
+   (`GATEMAIN.EXE:0x5987`), and returns the callback's `AX`.
+
+The final action dispatcher uses the adjacent far pointer at
+`ES:[0x28 + 6*action]`, confirming that these are different operations on
+the same six-byte action directory. The **known live selectors** are:
+
+| Action | Original action byte | Selector byte | Callback stage |
+| --- | ---: | ---: | --- |
+| OPEN drawer | `0x71` | `0x00` | No selector callback |
+| CLOSE drawer | `0x1d` | `0x00` | No selector callback |
+| TAKE book | `0x46` | `0x08` | May call selector 8's function |
+| DROP book | `0x32` | `0x04` | May call selector 4's function |
+| LOOK / INVENTORY | `0x5f` / `0x53` | `0x00` | No selector callback |
+
+This is a **candidate earlier decision layer**, not a proven admission ABI.
+We have neither traced its call path from input processing nor established
+whether `AX=0`/`AX=1` mean permission, interception, or something else.
+The selector may control *another* kind of action-specific preprocessing.
+
+To investigate without tracing every executed instruction, the native probe
+can now capture the selector function entry (`1476:0008`), live callback call
+(`1476:0039`), and return (`1476:0042`). It records `admission_action`, the
+unmodified selector index, the callback's **live far pointer**, and the raw
+return AX. The names of these trace fields are research terminology and do
+not imply a validated permission decision.
+
+```sh
+gateway-build
+python3 tools/run_action_matrix.py \
+  --only closed-after-reveal,room-after-close,take-twice \
+  --trace-admission --output build/action-admission-001
+"${GATEWAY_BUILD_DIR:-build}/gateway-story-check" \
+  build/action-admission-001/report.md
+```
+
+Each scenario's report now includes an additional **Earlier selector stage**
+table with the selector calls and AX values observed at the command's guest
+time slot, alongside whether the actual action dispatcher ran. The checker
+still tests only the first main mutation table and ignores diagnostic tables.
+To regenerate an individual selector summary from a native trace:
+
+```sh
+python3 tools/summarize_admission_trace.py \
+  build/action-admission-001/closed-after-reveal/native.trace \
+  --commands 'open drawer,close drawer,take book,open drawer,take book,drop book,look'
+```
+
+Timing correlation is **not** a call-graph proof. In particular, no selector
+entry could mean the original parser never reached the selector routine, or
+that an input was consumed by another part of the game. If TAKE reaches
+selector 8 and then no action dispatch occurs, the recorded callback pointer
+and AX will give us a concrete next decompilation target.
+
+The snapshot inspector independently decodes the same selector callback
+from the original six-byte action directory. It reads the far pointer at
+`ES:[4*(selector-1)]` only for nonzero selectors and prints it as
+`callback=CS:IP`, without assuming it is a loader trampoline:
+
+```sh
+python3 tools/inspect_action_dispatch.py \
+  build/action-admission-001/take-twice/native \
+  --action 0x46 --action 0x32
+```
+
+Compare this saved-memory pointer with the **live** `admission_target=` at the
+callback callsite; agreement will establish a concrete binary function to
+disassemble next. Both observations may refer to the same original callback
+table while still leaving its purpose unresolved.
+
 ### First standalone C++ state model
 
 `src/story_model.hpp` and `src/story_model.cpp` introduce an **experimental
