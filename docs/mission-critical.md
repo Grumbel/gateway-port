@@ -111,6 +111,34 @@ from these four files were generated without failures; notably `MC024` #0
 renders a legible control panel. The related `.RGN` resources are a separate
 region format, not required for decoding the pixel streams.
 
+## XOR frame deltas
+
+`MC007.PIC` demonstrates that some `0003h` records are XOR-encoded against
+another picture, rather than storing complete pixel indices. In particular,
+entry 31 is a full 640×288 hangar picture (`ff00h`) and entry 32 (`0003h`) has
+an identical rectangle. Both share the same palette, but the raw image at #32
+looks like random colored noise. Bitwise XOR of the decoded #32 pixels with #31
+reconstructs a coherent second hangar view. Entries 1–3 illustrate that these
+frames may all refer independently to the original full picture, **not** to the
+preceding delta. Entry 34, which is a full `ff00h` picture, already renders
+correctly and is unchanged.
+
+The extractor now automatically composes a `0003h` entry when its rectangle
+matches the most recent covering plain image, allowing a one-pixel width
+difference (as seen in #2). This conservative rule handles independently
+stored full-frame alternatives without accidentally replacing all small sprite
+images with full backgrounds. `--raw-overlays` exports the original indices
+without composition. `--mc-all-overlays` also composes smaller deltas against
+the most recent covering plain image, which can recover additional frames
+such as `MC007.PIC` #8 and `MC101.PIC` #1.
+
+**Limit:** `0003h` also occurs on separate sprites and scene-dependent layers:
+for example, `MC024.PIC` stores individual number-button graphics, and
+`MC007.PIC` has small character pictures. The archive does not explicitly
+identify which earlier background or sequence each image should be drawn on.
+Blindly compositing every entry can therefore introduce new artifacts. Exact
+runtime layering remains to be reverse engineered.
+
 ## Extracting PNGs and raw streams
 
 `gateway-extract` detects the newer directory automatically or accepts
@@ -124,8 +152,8 @@ The current palette is retained across records and input files in the order
 provided. VGA six-bit DAC channels are expanded to eight-bit PNG palette
 entries. When the first image is encountered before any palette update, a
 greyscale fallback makes the indexed pixels inspectable but does **not**
-reconstruct their intended colors. Flags `0003h` may refer to animations or
-layers; each entry is exported separately, without unverified composition.
+reconstruct their intended colors. Full-size `0003h` XOR frames are composed
+as described above; smaller sprites remain separate by default.
 
 For format inspection, the original chunk export still works:
 

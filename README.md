@@ -61,7 +61,7 @@ because their engine descends from Legend's earlier adventures.
 | 1993 | *Companions of Xanth* | **Not tested:** no game files available. |
 | 1994 | *Death Gate* | **Not tested:** no game files available; resource formats are related but differ from Gateway's. |
 | 1994 | *Superhero League of Hoboken* | **Not tested:** no game files available. |
-| 1995 | *Mission Critical* | **PIC extraction works:** native Crusher! decoder produced 55 indexed PNGs from four tested archives. Executable startup and image layering untested. |
+| 1995 | *Mission Critical* | **PIC extraction works:** Crusher! and raw-pixel decoder produced 481 PNGs from nine supplied archives with no failures. Full-frame XOR reconstruction works; scene-dependent layering and executable startup remain untested. |
 | 1995 | *Shannara* | **Not tested:** no game files available. |
 | 1997 | *Callahan's Crosstime Saloon* | **Not tested:** no game files available. |
 
@@ -199,10 +199,16 @@ for each image entry:
 ```
 
 Pass files in game order to preserve palette updates across files. If no palette
-has been seen, images use a grey ramp; records with flags `0003h` are exported
-as separate images (their animation/layer-composition semantics are still under
-investigation). To inspect the original compressed streams instead, export their
-current 768-byte VGA palette snapshots and a tab-separated metadata index:
+has been seen, images use a grey ramp. Some `0003h` records are **XOR frame
+deltas**, not corrupted pictures: for instance, `MC007.PIC` #32 must be XORed
+with the pixels from #31 to make a normal hangar frame. Full-size deltas are
+composed automatically. Smaller `0003h` images may be independent sprites or
+layers that rely on a particular scene, so they remain standalone by default.
+Use `--mc-all-overlays` to compose all positioned deltas against the most recent
+covering full image, or `--raw-overlays` to preserve every delta exactly as
+decoded. Neither option can reconstruct arbitrary scene-dependent combinations.
+To inspect the original compressed streams instead, export their current 768-byte
+VGA palette snapshots and a tab-separated metadata index:
 
 ```sh
 ./build/gateway-extract --raw-chunks -o build/pictures/mc ../MissionCritical/*.PIC
