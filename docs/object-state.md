@@ -359,6 +359,9 @@ usable, or how an action actually changes rooms. It also cannot be the full
 navigation graph: there are only eight populated pairs for 110 candidate
 rooms. The `--format dot` export plots these pairs as **dashed, undirected
 candidate edges**, omitting all unreferenced rooms; it is not a map of exits.
+Legend's [original hintbook maps](gateway-map-reference.md) independently
+place all eight endpoint pairs and provide a separate reference for ordinary
+movement edges, with puzzle gates and up/down notation.
 
 Next, correlate a native room transition through one of these named passage
 objects with the type-6 record, the changing current-room variable, and the

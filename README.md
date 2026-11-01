@@ -612,6 +612,13 @@ Tree House. `--format dot` draws only these **unverified, undirected passage
 candidates** for visual inspection; it does not claim every room has an exit
 or that traversability has been recovered.
 
+The [original 1992 hintbook maps](docs/gateway-map-reference.md) provide an
+independent reference: eleven map panels covering Gateway Station, six
+planetary locations and both endgame phases. All eight populated type-6
+endpoint pairs occur on those maps. The research notes cross-reference the
+printed room names with native object-ID ranges and distinguish up/down
+arrows and puzzle-gated passages; no copyrighted map scans are bundled.
+
 The standalone C++ model exposes the corresponding *local slot-filtering*
 stage, but it still does not perform parser traversal or name resolution.
 See [resident parser candidate iterator](docs/action-dispatch.md#resident-parser-candidate-iterator)

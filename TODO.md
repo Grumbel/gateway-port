@@ -64,12 +64,15 @@ emulation. Keep the original executable as a behavioral reference while mapping:
   **eight pairs of distinct type-1 room IDs** (type-6 slot 0 matches direct
   location; slot 1 names the second room); seven records have zero links.
   These are **candidate passage endpoints, not verified exits**. Graphviz DOT
-  export now draws just these candidates. Next trace room-change handlers
-  through one candidate passage (e.g. Travel Pod/Satellite), verify which state
-  word changes, whether travel is bidirectional, how disabled passage records
-  are enabled, and actual PIC selection. Also
-  trace real non-head sibling
-  and nested moves, extend to other record types, and establish which callers enable
+  export draws just these candidates. The original hintbook's eleven map
+  panels now independently confirm all eight pairs and locate most other
+  rooms; see `docs/gateway-map-reference.md`. Next trace a **normal** compass
+  transition not represented by a type-6 record (e.g. Your Quarters to
+  Heecheetown), then a named passage (Dock/cabin hatch), to identify the
+  current-room variable and movement handler. Verify passage restrictions,
+  bidirectionality, and actual PIC selection independently of map arrows.
+  Also trace real non-head sibling and nested moves, extend to other record
+  types, and establish which callers enable
   the gate's restriction parameter. The child accessor (`0157:0825`) is distinct
   from DROP's recursive relationship helper (`0157:00c5`); both are decoded,
   but their complete role in parser visibility and spatial containment is
