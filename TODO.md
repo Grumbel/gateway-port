@@ -34,8 +34,8 @@ The goal is to eventually render Gateway with modern, configurable fonts and
 layout, higher-resolution/upscaled pictures, and native input rather than VGA
 emulation. Keep the original executable as a behavioral reference while mapping:
 
-- The current room, visible picture/frame, and active clickable regions. Do not
-  mistake resource IDs or `OBJECT.DAT` name indexes for engine object IDs.
+- The current room, visible picture/frame, and active clickable regions. RGN
+  values are engine object IDs; `OBJECT.DAT` list indexes are different.
 - Which guest variables encode room and action state; which native handlers
   update them; and how object flag/location changes map to player actions.
 - The parser's action/argument representation, handler dispatch, text formatting

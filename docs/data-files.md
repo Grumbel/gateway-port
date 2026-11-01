@@ -107,8 +107,9 @@ link groups is not known; ScummVM keeps only the last pair of each.
 ## OBJECT.DAT
 
 **Confirmed.** A `u16` byte count (8029) is followed by 785 NUL-terminated names:
-`Blast Zone`, `Gray Plain`, `Plateau`, and so on. RGN files use zero-based
-indexes into this list.
+`Blast Zone`, `Gray Plain`, `Plateau`, and so on. **RGN values are native engine
+object IDs, not zero-based indexes into this list.** The initial debugger
+mistook those values for direct string indexes, producing incorrect labels.
 
 The native object table has 734 engine IDs, distinct from those string-list
 indexes. Its primary and secondary name words are one-based byte offsets into
@@ -224,20 +225,23 @@ Header records come first, one per entry of the matching PIC directory:
 | Word | Meaning |
 | ---: | --- |
 | 0 | Byte offset of this entry's rectangles |
-| 1 | Default object index for the entry |
+| 1 | Default native engine object ID for the entry |
 | 2 | Rectangle count |
 
 Rectangle records follow, and they cover the rest of the file contiguously:
 
 | Word | Meaning |
 | ---: | --- |
-| 0 | Object index, or 0 in `GATE_015` and `GATE_315` |
+| 0 | Native engine object ID, or 0 (use header default) |
 | 1 | Top-left: low byte `x`, high byte `y` |
 | 2 | Bottom-right: low byte `x`, high byte `y` |
 
 `x` is in two-pixel units. Across the room files it peaks at 189 (379 / 2) and
-`y` peaks at 223. Overlaid on `GATE_102` entry 15, rectangles named `desk chair`
-and `scorch mark` fall on the expected parts of the scene.
+`y` peaks at 223. A cross-check: in `GATE_102` entry 15, a rectangle with RGN
+value **292** occupies x=90..110, y=162..223 over the desk drawers. Native
+Gateway object `0x124` (292) is the drawer; the unrelated `OBJECT.DAT` string
+at list index 292 is "slip of paper". Rectangle names must therefore come from
+the **engine ID** and the corresponding native object's name-token byte offset.
 
 Header counts match a PIC directory for all 15 non-empty files:
 

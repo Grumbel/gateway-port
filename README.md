@@ -131,14 +131,16 @@ when the menu closes. Use Up/Down and Enter to select a menu item, or:
 | Key | Debug action |
 | --- | --- |
 | **F10**, **Esc** | Open/close the menu (Esc only when the menu is open) |
-| **H** | Toggle colored scene hitbox outlines; hover to identify an object name |
+| **H** | Toggle merged, colored and translucent hotspots; hover for the object ID/name |
 | **A** | Toggle automatic scene selection from recent PIC reads |
 | **Left/Right** (or PageUp/PageDown) | Examine previous/next RGN frame manually |
 | **D** | Dump guest registers, memory, framebuffer, regions and object state |
 
-Hitbox outlines stay on screen after closing the menu until toggled off. The
-current file and RGN entry, guest CS:IP/DS, and recognized Gateway object count
-are shown in the panel. The hitboxes come from the original `GATE_*.RGN`
+The menu starts in the lower-right text pane, beneath the scene picture. Drag
+its title bar to move it. Merged hotspot outlines and translucent fills stay
+on screen after closing the menu until toggled off. The current file and RGN
+entry, guest CS:IP/DS, and recognized Gateway object count are shown in the
+panel. The hitboxes come from the original `GATE_*.RGN`
 resources; their coordinates are relative to the picture in the right-hand
 panel. Auto-selected scenes are **only an estimate** based on which picture
 was recently read, and can lag, select transitional art, or fail to identify a
@@ -152,7 +154,8 @@ Override the destination with `--debug-dir DIR`. Every dump includes `.regs`
 `.objects.tsv` is also saved when the *Gateway 1* 734-object live table can be
 validated at DS; it includes object IDs, types, handler indices, name tokens,
 locations and raw state bytes. An unrecognized state is reported, not guessed.
-The region name index and the game engine's object ID are **different**.
+RGN hotspot numbers **are engine object IDs**, but are **not** indexes into the
+`OBJECT.DAT` string list. Labels are resolved through the live engine table.
 See [the debugger's evidence and limits](docs/debugger.md) before using these
 observations to design a native story interpreter.
 

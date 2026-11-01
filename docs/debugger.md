@@ -13,20 +13,29 @@ file contains a six-byte record for every PIC entry:
 | Offset | Type | Known meaning |
 | --- | --- | --- |
 | +0 | u16 | Offset of this entry's rectangle list in the RGN file |
-| +2 | u16 | Fallback name index |
+| +2 | u16 | Default native engine object ID |
 | +4 | u16 | Number of rectangles |
 
-Each six-byte rectangle is a name index followed by two packed u16 coordinates.
+Each six-byte rectangle is a native object ID followed by two packed u16 coordinates.
 The low coordinate byte is the X value in two-pixel units and the high byte is
 Y in pixels. The debug renderer doubles X and adds 260, since the 640-pixel
 Gateway layout's room picture starts at column 260. These boundaries have
 been checked against supplied files, but their interaction and hotspot
 priority semantics have **not** been checked against executable instructions.
 
-The RGN name index addresses a zero-based string enumeration in `OBJECT.DAT`.
-This is different from the one-based name **byte offset** held in native
-object records, and from the engine's sequential **object ID** (1–734).
-Those three numbers must not be interchanged when reverse-engineering actions.
+The RGN value is an ID in Gateway's live object table (1–734). Each object's
+record holds a one-based name **byte offset** into `OBJECT.DAT`. The file's
+separate zero-based NUL-string enumeration is *not* indexed by RGN numbers.
+For example, hotspot `292` is the drawer in Gateway's first room, while
+`OBJECT.DAT` list index 292 is "slip of paper". Labels appear when the debugger
+recognizes the native table; otherwise it displays only the numeric engine ID.
+
+The host rasterizer merges adjacent/overlapping rectangles with the same ID,
+draws only the outside contour, and applies a light translucent fill. Different
+IDs get distinct stable hues. Hover brightens one object's outline and fill;
+anonymous ID-0 rectangles stay separate because their shared zero does not
+identify one object. The game framebuffer is never changed. The debug menu
+starts in the lower-right text pane and can be dragged by its title bar.
 
 For the Gateway VGA family, `GATE_1xx.PIC` corresponds to the
 `GATE_0xx.RGN` room data. The debugger registers a pair when DOS opens a
@@ -64,7 +73,7 @@ renderer without host overlays or cursor artifacts.
 1. Start Gateway and take a snapshot of **Your Quarters** with F10 → D.
 2. Click a known room object, or type `look`, `open drawer`, `take book`.
 3. Take another snapshot; compare `.objects.tsv` and the raw `.bin` changes.
-   Use stable engine object IDs, not RGN name indices, to match records.
+   Use engine IDs from RGN and native records, not OBJECT.DAT string indexes.
 4. Manually select the RGN frame corresponding to the picture and check
    hotspot boundaries, then compare with the actual guest click behavior.
 5. Correlate a changed object handler with the original RTLink overlay file
