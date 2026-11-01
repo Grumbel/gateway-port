@@ -38,13 +38,14 @@ emulation. Keep the original executable as a behavioral reference while mapping:
   values are engine object IDs; `OBJECT.DAT` list indexes are different.
 - Which guest variables encode room and action state; which native handlers
   update them; and how object flag/location changes map to player actions.
-- Recover which native object type the first-room drawer uses and how the
-  indexed child pointer changes when TAKE moves the book. The child-list
-  setter (`0157:08fc`) and its type-specific offsets are now decoded;
-  capture its callsite and the actual drawer record writes with
-  `--trace-object-writes 124`. Exact native timestamps establish separate
-  OPEN/CLOSE eligibility and child-list transitions, but not the writer.
-  Next establish which callers enable the gate's restriction parameter.
+- The first-room drawer is confirmed type 2; TAKE calls the indexed child
+  setter (`0157:08fc`) to clear slot-0 head `0x123` at `+0x14`. The common
+  child-list relocation routine at OVL `0xc830` has been disassembled, and
+  a type-2 linked-chain model is independently tested. Next match the
+  setter's far return address from the **existing** native trace to the
+  relocation helper's runtime address, then extend traces to nested objects
+  and other record types. Establish which callers enable the gate's
+  restriction parameter.
   The child accessor (`0157:0825`) is distinct
   from DROP's recursive relationship helper (`0157:00c5`); both are decoded,
   but their complete role in parser visibility and spatial containment is

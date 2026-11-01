@@ -70,9 +70,14 @@ def child_setter_calls(lines, watched_object):
         object_id = int(entry['child_set_object'], 16)
         if object_id != watched_object:
             continue
+        stack = entry.get('stack', '').split(',')
+        if len(stack) < 2:
+            raise ValueError('indexed-child setter trace lacks far return address')
+        return_ip, return_cs = (int(word, 16) for word in stack[:2])
         calls.append(dict(ms=int(entry['ms']), object=object_id,
                           slot=int(entry['child_set_slot'], 16),
-                          value=int(entry['child_set_value'], 16)))
+                          value=int(entry['child_set_value'], 16),
+                          return_address=f'{return_cs:04x}:{return_ip:04x}'))
     return calls
 
 
@@ -124,12 +129,13 @@ def summarize(lines, *, child_only=False, changed_only=True, commands=None):
     if not count:
         output.append('(no matching writes)')
     output.extend(['', 'Native indexed-child setter calls (0157:08fc):',
-                   'ms     recent slot     slot  child',
-                   '------  --------------  ----  -----'])
+                   'ms     recent slot     slot  child  returns to',
+                   '------  --------------  ----  -----  ----------'])
     setters = child_setter_calls(lines, watch['object'])
     for call in setters:
         output.append(f'{call["ms"]:6}  {phase(call["ms"])[:14]:<14}  '
-                      f'{call["slot"]:4}  0x{call["value"]:03x}')
+                      f'{call["slot"]:4}  0x{call["value"]:03x}  '
+                      f'{call["return_address"]}')
     if not setters:
         output.append('(none observed for watched object)')
     output.append('These are guest memory-write attempts before execution, not independently '

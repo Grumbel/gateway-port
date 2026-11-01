@@ -552,9 +552,13 @@ python3 tools/correlate_visibility_trace.py \
 
 The original **indexed child-link setter** is now identified at `0157:08fc`
 (file `0x2e3a`). It is separate from the object's direct-location setter.
-To identify the instruction actually removing the book from the drawer, rerun
-the object scenario with `--trace-object-writes 124 --trace-visibility`
-and summarize the result with `tools/summarize_object_writes.py --child-only`.
+The watched replay confirms that TAKE invokes this setter to clear the book
+from the type-2 drawer's first child-list head at offset `+0x14`. Original
+`GATEMAIN.OVL:0xc830` contains a linked-list relocation routine, now
+translated for type-2 records into the standalone `StoryLinkedChildren`
+research model. Use `--trace-object-writes 124 --trace-visibility` with the
+object scenario and `tools/summarize_object_writes.py --child-only` to inspect
+the actual writer and its far return address.
 See [the child-list writer research](docs/action-dispatch.md#identify-the-native-child-list-writer)
 for the complete command and the distinction between observed writes and
 verified changes.

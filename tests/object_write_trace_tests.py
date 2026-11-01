@@ -44,6 +44,8 @@ class ObjectWriteTraceTests(unittest.TestCase):
         with_setter = summarize([HEADER, SETTER, *WRITES], child_only=True)
         self.assertIn('Native indexed-child setter', with_setter)
         self.assertIn('28360  28s slot           0  0x000', with_setter)
+        self.assertIn('returns to', with_setter)
+        self.assertIn('3333:2222', with_setter)
         full = summarize([HEADER, *WRITES], changed_only=False)
         self.assertIn('18393', full)
         self.assertIn('28361', full)

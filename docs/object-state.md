@@ -184,6 +184,16 @@ removes the first-room book is **not yet known**. The independent location
 setter at `0157:064b` (file `0x2b89`) updates only its type-dependent
 location field; its disassembly does **not** contain a child-list unlink.
 
+The subsequent watched native replay established that drawer `0x124` is
+**type 2** with 36 state bytes and 3 child slots. During TAKE, the indexed
+setter writes zero over `0x0123` at drawer state offset `+0x14`, at guest
+time 28,356 ms. The generic move helper at `GATEMAIN.OVL:0xc830` maintains
+these lists as *heads of next-sibling chains*, not flat arrays of all
+contained objects. For type 2, offset `+0x10` is a byte slot index and
+`+0x12` is the next-sibling word; `+0x14` begins the child-head words.
+See [child-list relocation](action-dispatch.md#the-shared-child-list-relocation-routine)
+for the original control flow and bounded C++ model.
+
 ## State-changing replay
 
 ```sh

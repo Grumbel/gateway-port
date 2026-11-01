@@ -889,6 +889,71 @@ A child-pointer write near TAKE still requires inspecting the caller and
 post-write state before generalizing to other containers. Replay with other
 object IDs when investigating nested structures.
 
+The supplied **seven-command replay** now confirms the central write:
+
+```text
+Object 0x124: native type 2, 36 bytes at 343b:0758, 3 child slots
+28356  take book   pc=0011efb  offset=0014  2301 -> 0000  slot 0
+28356  child setter 0157:08fc  object=0124  slot=0  value=0000
+```
+
+Thus TAKE uses the real indexed setter, and the type-2 record's first head
+changes from book `0x123` to zero. It is **not** an inferred lookup result or
+a simple clearing of the drawer-open property. The guest write PC `0x11efb`
+is exactly the type-2 `mov es:[bx+si+0x14],ax` instruction at original EXE
+file `0x2ec9` (`0157:098b`). We have not yet seen the
+setter's exact far return address in this summary; the expanded report now
+prints it from the existing raw `entry ... stack=` record, without needing a
+new replay.
+
+### The shared child-list relocation routine
+
+Further disassembly of `GATEMAIN.OVL` file `0xc830–0xc911` identifies an
+explicit list-relocation helper. The code calls the old-location accessor
+`0157:0546`, the object's slot-byte accessor `0157:0753`, the child-head
+accessor `0157:0825`, and the sibling getter `0157:09e4`. It unlinks the
+item, calls `0157:064b` and `0157:07bc` to set new location and slot, and
+prepends it to the destination using `0157:08fc` and `0157:0a4b`.
+
+For the now-confirmed **type-2** records, the fields are:
+
+| Record offset | Native meaning |
+| --- | --- |
+| `+0x0e` | Direct location (word) |
+| `+0x10` | Slot index within the parent (byte) |
+| `+0x12` | Next sibling (word) |
+| `+0x14+2*slot` | Child-list head (word), up to descriptor's slot count |
+
+A bounded pseudocode translation of the assembly's valid-list path is:
+
+```cpp
+old_parent = location(object);
+old_slot = slot(object);
+if (head(old_parent, old_slot) == object)
+    set_head(old_parent, old_slot, next(object));
+else
+    for (auto prev = head(old_parent, old_slot); prev; prev = next(prev))
+        if (next(prev) == object) {
+            set_next(prev, next(object));
+            break;
+        }
+set_location(object, new_parent);
+set_slot(object, new_slot);
+if (new_parent) {
+    auto earlier_head = head(new_parent, new_slot);
+    set_head(new_parent, new_slot, object);
+    set_next(object, earlier_head);
+}
+```
+
+The two unlink cases are visible at OVL `0xc869–0xc87e` (head) and
+`0xc883–0xc8b6` (middle). The new-head insertion is at `0xc8de–0xc90b`.
+`StoryLinkedChildren` now models this **type-2 subset** independently of
+`StoryModel`'s parser candidate filter; synthetic tests cover head and middle
+unlinking, destination insertion, repeated moves and malformed sibling cycles.
+The broader helper supports additional record types, and type-2 modeling
+does not establish their behavior, permission checks, or command admission.
+
 Given a saved object-state snapshot, inspect the **actual ordered relation
 paths** separately from direct `location` and parser visibility:
 
