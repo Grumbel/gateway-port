@@ -47,6 +47,44 @@ int main() {
         toggle(SDLK_KP_ENTER, SDL_KMOD_RALT, false, true);
         toggle(SDLK_KP_ENTER, SDL_KMOD_RALT, true, true);
         toggle(SDLK_F11, SDL_KMOD_NONE, false, false);
+        auto send_key = [&](SDL_Keycode key, bool repeat = false) {
+            SDL_Event shortcut{};
+            shortcut.type = SDL_EVENT_KEY_DOWN;
+            shortcut.key.windowID = window_id;
+            shortcut.key.key = key;
+            shortcut.key.repeat = repeat;
+            require(SDL_PushEvent(&shortcut), "push debug key");
+        };
+        gateway::DebugActions actions;
+        send_key(SDLK_F10);
+        require(host.poll(keys, mouse, vga, &actions) && host.debug_open(),
+                "F10 opens native debug menu");
+        require(keys.empty(), "F10 key leaked into guest input");
+        host.poll(keys, mouse, vga, &actions);
+        require(SDL_CursorVisible(), "menu uses native pointer");
+        send_key(SDLK_F10, true);
+        host.poll(keys, mouse, vga, &actions);
+        require(host.debug_open(), "F10 repeat closed menu");
+        actions = {};
+        send_key(SDLK_H);
+        send_key(SDLK_D);
+        send_key(SDLK_RIGHT);
+        send_key(SDLK_A);
+        host.poll(keys, mouse, vga, &actions);
+        require(host.hitboxes_visible() && actions.dump_state && actions.scene_step == 1 &&
+                    actions.toggle_auto_follow,
+                "debug actions did not reach host request queue");
+        require(keys.empty(), "modal debugger leaked control keys to DOS");
+        send_key(SDLK_ESCAPE);
+        host.poll(keys, mouse, vga, &actions);
+        host.poll(keys, mouse, vga, &actions);
+        require(!host.debug_open() && !SDL_CursorVisible(), "Escape closes debug menu");
+        require(keys.empty(), "debug-menu Escape leaked to DOS");
+        send_key(SDLK_A);
+        host.poll(keys, mouse, vga, &actions);
+        require(keys.size() == 1 && keys.front() == 0x1e61,
+                "ordinary guest keyboard input stopped after debug menu");
+        keys.clear();
         host.present(vga, mouse, {});
         SDL_Event event{};
         event.type = SDL_EVENT_MOUSE_MOTION;

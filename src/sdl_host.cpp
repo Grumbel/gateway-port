@@ -134,6 +134,29 @@ SdlHost::SdlHost(DisplayAspect aspect) : aspect_(aspect) {
     }
 }
 SdlHost::~SdlHost() { close(); }
+void SdlHost::debug_activate(unsigned row, DebugActions *actions) {
+    switch (row) {
+    case 0:
+        hitboxes_visible_ = !hitboxes_visible_;
+        break;
+    case 1:
+        if (actions)
+            actions->toggle_auto_follow = !actions->toggle_auto_follow;
+        break;
+    case 2:
+    case 3:
+        if (actions)
+            actions->scene_step += row == 2 ? -1 : 1;
+        break;
+    case 4:
+        if (actions)
+            actions->dump_state = true;
+        break;
+    case 5:
+        debug_open_ = false;
+        break;
+    }
+}
 void SdlHost::close() {
     if (audio_)
         SDL_DestroyAudioStream(audio_);
@@ -149,11 +172,14 @@ void SdlHost::close() {
     window_ = nullptr;
     SDL_Quit();
 }
-bool SdlHost::poll(std::deque<std::uint16_t> &keys, Mouse &mouse, const Vga &vga) {
+bool SdlHost::poll(std::deque<std::uint16_t> &keys, Mouse &mouse, const Vga &vga,
+                   DebugActions *actions) {
     const int presentation_height = presentation_height_ ? presentation_height_ : vga.height();
-    if (SDL_CursorVisible())
+    if (debug_open_ && !SDL_CursorVisible())
+        checked(SDL_ShowCursor());
+    else if (!debug_open_ && SDL_CursorVisible())
         checked(SDL_HideCursor());
-    if (mouse.warp_pending && texture_) {
+    if (!debug_open_ && mouse.warp_pending && texture_) {
         float x, y;
         const int rows = vga.text_mode() ? 200 : vga.height();
         checked(SDL_RenderCoordinatesToWindow(renderer_, float(mouse.x) * vga.width() / 640,
@@ -166,6 +192,30 @@ bool SdlHost::poll(std::deque<std::uint16_t> &keys, Mouse &mouse, const Vga &vga
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_EVENT_QUIT)
             return false;
+        if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F10) {
+            if (!event.key.repeat) {
+                debug_open_ = !debug_open_;
+                if (debug_open_)
+                    for (unsigned i = 0; i < 3; ++i)
+                        mouse.button(i, false);
+            }
+            continue; // F10 is a host command, never a guest BIOS keystroke.
+        }
+        if (debug_open_ && (event.type == SDL_EVENT_MOUSE_MOTION ||
+                            event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+                            event.type == SDL_EVENT_MOUSE_BUTTON_UP)) {
+            checked(SDL_ConvertEventToRenderCoordinates(renderer_, &event));
+            if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
+                event.button.button == SDL_BUTTON_LEFT) {
+                const auto row = debug_menu_row_at(int(event.button.x), int(event.button.y),
+                                                   vga.width());
+                if (row >= 0) {
+                    debug_row_ = unsigned(row);
+                    debug_activate(debug_row_, actions);
+                }
+            }
+            continue; // Never pass debug-menu clicks to the DOS mouse driver.
+        }
         if (event.type == SDL_EVENT_MOUSE_MOTION || event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
             event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
             checked(SDL_ConvertEventToRenderCoordinates(renderer_, &event));
@@ -201,6 +251,35 @@ bool SdlHost::poll(std::deque<std::uint16_t> &keys, Mouse &mouse, const Vga &vga
             }
             continue;
         }
+        if (debug_open_ && event.type == SDL_EVENT_KEY_DOWN) {
+            if (event.key.key == SDLK_ESCAPE) {
+                debug_open_ = false;
+            } else if (event.key.key == SDLK_UP) {
+                debug_row_ = (debug_row_ + debug_menu_rows - 1) % debug_menu_rows;
+            } else if (event.key.key == SDLK_DOWN) {
+                debug_row_ = (debug_row_ + 1) % debug_menu_rows;
+            } else if (event.key.key == SDLK_RETURN || event.key.key == SDLK_KP_ENTER ||
+                       event.key.key == SDLK_SPACE) {
+                if (!event.key.repeat)
+                    debug_activate(debug_row_, actions);
+            } else if (event.key.key == SDLK_H) {
+                if (!event.key.repeat)
+                    debug_activate(0, actions);
+            } else if (event.key.key == SDLK_A) {
+                if (!event.key.repeat)
+                    debug_activate(1, actions);
+            } else if (event.key.key == SDLK_D) {
+                if (!event.key.repeat)
+                    debug_activate(4, actions);
+            } else if (event.key.key == SDLK_LEFT || event.key.key == SDLK_PAGEUP) {
+                if (!event.key.repeat)
+                    debug_activate(2, actions);
+            } else if (event.key.key == SDLK_RIGHT || event.key.key == SDLK_PAGEDOWN) {
+                if (!event.key.repeat)
+                    debug_activate(3, actions);
+            }
+            continue;
+        }
         if (event.type == SDL_EVENT_KEY_DOWN && keys.size() < 16) {
             const auto key = bios_key(event.key);
             if (key)
@@ -210,7 +289,7 @@ bool SdlHost::poll(std::deque<std::uint16_t> &keys, Mouse &mouse, const Vga &vga
     return true;
 }
 void SdlHost::present(const Vga &vga, const Mouse &mouse,
-                      std::span<const std::int16_t> samples) {
+                      std::span<const std::int16_t> samples, const DebugOverlayData &debug) {
     if (!texture_ || width_ != vga.width() || height_ != vga.height()) {
         if (texture_)
             SDL_DestroyTexture(texture_);
@@ -228,6 +307,9 @@ void SdlHost::present(const Vga &vga, const Mouse &mouse,
                                                  SDL_LOGICAL_PRESENTATION_LETTERBOX));
     }
     auto pixels = vga.pixels();
+    if (debug_open_ || hitboxes_visible_)
+        draw_debug_overlay(pixels, width_, height_, mouse, debug, debug_open_, hitboxes_visible_,
+                           debug_row_);
     draw_mouse_cursor(pixels, width_, height_, mouse, vga.text_mode());
     checked(SDL_UpdateTexture(texture_, nullptr, pixels.data(), width_ * 4));
     checked(SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255));

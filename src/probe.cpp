@@ -5,6 +5,8 @@
 #include "dos_fcb.hpp"
 #include "dos_files.hpp"
 #include "dos_memory.hpp"
+#include "debug_scene.hpp"
+#include "debug_state.hpp"
 #include "mouse.hpp"
 #include "mz.hpp"
 #include "object_flags.hpp"
@@ -19,6 +21,7 @@
 #include <cctype>
 #include <charconv>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <ctime>
 #include <deque>
@@ -58,6 +61,11 @@ struct State {
     std::unique_ptr<gateway::DosDrive> drive;
     std::map<unsigned, gateway::DosFile> files;
     std::map<unsigned, std::string> file_names;
+    std::set<unsigned> debug_pic_handles;
+    std::unique_ptr<gateway::DebugSceneTracker> debug_scene;
+    std::vector<std::uint8_t> debug_object_dat;
+    std::optional<std::uint16_t> debug_object_ds;
+    std::string debug_status;
     std::ofstream research_trace;
     unsigned elapsed_ms = 0;
     bool overlays_active = false;
@@ -987,6 +995,19 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             state.files.emplace(handle, create ? state.drive->create(name, reg(uc, UC_X86_REG_CX))
                                                : state.drive->open(name, ax & 3));
             state.file_names[handle] = name;
+            if (state.debug_scene && !create) {
+                const auto region = gateway::DebugSceneTracker::matching_rgn(name);
+                if (!region.empty()) {
+                    try {
+                        if (state.debug_scene->add_picture(name, state.drive->read_all(name),
+                                                           state.drive->read_all(region)))
+                            state.debug_pic_handles.insert(handle);
+                    } catch (const std::exception &) {
+                        // Not every PIC series has an RGN. Debug discovery must
+                        // never affect the game's DOS file-open result.
+                    }
+                }
+            }
             set(uc, UC_X86_REG_AX, handle);
             set(uc, UC_X86_REG_FLAGS, reg(uc, UC_X86_REG_FLAGS) & ~1);
         } else if (number == 0x21 && (ax >> 8) == 0x40) {
@@ -1013,8 +1034,15 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             if (found == state.files.end())
                 throw gateway::DosIoError(6, "invalid DOS read handle");
             std::vector<std::uint8_t> buffer(reg(uc, UC_X86_REG_CX));
-            const auto source = state.research_trace.is_open() ? found->second.seek(0, 1) : 0;
+            const auto source = (state.research_trace.is_open() ||
+                                 state.debug_pic_handles.contains(reg(uc, UC_X86_REG_BX)))
+                                    ? found->second.seek(0, 1)
+                                    : 0;
             const auto count = found->second.read(buffer);
+            if (state.debug_scene &&
+                state.debug_pic_handles.contains(reg(uc, UC_X86_REG_BX)))
+                state.debug_scene->note_read(state.file_names[reg(uc, UC_X86_REG_BX)], source,
+                                             count);
             if (state.research_trace.is_open())
                 state.research_trace
                     << "read ms=" << std::dec << state.elapsed_ms << std::hex
@@ -1044,6 +1072,7 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             const auto handle = reg(uc, UC_X86_REG_BX);
             bool valid = false;
             state.file_names.erase(handle);
+            state.debug_pic_handles.erase(handle);
             if (state.files.erase(handle))
                 valid = true;
             else if (handle < state.standard_open.size()) {
@@ -1127,6 +1156,84 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
         uc_emu_stop(uc);
     }
 }
+
+// Used both by --dump-prefix and the F10 menu. The menu's extended files are
+// observations of guest-owned state, not a standalone/recovered story model.
+void dump_guest(uc_engine *uc, State &state, const std::string &prefix) {
+    text_snapshot(uc, state);
+    std::vector<std::uint8_t> memory(1024 * 1024);
+    check(uc_mem_read(uc, 0, memory.data(), memory.size()));
+    std::ofstream registers(prefix + ".regs");
+    for (const auto &[name, id] :
+         std::initializer_list<std::pair<const char *, int>>{{"AX", UC_X86_REG_AX},
+                                                             {"BX", UC_X86_REG_BX},
+                                                             {"CX", UC_X86_REG_CX},
+                                                             {"DX", UC_X86_REG_DX},
+                                                             {"CS", UC_X86_REG_CS},
+                                                             {"IP", UC_X86_REG_IP},
+                                                             {"SS", UC_X86_REG_SS},
+                                                             {"SP", UC_X86_REG_SP},
+                                                             {"DS", UC_X86_REG_DS},
+                                                             {"ES", UC_X86_REG_ES},
+                                                             {"BP", UC_X86_REG_BP},
+                                                             {"FLAGS", UC_X86_REG_FLAGS}})
+        registers << name << '=' << std::hex << reg(uc, id) << '\n';
+    registers.close();
+    std::ofstream binary(prefix + ".bin", std::ios::binary);
+    binary.write(reinterpret_cast<const char *>(memory.data()), memory.size());
+    binary.close();
+    std::ofstream picture(prefix + ".ppm", std::ios::binary);
+    picture << "P6\n" << state.vga.width() << ' ' << state.vga.height() << "\n255\n";
+    for (auto pixel : state.vga.pixels()) {
+        const char rgb[]{static_cast<char>(pixel >> 16), static_cast<char>(pixel >> 8),
+                         static_cast<char>(pixel)};
+        picture.write(rgb, 3);
+    }
+    picture.close();
+    if (!binary || !picture || !registers)
+        throw std::runtime_error("cannot write diagnostic dumps");
+
+    if (!state.debug_scene)
+        return;
+    const auto scene = state.debug_scene->view();
+    std::ofstream regions(prefix + ".regions.tsv");
+    regions << "picture\tregion_file\tentry\tregion_name_index\tname\tx0\ty0\tx1\ty1\n";
+    for (const auto &box : scene.boxes)
+        regions << scene.picture << '\t' << scene.region_file << '\t' << scene.entry << '\t'
+                << box.name_index << '\t' << box.name << '\t' << box.x0 << '\t' << box.y0
+                << '\t' << box.x1 << '\t' << box.y1 << '\n';
+    regions.close();
+    std::ofstream metadata(prefix + ".debug.txt");
+    metadata << "guest_ms=" << std::dec << state.elapsed_ms << '\n'
+             << "picture=" << scene.picture << '\n'
+             << "rgn=" << scene.region_file << '\n'
+             << "rgn_entry=" << scene.entry << '\n'
+             << "rgn_entry_count=" << scene.entry_count << '\n'
+             << "scene_selection=" << (scene.auto_follow ? "DOS PIC read estimate" : "manual")
+             << '\n' << "region_x=scene-local in two-pixel units (already doubled here)\n"
+             << "object_id=engine-local, NOT a region name index\n";
+    auto objects = gateway::inspect_gateway_state(memory, reg(uc, UC_X86_REG_DS));
+    if ((!objects || objects->objects.size() != 734) && state.debug_object_ds)
+        objects = gateway::inspect_gateway_state(memory, *state.debug_object_ds);
+    if (objects && objects->objects.size() == 734) {
+        std::ofstream records(prefix + ".objects.tsv");
+        records << gateway::debug_objects_tsv(*objects, state.debug_object_dat);
+        records.close();
+        if (!records)
+            throw std::runtime_error("cannot write object state dump");
+        metadata << "object_count=" << objects->objects.size() << '\n';
+        metadata << "object_ds=" << std::hex << objects->ds << '\n';
+        if (objects->book_location)
+            metadata << "book_location=" << std::dec << *objects->book_location << '\n';
+        if (objects->drawer_open)
+            metadata << "drawer_open=" << *objects->drawer_open << '\n';
+    } else {
+        metadata << "object_count=unknown (Gateway object table not detected at DS)\n";
+    }
+    metadata.close();
+    if (!regions || !metadata)
+        throw std::runtime_error("cannot write debug scene metadata");
+}
 } // namespace
 int main(int argc, char **argv) {
     bool interactive = false;
@@ -1138,6 +1245,7 @@ int main(int argc, char **argv) {
     writable_state = true;
 #endif
     std::filesystem::path state_directory;
+    std::filesystem::path debug_directory;
     unsigned milliseconds = 0;
     std::string dump_prefix, block_trace_path;
     std::string game_args, research_path, object_flags_mode;
@@ -1157,7 +1265,7 @@ int main(int argc, char **argv) {
                      "[--trace-research FILE --trace-entry HEX ...] [--key-at MS:BIOSHEX ...] "
                      "[--object-flags verify|hle | --object-state verify|hle] [--verify-overlays] "
                      "[--hle-overlays] [--trace-video] [--trace-timing] [--adlib-driver] "
-                     "[--aspect-ratio native|W:H]\n";
+                     "[--aspect-ratio native|W:H] [--debug-dir DIR]\n";
     };
     if (argc < 2 || std::string(argv[1]) == "--help") {
         usage();
@@ -1253,6 +1361,12 @@ int main(int argc, char **argv) {
                 return 2;
             }
             writable_state = true;
+        } else if (option == "--debug-dir" && i + 1 < argc) {
+            debug_directory = argv[++i];
+            if (debug_directory.empty()) {
+                usage();
+                return 2;
+            }
         } else if (option == "--break-at" && i + 1 < argc) {
             const std::string value = argv[++i];
             const auto result =
@@ -1393,6 +1507,18 @@ int main(int argc, char **argv) {
         state.drive = std::make_unique<gateway::DosDrive>(state.data_dir, state_directory);
         if (writable_state)
             std::cerr << "DOS state directory: " << state.drive->state_directory() << '\n';
+        if (interactive) {
+            state.debug_scene = std::make_unique<gateway::DebugSceneTracker>();
+            try {
+                state.debug_object_dat = state.drive->read_all("OBJECT.DAT");
+                state.debug_scene = std::make_unique<gateway::DebugSceneTracker>(
+                    gateway::parse_object_names(state.debug_object_dat));
+            } catch (const gateway::DosIoError &) {
+                // Other Legend releases need not have Gateway's OBJECT.DAT.
+            } catch (const std::runtime_error &) {
+                // An unknown object-name variant cannot block startup.
+            }
+        }
         auto font_prefix = std::filesystem::path(argv[1]).stem().string();
         std::transform(font_prefix.begin(), font_prefix.end(), font_prefix.begin(),
                        [](unsigned char c) { return std::toupper(c); });
@@ -1497,6 +1623,9 @@ int main(int argc, char **argv) {
                           reinterpret_cast<void *>(video_memory), &state, 0xa0000, 0xaffff));
 #ifdef GATEWAY_SDL
         std::unique_ptr<gateway::SdlHost> host;
+        gateway::DebugOverlayData debug_overlay;
+        unsigned debug_dump_sequence = 0;
+        unsigned last_debug_inspection = 0;
         if (interactive)
             host = std::make_unique<gateway::SdlHost>(
                 gateway::DisplayAspect{aspect_width, aspect_height});
@@ -1519,10 +1648,38 @@ int main(int argc, char **argv) {
             }
 #ifdef GATEWAY_SDL
             // Poll once per emulated millisecond, not at every ~60-us PIT edge.
-            if (host && elapsed_us % 1000 == 0 &&
-                !host->poll(state.keys, state.mouse, state.vga)) {
-                requested_stop = true;
-                break;
+            if (host && elapsed_us % 1000 == 0) {
+                gateway::DebugActions actions;
+                if (!host->poll(state.keys, state.mouse, state.vga, &actions)) {
+                    requested_stop = true;
+                    break;
+                }
+                if (state.debug_scene) {
+                    if (actions.toggle_auto_follow)
+                        state.debug_scene->auto_follow(!state.debug_scene->auto_follow());
+                    if (actions.scene_step)
+                        state.debug_scene->step(actions.scene_step);
+                }
+                if (actions.dump_state) {
+                    try {
+                        const auto directory = !debug_directory.empty()
+                                                   ? debug_directory
+                                                   : !state.drive->state_directory().empty()
+                                                         ? state.drive->state_directory() / "debug"
+                                                         : std::filesystem::path("build/debug");
+                        std::filesystem::create_directories(directory);
+                        const auto stem = "gateway-" + std::to_string(state.elapsed_ms) + "-" +
+                                          std::to_string(++debug_dump_sequence);
+                        const auto prefix = (directory / stem).string();
+                        dump_guest(engine.uc, state, prefix);
+                        state.debug_status = "Saved " + stem;
+                        std::cerr << "Gateway debug dump: " << prefix << ".{regs,bin,ppm,"
+                                     "regions.tsv,debug.txt[,objects.tsv]}\n";
+                    } catch (const std::exception &error) {
+                        state.debug_status = error.what();
+                        std::cerr << "Gateway debug dump failed: " << error.what() << '\n';
+                    }
+                }
             }
 #endif
             const auto pc =
@@ -1611,7 +1768,39 @@ int main(int argc, char **argv) {
                 text_snapshot(engine.uc, state);
                 auto samples = state.opl.render(768);
                 state.pit.mix_speaker(samples);
-                host->present(state.vga, state.mouse, samples);
+                if (host->debug_open() || host->hitboxes_visible()) {
+                    if (state.debug_scene)
+                        debug_overlay.scene = state.debug_scene->view();
+                    debug_overlay.guest_ms = state.elapsed_ms;
+                    debug_overlay.dump_message = state.debug_status;
+                    char registers[72];
+                    std::snprintf(registers, sizeof registers, "CS:IP %04X:%04X DS %04X ms %u",
+                                  reg(engine.uc, UC_X86_REG_CS), reg(engine.uc, UC_X86_REG_IP),
+                                  reg(engine.uc, UC_X86_REG_DS), state.elapsed_ms);
+                    debug_overlay.registers = registers;
+                    if (host->debug_open() &&
+                        (last_debug_inspection == 0 ||
+                         state.elapsed_ms - last_debug_inspection >= 250)) {
+                        last_debug_inspection = state.elapsed_ms;
+                        std::vector<std::uint8_t> memory(1024 * 1024);
+                        check(uc_mem_read(engine.uc, 0, memory.data(), memory.size()));
+                        const auto objects = gateway::inspect_gateway_state(
+                            memory, reg(engine.uc, UC_X86_REG_DS));
+                        if (objects && objects->objects.size() == 734) {
+                            state.debug_object_ds = objects->ds;
+                            std::ostringstream summary;
+                            summary << "Objects: " << objects->objects.size();
+                            if (objects->book_location)
+                                summary << "  book@" << std::hex << *objects->book_location;
+                            if (objects->drawer_open)
+                                summary << " drawer " << (*objects->drawer_open ? "open" : "closed");
+                            debug_overlay.object_summary = summary.str();
+                        } else {
+                            debug_overlay.object_summary = "Objects: not detected at DS";
+                        }
+                    }
+                }
+                host->present(state.vga, state.mouse, samples, debug_overlay);
                 std::this_thread::sleep_until(started + std::chrono::microseconds(elapsed_us));
             }
 #endif
@@ -1639,38 +1828,7 @@ int main(int argc, char **argv) {
                 throw std::runtime_error("cannot write guest block trace");
         }
         if (!dump_prefix.empty()) {
-            text_snapshot(engine.uc, state);
-            std::vector<std::uint8_t> memory(1024 * 1024);
-            check(uc_mem_read(engine.uc, 0, memory.data(), memory.size()));
-            std::ofstream registers(dump_prefix + ".regs");
-            for (const auto &[name, id] :
-                 std::initializer_list<std::pair<const char *, int>>{{"AX", UC_X86_REG_AX},
-                                                                     {"BX", UC_X86_REG_BX},
-                                                                     {"CX", UC_X86_REG_CX},
-                                                                     {"DX", UC_X86_REG_DX},
-                                                                     {"CS", UC_X86_REG_CS},
-                                                                     {"IP", UC_X86_REG_IP},
-                                                                     {"SS", UC_X86_REG_SS},
-                                                                     {"SP", UC_X86_REG_SP},
-                                                                     {"DS", UC_X86_REG_DS},
-                                                                     {"ES", UC_X86_REG_ES},
-                                                                     {"BP", UC_X86_REG_BP},
-                                                                     {"FLAGS", UC_X86_REG_FLAGS}})
-                registers << name << '=' << std::hex << reg(engine.uc, id) << '\n';
-            registers.close();
-            std::ofstream binary(dump_prefix + ".bin", std::ios::binary);
-            binary.write(reinterpret_cast<const char *>(memory.data()), memory.size());
-            binary.close();
-            std::ofstream picture(dump_prefix + ".ppm", std::ios::binary);
-            picture << "P6\n" << state.vga.width() << ' ' << state.vga.height() << "\n255\n";
-            for (auto pixel : state.vga.pixels()) {
-                const char rgb[]{static_cast<char>(pixel >> 16), static_cast<char>(pixel >> 8),
-                                 static_cast<char>(pixel)};
-                picture.write(rgb, 3);
-            }
-            picture.close();
-            if (!binary || !picture || !registers)
-                throw std::runtime_error("cannot write diagnostic dumps");
+            dump_guest(engine.uc, state, dump_prefix);
         }
         if (state.research_trace.is_open()) {
             state.research_trace.close();

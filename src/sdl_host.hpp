@@ -1,4 +1,5 @@
 #pragma once
+#include "debug_ui.hpp"
 #include "mouse.hpp"
 #include "vga.hpp"
 #include <cstdint>
@@ -18,8 +19,12 @@ class SdlHost {
     ~SdlHost();
     SdlHost(const SdlHost &) = delete;
     SdlHost &operator=(const SdlHost &) = delete;
-    bool poll(std::deque<std::uint16_t> &keys, Mouse &mouse, const Vga &vga);
-    void present(const Vga &vga, const Mouse &mouse, std::span<const std::int16_t> samples);
+    bool poll(std::deque<std::uint16_t> &keys, Mouse &mouse, const Vga &vga,
+              DebugActions *actions = nullptr);
+    void present(const Vga &vga, const Mouse &mouse, std::span<const std::int16_t> samples,
+                 const DebugOverlayData &debug = {});
+    bool debug_open() const { return debug_open_; }
+    bool hitboxes_visible() const { return hitboxes_visible_; }
 
   private:
     SDL_Window *window_ = nullptr;
@@ -30,6 +35,9 @@ class SdlHost {
     int presentation_height_ = 0;
     DisplayAspect aspect_;
     bool fullscreen_ = false;
+    bool debug_open_ = false, hitboxes_visible_ = false;
+    unsigned debug_row_ = 0;
+    void debug_activate(unsigned row, DebugActions *actions);
     void close();
 };
 } // namespace gateway
