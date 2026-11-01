@@ -406,7 +406,7 @@ word table and run the scripted native story trace:
 python3 tools/gateway_vocab.py ../gateway-dos/VOCAB.DAT look open close pull --groups
 python3 tools/trace_game_logic.py --scenario objects --services state \
   --output build/story-commands
-python3 tools/summarize_story_trace.py build/story-commands/native.trace
+python3 tools/summarize_story_trace.py build/story-commands/native.trace --actions
 ```
 
 The resulting raw command codes are not yet mapped to their typed verbs;

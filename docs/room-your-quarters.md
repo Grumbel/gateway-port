@@ -234,6 +234,26 @@ These observations come directly from that supplied trace:
 | `take book` | 25,333 virtual ms | `0x124` (drawer) | 5 |
 | `close drawer` | 34,422 virtual ms | `0x124` (drawer) | 6 |
 
+The same captured trace already includes the **top-level action dispatcher**
+at linear `0x147a6` / `1476:0046`, with the action ID in AX and at the third
+word of its far-call argument frame. Correlating those entries with the
+nearest recently submitted input gives:
+
+| Typed input | Native action AX |
+| --- | ---: |
+| `look` | `0x5f` |
+| `open drawer` | `0x71` |
+| `take book` | `0x46` |
+| `inventory` | `0x53` |
+| `drop book` | `0x32` |
+| `close drawer` | `0x1d` |
+
+In particular, the drawer handler's `0x7b` branch forwards **action `0x71`**,
+and its `0x7c` branch forwards **action `0x1d`** through the same shared call.
+This strongly supports associating these two inner command cases with opening
+and closing the drawer. It remains an **inference** until we see those exact
+branch PCs execute or capture the inner command byte at the new AX hook.
+
 The typed-input association is from the recent Enter key and call timing; it
 does not prove that an event ID is itself a verb ID. Event 5 reaches the drawer
 handler but its code only processes event 6; it need not modify the drawer.
@@ -251,11 +271,13 @@ translation from the command values to verb names is assumed.
 For an already captured bundle-042 trace, the same summarizer now works:
 
 ```sh
-python3 tools/summarize_story_trace.py build/story-commands/native.trace --details
+python3 tools/summarize_story_trace.py build/story-commands/native.trace --details --actions
 ```
 
 It shows events even when their command byte is unavailable (`?`); a newly
 captured trace using the `0x4a390` hook can fill in the exact byte.
+`--actions` also reports the native top-level action IDs already available in
+the older trace, independently of the inner command-byte probe.
 
 ## Next decompilation boundary
 
