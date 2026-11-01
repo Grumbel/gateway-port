@@ -88,7 +88,33 @@ frames and exposed 678 polygons. This establishes binary layout and frame
 association, **not** that the guest has selected the same frame now visible on
 screen. Live F10 checks are still needed for scene origin, visibility/clipping,
 actual mouse-selection priority and object labels in the other titles.
-The Gateway 1 live-table name resolver is intentionally not applied to them.
+The Gateway 1 DS offsets and handler-layout assumptions are intentionally not
+applied to them.
+
+### Experimental native object-name lookup
+
+Gateway 1's RGN IDs differ from sequential `OBJECT.DAT` string indexes (the
+drawer counterexample above). The other games can have the same ambiguity.
+Spellcasting 201, Spellcasting 301, and Gateway II include `OBJECT.DAT`, but
+their live object-directory addresses have not yet been recovered. Their F10
+debugger now searches conventional guest memory for a six-byte native object
+directory (`type, reserved, record offset, record segment`) independent of DS.
+It requires the first object's primary name token to point at the first string
+and verifies at least 256 consecutive typed records, far pointers and primary/
+secondary tokens against exact `OBJECT.DAT` NUL-delimited string boundaries.
+At least three-quarters of these records must have valid names; the table must
+also cover all IDs in the selected hitbox frame. A successful candidate is
+revalidated on each refresh, with its address retained as a search hint.
+
+This is a **hypothesis about shared native record layouts**, supported by
+synthetic tests, not a verified discovery in each game's runtime memory. It
+may fail to identify a different layout; in that case F10 continues showing
+object IDs and allows a D snapshot for analysis. A successful lookup exports
+the ID/name mapping in `.names.tsv` and its directory's linear address in
+`.debug.txt`. The mapping must be visually checked against the game before
+being treated as confirmed. Spellcasting 101 lacks `OBJECT.DAT` entirely, so
+the new lookup does not apply to it; its embedded object-name storage remains
+to be located.
 
 ## Live object state
 

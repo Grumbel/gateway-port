@@ -150,9 +150,12 @@ panel. Hitboxes come from the original `GATE_*.RGN`, `S101_R*.RGN`,
 packed rectangles; Gateway II uses polygon vertices (and two-point boxes),
 shown with the same merged outlines and translucent fills. All coordinates
 are relative to the room picture in the right-hand panel. The new dialects
-pass resource-fixture tests but need a live visual/alignment check. Object
-**names** currently resolve only for Gateway 1, whose native object table has
-been reverse-engineered; other games show numeric IDs, not guessed names.
+pass resource-fixture tests but need a live visual/alignment check. Gateway 1
+object names are confirmed against its native state. Spellcasting 201/301 and
+Gateway II now attempt a conservative lookup of native object records: names
+appear only after hundreds of records and their `OBJECT.DAT` tokens validate.
+If the layout is not recognized, numeric IDs remain visible. Spellcasting 101
+has no `OBJECT.DAT` and still needs a separate name-source investigation.
 Auto-selected scenes are **only an estimate** based on which picture
 was recently read, and can lag, select transitional art, or fail to identify a
 scene. Use manual frame selection to compare frames if that happens.
@@ -165,7 +168,8 @@ Override the destination with `--debug-dir DIR`. Every dump includes `.regs`
 (selection provenance). A
 `.objects.tsv` is also saved when the *Gateway 1* 734-object live table can be
 validated at DS; it includes object IDs, types, handler indices, name tokens,
-locations and raw state bytes. An unrecognized state is reported, not guessed.
+locations and raw state bytes. A `.names.tsv` is saved for the other games if
+their native names can be validated. An unrecognized state is reported, not guessed.
 RGN hotspot numbers **are engine object IDs**, but are **not** indexes into the
 `OBJECT.DAT` string list. Labels are resolved through the live engine table.
 The user confirms that merged regions render correctly and that their names now
