@@ -605,6 +605,13 @@ recovered the room-transition graph or the game scripts. See
 [the world-snapshot export](docs/object-state.md#export-an-initial-typed-world-snapshot-for-a-native-renderer)
 for example commands and limitations.
 
+The follow-up schema-2 snapshot confirms eight type-6 records holding two
+distinct room IDs (seven other records have zero links). For example, a door
+references Travel Pod and Satellite, and a rope ladder references Garden and
+Tree House. `--format dot` draws only these **unverified, undirected passage
+candidates** for visual inspection; it does not claim every room has an exit
+or that traversability has been recovered.
+
 The standalone C++ model exposes the corresponding *local slot-filtering*
 stage, but it still does not perform parser traversal or name resolution.
 See [resident parser candidate iterator](docs/action-dispatch.md#resident-parser-candidate-iterator)

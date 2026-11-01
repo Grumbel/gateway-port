@@ -60,12 +60,14 @@ emulation. Keep the original executable as a behavioral reference while mapping:
   snapshot. The actual full export shows only 50/110 room candidates with
   direct type-8 children (107 total), so type 8 cannot be treated as a
   universal scene-picture reference. Fifteen unattached type-6 records are
-  named like doors, bridges, or archways; eight reference a type-1 room in
-  their direct location word. Schema 2 now retains all native type-6 relation
-  words and labels possible two-room pairs, **not verified exits**. Regenerate
-  from the original `inspect_object_state.py` `objects.json` (the uploaded
-  schema-1 `world.json` omitted the relation words); inspect candidate
-  endpoints, then trace room-change callers and actual PIC selection. Also
+  named like doors, bridges, or archways. A schema-2 snapshot establishes
+  **eight pairs of distinct type-1 room IDs** (type-6 slot 0 matches direct
+  location; slot 1 names the second room); seven records have zero links.
+  These are **candidate passage endpoints, not verified exits**. Graphviz DOT
+  export now draws just these candidates. Next trace room-change handlers
+  through one candidate passage (e.g. Travel Pod/Satellite), verify which state
+  word changes, whether travel is bidirectional, how disabled passage records
+  are enabled, and actual PIC selection. Also
   trace real non-head sibling
   and nested moves, extend to other record types, and establish which callers enable
   the gate's restriction parameter. The child accessor (`0157:0825`) is distinct

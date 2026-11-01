@@ -297,6 +297,11 @@ python3 tools/export_story_world.py build/parser-child-writes/objects.json \
   --format markdown > build/parser-child-writes/world.md
 python3 tools/export_story_world.py build/parser-child-writes/objects.json \
   --format json > build/parser-child-writes/world.json
+python3 tools/export_story_world.py build/parser-child-writes/objects.json \
+  --format dot > build/parser-child-writes/room-candidates.dot
+# Optional (requires Graphviz):
+dot -Tsvg build/parser-child-writes/room-candidates.dot \
+  -o build/parser-child-writes/room-candidates.svg
 ```
 
 The Markdown inventory lists type-1 rooms with direct and nested contents,
@@ -328,27 +333,37 @@ roots have direct type-8 children (107 such children altogether), and **36**
 rooms have no descendants. The type-8 names include furniture/scene features
 like plants and controls, with only one literally called `picture`; a rule
 such as “choose the first type-8 child as the room's background image” would
-be unsupported. The captured schema-1 export also has 15 unattached type-6
-objects named like doors, archways, stairs and bridges; eight have nonzero
-direct-location words to type-1 rooms. Their *other* relation words were lost
-from that older world export, so it cannot establish room-to-room links.
+be unsupported. The original schema-1 export showed 15 unattached type-6
+records named like doors, archways, stairs and bridges, but omitted their
+multi-slot relation fields. A subsequent **schema-2 Markdown export** of the
+same 734-object native state supplied all these words: each of the 15 records
+has two relation slots; seven have `0, 0`, and the other eight have **two
+distinct references to type-1 rooms**, with the first word equal to the
+record's direct-location word.
 
-| Type-6 record | Resolved direct location (type-1 record) |
-| --- | --- |
-| `0x020` door | `0x013` Travel Pod |
-| `0x1b7` cabin hatch | `0x0fe` Dock |
-| `0x225` archway | `0x1ba` Mountain Plateau |
-| `0x226` rope ladder | `0x1c3` Garden |
-| `0x227` rope bridge | `0x1c9` Pinnacles |
-| `0x24d` archway | `0x232` City Center |
-| `0x24e` spiral staircase | `0x233` Temple Court |
-| `0x259` door | `0x257` Plaza |
+| Type-6 record | First relation / direct location | Second relation |
+| --- | --- | --- |
+| `0x020` door | `0x013` Travel Pod | `0x012` Satellite |
+| `0x1b7` cabin hatch | `0x0fe` Dock | `0x1b1` ship cabin |
+| `0x225` archway | `0x1ba` Mountain Plateau | `0x1bb` Vantage Point |
+| `0x226` rope ladder | `0x1c3` Garden | `0x1c4` Tree House |
+| `0x227` rope bridge | `0x1c9` Pinnacles | `0x1ca` Becker's House |
+| `0x24d` archway | `0x232` City Center | `0x233` Temple Court |
+| `0x24e` spiral staircase | `0x233` Temple Court | `0x234` Octagonal Room |
+| `0x259` door | `0x257` Plaza | `0x258` Tower |
 
-To inspect those missing fields, regenerate schema 2 **from the original
-`objects.json`** with the commands above, then examine the
-`Type-6 connector / multi-relation candidates` section of `world.md` or
-`connector_candidates` of `world.json`. A candidate pair would justify
-tracing the native room-change path, not hard-coding a map edge. This exporter
+This pattern is strong evidence for an **endpoint-pair representation** of
+special passage objects; the Temple Court appears in two different pairs.
+It does *not* establish which direction is allowed, whether the passages are
+usable, or how an action actually changes rooms. It also cannot be the full
+navigation graph: there are only eight populated pairs for 110 candidate
+rooms. The `--format dot` export plots these pairs as **dashed, undirected
+candidate edges**, omitting all unreferenced rooms; it is not a map of exits.
+
+Next, correlate a native room transition through one of these named passage
+objects with the type-6 record, the changing current-room variable, and the
+handler that performs the change. In particular, distinguish the recursive
+object-relation test (`0157:00c5`) from parser direction handling. This exporter
 still does **not** reconstruct scripts, object visibility, exit connections,
 mutable flags, text selection, picture composition, or transitions. Inactive
 objects with location zero remain records, not automatically assigned rooms.

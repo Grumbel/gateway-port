@@ -682,6 +682,15 @@ containment remains unproven. This explains why a modern implementation
 must distinguish relation reachability from both direct location and the
 parser's still-unrecovered visibility gate.
 
+The later 734-object world export found a narrower pattern: all 15 type-6
+records have two relation slots; eight contain two distinct type-1 room IDs,
+with slot 0 equal to the direct-location word, and seven contain `0, 0`.
+Names such as door, cabin hatch, archway and rope bridge make these plausible
+*passage endpoint pairs*. This is stronger evidence for spatial structure,
+but **not evidence that `0157:00c5` performs movement**: its implementation
+only tests recursive object relations. See the [candidate endpoint table and
+Graphviz export](object-state.md#export-an-initial-typed-world-snapshot-for-a-native-renderer).
+
 The experimental C++ `StoryModel::evaluate_carry_precheck()` now models
 TAKE's direct-location case and DROP's ordered recursive relationship
 traversal. Additional type-6 links may be supplied through
