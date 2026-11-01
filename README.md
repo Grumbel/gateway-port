@@ -461,6 +461,20 @@ and INVENTORY commands made **no additional flag changes**. The
 [action-dispatch notes](docs/action-dispatch.md#which-service-calls-actually-changed-state)
 give a controlled `--command-sequence` replay for testing repeated actions.
 
+That repeat replay confirmed persistent object flags: reopening the drawer
+changes only `0x0c`, and taking the book a second time changes only its
+location. An initial, independent **C++ story-state model** now reproduces
+those confirmed mutations without executing the DOS game:
+
+```sh
+ctest --test-dir "${GATEWAY_BUILD_DIR:-build}" -R story-model --output-on-failure
+```
+
+This model is deliberately limited to the *effects of already-successful*
+OPEN, CLOSE, TAKE and DROP commands. It is not a new parser or interpreter;
+the missing action guards, containment updates and story callbacks are
+documented in [action-dispatch.md](docs/action-dispatch.md#first-standalone-c-state-model).
+
 RTLink sections and all handler entry file offsets can now be extracted:
 
 ```sh

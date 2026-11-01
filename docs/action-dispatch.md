@@ -360,6 +360,51 @@ later handler. Commands that fail parser validation or are blocked by the
 game's own state rules are not necessarily comparable; inspect the action
 rows and on-screen results before interpreting absent writes.
 
+The subsequent user replay confirmed exactly those persistent effects:
+
+| Time | Action | Changed state |
+| ---: | --- | --- |
+| 18,392 ms | OPEN | Drawer `0x0c=1`, `0x02=1`; book `0x07=1` |
+| 21,422 ms | CLOSE | Drawer `0x0c=0` |
+| 25,393 ms | OPEN again | Drawer `0x0c=1` **only** |
+| 28,333 ms | TAKE | Book location `0xd3`, `0x02=1` |
+| 31,333 ms | DROP | Book location `0xee` |
+| 34,333 ms | TAKE again | Book location `0xd3` **only** |
+| 37,326 ms | INVENTORY | No changes |
+
+This run verified 189 RTLink section loads across nine sections and ended
+with a different framebuffer SHA-256 than the original replay, as expected
+from the different actions and final state. In this bounded scenario `0x02`
+and `0x07` are persistent across close/reopen and take/drop cycles. That is
+strong evidence for the earlier *interacted with* / *seen* interpretations,
+but the full property semantics and initial-state rules remain unknown.
+
+### First standalone C++ state model
+
+`src/story_model.hpp` and `src/story_model.cpp` introduce an **experimental
+host-owned object state** and four confirmed successful-action transitions:
+
+- OPEN sets properties `0x0c` and `0x02`; CLOSE clears only `0x0c`.
+- TAKE moves the target into the player, sets `0x02`, and clears `0x08`/`0x0a`.
+- DROP moves the target to the current room.
+- A separate `observe(objects)` operation sets property `0x07`, since scene
+  disclosure and the command itself are not yet proven to be the same routine.
+
+The model emits mutations **only when logical object state actually changes**,
+matching the trace's changed-only view. It uses no DOS guest memory, Unicorn,
+SDL, script resources, or hardcoded Gateway object IDs. The `story-model`
+CTest exercises the exact first-room repeated-action sequence and checks that
+the second OPEN and TAKE preserve the persistent flags. It also checks that
+TAKE would clear `0x08` and `0x0a` when they start set, whereas those clear
+operations were redundant in the observed native trace.
+
+This is **not yet an interpreter or a general action implementation**:
+`apply_success` assumes the original code has already accepted the command.
+Reachability, mode and property guards, object containment/list maintenance,
+text output, room scripts and visual disclosure remain outside the model.
+Successful state equivalence in this one replay must not be generalized to
+other objects or Legend games without additional tests.
+
 `--native-only` avoids two additional HLE comparison replays; omit it for the
 full three-way regression check. Guest addresses are specific to the known
 Gateway launch layout, and sections loaded in the same bank may require
@@ -368,6 +413,6 @@ residency checks when analyzing other games or actions.
 For the modern replacement action layer, we can now distinguish the global
 OPEN/CLOSE routines from object-specific event-6 handlers and reuse the
 verified object-flag service ABI. Next steps are to distinguish redundant
-`0x02` and `0x07` persistence across repeated actions, recover mode guards
-and other state semantics, and identify reusable contracts for
-TAKE/DROP/INVENTORY before replacing native execution.
+`0x02` and `0x07` effects across more rooms and objects, recover mode guards
+and object-list bookkeeping, then compare the independent C++ model against
+multiple scenarios before considering native action replacement.
