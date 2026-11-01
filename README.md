@@ -415,6 +415,13 @@ The summarizer accepts older unannotated entry traces too; use `--details` to
 see each room/drawer event with the nearest recently completed typed input.
 New traces also capture the drawer's command byte directly from AX at its
 native comparison site (`0x4a390`), avoiding the original pointer-probe gap.
+Live tracing establishes that normal `open drawer` (`0x71`) and `close drawer`
+(`0x1d`) fall through the drawer-specific handler to shared action logic.
+To inspect the native action handler pointers from the existing replay dump:
+
+```sh
+python3 tools/inspect_action_dispatch.py build/story-commands-043/native
+```
 
 RTLink sections and all handler entry file offsets can now be extracted:
 

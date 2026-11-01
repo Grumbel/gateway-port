@@ -250,9 +250,10 @@ nearest recently submitted input gives:
 
 In particular, the drawer handler's `0x7b` branch forwards **action `0x71`**,
 and its `0x7c` branch forwards **action `0x1d`** through the same shared call.
-This strongly supports associating these two inner command cases with opening
-and closing the drawer. It remains an **inference** until we see those exact
-branch PCs execute or capture the inner command byte at the new AX hook.
+This initially suggested those branch codes represent ordinary open and close.
+**That inference was subsequently disproved by the AX trace below**: the
+actual command bytes arriving for the two typed operations are `0x71` and
+`0x1d`, *not* `0x7b` and `0x7c`.
 
 The typed-input association is from the recent Enter key and call timing; it
 does not prove that an event ID is itself a verb ID. Event 5 reaches the drawer
@@ -279,17 +280,52 @@ captured trace using the `0x4a390` hook can fill in the exact byte.
 `--actions` also reports the native top-level action IDs already available in
 the older trace, independently of the inner command-byte probe.
 
+### Confirmed AX values: open/close are handled elsewhere
+
+A fresh bundle-043 replay provided the actual `0x4a390` entry lines:
+
+| Last typed command | Guest time | `AX` at drawer `cmp ax,0x61` |
+| --- | ---: | ---: |
+| `open drawer` | 18,392 ms | **`0x0071`** |
+| `close drawer` | 34,422 ms | **`0x001d`** |
+
+At file offset `0x51a90` the native drawer handler compares this zero-extended
+AX value with `0x61` and dispatches through other tests at `0x51a9d` and
+`0x51b69`. The handled command values are `0x3a`, `0x46`, `0x61`, `0x65`,
+`0x7b`, `0x7c`, and `0x85`. Neither observed byte matches. Both paths therefore
+reach the default at `0x51b7d` (`sub ax,ax; pop bp; retf`): **the drawer-specific
+handler returns zero for ordinary OPEN and CLOSE**. The action dispatcher or
+another shared routine must implement those actions' actual effects; the
+earlier conjecture that the drawer handler performs ordinary open/close was
+incorrect. The generic action path itself has not yet been traced.
+
+The existing `trace_game_logic.py` replay leaves the guest's native action
+directory in its final `.bin` and `.regs` dump. The engine-boundary trace
+established that `[DS:8da8]` points to a six-byte-per-action table, indexed by
+`0x28 + 6*action` and holding a far handler pointer plus an unclassified word.
+Inspect its original runtime pointers without invoking the guest again:
+
+```sh
+python3 tools/inspect_action_dispatch.py build/story-commands-043/native
+```
+
+The output selects the six action IDs confirmed in the command replay. Use
+`--all` for all 195 entries, or repeat `--action 0x71 --action 0x1d` for a
+subset. This can identify the shared open/close entry points and is the next
+step before a replacement native action implementation. Addresses from this
+memory table are **runtime far pointers**, not overlay file offsets.
+
 ## Next decompilation boundary
 
 1. Trace all calls into handler 233, with event IDs and register/stack state,
    to give the cases semantic names and validate the event-8/9/11 equivalence.
 2. Determine the meaning of property 7 and the state word read via
    `[DS:9476] : 393e` by comparing snapshots before/after room entry.
-3. Use the command trace above to map the drawer's numeric command codes to
-   typed input, resolve the forwarded service calls, then implement the
-   combined room/drawer behavior
-   using host state and compare it against the `look`, `open drawer`, `look`
-   replay.
+3. Use the action-directory exporter and a new shared-action entry trace to
+   identify the **generic** open/close implementations. Do not emulate them
+   in the drawer handler: it returns zero for both observed command values.
+   Resolve the forwarded services separately, then compare a host translation
+   against the `look`, `open drawer`, `look` replay.
 4. Preserve the native interpreter/overlay path as the correctness oracle until
    each replacement is tested against the same commands and state transitions.
 
