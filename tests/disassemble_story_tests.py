@@ -7,6 +7,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from disassemble_story import annotate, event_targets, text_id
 from gateway_strings import GatewayStrings
+from gateway_vocab import GatewayVocabulary
+from summarize_story_trace import summarize
 import struct
 
 
@@ -40,6 +42,25 @@ class StoryDisassemblyTests(unittest.TestCase):
         data = (struct.pack('<HHHHH', 1, 1, 1, 1, 2)
                 + struct.pack('<2H', *tree) + struct.pack('<HH', 0, 0) + b'\x02')
         self.assertEqual(GatewayStrings(data).get(0, 0), 'A')
+
+    def test_synthetic_vocabulary_and_link_group(self):
+        tree = struct.pack('<2H', 0xffbe, 0xffff)
+        data = (struct.pack('<H', 2) + tree + struct.pack('<H', 1)
+                + b'\x02' + struct.pack('<H', 1) + struct.pack('<HH', 0, 1)
+                + struct.pack('<H', 1) + struct.pack('<HHHH', 0, 1, 0, 7))
+        vocabulary = GatewayVocabulary(data)
+        self.assertEqual(vocabulary.entries[0]['text'], 'A')
+        self.assertEqual(vocabulary.entries[0]['flags'], 1)
+        self.assertEqual(vocabulary.groups, [{'key': 0, 'pairs': [(0, 7)]}])
+
+    def test_story_trace_summary(self):
+        lines = ['key ms=500 value=1c0d',
+                 'entry ms=501 pc=4a378 cs=49d8 story_object=124 story_event=6 story_command=3a',
+                 'entry ms=510 pc=4a378 cs=49d8 story_object=124 story_event=6 story_command=3a',
+                 'entry ms=520 pc=49db5 cs=49d8 story_object=ee story_event=8 story_command=5f',
+                 'entry ms=521 pc=dead cs=1111']
+        self.assertEqual(summarize(lines), [(0xee, 8, 0x5f, 1, 520),
+                                            (0x124, 6, 0x3a, 2, 501)])
 
 
 if __name__ == '__main__':
