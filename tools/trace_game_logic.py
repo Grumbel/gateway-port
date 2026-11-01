@@ -23,6 +23,8 @@ parser.add_argument('--trace-state-writes', action='store_true',
                     help='verify native state services and mark actual byte changes in one replay')
 parser.add_argument('--trace-admission', action='store_true',
                     help='trace the earlier resident action-selector callback and return')
+parser.add_argument('--trace-visibility', action='store_true',
+                    help='trace restricted candidate child-slot checks in the resident parser')
 parser.add_argument('--command-sequence', metavar='CMD,CMD,...',
                     help='replace the seven objects-scenario commands at 18,21,25,28,31,34,37 s')
 args = parser.parse_args()
@@ -32,6 +34,8 @@ if args.trace_state_writes and not args.native_only:
     parser.error('--trace-state-writes requires --native-only')
 if args.trace_admission and (not args.native_only or args.scenario != 'objects'):
     parser.error('--trace-admission requires --native-only --scenario objects')
+if args.trace_visibility and (not args.native_only or args.scenario != 'objects'):
+    parser.error('--trace-visibility requires --native-only --scenario objects')
 if args.command_sequence and not args.native_only:
     parser.error('--command-sequence currently requires --native-only')
 if args.hle_overlays:
@@ -56,6 +60,8 @@ if args.scenario in ['drawer', 'objects']:
         parser.error(f'{args.probe} lacks state-write delta tracing; run gateway-build')
     if args.trace_admission and b' admission_target=' not in probe_bytes:
         parser.error(f'{args.probe} lacks action-selector trace support; run gateway-build')
+    if args.trace_visibility and b' visibility_stage=' not in probe_bytes:
+        parser.error(f'{args.probe} lacks candidate-visibility trace support; run gateway-build')
 args.output.mkdir(parents=True, exist_ok=True)
 if custom_commands:
     print('Scripted commands: ' + ' | '.join(custom_commands))
@@ -99,6 +105,11 @@ for mode in (['native'] if args.native_only else ['native', 'verify', 'hle']):
         # selector function entry, indirect callback call, and return AX.
         command += ['--trace-entry', '14768', '--trace-entry', '14799',
                     '--trace-entry', '147a2']
+    if args.trace_visibility and mode == 'native':
+        # GATEMAIN.EXE resident section at 1000:0000: restricted slot gate
+        # before/after call, and child-link accessor before/after call.
+        command += ['--trace-entry', '10063', '--trace-entry', '10068',
+                    '--trace-entry', '10075', '--trace-entry', '1007a']
     if mode == 'native' and args.trace_state_writes:
         # Observe the native implementation's writes without replacing them.
         # Its existing verification hooks compare the predicted bytes with

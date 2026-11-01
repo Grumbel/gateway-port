@@ -523,6 +523,27 @@ reproduces all nine supplied scenarios and their selector observations; nested
 containers and general parser visibility remain unimplemented. See
 [the callback disassembly](docs/action-dispatch.md#verified-takedrop-pre-action-callbacks).
 
+A separate **parser candidate traversal** is now partially decoded. The
+original EXE uses a child-slot list distinct from the handler-side relation
+links, and a flag-based slot predicate (`0385:0a9a`) when a caller requests
+restricted enumeration. The snapshot exporter includes both `child_links` and
+`relation_links`; the standalone C++ model reproduces the slot predicate but
+does not yet use it to resolve commands. To collect native evidence around
+OPEN/CLOSE, run:
+
+```sh
+gateway-build
+python3 tools/trace_game_logic.py --scenario objects --native-only \
+  --verify-overlays --trace-visibility --output build/parser-child-check
+python3 tools/summarize_visibility_trace.py \
+  build/parser-child-check/native.trace --object 0x124
+```
+
+This logs the predicate's AX result separately from child lookups; the
+summary's command labels are *time windows*, not confirmed parser decisions.
+See [resident parser candidate iterator](docs/action-dispatch.md#resident-parser-candidate-iterator)
+for offsets, controls, limitations, and a repeated OPEN/CLOSE command sequence.
+
 RTLink sections and all handler entry file offsets can now be extracted:
 
 ```sh

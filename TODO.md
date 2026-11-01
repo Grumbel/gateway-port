@@ -38,11 +38,12 @@ emulation. Keep the original executable as a behavioral reference while mapping:
   values are engine object IDs; `OBJECT.DAT` list indexes are different.
 - Which guest variables encode room and action state; which native handlers
   update them; and how object flag/location changes map to player actions.
-- Decode the *earlier parser visibility/reachability gate* that suppresses TAKE
-  of a book in a closed drawer. DROP's separate recursive relationship helper
-  (`0157:00c5`) is now decoded, including multi-slot type-6 links; compare its
-  behavior against native nested-object traces and identify which links denote
-  spatial containment versus other relations.
+- Validate the newly recovered parser **child-slot gate** (`0385:0a9a`) in
+  native OPEN/CLOSE and hidden-book traces, and establish which callers enable
+  its restriction parameter. The child accessor (`0157:0825`) is distinct
+  from DROP's recursive relationship helper (`0157:00c5`); both are decoded,
+  but their complete role in parser visibility and spatial containment is
+  still unresolved. Compare both graphs against nested-object traces.
 - The parser's action/argument representation, handler dispatch, text formatting
   and rendering calls, with reproducible before/after state dumps.
 - Save/restore state boundaries before designing a standalone data model or

@@ -558,6 +558,48 @@ void trace_entry(uc_engine *uc, std::uint64_t address, std::uint32_t, void *opaq
                 break;
             bp = words[0];
         }
+        // Resident parser candidate iterator (GATEMAIN.EXE file 0x0eba,
+        // running at 1000:0000). The original code invokes the slot gate
+        // 0385:0a9a only with [BP+0x0c] != 0, then fetches a child via
+        // 0157:0825. Capture both call boundaries to distinguish "slot not
+        // considered" from "slot has no child", without guessing command
+        // semantics from a final memory snapshot. These hooks are opt-in.
+        if ((address == 0x10063 || address == 0x10068 ||
+             address == 0x10075 || address == 0x1007a) &&
+            reg(uc, UC_X86_REG_CS) == 0x1000) {
+            const auto stage = address == 0x10063 ? "gate-call" :
+                               address == 0x10068 ? "gate-return" :
+                               address == 0x10075 ? "child-call" : "child-return";
+            std::array<std::uint8_t, 5> code{};
+            check(uc_mem_read(uc, address, code.data(), code.size()));
+            const bool matched =
+                (address == 0x10063 && code == std::array<std::uint8_t, 5>{
+                     0x9a, 0x9a, 0x0a, 0x85, 0x03}) ||
+                (address == 0x10068 && code == std::array<std::uint8_t, 5>{
+                     0x83, 0xc4, 0x04, 0x0b, 0xc0}) ||
+                (address == 0x10075 && code == std::array<std::uint8_t, 5>{
+                     0x9a, 0x25, 0x08, 0x57, 0x01}) ||
+                (address == 0x1007a && code == std::array<std::uint8_t, 5>{
+                     0x83, 0xc4, 0x04, 0x89, 0x46});
+            out << " visibility_stage=" << stage;
+            if (matched) {
+                const auto current_bp = reg(uc, UC_X86_REG_BP);
+                auto local = [&](std::uint16_t offset) {
+                    std::uint16_t value{};
+                    check(uc_mem_read(uc, base + offset, &value, sizeof(value)));
+                    return value;
+                };
+                out << " visibility_object=" << local(std::uint16_t(current_bp - 0x50))
+                    << " visibility_slot=" << local(std::uint16_t(current_bp - 4))
+                    << " visibility_restricted=" << local(std::uint16_t(current_bp + 0x0c));
+                if (address == 0x10068)
+                    out << " visibility_result=" << reg(uc, UC_X86_REG_AX);
+                if (address == 0x1007a)
+                    out << " visibility_child=" << reg(uc, UC_X86_REG_AX);
+            } else {
+                out << " visibility_probe=code-mismatch";
+            }
+        }
         // A far-call target may be altered during RTLink dispatch. Capture
         // the four preceding trampoline bytes plus the target itself at the
         // callsite, at the callee, and after return, rather than extrapolating

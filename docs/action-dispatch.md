@@ -697,6 +697,77 @@ raw selector return separately from whether the normal action dispatched.
 None of this promotes the first-room visibility approximation to a general
 parser or container implementation.
 
+### Resident parser candidate iterator
+
+The original resident `GATEMAIN.EXE` at **file `0x0eba`** is loaded at
+`1000:0000` in the bounded Gateway replay. The mapping is cross-checked
+against the known action-dispatch far call at file `0x138f` / live
+`1000:04d5`. This code enumerates candidate child slots and invokes another
+callback, but we have **not** reconstructed the whole parser or its call graph.
+
+The relevant loop is at file `0x0f11–0x0f3c`. When the caller's word
+`[BP+0x0c]` is nonzero, it calls `0385:0a9a` (file `0x53c4`) with
+`(object=[BP-0x50], slot=[BP-0x04])`. A zero AX skips that slot; otherwise
+it fetches the child through `0157:0825` (file `0x2d63`). A zero child is
+also skipped. Crucially, `0157:0825` uses the **second** descriptor byte as
+the number of child slots, and a type-specific child list. These fields are
+now exported as `child_count`/`child_links` (see
+[object-state.md](object-state.md#separate-parser-child-slots)). They are
+different from `relation_count`/`relation_links` used by the DROP helper.
+
+The `0385:0a9a` slot predicate has the following confirmed control flow:
+
+```cpp
+bool can_enumerate_child_slot(ObjectId object, unsigned type, unsigned slot) {
+    if (type == 1 || type == 7) return true;
+    if (slot == 0)
+        return flag(object, 0x13) && (flag(object, 0x0c) || flag(object, 0x1f));
+    if (slot == 1) return flag(object, 0x1c);
+    if (slot == 2) return true;
+    return false;
+}
+```
+
+The type checks are at file `0x53da–0x53e2`; the slot dispatch is at
+`0x53e4–0x53f5`; property reads are at `0x53f7–0x542e` and
+`0x5435–0x5444`. The C++ research-only
+`StoryModel::can_enumerate_child_slot()` mirrors this predicate; it is not
+currently wired into game execution. In the first-room action traces,
+property `0x0c` tracks the drawer being open, but names like *container*,
+*transparent*, *reachable*, and *visible* for the other properties remain
+inferences. Likewise, `1000:0000` may enumerate candidates for multiple
+parser contexts; its caller's restriction flag is not yet characterized.
+
+To capture a native replay with the gate, the object/slot arguments, AX
+after the predicate, and the child returned from the accessor:
+
+```sh
+gateway-build
+python3 tools/trace_game_logic.py --scenario objects --native-only \
+  --verify-overlays --trace-visibility \
+  --command-sequence 'open drawer,close drawer,open drawer,take book,drop book,take book,inventory' \
+  --output build/parser-child-check
+python3 tools/summarize_visibility_trace.py \
+  build/parser-child-check/native.trace --object 0x124 \
+  --commands 'open drawer,close drawer,open drawer,take book,drop book,take book,inventory'
+```
+
+For fine-grained inspection, `rg 'visibility_stage=' .../native.trace` shows
+the raw `gate-call` (`1000:0063`), `gate-return` (`1000:0068`), `child-call`
+(`1000:0075`) and `child-return` (`1000:007a`) entries. The probe verifies
+the expected instruction bytes before interpreting local variables; a
+`visibility_probe=code-mismatch` must be investigated, **not** treated as
+a valid deny decision. The summary groups the gate result and returned
+children by *scripted time window*, not by proven command ownership. It
+does not assert that a particular child was accepted as a verb's target.
+
+**Next validation:** compare the drawer's restricted slot probes before and
+after OPEN/CLOSE and repeat the same experiment on nested/type-6 objects.
+If no entries appear, first establish whether `1000:0000` is reached in the
+test's active parser path; do not infer a missing visibility check merely
+from an empty trace. The actual object-name resolution and command context
+remain unmodeled.
+
 Given a saved object-state snapshot, inspect the **actual ordered relation
 paths** separately from direct `location` and parser visibility:
 
@@ -724,10 +795,11 @@ ctest --test-dir "${GATEWAY_BUILD_DIR:-build}" \
   -R 'story-(model|action-matrix|action-admission)' --output-on-failure
 ```
 
-The next unresolved step is the parser/visibility gate that decides whether
-the book can be referenced at all when inside the closed drawer. We can now
-probe native nested-container cases using the recovered relation graph, but
-still need real game traces to verify every type-6 relationship's meaning.
+The slot-level parser traversal predicate is now disassembled, but it is not
+yet established which native parser paths enable its restriction parameter,
+or whether it fully explains references to the book in the closed drawer.
+The native child-slot trace above and nested-container cases are the next
+validation steps; relation slot semantics also still require live evidence.
 
 ### First standalone C++ state model
 

@@ -90,6 +90,23 @@ class TraceGameLogicTests(unittest.TestCase):
             self.assertIn('lacks action-selector trace support', native.stderr)
             self.assertFalse(output.exists())
 
+    def test_visibility_trace_requires_native_objects_and_updated_probe(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            probe = root / 'gateway-probe'
+            probe.write_bytes(b' action_code= changed= admission_target= old probe')
+            output = root / 'replay'
+            base = [sys.executable, str(DRIVER), '--trace-visibility',
+                    '--probe', str(probe), '--output', str(output)]
+            wrong = subprocess.run(base, capture_output=True, text=True)
+            self.assertEqual(wrong.returncode, 2)
+            self.assertIn('requires --native-only --scenario objects', wrong.stderr)
+            native = subprocess.run(base + ['--scenario', 'objects', '--native-only'],
+                                    capture_output=True, text=True)
+            self.assertEqual(native.returncode, 2)
+            self.assertIn('lacks candidate-visibility trace support', native.stderr)
+            self.assertFalse(output.exists())
+
 
 if __name__ == '__main__':
     unittest.main()
