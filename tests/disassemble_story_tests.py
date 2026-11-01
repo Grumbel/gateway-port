@@ -9,6 +9,7 @@ from disassemble_story import annotate, event_targets, text_id
 from gateway_strings import GatewayStrings
 from gateway_vocab import GatewayVocabulary
 from summarize_story_trace import collect_actions, summarize
+from inspect_action_dispatch import inspect_actions
 import struct
 
 
@@ -94,6 +95,17 @@ class StoryDisassemblyTests(unittest.TestCase):
                  'entry ms=186 pc=147a6 cs=1477 ax=46 stack=4da,1000,46,',
                  'entry ms=3000 pc=147a6 cs=1476 ax=ff stack=4da,1000,ff,']
         self.assertEqual(collect_actions(lines), [(185, 'open', 0x71)])
+
+    def test_native_action_directory_from_memory(self):
+        memory = bytearray(0x20000)
+        struct.pack_into('<H', memory, 0x10000 + 0x8da8, 0x1200)
+        struct.pack_into('<3H', memory, 0x12000 + 0x28 + 6 * 0x5f,
+                         0x0b90, 0x148e, 0x0008)
+        records = inspect_actions(memory, 0x1000, [0x5f])
+        self.assertEqual(records, [dict(action=0x5f, handler_segment=0x148e,
+                                        handler_offset=0x0b90, extra_word=8)])
+        with self.assertRaises(ValueError):
+            inspect_actions(memory, 0x1000, [196])
 
 
 if __name__ == '__main__':
