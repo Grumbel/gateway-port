@@ -201,9 +201,12 @@ void port_out(uc_engine *uc, std::uint32_t port, int size, std::uint32_t value,
                 state.opl.out(port + i, (value >> (8 * i)) & 255);
                 continue;
             }
-            if (port + i == 0x226) {
-                // Sound Blaster DSP reset probe at base 220h + 6. We do not
-                // claim the DSP is present (no 0xAA reset acknowledgement).
+            if (port + i == 0x226 || port + i == 0x22a || port + i == 0x22c ||
+                port + i == 0x22e) {
+                // Sound Blaster DSP probe ports (base 220h). Some detection
+                // routines write even to read-only DSP registers. With no
+                // DSP installed, none of these writes has an effect and there
+                // is no 0xAA reset acknowledgement.
                 continue;
             }
             if (!state.vga.handles_port(port + i)) {
@@ -654,6 +657,12 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             // nonzero AL is not a supported subfunction; report that through
             // the BIOS signature instead of terminating the guest.
             set(uc, UC_X86_REG_AX, ax & 0xff00);
+        } else if (number == 0x10 && (ax >> 8) == 0x12 &&
+                   (reg(uc, UC_X86_REG_BX) & 255) == 0x10) {
+            // Return EGA/VGA configuration: color adapter with 256 KiB VRAM.
+            // Keep CX nonzero so software detects the adapter as installed.
+            set(uc, UC_X86_REG_BX, 0x0003);
+            set(uc, UC_X86_REG_CX, 0x0009);
         } else if (number == 0x10 && (ax >> 8) == 9) {
             const auto bx = reg(uc, UC_X86_REG_BX);
             const auto page = (bx >> 8) & 7;

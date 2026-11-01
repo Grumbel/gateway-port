@@ -122,6 +122,14 @@ return an undriven `FFh` instead of claiming a reset acknowledgement (`AAh`).
 This preserves the existing AdLib emulator and avoids inventing DSP audio
 support. Subsequent startup and audio behavior still need runtime validation.
 
+In the next user trace, 101 advanced to `INT 10h AX=1200h, BL=10h`, the
+standard EGA/VGA configuration query. The runtime now identifies a color
+adapter with 256 KiB of video memory and a nonzero configuration word.
+Spellcasting 201 progressed to a write to `22Ah`, which is normally the
+Sound Blaster DSP's read-data register. Detection code may write to that
+read-only register; this is now treated as harmless in the absent-DSP model.
+These are sequential compatibility fixes, not yet proof of a working game.
+
 - Colors have not been compared with the running games under DOSBox.
 - Spellcasting 101 and 201 mono entries are shown as black and white.
 - Some Spellcasting 101 1-bit entries, such as `S101_C2` #19 and #40, look like
