@@ -399,6 +399,18 @@ for an initial C-like translation and its limitations.
 The [Your Quarters case study](docs/room-your-quarters.md) follows the first
 complete 24-entry room-event jump table, annotates story text, and partially
 reconstructs the `look` handler in C-like pseudocode.
+To investigate its parser/action dispatch with the original game, inspect the
+word table and run the scripted native story trace:
+
+```sh
+python3 tools/gateway_vocab.py ../gateway-dos/VOCAB.DAT look open close pull --groups
+python3 tools/trace_game_logic.py --scenario objects --services state \
+  --output build/story-commands
+python3 tools/summarize_story_trace.py build/story-commands/native.trace
+```
+
+The resulting raw command codes are not yet mapped to their typed verbs;
+see [story command tracing](docs/room-your-quarters.md#mapping-the-parsers-numeric-command-codes).
 
 RTLink sections and all handler entry file offsets can now be extracted:
 

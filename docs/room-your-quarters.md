@@ -153,14 +153,79 @@ validated against the C++ HLE. This is enough to sketch a future modern
 `Drawer` object and reactive room description, but not yet to replace the
 unknown verbs, object-service side effects, or input parser faithfully.
 
+## Mapping the parser's numeric command codes
+
+The original `VOCAB.DAT` is now readable with a standalone, read-only tool:
+
+```sh
+python3 tools/gateway_vocab.py ../gateway-dos/VOCAB.DAT \
+  look open close pull examine drawer --groups
+```
+
+The inspected file contains **2,644 indexed words**, **91 link groups** and
+**210 link pairs**. Relevant entries (decimal word index, hexadecimal flag):
+
+| Word | Index | Flags |
+| --- | ---: | ---: |
+| `close` | 381 | `0x0001` |
+| `drawer` | 641 | `0x0002` |
+| `examine` | 736 | `0x0001` |
+| `look` | 1295 | `0x0001` |
+| `open` | 1538 | `0x0005` |
+| `pull` | 1782 | `0x0001` |
+
+These *word indexes* do not equal the drawer handler's **one-byte command
+codes** (`3a`, `46`, `61`, `65`, `7b`, `7c`, `85`). Its link groups should not
+be called synonym sets: one group headed by `cattails` also contains `amount`,
+`enter`, and `trapdoor`, while a group headed by `pull` includes `sphere` and
+`voyage`. They may implement internal parser indexing; their precise role is
+still unknown. The last field in a link pair does not generally equal the
+word's vocabulary flag (only 37 of 210 pairs match), so the groups have not
+been used to infer verbs.
+
+### Get the missing dynamic evidence
+
+The opt-in `--trace-entry` hook now annotates two known original Gateway
+handlers, guarded by their expected relocated CS and function prologue:
+
+| Guest entry (linear) | Native handler |
+| --- | --- |
+| `0x49db5` | room 0xee / Your Quarters / event word at caller stack +4 |
+| `0x4a378` | drawer 0x124 / event word at caller stack +4 |
+
+It follows `[DS:9478]` to read the command byte at `ES:e664` and records
+`story_object`, `story_event`, and `story_command` in the existing research
+trace. Unlike a guessed static mapping, this can connect a *known typed action*
+to a branch by observing the live guest. No guest state is changed by tracing.
+The addresses are **specific to the established original Gateway launch layout**,
+not universal breakpoints for other Legend games or other overlay layouts.
+
+The scripted comparison already drives `look`, `open drawer`, and subsequent
+object commands. It now enables these two entry hooks automatically in its
+`drawer` and `objects` scenarios:
+
+```sh
+python3 tools/trace_game_logic.py --scenario objects --services state \
+  --output build/story-commands
+python3 tools/summarize_story_trace.py build/story-commands/native.trace
+```
+
+The report lists the object, event, command byte, call count, and first virtual
+timestamp. The raw records remain in `native.trace` for correlating the
+timestamped `key` events. This workflow still requires a built `gateway-probe`
+and the original game resources; the probes were **not** run in this analysis
+environment, where Unicorn and CMake are unavailable. Command meanings remain
+unverified until those replay results are collected.
+
 ## Next decompilation boundary
 
 1. Trace all calls into handler 233, with event IDs and register/stack state,
    to give the cases semantic names and validate the event-8/9/11 equivalence.
 2. Determine the meaning of property 7 and the state word read via
    `[DS:9476] : 393e` by comparing snapshots before/after room entry.
-3. Map the drawer command-byte codes to vocabulary actions, resolve the
-   forwarded service calls, then implement the combined room/drawer behavior
+3. Use the command trace above to map the drawer's numeric command codes to
+   typed input, resolve the forwarded service calls, then implement the
+   combined room/drawer behavior
    using host state and compare it against the `look`, `open drawer`, `look`
    replay.
 4. Preserve the native interpreter/overlay path as the correctness oracle until
