@@ -81,6 +81,26 @@ bool StoryModel::can_enumerate_child_slot(StoryObjectId object, std::uint8_t typ
     }
 }
 
+std::vector<StoryChildCandidate> StoryModel::eligible_child_slots(
+    StoryObjectId object, std::uint8_t type, std::span<const StoryObjectId> children,
+    bool restricted) const {
+    if (type < 1 || type > 8)
+        throw std::invalid_argument("eligible child slots require a valid native object type");
+    if (children.size() > 0x10000)
+        throw std::invalid_argument("child slot count exceeds 16-bit native index range");
+    std::vector<StoryChildCandidate> result;
+    for (std::size_t slot = 0; slot < children.size(); ++slot) {
+        // The original iterator first tests the gate if restricted, then
+        // fetches child_at(object, slot) and skips zero. It does not treat
+        // zero as an end-of-list marker in this loop.
+        if ((!restricted || can_enumerate_child_slot(object, type,
+                                                     static_cast<std::uint16_t>(slot))) &&
+            children[slot])
+            result.push_back({static_cast<std::uint16_t>(slot), children[slot]});
+    }
+    return result;
+}
+
 StoryCarryPrecheck StoryModel::evaluate_carry_precheck(StoryAction action,
                                                        StoryObjectId target,
                                                        StoryObjectId player) const {

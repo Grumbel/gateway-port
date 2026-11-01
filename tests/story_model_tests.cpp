@@ -10,6 +10,7 @@ using gateway::StoryMutation;
 using gateway::StoryMutationKind;
 using gateway::StoryNormalGuard;
 using gateway::StoryCarryPrecheck;
+using gateway::StoryChildCandidate;
 
 void expect(std::vector<StoryMutation> actual, std::initializer_list<StoryMutation> expected,
             const char *message) {
@@ -51,6 +52,18 @@ int main() {
         if (!model.can_enumerate_child_slot(drawer, 2, 1))
             throw std::runtime_error("slot one ignored property 0x1c");
         model.initial_flag(drawer, 0x1c, false);
+        // The recorded 7864–37404 ms candidate trace distinguishes two
+        // independent facts: a slot can be gated off while its child pointer
+        // still contains the book, and an open drawer can have an empty slot
+        // after TAKE. Type 2 here stands for any non-exempt native type; the
+        // actual drawer type has not yet been established from a snapshot.
+        // Supply observed child words; do not invent pointer mutations.
+        constexpr std::array<gateway::StoryObjectId, 3> with_book{book, 0, 0};
+        constexpr std::array<gateway::StoryObjectId, 3> without_book{0, 0, 0};
+        if (!model.eligible_child_slots(drawer, 2, with_book, true).empty() ||
+            model.eligible_child_slots(drawer, 2, with_book, false) !=
+                std::vector<StoryChildCandidate>{{0, book}})
+            throw std::runtime_error("closed drawer candidate-slot gating differs");
         bool invalid_child_type_rejected = false;
         try {
             (void)model.can_enumerate_child_slot(drawer, 0, 0);
@@ -77,6 +90,9 @@ int main() {
                "initial OPEN changes incorrect flags");
         if (!model.can_enumerate_child_slot(drawer, 2, 0))
             throw std::runtime_error("OPEN did not enable restricted child slot zero");
+        if (model.eligible_child_slots(drawer, 2, with_book, true) !=
+            std::vector<StoryChildCandidate>{{0, book}})
+            throw std::runtime_error("open drawer failed to enumerate its child");
         if (model.evaluate_normal_open_close(StoryAction::Open, drawer) !=
                 StoryNormalGuard::AlreadyOpen ||
             model.evaluate_normal_open_close(StoryAction::Close, drawer) !=
@@ -90,6 +106,8 @@ int main() {
                "CLOSE did not clear open bit");
         if (model.can_enumerate_child_slot(drawer, 2, 0))
             throw std::runtime_error("CLOSE did not disable restricted child slot zero");
+        if (!model.eligible_child_slots(drawer, 2, with_book, true).empty())
+            throw std::runtime_error("closed drawer still exposed a child slot");
         if (model.evaluate_normal_open_close(StoryAction::Close, drawer) !=
             StoryNormalGuard::AlreadyClosed)
             throw std::runtime_error("repeated CLOSE not classified as already closed");
@@ -155,6 +173,13 @@ int main() {
                {{StoryMutationKind::SetLocation, book, player},
                 {StoryMutationKind::SetFlag, book, 0x02}},
                "initial TAKE effects differ from native trace");
+        if (!model.can_enumerate_child_slot(drawer, 2, 0) ||
+            !model.eligible_child_slots(drawer, 2, without_book, true).empty())
+            throw std::runtime_error("post-TAKE empty child slot confused with gate denial");
+        constexpr std::array<gateway::StoryObjectId, 3> hole_then_child{0, 0, book};
+        if (model.eligible_child_slots(drawer, 2, hole_then_child, true) !=
+            std::vector<StoryChildCandidate>{{2, book}})
+            throw std::runtime_error("zero child wrongly stopped later slot enumeration");
         if (model.evaluate_carry_precheck(StoryAction::Take, book, player) !=
                 StoryCarryPrecheck::AlreadyHolding ||
             model.evaluate_carry_precheck(StoryAction::Drop, book, player) !=

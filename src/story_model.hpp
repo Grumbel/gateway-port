@@ -39,6 +39,15 @@ struct StoryMutation {
     bool operator==(const StoryMutation &) const = default;
 };
 
+// A single slot that survives the resident parser's *optional* eligibility
+// check and its nonzero-child test. This is not a resolved parser target.
+struct StoryChildCandidate {
+    std::uint16_t slot;
+    StoryObjectId child;
+
+    bool operator==(const StoryChildCandidate &) const = default;
+};
+
 class StoryModel {
 public:
     // Initial state is supplied by the caller. This sparse logical model
@@ -66,6 +75,14 @@ public:
     // This is NOT a complete parser visibility or action-reachability check.
     bool can_enumerate_child_slot(StoryObjectId object, std::uint8_t type,
                                   std::uint16_t slot) const;
+
+    // One local stage of EXE 1000:0000: apply the optional slot gate and
+    // omit zero child IDs. The caller supplies the ordered child accessor
+    // results from a particular snapshot. No recursion, name resolution,
+    // command acceptance or implied child-pointer mutations are performed.
+    std::vector<StoryChildCandidate> eligible_child_slots(
+        StoryObjectId object, std::uint8_t type, std::span<const StoryObjectId> children,
+        bool restricted) const;
 
     // Mirrors the verified predicate order at GATEMAIN.OVL 0xea65–0xeb1e
     // (OPEN) and 0xd706–0xd7d4 (CLOSE) on the ordinary inner path only.

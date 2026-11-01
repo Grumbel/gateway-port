@@ -168,6 +168,9 @@ declared slots, preserves zero entries, and does not conflate child traversal
 with the handler-side relation/path test. The iterator also optionally
 filters slots with the separate `0385:0a9a` predicate described in
 [action-dispatch.md](action-dispatch.md#resident-parser-candidate-iterator).
+The independent C++ `StoryModel::eligible_child_slots()` tests this filtered,
+nonzero stage against caller-supplied child words, without assuming that
+child pointers can be reconstructed from `location` alone.
 
 ## State-changing replay
 
