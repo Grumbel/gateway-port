@@ -110,6 +110,13 @@ class ChildChainInspectionTests(unittest.TestCase):
         self.assertIn('Nonzero indexed child heads: 6', audit)
         self.assertIn('Child links traversed: 15 (15 distinct objects)', audit)
         self.assertIn('Consistency findings: 0', audit)
+        self.assertIn('Unlinked records (not reached from any indexed head): 1', audit)
+        self.assertIn('Ownership roots with referenced descendants: 1', audit)
+        self.assertIn('Maximum decoded nesting depth: 2', audit)
+        self.assertIn('0x0ee Your Quarters (type 1): 15', audit)
+        unlinked = audit_chains(objects, list_unlinked=True, unlinked_type=1, limit=1)
+        self.assertIn('0x0ee type=1 location=? nonzero-heads=1 Your Quarters', unlinked)
+        self.assertNotIn('0x123 type=2', unlinked)
 
     def test_audit_reports_corrupt_parent_slots_cycles_and_shared_children(self):
         objects = first_room_snapshot()
@@ -126,6 +133,23 @@ class ChildChainInspectionTests(unittest.TestCase):
         objects = first_room_snapshot()
         objects[8]['child_links'][0] = 0x175
         self.assertIn('referenced by multiple heads/chains', audit_chains(objects))
+
+    def test_audit_detects_nested_containment_cycles_separately_from_sibling_cycles(self):
+        objects = first_room_snapshot()
+        # Player already belongs to the room, which is reached through the
+        # room's own type-1 indexed head. Point another player slot to the
+        # room to create a parent-ownership cycle without a sibling cycle.
+        player = next(obj for obj in objects if obj['object'] == 0xd3)
+        player['child_links'][2] = 0xee
+        report = audit_chains(objects)
+        self.assertIn('nested containment cycle:', report)
+        self.assertIn('0x0d3', report)
+        self.assertIn('0x0ee', report)
+        self.assertNotIn('sibling cycle at', report)
+        with self.assertRaisesRegex(ValueError, 'native object type'):
+            audit_chains(objects, list_unlinked=True, unlinked_type=9)
+        with self.assertRaisesRegex(ValueError, 'listing limit'):
+            audit_chains(objects, limit=735)
 
     def test_rejects_broken_sibling_chain_and_unknown_objects(self):
         objects = fixture()
@@ -156,6 +180,15 @@ class ChildChainInspectionTests(unittest.TestCase):
                                      capture_output=True, text=True)
             self.assertEqual(audited.returncode, 0, audited.stderr)
             self.assertIn('Consistency findings:', audited.stdout)
+            report = subprocess.run([sys.executable, str(TOOL), str(state), '--audit',
+                                     '--list-unlinked', '--unlinked-type', '2', '--limit', '1'],
+                                    capture_output=True, text=True)
+            self.assertEqual(report.returncode, 0, report.stderr)
+            self.assertIn('Unlinked object details (type 2)', report.stdout)
+            invalid = subprocess.run([sys.executable, str(TOOL), str(state), '--audit',
+                                      '--unlinked-type', '2'], capture_output=True, text=True)
+            self.assertEqual(invalid.returncode, 2)
+            self.assertIn('requires --list-unlinked', invalid.stderr)
 
 
 if __name__ == '__main__':
