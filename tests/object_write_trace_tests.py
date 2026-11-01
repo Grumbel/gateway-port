@@ -7,8 +7,9 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-from summarize_object_writes import (affected_child_slots, map_child_setter_return,
-                                     parse, summarize)
+from summarize_object_writes import (affected_child_slots, head_relocation_pairs,
+                                     map_child_setter_return, parse, summarize,
+                                     child_setter_calls)
 
 
 TOOL = Path(__file__).resolve().parents[1] / 'tools' / 'summarize_object_writes.py'
@@ -62,6 +63,41 @@ class ObjectWriteTraceTests(unittest.TestCase):
         watch['type'] = 6
         self.assertEqual(affected_child_slots(watch, 0x10, 2), [1])
 
+    def test_repeated_book_moves_restore_room_next_sibling(self):
+        # The same pairing shape as the observed 28s/31s/34s seven-command
+        # replay, including startup relocations whose action is unknown.
+        manifest = dict(sections=[dict(id=4, runtime_segment=0x4319,
+                                       image_file_offset=0xb1e0, file_bytes=0x1ac0,
+                                       filename='GATEMAIN.OVL')])
+        overlay = bytearray(0xd000)
+        for address in (0xc879, 0xc8f8):
+            overlay[address:address + 5] = bytes.fromhex('9afc085701')
+
+        def setter(ms, object_id, value, insertion=False):
+            saved_ip = '171d' if insertion else '169e'
+            return (f'entry ms={ms} pc=11e6c cs=1157 '
+                    f'stack={saved_ip},4319,{object_id:x},0,{value:x} '
+                    f'child_set_object={object_id:x} child_set_slot=0 '
+                    f'child_set_value={value:x}')
+
+        moves = [(5408, 0x161, 0, 0x161, 0x16d),
+                 (28356, 0x124, 0, 0xd3, 0x123),
+                 (31333, 0xd3, 0, 0xee, 0x123),
+                 (34354, 0xee, 0x175, 0xd3, 0x123)]
+        lines = [line for ms, old_parent, remainder, new_parent, moved in moves
+                 for line in (setter(ms, old_parent, remainder),
+                              setter(ms, new_parent, moved, insertion=True))]
+        paired = head_relocation_pairs(child_setter_calls(lines), manifest, overlay)
+        self.assertEqual(len(paired), 4)
+        self.assertEqual([row['object'] for row in paired],
+                         [0x16d, 0x123, 0x123, 0x123])
+        self.assertEqual([(row['old_parent'], row['replacement']) for row in paired],
+                         [(0x161, 0), (0x124, 0), (0xd3, 0), (0xee, 0x175)])
+        report = summarize([HEADER, *lines], manifest=manifest, overlay=overlay,
+                           relocations=True)
+        self.assertIn('0x123  0x0ee', report)
+        self.assertIn('0x175', report)
+
     def test_original_direct_call_is_resolved_only_with_rtlink_bytes(self):
         # Several sections occupy 4319:xxxx. Only section 4 contains the
         # original CALL 0157:08fc immediately before the captured return.
@@ -88,11 +124,31 @@ class ObjectWriteTraceTests(unittest.TestCase):
                               all_setters=True, manifest=manifest, overlay=overlay)
         self.assertIn('0x0d3', all_calls)
         self.assertIn('section=4 GATEMAIN.OVL:0xc8f8', all_calls)
+        paired_calls = [SETTER.replace('stack=2222,3333', 'stack=169e,4319'),
+                        DEST_SETTER]
+        self.assertEqual(head_relocation_pairs(child_setter_calls(paired_calls),
+                                               manifest, overlay), [
+            dict(ms=28360, object=0x123, old_parent=0x124, old_slot=0,
+                 replacement=0, new_parent=0xd3, new_slot=0)])
+        move_report = summarize([HEADER, *paired_calls, *WRITES],
+                                relocations=True, manifest=manifest, overlay=overlay)
+        self.assertIn('inferred moves', move_report)
+        self.assertIn('0x123  0x124', move_report)
+        self.assertIn('0x0d3', move_report)
+        self.assertIn('post-write state', move_report)
+        self.assertEqual(head_relocation_pairs(child_setter_calls(paired_calls[::-1]),
+                                               manifest, overlay), [])
+        late_destination = DEST_SETTER.replace('ms=28360', 'ms=28365')
+        self.assertEqual(head_relocation_pairs(child_setter_calls([paired_calls[0],
+                                                                  late_destination]),
+                                               manifest, overlay), [])
         self.assertNotIn('0x0d3', summarize([HEADER, DEST_SETTER, *WRITES]))
         overlay[0xc879] = 0x90
         self.assertIsNone(map_child_setter_return('4319:169e', manifest, overlay))
         with self.assertRaisesRegex(ValueError, 'supplied together'):
             summarize([HEADER], manifest=manifest)
+        with self.assertRaisesRegex(ValueError, 'requires RTLink manifest'):
+            summarize([HEADER], relocations=True)
         # Duplicate matching section must be reported, not guessed.
         overlay[0xc879] = 0x9a
         manifest['sections'].append(dict(id=5, runtime_segment=0x4319,

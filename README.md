@@ -565,9 +565,18 @@ arguments check original call bytes before reporting source offsets (important
 because multiple RTLink sections share a runtime bank). `--all-setters`
 lists *every* child setter call recorded during the same run, including
 destination containers and subsequent actions; it requires no new replay.
+With the original OVL/RTLink map provided, `--relocations` pairs the
+byte-verified unlink/insert callsites and reports the inferred move. The
+repeated first-room replay now shows the book moving drawer → inventory →
+room → inventory. The second TAKE restores room head **`0x175`**, evidence
+that a head word points into a sibling chain rather than representing the
+room's entire object list. `inspect_object_state.py` now exports original
+`child_slot`/`next_sibling` fields; `tools/inspect_child_chains.py` follows
+complete ordered child lists from a snapshot and checks inconsistent links.
 See [the child-list writer research](docs/action-dispatch.md#identify-the-native-child-list-writer)
-for the complete command and the distinction between observed writes and
-verified changes.
+for the commands, mapped calls, and the distinction between observed writes
+and verified changes. See [snapshot child-chain inspection](docs/object-state.md#enumerating-siblings-instead-of-just-child-heads)
+for use against room, drawer, or inventory.
 
 The standalone C++ model exposes the corresponding *local slot-filtering*
 stage, but it still does not perform parser traversal or name resolution.

@@ -43,8 +43,13 @@ emulation. Keep the original executable as a behavioral reference while mapping:
   child-list relocation routine at OVL `0xc830` has been disassembled, and
   a type-2 linked-chain model is independently tested. Its far return address
   `4319:169e` maps to section-4 OVL `0xc879`, confirming the helper's head
-  unlink path during TAKE. Next extend traces to nested objects and other
-  record types; establish which callers enable the gate's
+  unlink path during TAKE. The verified insertion call at OVL `0xc8f8` and
+  all-setter replay establish drawer → player → room → player head updates;
+  removing book from the room restores head `0x175` (its next sibling).
+  The snapshot exporter and `inspect_child_chains.py` now decode ordered
+  child/sibling lists. Next compare actual post-action room/player chains,
+  capture moves of non-head siblings and nested objects, extend to other
+  record types, and establish which callers enable the gate's
   restriction parameter.
   The child accessor (`0157:0825`) is distinct
   from DROP's recursive relationship helper (`0157:00c5`); both are decoded,

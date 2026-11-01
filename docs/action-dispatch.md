@@ -912,6 +912,15 @@ insertion and later DROP path without another replay. The memory-write table
 still covers the single watched object; setter calls for other objects do
 **not** independently prove those other records were changed.
 
+To match adjacent calls to the two verified original head-relocation sites,
+add `--relocations` to the command above. This requires both the original
+overlay file and RTLink map, automatically includes all setter calls, and
+checks that the saved return PC maps to a **direct** far call in section 4:
+unlink at `0xc879` followed by prepend at `0xc8f8`, no more than one guest
+millisecond apart. It emits candidate moved-object IDs and old/new parent
+slot IDs. It deliberately does not infer that guest writes finished or that
+the parser resolved a command; trace callbacks are captured on entry.
+
 The supplied **seven-command replay** now confirms the central write:
 
 ```text
@@ -980,6 +989,42 @@ The two unlink cases are visible at OVL `0xc869–0xc87e` (head) and
 unlinking, destination insertion, repeated moves and malformed sibling cycles.
 The broader helper supports additional record types, and type-2 modeling
 does not establish their behavior, permission checks, or command admission.
+
+#### All child-head setters in the repeated-action replay
+
+The user's `--all-setters --overlay-map --overlay-file` report exposed both
+relocation calls for the **same** replay. Each pair is mapped independently
+through original, byte-verified section-4 code, rather than guessed from its
+runtime `4319` address:
+
+| Guest time (ms) | Moved object | Old container slot-0 head assigned | Destination slot-0 head assigned |
+| ---: | --- | --- | --- |
+| 28,356 | book `0x123` | drawer `0x124` → `0x000` | player `0x0d3` → `0x123` |
+| 31,333 | book `0x123` | player `0x0d3` → `0x000` | room `0x0ee` → `0x123` |
+| 34,354 | book `0x123` | room `0x0ee` → **`0x175`** | player `0x0d3` → `0x123` |
+
+At each removal, `0157:08fc` returns to `4319:169e`, resolving to the
+original direct far call at OVL `0xc879`. At insertion it returns to
+`4319:171d`, resolving to original call `0xc8f8`. Thus `0x175` is the
+room's restored head when the book is removed again, consistent with the
+original sibling-linked-list algorithm; it is **not** an inexplicable new
+child or a second room slot. Its name and its place in the complete room
+chain should be checked in a saved native snapshot.
+
+Four additional identical unlink/insert pairs during startup at 5,408–5,409
+ms assign `0x161[0] → 0`, then `0x161[0] → 0x16d`. They establish use of
+the helper during initialization but do not establish a gameplay action or
+why the operation repeats. No post-write native memory checks were included
+in this setter report; only the drawer write at 28,356 ms was independently
+captured by the watched memory hook.
+
+The snapshot exporter now includes the native slot and next-sibling fields
+for types 2, 7, and 8. `tools/inspect_child_chains.py` follows each head into
+an ordered sibling chain, checks parent/slot annotations and detects cycles.
+See [enumerating siblings](object-state.md#enumerating-siblings-instead-of-just-child-heads)
+for the full commands. The next useful comparison is the actual room and
+player child chains in the post-replay snapshot versus the intermediate
+head-setter call sequence, then additional moves between non-head siblings.
 
 Given a saved object-state snapshot, inspect the **actual ordered relation
 paths** separately from direct `location` and parser visibility:

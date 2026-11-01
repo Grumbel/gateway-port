@@ -17,6 +17,11 @@ COMMAND_TIMES = [18000, 21000, 25000, 28000, 31000, 34000, 37000]
 # Original, unrelocated five-byte direct far CALL to 0157:08fc. RTLink adds
 # the program segment to the final word at load time.
 CHILD_SETTER_CALL = bytes.fromhex('9afc085701')
+# The original section-4 shared move helper calls the indexed-head setter
+# from these two *different* direct far-call sites. Neither call proves the
+# linked-list operation completed; that requires a post-action snapshot.
+HEAD_UNLINK_CALL = (4, 0xc879)
+HEAD_INSERT_CALL = (4, 0xc8f8)
 
 
 def fields(line, prefix):
@@ -109,6 +114,25 @@ def map_child_setter_return(return_address, manifest, overlay):
     return matches[0] if matches else None
 
 
+def head_relocation_pairs(calls, manifest, overlay):
+    """Pair adjacent unlink/insert calls to the known section-4 move helper.
+
+    These are *inferred* transfers: each setter was intercepted on entry,
+    and the first one's value is the old head's replacement, not the item
+    being transferred. The second call supplies the moved object's ID.
+    """
+    decoded = [(call, map_child_setter_return(call['return_address'], manifest, overlay))
+               for call in calls]
+    pairs = []
+    for (old, source), (new, destination) in zip(decoded, decoded[1:]):
+        if (source == HEAD_UNLINK_CALL and destination == HEAD_INSERT_CALL and
+                0 <= new['ms'] - old['ms'] <= 1 and new['value'] != 0):
+            pairs.append(dict(ms=old['ms'], object=new['value'], old_parent=old['object'],
+                              old_slot=old['slot'], replacement=old['value'],
+                              new_parent=new['object'], new_slot=new['slot']))
+    return pairs
+
+
 def affected_child_slots(watch, offset, size):
     start = CHILD_BASE.get(watch['type'])
     if start is None:
@@ -124,13 +148,15 @@ def affected_child_slots(watch, offset, size):
 
 
 def summarize(lines, *, child_only=False, changed_only=True, commands=None,
-              manifest=None, overlay=None, all_setters=False):
+              manifest=None, overlay=None, all_setters=False, relocations=False):
     lines = list(lines)
     watch, writes = parse(lines)
     if commands is not None and len(commands) != len(COMMAND_TIMES):
         raise ValueError('command labels must cover all seven scripted input slots')
     if (manifest is None) != (overlay is None):
         raise ValueError('RTLink manifest and original overlay must be supplied together')
+    if relocations and manifest is None:
+        raise ValueError('relocation inference requires RTLink manifest and original overlay')
     output = [f'Object 0x{watch["object"]:03x}: native type {watch["type"]}, '
               f'{watch["size"]} bytes at {watch["at"]}, '
               f'{watch["child_count"]} child slots',
@@ -164,7 +190,8 @@ def summarize(lines, *, child_only=False, changed_only=True, commands=None,
         header += '  original direct call'
     output.extend(['', 'Native indexed-child setter calls (0157:08fc):',
                    header, '------  --------------  ------  ----  -----  ----------'])
-    setters = child_setter_calls(lines, None if all_setters else watch['object'])
+    setters = child_setter_calls(lines, None if (all_setters or relocations)
+                                else watch['object'])
     for call in setters:
         entry = (f'{call["ms"]:6}  {phase(call["ms"])[:14]:<14}  '
                  f'0x{call["object"]:03x}  {call["slot"]:4}  0x{call["value"]:03x}  '
@@ -176,6 +203,22 @@ def summarize(lines, *, child_only=False, changed_only=True, commands=None,
         output.append(entry)
     if not setters:
         output.append('(none observed)')
+    if relocations:
+        output.extend(['', 'Adjacent section-4 head unlink/insert calls (inferred moves):',
+                       'ms     moved   old parent slot  replacement  new parent slot',
+                       '------ ------  ---------- ----  -----------  ---------- ----'])
+        pairs = head_relocation_pairs(setters, manifest, overlay)
+        for move in pairs:
+            output.append(f'{move["ms"]:6}  0x{move["object"]:03x}  '
+                          f'0x{move["old_parent"]:03x}      {move["old_slot"]:2}  '
+                          f'0x{move["replacement"]:03x}        '
+                          f'0x{move["new_parent"]:03x}      {move["new_slot"]:2}')
+        if not pairs:
+            output.append('(no matching adjacent head relocations)')
+        output.append('Pairing uses verified direct calls at OVL 0xc879 and 0xc8f8 '
+                      'within 1 ms. Moving IDs come from insertion arguments; '
+                      'post-write state, intervening siblings, and parser success '
+                      'are not verified by this table.')
     output.append('These are guest memory-write attempts before execution, not independently '
                   'verified changes. Slot labels identify record offsets only, not parser success.')
     return '\n'.join(output)
@@ -195,6 +238,8 @@ def main():
                         help='original GATEMAIN.OVL bytes for callsite signature checks')
     parser.add_argument('--all-setters', action='store_true',
                         help='include native child setter calls for all object IDs in this trace')
+    parser.add_argument('--relocations', action='store_true',
+                        help='infer adjacent section-4 head moves (requires original overlay map/file)')
     args = parser.parse_args()
     try:
         commands = parse_sequence(args.commands) if args.commands is not None else None
@@ -204,7 +249,8 @@ def main():
         overlay = args.overlay_file.read_bytes() if args.overlay_file else None
         print(summarize(args.trace.read_text().splitlines(), child_only=args.child_only,
                         changed_only=not args.all, commands=commands,
-                        manifest=manifest, overlay=overlay, all_setters=args.all_setters))
+                        manifest=manifest, overlay=overlay, all_setters=args.all_setters,
+                        relocations=args.relocations))
     except (OSError, ValueError, KeyError) as error:
         parser.error(str(error))
 
