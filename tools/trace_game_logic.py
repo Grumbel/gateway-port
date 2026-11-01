@@ -46,7 +46,8 @@ for mode in ['native', 'verify', 'hle']:
                '--trace-entry', '147a6', '--trace-entry', '28d2b',
                '--dump-prefix', str(prefix)]
     if args.scenario in ['drawer', 'objects']:
-        command += ['--trace-entry', '49db5', '--trace-entry', '4a378']
+        command += ['--trace-entry', '49db5', '--trace-entry', '4a378',
+                    '--trace-entry', '4a390']
     for time, key in sorted(keys):
         command += ['--key-at', f'{time}:{key:04x}']
     if args.verify_overlays:

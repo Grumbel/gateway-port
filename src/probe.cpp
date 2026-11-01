@@ -543,31 +543,40 @@ void trace_entry(uc_engine *uc, std::uint64_t address, std::uint32_t, void *opaq
                 break;
             bp = words[0];
         }
-        // Only these two verified Gateway section-38 handler entries have a
-        // known event argument and command-state pointer.  Opt-in traces can
-        // relate typed input to the native numeric command dispatch without
-        // changing guest execution.  Section code may be absent/replaced at
-        // these linear addresses, so require the expected far-handler prologue.
+        // These two Gateway section-38 handlers receive the event word at
+        // far-call stack +4.  Always record it at matching CS:IP, even if the
+        // optional command-state lookup cannot be verified: otherwise a
+        // missing command silently makes an otherwise useful trace unreadable.
         if ((address == 0x49db5 || address == 0x4a378) &&
             reg(uc, UC_X86_REG_CS) == 0x49d8) {
+            std::uint16_t event;
+            check(uc_mem_read(uc, base + std::uint16_t(reg(uc, UC_X86_REG_SP) + 4),
+                              &event, sizeof(event)));
+            out << " story_object=" << (address == 0x49db5 ? 0xee : 0x124)
+                << " story_event=" << event;
             std::array<std::uint8_t, 6> prologue{};
             check(uc_mem_read(uc, address, prologue.data(), prologue.size()));
             if (prologue == std::array<std::uint8_t, 6>{0x55, 0x8b, 0xec, 0x8b, 0x46, 0x06}) {
-                std::uint16_t event, command_segment;
-                check(uc_mem_read(uc, base + std::uint16_t(reg(uc, UC_X86_REG_SP) + 4),
-                                  &event, sizeof(event)));
+                std::uint16_t command_segment;
                 const auto ds_base = std::size_t(reg(uc, UC_X86_REG_DS)) * 16;
                 if (ds_base + 0x947a <= 0xa0000) {
                     check(uc_mem_read(uc, ds_base + 0x9478, &command_segment,
                                       sizeof(command_segment)));
                     const auto command_address = std::size_t(command_segment) * 16 + 0xe664;
-                    if (command_address < 0xa0000) {
+                    out << " story_command_segment=" << command_segment;
+                    if (command_address < 0x100000) {
                         std::uint8_t command;
                         check(uc_mem_read(uc, command_address, &command, sizeof(command)));
-                        out << " story_object=" << (address == 0x49db5 ? 0xee : 0x124)
-                            << " story_event=" << event << " story_command=" << unsigned(command);
-                    }
-                }
+                        out << " story_command=" << unsigned(command);
+                    } else
+                        out << " story_probe=command-address-out-of-range";
+                } else
+                    out << " story_probe=data-segment-out-of-range";
+            } else {
+                out << " story_probe=prologue-mismatch-";
+                for (const auto byte : prologue)
+                    out << std::setw(2) << std::setfill('0') << unsigned(byte);
+                out << std::setfill(' ');
             }
         }
         out << '\n';
