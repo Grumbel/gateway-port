@@ -301,8 +301,12 @@ incorrect. The generic action path itself has not yet been traced.
 
 The existing `trace_game_logic.py` replay leaves the guest's native action
 directory in its final `.bin` and `.regs` dump. The engine-boundary trace
-established that `[DS:8da8]` points to a six-byte-per-action table, indexed by
-`0x28 + 6*action` and holding a far handler pointer plus an unclassified word.
+established that `[DS:8da8]` points to an action table with a six-byte stride.
+The far handler pointer is at `0x28 + 6*action`. Separate resident code reads
+a selector byte at `0x27 + 6*action`; the following byte after the far pointer
+is unclassified. The prior `other` word printed by the inspector accidentally
+combined that trailing byte with the **next** action's selector (see the
+[corrected record layout](action-dispatch.md)).
 Inspect its original runtime pointers without invoking the guest again:
 
 ```sh

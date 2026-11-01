@@ -103,9 +103,24 @@ class StoryDisassemblyTests(unittest.TestCase):
                          0x0b90, 0x148e, 0x0008)
         records = inspect_actions(memory, 0x1000, [0x5f])
         self.assertEqual(records, [dict(action=0x5f, handler_segment=0x148e,
-                                        handler_offset=0x0b90, extra_word=8)])
+                                        handler_offset=0x0b90, selector=0, trailer=8)])
         with self.assertRaises(ValueError):
             inspect_actions(memory, 0x1000, [196])
+
+    def test_action_trailer_is_not_a_word_with_next_selector(self):
+        memory = bytearray(0x20000)
+        struct.pack_into('<H', memory, 0x10000 + 0x8da8, 0x1200)
+        first = 0x12000 + 0x28 + 6 * 0x32
+        memory[first - 1] = 0x04
+        struct.pack_into('<2H', memory, first, 0x0102, 0x3040)
+        memory[first + 4] = 0x24
+        memory[first + 5] = 0x05
+        entries = inspect_actions(memory, 0x1000, [0x32, 0x33])
+        self.assertEqual(entries[0]['selector'], 0x04)
+        self.assertEqual(entries[0]['trailer'], 0x24)
+        self.assertEqual(entries[1]['selector'], 0x05)
+        self.assertEqual(entries[0]['handler_offset'], 0x0102)
+        self.assertEqual(entries[0]['handler_segment'], 0x3040)
 
     def test_action_rtlink_reference_is_data_not_trampoline_start(self):
         memory = bytearray(0x40000)

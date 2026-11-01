@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Read Gateway's native 195-entry action table from a live memory dump.
 
-The segment pointer and six-byte record layout are Gateway-specific. A table
-pointer may lead to RTLink reference metadata rather than executable code.
+Gateway's resident dispatch code reads a selector byte at 0x27 + 6*action
+and a far handler pointer at 0x28 + 6*action. The following byte is separate:
+reading a 16-bit "other" word there mixes it with the next action's selector.
+A far pointer may lead to RTLink reference metadata rather than code.
 """
 import argparse
 import json
@@ -16,6 +18,12 @@ KNOWN_ACTIONS = {0x1d: 'close drawer', 0x32: 'drop book', 0x46: 'take book',
 
 
 def inspect_actions(memory, ds, action_ids):
+    def byte(segment, offset):
+        address = segment * 16 + offset
+        if address < 0 or address >= min(len(memory), 0xa0000):
+            raise ValueError('action table byte outside guest conventional memory')
+        return memory[address]
+
     def word(segment, offset):
         address = segment * 16 + offset
         if address < 0 or address + 2 > min(len(memory), 0xa0000):
@@ -34,9 +42,10 @@ def inspect_actions(memory, ds, action_ids):
         offset = 0x28 + 6 * action
         ip = word(directory_segment, offset)
         cs = word(directory_segment, offset + 2)
-        extra = word(directory_segment, offset + 4)
+        selector = byte(directory_segment, offset - 1)
+        trailer = byte(directory_segment, offset + 4)
         entry = dict(action=action, handler_segment=cs, handler_offset=ip,
-                     extra_word=extra)
+                     selector=selector, trailer=trailer)
         # Most nonresident action entries point to the *six-byte reference*
         # stored at +4 inside an RTLink call/jump trampoline.  These six bytes
         # are target IP, target CS, and section ID; they are NOT executable
@@ -94,11 +103,12 @@ def main():
                               int(registers['DS'], 16), ids)
     if args.overlay_map:
         records = map_action_entries(records, json.loads(args.overlay_map.read_text()))
-    print('action  table_pointer  other  reference / original code offset  observed_input')
+    print('action  table_pointer  selector trailer  reference / original code offset  observed_input')
     for record in records:
         action = record['action']
         print(f"0x{action:02x}    {record['handler_segment']:04x}:"
-              f"{record['handler_offset']:04x}     {record['extra_word']:04x}  ", end='')
+              f"{record['handler_offset']:04x}     {record['selector']:02x}       "
+              f"{record['trailer']:02x}    ", end='')
         ref = record.get('rtlink_reference')
         if ref:
             print(f"section={ref['section']} target={ref['target_segment']:04x}:"
@@ -108,7 +118,7 @@ def main():
                   f"0x{record['native_code']['file_offset']:x}", end='')
         print(f"  {KNOWN_ACTIONS.get(action, '')}")
     print('Table pointers may reference six-byte RTLink metadata, not executable code; '
-          'the table third word remains unclassified.')
+          'the selector and trailer bytes have not been assigned semantics.')
 
 
 if __name__ == '__main__':
