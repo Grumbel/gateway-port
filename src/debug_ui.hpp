@@ -18,10 +18,24 @@ struct DebugOverlayData {
     std::string dump_message;
     unsigned guest_ms = 0;
 };
+struct DebugMenuPosition {
+    // Negative coordinates mean the default position: bottom-right.
+    int x = -1, y = -1;
+};
+struct DebugMenuBounds {
+    int x, y, width, height;
+};
 constexpr unsigned debug_menu_rows = 6;
 // Menu rows: hitboxes, auto-follow, previous RGN, next RGN, dump, close.
-int debug_menu_row_at(int x, int y, int width);
+DebugMenuBounds debug_menu_bounds(int screen_width, int screen_height,
+                                  DebugMenuPosition position = {});
+int debug_menu_row_at(int x, int y, int width, int height,
+                      DebugMenuPosition position = {});
+bool debug_menu_title_at(int x, int y, int width, int height,
+                         DebugMenuPosition position = {});
+std::uint32_t debug_hotspot_color(std::uint16_t object_id);
 void draw_debug_overlay(std::span<std::uint32_t> pixels, int width, int height,
                         const Mouse &mouse, const DebugOverlayData &data,
-                        bool menu_open, bool show_hitboxes, unsigned selected_row);
+                        bool menu_open, bool show_hitboxes, unsigned selected_row,
+                        DebugMenuPosition position = {});
 } // namespace gateway

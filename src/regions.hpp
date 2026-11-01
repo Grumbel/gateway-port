@@ -6,14 +6,14 @@
 #include <vector>
 
 namespace gateway {
-// The RGN object index refers to the zero-based OBJECT.DAT name list, NOT the
-// internal engine object ID used by object-state services.
+// RGN records refer to native engine object IDs, NOT indexes into the
+// zero-based OBJECT.DAT string list. Resolve names through the live table.
 struct HitRegion {
-    std::uint16_t name_index = 0;
+    std::uint16_t object_id = 0;
     unsigned x0 = 0, y0 = 0, x1 = 0, y1 = 0; // Scene-local, inclusive.
 };
 struct RegionFrame {
-    std::uint16_t default_name_index = 0;
+    std::uint16_t default_object_id = 0;
     std::vector<HitRegion> boxes;
 };
 

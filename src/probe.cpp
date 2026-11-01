@@ -1197,10 +1197,10 @@ void dump_guest(uc_engine *uc, State &state, const std::string &prefix) {
         return;
     const auto scene = state.debug_scene->view();
     std::ofstream regions(prefix + ".regions.tsv");
-    regions << "picture\tregion_file\tentry\tregion_name_index\tname\tx0\ty0\tx1\ty1\n";
+    regions << "picture\tregion_file\tentry\tengine_object_id\tname\tx0\ty0\tx1\ty1\n";
     for (const auto &box : scene.boxes)
         regions << scene.picture << '\t' << scene.region_file << '\t' << scene.entry << '\t'
-                << box.name_index << '\t' << box.name << '\t' << box.x0 << '\t' << box.y0
+                << box.object_id << '\t' << box.name << '\t' << box.x0 << '\t' << box.y0
                 << '\t' << box.x1 << '\t' << box.y1 << '\n';
     regions.close();
     std::ofstream metadata(prefix + ".debug.txt");
@@ -1211,7 +1211,7 @@ void dump_guest(uc_engine *uc, State &state, const std::string &prefix) {
              << "rgn_entry_count=" << scene.entry_count << '\n'
              << "scene_selection=" << (scene.auto_follow ? "DOS PIC read estimate" : "manual")
              << '\n' << "region_x=scene-local in two-pixel units (already doubled here)\n"
-             << "object_id=engine-local, NOT a region name index\n";
+             << "region_object_id=native engine object ID, NOT OBJECT.DAT list index\n";
     auto objects = gateway::inspect_gateway_state(memory, reg(uc, UC_X86_REG_DS));
     if ((!objects || objects->objects.size() != 734) && state.debug_object_ds)
         objects = gateway::inspect_gateway_state(memory, *state.debug_object_ds);
@@ -1511,8 +1511,9 @@ int main(int argc, char **argv) {
             state.debug_scene = std::make_unique<gateway::DebugSceneTracker>();
             try {
                 state.debug_object_dat = state.drive->read_all("OBJECT.DAT");
-                state.debug_scene = std::make_unique<gateway::DebugSceneTracker>(
-                    gateway::parse_object_names(state.debug_object_dat));
+                // Validate the resource, but do NOT use its sequential string
+                // indexes as RGN labels: RGN words are engine object IDs.
+                gateway::parse_object_names(state.debug_object_dat);
             } catch (const gateway::DosIoError &) {
                 // Other Legend releases need not have Gateway's OBJECT.DAT.
             } catch (const std::runtime_error &) {
@@ -1778,16 +1779,22 @@ int main(int argc, char **argv) {
                                   reg(engine.uc, UC_X86_REG_CS), reg(engine.uc, UC_X86_REG_IP),
                                   reg(engine.uc, UC_X86_REG_DS), state.elapsed_ms);
                     debug_overlay.registers = registers;
-                    if (host->debug_open() &&
+                    if ((host->debug_open() || host->hitboxes_visible()) &&
                         (last_debug_inspection == 0 ||
                          state.elapsed_ms - last_debug_inspection >= 250)) {
                         last_debug_inspection = state.elapsed_ms;
                         std::vector<std::uint8_t> memory(1024 * 1024);
                         check(uc_mem_read(engine.uc, 0, memory.data(), memory.size()));
-                        const auto objects = gateway::inspect_gateway_state(
+                        auto objects = gateway::inspect_gateway_state(
                             memory, reg(engine.uc, UC_X86_REG_DS));
+                        if ((!objects || objects->objects.size() != 734) && state.debug_object_ds)
+                            objects = gateway::inspect_gateway_state(memory, *state.debug_object_ds);
                         if (objects && objects->objects.size() == 734) {
                             state.debug_object_ds = objects->ds;
+                            if (state.debug_scene)
+                                state.debug_scene->set_object_names(
+                                    gateway::debug_engine_object_names(*objects,
+                                                                       state.debug_object_dat));
                             std::ostringstream summary;
                             summary << "Objects: " << objects->objects.size();
                             if (objects->book_location)

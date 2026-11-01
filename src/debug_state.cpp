@@ -112,4 +112,17 @@ std::string debug_objects_tsv(const DebugGameState &state,
     }
     return out.str();
 }
+
+std::vector<std::string> debug_engine_object_names(
+    const DebugGameState &state, std::span<const std::uint8_t> object_dat) {
+    std::vector<std::string> names(state.objects.size() + 1);
+    for (const auto &object : state.objects) {
+        if (!object.id || object.id >= names.size())
+            continue;
+        names[object.id] = token_name(object_dat, object.name_token);
+        if (names[object.id].empty())
+            names[object.id] = token_name(object_dat, object.secondary_name_token);
+    }
+    return names;
+}
 } // namespace gateway

@@ -42,6 +42,15 @@ int main() try {
     require(dump.find("Book") != std::string::npos &&
                 dump.find("233") != std::string::npos,
             "Gateway TSV names and handlers");
+    const auto object_names = gateway::debug_engine_object_names(*state, names);
+    require(object_names.size() == 2 && object_names[0].empty() && object_names[1] == "Book",
+            "engine ID resolves the one-based OBJECT.DAT byte-offset token");
+    memory[record_seg * 16 + 0x200] = 0;
+    memory[record_seg * 16 + 0x201] = 0;
+    store(memory, record_seg, 0x202, 1);
+    const auto secondary = gateway::inspect_gateway_state(memory, ds);
+    require(secondary && gateway::debug_engine_object_names(*secondary, names)[1] == "Book",
+            "unnamed object falls back to secondary token");
     memory[dir * 16 + 0xc0] = 9;
     require(!gateway::inspect_gateway_state(memory, ds), "invalid object type accepted");
     require(!gateway::inspect_gateway_state(memory, 0), "unrelated DS recognized as Gateway");

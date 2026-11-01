@@ -2,6 +2,7 @@
 #include "mouse_cursor.hpp"
 #include "opl.hpp"
 #include <SDL3/SDL.h>
+#include <algorithm>
 #include <stdexcept>
 namespace gateway {
 namespace {
@@ -195,6 +196,7 @@ bool SdlHost::poll(std::deque<std::uint16_t> &keys, Mouse &mouse, const Vga &vga
         if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F10) {
             if (!event.key.repeat) {
                 debug_open_ = !debug_open_;
+                debug_dragging_ = false;
                 if (debug_open_)
                     for (unsigned i = 0; i < 3; ++i)
                         mouse.button(i, false);
@@ -205,13 +207,32 @@ bool SdlHost::poll(std::deque<std::uint16_t> &keys, Mouse &mouse, const Vga &vga
                             event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
                             event.type == SDL_EVENT_MOUSE_BUTTON_UP)) {
             checked(SDL_ConvertEventToRenderCoordinates(renderer_, &event));
+            if (event.type == SDL_EVENT_MOUSE_MOTION && debug_dragging_) {
+                const auto bounds = debug_menu_bounds(vga.width(), vga.height());
+                debug_position_.x = std::clamp(int(event.motion.x) - debug_drag_offset_x_, 0,
+                                                std::max(0, vga.width() - bounds.width));
+                debug_position_.y = std::clamp(int(event.motion.y) - debug_drag_offset_y_, 0,
+                                                std::max(0, vga.height() - bounds.height));
+            }
+            if (event.type == SDL_EVENT_MOUSE_BUTTON_UP &&
+                event.button.button == SDL_BUTTON_LEFT)
+                debug_dragging_ = false;
             if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
                 event.button.button == SDL_BUTTON_LEFT) {
-                const auto row = debug_menu_row_at(int(event.button.x), int(event.button.y),
-                                                   vga.width());
-                if (row >= 0) {
-                    debug_row_ = unsigned(row);
-                    debug_activate(debug_row_, actions);
+                const int x = int(event.button.x), y = int(event.button.y);
+                if (debug_menu_title_at(x, y, vga.width(), vga.height(), debug_position_)) {
+                    const auto bounds = debug_menu_bounds(vga.width(), vga.height(),
+                                                          debug_position_);
+                    debug_dragging_ = true;
+                    debug_drag_offset_x_ = x - bounds.x;
+                    debug_drag_offset_y_ = y - bounds.y;
+                } else {
+                    const auto row = debug_menu_row_at(x, y, vga.width(), vga.height(),
+                                                       debug_position_);
+                    if (row >= 0) {
+                        debug_row_ = unsigned(row);
+                        debug_activate(debug_row_, actions);
+                    }
                 }
             }
             continue; // Never pass debug-menu clicks to the DOS mouse driver.
@@ -238,9 +259,11 @@ bool SdlHost::poll(std::deque<std::uint16_t> &keys, Mouse &mouse, const Vga &vga
                     mouse.button(index, event.type == SDL_EVENT_MOUSE_BUTTON_DOWN);
             }
         }
-        if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST)
+        if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
+            debug_dragging_ = false;
             for (unsigned i = 0; i < 3; ++i)
                 mouse.button(i, false);
+        }
         if (event.type == SDL_EVENT_KEY_DOWN &&
             (event.key.key == SDLK_F11 ||
              ((event.key.key == SDLK_RETURN || event.key.key == SDLK_KP_ENTER) &&
@@ -254,6 +277,7 @@ bool SdlHost::poll(std::deque<std::uint16_t> &keys, Mouse &mouse, const Vga &vga
         if (debug_open_ && event.type == SDL_EVENT_KEY_DOWN) {
             if (event.key.key == SDLK_ESCAPE) {
                 debug_open_ = false;
+                debug_dragging_ = false;
             } else if (event.key.key == SDLK_UP) {
                 debug_row_ = (debug_row_ + debug_menu_rows - 1) % debug_menu_rows;
             } else if (event.key.key == SDLK_DOWN) {
@@ -309,7 +333,7 @@ void SdlHost::present(const Vga &vga, const Mouse &mouse,
     auto pixels = vga.pixels();
     if (debug_open_ || hitboxes_visible_)
         draw_debug_overlay(pixels, width_, height_, mouse, debug, debug_open_, hitboxes_visible_,
-                           debug_row_);
+                           debug_row_, debug_position_);
     draw_mouse_cursor(pixels, width_, height_, mouse, vga.text_mode());
     checked(SDL_UpdateTexture(texture_, nullptr, pixels.data(), width_ * 4));
     checked(SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255));

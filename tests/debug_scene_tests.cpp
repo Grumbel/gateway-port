@@ -1,4 +1,5 @@
 #include "debug_scene.hpp"
+#include <algorithm>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -40,7 +41,7 @@ int main(int argc, char **argv) try {
         word(rgn, 20 + i * 6, 0x0702);
         word(rgn, 22 + i * 6, 0x0906);
     }
-    gateway::DebugSceneTracker tracker({"Zero", "One", "Two", "Three"});
+    gateway::DebugSceneTracker tracker({"", "One", "Two", "Three"});
     require(gateway::DebugSceneTracker::matching_rgn("c:\\gate_102.pic") == "GATE_002.RGN",
             "Gateway room-picture RGN mapping");
     require(gateway::DebugSceneTracker::matching_rgn("GATE_315.PIC") == "GATE_315.RGN",
@@ -63,6 +64,10 @@ int main(int argc, char **argv) try {
     tracker.auto_follow(true);
     tracker.note_read("GATE_102.PIC", 38, 2);
     require(tracker.view().entry == 0, "resuming automatic scene tracking");
+    tracker.set_object_names({"", "Engine object one", "Engine object two"});
+    require(tracker.view().boxes[0].name == "Engine object one" &&
+                tracker.view().boxes[0].object_id == 1,
+            "scene labels follow native engine object IDs, not string-list positions");
     if (argc > 1) {
         const auto dir = std::filesystem::path(argv[1]);
         auto read = [&](const char *name) {
@@ -73,7 +78,9 @@ int main(int argc, char **argv) try {
         const auto real_pic = read("GATE_102.PIC");
         const auto real_rgn = read("GATE_002.RGN");
         const auto names = gateway::parse_object_names(read("OBJECT.DAT"));
-        auto real = gateway::DebugSceneTracker(names);
+        require(names.at(292) == "slip of paper",
+                "reference string-list entry demonstrates the old naming bug");
+        auto real = gateway::DebugSceneTracker();
         require(real.add_picture("C:GATE_102.PIC", real_pic, real_rgn),
                 "Gateway 1 PIC/RGN actual file pair");
         const auto entries = gateway::parse_pic_directory(real_pic);
@@ -90,6 +97,16 @@ int main(int argc, char **argv) try {
             break;
         }
         require(selected, "Gateway real PIC has no suitable room frame");
+        std::vector<std::string> recovered(735);
+        recovered[292] = "drawer"; // Known native Gateway object 0x124.
+        real.set_object_names(std::move(recovered));
+        real.note_read("GATE_102.PIC", entries.at(15).offset, 1);
+        const auto room = real.view();
+        const auto drawer = std::find_if(room.boxes.begin(), room.boxes.end(),
+                                         [](const auto &r) { return r.object_id == 292; });
+        require(room.entry == 15 && drawer != room.boxes.end() && drawer->name == "drawer" &&
+                    drawer->x0 == 90 && drawer->y0 == 162,
+                "Gateway room 15 drawer is native object 292, not OBJECT.DAT name index 292");
     }
     std::cout << "Gateway scene-tracking checks passed\n";
 } catch (const std::exception &error) {

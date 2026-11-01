@@ -6,12 +6,13 @@
 #include <map>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace gateway {
 struct DebugHitbox {
     unsigned x0, y0, x1, y1;
-    std::uint16_t name_index;
+    std::uint16_t object_id;
     std::string name;
 };
 struct DebugSceneView {
@@ -26,7 +27,9 @@ struct DebugSceneView {
 // rectangles. This is NOT a recovered native "current scene" variable.
 class DebugSceneTracker {
   public:
+    // names[0] is unused; names[engine_object_id] comes from live guest records.
     explicit DebugSceneTracker(std::vector<std::string> names = {});
+    void set_object_names(std::vector<std::string> names) { names_ = std::move(names); }
     static std::string canonical_file(std::string name);
     static std::string matching_rgn(const std::string &pic);
     bool add_picture(const std::string &file, std::span<const std::uint8_t> pic,

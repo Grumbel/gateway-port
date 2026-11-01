@@ -25,6 +25,7 @@ class SdlHost {
                  const DebugOverlayData &debug = {});
     bool debug_open() const { return debug_open_; }
     bool hitboxes_visible() const { return hitboxes_visible_; }
+    DebugMenuPosition debug_position() const { return debug_position_; }
 
   private:
     SDL_Window *window_ = nullptr;
@@ -36,6 +37,9 @@ class SdlHost {
     DisplayAspect aspect_;
     bool fullscreen_ = false;
     bool debug_open_ = false, hitboxes_visible_ = false;
+    DebugMenuPosition debug_position_;
+    bool debug_dragging_ = false;
+    int debug_drag_offset_x_ = 0, debug_drag_offset_y_ = 0;
     unsigned debug_row_ = 0;
     void debug_activate(unsigned row, DebugActions *actions);
     void close();

@@ -24,4 +24,8 @@ std::optional<DebugGameState> inspect_gateway_state(std::span<const std::uint8_t
                                                      std::uint16_t ds);
 std::string debug_objects_tsv(const DebugGameState &state,
                               std::span<const std::uint8_t> object_dat = {});
+// Use the engine object IDs as keys (index 0 is unused). RGN records use
+// these IDs; OBJECT.DAT string indexes are not interchangeable with them.
+std::vector<std::string> debug_engine_object_names(
+    const DebugGameState &state, std::span<const std::uint8_t> object_dat);
 } // namespace gateway

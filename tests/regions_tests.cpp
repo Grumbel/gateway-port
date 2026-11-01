@@ -29,10 +29,10 @@ int main() try {
     require(frames.size() == 2 && frames[0].boxes.size() == 2 && frames[1].boxes.empty(),
             "RGN header and rectangle counts");
     const auto &first = frames[0].boxes[0];
-    require(first.name_index == 7 && first.x0 == 6 && first.y0 == 4 && first.x1 == 12 &&
+    require(first.object_id == 7 && first.x0 == 6 && first.y0 == 4 && first.x1 == 12 &&
                 first.y1 == 8,
             "RGN rectangle coordinates");
-    require(frames[0].boxes[1].name_index == 5, "RGN default object name");
+    require(frames[0].boxes[1].object_id == 5, "RGN default native object ID");
     rejects([&] { gateway::parse_regions(bytes, 5); });
     auto invalid = bytes;
     invalid[0] = 2;

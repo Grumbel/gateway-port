@@ -94,9 +94,9 @@ DebugSceneView DebugSceneTracker::view() const {
     view.entry = entry_;
     view.entry_count = found->second.regions.size();
     for (const auto &region : found->second.regions[entry_].boxes) {
-        const auto index = region.name_index;
-        view.boxes.push_back({region.x0, region.y0, region.x1, region.y1, index,
-                              index < names_.size() ? names_[index] : ""});
+        const auto id = region.object_id;
+        view.boxes.push_back({region.x0, region.y0, region.x1, region.y1, id,
+                              id && id < names_.size() ? names_[id] : ""});
     }
     return view;
 }

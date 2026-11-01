@@ -19,7 +19,7 @@ std::vector<RegionFrame> parse_regions(std::span<const std::uint8_t> file,
     for (std::size_t i = 0; i < pic_entry_count; ++i) {
         const auto at = i * 6;
         const auto offset = word(file, at);
-        frames[i].default_name_index = word(file, at + 2);
+        frames[i].default_object_id = word(file, at + 2);
         const auto count = word(file, at + 4);
         if (!count)
             continue;
@@ -29,7 +29,7 @@ std::vector<RegionFrame> parse_regions(std::span<const std::uint8_t> file,
             const auto rect = offset + j * 6;
             auto name = word(file, rect);
             if (!name)
-                name = frames[i].default_name_index;
+                name = frames[i].default_object_id;
             const auto first = word(file, rect + 2), last = word(file, rect + 4);
             const unsigned x0 = (first & 255) * 2, y0 = first >> 8;
             const unsigned x1 = (last & 255) * 2, y1 = last >> 8;

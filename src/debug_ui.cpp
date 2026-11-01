@@ -4,6 +4,7 @@
 #include <array>
 #include <cstdio>
 #include <string_view>
+#include <vector>
 
 namespace gateway {
 namespace {
@@ -12,6 +13,7 @@ constexpr std::uint32_t border = 0xff75aaff;
 constexpr std::uint32_t white = 0xffe6edfa;
 constexpr std::uint32_t muted = 0xffa5b4c5;
 constexpr std::uint32_t accent = 0xffffd65c;
+constexpr int menu_width = 354, menu_height = 248;
 
 void pixel(std::span<std::uint32_t> image, int width, int height, int x, int y,
            std::uint32_t color) {
@@ -43,56 +45,139 @@ void text(std::span<std::uint32_t> image, int width, int height, int x, int y,
                     pixel(image, width, height, x + int(8 * i + column), y + int(row), color);
     }
 }
-int menu_left(int width) { return std::max(0, width - 354); }
+std::uint32_t tint(std::uint32_t base, std::uint32_t color, unsigned alpha) {
+    auto channel = [alpha](unsigned old, unsigned next) {
+        return (old * (255 - alpha) + next * alpha + 127) / 255;
+    };
+    return 0xff000000 | (channel((base >> 16) & 255, (color >> 16) & 255) << 16) |
+           (channel((base >> 8) & 255, (color >> 8) & 255) << 8) |
+           channel(base & 255, color & 255);
+}
 } // namespace
 
-int debug_menu_row_at(int x, int y, int width) {
-    if (x < menu_left(width) + 8 || x >= width - 8 || y < 48 || y >= 48 + 20 * 6)
+DebugMenuBounds debug_menu_bounds(int width, int height, DebugMenuPosition position) {
+    const int w = std::min(menu_width, std::max(0, width));
+    const int h = std::min(menu_height, std::max(0, height));
+    const int max_x = std::max(0, width - w), max_y = std::max(0, height - h);
+    return {std::clamp(position.x < 0 ? max_x : position.x, 0, max_x),
+            std::clamp(position.y < 0 ? max_y : position.y, 0, max_y), w, h};
+}
+
+int debug_menu_row_at(int x, int y, int width, int height, DebugMenuPosition position) {
+    const auto window = debug_menu_bounds(width, height, position);
+    if (x < window.x + 8 || x >= window.x + window.width - 8 ||
+        y < window.y + 40 || y >= window.y + 40 + 20 * int(debug_menu_rows))
         return -1;
-    return (y - 48) / 20;
+    return (y - window.y - 40) / 20;
+}
+
+bool debug_menu_title_at(int x, int y, int width, int height, DebugMenuPosition position) {
+    const auto window = debug_menu_bounds(width, height, position);
+    return x >= window.x + 8 && x < window.x + window.width - 8 &&
+           y >= window.y + 6 && y < window.y + 34;
+}
+
+std::uint32_t debug_hotspot_color(std::uint16_t object_id) {
+    // The golden-angle hue step keeps consecutive engine IDs visually distinct.
+    const unsigned hue = (unsigned(object_id) * 137 + 20) % 360;
+    constexpr unsigned v = 255, s = 195;
+    const unsigned p = v * (255 - s) / 255;
+    const unsigned f = hue % 60;
+    const unsigned q = v * (255 - s * f / 60) / 255;
+    const unsigned t = v * (255 - s * (60 - f) / 60) / 255;
+    const std::array<std::array<unsigned, 3>, 6> rgb{{
+        {{v, t, p}}, {{q, v, p}}, {{p, v, t}},
+        {{p, q, v}}, {{t, p, v}}, {{v, p, q}},
+    }};
+    const auto &c = rgb[hue / 60];
+    return 0xff000000 | (c[0] << 16) | (c[1] << 8) | c[2];
 }
 
 void draw_debug_overlay(std::span<std::uint32_t> image, int width, int height,
                         const Mouse &mouse, const DebugOverlayData &data,
-                        bool menu_open, bool show_hitboxes, unsigned selected_row) {
+                        bool menu_open, bool show_hitboxes, unsigned selected_row,
+                        DebugMenuPosition position) {
     if (width < 1 || height < 1 || image.size() < std::size_t(width) * height)
         return;
-    int hovered = -1;
     if (show_hitboxes) {
+        // The picture occupies columns 260..639 and rows 0..231 in Gateway.
+        // Raster ownership merges touching/overlapping rectangles belonging to
+        // the same engine object, so shared interior edges are never drawn.
+        const int left = 260 * width / 640;
+        const int area_width = width - left;
+        const int area_height = std::min(height, 232);
+        std::vector<std::uint32_t> owner(std::size_t(area_width) * area_height);
+        constexpr std::uint32_t unnamed_base = 65536;
         for (std::size_t i = 0; i < data.scene.boxes.size(); ++i) {
             const auto &box = data.scene.boxes[i];
-            // In the original 640-column Gateway interface the picture occupies
-            // x=260..639. RGN X coordinates are scene-relative and doubled.
-            const int x0 = int((260 + box.x0) * width / 640);
-            const int x1 = int((261 + box.x1) * width / 640);
-            const int y0 = box.y0, y1 = box.y1 + 1;
-            const bool over = mouse.x >= int(260 + box.x0) &&
-                              mouse.x <= int(260 + box.x1) &&
-                              mouse.y >= int(box.y0) && mouse.y <= int(box.y1);
-            if (over)
-                hovered = static_cast<int>(i);
-            rect(image, width, height, x0, y0, x1, y1, over ? 0xffff62b8 : accent, false);
+            const int x0 = std::clamp(int((260 + box.x0) * width / 640), left, width);
+            // X is in *two*-pixel units, so the final column includes both pixels.
+            const int x1 = std::clamp(int((262 + box.x1) * width / 640), left, width);
+            const int y0 = std::clamp(int(box.y0), 0, area_height);
+            const int y1 = std::clamp(int(box.y1 + 1), 0, area_height);
+            for (int y = y0; y < y1; ++y)
+                for (int x = x0; x < x1; ++x)
+                    // Object 0 has no identity: keep such rectangles separate
+                    // rather than merging unrelated anonymous regions.
+                    owner[std::size_t(y) * area_width + x - left] =
+                        box.object_id ? box.object_id : unnamed_base + i;
+        }
+        std::uint32_t hovered = 0;
+        const int mx = mouse.x * width / 640;
+        if (area_width && mx >= left && mx < width && mouse.y >= 0 &&
+            mouse.y < area_height)
+            hovered = owner[std::size_t(mouse.y) * area_width + mx - left];
+        for (int y = 0; y < area_height; ++y) {
+            for (int x = 0; x < area_width; ++x) {
+                const auto at = std::size_t(y) * area_width + x;
+                const auto id = owner[at];
+                if (!id)
+                    continue;
+                const bool outline = x == 0 || x + 1 == area_width || y == 0 ||
+                                     y + 1 == area_height || owner[at - 1] != id ||
+                                     owner[at + 1] != id || owner[at - area_width] != id ||
+                                     owner[at + area_width] != id;
+                const auto color = debug_hotspot_color(
+                    std::uint16_t(id < unnamed_base ? id : id - unnamed_base));
+                auto &pixel_value = image[std::size_t(y) * width + x + left];
+                pixel_value = outline ? (id == hovered ? white : color)
+                                      : tint(pixel_value, color, id == hovered ? 100 : 55);
+            }
         }
         rect(image, width, height, 2, height - 23, std::min(width, 310), height - 2, panel,
              true);
         char info[128];
-        std::snprintf(info, sizeof info, "RGN %s #%zu (%zu hitboxes)",
+        std::snprintf(info, sizeof info, "RGN %s #%zu (%zu rectangles)",
                       data.scene.region_file.c_str(), data.scene.entry, data.scene.boxes.size());
         text(image, width, height, 8, height - 18, info, white, 37);
-        if (hovered >= 0) {
-            const auto &box = data.scene.boxes[hovered];
-            std::snprintf(info, sizeof info, "name[%u] %s", box.name_index, box.name.c_str());
+        if (hovered) {
+            if (hovered >= unnamed_base) {
+                std::snprintf(info, sizeof info, "Unnamed region #%u",
+                              unsigned(hovered - unnamed_base));
+            } else {
+                const auto id = std::uint16_t(hovered);
+                const auto found = std::find_if(data.scene.boxes.begin(), data.scene.boxes.end(),
+                                                [id](const auto &box) { return box.object_id == id; });
+                const auto name = found != data.scene.boxes.end() && !found->name.empty()
+                                      ? found->name.c_str()
+                                      : "(name not resolved)";
+                std::snprintf(info, sizeof info, "Object #%u: %s", id, name);
+            }
             rect(image, width, height, 2, height - 44, std::min(width, 310), height - 24,
                  panel, true);
-            text(image, width, height, 8, height - 39, info, accent, 37);
+            text(image, width, height, 8, height - 39, info,
+                 debug_hotspot_color(std::uint16_t(hovered < unnamed_base ? hovered
+                                                                        : hovered - unnamed_base)),
+                 37);
         }
     }
     if (!menu_open)
         return;
-    const int left = menu_left(width), right = width - 6;
-    rect(image, width, height, left, 8, right, 256, panel, true);
-    rect(image, width, height, left, 8, right, 256, border, false);
-    text(image, width, height, left + 13, 17, "GATEWAY DEBUG  [F10]", accent);
+    const auto bounds = debug_menu_bounds(width, height, position);
+    const int left = bounds.x, top = bounds.y, right = left + bounds.width - 6;
+    rect(image, width, height, left, top, right, top + bounds.height, panel, true);
+    rect(image, width, height, left, top, right, top + bounds.height, border, false);
+    text(image, width, height, left + 13, top + 9, "GATEWAY DEBUG [drag]", accent);
     const std::array<std::string, 6> entries{
         std::string("Hitboxes: ") + (show_hitboxes ? "ON" : "OFF"),
         std::string("Auto scene: ") + (data.scene.auto_follow ? "ON" : "OFF"),
@@ -102,7 +187,7 @@ void draw_debug_overlay(std::span<std::uint32_t> image, int width, int height,
         "Close debug menu",
     };
     for (unsigned i = 0; i < entries.size(); ++i) {
-        const int y = 48 + 20 * int(i);
+        const int y = top + 40 + 20 * int(i);
         if (selected_row == i)
             rect(image, width, height, left + 7, y - 4, right - 7, y + 12, 0xff314a6a,
                  true);
@@ -112,10 +197,11 @@ void draw_debug_overlay(std::span<std::uint32_t> image, int width, int height,
     char scene[160];
     std::snprintf(scene, sizeof scene, "Scene: %s #%zu %s", data.scene.picture.c_str(),
                   data.scene.entry, data.scene.auto_follow ? "(guess)" : "(manual)");
-    text(image, width, height, left + 13, 179, scene, white, 39);
-    text(image, width, height, left + 13, 193, data.registers, muted, 39);
-    text(image, width, height, left + 13, 207, data.object_summary, muted, 39);
-    text(image, width, height, left + 13, 221, data.dump_message, accent, 39);
-    text(image, width, height, left + 13, 241, "Up/Dn Left/Right H A D Esc", muted, 39);
+    text(image, width, height, left + 13, top + 171, scene, white, 39);
+    text(image, width, height, left + 13, top + 185, data.registers, muted, 39);
+    text(image, width, height, left + 13, top + 199, data.object_summary, muted, 39);
+    text(image, width, height, left + 13, top + 213, data.dump_message, accent, 39);
+    text(image, width, height, left + 13, top + 233,
+         "Up/Dn Left/Right H A D Esc", muted, 39);
 }
 } // namespace gateway

@@ -62,6 +62,32 @@ int main() {
         require(keys.empty(), "F10 key leaked into guest input");
         host.poll(keys, mouse, vga, &actions);
         require(SDL_CursorVisible(), "menu uses native pointer");
+        SDL_Event drag{};
+        drag.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+        drag.button.windowID = window_id;
+        drag.button.button = SDL_BUTTON_LEFT;
+        drag.button.x = 750; // 640x480 logical (500,243): title bar in bottom-right
+        drag.button.y = 365;
+        require(SDL_PushEvent(&drag), "press debug title bar");
+        drag = {};
+        drag.type = SDL_EVENT_MOUSE_MOTION;
+        drag.motion.windowID = window_id;
+        drag.motion.x = 400;
+        drag.motion.y = 280;
+        require(SDL_PushEvent(&drag), "drag debug window");
+        drag = {};
+        drag.type = SDL_EVENT_MOUSE_BUTTON_UP;
+        drag.button.windowID = window_id;
+        drag.button.button = SDL_BUTTON_LEFT;
+        drag.button.x = 400;
+        drag.button.y = 280;
+        require(SDL_PushEvent(&drag), "release debug title bar");
+        host.poll(keys, mouse, vga, &actions);
+        require(host.debug_position().x >= 0 && host.debug_position().y >= 0 &&
+                    host.debug_position().y < 232,
+                "dragging the title bar should move the window upward");
+        require(mouse.history[0].presses == 0 && keys.empty(),
+                "debug window drag leaked guest mouse or keyboard input");
         send_key(SDLK_F10, true);
         host.poll(keys, mouse, vga, &actions);
         require(host.debug_open(), "F10 repeat closed menu");
