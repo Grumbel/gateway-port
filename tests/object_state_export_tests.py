@@ -7,6 +7,7 @@ import unittest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'tools'))
 from inspect_object_state import (child_links, inspect_objects, map_handler_entries,
                                   relation_links, HANDLER_FIELDS)
+from inspect_child_chains import resolve_chains
 
 
 class ObjectStateExportTests(unittest.TestCase):
@@ -137,6 +138,36 @@ class ObjectStateExportTests(unittest.TestCase):
         self.memory[0x30000 + 6 * 3 - 2] = 9  # 0x0e + 18 > 24.
         with self.assertRaisesRegex(ValueError, 'child list exceeds'):
             inspect_objects(self.memory, self.ds)
+
+    def test_linked_child_slot_and_next_sibling_have_separate_type_offsets(self):
+        # The type-2 record uses +0x10/+0x12; types 7 and 8 use +0x0e/+0x10.
+        # These are not the indexed child heads at +0x14/+0x12.
+        for kind, slot_offset, next_offset in [(2, 0x10, 0x12),
+                                                (7, 0x0e, 0x10),
+                                                (8, 0x0e, 0x10)]:
+            self.memory[0x40000 + kind * 0x100 + slot_offset] = kind
+            self.word(0x4000, kind * 0x100 + next_offset, kind * 0x100 + 1)
+        objects = inspect_objects(self.memory, self.ds)
+        for kind in (2, 7, 8):
+            self.assertEqual(objects[kind - 1]['child_slot'], kind)
+            self.assertEqual(objects[kind - 1]['next_sibling'], kind * 0x100 + 1)
+        for kind in (1, 3, 4, 5, 6):
+            self.assertNotIn('child_slot', objects[kind - 1])
+            self.assertNotIn('next_sibling', objects[kind - 1])
+
+    def test_exported_indexed_head_resolves_through_a_real_sibling_field(self):
+        # Two children under a type-2 parent: only the first occupies +0x14.
+        # The second must be discovered through type-7's +0x10 sibling word.
+        self.memory[0x30000 + 2 * 3 - 2] = 3
+        self.word(0x4000, 0x200 + 0x14, 7)
+        self.word(0x4000, 0x700 + 0x0c, 2)   # child 7's location
+        self.word(0x4000, 0x700 + 0x10, 8)   # child 7's next sibling
+        self.word(0x4000, 0x800 + 0x0c, 2)   # child 8's location
+        objects = inspect_objects(self.memory, self.ds)
+        report = resolve_chains(objects, 2)
+        self.assertIn('0x007 (type 7)', report)
+        self.assertIn('0x008 (type 8)', report)
+        self.assertNotIn('!= parent', report)
 
     def test_bad_type_handler_size_name_and_pointer_are_rejected(self):
         for address, value in [(0x200c0, 9), (0x30002, 1)]:

@@ -8,6 +8,9 @@ import struct
 HANDLER_FIELDS = [0x10, 0x22, 0x0a, 0x12, 0x14, 0x16, 0x1e, 0x16]
 LOCATION_FIELDS = {2: 0x0e, 6: 0x0a, 7: 0x0c, 8: 0x0c}
 CHILD_FIELDS = {1: 0x0c, 2: 0x14, 4: 0x0a, 5: 0x0c, 6: 0x0e, 7: 0x12}
+# Original EXE 0157:0753/07bc (byte slot) and 0157:09e4/0a4b
+# (word next-sibling). These are independent of location and child heads.
+SIBLING_FIELDS = {2: (0x10, 0x12), 7: (0x0e, 0x10), 8: (0x0e, 0x10)}
 
 
 def relation_links(kind, count, raw):
@@ -98,6 +101,12 @@ def inspect_objects(memory, ds, names=None):
                 item[label] = names[start:end].decode('cp437')
         if kind in LOCATION_FIELDS:
             item['location'] = word(segment, offset + LOCATION_FIELDS[kind])
+        if kind in SIBLING_FIELDS:
+            slot_offset, next_offset = SIBLING_FIELDS[kind]
+            if next_offset + 2 > len(raw):
+                raise ValueError(f'object {object_id}: record too short for sibling links')
+            item['child_slot'] = raw[slot_offset]
+            item['next_sibling'] = struct.unpack_from('<H', raw, next_offset)[0]
         if handler:
             bank, index = divmod(handler - 1, 512)
             table = word(ds, 0x8db4 + bank * 2)

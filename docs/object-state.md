@@ -179,9 +179,10 @@ stack words are `(object ID, slot index, new child ID)` at `[BP+6]`, `[BP+8]`,
 then writes the same type-specific word addresses as the accessor above:
 type 2 at `+0x14+2*slot`, type 4 at `+0x0a+2*slot`, type 5 at
 `+0x0c+2*slot`, type 6 at `+0x0e+2*slot`, type 7 at `+0x12+2*slot`,
-and type 1 at fixed `+0x0c`; type 3/8 are no-ops. The actual caller that
-removes the first-room book is **not yet known**. The independent location
-setter at `0157:064b` (file `0x2b89`) updates only its type-dependent
+and type 1 at fixed `+0x0c`; type 3/8 are no-ops. The caller removing the
+first-room book is now identified as the common relocation helper at original
+`GATEMAIN.OVL:0xc879` (section 4), which calls this setter. The independent
+location setter at `0157:064b` (file `0x2b89`) updates only its type-dependent
 location field; its disassembly does **not** contain a child-list unlink.
 
 The subsequent watched native replay established that drawer `0x124` is
@@ -195,6 +196,39 @@ The child setter returns to live `4319:169e`, identified by verified RTLink
 section 4 as original OVL `0xc87e` (immediately after its call at `0xc879`).
 See [child-list relocation](action-dispatch.md#the-shared-child-list-relocation-routine)
 for the original control flow and bounded C++ model.
+
+### Enumerating siblings instead of just child heads
+
+The same original EXE contains a byte child-slot getter/setter at
+`0157:0753/07bc` and a word next-sibling getter/setter at `0157:09e4/0a4b`.
+The exporter decodes both fields, independently of `child_links`:
+
+| Native record type | Child's `child_slot` byte | Child's `next_sibling` word |
+| --- | ---: | ---: |
+| 2 | `+0x10` | `+0x12` |
+| 7, 8 | `+0x0e` | `+0x10` |
+
+Types without these native accessors omit the fields rather than inventing
+them. Each indexed `child_links` entry is a **head pointer**; subsequent
+siblings are reached through each child's `next_sibling` word. This means a
+zero child-head write does not by itself establish that the room or inventory
+is empty, or that no second object was previously linked behind that head.
+
+The independent inspector reconstructs the lists in a saved native snapshot:
+
+```sh
+python3 tools/inspect_object_state.py build/parser-child-writes/native \
+  --names ../gateway-dos/OBJECT.DAT > build/parser-child-writes/objects.json
+python3 tools/inspect_child_chains.py build/parser-child-writes/objects.json \
+  --container 0xee --recursive --max-depth 3
+python3 tools/inspect_child_chains.py build/parser-child-writes/objects.json \
+  --container 0xd3
+```
+
+The inspector labels each slot, retains sibling order, checks the child's
+location and slot metadata, and fails on a dangling child or sibling cycle.
+Recursive expansion detects a containment cycle without following it forever.
+It observes one snapshot, not parser visibility or which actions succeeded.
 
 ## State-changing replay
 

@@ -115,6 +115,10 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/visibility_correlation_tests.py)
     add_test(NAME story-object-write-trace COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/object_write_trace_tests.py)
+    add_test(NAME story-child-chain COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/child_chain_inspect_tests.py)
+    add_test(NAME object-state-export COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/object_state_export_tests.py)
     add_test(NAME story-replay-driver COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/trace_game_logic_tests.py)
     add_test(NAME story-action-batch COMMAND ${Python3_EXECUTABLE}
@@ -133,8 +137,6 @@ if(GATEWAY_WITH_UNICORN)
     find_package(Python3 COMPONENTS Interpreter REQUIRED)
     add_test(NAME rtlink-tool COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/overlay_tool_tests.py $<TARGET_FILE:gateway-overlay>)
-    add_test(NAME object-state-export COMMAND ${Python3_EXECUTABLE}
-      ${CMAKE_CURRENT_SOURCE_DIR}/tests/object_state_export_tests.py)
     add_test(NAME real-mode-probe COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/probe_tests.py $<TARGET_FILE:gateway-probe>)
   endif()
