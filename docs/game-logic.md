@@ -142,3 +142,44 @@ lookup routine, and replaces the shared object-flag query in a bounded replay.
 The original and host query agree on 620 calls across `look`, `open drawer`, and
 `look`, with identical final framebuffers in native, verification, and HLE modes.
 The remaining work is mapping the rest of the handler/state ABI and RTLink data.
+
+## First reproducible annotated disassembly
+
+`tools/disassemble_story.py` is a bounded linear-sweep disassembler for the
+original 16-bit overlay. It annotates the confirmed `mov ax,token; mov dx,f000;
+push dx; push ax; call far` pattern with the `GATESTR.DAT` segment and string
+index. It **does not** decompile C, resolve RTLink relocations, or decide whether
+an arbitrary sequence is code rather than embedded data. Treat every printed
+text match as a candidate until its call target is identified.
+
+```sh
+python3 tools/disassemble_story.py ../gateway-dos/GATEMAIN.OVL \
+  --start 0x72a97 --size 0x25
+```
+
+On the binary identified above, this shows the native conditional at `0x72a9b`
+and annotates the far call at `0x72aac` with **segment 45, string 100**. The
+behavior can be provisionally expressed as this C-like *pseudocode* (not source
+reconstruction):
+
+```c
+if (read_word(read_segment(DS, 0x970c), 0x35c6) == 0x0276) {
+    display_story_text(/* GATESTR segment 45, string 100 */);
+    goto earlier_handler_code; // file offset 0x72a41
+}
+return 0; // far return from this native routine
+```
+
+`DS:970c` is a pointer to a state segment; `ES:35c6` is an **unidentified**
+state word, not a named `salamander_state` field yet. The caller, action/event
+that reaches this branch, and meaning of `0x276` need dynamic confirmation.
+Far call operands printed from disk are pre-relocation, and should not be used
+as live breakpoints without the RTLink map. The utility's tests intentionally
+reject annotations when an intervening instruction breaks the known sequence.
+
+For a modern engine, the next useful slice is a single *room event*:
+resolve its handler entry from the exported object inventory and overlay
+manifest, identify the event switch, follow all state reads/writes and story
+tokens, then replay the same player command to validate the C-like translation.
+This is an incremental translation of native routines, not extraction of a
+standalone script language.

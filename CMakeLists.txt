@@ -109,6 +109,8 @@ if(GATEWAY_WITH_UNICORN)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/overlay_tool_tests.py $<TARGET_FILE:gateway-overlay>)
     add_test(NAME object-state-export COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/object_state_export_tests.py)
+    add_test(NAME story-disassembly COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/disassemble_story_tests.py)
     add_test(NAME real-mode-probe COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/probe_tests.py $<TARGET_FILE:gateway-probe>)
   endif()

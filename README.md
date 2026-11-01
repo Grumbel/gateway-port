@@ -386,6 +386,17 @@ python3 tools/inspect_object_state.py build/game-logic/hle \
 See [object-state findings](docs/object-state.md) for the 696 recovered handler
 entry points, service contracts, name mapping, and validation limits.
 
+To begin reconstructing native story logic, disassemble a bounded Gateway room
+or object routine with text-token annotations:
+
+```sh
+python3 tools/disassemble_story.py ../gateway-dos/GATEMAIN.OVL \
+  --start 0x72a97 --size 0x25
+```
+
+See [native story disassembly](docs/game-logic.md#first-reproducible-annotated-disassembly)
+for an initial C-like translation and its limitations.
+
 RTLink sections and all handler entry file offsets can now be extracted:
 
 ```sh
