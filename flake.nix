@@ -84,6 +84,31 @@ except Exception:
             shellHook = ''
               export GATEWAY_SOURCE="$PWD"
               export GATEWAY_BUILD_DIR="''${GATEWAY_BUILD_DIR:-/tmp/gateway-port-build}"
+              case $- in
+                *i*)
+                  printf '\n%s\n' \
+                    'Gateway development shell' \
+                    '=========================' \
+                    "Source: $GATEWAY_SOURCE" \
+                    "Build:  $GATEWAY_BUILD_DIR (Debug by default)" \
+                    '' \
+                    '  gateway-configure                   Configure CMake/Ninja' \
+                    '  gateway-build                       Build the project' \
+                    '  gateway-run ../101/S101.EXE         Build and run Spellcasting 101' \
+                    '  gateway-run ../201/S201.EXE         Build and run Spellcasting 201' \
+                    '  gateway-run-gdb ../101/S101.EXE     Build and debug under GDB' \
+                    '' \
+                    'Troubleshooting:' \
+                    '  gateway-run ../201/S201.EXE --trace-video' \
+                    '  gateway-run ../101/S101.EXE --headless --milliseconds 15000 \' \
+                    '    --dump-prefix /tmp/s101-stall --trace-blocks /tmp/s101-blocks.txt' \
+                    '' \
+                    'GDB: press Ctrl-C to interrupt a frozen game, then use bt / continue.' \
+                    'Guest DOS registers are inside Unicorn, not native GDB registers.' \
+                    'More details: README.md (Debugging with nix develop).' \
+                    ''
+                  ;;
+              esac
             '';
           };
         });
