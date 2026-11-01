@@ -441,6 +441,20 @@ See [native action dispatch](docs/action-dispatch.md) for a partial C-like
 translation, exact runtime addresses, original overlay file offsets, and
 remaining branch-verification work.
 
+The current native replay confirms book location changes (`0xd3` when taken,
+`0xee` when dropped) and flags `0x02`, `0x08`, and `0x0a` on TAKE. The game also
+issues many repeated `set(...,0x07)` calls while describing rooms and inventory.
+To distinguish actual writes from redundant calls, run:
+
+```sh
+python3 tools/trace_game_logic.py --scenario objects --native-only \
+  --verify-overlays --trace-state-writes --output build/action-write-check
+python3 tools/summarize_action_effects.py \
+  build/action-write-check/native.trace --changed-only
+```
+
+This traces native object-state writes without replacing the game's routines.
+
 RTLink sections and all handler entry file offsets can now be extracted:
 
 ```sh

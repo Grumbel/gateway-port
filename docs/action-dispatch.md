@@ -143,12 +143,12 @@ of the **original OVL file** reveals:
 | INVENTORY `0x53` | `0xe8c4` | Calls inventory/list helper `1c24:3dc9`, then emits text; no direct flag mutation in its short entry. |
 | TAKE `0x46` | `0xfee1` | On one branch sets flag `0x02` at `0x10066`, clears `0x08` at `0x1007b`, and clears `0x0a` at `0x10090`, using verified `0157` services. |
 
-These are **static candidate paths**, not confirmation that the scripted
-`take book`/`drop book` replay executed those exact instructions. The native
-object-state replay already demonstrated that the book (`0x123`) moves to the
-player (`0xd3`) when taken and to the room (`0xee`) when dropped, but did not
-identify all intervening action-specific helper calls. The new service-entry
-hooks below aim to connect those observations to top-level action dispatches.
+The subsequent section-5 replay **confirmed execution** of all three shared
+entries, including TAKE's predicted property-`0x02` setter and property-`0x08`
+and `0x0a` clearers. The book (`0x123`) moves to the player (`0xd3`) on TAKE
+and to the room (`0xee`) on DROP. The new service-entry hooks below connect
+those changes to their top-level action dispatches, although the intervening
+helpers have not yet been decompiled.
 
 To inspect the two shared functions:
 
@@ -271,8 +271,48 @@ has a return IP and CS followed by `(object, property)` for flag services, or
 `summarize_action_effects.py` uses these service entries when present and
 falls back to the original OVL callsites for older traces. This avoids
 double-counting one flag mutation. New replay results are still needed to
-confirm execution of the TAKE/DROP/INVENTORY entry points and determine which
-of their nested service calls occur during the scripted commands.
+determine which *write attempts* actually change object records.
+
+### All five shared actions observed
+
+The user-supplied native-only replay hooked the complete action path. It
+matched the earlier 187 verified RTLink loads and final framebuffer hash.
+These calls are now **live observations**, not merely static candidates:
+
+| Command | Observed object-state service calls |
+| --- | --- |
+| LOOK (`0x5f`) | Repeatedly sets property `0x07` on the room and other objects. |
+| OPEN (`0x71`) | Sets properties `0x0c`, `0x02`, `0x07` on drawer `0x124`; also sets `0x07` on book `0x123`. |
+| TAKE (`0x46`) | Sets `0x07` on book and drawer; sets book location to `0xd3`; sets book `0x02`, clears `0x08` and `0x0a`. |
+| INVENTORY (`0x53`) | Sets `0x07` on player `0xd3` and inventory-related objects. |
+| DROP (`0x32`) | Sets book location to `0xee` and its `0x07`. |
+| CLOSE (`0x1d`) | Sets drawer `0x07` and clears its `0x0c`. |
+
+Flag `0x07` is especially interesting: LOOK and INVENTORY both set it on many
+objects, including repeat visits to the same scene. It could represent
+"observed/known" state, but **that interpretation is still a hypothesis**.
+The trace records setter calls, which are not necessarily byte changes;
+repeated requests to set an existing bit can be idempotent.
+
+To distinguish changes from redundant calls, the replay driver has an opt-in
+passive verification run. It executes the original native services, computes
+each proposed write and its *pre-call* byte comparison, then verifies native
+results at the existing service exit hook:
+
+```sh
+gateway-build
+python3 tools/trace_game_logic.py --scenario objects --native-only \
+  --verify-overlays --trace-state-writes --output build/action-write-check
+python3 tools/summarize_action_effects.py \
+  build/action-write-check/native.trace --changed-only
+```
+
+`[changed]` means the pre-call bytes differ from the predicted write;
+`[unchanged]` means the setter would not modify them; `[unsupported]` means
+the object's type does not support that property or location operation.
+The native verification mode does **not** replace or modify the guest's own
+service implementation. `--changed-only` requires this new annotation and
+rejects older traces rather than silently dropping their calls.
 
 `--native-only` avoids two additional HLE comparison replays; omit it for the
 full three-way regression check. Guest addresses are specific to the known
@@ -281,7 +321,7 @@ residency checks when analyzing other games or actions.
 
 For the modern replacement action layer, we can now distinguish the global
 OPEN/CLOSE routines from object-specific event-6 handlers and reuse the
-verified object-flag service ABI. Next steps are to confirm the second OPEN
-setter's exact state effect, recover mode guards and other state semantics,
-and identify reusable contracts for TAKE/DROP/INVENTORY before replacing
-native execution.
+verified object-flag service ABI. Next steps are to distinguish redundant
+`0x07` writes from state transitions, recover mode guards and other state
+semantics, and identify reusable contracts for TAKE/DROP/INVENTORY before
+replacing native execution.
