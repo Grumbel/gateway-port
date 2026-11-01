@@ -791,14 +791,60 @@ gate also has other slots (slot 1 was denied and slot 2 allowed in the
 observed drawer traversal), whose behavior is not yet interpreted as a
 complete containment model.
 
+### First-room gate and child-link transitions verified by timestamp
+
+The next supplied `--details` output resolves those mixed windows. Compare
+these independent native observations with the corresponding state-service
+timestamps from the **same seven-command replay**:
+
+| Native action call | Last restricted slot-0 check before | First restricted slot-0 check after |
+| --- | --- | --- |
+| `set(0x124,0x0c)` at **18393 ms** (OPEN) | 18360: **deny** | 18470: **allow**, child `0x123` |
+| `clear(0x124,0x0c)` at **21443 ms** (CLOSE) | 21389: **allow**, child `0x123` | 21496: **deny** |
+| `set(0x124,0x0c)` at **25393 ms** (second OPEN) | 25360: **deny** | 25469: **allow**, child `0x123` |
+| `location-set(0x123,0xd3)` at **28356 ms** (TAKE) | 28300: **allow**, child `0x123` | 28480: **allow**, child `0x000` |
+| `location-set(0x123,0xee)` at **31333 ms** (DROP) | 31300: **allow**, child `0x000` | 31407: **allow**, child `0x000` |
+
+This is stronger evidence than the command-window counts: the **OPEN bit
+controls eligibility**, while a **separate child pointer** determines whether
+the book is in the drawer. After TAKE the gate remains true even though its
+slot-0 child becomes zero. The native behavior therefore cannot be modeled
+by a single Boolean `is_visible` property. These are samples around native
+*service calls*; earlier `--trace-state-writes` runs independently confirmed
+changed state bytes for the first four relevant actions. This still does
+not establish complete parser acceptance or recursive reachability.
+
+The correlation can now be generated from the original full trace without
+another DOS run:
+
+```sh
+python3 tools/correlate_visibility_trace.py \
+  build/parser-child-check/native.trace --container 0x124 --child 0x123
+```
+
+The tool reads verified `1000:0068`/`1000:007a` returns and native service
+entry stack arguments, pairs the closest slot-0 observations within 500 ms
+of each service, and explicitly marks missing neighbors. It never equates a
+setter *call* with proof of a changed value. Its synthetic regression
+reproduces the observed OPEN/CLOSE/TAKE sequence; a real trace may expose
+additional intermediate writes or other command paths.
+
+The C++ research model now exposes
+`StoryModel::eligible_child_slots(object, type, child_words, restricted)`.
+It filters the caller-supplied ordered child words using the native
+`0385:0a9a` predicate and skips zero child IDs. This is a single stage of
+the original iterator—not parser recursion, object lookup, or automatic
+mutation of child links. The first-room test exercises closed/open/closed,
+then the independent transition from child `0x123` to zero after TAKE.
+
 The summary groups results by *scripted time window*, not by proven command
 ownership, and does not assert that a particular child was accepted as a
 verb's target. The gate's caller restriction flag and other possible parser
 paths remain unclassified.
 
-**Next validation:** use `--details` to align the drawer's restricted slot
-results with the exact native OPEN/CLOSE property writes, then repeat the
-experiment on nested/type-6 objects. If no entries appear, first establish
+**Next validation:** determine the drawer's actual native object type and
+how its indexed child pointer is updated on TAKE, then repeat the experiment
+on nested/type-6 objects. If no entries appear, first establish
 whether `1000:0000` is reached in the test's active parser path; do not
 infer a missing visibility check merely from an empty trace. The actual
 object-name resolution and command context remain unmodeled.

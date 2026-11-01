@@ -541,6 +541,17 @@ python3 tools/summarize_visibility_trace.py \
 
 This logs the predicate's AX result separately from child lookups; the
 summary's command labels are *time windows*, not confirmed parser decisions.
+The first native replay now confirms that OPEN/CLOSE changes the drawer's
+slot-0 eligibility while TAKE empties its child pointer without closing the
+drawer. To align both effects with native service calls in the same trace:
+
+```sh
+python3 tools/correlate_visibility_trace.py \
+  build/parser-child-check/native.trace --container 0x124 --child 0x123
+```
+
+The standalone C++ model exposes the corresponding *local slot-filtering*
+stage, but it still does not perform parser traversal or name resolution.
 See [resident parser candidate iterator](docs/action-dispatch.md#resident-parser-candidate-iterator)
 for offsets, controls, limitations, and a repeated OPEN/CLOSE command sequence.
 
