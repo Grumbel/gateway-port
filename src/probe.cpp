@@ -218,7 +218,8 @@ void port_out(uc_engine *uc, std::uint32_t port, int size, std::uint32_t value,
             state.vga.out(port + i, (value >> (8 * i)) & 255);
             if (state.trace_video && port + i == 0x3d5) {
                 const auto index = state.vga.in(0x3d4);
-                if (index == 0x0c || index == 0x0d || index == 0x13 || index == 0x17)
+                if (index == 0x07 || index == 0x09 || index == 0x0c || index == 0x0d ||
+                    index == 0x13 || index == 0x17 || index == 0x18)
                     std::cerr << "VGA ms=" << std::dec << state.elapsed_ms << " CRTC["
                               << std::hex << index << "]=" << unsigned(byte) << '\n';
             }

@@ -66,3 +66,16 @@ and opening description:
 
 All 17 CTest targets pass, including synthetic BIOS glyph checks without game
 fonts in modes 10h and 12h. Interactive input and audible sound remain unverified.
+
+## VGA split-screen display addressing
+
+The CRTC line-compare register (`18h`, extended by `07h` bit 4 and `09h`
+bit 6) resets the display memory address after the matching scanline. This
+permits a fixed lower display area while the top region uses a nonzero page
+start. The renderer now applies that address reset in planar and mode-13h
+graphics rather than applying the display start to every row. The initial
+line compare is set above the visible frame to leave splitting disabled.
+
+`--trace-video` includes writes to these split-screen registers alongside the
+existing CRTC start, pitch and addressing-mode traces. Real-world validation
+against the Spellcasting 101/201 intermittent offset remains necessary.

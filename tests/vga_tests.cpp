@@ -89,8 +89,20 @@ int main() {
         vga.graphics_page(1);
         require(vga.graphics_page() == 1 && vga.pixels()[0] == 0xff0000aa,
                 "graphics page selection ignored");
+        vga.write(28160, 0x80);
+        // Compare at scanline 1: the next line must restart at address zero,
+        // rather than continue two scanlines into page one.
+        vga.out(0x3d4, 0x18);
+        vga.out(0x3d5, 1);
+        vga.out(0x3d4, 0x07);
+        vga.out(0x3d5, 0);
+        vga.out(0x3d4, 0x09);
+        vga.out(0x3d5, 0);
+        require(vga.pixels()[2 * 640] == 0xff000000, "line compare ignored");
+        vga.write(0, 0x80);
+        require(vga.pixels()[2 * 640] == 0xff0000aa, "line compare did not reset address");
         vga.graphics_page(0);
-        require(vga.pixels()[0] == 0xff000000, "graphics page zero not restored");
+        require(vga.pixels()[0] == 0xff0000aa, "graphics page zero not restored");
         vga.set_mode(3);
         require(vga.width() == 640 && vga.height() == 400, "80x25 text dimensions");
         std::array<std::uint8_t, 8> font{};

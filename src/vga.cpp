@@ -25,6 +25,10 @@ void Vga::set_mode(std::uint8_t mode, bool clear) {
     gc_[7] = 15;
     gc_[8] = 255;
     crtc_[0x13] = width() / (mode == 0x13 ? 8 : 16);
+    // Disable split-screen address reset until the guest requests one.
+    crtc_[0x18] = 0xff;
+    crtc_[0x07] |= 0x10;
+    crtc_[0x09] |= 0x40;
     attr_data_ = false;
     for (auto &plane : planes_)
         if (clear)
@@ -278,8 +282,17 @@ std::vector<std::uint32_t> Vga::pixels() const {
     const auto crtc_start = (std::uint16_t(crtc_[0x0c]) << 8) | crtc_[0x0d];
     const auto start = mode_ == 0x13 ? crtc_start : crtc_start * 2u;
     const auto stride = unsigned(crtc_[0x13]) * (mode_ == 0x13 ? 8 : 2);
+    const unsigned line_compare = unsigned(crtc_[0x18]) |
+                                  ((crtc_[0x07] & 0x10) ? 0x100 : 0) |
+                                  ((crtc_[0x09] & 0x40) ? 0x200 : 0);
     for (int y = 0; y < height(); ++y)
         for (int x = 0; x < width(); ++x) {
+            // VGA line compare starts a second display region from address 0.
+            // The second region is useful for fixed status/UI panels while
+            // the top page scrolls independently.
+            const bool split = unsigned(y) > line_compare;
+            const unsigned display_start = split ? 0 : start;
+            const unsigned display_row = split ? unsigned(y) - line_compare - 1 : unsigned(y);
             unsigned color = 0;
             if (mode_ == 3) {
                 const auto cell = text_page_ * 4096 + ((y / 16) * 80 + x / 8) * 2;
@@ -287,10 +300,10 @@ std::vector<std::uint32_t> Vga::pixels() const {
                 const bool ink = text_font_[character][y % 16] & (0x80 >> (x % 8));
                 color = attr_[ink ? attribute & 15 : (attribute >> 4) & 7] & 63;
             } else if (mode_ == 0x13) {
-                const auto offset = (start * 4 + y * stride + x) & 0xffff;
+                const auto offset = (display_start * 4 + display_row * stride + x) & 0xffff;
                 color = planes_[offset & 3][offset >> 2];
             } else {
-                const auto offset = (start + y * stride + x / 8) & 0xffff;
+                const auto offset = (display_start + display_row * stride + x / 8) & 0xffff;
                 for (unsigned p = 0; p < 4; ++p)
                     color |= ((planes_[p][offset] >> (7 - (x & 7))) & 1) << p;
                 color = attr_[color] & 63;
