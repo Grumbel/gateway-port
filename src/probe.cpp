@@ -1,4 +1,5 @@
 #include "../third_party/font8x8/font8x8_basic.h"
+#include "bios_text.hpp"
 #include "dos_clock.hpp"
 #include "dos_fcb.hpp"
 #include "dos_files.hpp"
@@ -730,6 +731,17 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             if (cell < 2000)
                 check(uc_mem_read(uc, 0xb8000 + page * 4096 + cell * 2, &value, 2));
             set(uc, UC_X86_REG_AX, value);
+        } else if (number == 0x10 && ((ax >> 8) == 6 || (ax >> 8) == 7) &&
+                   state.vga.mode() == 3) {
+            const auto bx = reg(uc, UC_X86_REG_BX);
+            const auto cx = reg(uc, UC_X86_REG_CX);
+            const auto dx = reg(uc, UC_X86_REG_DX);
+            std::array<std::uint8_t, 4096> page{};
+            const auto address = 0xb8000 + state.vga.text_page() * page.size();
+            check(uc_mem_read(uc, address, page.data(), page.size()));
+            gateway::scroll_text_window(page, (ax >> 8) == 7, ax & 255, bx >> 8,
+                                        cx >> 8, cx & 255, dx >> 8, dx & 255);
+            check(uc_mem_write(uc, address, page.data(), page.size()));
         } else if (number == 0x10 && (ax >> 8) == 5) {
             const std::uint8_t page = ax & 7;
             if (state.vga.mode() == 3)

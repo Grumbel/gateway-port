@@ -167,6 +167,12 @@ normally use *word* addresses. The rendered offset and BIOS page-start
 programming now use consistent 2-byte units. This is a concrete addressing
 bug fix, but visual confirmation in the complete runtime is still pending.
 
+The subsequent 101 loading screen reaches BIOS `INT 10h AH=06h, AL=00h`,
+requesting a full 80x25 clear using the specified text attribute. The runtime
+now implements text-window clearing and scrolling for `AH=06h`/`07h` against
+the active page's guest `B800:` memory; tests cover full clears, directional
+scrolling and preserving cells outside the requested rectangle.
+
 - Colors have not been compared with the running games under DOSBox.
 - Spellcasting 101 and 201 mono entries are shown as black and white.
 - Some Spellcasting 101 1-bit entries, such as `S101_C2` #19 and #40, look like
