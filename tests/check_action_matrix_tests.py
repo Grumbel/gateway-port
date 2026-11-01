@@ -64,6 +64,17 @@ class StoryMatrixCheckerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn('unknown scripted first-room command', result.stderr)
 
+    def test_extra_admission_diagnostics_are_not_mistaken_for_state_changes(self):
+        original = FIXTURE.read_text()
+        augmented = original.replace('Full trace: `baseline/native.trace`',
+            'Full trace: `baseline/native.trace`\n\n'
+            '### Earlier selector stage (raw observations)\n\n'
+            '| Guest slot | Command | Selector calls (raw AX) | Final dispatch |\n'
+            '| ---: | --- | --- | --- |\n'
+            '| 18s | open drawer | no callback AX=0x0 | observed |')
+        result = self.run_report(augmented)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_missing_report_is_error(self):
         result = subprocess.run([str(self.binary), '/nonexistent/gateway-matrix.md'],
                                 capture_output=True, text=True)

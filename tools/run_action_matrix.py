@@ -13,6 +13,7 @@ import subprocess
 import sys
 
 from summarize_action_effects import collect_effects
+from summarize_admission_trace import summarize as summarize_admission
 
 
 SLOTS = (18, 21, 25, 28, 31, 34, 37)
@@ -76,6 +77,8 @@ def main(argv=None):
     parser.add_argument('--probe', type=Path, help='override gateway-probe binary')
     parser.add_argument('--data', type=Path, help='override directory containing GATE.EXE')
     parser.add_argument('--only', help='comma-separated replay names; defaults to all')
+    parser.add_argument('--trace-admission', action='store_true',
+                        help='also inspect resident selector callbacks before action dispatch')
     parser.add_argument('--list', action='store_true', help='list replays and exit')
     parser.add_argument('--dry-run', action='store_true',
                         help='show commands without launching or writing anything')
@@ -99,6 +102,8 @@ def main(argv=None):
             command += ['--probe', str(args.probe)]
         if args.data:
             command += ['--data', str(args.data)]
+        if args.trace_admission:
+            command += ['--trace-admission']
         commands.append((name, command))
     if args.dry_run:
         for name, command in commands:
@@ -132,6 +137,15 @@ def main(argv=None):
             return 1
         report.extend([f'## {name}', '', summary, '',
                        f'Full trace: `{name}/native.trace`', ''])
+        if args.trace_admission:
+            try:
+                admission = summarize_admission((run_dir / 'native.trace').read_text().splitlines(),
+                                                SEQUENCES[name])
+                report.extend(['### Earlier selector stage (raw observations)', '', admission, '',
+                               'AX is an unclassified callback result, not a proven permission bit.',
+                               'Input/trace association is by guest time slot only.', ''])
+            except ValueError as error:
+                report.extend(['### Selector-stage trace unavailable', '', str(error), ''])
         (args.output / 'report.md').write_text('\n'.join(report) + '\n')
         print(f'{name}: complete', flush=True)
     print(f'Batch report: {args.output / "report.md"}')

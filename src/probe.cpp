@@ -575,6 +575,48 @@ void trace_entry(uc_engine *uc, std::uint64_t address, std::uint32_t, void *opaq
                 out << std::setw(2) << std::setfill('0') << unsigned(byte);
             out << std::setfill(' ');
         };
+        // Gateway has a second resident action-table access at 1476:0008:
+        // its selector byte (table offset 0x27+6*action) chooses a four-byte
+        // far callback, while 1476:0046 later dispatches the action itself.
+        // Observe only the verified selector-call instruction, including the
+        // live callback pointer. Its return value is NOT yet a known Boolean
+        // permission result; these hooks are research evidence only.
+        if ((address == 0x14768 || address == 0x14799 || address == 0x147a2) &&
+            reg(uc, UC_X86_REG_CS) == 0x1476) {
+            std::array<std::uint8_t, 6> code{};
+            check(uc_mem_read(uc, address, code.data(), code.size()));
+            const bool entry = address == 0x14768 &&
+                               code == std::array<std::uint8_t, 6>{0x55, 0x8b, 0xec,
+                                                                   0x83, 0xec, 0x02};
+            const bool callback = address == 0x14799 &&
+                                  code[0] == 0x26 && code[1] == 0xff && code[2] == 0x9f &&
+                                  code[3] == 0xfc && code[4] == 0xff;
+            const bool returning = address == 0x147a2 && code[0] == 0x8b && code[1] == 0xe5;
+            if (entry || callback || returning) {
+                const auto argument_offset = entry ? std::uint16_t(reg(uc, UC_X86_REG_SP) + 4)
+                                                   : std::uint16_t(reg(uc, UC_X86_REG_BP) + 6);
+                std::uint8_t action;
+                check(uc_mem_read(uc, base + argument_offset, &action, sizeof(action)));
+                out << " admission_action=" << unsigned(action);
+                if (callback) {
+                    const auto index = reg(uc, UC_X86_REG_BX);
+                    out << " admission_selector=" << (index / 4);
+                    const auto pointer = std::size_t(reg(uc, UC_X86_REG_ES)) * 16 +
+                                         std::uint16_t(index - 4);
+                    if (index >= 4 && pointer + 4 <= 0xa0000) {
+                        std::array<std::uint16_t, 2> target{};
+                        check(uc_mem_read(uc, pointer, target.data(), 4));
+                        out << " admission_target=" << target[1] << ':' << target[0];
+                    } else {
+                        out << " admission_probe=pointer-out-of-range";
+                    }
+                }
+                if (returning)
+                    out << " admission_return=" << reg(uc, UC_X86_REG_AX);
+            } else {
+                out << " admission_probe=code-mismatch";
+            }
+        }
         // The exact bytes distinguish a real action-dispatch call site from
         // unrelated code that happens to occupy the same address earlier in
         // the launcher. The expected 26 ff 9f 28 00 is the original far

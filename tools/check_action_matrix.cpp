@@ -130,6 +130,7 @@ std::size_t check(std::istream &in) {
     std::string line, scenario;
     FirstRoomReplay model;
     std::size_t step = 0, scenarios = 0;
+    bool effect_table = false;
     while (std::getline(in, line)) {
         if (line.starts_with("## ")) {
             if (!scenario.empty() && step != slots.size())
@@ -139,10 +140,19 @@ std::size_t check(std::istream &in) {
                 throw std::runtime_error("empty scenario heading");
             model = FirstRoomReplay{};
             step = 0;
+            effect_table = false;
             ++scenarios;
             continue;
         }
-        if (scenario.empty() || !line.starts_with("| "))
+        if (line.starts_with("### ")) {
+            effect_table = false; // Extra diagnostics are not object-state assertions.
+            continue;
+        }
+        if (line.starts_with("| Guest slot | Typed command | Dispatcher return | ")) {
+            effect_table = true;
+            continue;
+        }
+        if (scenario.empty() || !effect_table || !line.starts_with("| "))
             continue;
         const auto columns = split(line, '|');
         if (columns.size() != 6 || !columns[1].ends_with('s') ||

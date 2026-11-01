@@ -21,6 +21,8 @@ parser.add_argument('--native-only', action='store_true',
                     help='collect a quick native trace without the two comparison replays')
 parser.add_argument('--trace-state-writes', action='store_true',
                     help='verify native state services and mark actual byte changes in one replay')
+parser.add_argument('--trace-admission', action='store_true',
+                    help='trace the earlier resident action-selector callback and return')
 parser.add_argument('--command-sequence', metavar='CMD,CMD,...',
                     help='replace the seven objects-scenario commands at 18,21,25,28,31,34,37 s')
 args = parser.parse_args()
@@ -28,6 +30,8 @@ if args.native_only and args.hle_overlays:
     parser.error('--native-only and --hle-overlays cannot be combined')
 if args.trace_state_writes and not args.native_only:
     parser.error('--trace-state-writes requires --native-only')
+if args.trace_admission and (not args.native_only or args.scenario != 'objects'):
+    parser.error('--trace-admission requires --native-only --scenario objects')
 if args.command_sequence and not args.native_only:
     parser.error('--command-sequence currently requires --native-only')
 if args.hle_overlays:
@@ -50,6 +54,8 @@ if args.scenario in ['drawer', 'objects']:
                      'run gateway-build, or point --probe to the freshly built gateway-probe')
     if args.trace_state_writes and b' changed=' not in probe_bytes:
         parser.error(f'{args.probe} lacks state-write delta tracing; run gateway-build')
+    if args.trace_admission and b' admission_target=' not in probe_bytes:
+        parser.error(f'{args.probe} lacks action-selector trace support; run gateway-build')
 args.output.mkdir(parents=True, exist_ok=True)
 if custom_commands:
     print('Scripted commands: ' + ' | '.join(custom_commands))
@@ -88,6 +94,11 @@ for mode in (['native'] if args.native_only else ['native', 'verify', 'hle']):
                     # and compatibility with old traces.
                     '--trace-entry', '47d44', '--trace-entry', '47d59',
                     '--trace-entry', '46a0c']
+    if args.trace_admission and mode == 'native':
+        # File offsets 0x5956/0x5987/0x5990 in original GATEMAIN.EXE:
+        # selector function entry, indirect callback call, and return AX.
+        command += ['--trace-entry', '14768', '--trace-entry', '14799',
+                    '--trace-entry', '147a2']
     if mode == 'native' and args.trace_state_writes:
         # Observe the native implementation's writes without replacing them.
         # Its existing verification hooks compare the predicted bytes with

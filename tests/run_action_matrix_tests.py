@@ -24,6 +24,16 @@ class ActionMatrixTests(unittest.TestCase):
         self.assertEqual(SEQUENCES['closed-after-reveal'][1], 'close drawer')
         self.assertEqual(SEQUENCES['room-after-close'][3:5], ('drop book', 'take book'))
 
+    def test_selector_trace_flag_reaches_the_native_driver(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'unused'
+            result = subprocess.run([sys.executable, str(ROOT / 'tools' / 'run_action_matrix.py'),
+                                     '--only', 'closed-after-reveal', '--trace-admission',
+                                     '--dry-run', '--output', str(output)],
+                                    capture_output=True, text=True, check=True)
+            self.assertIn('--trace-admission', result.stdout)
+            self.assertFalse(output.exists())
+
     def test_dry_run_shows_commands_without_creating_output(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / 'untouched'
