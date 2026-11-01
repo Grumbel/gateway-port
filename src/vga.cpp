@@ -241,6 +241,44 @@ void Vga::draw_glyph(unsigned column, unsigned row, std::span<const std::uint8_t
         }
 }
 
+void Vga::scroll_graphics_window(bool down, unsigned lines, std::uint8_t color,
+                                 unsigned top, unsigned left, unsigned bottom, unsigned right) {
+    if (mode_ == 3 || mode_ == 0x13)
+        throw std::runtime_error("unsupported graphics scrolling mode");
+    const unsigned cell_height = mode_ == 0x10 ? 14 : mode_ == 0x12 ? 16 : 8;
+    const unsigned columns = width() / 8, rows = height() / cell_height;
+    if (top > bottom || left > right || bottom >= rows || right >= columns)
+        throw std::runtime_error("invalid BIOS graphics scroll rectangle");
+    const unsigned window_height = bottom - top + 1;
+    if (!lines || lines >= window_height)
+        lines = window_height;
+    const unsigned pitch = width() / 8;
+    const unsigned base = graphics_page_ * page_size();
+    const unsigned first = top * cell_height, last = (bottom + 1) * cell_height;
+    const unsigned shift = lines * cell_height;
+    for (unsigned p = 0; p < 4; ++p) {
+        auto &plane = planes_[p];
+        if (lines < window_height) {
+            if (down) {
+                for (unsigned y = last - shift; y-- > first;)
+                    std::copy_n(plane.begin() + base + y * pitch + left,
+                                right - left + 1,
+                                plane.begin() + base + (y + shift) * pitch + left);
+            } else {
+                for (unsigned y = first; y + shift < last; ++y)
+                    std::copy_n(plane.begin() + base + (y + shift) * pitch + left,
+                                right - left + 1,
+                                plane.begin() + base + y * pitch + left);
+            }
+        }
+        const unsigned clear_begin = down ? first : last - shift;
+        const unsigned clear_end = down ? first + shift : last;
+        for (unsigned y = clear_begin; y < clear_end; ++y)
+            std::fill_n(plane.begin() + base + y * pitch + left, right - left + 1,
+                        (color & (1 << p)) ? 0xff : 0x00);
+    }
+}
+
 void Vga::text_font(unsigned character, std::span<const std::uint8_t> bitmap) {
     if (character >= text_font_.size() || bitmap.empty() || bitmap.size() > 16)
         throw std::runtime_error("invalid text glyph");

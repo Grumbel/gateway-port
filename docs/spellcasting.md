@@ -173,6 +173,14 @@ now implements text-window clearing and scrolling for `AH=06h`/`07h` against
 the active page's guest `B800:` memory; tests cover full clears, directional
 scrolling and preserving cells outside the requested rectangle.
 
+After skipping the 101 title with Escape, a later trace reaches the same
+`INT 10h AH=06h, AL=00h` service in EGA mode `10h`, after switching to
+graphics page 1. The BIOS handler now scrolls and clears planar graphics in
+character-cell rectangles on the selected graphics page as well. Focused VGA
+tests exercise full-page clearing and both scroll directions, including
+preservation of the other graphics page. Gameplay past this call remains
+unverified.
+
 - Colors have not been compared with the running games under DOSBox.
 - Spellcasting 101 and 201 mono entries are shown as black and white.
 - Some Spellcasting 101 1-bit entries, such as `S101_C2` #19 and #40, look like

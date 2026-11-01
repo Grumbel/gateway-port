@@ -113,6 +113,27 @@ int main() {
         require(vga.pixels()[2 * 640] == 0xff0000aa, "line compare did not reset address");
         vga.graphics_page(0);
         require(vga.pixels()[0] == 0xff0000aa, "graphics page zero not restored");
+        // BIOS AH=06h clears the selected EGA page, not the first page.
+        gateway::Vga scrolling;
+        scrolling.set_mode(0x10);
+        mask(scrolling, 1);
+        scrolling.write(0, 0x80);
+        scrolling.write(32768, 0x80);
+        scrolling.graphics_page(1);
+        scrolling.scroll_graphics_window(false, 0, 0, 0, 0, 24, 79);
+        require(scrolling.pixels()[0] == 0xff000000, "graphics clear missed page one");
+        scrolling.graphics_page(0);
+        require(scrolling.pixels()[0] == 0xff0000aa, "graphics clear corrupted page zero");
+        // Move a row up and expose a newly cleared row, then reverse direction.
+        scrolling.write(14 * 80, 0x80);
+        scrolling.scroll_graphics_window(false, 1, 4, 0, 0, 2, 0);
+        require(scrolling.pixels()[0] == 0xff0000aa, "graphics scroll-up did not move row");
+        require(scrolling.pixels()[2 * 14 * 640] == 0xffaa0000,
+                "graphics scroll-up did not fill bottom row");
+        scrolling.scroll_graphics_window(true, 1, 0, 0, 0, 2, 0);
+        require(scrolling.pixels()[0] == 0xff000000, "graphics scroll-down did not clear top row");
+        require(scrolling.pixels()[14 * 640] == 0xff0000aa,
+                "graphics scroll-down did not move row");
         vga.set_mode(3);
         require(vga.width() == 640 && vga.height() == 400, "80x25 text dimensions");
         std::array<std::uint8_t, 8> font{};
