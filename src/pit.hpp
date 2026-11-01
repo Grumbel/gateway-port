@@ -12,6 +12,9 @@ class Pit {
     std::uint8_t in(std::uint16_t port);
     void out(std::uint16_t port, std::uint8_t value);
     void advance(std::uint64_t microseconds);
+    // Time until channel 0's next timer edge, rounded up to whole microseconds.
+    // A pending IRQ or a completed one-shot needs no finer scheduling.
+    unsigned microseconds_until_irq() const;
     void mix_speaker(std::span<std::int16_t> stereo);
     bool pending() const { return pending_; }
     void acknowledge() { pending_ = false; }

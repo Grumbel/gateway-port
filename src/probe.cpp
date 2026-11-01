@@ -1443,14 +1443,14 @@ int main(int argc, char **argv) {
         uc_err status = UC_ERR_OK;
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
         const auto started = std::chrono::steady_clock::now();
-        unsigned steps = 0;
+        std::uint64_t elapsed_us = 0;
         while (true) {
-            state.elapsed_ms = steps;
-            while (!scheduled_keys.empty() && scheduled_keys.begin()->first <= steps) {
+            state.elapsed_ms = elapsed_us / 1000;
+            while (!scheduled_keys.empty() && scheduled_keys.begin()->first <= state.elapsed_ms) {
                 const auto key = scheduled_keys.begin()->second;
                 state.keys.push_back(key);
                 if (state.research_trace.is_open())
-                    state.research_trace << "key ms=" << std::dec << steps << std::hex
+                    state.research_trace << "key ms=" << std::dec << state.elapsed_ms << std::hex
                                          << " value=" << key << '\n';
                 scheduled_keys.erase(scheduled_keys.begin());
             }
@@ -1462,7 +1462,13 @@ int main(int argc, char **argv) {
 #endif
             const auto pc =
                 std::size_t(reg(engine.uc, UC_X86_REG_CS)) * 16 + reg(engine.uc, UC_X86_REG_IP);
-            status = uc_emu_start(engine.uc, pc, 0x100000, 100000, 5000);
+            // A 72-count PIT divisor (used by Spellcasting 101's title sound)
+            // expires every ~60 us. Run guest instructions between those IRQs;
+            // advancing the PIT in 1-ms chunks loses most of the timer edges.
+            const auto slice_us = std::min<std::uint64_t>(
+                1000 - elapsed_us % 1000, state.pit.microseconds_until_irq());
+            const auto instructions = std::max<std::uint64_t>(1, 5000 * slice_us / 1000);
+            status = uc_emu_start(engine.uc, pc, 0x100000, 100000, instructions);
             if (state.overlay_resume && state.failure.empty() && status == UC_ERR_OK) {
                 state.overlay_resume = false;
                 set(engine.uc, UC_X86_REG_CS, 0x2c24);
@@ -1484,9 +1490,9 @@ int main(int argc, char **argv) {
             }
             if (status != UC_ERR_OK || state.exited || !state.failure.empty())
                 break;
-            state.clock.advance(1000);
-            state.pit.advance(1000);
-            state.opl.advance(1000);
+            state.clock.advance(slice_us);
+            state.pit.advance(slice_us);
+            state.opl.advance(slice_us);
             if (state.pit.pending() && !(state.pic_mask & 1) && !state.irq_in_service &&
                 (reg(engine.uc, UC_X86_REG_FLAGS) & 0x200)) {
                 state.pit.acknowledge();
@@ -1494,22 +1500,22 @@ int main(int argc, char **argv) {
                 if (!dispatch(engine.uc, 8))
                     throw std::runtime_error("missing IRQ0 vector");
             }
-            ++steps;
+            elapsed_us += slice_us;
 #ifdef GATEWAY_SDL
-            if (host && steps % 16 == 0) {
+            if (host && elapsed_us % 16000 == 0) {
                 text_snapshot(engine.uc, state);
                 auto samples = state.opl.render(768);
                 state.pit.mix_speaker(samples);
                 host->present(state.vga, state.mouse, samples);
-                std::this_thread::sleep_until(started + std::chrono::milliseconds(steps));
+                std::this_thread::sleep_until(started + std::chrono::microseconds(elapsed_us));
             }
 #endif
-            if (milliseconds && steps >= milliseconds) {
+            if (milliseconds && elapsed_us >= std::uint64_t(milliseconds) * 1000) {
                 requested_stop = true;
                 break;
             }
             if (!interactive && !milliseconds &&
-                (steps >= 2000 || std::chrono::steady_clock::now() >= deadline))
+                (elapsed_us >= 2000000 || std::chrono::steady_clock::now() >= deadline))
                 break;
         }
         if (!block_trace_path.empty()) {

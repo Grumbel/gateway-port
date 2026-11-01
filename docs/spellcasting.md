@@ -181,6 +181,19 @@ tests exercise full-page clearing and both scroll directions, including
 preservation of the other graphics page. Gameplay past this call remains
 unverified.
 
+### Spellcasting 101 title playback
+
+The title screen installs an IRQ0 handler at `140E:00E5` and waits in
+`140E:005F` for its `DX` completion flag. The handler advances speaker data
+and eventually restores the normal handler at `140E:0117`, which sets bit 0
+of `DX`. Its initialization at `140E:0148` programs PIT channel 0 in mode 2
+with divisor 72: approximately 16,572 IRQs per second. Previously the host
+advanced emulated time 1 ms at a time and delivered at most one IRQ per step,
+so playback ran at a fraction of its intended rate. The scheduler now slices
+guest execution at timer edges and preserves millisecond-granularity CLI and
+SDL presentation schedules. A PIT test checks 165–166 distinct interrupts
+in 10 ms. End-to-end title playback still requires verification.
+
 - Colors have not been compared with the running games under DOSBox.
 - Spellcasting 101 and 201 mono entries are shown as black and white.
 - Some Spellcasting 101 1-bit entries, such as `S101_C2` #19 and #40, look like

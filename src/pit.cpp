@@ -27,6 +27,15 @@ void Pit::mix_speaker(std::span<std::int16_t> stereo) {
         }
     audio_count_ = 0;
 }
+unsigned Pit::microseconds_until_irq() const {
+    const auto &channel = channels_[0];
+    if (pending_ || (channel.terminal &&
+                     (channel.mode == 0 || channel.mode == 1 || channel.mode == 4 ||
+                      channel.mode == 5)))
+        return 1000;
+    const std::uint64_t needed = std::uint64_t(channel.remaining) * 1000000 - fraction_;
+    return std::max<std::uint64_t>(1, (needed + 1193181) / 1193182);
+}
 void Pit::advance(std::uint64_t microseconds) {
     // Preserve sub-block beeps even if the guest switches the speaker off before
     // the next 16-ms SDL audio submission. Retain at most one presentation block.
