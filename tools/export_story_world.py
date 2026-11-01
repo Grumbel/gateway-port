@@ -88,6 +88,8 @@ def export_world(objects):
                                ('location', 'native_location'),
                                ('child_slot', 'native_parent_slot'),
                                ('next_sibling', 'native_next_sibling'),
+                               ('relation_count', 'native_relation_count'),
+                               ('relation_links', 'native_relation_links'),
                                ('native_code', 'native_code')]:
             if source in record:
                 result[target] = record[source]
@@ -115,22 +117,71 @@ def export_world(objects):
         raise ValueError(f'object 0x{missing:03x}: no containment root (cycle)')
     by_type = Counter(record['type'] for record in objects)
     root_type = Counter(by_id[object_id]['type'] for object_id in roots)
+    room_roots = [root for root in forest if root['native_type'] == 1]
+    room_direct_type8 = [sum(child['native_type'] == 8
+                             for slot in room['child_slots'] for child in slot['objects'])
+                         for room in room_roots]
     unattached_with_location = [
         dict(id=object_id, name=by_id[object_id].get('name', ''),
              native_type=by_id[object_id]['type'],
              native_location=by_id[object_id]['location'])
         for object_id in roots if by_id[object_id].get('location', 0)
     ]
+    connector_candidates = []
+    for object_id, record in sorted(by_id.items()):
+        if record['type'] != 6:
+            continue
+        original_links = record.get('relation_links')
+        count = record.get('relation_count')
+        if original_links is not None and count is not None and len(original_links) != count:
+            raise ValueError(f'object 0x{object_id:03x}: type-6 relation count mismatch')
+        relations = []
+        for slot, target in enumerate(original_links or []):
+            if not isinstance(target, int) or not 0 <= target <= 0xffff:
+                raise ValueError(f'object 0x{object_id:03x}: invalid relation word')
+            referenced = by_id.get(target)
+            item = dict(slot=slot, id=target)
+            if referenced is not None:
+                item['name'] = referenced.get('name', '')
+                item['native_type'] = referenced['type']
+            relations.append(item)
+        rooms = [item['id'] for item in relations if item.get('native_type') == 1]
+        nonzero = [item['id'] for item in relations if item['id']]
+        pair = (rooms if len(rooms) == 2 and len(set(rooms)) == 2 and
+                len(nonzero) == 2 else [])
+        location = record.get('location', 0)
+        location_reference = dict(id=location)
+        if location in by_id:
+            location_reference.update(name=by_id[location].get('name', ''),
+                                      native_type=by_id[location]['type'])
+        connector_candidates.append(dict(
+            id=object_id, name=record.get('name', ''),
+            native_handler=record.get('handler', 0),
+            native_location=location,
+            native_location_reference=location_reference,
+            declared_relation_slots=count,
+            relations_available=original_links is not None,
+            relations=relations,
+            two_room_candidate=pair,
+        ))
     return dict(
-        schema_version=1,
+        schema_version=2,
         meaning='single Gateway native object-state snapshot; no scripts or parser visibility',
         counts=dict(records=len(objects), indexed_children=len(owners), roots=len(roots),
                     room_candidates=root_type[1], populated_roots=sum(
                         bool(record['descendant_count']) for record in forest),
+                    empty_room_candidates=sum(not room['descendant_count']
+                                              for room in room_roots),
+                    rooms_with_direct_type8=sum(bool(count) for count in room_direct_type8),
+                    direct_type8_room_children=sum(room_direct_type8),
                     max_depth=max_depth,
+                    type6_connector_candidates=len(connector_candidates),
+                    two_room_relation_candidates=sum(
+                        bool(candidate['two_room_candidate']) for candidate in connector_candidates),
                     by_native_type={str(kind): by_type[kind] for kind in range(1, 9)}),
         room_candidate_ids=[object_id for object_id in roots if by_id[object_id]['type'] == 1],
         unattached_with_location=unattached_with_location,
+        connector_candidates=connector_candidates,
         roots=forest,
     )
 
@@ -145,8 +196,8 @@ def markdown_world(world):
         '',
         '## Type-1 room candidates',
         '',
-        '| Object | Name | Direct contents | All descendants |',
-        '| --- | --- | ---: | ---: |',
+        '| Object | Name | Direct contents | Direct type-8 | All descendants |',
+        '| --- | --- | ---: | ---: | ---: |',
     ]
 
     def label(node):
@@ -156,7 +207,9 @@ def markdown_world(world):
         if root['native_type'] != 1:
             continue
         direct = sum(len(slot['objects']) for slot in root['child_slots'])
-        lines.append(f'| `0x{root["id"]:03x}` | {label(root)} | {direct} | '
+        scenery = sum(child['native_type'] == 8 for slot in root['child_slots']
+                      for child in slot['objects'])
+        lines.append(f'| `0x{root["id"]:03x}` | {label(root)} | {direct} | {scenery} | '
                      f'{root["descendant_count"]} |')
     lines.extend(['', '## Other populated roots', '',
                   '| Object | Type | Name | All descendants |',
@@ -172,10 +225,35 @@ def markdown_world(world):
     for record in world['unattached_with_location']:
         lines.append(f'| `0x{record["id"]:03x}` | {record["native_type"]} | '
                      f'{label(record)} | `0x{record["native_location"]:03x}` |')
+    lines.extend(['', '## Type-6 connector / multi-relation candidates', '',
+                  '| Object | Name | Direct location word | Original relation words | '
+                  'Two-room candidate |',
+                  '| --- | --- | --- | --- | --- |'])
+    for candidate in world['connector_candidates']:
+        location = candidate['native_location_reference']
+        location_text = f'`0x{location["id"]:03x}`'
+        if 'native_type' in location:
+            location_text += f' {label(location)} (type {location["native_type"]})'
+        if not candidate['relations_available']:
+            resolved = '(not exported; regenerate from inspect_object_state.py JSON)'
+        else:
+            labels = []
+            for entry in candidate['relations']:
+                text = f'`0x{entry["id"]:03x}`'
+                if 'native_type' in entry:
+                    text += f' {label(entry)} (type {entry["native_type"]})'
+                labels.append(text)
+            resolved = ', '.join(labels) if labels else '(no relation words)'
+        pair = ', '.join(f'`0x{room:03x}`' for room in candidate['two_room_candidate']) or '—'
+        lines.append(f'| `0x{candidate["id"]:03x}` | {label(candidate)} | '
+                     f'{location_text} | '
+                     f'{resolved} | {pair} |')
     lines.extend(['', 'This is one captured native state. Type-1 records are '
                   '*room candidates*, not proven scene or navigation definitions. '
                   'Unattached objects may be inactive or use other native semantics; '
-                  'nothing here establishes visibility, scripting, or traversability.'])
+                  'Type-6 words are original relation fields, not confirmed exits or '
+                  'directed travel paths. Nothing here establishes visibility, '
+                  'scripting, or traversability.'])
     return '\n'.join(lines) + '\n'
 
 

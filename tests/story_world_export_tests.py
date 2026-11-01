@@ -17,12 +17,15 @@ TOOL = ROOT / 'tools' / 'export_story_world.py'
 class StoryWorldExportTests(unittest.TestCase):
     def test_original_mixed_type_room_tree_and_inventory(self):
         world = export_world(first_room_snapshot())
-        self.assertEqual(world['schema_version'], 1)
+        self.assertEqual(world['schema_version'], 2)
         self.assertEqual(world['counts']['records'], 16)
         self.assertEqual(world['counts']['indexed_children'], 15)
         self.assertEqual(world['counts']['roots'], 1)
         self.assertEqual(world['counts']['room_candidates'], 1)
         self.assertEqual(world['counts']['populated_roots'], 1)
+        self.assertEqual(world['counts']['empty_room_candidates'], 0)
+        self.assertEqual(world['counts']['rooms_with_direct_type8'], 1)
+        self.assertEqual(world['counts']['direct_type8_room_children'], 2)
         self.assertEqual(world['counts']['max_depth'], 2)
         self.assertEqual(world['room_candidate_ids'], [0xee])
         room = world['roots'][0]
@@ -44,8 +47,52 @@ class StoryWorldExportTests(unittest.TestCase):
                          [0xd7, 0xd5, 0xd4])
         self.assertNotIn('raw_state', str(world))
         report = markdown_world(world)
-        self.assertIn('| `0x0ee` | Your Quarters | 8 | 15 |', report)
+        self.assertIn('| `0x0ee` | Your Quarters | 8 | 2 | 15 |', report)
         self.assertIn('Type-1 room candidates', report)
+
+    def test_original_type_six_relation_words_are_resolved_without_inventing_exits(self):
+        objects = [dict(object=0x12, type=1, name='Satellite', child_links=[0]),
+                   dict(object=0x13, type=1, name='Travel Pod', child_links=[0]),
+                   dict(object=0x20, type=6, name='door', location=0x13,
+                        relation_count=2, relation_links=[0x13, 0x12],
+                        child_links=[0, 0])]
+        world = export_world(objects)
+        self.assertEqual(world['counts']['type6_connector_candidates'], 1)
+        self.assertEqual(world['counts']['two_room_relation_candidates'], 1)
+        connector = world['connector_candidates'][0]
+        self.assertEqual(connector['id'], 0x20)
+        self.assertTrue(connector['relations_available'])
+        self.assertEqual(connector['native_location_reference'],
+                         dict(id=0x13, name='Travel Pod', native_type=1))
+        self.assertEqual([entry['name'] for entry in connector['relations']],
+                         ['Travel Pod', 'Satellite'])
+        self.assertEqual(connector['two_room_candidate'], [0x13, 0x12])
+        door = next(root for root in world['roots'] if root['id'] == 0x20)
+        self.assertEqual(door['native_relation_count'], 2)
+        self.assertEqual(door['native_relation_links'], [0x13, 0x12])
+        report = markdown_world(world)
+        self.assertIn('Type-6 connector / multi-relation candidates', report)
+        self.assertIn('Direct location word', report)
+        self.assertIn('Travel Pod (type 1)', report)
+        self.assertIn('Satellite (type 1)', report)
+        self.assertIn('not confirmed exits', report)
+
+        objects[2]['relation_links'] = [0x13, 0x20]
+        self.assertEqual(export_world(objects)['connector_candidates'][0]['two_room_candidate'], [])
+        objects[2]['relation_links'] = [0x13, 0]
+        self.assertEqual(export_world(objects)['connector_candidates'][0]['two_room_candidate'], [])
+        objects[2]['relation_links'] = [0x13, 0x777]
+        unresolved = export_world(objects)['connector_candidates'][0]
+        self.assertNotIn('native_type', unresolved['relations'][1])
+        self.assertEqual(unresolved['two_room_candidate'], [])
+        objects[2]['relation_count'] = 3
+        with self.assertRaisesRegex(ValueError, 'relation count mismatch'):
+            export_world(objects)
+        objects[2]['relation_count'] = 2
+        del objects[2]['relation_links']
+        incomplete = export_world(objects)
+        self.assertFalse(incomplete['connector_candidates'][0]['relations_available'])
+        self.assertIn('regenerate from inspect_object_state.py', markdown_world(incomplete))
 
     def test_detached_records_and_native_handler_metadata_survive(self):
         objects = first_room_snapshot()
@@ -118,7 +165,7 @@ class StoryWorldExportTests(unittest.TestCase):
             command = [sys.executable, str(TOOL), str(source)]
             report = subprocess.run(command, text=True, capture_output=True)
             self.assertEqual(report.returncode, 0, report.stderr)
-            self.assertIn('| `0x0ee` | Your Quarters | 8 | 15 |', report.stdout)
+            self.assertIn('| `0x0ee` | Your Quarters | 8 | 2 | 15 |', report.stdout)
             structured = subprocess.run(command + ['--format', 'json'],
                                         text=True, capture_output=True)
             self.assertEqual(structured.returncode, 0, structured.stderr)
