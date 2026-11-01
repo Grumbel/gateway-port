@@ -639,18 +639,79 @@ and callbacks that have **not** been fully translated.
 The DROP pre-handler at `0xd804` first calls `0157:00c5` with the object and
 a live state value from `ES:35c8`. If that predicate fails, it emits a
 message and returns `AX=1` at `0xd855`, through `0xd9a6`. In the observed
-first room this catches attempting to DROP a book not held. The helper's
-general containment semantics are still unknown; the result must **not** be
-reduced to a simple direct-location comparison for all objects.
+first room this catches attempting to DROP a book not held. The recursive
+helper is decoded below; its logic is **not** a direct-location comparison.
 
-The experimental C++ `StoryModel::evaluate_direct_carry_precheck()` now
-models only the first-room direct-location cases. `gateway-story-check`
+### Resident recursive object relations
+
+The helper `0157:00c5` is present in `GATEMAIN.EXE` at file offset `0x2603`,
+identified by the existing resident-code mapping (the byte-identical flag
+helper at runtime `1157:029d` corresponds to file offset `0x27db`). Its
+relative call at `0x265d` enters the relation accessor at file offset
+`0x2aff`, *not* at `0x503d`: displacements within the resident image are
+already correct relative to their **file** positions.
+
+Its actual logic, omitting register/frame handling, is:
+
+```cpp
+bool follows_links(ObjectId source, ObjectId wanted) {
+    for (int slot = 0; slot < type_descriptor[source.type].relation_count; ++slot) {
+        ObjectId next = link_at(source, slot);
+        if (next == 0)
+            return false;  // Native loop exits early, not just this slot.
+        if (next == wanted || follows_links(next, wanted))
+            return true;
+    }
+    return false;
+}
+```
+
+The loop's early exit on a zero link comes from `0x2666–0x266a`; it matters
+for multi-slot type-6 records. The descriptor count is read at
+`[DS:8d52] + 3*type-3` (`0x263f–0x2654`). The `0x2aff` accessor returns:
+
+- type 6: `state[0x0a + 2*slot]`, with a per-type count check;
+- type 2: `state[0x0e]`; type 7/8: `state[0x0c]` (ignores slot);
+- other types, invalid IDs or slot bounds: zero.
+
+The direct-location getter and setter at `0x2a84`/`0x2b89` corroborate those
+fields but handle only the first word of type 6. The recursive helper **does
+not guard against cycles**; its return is not reflexively true for a source
+without a path back to itself. Whether every type-6 link is strictly spatial
+containment remains unproven. This explains why a modern implementation
+must distinguish relation reachability from both direct location and the
+parser's still-unrecovered visibility gate.
+
+The experimental C++ `StoryModel::evaluate_carry_precheck()` now models
+TAKE's direct-location case and DROP's ordered recursive relationship
+traversal. Additional type-6 links may be supplied through
+`StoryModel::set_relation_tail()`; moving an object changes the primary
+location without clobbering its other links. Because the native routine can
+recurse forever on cycles, the host traversal tracks visited IDs. This is a
+deliberate safety difference for malformed object graphs, not proven native
+equivalence for arbitrary world states. `gateway-story-check`
 replicates the three-stage observation—current object visibility, selector
 callback, normal action mutation—and checks **both** the existing six-scenario
 state fixture and this new three-scenario selector fixture. It verifies each
 raw selector return separately from whether the normal action dispatched.
 None of this promotes the first-room visibility approximation to a general
 parser or container implementation.
+
+Given a saved object-state snapshot, inspect the **actual ordered relation
+paths** separately from direct `location` and parser visibility:
+
+```sh
+python3 tools/inspect_object_state.py build/object-state-final/native \
+  --names ../gateway-dos/OBJECT.DAT > build/object-relations.json
+python3 tools/inspect_relation_paths.py build/object-relations.json \
+  --source 0x123 --target 0xd3
+python3 tools/inspect_relation_paths.py build/object-relations.json \
+  --source 0x123 --target 0xee
+```
+
+The first asks whether the book has a link path to the player; the second to
+the room. Results depend on the **specific snapshot** (before/after TAKE or
+DROP). These are graph queries, not guarantees that a command is accepted.
 
 To reproduce the original-code evidence:
 
@@ -664,9 +725,9 @@ ctest --test-dir "${GATEWAY_BUILD_DIR:-build}" \
 ```
 
 The next unresolved step is the parser/visibility gate that decides whether
-the book can be referenced at all when inside the closed drawer; we should
-also characterize `0157:00c5` before implementing generalized possession or
-nested-container handling in the replacement engine.
+the book can be referenced at all when inside the closed drawer. We can now
+probe native nested-container cases using the recovered relation graph, but
+still need real game traces to verify every type-6 relationship's meaning.
 
 ### First standalone C++ state model
 
@@ -695,7 +756,7 @@ contradictory flags to catch accidental changes to that sequence.
 
 This is **not yet an interpreter or a general action implementation**:
 `apply_success` assumes the original code has already accepted the command.
-Reachability, earlier mode/other-object guards, object containment/list maintenance,
+Parser reachability, earlier mode/other-object guards, object containment/list maintenance,
 text output, room scripts and visual disclosure remain outside the model.
 Successful state equivalence in this one replay must not be generalized to
 other objects or Legend games without additional tests.

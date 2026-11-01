@@ -106,31 +106,31 @@ int main() {
             throw std::runtime_error("normal guard accepted an unrelated action");
         bool rejected_non_carry = false;
         try {
-            (void)model.evaluate_direct_carry_precheck(StoryAction::Open, drawer, player);
+            (void)model.evaluate_carry_precheck(StoryAction::Open, drawer, player);
         } catch (const std::invalid_argument &) {
             rejected_non_carry = true;
         }
         if (!rejected_non_carry)
             throw std::runtime_error("carry precheck accepted an unrelated action");
         expect(model.observe(book_scene), {}, "already-known book changed on reopen");
-        if (model.evaluate_direct_carry_precheck(StoryAction::Take, book, player) !=
+        if (model.evaluate_carry_precheck(StoryAction::Take, book, player) !=
                 StoryCarryPrecheck::Continue ||
-            model.evaluate_direct_carry_precheck(StoryAction::Drop, book, player) !=
+            model.evaluate_carry_precheck(StoryAction::Drop, book, player) !=
                 StoryCarryPrecheck::NotHolding)
             throw std::runtime_error("unheld book's selector prechecks differ");
         expect(model.apply_success(StoryAction::Take, book, player, room),
                {{StoryMutationKind::SetLocation, book, player},
                 {StoryMutationKind::SetFlag, book, 0x02}},
                "initial TAKE effects differ from native trace");
-        if (model.evaluate_direct_carry_precheck(StoryAction::Take, book, player) !=
+        if (model.evaluate_carry_precheck(StoryAction::Take, book, player) !=
                 StoryCarryPrecheck::AlreadyHolding ||
-            model.evaluate_direct_carry_precheck(StoryAction::Drop, book, player) !=
+            model.evaluate_carry_precheck(StoryAction::Drop, book, player) !=
                 StoryCarryPrecheck::Continue)
             throw std::runtime_error("held book's selector prechecks differ");
         expect(model.apply_success(StoryAction::Drop, book, player, room),
                {{StoryMutationKind::SetLocation, book, room}},
                "DROP did not move the book to the room");
-        if (model.evaluate_direct_carry_precheck(StoryAction::Drop, book, player) !=
+        if (model.evaluate_carry_precheck(StoryAction::Drop, book, player) !=
             StoryCarryPrecheck::NotHolding)
             throw std::runtime_error("repeated DROP precheck was not consumed");
         expect(model.apply_success(StoryAction::Take, book, player, room),
@@ -159,6 +159,67 @@ int main() {
                "TAKE did not clear existing flags");
         expect(model.apply_success(StoryAction::Take, other, player, room), {},
                "identical TAKE effects were not idempotent");
+
+        // DROP calls original 0157:00c5, which recursively follows relation
+        // links. TAKE instead compares the target's *direct* location only.
+        constexpr gateway::StoryObjectId pouch = 0x202, coin = 0x203;
+        model.define(pouch, player);
+        model.define(coin, pouch);
+        if (!model.follows_relation_path(coin, player) ||
+            model.follows_relation_path(player, player) ||
+            model.evaluate_carry_precheck(StoryAction::Drop, coin, player) !=
+                StoryCarryPrecheck::Continue ||
+            model.evaluate_carry_precheck(StoryAction::Take, coin, player) !=
+                StoryCarryPrecheck::Continue)
+            throw std::runtime_error("nested-object path or TAKE/DROP distinction incorrect");
+        expect(model.apply_success(StoryAction::Drop, pouch, player, room),
+               {{StoryMutationKind::SetLocation, pouch, room}},
+               "moving a container did not update its primary relation");
+        if (model.follows_relation_path(coin, player) ||
+            model.evaluate_carry_precheck(StoryAction::Drop, coin, player) !=
+                StoryCarryPrecheck::NotHolding)
+            throw std::runtime_error("moving a container left nested object held");
+
+        // Type-6 records can hold several ordered relations. The original
+        // loop stops on the *first* zero, even when later bytes are nonzero.
+        constexpr gateway::StoryObjectId multi = 0x204, dead_end = 0x205;
+        constexpr gateway::StoryObjectId branch = 0x209;
+        model.define(multi, dead_end);
+        model.define(dead_end, room);
+        model.define(branch);
+        const std::array relations{branch, player};
+        model.set_relation_tail(multi, relations);
+        if (!model.follows_relation_path(multi, player))
+            throw std::runtime_error("secondary type-6 relation was not traversed");
+        expect(model.apply_success(StoryAction::Take, multi, player, room),
+               {{StoryMutationKind::SetLocation, multi, player},
+                {StoryMutationKind::SetFlag, multi, 0x02}},
+               "moving a type-6 object did not update its primary link");
+        if (!model.follows_relation_path(multi, branch))
+            throw std::runtime_error("moving type-6 object clobbered its other relations");
+        const std::array zero_then_player{gateway::StoryObjectId{0}, player};
+        model.set_relation_tail(multi, zero_then_player);
+        if (model.follows_relation_path(multi, 0x999))
+            throw std::runtime_error("unknown relationship target was reachable");
+        // Move the primary link away from the player so a zero early exit
+        // cannot be accidentally masked by an immediate primary match.
+        expect(model.apply_success(StoryAction::Drop, multi, player, room),
+               {{StoryMutationKind::SetLocation, multi, room}},
+               "moving multi-link object back to room failed");
+        if (model.follows_relation_path(multi, player))
+            throw std::runtime_error("zero relation slot did not terminate the native list");
+
+        // Native assembly has no cycle guard; the host model must terminate
+        // while preserving one-or-more-link (non-reflexive) semantics.
+        constexpr gateway::StoryObjectId a = 0x206, b = 0x207;
+        model.define(a, b);
+        model.define(b, a);
+        if (model.follows_relation_path(a, room) || !model.follows_relation_path(a, a))
+            throw std::runtime_error("cyclic relationship traversal was incorrect");
+        constexpr gateway::StoryObjectId absent = 0x208;
+        model.define(absent, 0x7fff); // Unknown destination stops traversal.
+        if (model.follows_relation_path(absent, player))
+            throw std::runtime_error("undefined relation destination was followed");
 
         bool duplicate_rejected = false;
         try {

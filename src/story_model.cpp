@@ -4,7 +4,7 @@
 namespace gateway {
 
 void StoryModel::define(StoryObjectId id, std::optional<StoryObjectId> location) {
-    if (!id || !objects_.emplace(id, Object{{}, location}).second)
+    if (!id || !objects_.emplace(id, Object{{}, location, {}}).second)
         throw std::invalid_argument("invalid or duplicate story object");
 }
 
@@ -23,17 +23,55 @@ std::optional<StoryObjectId> StoryModel::location(StoryObjectId id) const {
     return objects_.at(id).location;
 }
 
-StoryCarryPrecheck StoryModel::evaluate_direct_carry_precheck(StoryAction action,
-                                                               StoryObjectId target,
-                                                               StoryObjectId player) const {
-    const auto where = location(target);
+void StoryModel::set_relation_tail(StoryObjectId id, std::span<const StoryObjectId> links) {
+    objects_.at(id).relation_tail.assign(links.begin(), links.end());
+}
+
+bool StoryModel::follows_relation_path(StoryObjectId source, StoryObjectId wanted) const {
+    // Each known object is explored at most once. The DOS function at EXE
+    // 0x2603 uses recursive DFS without this guard; valid acyclic records
+    // have the same Boolean result.
+    std::vector<StoryObjectId> pending{source};
+    std::set<StoryObjectId> visited{source};
+    while (!pending.empty()) {
+        const StoryObjectId current = pending.back();
+        pending.pop_back();
+        const auto found = objects_.find(current);
+        if (found == objects_.end())
+            continue;
+        const Object &object = found->second;
+        const auto explore = [&](StoryObjectId link) {
+            if (link == wanted)
+                return true;
+            if (visited.insert(link).second)
+                pending.push_back(link);
+            return false;
+        };
+        // A zero entry terminates that object's list in the native helper.
+        if (!object.location || !*object.location)
+            continue;
+        if (explore(*object.location))
+            return true;
+        for (StoryObjectId link : object.relation_tail) {
+            if (!link)
+                break;
+            if (explore(link))
+                return true;
+        }
+    }
+    return false;
+}
+
+StoryCarryPrecheck StoryModel::evaluate_carry_precheck(StoryAction action,
+                                                       StoryObjectId target,
+                                                       StoryObjectId player) const {
     switch (action) {
     case StoryAction::Take:
-        return where == player ? StoryCarryPrecheck::AlreadyHolding
-                               : StoryCarryPrecheck::Continue;
+        return location(target) == player ? StoryCarryPrecheck::AlreadyHolding
+                                          : StoryCarryPrecheck::Continue;
     case StoryAction::Drop:
-        return where == player ? StoryCarryPrecheck::Continue
-                               : StoryCarryPrecheck::NotHolding;
+        return follows_relation_path(target, player) ? StoryCarryPrecheck::Continue
+                                                      : StoryCarryPrecheck::NotHolding;
     default:
         throw std::invalid_argument("carry precheck requires TAKE or DROP");
     }

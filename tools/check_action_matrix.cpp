@@ -125,13 +125,13 @@ public:
                                  (where == drawer && state_.flag(drawer, 0x0c));
             if (!visible)
                 return {false, {}, false}; // Parser never reaches selector for closed drawer.
-            if (state_.evaluate_direct_carry_precheck(StoryAction::Take, book, player) ==
+            if (state_.evaluate_carry_precheck(StoryAction::Take, book, player) ==
                 StoryCarryPrecheck::AlreadyHolding)
                 return {false, {}, true, 8, 1}; // Selector handles 'already have'.
             return {true, state_.apply_success(StoryAction::Take, book, player, room), true, 8};
         }
         if (command == "drop book") {
-            if (state_.evaluate_direct_carry_precheck(StoryAction::Drop, book, player) ==
+            if (state_.evaluate_carry_precheck(StoryAction::Drop, book, player) ==
                 StoryCarryPrecheck::NotHolding)
                 return {false, {}, true, 4, 1}; // Selector handles 'not held'.
             return {true, state_.apply_success(StoryAction::Drop, book, player, room), true, 4};
