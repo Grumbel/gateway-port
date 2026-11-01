@@ -9,7 +9,7 @@ from disassemble_story import annotate, event_targets, text_id
 from gateway_strings import GatewayStrings
 from gateway_vocab import GatewayVocabulary
 from summarize_story_trace import collect_actions, summarize
-from inspect_action_dispatch import inspect_actions
+from inspect_action_dispatch import inspect_actions, map_action_entries
 import struct
 
 
@@ -106,6 +106,23 @@ class StoryDisassemblyTests(unittest.TestCase):
                                         handler_offset=0x0b90, extra_word=8)])
         with self.assertRaises(ValueError):
             inspect_actions(memory, 0x1000, [196])
+
+    def test_action_rtlink_reference_is_data_not_trampoline_start(self):
+        memory = bytearray(0x40000)
+        struct.pack_into('<H', memory, 0x10000 + 0x8da8, 0x1200)
+        struct.pack_into('<3H', memory, 0x12000 + 0x28 + 6 * 0x1d,
+                         0x17f9, 0x2c24, 3)
+        struct.pack_into('<3H', memory, 0x2c240 + 0x17f9, 0x0cf7, 0x4661, 7)
+        entries = inspect_actions(memory, 0x1000, [0x1d])
+        self.assertEqual(entries[0]['rtlink_reference'],
+                         dict(section=7, target_segment=0x4661, target_offset=0x0cf7))
+        manifest = {'sections': [dict(id=7, filename='GATEMAIN.OVL',
+                                     runtime_segment=0x4661, file_bytes=0x32f0,
+                                     image_file_offset=0x14150)]}
+        mapped = map_action_entries(entries, manifest)
+        self.assertEqual(mapped[0]['native_code']['file_offset'], 0x14e47)
+        with self.assertRaises(ValueError):
+            map_action_entries(entries, {'sections': []})
 
 
 if __name__ == '__main__':
