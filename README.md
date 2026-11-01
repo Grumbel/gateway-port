@@ -190,8 +190,9 @@ file. XOR overlays are merged onto their picture; `--raw-overlays` keeps the del
 entry fails to decode.
 
 Mission Critical uses a newer 20-byte PIC directory and **Crusher! 3.0**
-compression. The native decoder reconstructs the indexed pixels, applies the
-latest VGA palette update, and writes a PNG for each image entry:
+compression (or uncompressed indexed pixels). The native decoder reconstructs
+the indexed pixels, applies the latest VGA palette update, and writes a PNG
+for each image entry:
 
 ```sh
 ./build/gateway-extract -o build/pictures/mc ../MissionCritical/*.PIC

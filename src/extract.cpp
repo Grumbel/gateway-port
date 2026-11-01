@@ -1,4 +1,3 @@
-#include "crusher.hpp"
 #include "pic.hpp"
 #include <algorithm>
 #include <array>
@@ -184,7 +183,7 @@ int main(int argc, char **argv) try {
                              << entry.flags << '\t' << entry.x << '\t' << entry.y << '\t'
                              << entry.width << '\t' << entry.height << '\t' << entry.extra << '\t'
                              << entry.palette_start << '\t' << entry.palette_size << '\n';
-                if (entry.flags == 0xff00 && entry.palette_size) {
+                if ((entry.flags & 0xff00) && entry.palette_size) {
                     std::copy_n(file.begin() + entry.offset + 4, entry.palette_size,
                                 mc_palette.begin() + entry.palette_start);
                     have_mc_palette = true;
@@ -199,8 +198,7 @@ int main(int argc, char **argv) try {
                         ++raw_written;
                     } else {
                         try {
-                            const auto pixels = gateway::decode_crusher(
-                                stream, static_cast<std::size_t>(entry.width) * entry.height);
+                            const auto pixels = gateway::decode_mc_pic_pixels(file, entry);
                             std::vector<Rgb8> palette = have_mc_palette ? std::vector<Rgb8>(256)
                                                                         : grey_palette();
                             if (have_mc_palette) {

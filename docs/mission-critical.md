@@ -24,7 +24,9 @@ little-endian:
 | `10h` | `u16` | Height |
 | `12h` | `u16` | Unknown; observed `0000h` and `0002h` |
 
-Entries with `flags == ff00h` carry a palette update at their payload offset:
+Entries with a nonzero high flags byte (`flags & ff00h`) carry a palette
+update at their payload offset. `MISSION.EXE` tests the high byte at `0x855cc`,
+not the full value `ff00h`:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -40,7 +42,7 @@ occupied entries, including palette-only records and EOF:
 
 ```text
 next_offset = offset + compressed_size
-            + (flags == 0xff00 ? 4 + palette_count : 0)
+            + ((flags & 0xff00) ? 4 + palette_count : 0)
 ```
 
 | File | Occupied entries | Palette updates | Image streams | Palette-only |
@@ -54,6 +56,14 @@ next_offset = offset + compressed_size
 Most palette updates replace all 768 bytes. `MC040.PIC` entries 3–6 instead
 replace 96 bytes (32 RGB colors) starting at palette byte offsets 480, 192,
 288, and 384 respectively. Those entries contain no image stream.
+
+The original PIC loader also distinguishes compressed from uncompressed
+images by comparing `compressed_size` with `width * height` (at `0x85a52`).
+When those are equal the payload is already **raw eight-bit palette indices**;
+Crusher must not be invoked. This case did not occur in the initial four
+sample archives. Likewise, records do not need to occupy every byte through
+EOF: the engine seeks by the per-entry offsets and permits unindexed trailing
+data.
 
 `MC101.PIC` entries 1–20 have flags `0003h` and last word `0002h`, often at
 the same position and dimensions. They resemble animation or layered image
@@ -83,14 +93,23 @@ implementation is around `0xaf640`–`0xaf914`. The format has:
   The distance class supplies a variable-length offset into a rolling
   4096-byte dictionary.
 - No embedded uncompressed-size field; the PIC directory width and height
-  determine the expected number of output pixels.
+  determine the expected number of output pixels. Records of that exact
+  byte length are stored without compression.
 
-For all **55** image streams in the four sample archives, decoding produced
+For all **55** image streams in the original four sample archives, decoding produced
 exactly `width * height` pixels, consumed the compressed data except for 0–7
 padding bits, and generated a valid indexed PNG. A second exploratory Python
 implementation was compared byte-for-byte with all 55 C++ PNGs. The USS
 Lexington communications screen and mission background images were visually
 inspected. No game resources are embedded in the tests.
+
+Four additional archives (`MC004.PIC`, `MC005.PIC`, `MC015.PIC`, and
+`MC024.PIC`) were later supplied. **All 287 image records decode**, including
+the raw records `MC004` #27 and `MC015` #72–74. `MC024` #0 uses `ff04h` flags
+and carries a palette update, confirming the high-byte test. The native PNGs
+from these four files were generated without failures; notably `MC024` #0
+renders a legible control panel. The related `.RGN` resources are a separate
+region format, not required for decoding the pixel streams.
 
 ## Extracting PNGs and raw streams
 
