@@ -68,7 +68,10 @@ for mode in (['native'] if args.native_only else ['native', 'verify', 'hle']):
                     # Check the resident action dispatcher before/after its
                     # indirect far call, not merely the speculative section-7
                     # destinations (which were absent in the objects replay).
-                    '--trace-entry', '147c0', '--trace-entry', '147c5']
+                    '--trace-entry', '147c0', '--trace-entry', '147c5',
+                    # Actual OPEN/CLOSE far-call operands in the RTLink manager.
+                    # The callee hook and callsite record live code bytes.
+                    '--trace-entry', '2de99', '--trace-entry', '2da39']
     for time, key in sorted(keys):
         command += ['--key-at', f'{time}:{key:04x}']
     if args.verify_overlays:

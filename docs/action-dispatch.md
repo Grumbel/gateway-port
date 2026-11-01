@@ -123,6 +123,34 @@ and also omitted the newly added `BX`/`CX` fields, so the C++
 installed twice for `147a6` by the Python driver, explaining its duplicate
 lines. Neither result identifies the live far-call destination yet.
 
+The next rebuilt-probe trace resolved the live pointers unambiguously:
+
+| Typed command | Time at `1476:0060` | Live far-call target | Time at `1476:0065` | Return AX |
+| --- | ---: | --- | ---: | ---: |
+| `open drawer` | 18,392 ms | `2c24:1c59` | 18,417 ms | `1` |
+| `close drawer` | 34,422 ms | `2c24:17f9` | 34,443 ms | `1` |
+
+The opcode at the callsite was verified as `26 ff 9f 28 00` in both cases,
+with `ES=3bc5`, `BX=6*action_id`. The live pointer is thus genuinely read
+from the action table and **called**, rather than merely stored as an inert
+lookup reference. But the original EXE puts these exact offsets four bytes
+*into* the ten-byte RTLink trampolines (`e8 disp16; ea far-pointer; section`),
+and the native replay did not load section 7. It is not yet established what
+code the guest actually executes there. In particular, do not assume the
+initial six-byte on-disk reference is what occupies that memory during the
+call, or that the section-7 handler was entered.
+
+The opt-in entry trace now captures a 16-byte memory window beginning four
+bytes before each target, at three observation points:
+
+- `action_target_context=` immediately **before** the far call;
+- `action_callee_context=` if execution reaches `2c24:1c59` or `2c24:17f9`;
+- `action_target_after_context=` after returning to `1476:0065`.
+
+This should distinguish transient patching of the reference from a direct
+dispatch into the bytes observed in the final snapshot. Any differences are
+data to investigate; the probe does not modify guest memory.
+
 The replay script now prefers `$GATEWAY_BUILD_DIR/gateway-probe` under
 `nix develop` (falling back to `build/gateway-probe` elsewhere) and checks the
 binary for the `action_code=` diagnostic before starting. This fails quickly
@@ -133,14 +161,13 @@ trace without the necessary fields.
 gateway-build  # in nix develop; builds $GATEWAY_BUILD_DIR/gateway-probe
 python3 tools/trace_game_logic.py --scenario objects --native-only \
   --verify-overlays --output build/action-dispatch-check
-rg '^entry .*pc=(147a6|147c0|147c5)\b' build/action-dispatch-check/native.trace \
+rg '^entry .*pc=(147c0|147c5|2de99|2da39)\b' build/action-dispatch-check/native.trace \
   | rg 'ms=(18[0-9]{3}|34[0-9]{3})\b'
 ```
 
-Inspect `action_code=` at entry/call/return and `action_target=` at the
-callsite, particularly around `open drawer` at 18,392 ms and `close drawer`
-at 34,422 ms. An absent hook or unexpected opcode is a useful result: the
-file-to-memory mapping must then be corrected before naming any handler.
+Compare the three `action_*_context=` hex strings for each action. An absent
+callee hook is also useful evidence: the host may have redirected execution
+between the far call and the guest's next code block.
 `--native-only` avoids rerunning verification/HLE during this diagnostic;
 omit it to repeat the full three-way regression check.
 

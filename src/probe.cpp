@@ -544,6 +544,23 @@ void trace_entry(uc_engine *uc, std::uint64_t address, std::uint32_t, void *opaq
                 break;
             bp = words[0];
         }
+        // A far-call target may be altered during RTLink dispatch. Capture
+        // the four preceding trampoline bytes plus the target itself at the
+        // callsite, at the callee, and after return, rather than extrapolating
+        // live code from an on-disk image or the final guest-memory dump.
+        auto dump_action_context = [&](const char *label, std::size_t target) {
+            constexpr std::size_t size = 16;
+            if (target < 4 || target - 4 + size > 0xa0000) {
+                out << ' ' << label << "=out-of-range";
+                return;
+            }
+            std::array<std::uint8_t, size> bytes{};
+            check(uc_mem_read(uc, target - 4, bytes.data(), bytes.size()));
+            out << ' ' << label << '=';
+            for (const auto byte : bytes)
+                out << std::setw(2) << std::setfill('0') << unsigned(byte);
+            out << std::setfill(' ');
+        };
         // The exact bytes distinguish a real action-dispatch call site from
         // unrelated code that happens to occupy the same address earlier in
         // the launcher. The expected 26 ff 9f 28 00 is the original far
@@ -564,9 +581,26 @@ void trace_entry(uc_engine *uc, std::uint64_t address, std::uint32_t, void *opaq
                     std::array<std::uint16_t, 2> target{};
                     check(uc_mem_read(uc, pointer, target.data(), 4));
                     out << " action_target=" << target[1] << ':' << target[0];
+                    dump_action_context("action_target_context",
+                                        std::size_t(target[1]) * 16 + target[0]);
                 } else
                     out << " action_probe=pointer-out-of-range";
             }
+            if (address == 0x147c5) {
+                std::uint16_t action;
+                check(uc_mem_read(uc, base + std::uint16_t(reg(uc, UC_X86_REG_SP) + 6),
+                                  &action, sizeof(action)));
+                if (action == 0x71 || action == 0x1d) {
+                    const auto target = std::size_t(0x2c24) * 16 +
+                                        (action == 0x71 ? 0x1c59 : 0x17f9);
+                    out << " action_return_id=" << action;
+                    dump_action_context("action_target_after_context", target);
+                }
+            }
+        }
+        if ((address == 0x2da39 || address == 0x2de99) &&
+            reg(uc, UC_X86_REG_CS) == 0x2c24) {
+            dump_action_context("action_callee_context", address);
         }
         // These two Gateway section-38 handlers receive the event word at
         // far-call stack +4.  Always record it at matching CS:IP, even if the
