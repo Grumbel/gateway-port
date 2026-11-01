@@ -1,4 +1,4 @@
-# Gateway 1 F10 debugger: evidence, interpretation, limits
+# Legend engine F10 debugger: evidence, interpretation, limits
 
 This debugger is deliberately observational. The emulator continues running
 the original Gateway executable and its native story handlers. F10 is handled
@@ -30,7 +30,7 @@ For example, hotspot `292` is the drawer in Gateway's first room, while
 `OBJECT.DAT` list index 292 is "slip of paper". Labels appear when the debugger
 recognizes the native table; otherwise it displays only the numeric engine ID.
 
-The host rasterizer merges adjacent/overlapping rectangles with the same ID,
+The host rasterizer merges adjacent/overlapping regions with the same ID,
 draws only the outside contour, and applies a light translucent fill. Different
 IDs get distinct stable hues. Hover brightens one object's outline and fill;
 anonymous ID-0 rectangles stay separate because their shared zero does not
@@ -44,6 +44,51 @@ is a heuristic, not a recovered engine "current room" property. PIC loads
 may be prefetches; scenes with XOR layers, cached images, or mode changes
 may not line up with this estimate. A and Left/Right let the tester override
 it manually and compare candidate RGN entries to the visible picture.
+
+## Other Legend games: format verification, runtime still unconfirmed
+
+The PIC-read tracking and F10 overlay now support the four additional titles
+with original game data in `games.zip`:
+
+| Game | Room PIC → region file | Region encoding |
+| --- | --- | --- |
+| Spellcasting 101 | `S101_E1.PIC`/`S101_C1.PIC` → `S101_R1.RGN`, etc. | Packed rectangles, two-pixel X units |
+| Spellcasting 201 | `S201_E1.PIC`/`S201_C1.PIC` → `S201_R1.RGN`, etc. | Packed rectangles, two-pixel X units |
+| Spellcasting 301 | `S301_102.PIC` → `S301_002.RGN`, etc. | Gateway-compatible packed rectangles |
+| Gateway II: Homeworld | `HOME_102.PIC` → `HOME_002.RGN`; `HOME_304.PIC` → `HOME_304.RGN` | Polygons (see below) |
+
+Older Spellcasting RGNs have fixed-size header tables that need not match the
+corresponding PIC's directory: S101 uses 30–80 slots depending on the file,
+and S201 uses a 128-slot table even when the PIC has fewer entries. A bounded
+header scan prevents interpreting the rectangle data as extra headers; a few
+S201 inverted/sentinel rectangles are discarded while keeping valid shapes in
+the same frame. The PIC-to-RGN frame indexes are otherwise preserved.
+
+**Gateway II differs materially.** Its six-byte *frame headers* have the same
+`offset, default ID, count` layout, but the count denotes polygon records:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| +0 | u16 | Object ID, or 0 to use frame default |
+| +2 | u16 | Vertex count |
+| +4 onward | repeated `(u16 x, u16 y)` | Ordered scene-local vertices, in single-pixel units |
+
+Polygons with two vertices represent rectangular opposite corners. Other
+polygons are filled using the even-odd rule, retaining concavities; the final
+ownership buffer still merges regions of the same ID into one contour. All
+nine supplied Gateway II region files parse completely, with no unexplained
+trailing polygon bytes. A debug `.regions.tsv` dump includes ordered polygon
+vertices in a semicolon-delimited last column; rectangle bounds remain in the
+existing columns.
+
+The focused test suite checked **41 real PIC/RGN pairs**, covering both color
+variants of the two early Spellcasting games, the S301 room series, and all
+the available Gateway II region files. Reads selected 375 room-sized PIC
+frames and exposed 678 polygons. This establishes binary layout and frame
+association, **not** that the guest has selected the same frame now visible on
+screen. Live F10 checks are still needed for scene origin, visibility/clipping,
+actual mouse-selection priority and object labels in the other titles.
+The Gateway 1 live-table name resolver is intentionally not applied to them.
 
 ## Live object state
 

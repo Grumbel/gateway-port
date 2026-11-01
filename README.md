@@ -14,6 +14,9 @@ music now plays correctly; Spellcasting 201 starts and renders its game interfac
 correctly in user testing. Spellcasting 301 reaches its first room, Beach, in a
 headless run. Gateway 1's F10 debugger has been user-tested: automatic scene
 selection, merged hitbox highlighting, and object labels work as expected.
+The same debugger now reads room hitboxes from Spellcasting 101/201/301 and
+Gateway II, including Gateway II's polygonal regions; these additions have
+been checked against game resources but not yet visually confirmed in play.
 No title has been verified through a complete playthrough. It provides:
 
 - A checked DOS MZ loader with segment relocation and initial register setup.
@@ -142,9 +145,15 @@ The menu starts in the lower-right text pane, beneath the scene picture. Drag
 its title bar to move it. Merged hotspot outlines and translucent fills stay
 on screen after closing the menu until toggled off. The current file and RGN
 entry, guest CS:IP/DS, and recognized Gateway object count are shown in the
-panel. The hitboxes come from the original `GATE_*.RGN`
-resources; their coordinates are relative to the picture in the right-hand
-panel. Auto-selected scenes are **only an estimate** based on which picture
+panel. Hitboxes come from the original `GATE_*.RGN`, `S101_R*.RGN`,
+`S201_R*.RGN`, `S301_*.RGN`, or `HOME_*.RGN` resources. Spellcasting uses
+packed rectangles; Gateway II uses polygon vertices (and two-point boxes),
+shown with the same merged outlines and translucent fills. All coordinates
+are relative to the room picture in the right-hand panel. The new dialects
+pass resource-fixture tests but need a live visual/alignment check. Object
+**names** currently resolve only for Gateway 1, whose native object table has
+been reverse-engineered; other games show numeric IDs, not guessed names.
+Auto-selected scenes are **only an estimate** based on which picture
 was recently read, and can lag, select transitional art, or fail to identify a
 scene. Use manual frame selection to compare frames if that happens.
 
@@ -152,7 +161,8 @@ Dumping writes numbered `gateway-<guest-ms>-<sequence>` files under the DOS
 state directory's `debug/` folder (or under `build/debug/` in read-only mode).
 Override the destination with `--debug-dir DIR`. Every dump includes `.regs`
 (CPU registers), `.bin` (1 MiB guest memory), `.ppm` (undecorated framebuffer),
-`.regions.tsv` (visible hitboxes) and `.debug.txt` (selection provenance). A
+`.regions.tsv` (visible hitboxes, including polygon vertices) and `.debug.txt`
+(selection provenance). A
 `.objects.tsv` is also saved when the *Gateway 1* 734-object live table can be
 validated at DS; it includes object IDs, types, handler indices, name tokens,
 locations and raw state bytes. An unrecognized state is reported, not guessed.
