@@ -136,6 +136,32 @@ class StoryDisassemblyTests(unittest.TestCase):
         record, = inspect_actions(memory, 0x1000, [0x46])
         self.assertNotIn('selector_callback', record)
 
+    def test_take_drop_selector_trampolines_map_to_original_overlay(self):
+        memory = bytearray(0x40000)
+        struct.pack_into('<H', memory, 0x10000 + 0x8da8, 0x1200)
+        for action, selector, pointer, target in [(0x46, 8, 0x1939, 0x27df),
+                                                   (0x32, 4, 0x1961, 0x0434)]:
+            table = 0x12000 + 0x28 + 6 * action
+            memory[table - 1] = selector
+            struct.pack_into('<2H', memory, table, 0x1500, 0x1234)
+            struct.pack_into('<2H', memory, 0x12000 + 4 * (selector - 1),
+                             pointer, 0x2c24)
+            struct.pack_into('<BhB3H', memory, 0x2c240 + pointer, 0xe8,
+                             0x058d - (pointer + 3), 0xea, target, 0x4661, 5)
+        entries = inspect_actions(memory, 0x1000, [0x46, 0x32])
+        self.assertEqual([(entry['selector_reference']['section'],
+                           entry['selector_reference']['target_offset']) for entry in entries],
+                         [(5, 0x27df), (5, 0x0434)])
+        manifest = {'sections': [dict(id=5, filename='GATEMAIN.OVL',
+                                     runtime_segment=0x4661, file_bytes=0x4000,
+                                     image_file_offset=0xd3d0)]}
+        mapped = map_action_entries(entries, manifest)
+        self.assertEqual([entry['selector_native_code']['file_offset'] for entry in mapped],
+                         [0xfbaf, 0xd804])
+        # A pointer with a broken manager call cannot be guessed from target bytes.
+        memory[0x2c240 + 0x1939] = 0x90
+        self.assertNotIn('selector_reference', inspect_actions(memory, 0x1000, [0x46])[0])
+
     def test_action_rtlink_reference_comes_from_trampoline_operands(self):
         memory = bytearray(0x40000)
         struct.pack_into('<H', memory, 0x10000 + 0x8da8, 0x1200)

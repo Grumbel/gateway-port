@@ -32,6 +32,21 @@ def inspect_actions(memory, ds, action_ids):
             raise ValueError('action table word outside guest conventional memory')
         return struct.unpack_from('<H', memory, address)[0]
 
+    def trampoline(segment, offset):
+        # Both shared actions and selector callbacks may point to identical
+        # ten-byte RTLink trampolines. Validate the manager CALL/JMP prefix.
+        address = segment * 16 + offset
+        if segment != 0x2c24 or address + 10 > min(len(memory), 0xa0000):
+            return None
+        displacement = struct.unpack_from('<h', memory, address + 1)[0]
+        gate = (offset + 3 + displacement) & 0xffff
+        if memory[address] != 0xe8 or memory[address + 3] != 0xea or gate != 0x058d:
+            return None
+        target_ip, target_cs, section_id = struct.unpack_from('<3H', memory, address + 4)
+        if section_id >= 58:
+            raise ValueError('invalid section ID in RTLink trampoline')
+        return dict(section=section_id, target_segment=target_cs, target_offset=target_ip)
+
     if not 0 < ds <= 0xffff:
         raise ValueError('invalid original Gateway data segment')
     directory_segment = word(ds, 0x8da8)
@@ -56,22 +71,11 @@ def inspect_actions(memory, ds, action_ids):
             callback_offset = 4 * (selector - 1)
             entry['selector_callback'] = dict(segment=word(directory_segment, callback_offset + 2),
                                               offset=word(directory_segment, callback_offset))
-        # These action pointers point to *executable trampoline starts*.
-        # The reference is at +4 (after e8 disp16; ea), and the near call
-        # resolves to the original Gateway RTLink manager gate at 2c24:058d.
-        reference_address = cs * 16 + ip
-        if cs == 0x2c24 and reference_address + 10 <= min(len(memory), 0xa0000):
-            displacement = struct.unpack_from('<h', memory, reference_address + 1)[0]
-            gate = (ip + 3 + displacement) & 0xffff
-            if (memory[reference_address] == 0xe8 and
-                    memory[reference_address + 3] == 0xea and gate == 0x058d):
-                target_ip, target_cs, section_id = struct.unpack_from('<3H', memory,
-                                                                       reference_address + 4)
-                if section_id >= 58:
-                    raise ValueError('invalid section ID in action RTLink trampoline')
-                entry['rtlink_reference'] = dict(section=section_id,
-                                                 target_segment=target_cs,
-                                                 target_offset=target_ip)
+        if reference := trampoline(cs, ip):
+            entry['rtlink_reference'] = reference
+        if selector and (reference := trampoline(entry['selector_callback']['segment'],
+                                                entry['selector_callback']['offset'])):
+            entry['selector_reference'] = reference
         results.append(entry)
     return results
 
@@ -83,8 +87,11 @@ def map_action_entries(entries, manifest):
     output = []
     for item in entries:
         result = dict(item)
-        ref = item.get('rtlink_reference')
-        if ref:
+        for reference_key, native_key in (('rtlink_reference', 'native_code'),
+                                          ('selector_reference', 'selector_native_code')):
+            ref = item.get(reference_key)
+            if not ref:
+                continue
             section = sections.get(ref['section'])
             if section is None:
                 raise ValueError('action RTLink reference has no section in manifest')
@@ -92,9 +99,9 @@ def map_action_entries(entries, manifest):
             image_offset = displacement + ref['target_offset']
             if not 0 <= image_offset < section['file_bytes']:
                 raise ValueError('action target outside RTLink section file-backed bytes')
-            result['native_code'] = dict(filename=section['filename'], section=section['id'],
-                                         image_offset=image_offset,
-                                         file_offset=section['image_file_offset'] + image_offset)
+            result[native_key] = dict(filename=section['filename'], section=section['id'],
+                                      image_offset=image_offset,
+                                      file_offset=section['image_file_offset'] + image_offset)
         output.append(result)
     return output
 
@@ -133,6 +140,9 @@ def main():
         print(f"  {KNOWN_ACTIONS.get(action, '')}", end='')
         if callback := record.get('selector_callback'):
             print(f"  callback={callback['segment']:04x}:{callback['offset']:04x}", end='')
+        if selector_code := record.get('selector_native_code'):
+            print(f" callback-file={selector_code['filename']}:"
+                  f"0x{selector_code['file_offset']:x}", end='')
         print()
     print('Nonresident action pointers address executable RTLink trampolines; '
           'the selector and trailer bytes have not been assigned semantics.')
