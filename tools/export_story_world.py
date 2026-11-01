@@ -3,7 +3,8 @@
 
 Reads inspect_object_state.py JSON; no executable assets or guest execution.
 Type-1 roots are *room candidates*. This snapshot is not a recovered script
-database, navigation map, renderer, or proof of object visibility.
+database, navigation map, renderer, or proof of object visibility. Optional
+DOT output shows *only* candidate room pairs from two-slot type-6 relations.
 """
 import argparse
 from collections import Counter
@@ -135,6 +136,11 @@ def export_world(objects):
         count = record.get('relation_count')
         if original_links is not None and count is not None and len(original_links) != count:
             raise ValueError(f'object 0x{object_id:03x}: type-6 relation count mismatch')
+        if (original_links and 'location' in record and
+                original_links[0] != record['location']):
+            # Both are read from state +0x0a in the native type-6 layout.
+            raise ValueError(f'object 0x{object_id:03x}: type-6 first relation '
+                             'differs from direct location')
         relations = []
         for slot, target in enumerate(original_links or []):
             if not isinstance(target, int) or not 0 <= target <= 0xffff:
@@ -257,18 +263,56 @@ def markdown_world(world):
     return '\n'.join(lines) + '\n'
 
 
+def dot_room_candidates(world):
+    """Sketch two-room type-6 references without asserting traversable exits."""
+    def quote(label):
+        return ('"' + str(label).replace('\\', '\\\\').replace('"', '\\"')
+                .replace('\n', '\\n') + '"')
+
+    # A node is included only if it appears in a qualifying pair; this is
+    # neither the complete room inventory nor a directed navigation graph.
+    nodes = {}
+    edges = []
+    for connector in world['connector_candidates']:
+        pair = connector['two_room_candidate']
+        if not pair:
+            continue
+        lookup = {item['id']: item for item in connector['relations']}
+        for room_id in pair:
+            nodes[room_id] = lookup[room_id].get('name', '')
+        edges.append((pair[0], pair[1], connector))
+    lines = [
+        '// Candidate references only: no verified exits, directions, or scene transitions.',
+        'graph gateway_room_relation_candidates {',
+        '  graph [label="Gateway type-6 room references (unverified)", labelloc=t];',
+        '  node [shape=box];',
+    ]
+    for room_id, name in sorted(nodes.items()):
+        display = f'0x{room_id:03x}' + (f' {name}' if name else '')
+        lines.append(f'  room_{room_id:03x} [label={quote(display)}];')
+    for source, target, connector in edges:
+        display = f'0x{connector["id"]:03x}'
+        if connector['name']:
+            display += ' ' + connector['name']
+        lines.append(f'  room_{source:03x} -- room_{target:03x} '
+                     f'[style=dashed, label={quote(display)}];')
+    return '\n'.join(lines + ['}']) + '\n'
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('objects_json', type=Path,
                         help='inspect_object_state.py JSON output')
-    parser.add_argument('--format', choices=('json', 'markdown'), default='markdown',
-                        help='JSON forest for tools or room inventory Markdown (default)')
+    parser.add_argument('--format', choices=('json', 'markdown', 'dot'), default='markdown',
+                        help='JSON forest, Markdown inventory (default), or candidate graph DOT')
     args = parser.parse_args()
     try:
         data = json.loads(args.objects_json.read_text())
         world = export_world(data['objects'])
         if args.format == 'json':
             print(json.dumps(world, indent=2, ensure_ascii=False))
+        elif args.format == 'dot':
+            print(dot_room_candidates(world), end='')
         else:
             print(markdown_world(world), end='')
     except (KeyError, TypeError, OSError, ValueError) as error:

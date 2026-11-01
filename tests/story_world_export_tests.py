@@ -8,7 +8,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
-from export_story_world import export_world, markdown_world
+from export_story_world import dot_room_candidates, export_world, markdown_world
 from child_chain_inspect_tests import first_room_snapshot
 
 TOOL = ROOT / 'tools' / 'export_story_world.py'
@@ -77,6 +77,9 @@ class StoryWorldExportTests(unittest.TestCase):
         self.assertIn('Satellite (type 1)', report)
         self.assertIn('not confirmed exits', report)
 
+        objects[2]['relation_links'] = [0x12, 0x13]
+        with self.assertRaisesRegex(ValueError, 'first relation differs'):
+            export_world(objects)
         objects[2]['relation_links'] = [0x13, 0x20]
         self.assertEqual(export_world(objects)['connector_candidates'][0]['two_room_candidate'], [])
         objects[2]['relation_links'] = [0x13, 0]
@@ -93,6 +96,30 @@ class StoryWorldExportTests(unittest.TestCase):
         incomplete = export_world(objects)
         self.assertFalse(incomplete['connector_candidates'][0]['relations_available'])
         self.assertIn('regenerate from inspect_object_state.py', markdown_world(incomplete))
+
+    def test_dot_graph_has_only_two_room_candidates_and_escapes_names(self):
+        objects = [dict(object=0x12, type=1, name='Satellite "A"', child_links=[0]),
+                   dict(object=0x13, type=1, name='Travel Pod', child_links=[0]),
+                   dict(object=0x20, type=6, name='door', location=0x13,
+                        relation_count=2, relation_links=[0x13, 0x12]),
+                   dict(object=0x21, type=6, name='disabled door', location=0,
+                        relation_count=2, relation_links=[0, 0])]
+        graph = dot_room_candidates(export_world(objects))
+        self.assertIn('graph gateway_room_relation_candidates', graph)
+        self.assertIn('room_012 [label="0x012 Satellite \\"A\\""];', graph)
+        self.assertIn('room_013 -- room_012 [style=dashed, label="0x020 door"]', graph)
+        self.assertNotIn('room_021', graph)
+        self.assertNotIn('disabled door', graph)
+        objects[2]['relation_links'] = [0x13, 0]
+        self.assertNotIn('room_013', dot_room_candidates(export_world(objects)))
+
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'objects.json'
+            source.write_text(json.dumps({'objects': objects}))
+            output = subprocess.run([sys.executable, str(TOOL), str(source),
+                                     '--format', 'dot'], text=True, capture_output=True)
+            self.assertEqual(output.returncode, 0, output.stderr)
+            self.assertIn('graph gateway_room_relation_candidates', output.stdout)
 
     def test_detached_records_and_native_handler_metadata_survive(self):
         objects = first_room_snapshot()
