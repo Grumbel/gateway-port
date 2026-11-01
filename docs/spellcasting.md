@@ -105,6 +105,23 @@ A record of length 0 is a single symbol with no bits at all, which fills the ima
 
 ## Limitations
 
+### Startup compatibility probes (2026-11-01)
+
+The Spellcasting 101 launcher calls `INT 10h AX=1B02h` after querying the
+current video mode. The documented VGA functionality/state service defines
+`AX=1B00h`, not the `AL=02h` variant. The runtime now returns an unsupported
+signature (`AL=00h`) specifically for this probe, leaving other unknown
+interrupts fatal. Whether the launcher subsequently reaches gameplay remains
+to be verified with Unicorn.
+
+Spellcasting 201 gets through its RTLink launcher and then writes to port
+`226h`, the reset register of a Sound Blaster at base `220h`. There is no
+Sound Blaster PCM/DMA emulation in this port, so the runtime now models an
+absent DSP: its reset writes are harmless and the DSP status/data probes
+return an undriven `FFh` instead of claiming a reset acknowledgement (`AAh`).
+This preserves the existing AdLib emulator and avoids inventing DSP audio
+support. Subsequent startup and audio behavior still need runtime validation.
+
 - Colors have not been compared with the running games under DOSBox.
 - Spellcasting 101 and 201 mono entries are shown as black and white.
 - Some Spellcasting 101 1-bit entries, such as `S101_C2` #19 and #40, look like

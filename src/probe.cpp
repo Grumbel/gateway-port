@@ -160,6 +160,12 @@ std::uint32_t port_in(uc_engine *uc, std::uint32_t port, int size, void *opaque)
                 value |= std::uint32_t(state.opl.in(port + i)) << (8 * i);
                 continue;
             }
+            // No Sound Blaster DSP is installed. Return an empty/status-high bus
+            // on its probe registers so installers can fall back to AdLib.
+            if (port + i == 0x22a || port + i == 0x22c || port + i == 0x22e) {
+                value |= 0xffu << (8 * i);
+                continue;
+            }
             if (!state.vga.handles_port(port + i)) {
                 std::ostringstream message;
                 message << "unsupported hardware port read: " << std::hex << port + i;
@@ -193,6 +199,11 @@ void port_out(uc_engine *uc, std::uint32_t port, int size, std::uint32_t value,
             }
             if (state.opl.handles_port(port + i)) {
                 state.opl.out(port + i, (value >> (8 * i)) & 255);
+                continue;
+            }
+            if (port + i == 0x226) {
+                // Sound Blaster DSP reset probe at base 220h + 6. We do not
+                // claim the DSP is present (no 0xAA reset acknowledgement).
                 continue;
             }
             if (!state.vga.handles_port(port + i)) {
@@ -638,6 +649,11 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
         } else if (number == 0x10 && ax == 0x1a00) {
             set(uc, UC_X86_REG_AX, 0x1a);
             set(uc, UC_X86_REG_BX, 8); // VGA with an analog color display.
+        } else if (number == 0x10 && ax == 0x1b02) {
+            // VGA functionality/state information only defines AL=00. A
+            // nonzero AL is not a supported subfunction; report that through
+            // the BIOS signature instead of terminating the guest.
+            set(uc, UC_X86_REG_AX, ax & 0xff00);
         } else if (number == 0x10 && (ax >> 8) == 9) {
             const auto bx = reg(uc, UC_X86_REG_BX);
             const auto page = (bx >> 8) & 7;
