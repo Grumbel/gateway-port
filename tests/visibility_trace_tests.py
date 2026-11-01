@@ -54,6 +54,26 @@ class VisibilityTraceTests(unittest.TestCase):
             summarize([mismatch, entry(600, 'child-call') +
                        ' visibility_probe=code-mismatch visibility_code=0000000000'])
 
+    def test_relocated_calls_in_older_trace_still_have_usable_returns(self):
+        # Bundle 061 compared the segment operand of a relocated far CALL
+        # with the unrelocated binary, losing *every* call observation while
+        # preserving the correct return-site hooks. Do not discard those.
+        lines = [entry(18392, 'gate-call') + ' visibility_probe=code-mismatch',
+                 entry(18393, 'gate-return', value='1'),
+                 entry(18393, 'child-call') + ' visibility_probe=code-mismatch',
+                 entry(18393, 'child-return', value='123')]
+        report = summarize(lines, focus=0x124, details=True)
+        self.assertIn('Skipped 2 unverified code-address hits', report)
+        self.assertIn('0x123', report)
+        self.assertIn('gate-return', report)
+        self.assertIn('child-return', report)
+        self.assertNotIn('incomplete probe call/return', report)
+
+    def test_actual_missing_return_is_still_flagged(self):
+        report = summarize([entry(20000, 'gate-call'), entry(20000, 'child-call')],
+                           focus=0x124)
+        self.assertIn('[warning: incomplete probe call/return observations]', report)
+
     def test_reject_invalid_probe_and_missing_or_nonboolean_results(self):
         with self.assertRaisesRegex(ValueError, 'unknown candidate probe diagnostic'):
             summarize([entry(18, 'gate-call') + ' visibility_probe=other'])

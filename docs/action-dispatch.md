@@ -748,29 +748,60 @@ python3 tools/trace_game_logic.py --scenario objects --native-only \
   --command-sequence 'open drawer,close drawer,open drawer,take book,drop book,take book,inventory' \
   --output build/parser-child-check
 python3 tools/summarize_visibility_trace.py \
-  build/parser-child-check/native.trace --object 0x124 \
+  build/parser-child-check/native.trace --object 0x124 --details \
   --commands 'open drawer,close drawer,open drawer,take book,drop book,take book,inventory'
 ```
 
 For fine-grained inspection, `rg 'visibility_stage=' .../native.trace` shows
 the raw `gate-call` (`1000:0063`), `gate-return` (`1000:0068`), `child-call`
-(`1000:0075`) and `child-return` (`1000:007a`) entries. The probe verifies
-the expected instruction bytes before interpreting local variables; a
-`visibility_probe=code-mismatch` is **not** a valid deny decision: the same
-linear addresses can contain different code early in launcher startup. The
-summarizer skips these unverified hits and reports how many it skipped; an
-all-mismatched trace still fails explicitly. Newer traces also capture
-`visibility_code` for diagnosing a persistent mismatch. The summary groups
-the gate result and returned
-children by *scripted time window*, not by proven command ownership. It
-does not assert that a particular child was accepted as a verb's target.
+(`1000:0075`) and `child-return` (`1000:007a`) entries. The probe validates
+each call's `9a` opcode and *offset*; its far-call **segment** field can be
+patched by the game's loader and must not be compared against the original
+EXE bytes. The supplied `GATEMAIN.EXE` has **zero standard MZ relocation
+entries**; the precise custom-loading/fixup mechanism still needs checking.
+After-RETURN site signatures still compare all five bytes. Matched callsites
+also report the live `visibility_target=segment:offset`.
 
-**Next validation:** compare the drawer's restricted slot probes before and
-after OPEN/CLOSE and repeat the same experiment on nested/type-6 objects.
-If no entries appear, first establish whether `1000:0000` is reached in the
-test's active parser path; do not infer a missing visibility check merely
-from an empty trace. The actual object-name resolution and command context
-remain unmodeled.
+The first live replay exposed a bug in bundle 061: it checked the *original*
+`0385` and `0157` segment bytes. Consequently 1,075 **call-site hits** were
+misclassified as `visibility_probe=code-mismatch`, despite their corresponding
+return hooks being correct. The summarizer now retains those valid return
+observations without declaring them incomplete merely because no calls
+passed the earlier bad check. Genuine mismatches are still excluded and
+reported, never interpreted as a deny decision.
+
+The supplied repeat-action replay completed 189 verified overlay loads with
+its expected framebuffer hash. For the drawer (`0x124`) in **restricted**
+enumeration, the valid return hooks showed:
+
+| Script window | Slot 0 deny / allow | Child IDs seen on allowed paths |
+| --- | ---: | --- |
+| Startup / LOOK, before OPEN | 4 / 0 | None |
+| First OPEN | 1 / 1 | `0x123` (book) |
+| CLOSE | 1 / 1 | `0x123` (book) |
+| Second OPEN | 1 / 1 | `0x123` (book) |
+| First TAKE | 0 / 2 | `0x000`, `0x123` |
+| DROP | 0 / 2 | `0x000` |
+
+These **time windows can contain both the state before and after the action**.
+In particular, the mixed CLOSE window does not mean the closed drawer is
+always searchable. Use `--details` to inspect the precise native timestamp
+of each gate and child return alongside the action-state write timings. The
+gate also has other slots (slot 1 was denied and slot 2 allowed in the
+observed drawer traversal), whose behavior is not yet interpreted as a
+complete containment model.
+
+The summary groups results by *scripted time window*, not by proven command
+ownership, and does not assert that a particular child was accepted as a
+verb's target. The gate's caller restriction flag and other possible parser
+paths remain unclassified.
+
+**Next validation:** use `--details` to align the drawer's restricted slot
+results with the exact native OPEN/CLOSE property writes, then repeat the
+experiment on nested/type-6 objects. If no entries appear, first establish
+whether `1000:0000` is reached in the test's active parser path; do not
+infer a missing visibility check merely from an empty trace. The actual
+object-name resolution and command context remain unmodeled.
 
 Given a saved object-state snapshot, inspect the **actual ordered relation
 paths** separately from direct `location` and parser visibility:

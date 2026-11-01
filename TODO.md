@@ -38,9 +38,9 @@ emulation. Keep the original executable as a behavioral reference while mapping:
   values are engine object IDs; `OBJECT.DAT` list indexes are different.
 - Which guest variables encode room and action state; which native handlers
   update them; and how object flag/location changes map to player actions.
-- Validate the newly recovered parser **child-slot gate** (`0385:0a9a`) in
-  native OPEN/CLOSE and hidden-book traces, and establish which callers enable
-  its restriction parameter. The child accessor (`0157:0825`) is distinct
+- Align the now-observed parser **child-slot gate** (`0385:0a9a`) with exact
+  OPEN/CLOSE state-write timestamps (`--details`), then establish which callers
+  enable its restriction parameter. The child accessor (`0157:0825`) is distinct
   from DROP's recursive relationship helper (`0157:00c5`); both are decoded,
   but their complete role in parser visibility and spatial containment is
   still unresolved. Compare both graphs against nested-object traces.

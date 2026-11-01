@@ -28,9 +28,11 @@ def parse_visibility(line):
         if 'visibility_probe' in fields:
             if fields['visibility_probe'] != 'code-mismatch':
                 raise ValueError('unknown candidate probe diagnostic')
-            # The launcher occupies 1000:xxxx early in the run. An address
-            # alone does not identify the final resident game code; these
-            # hits must never be interpreted as visibility decisions.
+            # An address alone does not identify a resident instruction.
+            # Early versions also compared the runtime far CALL segment
+            # immediate against the original unrelocated EXE: those calls
+            # failed even during gameplay. Never interpret such hits as
+            # visibility decisions, but retain valid return observations.
             return dict(ms=int(fields['ms']), stage=stage, unverified=True,
                         code=fields.get('visibility_code'))
         result_key = {'gate-return': 'visibility_result',
@@ -45,13 +47,15 @@ def parse_visibility(line):
         raise ValueError(f'invalid visibility entry: {error}: {line[:160]}') from error
 
 
-def summarize(lines, commands=DEFAULT_OBJECT_COMMANDS, focus=None):
+def summarize(lines, commands=DEFAULT_OBJECT_COMMANDS, focus=None, details=False):
     if len(commands) != len(OBJECT_SLOTS):
         raise ValueError('expected seven scripted commands')
     grouped = defaultdict(lambda: dict(gate_calls=0, gate_0=0, gate_1=0,
-                                       child_calls=0, children=set()))
+                                       child_calls=0, child_returns=0,
+                                       children=set()))
     total = 0
     unverified = []
+    observations = []
     for line in lines:
         event = parse_visibility(line)
         if not event:
@@ -74,7 +78,10 @@ def summarize(lines, commands=DEFAULT_OBJECT_COMMANDS, focus=None):
         elif event['stage'] == 'child-call':
             group['child_calls'] += 1
         else:
+            group['child_returns'] += 1
             group['children'].add(event['result'])
+        if event['stage'] in ('gate-return', 'child-return'):
+            observations.append(event)
     if not total:
         detail = (f'; skipped {len(unverified)} code-signature mismatches '
                   f'(first ms={unverified[0]["ms"]}, last ms={unverified[-1]["ms"]})'
@@ -97,9 +104,26 @@ def summarize(lines, commands=DEFAULT_OBJECT_COMMANDS, focus=None):
         children = ', '.join(f'0x{x:03x}' for x in sorted(group['children'])) or '-'
         result.append(f"{label[:14]:14}  0x{obj:03x}   {slot:>3}      {restricted:>4}      "
                       f"{group['gate_0']:>5}/{group['gate_1']:<5}       {children}")
-        if group['gate_calls'] != group['gate_0'] + group['gate_1'] or \
-                group['child_calls'] < len(group['children']):
+        # Bundles <=061 rejected the relocated far CALL instructions but
+        # captured their return sites. Zero call observations therefore
+        # cannot justify declaring these valid return records "incomplete".
+        if (group['gate_calls'] and
+                group['gate_calls'] != group['gate_0'] + group['gate_1']) or \
+                (group['child_calls'] and
+                 group['child_calls'] != group['child_returns']):
             result.append('  [warning: incomplete probe call/return observations]')
+    if details:
+        result.extend(('', 'ms     command window  object  slot  restricted  stage         value',
+                       '------  --------------  ------  ----  ----------  ------------  -----'))
+        for event in observations:
+            phase = bisect_right(OBJECT_SLOTS, event['ms'])
+            label = 'startup/LOOK' if phase == 0 else commands[phase - 1]
+            value = (str(event['result']) if event['stage'] == 'gate-return'
+                     else f'0x{event["result"]:03x}')
+            result.append(f'{event["ms"]:>6}  {label[:14]:14}  '
+                          f'0x{event["object"]:03x}   {event["slot"]:>3}      '
+                          f'{event["restricted"]:>4}      '
+                          f'{event["stage"]:12}  {value}')
     result.append('Rows group observations in scheduled input windows; a returned child ID '
                   'does not prove parser visibility or action success. '
                   'The gate is only called on restricted traversals.')
@@ -113,11 +137,14 @@ def main():
                         'defaults to the objects scenario')
     parser.add_argument('--object', type=lambda value: int(value, 0),
                         help='filter to an object ID, e.g. 0x124 for the drawer')
+    parser.add_argument('--details', action='store_true',
+                        help='show each verified gate and child return with its guest timestamp')
     args = parser.parse_args()
     try:
         commands = (parse_sequence(args.commands) if args.commands is not None
                     else DEFAULT_OBJECT_COMMANDS)
-        print(summarize(args.trace.read_text().splitlines(), commands, args.object))
+        print(summarize(args.trace.read_text().splitlines(), commands, args.object,
+                        details=args.details))
     except (OSError, ValueError) as error:
         parser.error(str(error))
 

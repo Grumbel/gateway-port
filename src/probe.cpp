@@ -572,13 +572,17 @@ void trace_entry(uc_engine *uc, std::uint64_t address, std::uint32_t, void *opaq
                                address == 0x10075 ? "child-call" : "child-return";
             std::array<std::uint8_t, 5> code{};
             check(uc_mem_read(uc, address, code.data(), code.size()));
+            // The far CALL segment immediate (bytes 3–4) can be rewritten by
+            // the game's loader and differ from the original 0385/0157 value.
+            // Validate opcode and target offset instead, retaining the full
+            // instruction signature for non-relocated return sites.
             const bool matched =
-                (address == 0x10063 && code == std::array<std::uint8_t, 5>{
-                     0x9a, 0x9a, 0x0a, 0x85, 0x03}) ||
+                (address == 0x10063 && code[0] == 0x9a && code[1] == 0x9a &&
+                 code[2] == 0x0a) ||
                 (address == 0x10068 && code == std::array<std::uint8_t, 5>{
                      0x83, 0xc4, 0x04, 0x0b, 0xc0}) ||
-                (address == 0x10075 && code == std::array<std::uint8_t, 5>{
-                     0x9a, 0x25, 0x08, 0x57, 0x01}) ||
+                (address == 0x10075 && code[0] == 0x9a && code[1] == 0x25 &&
+                 code[2] == 0x08) ||
                 (address == 0x1007a && code == std::array<std::uint8_t, 5>{
                      0x83, 0xc4, 0x04, 0x89, 0x46});
             out << " visibility_stage=" << stage;
@@ -592,6 +596,10 @@ void trace_entry(uc_engine *uc, std::uint64_t address, std::uint32_t, void *opaq
                 out << " visibility_object=" << local(std::uint16_t(current_bp - 0x50))
                     << " visibility_slot=" << local(std::uint16_t(current_bp - 4))
                     << " visibility_restricted=" << local(std::uint16_t(current_bp + 0x0c));
+                if (address == 0x10063 || address == 0x10075)
+                    out << " visibility_target="
+                        << std::uint16_t(code[3] | (unsigned(code[4]) << 8))
+                        << ':' << std::uint16_t(code[1] | (unsigned(code[2]) << 8));
                 if (address == 0x10068)
                     out << " visibility_result=" << reg(uc, UC_X86_REG_AX);
                 if (address == 0x1007a)
