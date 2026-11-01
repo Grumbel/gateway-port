@@ -6,7 +6,12 @@ bool Pit::speaker_output(std::uint64_t ticks) const {
     const auto &c = channels_[2];
     if (!(speaker_control_ & 1))
         return true;
-    const auto phase = (c.reload - c.remaining + ticks) % c.reload;
+    const auto elapsed = c.reload - c.remaining + ticks;
+    if (c.mode == 0 || c.mode == 1)
+        return c.terminal || elapsed >= c.reload;
+    if (c.mode == 4 || c.mode == 5)
+        return elapsed != c.reload;
+    const auto phase = elapsed % c.reload;
     return c.mode == 3 ? phase < (c.reload + 1) / 2 : phase != c.reload - 1;
 }
 void Pit::mix_speaker(std::span<std::int16_t> stereo) {
@@ -46,9 +51,13 @@ void Pit::advance(std::uint64_t microseconds) {
         if (!ticks)
             continue;
         if (ticks >= c.remaining) {
-            if (i == 0)
+            if (i == 0 && !c.terminal)
                 pending_ = true;
-            c.remaining = c.reload - ((ticks - c.remaining) % c.reload);
+            if (c.mode == 0 || c.mode == 1 || c.mode == 4 || c.mode == 5) {
+                c.terminal = true;
+                c.remaining = 1;
+            } else
+                c.remaining = c.reload - ((ticks - c.remaining) % c.reload);
         } else
             c.remaining -= ticks;
     }
@@ -77,10 +86,9 @@ void Pit::out(std::uint16_t port, std::uint8_t value) {
         auto mode = (value >> 1) & 7;
         if (mode >= 6)
             mode -= 4;
-        if (mode != 2 && mode != 3)
-            throw std::runtime_error("unsupported PIT counter mode");
         c.access = access;
         c.mode = mode;
+        c.terminal = false;
         c.high_write = c.high_read = false;
         c.latch_valid = false;
         return;
@@ -103,6 +111,7 @@ void Pit::out(std::uint16_t port, std::uint8_t value) {
     }
     c.reload = c.write ? c.write : 65536;
     c.remaining = c.reload;
+    c.terminal = false;
 }
 std::uint8_t Pit::in(std::uint16_t port) {
     if (port == 0x61)

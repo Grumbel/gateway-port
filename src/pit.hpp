@@ -22,6 +22,7 @@ class Pit {
         std::uint16_t write = 0, latched = 0;
         std::uint8_t access = 3, mode = 3;
         bool high_write = false, high_read = false, latch_valid = false;
+        bool terminal = false;
     };
     std::array<Channel, 3> channels_{};
     std::uint64_t fraction_ = 0;

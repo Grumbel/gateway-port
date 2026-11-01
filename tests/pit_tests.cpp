@@ -32,6 +32,25 @@ int main() {
         pit.out(0x40, 0);
         pit.advance(54000);
         require(!pit.pending(), "zero reload not 65536");
+        // Software-triggered one-shot counter must not retrigger every period.
+        gateway::Pit one_shot;
+        one_shot.out(0x43, 0x30); // channel 0, low/high, mode 0
+        one_shot.out(0x40, 0xa9);
+        one_shot.out(0x40, 4);
+        one_shot.advance(1100);
+        require(one_shot.pending(), "mode 0 terminal interrupt missing");
+        one_shot.acknowledge();
+        one_shot.advance(2000);
+        require(!one_shot.pending(), "mode 0 retriggered after terminal count");
+        // Also accept the standard hardware-triggered and strobe modes.
+        for (unsigned mode : {1u, 4u, 5u}) {
+            one_shot.out(0x43, 0x30 | (mode << 1));
+            one_shot.out(0x40, 0xa9);
+            one_shot.out(0x40, 4);
+            one_shot.advance(1200);
+            require(one_shot.pending(), "PIT one-shot/strobe mode not accepted");
+            one_shot.acknowledge();
+        }
         gateway::Pit speaker;
         speaker.out(0x43, 0xb6);
         speaker.out(0x42, 0xa9);

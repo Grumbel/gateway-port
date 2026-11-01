@@ -154,6 +154,19 @@ AH=05h AL=01h` in the same graphics mode; BIOS page selection now updates
 the planar display start address and the BIOS data area for graphics pages,
 not only text pages. Unit checks cover palette mapping and page visibility.
 
+The intro trace for 101 subsequently stops on `unsupported PIT counter mode`.
+The PIT now accepts the standard binary counter modes 0–5, including one-shot
+and software-strobe counter expiration, instead of accepting only periodic
+modes 2/3. Trigger semantics for hardware-triggered modes 1/5 remain a
+simplification; audio and intro timing still require live comparison.
+
+A user screenshot of the 201 intro shows a vertically split/misaligned planar
+picture after graphics page switching. The renderer previously treated VGA
+CRTC display-start registers as *byte* addresses, while planar graphics modes
+normally use *word* addresses. The rendered offset and BIOS page-start
+programming now use consistent 2-byte units. This is a concrete addressing
+bug fix, but visual confirmation in the complete runtime is still pending.
+
 - Colors have not been compared with the running games under DOSBox.
 - Spellcasting 101 and 201 mono entries are shown as black and white.
 - Some Spellcasting 101 1-bit entries, such as `S101_C2` #19 and #40, look like

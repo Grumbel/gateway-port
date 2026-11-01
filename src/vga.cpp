@@ -210,7 +210,7 @@ void Vga::draw_glyph(unsigned column, unsigned row, std::span<const std::uint8_t
                      std::uint8_t attribute) {
     if (mode_ == 3 || mode_ == 0x13)
         throw std::runtime_error("unsupported BIOS glyph mode");
-    const auto start = (std::uint16_t(crtc_[0x0c]) << 8) | crtc_[0x0d];
+    const auto start = ((std::uint16_t(crtc_[0x0c]) << 8) | crtc_[0x0d]) * 2u;
     const auto stride = unsigned(crtc_[0x13]) * 2;
     for (unsigned y = 0; y < bitmap.size(); ++y)
         for (unsigned x = 0; x < 8; ++x) {
@@ -257,7 +257,8 @@ void Vga::graphics_page(unsigned page) {
     if (page >= 65536 / bytes_per_page)
         throw std::runtime_error("invalid graphics page");
     graphics_page_ = page;
-    const unsigned start = page * bytes_per_page;
+    // Planar modes use CRTC word addresses. Mode 13h only has one page.
+    const unsigned start = page * bytes_per_page / 2;
     crtc_[0x0c] = start >> 8;
     crtc_[0x0d] = start;
 }
@@ -274,7 +275,8 @@ void Vga::palette(std::uint16_t index, std::uint8_t r, std::uint8_t g, std::uint
 }
 std::vector<std::uint32_t> Vga::pixels() const {
     std::vector<std::uint32_t> output(width() * height());
-    const auto start = (std::uint16_t(crtc_[0x0c]) << 8) | crtc_[0x0d];
+    const auto crtc_start = (std::uint16_t(crtc_[0x0c]) << 8) | crtc_[0x0d];
+    const auto start = mode_ == 0x13 ? crtc_start : crtc_start * 2u;
     const auto stride = unsigned(crtc_[0x13]) * (mode_ == 0x13 ? 8 : 2);
     for (int y = 0; y < height(); ++y)
         for (int x = 0; x < width(); ++x) {
