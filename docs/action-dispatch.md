@@ -132,6 +132,25 @@ The order and predicates of these **inner branches** are directly visible in
 the original x86 instructions; entry paths and the meanings of properties
 `0x0e` and `0x23` have not been proven across different objects.
 
+The independent `StoryModel::evaluate_normal_open_close()` now mirrors these
+read-only tests. It reports an ordinary-path guard result without modifying
+the object, printing text, or claiming the full DOS command is permitted:
+
+| Result | OPEN predicate (first match wins) | CLOSE predicate (first match wins) |
+| --- | --- | --- |
+| Already open | `0x0c` set | — |
+| Cannot operate | `0x0e` unset (after other checks) | `0x0e` unset |
+| Blocked | `0x23` set (after already-open) | `0x23` set (after `0x0e`) |
+| Already closed | — | `0x0c` unset (after other checks) |
+| Allowed in this **inner branch** | `0x0c` unset, `0x23` unset, `0x0e` set | `0x0e` set, `0x23` unset, `0x0c` set |
+
+The different predicate orders are intentional: an object with both `0x0c`
+and `0x23` takes OPEN's *already open* branch, but CLOSE's *blocked* branch
+if `0x0e` is present. These contradictory combinations are regression-tested
+against the actual instruction ordering at OVL `0xea65–0xeaf7` and
+`0xd706–0xd79b`, not observed game text. The naming of the guard results is
+provisional, and the model does **not** emulate the earlier special paths.
+
 ### Next shared actions to decompile
 
 The other three actions also use the known section-5 image. Static inspection
@@ -379,6 +398,45 @@ and `0x07` are persistent across close/reopen and take/drop cycles. That is
 strong evidence for the earlier *interacted with* / *seen* interpretations,
 but the full property semantics and initial-state rules remain unknown.
 
+### Run several action experiments in one batch
+
+Instead of manually running and summarizing one sequence at a time, use:
+
+```sh
+gateway-build
+python3 tools/run_action_matrix.py --list
+python3 tools/run_action_matrix.py --output build/action-matrix-001
+```
+
+This replays six independent first-room scenarios: baseline, the proven
+OPEN/CLOSE/TAKE repeat, two order/guard experiments (`open-twice` and
+`close-first`), a `take-twice` sequence, and a `take-before-open` sequence.
+Every scenario starts in a clean guest state and uses the same initial LOOK,
+seven fixed input slots and the native overlay-verification and state-write
+hooks. The runner invokes `trace_game_logic.py` for each sequence and writes
+`build/action-matrix-001/report.md`, along with the six full `native.trace`
+files, register/memory dumps, framebuffer captures and `driver.log` files.
+Existing output directories are never silently overwritten.
+
+To try a shorter batch, select one or more of the predefined scenarios:
+
+```sh
+python3 tools/run_action_matrix.py --only open-twice,close-first \
+  --output build/action-matrix-guards
+python3 tools/run_action_matrix.py --only take-twice,take-before-open \
+  --dry-run
+```
+
+The report groups verified **changed** object-state writes by guest command
+slot. It retains `(no dispatch observed)` when a command never reaches the
+known dispatcher, and records the dispatch return **without** treating
+`AX=1` as success. A command may fail to parse, fail an earlier special guard,
+or update additional uninstrumented state: absence of a changed write does
+not prove a particular branch. These runs are designed to gather contrasting
+evidence for future interpretation; results must be inspected before adding
+new semantics to the C++ model. Full native replay and comparison against
+multiple scenes remain future work.
+
 ### First standalone C++ state model
 
 `src/story_model.hpp` and `src/story_model.cpp` introduce an **experimental
@@ -398,9 +456,15 @@ the second OPEN and TAKE preserve the persistent flags. It also checks that
 TAKE would clear `0x08` and `0x0a` when they start set, whereas those clear
 operations were redundant in the observed native trace.
 
+The read-only common OPEN/CLOSE guard evaluator above is a **separate** step
+from `apply_success`: it covers the directly disassembled property predicates
+and their order, but it does not authorize calling `apply_success` without
+all other DOS runtime checks. The independent test exercises mutually
+contradictory flags to catch accidental changes to that sequence.
+
 This is **not yet an interpreter or a general action implementation**:
 `apply_success` assumes the original code has already accepted the command.
-Reachability, mode and property guards, object containment/list maintenance,
+Reachability, earlier mode/other-object guards, object containment/list maintenance,
 text output, room scripts and visual disclosure remain outside the model.
 Successful state equivalence in this one replay must not be generalized to
 other objects or Legend games without additional tests.

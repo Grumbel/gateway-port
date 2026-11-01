@@ -3,12 +3,14 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
-from run_action_matrix import SEQUENCES, summarize_trace  # noqa: E402
+from run_action_matrix import SEQUENCES, main, summarize_trace  # noqa: E402
 
 
 class ActionMatrixTests(unittest.TestCase):
@@ -72,6 +74,37 @@ class ActionMatrixTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'lacks state-write annotations'):
             summarize_trace('entry ms=18000 pc=147c0 cs=1476 stack=0,0,0,71,',
                             SEQUENCES['repeat'])
+
+    def test_batch_creates_report_and_retains_native_trace(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'new-batch'
+
+            def replay(command, **_kwargs):
+                target = Path(command[command.index('--output') + 1])
+                target.mkdir(parents=True, exist_ok=True)
+                (target / 'native.trace').write_text('\n'.join([
+                    'entry ms=18392 pc=147c0 cs=1476 stack=0,0,0,71,',
+                    'entry ms=18393 pc=11950 cs=1157 stack=abcd,4661,124,c,',
+                    'object-flag-set ms=18393 object=124 property=c changed=1',
+                    'entry ms=18417 pc=147c5 cs=1476 ax=1 stack=0,0,0,71,',
+                ]))
+                return SimpleNamespace(returncode=0, stdout='native completed\n', stderr='')
+
+            with patch('run_action_matrix.subprocess.run', side_effect=replay) as invoked:
+                self.assertEqual(main(['--only', 'repeat', '--output', str(output)]), 0)
+            self.assertEqual(invoked.call_count, 1)
+            self.assertIn('set(0x124,0x0c)', (output / 'report.md').read_text())
+            self.assertIn('native completed', (output / 'repeat' / 'driver.log').read_text())
+            self.assertTrue((output / 'repeat' / 'native.trace').exists())
+
+    def test_failed_probe_writes_diagnostics_and_partial_report(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'new-batch'
+            failure = SimpleNamespace(returncode=2, stdout='', stderr='stale probe\n')
+            with patch('run_action_matrix.subprocess.run', return_value=failure):
+                self.assertEqual(main(['--only', 'repeat', '--output', str(output)]), 2)
+            self.assertIn('stale probe', (output / 'repeat' / 'driver.log').read_text())
+            self.assertIn('replay failed', (output / 'report.md').read_text())
 
 
 if __name__ == '__main__':

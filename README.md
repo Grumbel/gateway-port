@@ -471,9 +471,24 @@ ctest --test-dir "${GATEWAY_BUILD_DIR:-build}" -R story-model --output-on-failur
 ```
 
 This model is deliberately limited to the *effects of already-successful*
-OPEN, CLOSE, TAKE and DROP commands. It is not a new parser or interpreter;
-the missing action guards, containment updates and story callbacks are
-documented in [action-dispatch.md](docs/action-dispatch.md#first-standalone-c-state-model).
+OPEN, CLOSE, TAKE and DROP commands, plus a read-only reproduction of the
+ordinary OPEN/CLOSE property checks (including their original order). It is
+not a new parser or interpreter; earlier action guards, containment updates
+and story callbacks are documented in
+[action-dispatch.md](docs/action-dispatch.md#first-standalone-c-state-model).
+
+To investigate several action sequences in a single run, after `gateway-build`:
+
+```sh
+python3 tools/run_action_matrix.py --output build/action-matrix-001
+```
+
+The six clean native replays cover ordinary/repeated OPEN, CLOSE, TAKE and
+DROP as well as potentially invalid orders. Each produces a trace; a combined
+`report.md` lists only **verified changed object-state writes** per command.
+It does not infer success from the DOS action return code or assert full
+gameplay equivalence. The runner supports `--list`, `--only`, and `--dry-run`;
+see [action-dispatch.md](docs/action-dispatch.md#run-several-action-experiments-in-one-batch).
 
 RTLink sections and all handler entry file offsets can now be extracted:
 
