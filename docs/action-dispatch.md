@@ -114,7 +114,23 @@ hook also reports the **runtime far pointer actually being called**, if its
 instruction signature matches. This checks our proposed file-to-runtime
 mapping rather than assuming that table entries are callable code.
 
+A subsequent `--native-only` replay from the user **did** reach the callsite
+for both operations: OPEN (`0x71`) entered at 18,392 ms and returned with
+`AX=1` at 18,416 ms; CLOSE (`0x1d`) entered at 34,422 ms and returned with
+`AX=1` at 34,443 ms. The trace contained no `action_code=` or `action_target=`
+and also omitted the newly added `BX`/`CX` fields, so the C++
+`gateway-probe` executable was an older build. The entry hook was accidentally
+installed twice for `147a6` by the Python driver, explaining its duplicate
+lines. Neither result identifies the live far-call destination yet.
+
+The replay script now prefers `$GATEWAY_BUILD_DIR/gateway-probe` under
+`nix develop` (falling back to `build/gateway-probe` elsewhere) and checks the
+binary for the `action_code=` diagnostic before starting. This fails quickly
+with an actionable build instruction instead of silently producing another
+trace without the necessary fields.
+
 ```sh
+gateway-build  # in nix develop; builds $GATEWAY_BUILD_DIR/gateway-probe
 python3 tools/trace_game_logic.py --scenario objects --native-only \
   --verify-overlays --output build/action-dispatch-check
 rg '^entry .*pc=(147a6|147c0|147c5)\b' build/action-dispatch-check/native.trace \

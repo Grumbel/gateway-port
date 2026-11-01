@@ -2,12 +2,14 @@
 """Compare native and experimental object-state HLE with external Gateway assets."""
 import argparse
 import hashlib
+import os
 import pathlib
 import subprocess
 from inspect_object_state import inspect_objects
 
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument('--probe', type=pathlib.Path, default=pathlib.Path('build/gateway-probe'))
+parser.add_argument('--probe', type=pathlib.Path,
+                    default=pathlib.Path(os.environ.get('GATEWAY_BUILD_DIR', 'build')) / 'gateway-probe')
 parser.add_argument('--data', type=pathlib.Path, default=pathlib.Path('../gateway-dos'))
 parser.add_argument('--output', type=pathlib.Path, default=pathlib.Path('build/game-logic'))
 parser.add_argument('--scenario', choices=['look', 'drawer', 'objects'], default='look')
@@ -21,6 +23,17 @@ if args.native_only and args.hle_overlays:
     parser.error('--native-only and --hle-overlays cannot be combined')
 if args.hle_overlays:
     args.verify_overlays = True
+# The expected action_code= field is emitted by the C++ gateway-probe, not the
+# Python driver. An old binary accepts --trace-entry but silently omits the
+# new fields, wasting an entire replay and leaving misleading diagnostics.
+if args.scenario in ['drawer', 'objects']:
+    try:
+        probe_bytes = args.probe.read_bytes()
+    except OSError as error:
+        parser.error(f'cannot read {args.probe}: {error}; run gateway-build first')
+    if b' action_code=' not in probe_bytes:
+        parser.error(f'{args.probe} lacks action-dispatch trace support; '
+                     'run gateway-build, or point --probe to the freshly built gateway-probe')
 args.output.mkdir(parents=True, exist_ok=True)
 keys = [(10000, 0x3920), (11000, 0x3920), (12000, 0x3920)]
 keys += [(14000, 0x266c), (14100, 0x186f), (14200, 0x186f),
@@ -55,8 +68,7 @@ for mode in (['native'] if args.native_only else ['native', 'verify', 'hle']):
                     # Check the resident action dispatcher before/after its
                     # indirect far call, not merely the speculative section-7
                     # destinations (which were absent in the objects replay).
-                    '--trace-entry', '147a6', '--trace-entry', '147c0',
-                    '--trace-entry', '147c5']
+                    '--trace-entry', '147c0', '--trace-entry', '147c5']
     for time, key in sorted(keys):
         command += ['--key-at', f'{time}:{key:04x}']
     if args.verify_overlays:
