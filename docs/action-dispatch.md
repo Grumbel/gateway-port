@@ -8,9 +8,23 @@ offsets**, not loaded CS:IP addresses.
 
 ## What the live action table actually points to
 
-The action dispatcher at `1476:0046` selects six-byte records from the table
-whose segment is stored at `[DS:8da8]`. The record begins at
-`0x28 + 6*action_id`. It contains a far pointer and an unclassified word.
+The action dispatcher at `1476:0046` selects entries from the table whose
+segment is stored at `[DS:8da8]`. Two adjacent resident functions in the
+original EXE establish *different accesses* to the same six-byte stride:
+
+- At original `GATEMAIN.EXE` file offset `0x5956`, a function indexes
+  `ES:[0x27 + 6*action_id]` as a **byte**, then treats its nonzero value as
+  a selector into another four-byte far-pointer table at the beginning of ES.
+- At file offset `0x5994`, a second function indexes
+  `ES:[0x28 + 6*action_id]` as a **far pointer**, then issues an indirect far
+  `CALL`. The latter function corresponds to the observed `1476:0046`
+  dispatcher; the call instruction is expected at runtime `1476:0060`.
+
+The old inspector reported a third `u16` at `0x2c + 6*action_id`, labelled
+`other`. **This was a misread:** that word combines the trailing byte of the
+current entry with the selector byte of the *next* entry. The revised inspector
+displays `selector` and `trailer` as separate, unclassified bytes, and no
+longer implies there is a third word in a six-byte action record.
 The `look` action `0x5f` points directly to resident code at `148e:0b90`.
 The other five actions exercised in the replay instead point into the RTLink
 manager segment `2c24`.
@@ -49,8 +63,8 @@ section directory. They identify **referenced code**, not necessarily the
 shared implementation that actually performs the requested operation. The
 contents demonstrate why that distinction matters: the candidate target at
 `0x14e47` discusses drinking, while the one at `0x15b61` discusses beds and
-sleeping. Neither resembles a general drawer open/close routine. The pointer
-table's extra word is not understood and could affect dispatch. An action
+sleeping. Neither resembles a general drawer open/close routine. The roles of
+the selector and trailing bytes are not fully understood. An action
 reference alone does not establish which branch was executed, whether it ran
 before/after generic handling, or which service ultimately changed the world
 state.
@@ -79,23 +93,40 @@ each to its original overlay file offset using the manifest. It leaves the
 resident `look` action as a direct pointer. Do not disassemble at the `2c24`
 table pointer: it is metadata, not the first instruction of the action handler.
 
-## Next dynamic check
+## Outcome of candidate-target replay, and next dynamic check
 
-`tools/trace_game_logic.py --scenario objects --services state` now installs
-entry hooks at the observed loaded targets `0x47307` (close reference) and
-`0x48021` (open reference), in addition to the already-confirmed drawer
-handler hook. The presence or absence of entry records at these addresses in
-a native replay helps determine whether the references execute during the
-two tested commands. Overlay residency can change; use
-`--verify-overlays` and check `overlay-load` records before attributing a
-hit to a specific on-disk section. A non-hit is evidence only for that bounded
-replay, not proof that the referenced routine is unreachable.
+The user ran `--scenario objects --services state --verify-overlays` with
+the initial two candidate hooks, and **neither target was entered**. All three
+replays completed with 187 verified loads across nine sections, identical
+734-object state, service-call sequences, and framebuffer hashes. The
+verified loaded sections were `0–5`, `37`, `38` and `56`; **section 7 never
+loaded**. Its `0x47307` and `0x48021` addresses are not reliable function
+entry points in that execution. A successful OPEN/CLOSE therefore need not
+pass through the two inferred section-7 bodies. We cannot yet tell whether
+the far pointers themselves are replaced at dispatch time, whether a separate
+selector path is used, or precisely where the shared OPEN/CLOSE state change
+is implemented.
+
+The next native replay instead hooks `1476:0046` (entry), `1476:0060`
+(expected `call far es:[bx+28]`), and `1476:0065` (expected post-call). The
+research trace records live opcode bytes at these addresses; the callsite
+hook also reports the **runtime far pointer actually being called**, if its
+instruction signature matches. This checks our proposed file-to-runtime
+mapping rather than assuming that table entries are callable code.
 
 ```sh
-python3 tools/trace_game_logic.py --scenario objects --services state \
-  --verify-overlays --output build/action-reference-check
-rg '^entry .*pc=(47307|48021)\b' build/action-reference-check/native.trace
+python3 tools/trace_game_logic.py --scenario objects --native-only \
+  --verify-overlays --output build/action-dispatch-check
+rg '^entry .*pc=(147a6|147c0|147c5)\b' build/action-dispatch-check/native.trace \
+  | rg 'ms=(18[0-9]{3}|34[0-9]{3})\b'
 ```
+
+Inspect `action_code=` at entry/call/return and `action_target=` at the
+callsite, particularly around `open drawer` at 18,392 ms and `close drawer`
+at 34,422 ms. An absent hook or unexpected opcode is a useful result: the
+file-to-memory mapping must then be corrected before naming any handler.
+`--native-only` avoids rerunning verification/HLE during this diagnostic;
+omit it to repeat the full three-way regression check.
 
 To build a replacement action layer, we still need the dispatcher path that
 handles an object's **unhandled** result. Opening and closing the drawer both

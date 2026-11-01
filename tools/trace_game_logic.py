@@ -14,7 +14,11 @@ parser.add_argument('--scenario', choices=['look', 'drawer', 'objects'], default
 parser.add_argument('--services', choices=['flags', 'state'], default='flags')
 parser.add_argument('--verify-overlays', action='store_true')
 parser.add_argument('--hle-overlays', action='store_true', help='host section loading in HLE mode')
+parser.add_argument('--native-only', action='store_true',
+                    help='collect a quick native trace without the two comparison replays')
 args = parser.parse_args()
+if args.native_only and args.hle_overlays:
+    parser.error('--native-only and --hle-overlays cannot be combined')
 if args.hle_overlays:
     args.verify_overlays = True
 args.output.mkdir(parents=True, exist_ok=True)
@@ -37,7 +41,7 @@ hashes = []
 service_sequences = []
 object_states = []
 overlay_sequences = []
-for mode in ['native', 'verify', 'hle']:
+for mode in (['native'] if args.native_only else ['native', 'verify', 'hle']):
     prefix = args.output / mode
     command = [str(args.probe.resolve()), str(args.data.resolve() / 'GATE.EXE'),
                '--press', 'escape', '--state-dir', str(args.output / (mode + '-state')),
@@ -48,9 +52,11 @@ for mode in ['native', 'verify', 'hle']:
     if args.scenario in ['drawer', 'objects']:
         command += ['--trace-entry', '49db5', '--trace-entry', '4a378',
                     '--trace-entry', '4a390',
-                    # Runtime targets of the 2c24 RTLink action references.
-                    # A hook firing does not itself prove which section is resident.
-                    '--trace-entry', '47307', '--trace-entry', '48021']
+                    # Check the resident action dispatcher before/after its
+                    # indirect far call, not merely the speculative section-7
+                    # destinations (which were absent in the objects replay).
+                    '--trace-entry', '147a6', '--trace-entry', '147c0',
+                    '--trace-entry', '147c5']
     for time, key in sorted(keys):
         command += ['--key-at', f'{time}:{key:04x}']
     if args.verify_overlays:
@@ -100,6 +106,9 @@ for mode in ['native', 'verify', 'hle']:
     regs = dict(line.split('=') for line in prefix.with_suffix('.regs').read_text().splitlines())
     object_states.append(inspect_objects(prefix.with_suffix('.bin').read_bytes(), int(regs['DS'], 16)))
     print(f'{mode} framebuffer SHA-256: {digest}')
+if args.native_only:
+    print('Native trace complete; no verification/HLE equivalence was tested.')
+    raise SystemExit(0)
 if args.verify_overlays and not overlay_sequences[0] == overlay_sequences[1] == overlay_sequences[2]:
     raise RuntimeError('native, verification and HLE overlay-load sequences differ')
 if object_states[0] != object_states[1] or object_states[0] != object_states[2]:

@@ -525,6 +525,7 @@ void trace_entry(uc_engine *uc, std::uint64_t address, std::uint32_t, void *opaq
         out << "entry ms=" << std::dec << state.elapsed_ms << std::hex << " pc=" << address
             << " cs=" << reg(uc, UC_X86_REG_CS) << " ds=" << reg(uc, UC_X86_REG_DS)
             << " es=" << reg(uc, UC_X86_REG_ES) << " ax=" << reg(uc, UC_X86_REG_AX)
+            << " bx=" << reg(uc, UC_X86_REG_BX) << " cx=" << reg(uc, UC_X86_REG_CX)
             << " dx=" << reg(uc, UC_X86_REG_DX) << " ss=" << reg(uc, UC_X86_REG_SS)
             << " sp=" << reg(uc, UC_X86_REG_SP) << " bp=" << reg(uc, UC_X86_REG_BP) << " stack=";
         const auto base = std::size_t(reg(uc, UC_X86_REG_SS)) * 16;
@@ -542,6 +543,30 @@ void trace_entry(uc_engine *uc, std::uint64_t address, std::uint32_t, void *opaq
             if (words[0] <= bp)
                 break;
             bp = words[0];
+        }
+        // The exact bytes distinguish a real action-dispatch call site from
+        // unrelated code that happens to occupy the same address earlier in
+        // the launcher. The expected 26 ff 9f 28 00 is the original far
+        // indirect CALL through ES:[BX+28] (GATEMAIN.EXE offset 0x59ae).
+        if ((address == 0x147a6 || address == 0x147c0 || address == 0x147c5) &&
+            reg(uc, UC_X86_REG_CS) == 0x1476) {
+            std::array<std::uint8_t, 8> code{};
+            check(uc_mem_read(uc, address, code.data(), code.size()));
+            out << " action_code=";
+            for (const auto byte : code)
+                out << std::setw(2) << std::setfill('0') << unsigned(byte);
+            out << std::setfill(' ');
+            if (address == 0x147c0 && code[0] == 0x26 && code[1] == 0xff &&
+                code[2] == 0x9f && code[3] == 0x28 && code[4] == 0x00) {
+                const auto pointer = std::size_t(reg(uc, UC_X86_REG_ES)) * 16 +
+                                     std::uint16_t(reg(uc, UC_X86_REG_BX) + 0x28);
+                if (pointer + 4 <= 0xa0000) {
+                    std::array<std::uint16_t, 2> target{};
+                    check(uc_mem_read(uc, pointer, target.data(), 4));
+                    out << " action_target=" << target[1] << ':' << target[0];
+                } else
+                    out << " action_probe=pointer-out-of-range";
+            }
         }
         // These two Gateway section-38 handlers receive the event word at
         // far-call stack +4.  Always record it at matching CS:IP, even if the
