@@ -23,7 +23,7 @@ struct PicEntry {
 // Crusher! compression and may update the palette independently of pixel data.
 struct McPicEntry {
     std::uint32_t offset = 0;
-    std::uint32_t compressed_size = 0;
+    std::uint32_t compressed_size = 0; // Stored byte count; may be uncompressed width * height.
     std::uint16_t flags = 0;
     std::uint16_t x = 0;
     std::uint16_t y = 0;
@@ -36,6 +36,8 @@ struct McPicEntry {
 };
 
 std::vector<McPicEntry> parse_mc_pic_directory(std::span<const std::uint8_t> file);
+std::vector<std::uint8_t> decode_mc_pic_pixels(std::span<const std::uint8_t> file,
+                                                const McPicEntry &entry);
 
 struct PicImage {
     int width = 0;

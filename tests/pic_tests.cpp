@@ -104,6 +104,21 @@ void test_mission_critical_directory() {
                 entries[1].width == 2 && entries[1].height == 2 && entries[1].extra == 2 &&
                 entries[1].data_offset == 0x140c,
             "MC positioned animation entry");
+    require(gateway::decode_mc_pic_pixels(file, entries[0]) == Bytes({0xaa, 0xbb}),
+            "MC uses raw image bytes when stored size equals pixel count");
+    require(gateway::decode_mc_pic_pixels(file, entries[1]) == Bytes({0xde, 0xad, 0xbe, 0xef}),
+            "MC raw image with non-palette flags");
+
+    Bytes high_flag = file;
+    high_flag[9] = 1; // The original loader tests only whether the high flag byte is nonzero.
+    const auto alternate = gateway::parse_mc_pic_directory(high_flag);
+    require(alternate[0].palette_size == 6 && alternate[0].data_offset == 0x140a,
+            "MC palette updates with non-ff high flag bytes");
+
+    Bytes trailer = file;
+    trailer.insert(trailer.end(), {0xe1, 0xff, 0x02});
+    require(gateway::parse_mc_pic_directory(trailer).size() == 256,
+            "MC archive permits trailing unindexed data");
 
     Bytes bad = file;
     bad[0x1402] = 7; // Palette byte length must be RGB triples.
@@ -135,6 +150,12 @@ void test_crusher() {
     constant.put(0, 4);
     require(gateway::decode_crusher(constant.bytes(), 4) == Bytes(4, '*'),
             "Crusher fixed-symbol block");
+    gateway::McPicEntry compressed;
+    compressed.compressed_size = static_cast<std::uint32_t>(constant.bytes().size());
+    compressed.width = 2;
+    compressed.height = 2;
+    require(gateway::decode_mc_pic_pixels(constant.bytes(), compressed) == Bytes(4, '*'),
+            "MC dispatches smaller stored streams to Crusher");
     rejects([&] { gateway::decode_crusher(constant.bytes(), 5); },
             "Crusher missing next block accepted");
     rejects([&] { gateway::decode_crusher(constant.bytes(), 3); },

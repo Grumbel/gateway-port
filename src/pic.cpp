@@ -1,3 +1,4 @@
+#include "crusher.hpp"
 #include "pic.hpp"
 #include <array>
 #include <stdexcept>
@@ -290,7 +291,8 @@ std::vector<McPicEntry> parse_mc_pic_directory(Bytes file) {
         if (entry.offset < previous_end || entry.offset > file.size())
             throw std::runtime_error("invalid Mission Critical PIC data offset");
         std::size_t data_at = entry.offset;
-        if (entry.flags == 0xff00) {
+        // MISSION.EXE checks the high *byte*, not the exact value 0xff00 (0x855cc).
+        if (entry.flags & 0xff00) {
             entry.palette_start = u16(file, data_at);
             entry.palette_size = u16(file, data_at + 2);
             data_at += 4;
@@ -305,9 +307,19 @@ std::vector<McPicEntry> parse_mc_pic_directory(Bytes file) {
         previous_end = data_at + entry.compressed_size;
         entries.push_back(entry);
     }
-    if (previous_end != file.size())
-        throw std::runtime_error("Mission Critical PIC data does not end at EOF");
+    // The game's loader seeks to each record's offset; it never assumes that the final
+    // record ends at EOF. Extra bytes after the last indexed record are allowed.
     return entries;
+}
+
+std::vector<std::uint8_t> decode_mc_pic_pixels(Bytes file, const McPicEntry &entry) {
+    const std::size_t pixels = static_cast<std::size_t>(entry.width) * entry.height;
+    const auto payload = bytes_at(file, entry.data_offset, entry.compressed_size);
+    // MISSION.EXE compares width*height with the stored data size before invoking Crusher!
+    // (0x85a52-0x85ac0). If equal, the bytes are already raw palette indices.
+    if (entry.compressed_size == pixels)
+        return {payload.begin(), payload.end()};
+    return decode_crusher(payload, pixels);
 }
 
 std::vector<std::uint8_t> explode_dcl(Bytes data, std::size_t max_size) {
