@@ -984,11 +984,14 @@ if (new_parent) {
 
 The two unlink cases are visible at OVL `0xc869–0xc87e` (head) and
 `0xc883–0xc8b6` (middle). The new-head insertion is at `0xc8de–0xc90b`.
-`StoryLinkedChildren` now models this **type-2 subset** independently of
-`StoryModel`'s parser candidate filter; synthetic tests cover head and middle
-unlinking, destination insertion, repeated moves and malformed sibling cycles.
-The broader helper supports additional record types, and type-2 modeling
-does not establish their behavior, permission checks, or command admission.
+`StoryLinkedChildren` now models the **logical head/sibling operations**
+independently of `StoryModel`'s parser candidate filter; synthetic tests cover
+head and middle unlinking, destination insertion, repeated moves and malformed
+sibling cycles. It is type-agnostic in memory and is **not** a replacement for
+the original per-type field accessors. Its read-only `children()` method checks
+each sibling's location and slot, and its move operation rejects malformed
+chains or invalid destinations before mutating host state. These are deliberate
+modern-engine safeguards that the original DOS code does not implement.
 
 #### All child-head setters in the repeated-action replay
 
@@ -1009,7 +1012,19 @@ original direct far call at OVL `0xc879`. At insertion it returns to
 room's restored head when the book is removed again, consistent with the
 original sibling-linked-list algorithm; it is **not** an inexplicable new
 child or a second room slot. Its name and its place in the complete room
-chain should be checked in a saved native snapshot.
+chain are independently exposed by the subsequent saved snapshot below.
+
+The supplied final snapshot now resolves `0x175` as **picture** and confirms
+that the room (`0x0ee`) is type 1 with one indexed child head. The picture and
+plant are type 8, the subsequent furniture is type 2, and the player is type 7.
+The player has book in child slot 0 and boots/badges/coverall in child slot 1;
+desk and commset contain additional nested objects. See
+[the complete ordered hierarchy](object-state.md#decoded-your-quarters-hierarchy-from-the-supplied-native-replay).
+The standalone model now tests this exact mixed-type logical structure,
+round-tripping DROP/TAKE to restore the room's picture head. A *synthetic*
+move of the commset from the **middle** of that list checks the model's splice
+operation, but no corresponding native execution of the middle-sibling
+branch has yet been captured.
 
 Four additional identical unlink/insert pairs during startup at 5,408–5,409
 ms assign `0x161[0] → 0`, then `0x161[0] → 0x16d`. They establish use of

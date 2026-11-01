@@ -570,9 +570,17 @@ byte-verified unlink/insert callsites and reports the inferred move. The
 repeated first-room replay now shows the book moving drawer → inventory →
 room → inventory. The second TAKE restores room head **`0x175`**, evidence
 that a head word points into a sibling chain rather than representing the
-room's entire object list. `inspect_object_state.py` now exports original
+room's entire object list. The saved native snapshot confirms that `0x175`
+is the **picture**, followed by the plant, furniture, desk and player, and
+that the book is once again inside the player. `inspect_object_state.py` now
+exports original
 `child_slot`/`next_sibling` fields; `tools/inspect_child_chains.py` follows
 complete ordered child lists from a snapshot and checks inconsistent links.
+Its `--audit` option scans every decoded container for dangling children,
+metadata disagreements, repeated references and cycles. The C++ linked-child
+research model now tests the actual mixed-type room hierarchy (type 1 room,
+type 8 picture/plant, type 2 furniture, type 7 player), including the
+picture-head restoration after DROP/TAKE.
 See [the child-list writer research](docs/action-dispatch.md#identify-the-native-child-list-writer)
 for the commands, mapped calls, and the distinction between observed writes
 and verified changes. See [snapshot child-chain inspection](docs/object-state.md#enumerating-siblings-instead-of-just-child-heads)

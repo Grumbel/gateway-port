@@ -120,11 +120,11 @@ private:
               StoryObjectId destination);
 };
 
-// Research-only representation of the *type-2* child-head and sibling fields.
-// The common GATEMAIN.OVL move helper at file 0xc830 uses these links, rather
-// than deriving the child list from every object's direct location. The DOS
-// routine also works with other record types; this bounded model deliberately
-// does not claim to implement their layouts, permission checks or parser.
+// Research-only, type-agnostic representation of *decoded* child-head and
+// sibling links. The observed room is type 1, its inventory-holder is type 7,
+// and its head/sibling chain includes type 8 and type 2 objects. Native field
+// offsets are decoded separately by inspect_object_state.py; this model does
+// not claim to implement every DOS type accessor, permission check or parser.
 class StoryLinkedChildren {
 public:
     void define(StoryObjectId object, std::uint16_t child_slots,
@@ -136,11 +136,14 @@ public:
     StoryObjectId location(StoryObjectId object) const;
     std::uint8_t slot(StoryObjectId object) const;
     std::vector<StoryObjectId> heads(StoryObjectId parent) const;
+    // Expand one complete sibling chain and check the children's location/
+    // slot metadata. Reject dangling IDs and malformed cycles.
+    std::vector<StoryObjectId> children(StoryObjectId parent, std::uint16_t slot) const;
 
-    // For type-2 objects only, emulate GATEMAIN.OVL file 0xc830:
+    // Emulate the logical, observed head/sibling path of OVL file 0xc830:
     // unlink from old parent's chain, assign location and slot, then insert
     // at the front of the new parent's chain. Zero destination detaches.
-    // The original lacks cycle guards; ours rejects malformed cycles.
+    // The original lacks these safety guards; ours rejects invalid chains.
     void move(StoryObjectId object, StoryObjectId destination, std::uint8_t slot);
 
 private:

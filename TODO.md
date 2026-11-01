@@ -47,9 +47,13 @@ emulation. Keep the original executable as a behavioral reference while mapping:
   all-setter replay establish drawer → player → room → player head updates;
   removing book from the room restores head `0x175` (its next sibling).
   The snapshot exporter and `inspect_child_chains.py` now decode ordered
-  child/sibling lists. Next compare actual post-action room/player chains,
-  capture moves of non-head siblings and nested objects, extend to other
-  record types, and establish which callers enable the gate's
+  child/sibling lists. The native snapshot identifies `0x175` as the picture,
+  and reconstructs a mixed-type room → desk/drawer, commset and inventory
+  tree. The research model reproduces these final links and DROP/TAKE head
+  transitions; its non-head move test remains synthetic. Next run the new
+  `inspect_child_chains.py --audit` on all 734 native records, trace actual
+  non-head sibling moves and nested-object moves, extend to other record
+  types, and establish which callers enable the gate's
   restriction parameter.
   The child accessor (`0157:0825`) is distinct
   from DROP's recursive relationship helper (`0157:00c5`); both are decoded,

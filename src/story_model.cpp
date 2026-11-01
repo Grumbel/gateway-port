@@ -1,4 +1,5 @@
 #include "story_model.hpp"
+#include <algorithm>
 #include <stdexcept>
 
 namespace gateway {
@@ -229,13 +230,41 @@ std::vector<StoryObjectId> StoryLinkedChildren::heads(StoryObjectId parent) cons
     return nodes_.at(parent).heads;
 }
 
+std::vector<StoryObjectId> StoryLinkedChildren::children(StoryObjectId parent,
+                                                        std::uint16_t child_slot) const {
+    const auto &record = nodes_.at(parent);
+    const auto first = record.heads.at(child_slot);
+    std::vector<StoryObjectId> result;
+    std::set<StoryObjectId> seen;
+    for (auto child = first; child;) {
+        if (!seen.insert(child).second)
+            throw std::logic_error("cyclic native child-sibling list");
+        const auto &node = nodes_.at(child);
+        if (node.location != parent || node.slot != child_slot)
+            throw std::logic_error("inconsistent native child location or slot");
+        result.push_back(child);
+        child = node.next;
+    }
+    return result;
+}
+
 void StoryLinkedChildren::move(StoryObjectId object, StoryObjectId destination,
                                std::uint8_t new_slot) {
     auto &entry = nodes_.at(object);
-    if (destination)
-        (void)nodes_.at(destination);
+    if (destination) {
+        if (destination == object)
+            throw std::logic_error("object cannot contain itself");
+        (void)nodes_.at(destination).heads.at(new_slot);
+    }
     const auto old_parent = entry.location;
     const auto old_slot = entry.slot;
+    // Validate the entire old sibling list *before* making any changes. This
+    // is a host-side safety choice; DOS code does not do this preflight.
+    if (old_parent) {
+        const auto siblings = children(old_parent, old_slot);
+        if (std::find(siblings.begin(), siblings.end(), object) == siblings.end())
+            throw std::logic_error("object absent from its recorded parent chain");
+    }
     const auto old_head = head(old_parent, old_slot);
     if (old_head == object) {
         // OVL 0xc869–0xc87e: replace old head with the removed object's next.
