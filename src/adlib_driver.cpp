@@ -51,6 +51,7 @@ void AdlibDriver::reset() {
     tempo_ = 90;
     ticks_per_beat_ = 32;
     current_tick_ = 0;
+    relative_origin_ = 0;
     active_voice_ = 0;
     next_order_ = played_notes_ = 0;
     events_ = {};
@@ -183,18 +184,18 @@ std::uint16_t AdlibDriver::call(std::uint16_t function, std::span<const std::uin
                                 std::uint16_t ax, std::span<const std::uint8_t> instrument) {
     function &= 255; // SOUND.COM ignores the high byte of SI.
     const auto accepted = [&] { return std::uint16_t((ax & 0xff00) | 0xff); };
-    const auto event = [&](Kind kind, unsigned offset, int value) {
+    const auto event = [&](Kind kind, unsigned offset, int value, bool relative = false) {
         Event item;
         item.kind = kind;
         item.voice = active_voice_;
-        item.tick = ticks(args, offset);
+        item.tick = ticks(args, offset) + (relative ? relative_origin_ : 0);
         item.value = value;
         enqueue(std::move(item));
     };
     switch (function) {
     case 0x00: reset(); break;
     case 0x02:
-        current_tick_ = ticks(args, 0);
+        relative_origin_ = current_tick_ = ticks(args, 0);
         break;
     case 0x03:
         playing_ = word(args, 0) != 0;
@@ -215,11 +216,12 @@ std::uint16_t AdlibDriver::call(std::uint16_t function, std::span<const std::uin
     case 0x08: {
         const auto denominator = word(args, 2);
         const double ratio = denominator ? double(word(args, 0)) / denominator : 0.0;
-        event(Kind::volume, 4, int(std::lround(std::clamp(ratio, 0.0, 1.0) * 65535)));
+        event(Kind::volume, 4, int(std::lround(std::clamp(ratio, 0.0, 1.0) * 65535)),
+              true);
         return accepted();
     }
     case 0x09:
-        event(Kind::tempo, 2, word(args, 0));
+        event(Kind::tempo, 2, word(args, 0), true);
         return accepted();
     case 0x0a: break; // Global transpose is not used by the traced music.
     case 0x0c: active_voice_ = word(args, 0); break;
@@ -248,7 +250,7 @@ std::uint16_t AdlibDriver::call(std::uint16_t function, std::span<const std::uin
         Event item;
         item.kind = Kind::timbre;
         item.voice = active_voice_;
-        item.tick = ticks(args, 4);
+        item.tick = relative_origin_ + ticks(args, 4);
         std::copy_n(instrument.begin(), std::min(instrument.size(), item.patch.size()),
                     item.patch.begin());
         enqueue(std::move(item));
@@ -258,7 +260,8 @@ std::uint16_t AdlibDriver::call(std::uint16_t function, std::span<const std::uin
         const auto denominator = word(args, 4);
         const auto ratio = denominator ? double(std::int16_t(word(args, 2))) /
                                          denominator : 0.0;
-        event(Kind::pitch, 6, int(std::lround(std::clamp(ratio, -1.0, 1.0) * 64)));
+        event(Kind::pitch, 6, int(std::lround(std::clamp(ratio, -1.0, 1.0) * 64)),
+              true);
         return accepted();
     }
     case 0x12: {

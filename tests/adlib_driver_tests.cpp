@@ -58,7 +58,8 @@ int main() {
         std::array<std::uint8_t, 56> patch{};
         init_instrument(patch);
         args = {};
-        word(args, 6, 8);
+        // SetTimbre's timestamp is relative to RelTimeStart, unlike a
+        // PlayNoteDel note timestamp. Zero therefore means absolute beat 8.
         require(driver.call(0x10, args, 0xab01, patch) == 0xabff,
                 "SetTimbre must preserve AH and return AL=FFh");
         args = {};
@@ -123,6 +124,33 @@ int main() {
         require(driver.played_notes() == 1, "tempo change did not advance the note");
         driver.advance(500000);
         require(driver.call(4, args, 0) == 0, "tempo-adjusted score did not finish");
+
+        // A tempo event at relative beat 1 is *not* due at absolute beat 1
+        // when RelTimeStart begins at beat 8. The original TSR adds its
+        // relative-time origin for controller events, but not PlayNoteDel.
+        driver.call(0, args, 0);
+        args = {};
+        word(args, 0, 8);
+        driver.call(0x12, args, 0);
+        word(args, 0, 0);
+        word(args, 2, 8);
+        driver.call(2, args, 0);
+        args = {};
+        word(args, 0, 180);
+        word(args, 4, 1);
+        driver.call(9, args, 0); // relative beat 1 = absolute beat 9
+        args = {};
+        word(args, 2, 0x8000); // absolute beat 9.5
+        word(args, 4, 9);
+        word(args, 8, 10);
+        driver.call(0x0e, args, 0);
+        args = {};
+        word(args, 0, 1);
+        driver.call(3, args, 0);
+        driver.advance(700000);
+        require(driver.played_notes() == 0, "controller time ignored its relative origin");
+        driver.advance(200000);
+        require(driver.played_notes() == 1, "absolute delayed note did not begin");
 
         std::cout << "AdLib SOUND.COM event and OPL synthesis checks passed\n";
     } catch (const std::exception &e) {

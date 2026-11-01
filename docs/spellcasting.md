@@ -279,8 +279,10 @@ calls, 1,045 active-voice selections, and smaller numbers of `08h` volume,
 `10h` timbre, and `11h` pitch events. This confirms that 101 supplies music
 through the AdLib driver, not a Sound Blaster DSP sample stream.
 
-The current `--adlib-driver` queues these events in guest beat time, handles
-tempo changes, translates 56-byte AdLib INS timbres to OPL2 registers, and
+The current `--adlib-driver` queues these events in guest beat time (the TSR's
+controller timestamps are relative to `RelTimeStart`, but delayed note
+timestamps are absolute), handles tempo changes, translates 56-byte AdLib INS
+timbres to OPL2 registers, and
 synthesizes notes through the existing Nuked OPL backend. It includes the
 driver's 11 voices with percussion-mode mapping and returns queue acceptance
 in `AL`. The final diagnostic reports the number of synthesized notes and
