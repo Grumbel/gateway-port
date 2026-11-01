@@ -194,6 +194,18 @@ guest execution at timer edges and preserves millisecond-granularity CLI and
 SDL presentation schedules. A PIT test checks 165–166 distinct interrupts
 in 10 ms. End-to-end title playback still requires verification.
 
+The subsequent runtime report confirmed that the title finishes, but sound
+is slow/distorted and keys do not interrupt playback. The title installs a
+raw IRQ1 handler at `140E:0125` and reads scan codes from keyboard port
+`60h`; forwarding keys solely through BIOS `INT 16h` cannot reach it. The
+runtime now forwards queued keys to a installed IRQ1 handler, supplying the
+scan code at port `60h`, while leaving BIOS-only input unchanged when no
+IRQ1 handler exists. SDL event polling is limited to once per emulated
+millisecond rather than once per high-frequency timer edge. PC-speaker
+sampling also keeps its sample phase across short PIT execution slices,
+tested by comparing a 16-ms bulk render against 60-us steps. Audio quality,
+keypress response, and real-time execution speed need live verification.
+
 - Colors have not been compared with the running games under DOSBox.
 - Spellcasting 101 and 201 mono entries are shown as black and white.
 - Some Spellcasting 101 1-bit entries, such as `S101_C2` #19 and #40, look like

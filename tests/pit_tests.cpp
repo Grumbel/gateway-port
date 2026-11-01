@@ -89,6 +89,20 @@ int main() {
             require(samples[i] == samples[i + 1], "speaker stereo mismatch");
         }
         require(positive && negative, "short beep lost before audio submission");
+        gateway::Pit bulk, sliced;
+        for (auto *timer : {&bulk, &sliced}) {
+            timer->out(0x43, 0xb6);
+            timer->out(0x42, 100);
+            timer->out(0x42, 0);
+            timer->out(0x61, 3);
+        }
+        bulk.advance(16000);
+        for (unsigned elapsed = 0; elapsed < 16000; elapsed += 60)
+            sliced.advance(std::min(60u, 16000 - elapsed));
+        std::array<std::int16_t, 1536> bulk_audio{}, sliced_audio{};
+        bulk.mix_speaker(bulk_audio);
+        sliced.mix_speaker(sliced_audio);
+        require(bulk_audio == sliced_audio, "PC speaker depends on timer slice size");
         speaker.advance(1000);
         samples.fill(0);
         speaker.mix_speaker(samples);

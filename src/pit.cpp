@@ -39,11 +39,17 @@ unsigned Pit::microseconds_until_irq() const {
 void Pit::advance(std::uint64_t microseconds) {
     // Preserve sub-block beeps even if the guest switches the speaker off before
     // the next 16-ms SDL audio submission. Retain at most one presentation block.
-    const auto scaled_audio = microseconds * 48000 + audio_fraction_;
+    const auto initial_audio_fraction = audio_fraction_;
+    const auto scaled_audio = microseconds * 48000 + initial_audio_fraction;
     const auto frames = scaled_audio / 1000000;
     audio_fraction_ = scaled_audio % 1000000;
     for (auto frame = frames > 768 ? frames - 768 : 0; frame < frames; ++frame) {
-        const auto ticks = frame * 1193182 / 48000;
+        // Locate the sample's actual time within this (possibly 60-us) PIT
+        // slice. Restarting the speaker phase at sample zero on every slice
+        // produces severe jitter during high-rate PC-speaker playback.
+        const auto sample_phase = (frame + 1) * 1000000 - initial_audio_fraction;
+        const auto ticks = (sample_phase * 1193182 + fraction_ * 48000) /
+                           (48000ull * 1000000);
         speaker_audio_[audio_next_] =
             (speaker_control_ & 3) == 3 ? (speaker_output(ticks) ? 1800 : -1800) : 0;
         audio_next_ = (audio_next_ + 1) % speaker_audio_.size();

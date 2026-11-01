@@ -106,6 +106,8 @@ struct State {
     std::uint16_t dta_segment = 0x0ff0, dta_offset = 0x80;
     std::uint8_t pending_dos_scan = 0;
     std::deque<std::uint16_t> keys;
+    std::uint8_t keyboard_data = 0;
+    bool keyboard_irq_pending = false;
     std::set<unsigned> polled_services;
     std::uint8_t pic_mask = 0;
     bool irq_in_service = false;
@@ -150,6 +152,10 @@ std::uint32_t port_in(uc_engine *uc, std::uint32_t port, int size, void *opaque)
     try {
         std::uint32_t value = 0;
         for (int i = 0; i < size; ++i) {
+            if (port + i == 0x60) {
+                value |= std::uint32_t(state.keyboard_data) << (8 * i);
+                continue;
+            }
             if (state.pit.handles_port(port + i)) {
                 value |= std::uint32_t(state.pit.in(port + i)) << (8 * i);
                 continue;
@@ -1455,7 +1461,9 @@ int main(int argc, char **argv) {
                 scheduled_keys.erase(scheduled_keys.begin());
             }
 #ifdef GATEWAY_SDL
-            if (host && !host->poll(state.keys, state.mouse, state.vga)) {
+            // Poll once per emulated millisecond, not at every ~60-us PIT edge.
+            if (host && elapsed_us % 1000 == 0 &&
+                !host->poll(state.keys, state.mouse, state.vga)) {
                 requested_stop = true;
                 break;
             }
@@ -1499,6 +1507,24 @@ int main(int argc, char **argv) {
                 state.irq_in_service = true;
                 if (!dispatch(engine.uc, 8))
                     throw std::runtime_error("missing IRQ0 vector");
+            }
+            // Games such as Spellcasting 101 install a raw IRQ1 handler and
+            // read keyboard scan codes from port 60h instead of INT 16h.
+            // Keep ordinary BIOS input queued when no IRQ1 handler exists.
+            std::uint16_t keyboard_vector[2]{};
+            check(uc_mem_read(engine.uc, 9 * 4, keyboard_vector, sizeof(keyboard_vector)));
+            if (!state.keyboard_irq_pending && !state.keys.empty() &&
+                (keyboard_vector[0] || keyboard_vector[1])) {
+                state.keyboard_data = state.keys.front() >> 8;
+                state.keys.pop_front();
+                state.keyboard_irq_pending = true;
+            }
+            if (state.keyboard_irq_pending && !(state.pic_mask & 2) &&
+                !state.irq_in_service && (reg(engine.uc, UC_X86_REG_FLAGS) & 0x200)) {
+                state.irq_in_service = true;
+                if (!dispatch(engine.uc, 9))
+                    throw std::runtime_error("missing IRQ1 vector");
+                state.keyboard_irq_pending = false;
             }
             elapsed_us += slice_us;
 #ifdef GATEWAY_SDL
