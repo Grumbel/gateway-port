@@ -143,6 +143,32 @@ in [action-dispatch.md](action-dispatch.md#resident-recursive-object-relations).
 two requested object IDs. It is intentionally independent of the original
 game's visibility, permission checks, and command parser.
 
+### Separate parser child slots
+
+The parser candidate iterator at `GATEMAIN.EXE` file offset `0x0eba`
+(`1000:0000` in the original replay) uses **another** object accessor,
+`0157:0825` at file `0x2d63`. Its bounds are the **second** byte of the
+three-byte descriptor (`type*3-2`). The JSON exporter therefore includes
+`child_count` and `child_links`, independently of `relation_count` and
+`relation_links`. These are not interchangeable graphs.
+
+| Type | Parser child accessor `0157:0825` |
+| ---: | --- |
+| 1 | Repeats `state[0x0c]` for every slot |
+| 2 | `state[0x14 + 2*slot]` |
+| 3 | Returns zero |
+| 4 | `state[0x0a + 2*slot]` |
+| 5 | `state[0x0c + 2*slot]` |
+| 6 | `state[0x0e + 2*slot]` |
+| 7 | `state[0x12 + 2*slot]` |
+| 8 | Returns zero |
+
+For indexed child lists the exporter rejects records too short for the
+declared slots, preserves zero entries, and does not conflate child traversal
+with the handler-side relation/path test. The iterator also optionally
+filters slots with the separate `0385:0a9a` predicate described in
+[action-dispatch.md](action-dispatch.md#resident-parser-candidate-iterator).
+
 ## State-changing replay
 
 ```sh

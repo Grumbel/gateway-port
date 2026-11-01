@@ -7,6 +7,7 @@ import struct
 
 HANDLER_FIELDS = [0x10, 0x22, 0x0a, 0x12, 0x14, 0x16, 0x1e, 0x16]
 LOCATION_FIELDS = {2: 0x0e, 6: 0x0a, 7: 0x0c, 8: 0x0c}
+CHILD_FIELDS = {1: 0x0c, 2: 0x14, 4: 0x0a, 5: 0x0c, 6: 0x0e, 7: 0x12}
 
 
 def relation_links(kind, count, raw):
@@ -24,6 +25,24 @@ def relation_links(kind, count, raw):
         return list(struct.unpack_from('<' + 'H' * count, raw, 0x0a))
     location = struct.unpack_from('<H', raw, LOCATION_FIELDS[kind])[0]
     return [location] * count
+
+
+def child_links(kind, count, raw):
+    """Decode the separate child accessor EXE 0157:0825 (file 0x2d63).
+
+    Its bounds come from the *second* type-descriptor byte, unlike the
+    recursive relationship accessor. Type 1 repeats one word; other supported
+    kinds hold indexed words. Zero entries are retained, not filtered.
+    """
+    if kind not in CHILD_FIELDS or not count:
+        return []
+    offset = CHILD_FIELDS[kind]
+    length = 2 if kind == 1 else count * 2
+    if offset + length > len(raw):
+        raise ValueError(f'type {kind} child list exceeds object record')
+    if kind == 1:
+        return [struct.unpack_from('<H', raw, offset)[0]] * count
+    return list(struct.unpack_from('<' + 'H' * count, raw, offset))
 
 
 def inspect_objects(memory, ds, names=None):
@@ -52,6 +71,7 @@ def inspect_objects(memory, ds, names=None):
             raise ValueError(f'object {object_id}: unsupported type {kind}')
         offset, segment = pointer(directory, record + 2)
         relation_count = chunk(descriptors, kind * 3 - 3, 1)[0]
+        child_count = chunk(descriptors, kind * 3 - 2, 1)[0]
         size = chunk(descriptors, kind * 3 - 1, 1)[0]
         handler_field = HANDLER_FIELDS[kind - 1]
         if size < handler_field + 2:
@@ -64,7 +84,8 @@ def inspect_objects(memory, ds, names=None):
                     size=size, name_token=word(segment, offset),
                     secondary_name_token=word(segment, offset + 2), handler=handler,
                     raw_state=raw.hex(), relation_count=relation_count,
-                    relation_links=relation_links(kind, relation_count, raw))
+                    relation_links=relation_links(kind, relation_count, raw),
+                    child_count=child_count, child_links=child_links(kind, child_count, raw))
         if names is not None:
             for key, label in [('name_token', 'name'), ('secondary_name_token', 'secondary_name')]:
                 if not item[key]:

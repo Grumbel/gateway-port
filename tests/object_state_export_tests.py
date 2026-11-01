@@ -5,8 +5,8 @@ import sys
 import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'tools'))
-from inspect_object_state import (inspect_objects, map_handler_entries, relation_links,
-                                  HANDLER_FIELDS)
+from inspect_object_state import (child_links, inspect_objects, map_handler_entries,
+                                  relation_links, HANDLER_FIELDS)
 
 
 class ObjectStateExportTests(unittest.TestCase):
@@ -96,6 +96,47 @@ class ObjectStateExportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'relation list exceeds'):
             inspect_objects(self.memory, self.ds)
         self.assertEqual(relation_links(6, 0, b''), [])
+
+    def test_child_links_use_separate_descriptor_slot_count_and_accessor(self):
+        # EXE 0157:0825 uses descriptor byte kind*3-2, not kind*3-3.
+        counts = {1: 4, 2: 4, 3: 3, 4: 3, 5: 4, 6: 4, 7: 4, 8: 3}
+        offsets = {1: 0x0c, 2: 0x14, 4: 0x0a, 5: 0x0c, 6: 0x0e, 7: 0x12}
+        for kind, count in counts.items():
+            self.memory[0x30000 + kind * 3 - 2] = count
+            if kind in offsets:
+                for slot in range(1 if kind == 1 else count):
+                    # Zero in the second slot ensures we don't drop holes.
+                    value = 0 if slot == 1 else (kind << 8) | slot
+                    self.word(0x4000, kind * 0x100 + offsets[kind] + 2 * slot, value)
+        objects = inspect_objects(self.memory, self.ds)
+        for kind, count in counts.items():
+            item = objects[kind - 1]
+            self.assertEqual(item['child_count'], count)
+            if kind in (3, 8):
+                self.assertEqual(item['child_links'], [])
+            elif kind == 1:
+                self.assertEqual(item['child_links'], [0x100] * count)
+            else:
+                self.assertEqual(item['child_links'],
+                                 [0 if slot == 1 else (kind << 8) | slot
+                                  for slot in range(count)])
+            self.assertEqual(item['relation_count'], 0)
+            self.assertEqual(item['relation_links'], [])
+
+    def test_child_slot_bounds_are_checked(self):
+        self.assertEqual(child_links(2, 0, b''), [])
+        self.assertEqual(child_links(3, 100, b''), [])
+        with self.assertRaisesRegex(ValueError, 'child list exceeds'):
+            child_links(2, 9, bytes(36))
+        with self.assertRaisesRegex(ValueError, 'child list exceeds'):
+            child_links(1, 2, bytes(12))
+        with self.assertRaisesRegex(ValueError, 'child list exceeds'):
+            child_links(7, 8, bytes(32))
+        # Type 1 checks only the one word it repeats, not count words.
+        self.assertEqual(child_links(1, 30, bytes(14)), [0] * 30)
+        self.memory[0x30000 + 6 * 3 - 2] = 9  # 0x0e + 18 > 24.
+        with self.assertRaisesRegex(ValueError, 'child list exceeds'):
+            inspect_objects(self.memory, self.ds)
 
     def test_bad_type_handler_size_name_and_pointer_are_rejected(self):
         for address, value in [(0x200c0, 9), (0x30002, 1)]:

@@ -60,6 +60,13 @@ public:
     // original recursive assembly this will not hang on cyclic object data.
     bool follows_relation_path(StoryObjectId source, StoryObjectId wanted) const;
 
+    // EXE 0385:0a9a (file 0x53c4) gates which *child slots* the resident
+    // parser's candidate iterator visits when its restriction flag is set.
+    // Type is the caller's native object type (1–8), slot is zero-based.
+    // This is NOT a complete parser visibility or action-reachability check.
+    bool can_enumerate_child_slot(StoryObjectId object, std::uint8_t type,
+                                  std::uint16_t slot) const;
+
     // Mirrors the verified predicate order at GATEMAIN.OVL 0xea65–0xeb1e
     // (OPEN) and 0xd706–0xd7d4 (CLOSE) on the ordinary inner path only.
     // Does not change state; Allowed is not proof the full DOS command succeeds.

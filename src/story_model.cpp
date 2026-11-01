@@ -62,6 +62,25 @@ bool StoryModel::follows_relation_path(StoryObjectId source, StoryObjectId wante
     return false;
 }
 
+bool StoryModel::can_enumerate_child_slot(StoryObjectId object, std::uint8_t type,
+                                          std::uint16_t slot) const {
+    if (type < 1 || type > 8)
+        throw std::invalid_argument("child-slot predicate requires a valid native object type");
+    // The two kinds bypass all slot and flag checks in the original helper.
+    if (type == 1 || type == 7)
+        return true;
+    switch (slot) {
+    case 0:
+        return flag(object, 0x13) && (flag(object, 0x0c) || flag(object, 0x1f));
+    case 1:
+        return flag(object, 0x1c);
+    case 2:
+        return true;
+    default:
+        return false;
+    }
+}
+
 StoryCarryPrecheck StoryModel::evaluate_carry_precheck(StoryAction action,
                                                        StoryObjectId target,
                                                        StoryObjectId player) const {

@@ -31,6 +31,35 @@ int main() {
         model.initial_flag(room, 0x07);
         model.initial_flag(player, 0x07);
 
+        // Native child-slot eligibility is distinct from relation traversal
+        // and from the action handlers' OPEN/CLOSE guards.
+        if (model.can_enumerate_child_slot(drawer, 2, 0) ||
+            model.can_enumerate_child_slot(drawer, 2, 1) ||
+            !model.can_enumerate_child_slot(drawer, 2, 2) ||
+            model.can_enumerate_child_slot(drawer, 2, 3) ||
+            !model.can_enumerate_child_slot(drawer, 1, 99) ||
+            !model.can_enumerate_child_slot(drawer, 7, 99))
+            throw std::runtime_error("initial parser child-slot predicates differ");
+        model.initial_flag(drawer, 0x13);
+        if (model.can_enumerate_child_slot(drawer, 2, 0))
+            throw std::runtime_error("slot zero ignored closed and opaque flags");
+        model.initial_flag(drawer, 0x1f);
+        if (!model.can_enumerate_child_slot(drawer, 2, 0))
+            throw std::runtime_error("slot zero ignored alternate openness flag");
+        model.initial_flag(drawer, 0x1f, false);
+        model.initial_flag(drawer, 0x1c);
+        if (!model.can_enumerate_child_slot(drawer, 2, 1))
+            throw std::runtime_error("slot one ignored property 0x1c");
+        model.initial_flag(drawer, 0x1c, false);
+        bool invalid_child_type_rejected = false;
+        try {
+            (void)model.can_enumerate_child_slot(drawer, 0, 0);
+        } catch (const std::invalid_argument &) {
+            invalid_child_type_rejected = true;
+        }
+        if (!invalid_child_type_rejected)
+            throw std::runtime_error("invalid native child type was accepted");
+
         if (model.evaluate_normal_open_close(StoryAction::Open, drawer) !=
             StoryNormalGuard::Allowed)
             throw std::runtime_error("closed, openable drawer rejected by normal OPEN guard");
@@ -46,6 +75,8 @@ int main() {
                {{StoryMutationKind::SetFlag, drawer, 0x0c},
                 {StoryMutationKind::SetFlag, drawer, 0x02}},
                "initial OPEN changes incorrect flags");
+        if (!model.can_enumerate_child_slot(drawer, 2, 0))
+            throw std::runtime_error("OPEN did not enable restricted child slot zero");
         if (model.evaluate_normal_open_close(StoryAction::Open, drawer) !=
                 StoryNormalGuard::AlreadyOpen ||
             model.evaluate_normal_open_close(StoryAction::Close, drawer) !=
@@ -57,6 +88,8 @@ int main() {
         expect(model.apply_success(StoryAction::Close, drawer, player, room),
                {{StoryMutationKind::ClearFlag, drawer, 0x0c}},
                "CLOSE did not clear open bit");
+        if (model.can_enumerate_child_slot(drawer, 2, 0))
+            throw std::runtime_error("CLOSE did not disable restricted child slot zero");
         if (model.evaluate_normal_open_close(StoryAction::Close, drawer) !=
             StoryNormalGuard::AlreadyClosed)
             throw std::runtime_error("repeated CLOSE not classified as already closed");
