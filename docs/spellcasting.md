@@ -130,6 +130,15 @@ Sound Blaster DSP's read-data register. Detection code may write to that
 read-only register; this is now treated as harmless in the absent-DSP model.
 These are sequential compatibility fixes, not yet proof of a working game.
 
+The following trace reaches `INT 10h AX=EF00h` in 101. No standard VGA
+definition was established for this service, so it is handled as an unknown
+BIOS extension that leaves registers unchanged; its intended vendor-specific
+behavior is still unknown. In 201 the detection sequence advances to a write
+at port `228h`. Rather than adding each port separately, the runtime models
+the entire unpopulated `220h`–`22Fh` Sound Blaster/Game Blaster I/O window:
+reads return `FFh`, and writes have no effect. This does not emulate any
+digital or CMS audio hardware.
+
 - Colors have not been compared with the running games under DOSBox.
 - Spellcasting 101 and 201 mono entries are shown as black and white.
 - Some Spellcasting 101 1-bit entries, such as `S101_C2` #19 and #40, look like

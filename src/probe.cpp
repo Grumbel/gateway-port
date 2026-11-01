@@ -162,7 +162,7 @@ std::uint32_t port_in(uc_engine *uc, std::uint32_t port, int size, void *opaque)
             }
             // No Sound Blaster DSP is installed. Return an empty/status-high bus
             // on its probe registers so installers can fall back to AdLib.
-            if (port + i == 0x22a || port + i == 0x22c || port + i == 0x22e) {
+            if (port + i >= 0x220 && port + i <= 0x22f) {
                 value |= 0xffu << (8 * i);
                 continue;
             }
@@ -201,12 +201,10 @@ void port_out(uc_engine *uc, std::uint32_t port, int size, std::uint32_t value,
                 state.opl.out(port + i, (value >> (8 * i)) & 255);
                 continue;
             }
-            if (port + i == 0x226 || port + i == 0x22a || port + i == 0x22c ||
-                port + i == 0x22e) {
-                // Sound Blaster DSP probe ports (base 220h). Some detection
-                // routines write even to read-only DSP registers. With no
-                // DSP installed, none of these writes has an effect and there
-                // is no 0xAA reset acknowledgement.
+            if (port + i >= 0x220 && port + i <= 0x22f) {
+                // Absent Sound Blaster/Game Blaster at base 220h. Old
+                // detection code also writes to otherwise read-only ports;
+                // an unpopulated I/O range simply ignores those writes.
                 continue;
             }
             if (!state.vga.handles_port(port + i)) {
@@ -663,6 +661,9 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             // Keep CX nonzero so software detects the adapter as installed.
             set(uc, UC_X86_REG_BX, 0x0003);
             set(uc, UC_X86_REG_CX, 0x0009);
+        } else if (number == 0x10 && ax == 0xef00) {
+            // Nonstandard video BIOS extension queried by Spellcasting 101.
+            // On an ordinary VGA BIOS, unknown functions return unchanged.
         } else if (number == 0x10 && (ax >> 8) == 9) {
             const auto bx = reg(uc, UC_X86_REG_BX);
             const auto page = (bx >> 8) & 7;
