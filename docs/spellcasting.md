@@ -271,6 +271,15 @@ and voice configuration/query calls and reports idle playback status until
 an actual queued-event scheduler exists. This should expose more of 101's
 music call sequence, but will not yet generate music.
 
+The next trace still repeats `SI=10h` (SetTimbre) and `SI=04h` (GetState)
+over nine thousand times. Disassembly of the bundled 7123-byte `SB-SOUND.COM`
+at resident offset `0FD0h` shows why: SetTimbre writes a success flag into
+the saved `AL` slot before returning (`FFh` after accepting an event,
+`00h` before acceptance). A probe that leaves `AL` unchanged is interpreted
+as a permanently full event buffer. The discovery handler now returns
+`AL=FFh` for SetTimbre, preserving `AH`. This is only a queue-acceptance
+contract for tracing; queued event playback and timing are not implemented.
+
 - Colors have not been compared with the running games under DOSBox.
 - Spellcasting 101 and 201 mono entries are shown as black and white.
 - Some Spellcasting 101 1-bit entries, such as `S101_C2` #19 and #40, look like

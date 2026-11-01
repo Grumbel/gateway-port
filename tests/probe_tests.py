@@ -655,6 +655,14 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.memory[0x402:0x406], bytes.fromhex('01000000'))
 
+    def test_adlib_probe_accepts_timbre_event(self):
+        # The original driver reports SetTimbre queue acceptance with AL=FFh.
+        code = bytes.fromhex('b80012bb0000be1000cd65a30003b8004ccd21')
+        result = self.run_guest(code, dump=True, probe_adlib=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(struct.unpack_from('<H', result.memory, 0xff00 + 0x300)[0],
+                         0x12ff)
+
     def test_mode_2_exit_restores_text_display(self):
         # Spellcasting 101 selects 80x25 B/W mode 2 while shutting down.
         result = self.run_guest(bytes.fromhex('b80200cd10b8004ccd21'), dump=True)

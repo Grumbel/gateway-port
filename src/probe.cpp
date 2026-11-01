@@ -1076,6 +1076,12 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
                 state.adlib_mode = state.adlib_voice = 0;
             } else if (function == 4) {
                 set(uc, UC_X86_REG_AX, 0);
+            } else if (function == 0x10) {
+                // The bundled SB-SOUND.COM returns AL=FFh when it accepts a
+                // SetTimbre event (AL=00h if its event buffer is full).
+                // Accept in discovery mode so the game can reveal subsequent
+                // calls; no sound is synthesized from the event yet.
+                set(uc, UC_X86_REG_AX, (ax & 0xff00) | 0xff);
             } else if (function == 6 || function == 0x0c) {
                 std::uint16_t value = 0;
                 check(uc_mem_read(uc, args, &value, sizeof(value)));
