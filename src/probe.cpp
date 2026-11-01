@@ -543,6 +543,33 @@ void trace_entry(uc_engine *uc, std::uint64_t address, std::uint32_t, void *opaq
                 break;
             bp = words[0];
         }
+        // Only these two verified Gateway section-38 handler entries have a
+        // known event argument and command-state pointer.  Opt-in traces can
+        // relate typed input to the native numeric command dispatch without
+        // changing guest execution.  Section code may be absent/replaced at
+        // these linear addresses, so require the expected far-handler prologue.
+        if ((address == 0x49db5 || address == 0x4a378) &&
+            reg(uc, UC_X86_REG_CS) == 0x49d8) {
+            std::array<std::uint8_t, 6> prologue{};
+            check(uc_mem_read(uc, address, prologue.data(), prologue.size()));
+            if (prologue == std::array<std::uint8_t, 6>{0x55, 0x8b, 0xec, 0x8b, 0x46, 0x06}) {
+                std::uint16_t event, command_segment;
+                check(uc_mem_read(uc, base + std::uint16_t(reg(uc, UC_X86_REG_SP) + 4),
+                                  &event, sizeof(event)));
+                const auto ds_base = std::size_t(reg(uc, UC_X86_REG_DS)) * 16;
+                if (ds_base + 0x947a <= 0xa0000) {
+                    check(uc_mem_read(uc, ds_base + 0x9478, &command_segment,
+                                      sizeof(command_segment)));
+                    const auto command_address = std::size_t(command_segment) * 16 + 0xe664;
+                    if (command_address < 0xa0000) {
+                        std::uint8_t command;
+                        check(uc_mem_read(uc, command_address, &command, sizeof(command)));
+                        out << " story_object=" << (address == 0x49db5 ? 0xee : 0x124)
+                            << " story_event=" << event << " story_command=" << unsigned(command);
+                    }
+                }
+            }
+        }
         out << '\n';
         if (!out)
             throw std::runtime_error("cannot write research trace");
