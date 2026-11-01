@@ -107,6 +107,27 @@ class TraceGameLogicTests(unittest.TestCase):
             self.assertIn('lacks candidate-visibility trace support', native.stderr)
             self.assertFalse(output.exists())
 
+    def test_object_write_watch_rejects_wrong_replay_and_stale_probe(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            probe = root / 'gateway-probe'
+            probe.write_bytes(b' action_code= changed= admission_target= visibility_stage=')
+            output = root / 'replay'
+            base = [sys.executable, str(DRIVER), '--scenario', 'objects',
+                    '--trace-object-writes', '124', '--probe', str(probe),
+                    '--output', str(output)]
+            wrong = subprocess.run(base, capture_output=True, text=True)
+            self.assertEqual(wrong.returncode, 2)
+            self.assertIn('requires --native-only --scenario objects', wrong.stderr)
+            invalid = subprocess.run(base + ['--native-only', '--trace-object-writes', '10000'],
+                                     capture_output=True, text=True)
+            self.assertEqual(invalid.returncode, 2)
+            self.assertIn('nonzero 16-bit hex object ID', invalid.stderr)
+            old = subprocess.run(base + ['--native-only'], capture_output=True, text=True)
+            self.assertEqual(old.returncode, 2)
+            self.assertIn('lacks native object-write tracing', old.stderr)
+            self.assertFalse(output.exists())
+
 
 if __name__ == '__main__':
     unittest.main()

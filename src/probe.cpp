@@ -80,6 +80,12 @@ struct State {
     std::array<unsigned, 5> object_service_calls{};
     unsigned object_flags_calls = 0;
     bool object_flags_active = false;
+    std::optional<std::uint16_t> object_service_ds;
+    struct ObjectWriteWatch {
+        std::uint16_t object, kind, offset, segment, size, child_count;
+        std::uint64_t linear;
+    };
+    std::optional<ObjectWriteWatch> object_write_watch;
     struct ObjectVerification {
         std::uint64_t exit;
         std::optional<std::uint16_t> result;
@@ -456,6 +462,7 @@ void object_flags_hook(uc_engine *uc, std::uint64_t address, std::uint32_t, void
         };
         const auto object = word(4);
         const auto ds = reg(uc, UC_X86_REG_DS);
+        state.object_service_ds = ds;
         const auto index = std::size_t(spec - object_services.begin());
         const auto service = static_cast<ObjectService>(index);
         // Location has one argument; do not interpret the next caller stack word as an argument.
@@ -526,6 +533,71 @@ void object_flags_hook(uc_engine *uc, std::uint64_t address, std::uint32_t, void
                                                 result.value_or(reg(uc, UC_X86_REG_AX))};
             check(uc_emu_stop(uc));
         }
+    } catch (const std::exception &e) {
+        hardware_failure(uc, state, e.what());
+    }
+}
+
+// Watch one *native record*, not the object's interpreted location field.
+// The location setter at 0157:064b only writes the object's own state. A
+// child-list change can occur elsewhere, including through an overlay helper.
+// Install this narrow memory hook after object services establish a verified
+// data segment; watching the entire guest address space is prohibitively slow.
+State::ObjectWriteWatch locate_object_write_watch(uc_engine *uc, std::uint16_t ds,
+                                                  std::uint16_t object) {
+    auto byte = [uc](std::uint64_t address) {
+        if (address >= 0xa0000)
+            throw std::runtime_error("watched object address outside conventional memory");
+        std::uint8_t result{};
+        check(uc_mem_read(uc, address, &result, 1));
+        return result;
+    };
+    auto word = [&](std::uint64_t address) {
+        return std::uint16_t(byte(address) | (unsigned(byte(address + 1)) << 8));
+    };
+    const auto data = std::uint64_t(ds) * 16;
+    const auto count = word(std::uint64_t(word(data + 0x8d54)) * 16 + 0x38dc);
+    if (!count || count > 0x8000 || object > count)
+        throw std::runtime_error("watched object not in the live Gateway directory");
+    const auto directory = std::uint64_t(word(data + 0x8d50)) * 16;
+    const auto descriptor = std::uint64_t(word(data + 0x8d52)) * 16;
+    const auto entry = directory + 0xba + std::uint64_t(object) * 6;
+    const auto kind = byte(entry);
+    if (kind < 1 || kind > 8)
+        throw std::runtime_error("watched object has invalid native type");
+    const auto offset = word(entry + 2), segment = word(entry + 4);
+    const auto size = byte(descriptor + kind * 3 - 1);
+    const auto child_count = byte(descriptor + kind * 3 - 2);
+    const auto address = std::uint64_t(segment) * 16 + offset;
+    if (!size || std::uint64_t(offset) + size > 0x10000 || address + size > 0xa0000)
+        throw std::runtime_error("watched object record is outside guest memory");
+    return {object, kind, offset, segment, size, child_count, address};
+}
+
+void object_write_hook(uc_engine *uc, uc_mem_type, std::uint64_t address, int size,
+                       std::int64_t value, void *opaque) noexcept {
+    auto &state = *static_cast<State *>(opaque);
+    try {
+        const auto &watch = *state.object_write_watch;
+        if (size <= 0 || size > 8 || address < watch.linear ||
+            address + size > watch.linear + watch.size)
+            throw std::runtime_error("watched object received an unsupported memory write");
+        std::array<std::uint8_t, 8> before{};
+        check(uc_mem_read(uc, address, before.data(), size));
+        const auto offset = address - watch.linear;
+        auto &out = state.research_trace;
+        out << "object-write ms=" << std::dec << state.elapsed_ms << std::hex
+            << " object=" << watch.object << " pc="
+            << (unsigned(reg(uc, UC_X86_REG_CS)) * 16 + reg(uc, UC_X86_REG_IP))
+            << " cs=" << reg(uc, UC_X86_REG_CS) << " ip=" << reg(uc, UC_X86_REG_IP)
+            << " offset=" << offset << " size=" << size << " before=";
+        for (int i = 0; i < size; ++i)
+            out << std::setw(2) << std::setfill('0') << unsigned(before[i]);
+        out << " value=";
+        for (int i = 0; i < size; ++i)
+            out << std::setw(2) << std::setfill('0') << unsigned((std::uint64_t(value) >>
+                                                                 (i * 8)) & 0xff);
+        out << std::setfill(' ') << '\n';
     } catch (const std::exception &e) {
         hardware_failure(uc, state, e.what());
     }
@@ -609,6 +681,27 @@ void trace_entry(uc_engine *uc, std::uint64_t address, std::uint32_t, void *opaq
                 for (const auto byte : code)
                     out << std::setw(2) << std::setfill('0') << unsigned(byte);
                 out << std::setfill(' ');
+            }
+        }
+        // 0157:08fc / EXE file 0x2e3a: native indexed parser-child setter.
+        // Unlike the direct location setter 0157:064b, this function stores a
+        // word into the object's type-dependent child array. Callers pass
+        // (object, slot, child) as far-call stack words.
+        if (address == 0x11e6c && reg(uc, UC_X86_REG_CS) == 0x1157) {
+            std::array<std::uint8_t, 6> code{};
+            check(uc_mem_read(uc, address, code.data(), code.size()));
+            if (code == std::array<std::uint8_t, 6>{0x55, 0x8b, 0xec, 0x83, 0xec, 0x06}) {
+                auto stack_word = [&](std::uint16_t offset) {
+                    std::uint16_t value{};
+                    check(uc_mem_read(uc, base + std::uint16_t(reg(uc, UC_X86_REG_SP) + offset),
+                                      &value, sizeof(value)));
+                    return value;
+                };
+                out << " child_set_object=" << stack_word(4)
+                    << " child_set_slot=" << stack_word(6)
+                    << " child_set_value=" << stack_word(8);
+            } else {
+                out << " child_set_probe=code-mismatch";
             }
         }
         // A far-call target may be altered during RTLink dispatch. Capture
@@ -1491,6 +1584,7 @@ int main(int argc, char **argv) {
     bool verify_overlays = false, hle_overlays = false, trace_video = false;
     bool trace_timing = false;
     bool probe_adlib = false;
+    std::uint16_t trace_object_writes = 0;
     unsigned aspect_width = 4, aspect_height = 3;
     std::vector<std::uint64_t> entry_addresses;
     std::multimap<unsigned, std::uint16_t> scheduled_keys;
@@ -1503,6 +1597,7 @@ int main(int argc, char **argv) {
                      "[--trace-research FILE --trace-entry HEX ...] [--key-at MS:BIOSHEX ...] "
                      "[--object-flags verify|hle | --object-state verify|hle] [--verify-overlays] "
                      "[--hle-overlays] [--trace-video] [--trace-timing] [--adlib-driver] "
+                     "[--trace-object-writes OBJECT-HEX] "
                      "[--aspect-ratio native|W:H] [--debug-dir DIR]\n";
     };
     if (argc < 2 || std::string(argv[1]) == "--help") {
@@ -1557,7 +1652,18 @@ int main(int argc, char **argv) {
             }
         } else if (option == "--trace-research" && i + 1 < argc)
             research_path = argv[++i];
-        else if (option == "--trace-entry" && i + 1 < argc) {
+        else if (option == "--trace-object-writes" && i + 1 < argc) {
+            const std::string value = argv[++i];
+            unsigned parsed = 0;
+            const auto result =
+                std::from_chars(value.data(), value.data() + value.size(), parsed, 16);
+            if (result.ec != std::errc{} || result.ptr != value.data() + value.size() ||
+                !parsed || parsed > 0xffff) {
+                usage();
+                return 2;
+            }
+            trace_object_writes = static_cast<std::uint16_t>(parsed);
+        } else if (option == "--trace-entry" && i + 1 < argc) {
             const std::string value = argv[++i];
             std::uint64_t address = 0;
             const auto result =
@@ -1650,6 +1756,12 @@ int main(int argc, char **argv) {
     }
     if (!entry_addresses.empty() && research_path.empty()) {
         usage();
+        return 2;
+    }
+    if (trace_object_writes && (research_path.empty() ||
+                                object_flags_mode != "verify" || !object_state_services)) {
+        std::cerr << "--trace-object-writes requires --trace-research and "
+                     "--object-state verify\n";
         return 2;
     }
     try {
@@ -1864,6 +1976,7 @@ int main(int argc, char **argv) {
         uc_hook video_hook;
         check(uc_hook_add(engine.uc, &video_hook, UC_HOOK_MEM_READ | UC_HOOK_MEM_WRITE,
                           reinterpret_cast<void *>(video_memory), &state, 0xa0000, 0xaffff));
+        uc_hook object_write_hook_id{};
 #ifdef GATEWAY_SDL
         std::unique_ptr<gateway::SdlHost> host;
         gateway::DebugOverlayData debug_overlay;
@@ -1881,6 +1994,20 @@ int main(int argc, char **argv) {
         std::uint64_t delivered_irq0 = 0;
         while (true) {
             state.elapsed_ms = elapsed_us / 1000;
+            if (trace_object_writes && !state.object_write_watch &&
+                state.object_service_ds) {
+                state.object_write_watch = locate_object_write_watch(
+                    engine.uc, *state.object_service_ds, trace_object_writes);
+                const auto &watch = *state.object_write_watch;
+                check(uc_hook_add(engine.uc, &object_write_hook_id, UC_HOOK_MEM_WRITE,
+                                  reinterpret_cast<void *>(object_write_hook), &state,
+                                  watch.linear, watch.linear + watch.size - 1));
+                state.research_trace << "object-watch ms=" << std::dec << state.elapsed_ms
+                                     << std::hex << " object=" << watch.object
+                                     << " type=" << watch.kind << " at=" << watch.segment
+                                     << ':' << watch.offset << " size=" << watch.size
+                                     << " child_count=" << watch.child_count << '\n';
+            }
             while (!scheduled_keys.empty() && scheduled_keys.begin()->first <= state.elapsed_ms) {
                 const auto key = scheduled_keys.begin()->second;
                 state.keys.push_back(key);
@@ -2103,6 +2230,8 @@ int main(int argc, char **argv) {
         if (!dump_prefix.empty()) {
             dump_guest(engine.uc, state, dump_prefix);
         }
+        if (trace_object_writes && !state.object_write_watch)
+            throw std::runtime_error("watched Gateway object was never initialized");
         if (state.research_trace.is_open()) {
             state.research_trace.close();
             if (!state.research_trace)
