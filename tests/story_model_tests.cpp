@@ -8,6 +8,7 @@ using gateway::StoryAction;
 using gateway::StoryModel;
 using gateway::StoryMutation;
 using gateway::StoryMutationKind;
+using gateway::StoryNormalGuard;
 
 void expect(std::vector<StoryMutation> actual, std::initializer_list<StoryMutation> expected,
             const char *message) {
@@ -29,6 +30,10 @@ int main() {
         model.initial_flag(room, 0x07);
         model.initial_flag(player, 0x07);
 
+        if (model.evaluate_normal_open_close(StoryAction::Open, drawer) !=
+            StoryNormalGuard::Allowed)
+            throw std::runtime_error("closed, openable drawer rejected by normal OPEN guard");
+
         // First LOOK in the native trace produces no changed writes.
         expect(model.apply_success(StoryAction::Look, room, player, room), {},
                "LOOK should delegate observed objects to the scene");
@@ -40,17 +45,64 @@ int main() {
                {{StoryMutationKind::SetFlag, drawer, 0x0c},
                 {StoryMutationKind::SetFlag, drawer, 0x02}},
                "initial OPEN changes incorrect flags");
+        if (model.evaluate_normal_open_close(StoryAction::Open, drawer) !=
+                StoryNormalGuard::AlreadyOpen ||
+            model.evaluate_normal_open_close(StoryAction::Close, drawer) !=
+                StoryNormalGuard::Allowed)
+            throw std::runtime_error("open drawer guard state incorrect");
         const std::array book_scene{book};
         expect(model.observe(book_scene), {{StoryMutationKind::SetFlag, book, 0x07}},
                "newly exposed book did not become known");
         expect(model.apply_success(StoryAction::Close, drawer, player, room),
                {{StoryMutationKind::ClearFlag, drawer, 0x0c}},
                "CLOSE did not clear open bit");
+        if (model.evaluate_normal_open_close(StoryAction::Close, drawer) !=
+            StoryNormalGuard::AlreadyClosed)
+            throw std::runtime_error("repeated CLOSE not classified as already closed");
 
         // Native repeat run: OPEN again changes only 0x0c, not persistent 0x02/0x07.
         expect(model.apply_success(StoryAction::Open, drawer, player, room),
                {{StoryMutationKind::SetFlag, drawer, 0x0c}},
                "second OPEN modified persistent flags");
+
+        // The native conditionals have different order for OPEN and CLOSE.
+        // This test covers contradictions deliberately, so a future
+        // simplification cannot accidentally reorder the checks.
+        constexpr gateway::StoryObjectId locked = 0x201;
+        model.define(locked);
+        model.initial_flag(locked, 0x23);
+        if (model.evaluate_normal_open_close(StoryAction::Open, locked) !=
+                StoryNormalGuard::Blocked ||
+            model.evaluate_normal_open_close(StoryAction::Close, locked) !=
+                StoryNormalGuard::CannotOperate)
+            throw std::runtime_error("OPEN/CLOSE guard precedence changed");
+        model.initial_flag(locked, 0x0e);
+        if (model.evaluate_normal_open_close(StoryAction::Open, locked) !=
+                StoryNormalGuard::Blocked ||
+            model.evaluate_normal_open_close(StoryAction::Close, locked) !=
+                StoryNormalGuard::Blocked)
+            throw std::runtime_error("blocked object passed normal guard");
+        model.initial_flag(locked, 0x0c);
+        if (model.evaluate_normal_open_close(StoryAction::Open, locked) !=
+                StoryNormalGuard::AlreadyOpen ||
+            model.evaluate_normal_open_close(StoryAction::Close, locked) !=
+                StoryNormalGuard::Blocked)
+            throw std::runtime_error("already-open versus blocked precedence changed");
+        model.initial_flag(locked, 0x23, false);
+        model.initial_flag(locked, 0x0e, false);
+        if (model.evaluate_normal_open_close(StoryAction::Open, locked) !=
+                StoryNormalGuard::AlreadyOpen ||
+            model.evaluate_normal_open_close(StoryAction::Close, locked) !=
+                StoryNormalGuard::CannotOperate)
+            throw std::runtime_error("missing property 0x0e precedence changed");
+        bool rejected_non_open = false;
+        try {
+            (void)model.evaluate_normal_open_close(StoryAction::Take, drawer);
+        } catch (const std::invalid_argument &) {
+            rejected_non_open = true;
+        }
+        if (!rejected_non_open)
+            throw std::runtime_error("normal guard accepted an unrelated action");
         expect(model.observe(book_scene), {}, "already-known book changed on reopen");
         expect(model.apply_success(StoryAction::Take, book, player, room),
                {{StoryMutationKind::SetLocation, book, player},

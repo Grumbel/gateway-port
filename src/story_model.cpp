@@ -23,6 +23,30 @@ std::optional<StoryObjectId> StoryModel::location(StoryObjectId id) const {
     return objects_.at(id).location;
 }
 
+StoryNormalGuard StoryModel::evaluate_normal_open_close(StoryAction action,
+                                                         StoryObjectId target) const {
+    switch (action) {
+    case StoryAction::Open:
+        if (flag(target, 0x0c))
+            return StoryNormalGuard::AlreadyOpen;
+        if (flag(target, 0x23))
+            return StoryNormalGuard::Blocked;
+        if (!flag(target, 0x0e))
+            return StoryNormalGuard::CannotOperate;
+        return StoryNormalGuard::Allowed;
+    case StoryAction::Close:
+        if (!flag(target, 0x0e))
+            return StoryNormalGuard::CannotOperate;
+        if (flag(target, 0x23))
+            return StoryNormalGuard::Blocked;
+        if (!flag(target, 0x0c))
+            return StoryNormalGuard::AlreadyClosed;
+        return StoryNormalGuard::Allowed;
+    default:
+        throw std::invalid_argument("normal OPEN/CLOSE guard requires OPEN or CLOSE");
+    }
+}
+
 void StoryModel::set_flag(std::vector<StoryMutation> &changes, StoryObjectId id,
                           std::uint16_t property, bool value) {
     auto &flags = objects_.at(id).flags;

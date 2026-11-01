@@ -15,6 +15,17 @@ using StoryObjectId = std::uint16_t;
 enum class StoryAction { Look, Open, Close, Take, Drop, Inventory };
 enum class StoryMutationKind { SetFlag, ClearFlag, SetLocation };
 
+// Result of the *inner, common* OPEN/CLOSE guard sequence in Gateway's
+// section-5 handler. The complete DOS action has earlier mode, reachability,
+// special-object and event-handler decisions which are NOT represented here.
+enum class StoryNormalGuard {
+    Allowed,
+    AlreadyOpen,
+    AlreadyClosed,
+    Blocked,
+    CannotOperate,
+};
+
 struct StoryMutation {
     StoryMutationKind kind;
     StoryObjectId object;
@@ -31,6 +42,13 @@ public:
     void initial_flag(StoryObjectId object, std::uint16_t property, bool set = true);
     bool flag(StoryObjectId object, std::uint16_t property) const;
     std::optional<StoryObjectId> location(StoryObjectId object) const;
+
+    // Mirrors the verified predicate order at GATEMAIN.OVL 0xea65–0xeb1e
+    // (OPEN) and 0xd706–0xd7d4 (CLOSE) on the ordinary inner path only.
+    // Does not change state; Allowed is not proof the full DOS command succeeds.
+    // Rejects actions other than Open and Close.
+    StoryNormalGuard evaluate_normal_open_close(StoryAction action,
+                                                StoryObjectId target) const;
 
     // Only the mutations of an already-successful action, as observed for
     // Gateway's first-room drawer/book scenario. The original DOS handlers
