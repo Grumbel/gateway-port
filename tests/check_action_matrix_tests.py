@@ -8,6 +8,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / 'tests' / 'fixtures' / 'gateway-action-matrix.md'
+ADMISSION_FIXTURE = ROOT / 'tests' / 'fixtures' / 'gateway-action-admission.md'
 
 
 class StoryMatrixCheckerTests(unittest.TestCase):
@@ -68,12 +69,33 @@ class StoryMatrixCheckerTests(unittest.TestCase):
         original = FIXTURE.read_text()
         augmented = original.replace('Full trace: `baseline/native.trace`',
             'Full trace: `baseline/native.trace`\n\n'
-            '### Earlier selector stage (raw observations)\n\n'
-            '| Guest slot | Command | Selector calls (raw AX) | Final dispatch |\n'
+            '### Unrelated diagnostic table\n\n'
+            '| Guest slot | Some debug column | raw value | Count |\n'
             '| ---: | --- | --- | --- |\n'
-            '| 18s | open drawer | no callback AX=0x0 | observed |')
+            '| 18s | open drawer | arbitrary | 42 |')
         result = self.run_report(augmented)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_uploaded_selector_trace_matches_all_three_scenarios(self):
+        result = subprocess.run([str(self.binary), str(ADMISSION_FIXTURE)],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('matches 3 native action-matrix scenarios', result.stdout)
+
+    def test_wrong_selector_return_is_reported_at_correct_slot(self):
+        broken = ADMISSION_FIXTURE.read_text().replace(
+            '25s | take book | selector=0x08 -> 2c24:1939 AX=0x1',
+            '25s | take book | selector=0x08 -> 2c24:1939 AX=0x0')
+        result = self.run_report(broken)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('take-twice selector at 25s', result.stderr)
+
+    def test_missing_selector_row_rejected(self):
+        broken = ADMISSION_FIXTURE.read_text().replace(
+            '| 37s | inventory | no callback AX=0x0 | observed |', '')
+        result = self.run_report(broken)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('incomplete selector table', result.stderr)
 
     def test_missing_report_is_error(self):
         result = subprocess.run([str(self.binary), '/nonexistent/gateway-matrix.md'],

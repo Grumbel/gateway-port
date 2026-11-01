@@ -54,6 +54,8 @@ if(BUILD_TESTING)
   add_test(NAME story-model COMMAND story-model-tests)
   add_test(NAME story-action-matrix COMMAND gateway-story-check
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/gateway-action-matrix.md)
+  add_test(NAME story-action-admission COMMAND gateway-story-check
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/gateway-action-admission.md)
   add_executable(dos-files-tests tests/dos_files_tests.cpp)
   target_link_libraries(dos-files-tests PRIVATE gateway_core)
   add_test(NAME dos-files COMMAND dos-files-tests)

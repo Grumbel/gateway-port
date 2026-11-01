@@ -26,6 +26,12 @@ enum class StoryNormalGuard {
     CannotOperate,
 };
 
+// Normal TAKE/DROP pre-action selector's *direct-location* cases observed for
+// the first-room book. A real possession check can include nested containers
+// and object-specific events; this is deliberately not a general inventory
+// or visibility permission decision.
+enum class StoryCarryPrecheck { Continue, AlreadyHolding, NotHolding };
+
 struct StoryMutation {
     StoryMutationKind kind;
     StoryObjectId object;
@@ -49,6 +55,13 @@ public:
     // Rejects actions other than Open and Close.
     StoryNormalGuard evaluate_normal_open_close(StoryAction action,
                                                 StoryObjectId target) const;
+
+    // Partial translation of Gateway section-5 selector callbacks at
+    // GATEMAIN.OVL 0xfbaf (TAKE) and 0xd804 (DROP). Neither checks whether
+    // the parser can currently resolve or reach the object.
+    StoryCarryPrecheck evaluate_direct_carry_precheck(StoryAction action,
+                                                      StoryObjectId target,
+                                                      StoryObjectId player) const;
 
     // Only the mutations of an already-successful action, as observed for
     // Gateway's first-room drawer/book scenario. The original DOS handlers

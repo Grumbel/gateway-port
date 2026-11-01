@@ -9,6 +9,7 @@ using gateway::StoryModel;
 using gateway::StoryMutation;
 using gateway::StoryMutationKind;
 using gateway::StoryNormalGuard;
+using gateway::StoryCarryPrecheck;
 
 void expect(std::vector<StoryMutation> actual, std::initializer_list<StoryMutation> expected,
             const char *message) {
@@ -103,14 +104,35 @@ int main() {
         }
         if (!rejected_non_open)
             throw std::runtime_error("normal guard accepted an unrelated action");
+        bool rejected_non_carry = false;
+        try {
+            (void)model.evaluate_direct_carry_precheck(StoryAction::Open, drawer, player);
+        } catch (const std::invalid_argument &) {
+            rejected_non_carry = true;
+        }
+        if (!rejected_non_carry)
+            throw std::runtime_error("carry precheck accepted an unrelated action");
         expect(model.observe(book_scene), {}, "already-known book changed on reopen");
+        if (model.evaluate_direct_carry_precheck(StoryAction::Take, book, player) !=
+                StoryCarryPrecheck::Continue ||
+            model.evaluate_direct_carry_precheck(StoryAction::Drop, book, player) !=
+                StoryCarryPrecheck::NotHolding)
+            throw std::runtime_error("unheld book's selector prechecks differ");
         expect(model.apply_success(StoryAction::Take, book, player, room),
                {{StoryMutationKind::SetLocation, book, player},
                 {StoryMutationKind::SetFlag, book, 0x02}},
                "initial TAKE effects differ from native trace");
+        if (model.evaluate_direct_carry_precheck(StoryAction::Take, book, player) !=
+                StoryCarryPrecheck::AlreadyHolding ||
+            model.evaluate_direct_carry_precheck(StoryAction::Drop, book, player) !=
+                StoryCarryPrecheck::Continue)
+            throw std::runtime_error("held book's selector prechecks differ");
         expect(model.apply_success(StoryAction::Drop, book, player, room),
                {{StoryMutationKind::SetLocation, book, room}},
                "DROP did not move the book to the room");
+        if (model.evaluate_direct_carry_precheck(StoryAction::Drop, book, player) !=
+            StoryCarryPrecheck::NotHolding)
+            throw std::runtime_error("repeated DROP precheck was not consumed");
         expect(model.apply_success(StoryAction::Take, book, player, room),
                {{StoryMutationKind::SetLocation, book, player}},
                "second TAKE modified persistent flags");

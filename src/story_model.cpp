@@ -23,6 +23,22 @@ std::optional<StoryObjectId> StoryModel::location(StoryObjectId id) const {
     return objects_.at(id).location;
 }
 
+StoryCarryPrecheck StoryModel::evaluate_direct_carry_precheck(StoryAction action,
+                                                               StoryObjectId target,
+                                                               StoryObjectId player) const {
+    const auto where = location(target);
+    switch (action) {
+    case StoryAction::Take:
+        return where == player ? StoryCarryPrecheck::AlreadyHolding
+                               : StoryCarryPrecheck::Continue;
+    case StoryAction::Drop:
+        return where == player ? StoryCarryPrecheck::Continue
+                               : StoryCarryPrecheck::NotHolding;
+    default:
+        throw std::invalid_argument("carry precheck requires TAKE or DROP");
+    }
+}
+
 StoryNormalGuard StoryModel::evaluate_normal_open_close(StoryAction action,
                                                          StoryObjectId target) const {
     switch (action) {

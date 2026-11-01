@@ -21,6 +21,7 @@ using gateway::StoryModel;
 using gateway::StoryMutation;
 using gateway::StoryMutationKind;
 using gateway::StoryNormalGuard;
+using gateway::StoryCarryPrecheck;
 
 constexpr gateway::StoryObjectId book = 0x123;
 constexpr gateway::StoryObjectId drawer = 0x124;
@@ -69,7 +70,22 @@ std::string format_mutations(const std::vector<StoryMutation> &mutations) {
 struct ReplayResult {
     bool dispatched;
     std::vector<StoryMutation> changes;
+    bool selector_stage = true;
+    unsigned selector = 0;
+    unsigned selector_return = 0;
 };
+
+std::string format_selector(const ReplayResult &result) {
+    if (!result.selector_stage)
+        return "—";
+    if (!result.selector)
+        return "no callback AX=0x0";
+    std::ostringstream out;
+    out << "selector=0x" << std::hex << std::setfill('0') << std::setw(2)
+        << result.selector << " -> " << (result.selector == 8 ? "2c24:1939" : "2c24:1961")
+        << " AX=0x" << result.selector_return;
+    return out.str();
+}
 
 // The gate is deliberately OUTSIDE StoryModel. The report establishes only
 // that an action did not reach the dispatcher, not which parser/visibility
@@ -105,16 +121,20 @@ public:
         }
         if (command == "take book") {
             const auto where = state_.location(book);
-            const bool visible = where == room ||
+            const bool visible = where == player || where == room ||
                                  (where == drawer && state_.flag(drawer, 0x0c));
             if (!visible)
-                return {false, {}};
-            return {true, state_.apply_success(StoryAction::Take, book, player, room)};
+                return {false, {}, false}; // Parser never reaches selector for closed drawer.
+            if (state_.evaluate_direct_carry_precheck(StoryAction::Take, book, player) ==
+                StoryCarryPrecheck::AlreadyHolding)
+                return {false, {}, true, 8, 1}; // Selector handles 'already have'.
+            return {true, state_.apply_success(StoryAction::Take, book, player, room), true, 8};
         }
         if (command == "drop book") {
-            if (state_.location(book) != player)
-                return {false, {}};
-            return {true, state_.apply_success(StoryAction::Drop, book, player, room)};
+            if (state_.evaluate_direct_carry_precheck(StoryAction::Drop, book, player) ==
+                StoryCarryPrecheck::NotHolding)
+                return {false, {}, true, 4, 1}; // Selector handles 'not held'.
+            return {true, state_.apply_success(StoryAction::Drop, book, player, room), true, 4};
         }
         if (command == "look" || command == "inventory")
             return {true, {}}; // The six observed scenarios have no new visible objects here.
@@ -131,33 +151,60 @@ std::size_t check(std::istream &in) {
     FirstRoomReplay model;
     std::size_t step = 0, scenarios = 0;
     bool effect_table = false;
+    bool selector_table = false;
+    std::size_t selector_step = 0;
+    std::vector<ReplayResult> expected_results;
     while (std::getline(in, line)) {
         if (line.starts_with("## ")) {
             if (!scenario.empty() && step != slots.size())
                 throw std::runtime_error(scenario + ": expected seven command slots");
+            if (selector_table && selector_step != slots.size())
+                throw std::runtime_error(scenario + ": incomplete selector table");
             scenario = trim(std::string_view(line).substr(3));
             if (scenario.empty())
                 throw std::runtime_error("empty scenario heading");
             model = FirstRoomReplay{};
             step = 0;
             effect_table = false;
+            selector_table = false;
+            selector_step = 0;
+            expected_results.clear();
             ++scenarios;
             continue;
         }
         if (line.starts_with("### ")) {
             effect_table = false; // Extra diagnostics are not object-state assertions.
+            selector_table = false;
             continue;
         }
         if (line.starts_with("| Guest slot | Typed command | Dispatcher return | ")) {
             effect_table = true;
             continue;
         }
-        if (scenario.empty() || !effect_table || !line.starts_with("| "))
+        if (line.starts_with("| Guest slot | Command | Selector calls (raw AX) | ")) {
+            selector_table = true;
+            continue;
+        }
+        if (scenario.empty() || (!effect_table && !selector_table) || !line.starts_with("| "))
             continue;
         const auto columns = split(line, '|');
         if (columns.size() != 6 || !columns[1].ends_with('s') ||
             !std::isdigit(static_cast<unsigned char>(columns[1][0])))
             continue; // Markdown table headings/separators.
+        if (selector_table) {
+            if (selector_step >= expected_results.size() ||
+                columns[1] != std::to_string(slots[selector_step]) + "s")
+                throw std::runtime_error(scenario + ": unexpected selector slot " + columns[1]);
+            const auto &expected = expected_results[selector_step++];
+            const auto expected_selector = format_selector(expected);
+            const auto expected_dispatch = expected.dispatched ? "observed" : "not observed";
+            if (columns[3] != expected_selector || columns[4] != expected_dispatch)
+                throw std::runtime_error(scenario + " selector at " + columns[1] +
+                                         ": native=" + columns[3] + " / " + columns[4] +
+                                         ", model=" + expected_selector + " / " +
+                                         expected_dispatch);
+            continue;
+        }
         if (step == slots.size() || columns[1] != std::to_string(slots[step]) + "s")
             throw std::runtime_error(scenario + ": unexpected guest command slot " + columns[1]);
         const auto result = model.run(columns[2]);
@@ -169,10 +216,13 @@ std::size_t check(std::istream &in) {
                                      ", model=" + expected_dispatch + "; native changes=" +
                                      columns[4] + ", model=" + expected_effects);
         }
+        expected_results.push_back(result);
         ++step;
     }
     if (!scenario.empty() && step != slots.size())
         throw std::runtime_error(scenario + ": expected seven command slots");
+    if (selector_table && selector_step != slots.size())
+        throw std::runtime_error(scenario + ": incomplete selector table");
     if (!scenarios)
         throw std::runtime_error("no action-matrix scenarios found");
     return scenarios;
