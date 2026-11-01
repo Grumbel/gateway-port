@@ -9,6 +9,7 @@ void Vga::set_mode(std::uint8_t mode, bool clear) {
         throw std::runtime_error("unsupported VGA mode");
     mode_ = mode;
     text_page_ = 0;
+    graphics_page_ = 0;
     if (mode == 3 && clear) {
         for (std::size_t i = 0; i < text_.size(); i += 2) {
             text_[i] = ' ';
@@ -247,6 +248,22 @@ void Vga::text_page(unsigned page) {
     if (page >= 8)
         throw std::runtime_error("invalid text page");
     text_page_ = page;
+}
+void Vga::graphics_page(unsigned page) {
+    if (mode_ == 3)
+        throw std::runtime_error("graphics page in text mode");
+    const unsigned stride = width() / 8;
+    const unsigned bytes_per_page = mode_ == 0x13 ? 64000 : stride * height();
+    if (page >= 65536 / bytes_per_page)
+        throw std::runtime_error("invalid graphics page");
+    graphics_page_ = page;
+    const unsigned start = page * bytes_per_page;
+    crtc_[0x0c] = start >> 8;
+    crtc_[0x0d] = start;
+}
+void Vga::attribute_palette(std::span<const std::uint8_t, 17> values) {
+    std::copy_n(values.begin(), 16, attr_.begin());
+    attr_[0x11] = values[16];
 }
 
 void Vga::palette(std::uint16_t index, std::uint8_t r, std::uint8_t g, std::uint8_t b) {

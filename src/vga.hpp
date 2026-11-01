@@ -26,11 +26,15 @@ class Vga {
     std::span<const std::uint8_t> text_memory() const { return text_; }
     void text_page(unsigned page);
     unsigned text_page() const { return text_page_; }
+    void graphics_page(unsigned page);
+    unsigned graphics_page() const { return graphics_page_; }
+    void attribute_palette(std::span<const std::uint8_t, 17> values);
     void palette(std::uint16_t index, std::uint8_t r, std::uint8_t g, std::uint8_t b);
 
   private:
     std::uint8_t mode_ = 3;
     unsigned text_page_ = 0;
+    unsigned graphics_page_ = 0;
     std::array<std::uint8_t, 32768> text_{};
     std::array<std::array<std::uint8_t, 16>, 256> text_font_{};
     std::array<std::array<std::uint8_t, 65536>, 4> planes_{};

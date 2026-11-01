@@ -82,6 +82,15 @@ int main() {
         vga.write(1, 2);
         pixels = vga.pixels();
         require(pixels[0] == 0xffaa0000 && pixels[1] == 0xff00aa00, "chain-four addressing failed");
+        vga.set_mode(0x10);
+        require(vga.width() == 640 && vga.height() == 350, "mode 10 dimensions");
+        mask(vga, 1);
+        vga.write(28000, 0x80);
+        vga.graphics_page(1);
+        require(vga.graphics_page() == 1 && vga.pixels()[0] == 0xff0000aa,
+                "graphics page selection ignored");
+        vga.graphics_page(0);
+        require(vga.pixels()[0] == 0xff000000, "graphics page zero not restored");
         vga.set_mode(3);
         require(vga.width() == 640 && vga.height() == 400, "80x25 text dimensions");
         std::array<std::uint8_t, 8> font{};
@@ -104,6 +113,14 @@ int main() {
         vga.set_mode(3);
         require(vga.text_memory()[0] == ' ' && vga.text_memory()[1] == 7,
                 "text clear did not restore blank cells");
+        vga.set_mode(0x12);
+        mask(vga, 1);
+        vga.write(0, 0x80);
+        std::array<std::uint8_t, 17> ega_palette{};
+        ega_palette[1] = 4;
+        ega_palette[16] = 7;
+        vga.attribute_palette(ega_palette);
+        require(vga.pixels()[0] == 0xffaa0000, "BIOS attribute palette mapping ignored");
         std::cout << "VGA checks passed\n";
     } catch (const std::exception &e) {
         std::cerr << e.what() << '\n';

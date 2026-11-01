@@ -147,6 +147,13 @@ the DSP reset register for a card at base `230h`. The absent-card model now
 covers the successive 16-port base ranges `210h` through `260h`, instead of
 only `220h`. The actual game startup beyond these points is unverified.
 
+In the next trace, 101 reaches `INT 10h AX=1002h` after switching to graphics
+mode `10h`. The runtime now loads all 16 VGA attribute palette entries and
+the overscan color from the 17-byte `ES:DX` table. 201 reaches `INT 10h
+AH=05h AL=01h` in the same graphics mode; BIOS page selection now updates
+the planar display start address and the BIOS data area for graphics pages,
+not only text pages. Unit checks cover palette mapping and page visibility.
+
 - Colors have not been compared with the running games under DOSBox.
 - Spellcasting 101 and 201 mono entries are shown as black and white.
 - Some Spellcasting 101 1-bit entries, such as `S101_C2` #19 and #40, look like
