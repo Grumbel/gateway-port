@@ -87,6 +87,7 @@ struct State {
     std::array<bool, 5> standard_open{true, true, true, true, true};
     gateway::DosMemory arena{0x0ff0, 0xa000, 0x0fd0};
     gateway::Vga vga;
+    bool trace_video = false;
     gateway::Mouse mouse;
     gateway::Opl opl;
     gateway::Pit pit;
@@ -214,6 +215,12 @@ void port_out(uc_engine *uc, std::uint32_t port, int size, std::uint32_t value,
                 throw std::runtime_error(message.str());
             }
             state.vga.out(port + i, (value >> (8 * i)) & 255);
+            if (state.trace_video && port + i == 0x3d5) {
+                const auto index = state.vga.in(0x3d4);
+                if (index == 0x0c || index == 0x0d || index == 0x13 || index == 0x17)
+                    std::cerr << "VGA ms=" << std::dec << state.elapsed_ms << " CRTC["
+                              << std::hex << index << "]=" << unsigned(byte) << '\n';
+            }
         }
     } catch (const std::exception &e) {
         hardware_failure(uc, state, e.what());
@@ -729,6 +736,10 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
                 state.vga.text_page(page);
             else
                 state.vga.graphics_page(page);
+            if (state.trace_video)
+                std::cerr << "VGA ms=" << std::dec << state.elapsed_ms << " BIOS page="
+                          << unsigned(page) << " mode=" << std::hex
+                          << unsigned(state.vga.mode()) << '\n';
             const std::uint16_t start = state.vga.mode() == 3
                                             ? page * 4096
                                             : page * (state.vga.mode() == 0x13
@@ -760,6 +771,9 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
                 mode != 0x13)
                 throw std::runtime_error("unsupported VGA mode");
             state.vga.set_mode(mode, !(ax & 0x80));
+            if (state.trace_video)
+                std::cerr << "VGA ms=" << std::dec << state.elapsed_ms << " BIOS mode="
+                          << std::hex << unsigned(mode) << '\n';
             if (mode == 3)
                 text_mode_state(uc, state, !(ax & 0x80));
             const std::uint8_t value = mode;
@@ -1070,7 +1084,7 @@ int main(int argc, char **argv) {
     std::string dump_prefix, block_trace_path;
     std::string game_args, research_path, object_flags_mode;
     bool object_state_services = false;
-    bool verify_overlays = false, hle_overlays = false;
+    bool verify_overlays = false, hle_overlays = false, trace_video = false;
     std::vector<std::uint64_t> entry_addresses;
     std::multimap<unsigned, std::uint16_t> scheduled_keys;
     std::uint16_t injected_key = 0;
@@ -1081,7 +1095,7 @@ int main(int argc, char **argv) {
                      "[--break-at HEX] [--state-dir DIR | --read-only] [--trace-blocks FILE] "
                      "[--trace-research FILE --trace-entry HEX ...] [--key-at MS:BIOSHEX ...] "
                      "[--object-flags verify|hle | --object-state verify|hle] [--verify-overlays] "
-                     "[--hle-overlays]\n";
+                     "[--hle-overlays] [--trace-video]\n";
     };
     if (argc < 2 || std::string(argv[1]) == "--help") {
         usage();
@@ -1092,7 +1106,9 @@ int main(int argc, char **argv) {
         if (option == "--hle-overlays") {
             hle_overlays = true;
             verify_overlays = true;
-        } else if (option == "--verify-overlays")
+        } else if (option == "--trace-video")
+            trace_video = true;
+        else if (option == "--verify-overlays")
             verify_overlays = true;
         else if ((option == "--object-flags" || option == "--object-state") && i + 1 < argc) {
             if (!object_flags_mode.empty()) {
@@ -1203,6 +1219,7 @@ int main(int argc, char **argv) {
         std::vector<std::uint8_t> bytes{std::istreambuf_iterator<char>(file), {}};
         auto image = gateway::load_mz(bytes);
         State state;
+        state.trace_video = trace_video;
         state.object_flags_mode = object_flags_mode;
         state.object_state_services = object_state_services;
         if (!research_path.empty()) {

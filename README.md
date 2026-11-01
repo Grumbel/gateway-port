@@ -39,6 +39,38 @@ ctest --test-dir build --output-on-failure
 ./build/gateway-host
 ```
 
+### Debugging with `nix develop`
+
+The development shell follows the `gamepkgstd` workflow. From the checkout:
+
+```sh
+nix develop
+gateway-run ../201/S201.EXE --trace-video
+gateway-run-gdb ../101/S101.EXE
+```
+
+`gateway-configure` configures an out-of-tree Ninja Debug build (default
+`/tmp/gateway-port-build`, override with `GATEWAY_BUILD_DIR`),
+`gateway-build` builds it, and both run commands build before launching. The
+first configure links `build` to that directory only if `build` does not
+already exist. Set `CMAKE_BUILD_TYPE=RelWithDebInfo` to override Debug on
+initial configuration. `nix develop -c gateway-run-gdb ../101/S101.EXE`
+also works without an interactive shell.
+
+GDB starts the SDL runtime immediately and stays at the prompt if the process
+crashes or exits unsuccessfully. For a guest that appears frozen, press Ctrl-C
+in GDB, then use `bt` and `continue`. GDB sees the host C++/Unicorn execution,
+not DOS `CS:IP` directly; use the bounded guest trace instead:
+
+```sh
+gateway-run ../101/S101.EXE --headless --milliseconds 15000 \
+  --dump-prefix /tmp/s101-stall --trace-blocks /tmp/s101-blocks.txt
+```
+
+For visual glitches that happen after a keypress, `--trace-video` prints BIOS
+mode/page changes and CRTC start/pitch/mode writes to stderr. This helps
+distinguish the renderer's state from the guest's page-flipping commands.
+
 Build a package with `nix build`; check it with `nix flake check`. Use `path:.`
 while testing new untracked files that Git-backed flakes would otherwise omit. The flake locks
 nixpkgs and provides SDL3, Unicorn, the compiler, CMake, and research tools.
