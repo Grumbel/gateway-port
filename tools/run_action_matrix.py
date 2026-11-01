@@ -29,6 +29,13 @@ SEQUENCES = {
                    'drop book', 'take book', 'inventory'),
     'take-before-open': ('take book', 'open drawer', 'take book', 'drop book',
                          'take book', 'drop book', 'inventory'),
+    # New discriminating probes after the original six-run matrix: is a
+    # previously seen book still inaccessible behind a closed drawer, and
+    # does room-level visibility survive closing the now-empty drawer?
+    'closed-after-reveal': ('open drawer', 'close drawer', 'take book',
+                            'open drawer', 'take book', 'drop book', 'look'),
+    'room-after-close': ('open drawer', 'take book', 'close drawer',
+                         'drop book', 'take book', 'inventory', 'look'),
 }
 DRIVER = Path(__file__).with_name('trace_game_logic.py')
 

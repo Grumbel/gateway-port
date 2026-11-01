@@ -408,9 +408,11 @@ python3 tools/run_action_matrix.py --list
 python3 tools/run_action_matrix.py --output build/action-matrix-001
 ```
 
-This replays six independent first-room scenarios: baseline, the proven
+This replays the six independently verified first-room scenarios: baseline, the proven
 OPEN/CLOSE/TAKE repeat, two order/guard experiments (`open-twice` and
 `close-first`), a `take-twice` sequence, and a `take-before-open` sequence.
+Two newer, **not yet user-verified** sequences probe the distinction between
+an item behind a closed container and one dropped into the room.
 Every scenario starts in a clean guest state and uses the same initial LOOK,
 seven fixed input slots and the native overlay-verification and state-write
 hooks. The runner invokes `trace_game_logic.py` for each sequence and writes
@@ -436,6 +438,72 @@ not prove a particular branch. These runs are designed to gather contrasting
 evidence for future interpretation; results must be inspected before adding
 new semantics to the C++ model. Full native replay and comparison against
 multiple scenes remain future work.
+
+### Results of the first complete six-scenario batch
+
+The 2026-11-01 user replay is preserved as a generated test fixture at
+`tests/fixtures/gateway-action-matrix.md`. It contains all seven command slots
+for each of the original six experiments; the complete guest `.trace` files
+were not included in the handoff. The effects match the earlier repeat trace
+and add the following contrasts:
+
+| Command and state | Dispatcher trace | Verified changed effects |
+| --- | --- | --- |
+| OPEN while drawer already open | `AX=1` | None |
+| CLOSE while drawer already closed | `AX=1` | None |
+| TAKE a book already held | No dispatch recorded | None |
+| DROP a book already dropped | No dispatch recorded | None |
+| TAKE book before opening drawer | No dispatch recorded | None |
+| TAKE book after dropping it into room | `AX=1` | Location returns to player |
+
+The report **does not explain** why no dispatcher entry was observed. It is
+consistent with parser/visibility filtering, but delayed or consumed scripted
+keystrokes must be excluded with lower-level evidence before treating this as
+a general rule. Equally, `AX=1` only establishes that the command was handled,
+not that it succeeded. The shared OPEN/CLOSE guard evaluator remains the
+directly disassembled inner handler; the TAKE/DROP admission logic below is
+not promoted into that model.
+
+`gateway-story-check` is a separate, asset-free **C++ comparison tool** built
+against `StoryModel`. It reads the generated Markdown report directly, resets
+the sparse object state for each scenario, checks the normal OPEN/CLOSE guard,
+and compares all observed changed mutations. For the two book commands, it
+uses an explicitly **first-room-only, provisional** admission rule: TAKE is
+attempted when the book is in the room or in the open drawer; DROP when the
+book is held. The initial room/drawer visibility flags and the book's first
+`0x07` disclosure are also seeded or observed as established by this replay.
+
+```sh
+gateway-build
+"${GATEWAY_BUILD_DIR:-build}/gateway-story-check" \
+  build/action-matrix-001/report.md
+```
+
+This matches **all six supplied scenarios**, including the distinction between
+an already-open command that reaches the dispatcher and a repeated TAKE that
+does not. A disagreement prints the scenario, time slot, action and the
+different mutations. This is a regression of one bounded hypothesis, **not**
+proof of generic parser behavior or equivalence of the complete game state.
+The `story-action-matrix` CTest runs the bundled fixture without DOS assets.
+
+Two follow-up experiments were added specifically to challenge the provisional
+admission rule, while keeping each scenario independently reproducible:
+
+```sh
+python3 tools/run_action_matrix.py \
+  --only closed-after-reveal,room-after-close \
+  --output build/action-matrix-visibility
+"${GATEWAY_BUILD_DIR:-build}/gateway-story-check" \
+  build/action-matrix-visibility/report.md
+```
+
+In `closed-after-reveal`, the book was seen once but the drawer is closed
+before TAKE is attempted. In `room-after-close`, the book is dropped into the
+room after closing the drawer and TAKE is attempted there. These distinguish
+mere persistent `0x07` knowledge from current visibility/reachability. **The
+model predicts** no dispatch for the first, and a successful location change
+for the second. A failed checker run is an informative counterexample to
+investigate, not necessarily a regression in DOS emulation.
 
 ### First standalone C++ state model
 

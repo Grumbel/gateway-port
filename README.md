@@ -483,12 +483,26 @@ To investigate several action sequences in a single run, after `gateway-build`:
 python3 tools/run_action_matrix.py --output build/action-matrix-001
 ```
 
-The six clean native replays cover ordinary/repeated OPEN, CLOSE, TAKE and
-DROP as well as potentially invalid orders. Each produces a trace; a combined
+The first six clean native replays cover ordinary/repeated OPEN, CLOSE, TAKE
+and DROP as well as potentially invalid orders; two additional scenarios
+probe visibility after closing a drawer. Each produces a trace; a combined
 `report.md` lists only **verified changed object-state writes** per command.
 It does not infer success from the DOS action return code or assert full
 gameplay equivalence. The runner supports `--list`, `--only`, and `--dry-run`;
 see [action-dispatch.md](docs/action-dispatch.md#run-several-action-experiments-in-one-batch).
+
+The user-supplied original six-run report is now an automated regression for
+the standalone C++ object-state model (42 scripted commands). Compare a new
+matrix directly, with no DOS guest required for the comparison itself:
+
+```sh
+"${GATEWAY_BUILD_DIR:-build}/gateway-story-check" build/action-matrix-001/report.md
+```
+
+This checker intentionally implements **only the first-room hypotheses** for
+command reachability. A mismatch is useful evidence for refining that logic,
+not proof that the native engine or the original game is faulty. See
+[action-dispatch.md](docs/action-dispatch.md#results-of-the-first-complete-six-scenario-batch).
 
 RTLink sections and all handler entry file offsets can now be extracted:
 

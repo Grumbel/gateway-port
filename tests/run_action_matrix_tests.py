@@ -15,9 +15,14 @@ from run_action_matrix import SEQUENCES, main, summarize_trace  # noqa: E402
 
 class ActionMatrixTests(unittest.TestCase):
     def test_sequences_have_seven_distinct_action_slots(self):
-        self.assertEqual(len(SEQUENCES), 6)
+        self.assertEqual(len(SEQUENCES), 8)
         for commands in SEQUENCES.values():
             self.assertEqual(len(commands), 7)
+
+    def test_follow_up_sequences_isolate_closed_container_from_room_visibility(self):
+        self.assertEqual(SEQUENCES['closed-after-reveal'][2], 'take book')
+        self.assertEqual(SEQUENCES['closed-after-reveal'][1], 'close drawer')
+        self.assertEqual(SEQUENCES['room-after-close'][3:5], ('drop book', 'take book'))
 
     def test_dry_run_shows_commands_without_creating_output(self):
         with tempfile.TemporaryDirectory() as directory:
