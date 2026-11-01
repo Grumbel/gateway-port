@@ -75,7 +75,10 @@ state at every point in the story.
 
 1. Start with an accessible Gateway Station connection such as Heecheetown ↔
    Your Quarters, **which has no type-6 pair**. Trace the current-room word
-   and the code that handles a cardinal movement command.
+   and the code that handles a cardinal movement command. The first-room
+   snapshot puts player `0x0d3` inside room `0x0ee` (Your Quarters). For native
+   type 7, the player's direct-location word is at record offset `+0x0c`;
+   watching it tests whether a compass move also changes that field.
 2. Separately observe a named type-6 passage (e.g. the Dock's cabin hatch) to
    see where its two relation words enter the room-change decision. Test both
    directions without assuming the hintbook arrow is a one-way constraint.
@@ -86,3 +89,34 @@ state at every point in the story.
 
 Do not hard-code the published map as the game's control flow. Keep its edges
 distinct from **native-observed** transition rules in any future engine.
+
+### Repeatable first-room movement trace
+
+Run in `nix develop` after `gateway-build`, with the original DOS assets
+outside the repository. This reuses the deterministic seven-command replay;
+the starting prompts are dismissed by its usual startup key schedule.
+
+```sh
+python3 tools/trace_game_logic.py \
+  --scenario objects --native-only --verify-overlays \
+  --trace-state-writes --trace-object-writes d3 \
+  --command-sequence 'east,west,east,west,look,inventory,look' \
+  --output build/room-navigation
+
+python3 tools/summarize_navigation_trace.py \
+  build/room-navigation/native.trace \
+  --world build/parser-child-writes/world.json \
+  --commands 'east,west,east,west,look,inventory,look'
+```
+
+The report shows candidate player-location changes, the native far-return
+address of each location setter, and the code PC of any matching watched
+write. Native service `changed=1` calls are verified by the probe; watched
+memory-write entries alone occur **before guest execution** and are labelled
+*attempts*, not established changes. Command names are assigned by scheduled
+time windows, not by recovered parser semantics.
+
+If nothing is reported, check whether the commands actually reached normal
+gameplay and whether another state variable tracks the current room. A
+negative result is not proof that the game's navigation is static or that
+the player object's location must change on every compass command.

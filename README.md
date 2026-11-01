@@ -618,6 +618,11 @@ planetary locations and both endgame phases. All eight populated type-6
 endpoint pairs occur on those maps. The research notes cross-reference the
 printed room names with native object-ID ranges and distinguish up/down
 arrows and puzzle-gated passages; no copyrighted map scans are bundled.
+The same notes describe a scripted EAST/WEST replay using the existing
+native player-object write watch. `tools/summarize_navigation_trace.py`
+correlates verified `0x0d3` location-set calls, potential direct record
+writes and their guest return addresses, ready for tracing the ordinary
+navigation path before reconstructing a modern map.
 
 The standalone C++ model exposes the corresponding *local slot-filtering*
 stage, but it still does not perform parser traversal or name resolution.
