@@ -849,6 +849,46 @@ whether `1000:0000` is reached in the test's active parser path; do not
 infer a missing visibility check merely from an empty trace. The actual
 object-name resolution and command context remain unmodeled.
 
+### Identify the native child-list writer
+
+Static disassembly of the original executable found the matching **indexed
+child-link setter** at `0157:08fc` (`GATEMAIN.EXE` file `0x2e3a`, native
+linear `0x11e6c`), immediately after the accessor at `0157:0825`. It accepts
+`(object, slot, child)` and writes the type-specific field that the child
+accessor reads. The store for type 2, for example, is at file `0x2ec9`:
+`mov es:[bx+si+0x14],ax`, with `SI=2*slot`. Type 1 writes its fixed `+0x0c`
+word; types 3 and 8 write nothing. The separate direct-location setter at
+file `0x2b89` contains no child-list write. **We have not yet observed which
+native caller invokes the indexed setter during TAKE.**
+
+Trace a single object's native writes without a global memory-write hook.
+The probe installs a narrow Unicorn write hook once verified object services
+have located the live Gateway data segment. It also traces the indexed
+setter's entry and three arguments:
+
+```sh
+gateway-build
+python3 tools/trace_game_logic.py \
+  --scenario objects --native-only --verify-overlays \
+  --trace-state-writes --trace-visibility --trace-object-writes 124 \
+  --command-sequence 'open drawer,close drawer,open drawer,take book,drop book,take book,inventory' \
+  --output build/parser-child-writes
+python3 tools/summarize_object_writes.py \
+  build/parser-child-writes/native.trace --child-only \
+  --commands 'open drawer,close drawer,open drawer,take book,drop book,take book,inventory'
+```
+
+The report prints the **actual native object type** of the drawer, the guest
+instruction addresses and record offsets of changed child words, and calls
+to `0157:08fc` for that object. The raw `object-write` lines retain non-child
+field writes, useful if the direct setter is *not* responsible for unlinking.
+`before` is sampled by the memory hook and `value` is the instruction's
+proposed write, not an independently verified post-write snapshot.
+`--trace-state-writes` separately verifies flag and location service writes.
+A child-pointer write near TAKE still requires inspecting the caller and
+post-write state before generalizing to other containers. Replay with other
+object IDs when investigating nested structures.
+
 Given a saved object-state snapshot, inspect the **actual ordered relation
 paths** separately from direct `location` and parser visibility:
 

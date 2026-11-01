@@ -39,10 +39,13 @@ emulation. Keep the original executable as a behavioral reference while mapping:
 - Which guest variables encode room and action state; which native handlers
   update them; and how object flag/location changes map to player actions.
 - Recover which native object type the first-room drawer uses and how the
-  indexed child pointer changes when TAKE moves the book. Exact native
-  timestamps now establish separate OPEN/CLOSE eligibility and child-list
-  transitions. Next establish which callers enable the gate's restriction
-  parameter. The child accessor (`0157:0825`) is distinct
+  indexed child pointer changes when TAKE moves the book. The child-list
+  setter (`0157:08fc`) and its type-specific offsets are now decoded;
+  capture its callsite and the actual drawer record writes with
+  `--trace-object-writes 124`. Exact native timestamps establish separate
+  OPEN/CLOSE eligibility and child-list transitions, but not the writer.
+  Next establish which callers enable the gate's restriction parameter.
+  The child accessor (`0157:0825`) is distinct
   from DROP's recursive relationship helper (`0157:00c5`); both are decoded,
   but their complete role in parser visibility and spatial containment is
   still unresolved. Compare both graphs against nested-object traces.

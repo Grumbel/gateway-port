@@ -550,6 +550,15 @@ python3 tools/correlate_visibility_trace.py \
   build/parser-child-check/native.trace --container 0x124 --child 0x123
 ```
 
+The original **indexed child-link setter** is now identified at `0157:08fc`
+(file `0x2e3a`). It is separate from the object's direct-location setter.
+To identify the instruction actually removing the book from the drawer, rerun
+the object scenario with `--trace-object-writes 124 --trace-visibility`
+and summarize the result with `tools/summarize_object_writes.py --child-only`.
+See [the child-list writer research](docs/action-dispatch.md#identify-the-native-child-list-writer)
+for the complete command and the distinction between observed writes and
+verified changes.
+
 The standalone C++ model exposes the corresponding *local slot-filtering*
 stage, but it still does not perform parser traversal or name resolution.
 See [resident parser candidate iterator](docs/action-dispatch.md#resident-parser-candidate-iterator)

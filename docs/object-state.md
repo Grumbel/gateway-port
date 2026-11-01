@@ -172,6 +172,18 @@ The independent C++ `StoryModel::eligible_child_slots()` tests this filtered,
 nonzero stage against caller-supplied child words, without assuming that
 child pointers can be reconstructed from `location` alone.
 
+The matching **native child-link setter** is `0157:08fc` (original
+`GATEMAIN.EXE` file offset `0x2e3a`, replay linear `0x11e6c`). Its far-call
+stack words are `(object ID, slot index, new child ID)` at `[BP+6]`, `[BP+8]`,
+`[BP+0x0a]`. It checks the same second descriptor byte for the slot bound,
+then writes the same type-specific word addresses as the accessor above:
+type 2 at `+0x14+2*slot`, type 4 at `+0x0a+2*slot`, type 5 at
+`+0x0c+2*slot`, type 6 at `+0x0e+2*slot`, type 7 at `+0x12+2*slot`,
+and type 1 at fixed `+0x0c`; type 3/8 are no-ops. The actual caller that
+removes the first-room book is **not yet known**. The independent location
+setter at `0157:064b` (file `0x2b89`) updates only its type-dependent
+location field; its disassembly does **not** contain a child-list unlink.
+
 ## State-changing replay
 
 ```sh

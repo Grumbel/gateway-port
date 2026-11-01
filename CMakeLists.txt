@@ -110,6 +110,8 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/visibility_trace_tests.py)
     add_test(NAME story-visibility-correlation COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/visibility_correlation_tests.py)
+    add_test(NAME story-object-write-trace COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/object_write_trace_tests.py)
     add_test(NAME story-replay-driver COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/trace_game_logic_tests.py)
     add_test(NAME story-action-batch COMMAND ${Python3_EXECUTABLE}
