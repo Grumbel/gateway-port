@@ -1,0 +1,45 @@
+"""Deterministic keyboard scripts for the bounded Gateway first-room replay.
+
+The seven configurable slots are spaced three seconds apart. They are useful
+for comparing action/state transitions, not for automated gameplay testing.
+"""
+
+OBJECT_SLOTS = (18000, 21000, 25000, 28000, 31000, 34000, 37000)
+DEFAULT_OBJECT_COMMANDS = (
+    'open drawer', 'look', 'take book', 'inventory',
+    'drop book', 'close drawer', 'look',
+)
+
+
+def parse_sequence(sequence):
+    """Parse exactly seven printable ASCII commands, in chronological order."""
+    commands = tuple(command.strip() for command in sequence.split(','))
+    if len(commands) != len(OBJECT_SLOTS):
+        raise ValueError(f'expected {len(OBJECT_SLOTS)} comma-separated commands')
+    for command in commands:
+        if not command or len(command) > 64 or any(not 32 <= ord(ch) <= 126
+                                                    for ch in command):
+            raise ValueError('commands must contain 1–64 printable ASCII characters')
+    return commands
+
+
+def schedule(scenario, commands=None):
+    """Return the exact BIOS-key schedule passed to gateway-probe."""
+    if scenario not in ('look', 'drawer', 'objects'):
+        raise ValueError(f'unknown scenario: {scenario}')
+    if commands is not None and scenario != 'objects':
+        raise ValueError('custom commands require the objects scenario')
+    keys = [(10000, 0x3920), (11000, 0x3920), (12000, 0x3920)]
+    keys += [(14000, 0x266c), (14100, 0x186f), (14200, 0x186f),
+             (14300, 0x256b), (14400, 0x1c0d)]
+    if scenario in ('drawer', 'objects'):
+        keys += [(15000, 0x3920), (16000, 0x3920), (17000, 0x3920)]
+        scripted = (list(zip(OBJECT_SLOTS, commands or DEFAULT_OBJECT_COMMANDS))
+                    if scenario == 'objects' else [(18000, 'open drawer'), (21000, 'look')])
+        for start, command in scripted:
+            keys += [(start + i * 30, ord(char)) for i, char in enumerate(command)]
+            keys.append((start + len(command) * 30, 0x1c0d))
+        keys += [(22000, 0x3920), (23000, 0x3920)]
+    if scenario == 'objects':
+        keys += [(39000, 0x3920), (40000, 0x3920), (41000, 0x3920)]
+    return sorted(keys)

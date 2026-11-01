@@ -6,6 +6,7 @@ import os
 import pathlib
 import subprocess
 from inspect_object_state import inspect_objects
+from story_scenarios import parse_sequence, schedule
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--probe', type=pathlib.Path,
@@ -20,13 +21,22 @@ parser.add_argument('--native-only', action='store_true',
                     help='collect a quick native trace without the two comparison replays')
 parser.add_argument('--trace-state-writes', action='store_true',
                     help='verify native state services and mark actual byte changes in one replay')
+parser.add_argument('--command-sequence', metavar='CMD,CMD,...',
+                    help='replace the seven objects-scenario commands at 18,21,25,28,31,34,37 s')
 args = parser.parse_args()
 if args.native_only and args.hle_overlays:
     parser.error('--native-only and --hle-overlays cannot be combined')
 if args.trace_state_writes and not args.native_only:
     parser.error('--trace-state-writes requires --native-only')
+if args.command_sequence and not args.native_only:
+    parser.error('--command-sequence currently requires --native-only')
 if args.hle_overlays:
     args.verify_overlays = True
+try:
+    custom_commands = parse_sequence(args.command_sequence) if args.command_sequence else None
+    keys = schedule(args.scenario, custom_commands)
+except ValueError as error:
+    parser.error(str(error))
 # The expected action_code= field is emitted by the C++ gateway-probe, not the
 # Python driver. An old binary accepts --trace-entry but silently omits the
 # new fields, wasting an entire replay and leaving misleading diagnostics.
@@ -41,21 +51,8 @@ if args.scenario in ['drawer', 'objects']:
     if args.trace_state_writes and b' changed=' not in probe_bytes:
         parser.error(f'{args.probe} lacks state-write delta tracing; run gateway-build')
 args.output.mkdir(parents=True, exist_ok=True)
-keys = [(10000, 0x3920), (11000, 0x3920), (12000, 0x3920)]
-keys += [(14000, 0x266c), (14100, 0x186f), (14200, 0x186f),
-         (14300, 0x256b), (14400, 0x1c0d)]
-if args.scenario in ['drawer', 'objects']:
-    keys += [(15000, 0x3920), (16000, 0x3920), (17000, 0x3920)]
-    for start, command in [(18000, 'open drawer'), (21000, 'look')]:
-        keys += [(start + i * 30, ord(c)) for i, c in enumerate(command)]
-        keys.append((start + len(command) * 30, 0x1c0d))
-    keys += [(22000, 0x3920), (23000, 0x3920)]
-if args.scenario == 'objects':
-    for start, text in [(25000, 'take book'), (28000, 'inventory'), (31000, 'drop book'),
-                        (34000, 'close drawer'), (37000, 'look')]:
-        keys += [(start + i * 30, ord(c)) for i, c in enumerate(text)]
-        keys.append((start + len(text) * 30, 0x1c0d))
-    keys += [(39000, 0x3920), (40000, 0x3920), (41000, 0x3920)]
+if custom_commands:
+    print('Scripted commands: ' + ' | '.join(custom_commands))
 hashes = []
 service_sequences = []
 object_states = []
@@ -96,7 +93,7 @@ for mode in (['native'] if args.native_only else ['native', 'verify', 'hle']):
         # Its existing verification hooks compare the predicted bytes with
         # the guest's result at each service epilogue.
         command += ['--object-state', 'verify']
-    for time, key in sorted(keys):
+    for time, key in keys:
         command += ['--key-at', f'{time}:{key:04x}']
     if args.verify_overlays:
         command += ['--verify-overlays']

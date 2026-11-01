@@ -11,6 +11,24 @@ DRIVER = Path(__file__).resolve().parents[1] / 'tools' / 'trace_game_logic.py'
 
 
 class TraceGameLogicTests(unittest.TestCase):
+    def test_command_sequence_validation_precedes_probe_and_output_creation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'should-not-exist'
+            result = subprocess.run([sys.executable, str(DRIVER), '--scenario', 'objects',
+                                     '--command-sequence', 'one,two', '--native-only',
+                                     '--output', str(output)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn('expected 7 comma-separated commands', result.stderr)
+            self.assertFalse(output.exists())
+
+    def test_custom_sequence_requires_native_only(self):
+        result = subprocess.run([
+            sys.executable, str(DRIVER), '--scenario', 'objects',
+            '--command-sequence', 'look,look,look,look,look,look,look',
+        ], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('--command-sequence currently requires --native-only', result.stderr)
+
     def test_old_probe_is_rejected_before_running_replay(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
