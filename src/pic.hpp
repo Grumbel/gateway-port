@@ -50,6 +50,10 @@ struct PicImage {
     std::vector<Rgb8> palette;        // Empty when the entry carries no palette.
 };
 
+// Decode a positioned XOR frame against an unchanged base picture. The caller chooses
+// the base; archive entries do not identify it explicitly.
+void apply_pic_xor(PicImage &frame, const PicImage &base);
+
 std::vector<PicEntry> parse_pic_directory(std::span<const std::uint8_t> file);
 PicImage decode_pic(std::span<const std::uint8_t> file, const PicEntry &entry, PicDialect dialect);
 

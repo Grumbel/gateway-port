@@ -71,17 +71,6 @@ const PicImage *find_base(const std::vector<PicImage> &bases, const PicImage &im
     return nullptr;
 }
 
-void apply_overlay(PicImage &image, const PicImage &base) {
-    auto pixels = base.pixels;
-    for (int y = 0; y < image.height; ++y)
-        for (int x = 0; x < image.width; ++x)
-            pixels[std::size_t(image.y - base.y + y) * base.width + image.x - base.x + x] ^=
-                image.pixels[std::size_t(y) * image.width + x];
-    image.pixels = std::move(pixels);
-    image.width = base.width;
-    image.height = base.height;
-}
-
 void write_file(const fs::path &path, std::span<const std::uint8_t> data) {
     std::ofstream out(path, std::ios::binary);
     out.write(reinterpret_cast<const char *>(data.data()), std::streamsize(data.size()));
@@ -98,7 +87,7 @@ std::vector<std::uint8_t> read_file(const fs::path &path) {
 
 void usage(std::ostream &out) {
     out << "usage: gateway-extract [--dialect auto|s101|s201|gateway|mc] "
-           "[--raw-overlays] [--raw-chunks] -o DIR "
+           "[--raw-overlays|--mc-all-overlays] [--raw-chunks] -o DIR "
            "FILE.PIC...\n";
 }
 } // namespace
@@ -107,6 +96,7 @@ int main(int argc, char **argv) try {
     std::optional<PicDialect> forced;
     bool forced_mc = false;
     bool raw_overlays = false;
+    bool mc_all_overlays = false;
     bool raw_chunks = false;
     fs::path output;
     std::vector<fs::path> inputs;
@@ -117,6 +107,8 @@ int main(int argc, char **argv) try {
             return 0;
         } else if (arg == "--raw-overlays") {
             raw_overlays = true;
+        } else if (arg == "--mc-all-overlays") {
+            mc_all_overlays = true;
         } else if (arg == "--raw-chunks") {
             raw_chunks = true;
         } else if (arg == "-o" && i + 1 < argc) {
@@ -147,6 +139,8 @@ int main(int argc, char **argv) try {
         usage(std::cerr);
         return 2;
     }
+    if (raw_overlays && mc_all_overlays)
+        throw std::runtime_error("--raw-overlays and --mc-all-overlays are mutually exclusive");
 
     std::size_t written = 0, failed = 0, unpaletted = 0, unplaced = 0, raw_written = 0;
     std::vector<Rgb8> palette_8; // Some 8-bit files rely on a palette loaded from an earlier one.
@@ -173,7 +167,8 @@ int main(int argc, char **argv) try {
                 manifest << "index\toffset\tcompressed_size\tflags\tx\ty\twidth\theight\textra"
                             "\tpalette_start\tpalette_size\n";
             }
-            std::size_t images = 0, file_failed = 0;
+            std::size_t images = 0, file_failed = 0, composed = 0, standalone_deltas = 0;
+            std::vector<PicImage> bases;
             for (std::size_t i = 0; i < entries.size(); ++i) {
                 const auto &entry = entries[i];
                 if (!entry.offset)
@@ -198,7 +193,41 @@ int main(int argc, char **argv) try {
                         ++raw_written;
                     } else {
                         try {
-                            const auto pixels = gateway::decode_mc_pic_pixels(file, entry);
+                            auto pixels = gateway::decode_mc_pic_pixels(file, entry);
+                            PicImage frame;
+                            frame.bits = 8;
+                            frame.x = entry.x;
+                            frame.y = entry.y;
+                            frame.width = entry.width;
+                            frame.height = entry.height;
+                            frame.overlay = entry.flags == 0x0003;
+                            frame.pixels = std::move(pixels);
+                            bool did_compose = false;
+                            if (!frame.overlay) {
+                                bases.push_back(frame);
+                            } else if (!raw_overlays) {
+                                if (const auto *base = find_base(bases, frame)) {
+                                    // Full-frame XORs are self-contained alternatives to the
+                                    // preceding plain frame. Smaller records can instead be
+                                    // sprites intended for a different screen state, so only
+                                    // compose them when explicitly requested.
+                                    const bool full_frame = frame.x == base->x &&
+                                                            frame.y == base->y &&
+                                                            frame.height == base->height &&
+                                                            frame.width <= base->width &&
+                                                            base->width - frame.width <= 1;
+                                    if (full_frame || mc_all_overlays) {
+                                        gateway::apply_pic_xor(frame, *base);
+                                        did_compose = true;
+                                    }
+                                } else if (mc_all_overlays) {
+                                    ++unplaced;
+                                }
+                            }
+                            if (did_compose)
+                                ++composed;
+                            else if (frame.overlay)
+                                ++standalone_deltas;
                             std::vector<Rgb8> palette = have_mc_palette ? std::vector<Rgb8>(256)
                                                                         : grey_palette();
                             if (have_mc_palette) {
@@ -214,7 +243,7 @@ int main(int argc, char **argv) try {
                             }
                             std::snprintf(name, sizeof name, "%03zu.png", i);
                             write_file(directory / name, gateway::encode_indexed_png(
-                                entry.width, entry.height, 8, pixels, palette));
+                                frame.width, frame.height, 8, frame.pixels, palette));
                             ++images;
                         } catch (const std::runtime_error &error) {
                             ++file_failed;
@@ -235,7 +264,11 @@ int main(int argc, char **argv) try {
             std::cout << input.filename().string() << ": mission-critical, " << populated
                       << " entries, " << (raw_chunks ? chunks : images)
                       << (raw_chunks ? " streams exported" : " images")
-                      << (raw_chunks ? "" : ", " + std::to_string(file_failed) + " failed") << '\n';
+                      << (raw_chunks ? "" : ", " + std::to_string(file_failed) + " failed");
+            if (!raw_chunks && (composed || standalone_deltas))
+                std::cout << ", " << composed << " XOR frames composed, " << standalone_deltas
+                          << " deltas kept raw";
+            std::cout << '\n';
             continue;
         }
         if (raw_chunks)
@@ -275,7 +308,7 @@ int main(int argc, char **argv) try {
                 bases.push_back(image);
             } else if (!raw_overlays) {
                 if (const auto *base = find_base(bases, image))
-                    apply_overlay(image, *base);
+                    gateway::apply_pic_xor(image, *base);
                 else
                     ++unplaced;
             }

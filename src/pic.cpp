@@ -322,6 +322,28 @@ std::vector<std::uint8_t> decode_mc_pic_pixels(Bytes file, const McPicEntry &ent
     return decode_crusher(payload, pixels);
 }
 
+void apply_pic_xor(PicImage &frame, const PicImage &base) {
+    if (frame.bits != base.bits || frame.width < 0 || frame.height < 0 || base.width < 0 ||
+        base.height < 0 || frame.x < base.x || frame.y < base.y ||
+        frame.x + frame.width > base.x + base.width ||
+        frame.y + frame.height > base.y + base.height ||
+        frame.pixels.size() != static_cast<std::size_t>(frame.width) * frame.height ||
+        base.pixels.size() != static_cast<std::size_t>(base.width) * base.height)
+        throw std::runtime_error("PIC XOR frame does not fit base picture");
+
+    auto pixels = base.pixels;
+    for (int y = 0; y < frame.height; ++y)
+        for (int x = 0; x < frame.width; ++x)
+            pixels[static_cast<std::size_t>(frame.y - base.y + y) * base.width +
+                   frame.x - base.x + x] ^=
+                frame.pixels[static_cast<std::size_t>(y) * frame.width + x];
+    frame.pixels = std::move(pixels);
+    frame.x = base.x;
+    frame.y = base.y;
+    frame.width = base.width;
+    frame.height = base.height;
+}
+
 std::vector<std::uint8_t> explode_dcl(Bytes data, std::size_t max_size) {
     static const auto literal_code = build_dcl_code(dcl_literal);
     static const auto length_code = build_dcl_code(dcl_length);

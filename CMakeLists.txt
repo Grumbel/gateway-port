@@ -77,6 +77,11 @@ if(BUILD_TESTING)
   add_executable(pic-tests tests/pic_tests.cpp)
   target_link_libraries(pic-tests PRIVATE gateway_core)
   add_test(NAME pic COMMAND pic-tests)
+  find_package(Python3 COMPONENTS Interpreter QUIET)
+  if(Python3_Interpreter_FOUND)
+    add_test(NAME pic-extract COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/extract_pic_tests.py $<TARGET_FILE:gateway-extract>)
+  endif()
 endif()
 install(TARGETS gateway-inspect gateway-extract gateway-overlay RUNTIME DESTINATION bin)
 

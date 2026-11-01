@@ -137,6 +137,51 @@ void test_mission_critical_directory() {
             "empty MC directory accepted");
 }
 
+void test_pic_xor_frames() {
+    gateway::PicImage base;
+    base.bits = 8;
+    base.x = 10;
+    base.y = 20;
+    base.width = 4;
+    base.height = 3;
+    base.pixels = {10, 11, 12, 13, 20, 21, 22, 23, 30, 31, 32, 33};
+
+    gateway::PicImage first;
+    first.bits = 8;
+    first.x = 11;
+    first.y = 21;
+    first.width = 2;
+    first.height = 2;
+    first.pixels = {1, 2, 4, 8};
+    gateway::apply_pic_xor(first, base);
+    require(first.x == 10 && first.y == 20 && first.width == 4 && first.height == 3,
+            "XOR frame must have base coordinates and dimensions");
+    require(first.pixels == Bytes({10, 11, 12, 13, 20, 20, 20, 23, 30, 27, 40, 33}),
+            "XOR frame must modify only its rectangle");
+
+    // Separate animation entries refer to the *same* full picture, not the previous frame.
+    gateway::PicImage second;
+    second.bits = 8;
+    second.x = 11;
+    second.y = 21;
+    second.width = 2;
+    second.height = 2;
+    second.pixels = {16, 32, 64, 128};
+    gateway::apply_pic_xor(second, base);
+    require(second.pixels == Bytes({10, 11, 12, 13, 20, 5, 54, 23, 30, 95, 160, 33}),
+            "XOR siblings must not be accumulated");
+    require(base.pixels[5] == 21, "XOR frame modified its base");
+
+    gateway::PicImage beyond = second;
+    beyond.x = 20;
+    rejects([&] { gateway::apply_pic_xor(beyond, base); },
+            "XOR frame outside base picture accepted");
+    gateway::PicImage malformed = second;
+    malformed.pixels.pop_back();
+    rejects([&] { gateway::apply_pic_xor(malformed, base); },
+            "XOR frame with truncated pixels accepted");
+}
+
 void test_crusher() {
     // A Crusher block with a fixed literal symbol needs no per-pixel bits. Both the literal
     // code and the unused distance tree have zero code-length records.
@@ -362,6 +407,7 @@ int main() {
     try {
         test_directory();
         test_mission_critical_directory();
+        test_pic_xor_frames();
         test_crusher();
         test_dcl();
         test_lzw();
