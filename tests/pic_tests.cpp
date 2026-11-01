@@ -39,6 +39,10 @@ void put_u16(Bytes &b, std::uint16_t value) {
     b.push_back(value & 255);
     b.push_back(value >> 8);
 }
+void put_u32(Bytes &b, std::uint32_t value) {
+    put_u16(b, static_cast<std::uint16_t>(value));
+    put_u16(b, static_cast<std::uint16_t>(value >> 16));
+}
 void put_entry(Bytes &b, std::uint32_t offset, std::uint16_t flags, std::uint16_t width,
                std::uint16_t height) {
     put_u16(b, offset & 0xffff);
@@ -70,6 +74,51 @@ void test_directory() {
     put_entry(misaligned, 5, 0, 1, 1);
     misaligned.resize(20);
     rejects([&] { gateway::parse_pic_directory(misaligned); }, "misaligned directory accepted");
+}
+
+void test_mission_critical_directory() {
+    Bytes file(0x1400);
+    const auto put_mc_entry = [&](std::size_t index, std::uint32_t offset, std::uint32_t size,
+                                  std::uint16_t flags, std::uint16_t x, std::uint16_t y,
+                                  std::uint16_t width, std::uint16_t height, std::uint16_t extra) {
+        Bytes record;
+        put_u32(record, offset);
+        put_u32(record, size);
+        for (const auto value : {flags, x, y, width, height, extra})
+            put_u16(record, value);
+        std::copy(record.begin(), record.end(), file.begin() + index * 20);
+    };
+    // First payload updates two RGB entries starting at palette index 64, followed by 2 bytes
+    // of Crusher data. The next entry shares the palette but supplies a separate image stream.
+    put_mc_entry(0, 0x1400, 2, 0xff00, 0, 0, 2, 1, 0);
+    put_mc_entry(1, 0x140c, 4, 3, 7, 9, 2, 2, 2);
+    file.insert(file.end(), {0xc0, 0, 6, 0, 1, 2, 3, 4, 5, 6, 0xaa, 0xbb});
+    file.insert(file.end(), {0xde, 0xad, 0xbe, 0xef});
+    const auto entries = gateway::parse_mc_pic_directory(file);
+    require(entries.size() == 256 && entries[2].offset == 0, "MC fixed-size directory");
+    require(entries[0].palette_start == 192 && entries[0].palette_size == 6 &&
+                entries[0].data_offset == 0x140a && entries[0].compressed_size == 2,
+            "MC partial palette and compressed size");
+    require(entries[1].flags == 3 && entries[1].x == 7 && entries[1].y == 9 &&
+                entries[1].width == 2 && entries[1].height == 2 && entries[1].extra == 2 &&
+                entries[1].data_offset == 0x140c,
+            "MC positioned animation entry");
+
+    Bytes bad = file;
+    bad[0x1402] = 7; // Palette byte length must be RGB triples.
+    rejects([&] { gateway::parse_mc_pic_directory(bad); }, "invalid MC palette length accepted");
+    bad = file;
+    bad[0x1400] = 0x00; // Palette start plus length must fit 768 bytes.
+    bad[0x1401] = 3;
+    rejects([&] { gateway::parse_mc_pic_directory(bad); }, "invalid MC palette range accepted");
+    bad = file;
+    bad[20] = 0x05; // The second record would overlap the first.
+    rejects([&] { gateway::parse_mc_pic_directory(bad); }, "overlapping MC entries accepted");
+    bad = file;
+    bad.pop_back();
+    rejects([&] { gateway::parse_mc_pic_directory(bad); }, "truncated MC stream accepted");
+    rejects([&] { gateway::parse_mc_pic_directory(Bytes(0x1400)); },
+            "empty MC directory accepted");
 }
 
 void test_dcl() {
@@ -230,6 +279,7 @@ void test_png() {
 int main() {
     try {
         test_directory();
+        test_mission_critical_directory();
         test_dcl();
         test_lzw();
         test_huffman();

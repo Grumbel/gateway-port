@@ -261,6 +261,55 @@ std::vector<PicEntry> parse_pic_directory(Bytes file) {
     return entries;
 }
 
+std::vector<McPicEntry> parse_mc_pic_directory(Bytes file) {
+    constexpr std::size_t directory_bytes = 0x1400;
+    constexpr std::size_t entry_bytes = 20;
+    constexpr std::size_t palette_bytes = 256 * 3;
+    if (file.size() < directory_bytes || u32(file, 0) != directory_bytes)
+        throw std::runtime_error("invalid Mission Critical PIC directory");
+
+    std::vector<McPicEntry> entries;
+    entries.reserve(directory_bytes / entry_bytes);
+    std::size_t previous_end = directory_bytes;
+    for (std::size_t at = 0; at < directory_bytes; at += entry_bytes) {
+        McPicEntry entry;
+        entry.offset = u32(file, at);
+        entry.compressed_size = u32(file, at + 4);
+        entry.flags = u16(file, at + 8);
+        entry.x = u16(file, at + 10);
+        entry.y = u16(file, at + 12);
+        entry.width = u16(file, at + 14);
+        entry.height = u16(file, at + 16);
+        entry.extra = u16(file, at + 18);
+        if (!entry.offset) {
+            if (entry.compressed_size || entry.flags || entry.width || entry.height)
+                throw std::runtime_error("invalid empty Mission Critical PIC entry");
+            entries.push_back(entry);
+            continue;
+        }
+        if (entry.offset < previous_end || entry.offset > file.size())
+            throw std::runtime_error("invalid Mission Critical PIC data offset");
+        std::size_t data_at = entry.offset;
+        if (entry.flags == 0xff00) {
+            entry.palette_start = u16(file, data_at);
+            entry.palette_size = u16(file, data_at + 2);
+            data_at += 4;
+            if (entry.palette_start % 3 || entry.palette_size % 3 ||
+                entry.palette_start + entry.palette_size > palette_bytes)
+                throw std::runtime_error("invalid Mission Critical PIC palette range");
+            bytes_at(file, data_at, entry.palette_size);
+            data_at += entry.palette_size;
+        }
+        bytes_at(file, data_at, entry.compressed_size);
+        entry.data_offset = static_cast<std::uint32_t>(data_at);
+        previous_end = data_at + entry.compressed_size;
+        entries.push_back(entry);
+    }
+    if (previous_end != file.size())
+        throw std::runtime_error("Mission Critical PIC data does not end at EOF");
+    return entries;
+}
+
 std::vector<std::uint8_t> explode_dcl(Bytes data, std::size_t max_size) {
     static const auto literal_code = build_dcl_code(dcl_literal);
     static const auto length_code = build_dcl_code(dcl_length);

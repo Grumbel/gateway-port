@@ -6,7 +6,7 @@
 #include <vector>
 
 namespace gateway {
-// Legend games store the same PIC directory but three different entry encodings.
+// Early Legend games share the same PIC directory but use three different entry encodings.
 enum class PicDialect { s101, s201, gateway };
 
 std::string_view pic_dialect_name(PicDialect dialect);
@@ -18,6 +18,24 @@ struct PicEntry {
     std::uint16_t height = 0;
     std::uint16_t reserved = 0;
 };
+
+// Mission Critical has a different 256-slot, 20-byte PIC directory. Its image streams use the
+// proprietary Crusher! codec; the metadata and palette updates can be extracted without it.
+struct McPicEntry {
+    std::uint32_t offset = 0;
+    std::uint32_t compressed_size = 0;
+    std::uint16_t flags = 0;
+    std::uint16_t x = 0;
+    std::uint16_t y = 0;
+    std::uint16_t width = 0;
+    std::uint16_t height = 0;
+    std::uint16_t extra = 0;
+    std::uint16_t palette_start = 0; // Byte offset into the 768-byte VGA DAC palette.
+    std::uint16_t palette_size = 0;  // Bytes, in RGB triples.
+    std::uint32_t data_offset = 0;   // Compressed stream starts after an optional palette update.
+};
+
+std::vector<McPicEntry> parse_mc_pic_directory(std::span<const std::uint8_t> file);
 
 struct PicImage {
     int width = 0;

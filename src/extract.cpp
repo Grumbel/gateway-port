@@ -1,5 +1,6 @@
 #include "pic.hpp"
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -96,14 +97,17 @@ std::vector<std::uint8_t> read_file(const fs::path &path) {
 }
 
 void usage(std::ostream &out) {
-    out << "usage: gateway-extract [--dialect auto|s101|s201|gateway] [--raw-overlays] -o DIR "
+    out << "usage: gateway-extract [--dialect auto|s101|s201|gateway|mc] "
+           "[--raw-overlays] [--raw-chunks] -o DIR "
            "FILE.PIC...\n";
 }
 } // namespace
 
 int main(int argc, char **argv) try {
     std::optional<PicDialect> forced;
+    bool forced_mc = false;
     bool raw_overlays = false;
+    bool raw_chunks = false;
     fs::path output;
     std::vector<fs::path> inputs;
     for (int i = 1; i < argc; ++i) {
@@ -113,6 +117,8 @@ int main(int argc, char **argv) try {
             return 0;
         } else if (arg == "--raw-overlays") {
             raw_overlays = true;
+        } else if (arg == "--raw-chunks") {
+            raw_chunks = true;
         } else if (arg == "-o" && i + 1 < argc) {
             output = argv[++i];
         } else if (arg == "--dialect" && i + 1 < argc) {
@@ -123,8 +129,13 @@ int main(int argc, char **argv) try {
                 forced = PicDialect::s201;
             else if (name == "gateway")
                 forced = PicDialect::gateway;
-            else if (name != "auto")
+            else if (name == "mc") {
+                forced = std::nullopt;
+                forced_mc = true;
+            } else if (name != "auto")
                 throw std::runtime_error("unknown dialect " + name);
+            if (name != "mc")
+                forced_mc = false;
         } else if (arg.starts_with("-")) {
             usage(std::cerr);
             return 2;
@@ -137,10 +148,69 @@ int main(int argc, char **argv) try {
         return 2;
     }
 
-    std::size_t written = 0, failed = 0, unpaletted = 0, unplaced = 0;
+    std::size_t written = 0, failed = 0, unpaletted = 0, unplaced = 0, raw_written = 0;
     std::vector<Rgb8> palette_8; // Some 8-bit files rely on a palette loaded from an earlier one.
+    std::array<std::uint8_t, 768> mc_palette{};
+    bool have_mc_palette = false; // Mission Critical also reuses palettes between files.
     for (const auto &input : inputs) {
         const auto file = read_file(input);
+        const bool mc = forced_mc ||
+                        (!forced && file.size() >= 0x1400 && file[0] == 0 && file[1] == 0x14 &&
+                         file[2] == 0 && file[3] == 0);
+        if (mc) {
+            const auto entries = gateway::parse_mc_pic_directory(file);
+            const std::size_t populated =
+                std::count_if(entries.begin(), entries.end(), [](const auto &e) { return e.offset; });
+            const std::size_t chunks = std::count_if(entries.begin(), entries.end(),
+                                                     [](const auto &e) { return e.compressed_size; });
+            if (!raw_chunks) {
+                failed += chunks;
+                std::cerr << input.filename().string() << ": Mission Critical PIC (" << populated
+                          << " entries, " << chunks << " Crusher-compressed images); native Crusher "
+                             "decoding unavailable. Use --raw-chunks to export streams.\n";
+                continue;
+            }
+            const auto directory = output / input.stem();
+            fs::create_directories(directory);
+            std::ofstream manifest(directory / "index.tsv");
+            if (!manifest)
+                throw std::runtime_error("cannot write Mission Critical manifest");
+            manifest << "index\toffset\tcompressed_size\tflags\tx\ty\twidth\theight\textra"
+                        "\tpalette_start\tpalette_size\n";
+            for (std::size_t i = 0; i < entries.size(); ++i) {
+                const auto &entry = entries[i];
+                if (!entry.offset)
+                    continue;
+                manifest << i << '\t' << entry.offset << '\t' << entry.compressed_size << '\t'
+                         << entry.flags << '\t' << entry.x << '\t' << entry.y << '\t'
+                         << entry.width << '\t' << entry.height << '\t' << entry.extra << '\t'
+                         << entry.palette_start << '\t' << entry.palette_size << '\n';
+                if (entry.flags == 0xff00 && entry.palette_size) {
+                    std::copy_n(file.begin() + entry.offset + 4, entry.palette_size,
+                                mc_palette.begin() + entry.palette_start);
+                    have_mc_palette = true;
+                }
+                char name[32];
+                if (entry.compressed_size) {
+                    std::snprintf(name, sizeof name, "%03zu.crusher", i);
+                    write_file(directory / name,
+                               std::span<const std::uint8_t>(file).subspan(entry.data_offset,
+                                                                           entry.compressed_size));
+                    ++raw_written;
+                }
+                if (have_mc_palette) {
+                    std::snprintf(name, sizeof name, "%03zu.pal", i);
+                    write_file(directory / name, mc_palette);
+                }
+            }
+            if (!manifest)
+                throw std::runtime_error("cannot write Mission Critical manifest");
+            std::cout << input.filename().string() << ": mission-critical, " << populated
+                      << " entries, " << chunks << " compressed streams exported (not decoded)\n";
+            continue;
+        }
+        if (raw_chunks)
+            throw std::runtime_error("--raw-chunks supports Mission Critical PIC files only");
         const auto entries = gateway::parse_pic_directory(file);
         auto decoded = forced ? decode_all(file, entries, *forced) : decode_best(file, entries);
         const auto directory = output / input.stem();
@@ -196,12 +266,16 @@ int main(int argc, char **argv) try {
         for (const auto &error : decoded.errors)
             std::cerr << input.filename().string() << ": " << error << '\n';
     }
-    std::cout << written << " images written to " << output.string() << ", " << failed
-              << " failed\n";
+    if (!raw_chunks || written)
+        std::cout << written << " images written to " << output.string() << ", " << failed
+                  << " failed\n";
     if (unplaced)
         std::cerr << unplaced << " overlays have no covering picture and stay as raw deltas\n";
     if (unpaletted)
         std::cerr << unpaletted << " 8-bit images had no palette and use a grey ramp\n";
+    if (raw_written)
+        std::cout << raw_written << " Crusher streams (plus available palette snapshots) written "
+                  << "to " << output.string() << "\n";
     return failed ? 1 : 0;
 } catch (const std::exception &error) {
     std::cerr << "gateway-extract: " << error.what() << '\n';
