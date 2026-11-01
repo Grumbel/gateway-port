@@ -9,8 +9,10 @@ formats and replacing the original interpreter is the long-term goal.
 
 The original-code runtime reaches **Your Quarters**, renders the first room, and
 accepts keyboard commands. Keyboard input, save/restore, and audio have also been
-confirmed working by the user. Spellcasting 301 also reaches its first room,
-Beach; its broader gameplay remains unverified. It provides:
+confirmed working by the user. Spellcasting 101 reaches gameplay, and its intro
+music now plays correctly; Spellcasting 201 starts and renders its game interface
+correctly in user testing. Spellcasting 301 reaches its first room, Beach, in a
+headless run. No title has been verified through a complete playthrough. It provides:
 
 - A checked DOS MZ loader with segment relocation and initial register setup.
 - `gateway-inspect`, which reports loaded image and entry information.
@@ -24,6 +26,54 @@ Beach; its broader gameplay remains unverified. It provides:
 Original game files remain external in `../gateway-dos/` and are never needed
 for package builds or unit tests. The probe opens game files read-only unless given `--state-dir`; the SDL runtime
 keeps writes in a separate persistent state directory.
+
+## Legend Entertainment adventure-engine compatibility
+
+Legend's original DOS adventure-engine family runs from *Spellcasting 101*
+(1990) through *Callahan's Crosstime Saloon* (1997). The first seven games use
+the illustrated text-parser interface closest to this port. The six later games
+use the evolving graphical/point-and-click branch of the same engine lineage;
+**shared ancestry does not imply executable or resource-format compatibility**.
+The status below describes actual observations with `gateway`, not a prediction
+based on the game's engine family. Only the five games listed with an executable
+path are available in the current test archive.
+
+### Illustrated parser games
+
+| Year | Game | Executable in test archive | Status |
+| --- | --- | --- | --- |
+| 1990 | *Spellcasting 101: Sorcerers Get All the Girls* | `../101/S101.EXE` | **User-tested:** intro sound and keyboard skipping work; reached gameplay. Full playthrough unverified. |
+| 1991 | *Timequest* | — | **Not tested:** no game files available. |
+| 1991 | *Spellcasting 201: The Sorcerer's Appliance* | `../201/S201.EXE` | **User-tested:** starts, displays graphics, verbs, objects, and story text correctly. Full playthrough unverified. |
+| 1992 | *Frederik Pohl's Gateway* | `../gateway-dos/GATE.EXE` | **User-tested:** reaches Your Quarters; keyboard, mouse controls, save/restore, and audio work. Full playthrough unverified. |
+| 1992 | *Spellcasting 301: Spring Break* | `../301/S301.EXE` | **Headless-tested:** reaches Beach and renders the opening screen. Interactive gameplay and audio unverified. |
+| 1993 | *Eric the Unready* | — | **Not tested:** no game files available. |
+| 1993 | *Gateway II: Homeworld* | `../gateway2-dos/HOME.EXE` | **Headless-tested:** reaches the Living Room with readable menus and opening text. Interactive input and audio unverified. |
+
+### Later graphical adventures in the same lineage
+
+These titles have increasingly different interfaces and data formats. **None
+has been tested with this port**; they should not be considered supported merely
+because their engine descends from Legend's earlier adventures.
+
+| Year | Game | Status |
+| --- | --- | --- |
+| 1993 | *Companions of Xanth* | **Not tested:** no game files available. |
+| 1994 | *Death Gate* | **Not tested:** no game files available; resource formats are related but differ from Gateway's. |
+| 1994 | *Superhero League of Hoboken* | **Not tested:** no game files available. |
+| 1995 | *Mission Critical* | **Not tested:** no game files available. |
+| 1995 | *Shannara* | **Not tested:** no game files available. |
+| 1997 | *Callahan's Crosstime Saloon* | **Not tested:** no game files available. |
+
+This lists individual games, not compilation releases such as *Spellcasting:
+Party Pak* or *The Lost Adventures of Legend*. Later Legend projects, including
+*Star Control 3*, *John Saul's Blackstone Chronicles*, and the Unreal-engine
+games, are outside this port's established engine scope. For the game catalog
+and engine history, see [IFWiki's Legend list](https://www.ifwiki.org/Legend_Entertainment),
+[MobyGames' Legend catalog](https://www.mobygames.com/company/117/legend-entertainment-company/games/),
+and [The Digital Antiquarian's engine history](https://www.filfre.net/2025/06/the-last-adventures-of-legend/).
+For detailed local checks, see [Spellcasting research](docs/spellcasting.md) and
+[Gateway II's headless startup](docs/video.md#bios-font-fallback-without-fixed-game-fonts).
 
 ## Build and run
 
