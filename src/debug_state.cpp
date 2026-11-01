@@ -190,10 +190,12 @@ std::optional<DebugNameTable> inspect_legend_name_table(
         if (auto found = inspect(*directory_hint))
             return found;
     }
-    // The directory can live in any conventional-memory segment. Two-byte
-    // alignment reduces the scan; a successful hit still validates hundreds
-    // of consecutive pointers and NUL-delimited name tokens.
-    for (std::size_t at = 0x10000; at < limit - minimum_objects * 6; at += 2) {
+    // The directory can live at *any byte address* in conventional memory.
+    // Gateway II's verified table begins at linear 0x38b1d (odd!), so scanning
+    // only word-aligned addresses silently missed all 521 of its objects.
+    // A successful candidate still validates hundreds of far pointers and
+    // NUL-delimited name tokens, and is cached as a hint for later frames.
+    for (std::size_t at = 0x10000; at < limit - minimum_objects * 6; ++at) {
         if (memory[at] < 1 || memory[at] > 8)
             continue;
         const auto record = std::size_t(read_word(at + 4)) * 16 + read_word(at + 2);

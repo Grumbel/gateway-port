@@ -1,6 +1,8 @@
 #include "debug_state.hpp"
 #include <cstdint>
+#include <fstream>
 #include <iostream>
+#include <iterator>
 #include <stdexcept>
 #include <vector>
 
@@ -16,7 +18,7 @@ void store(std::vector<std::uint8_t> &m, unsigned seg, unsigned off, unsigned va
 }
 } // namespace
 
-int main() try {
+int main(int argc, char **argv) try {
     std::vector<std::uint8_t> memory(0x50000);
     constexpr unsigned ds = 0x1000, dir = 0x1200, desc = 0x1300;
     constexpr unsigned count_seg = 0x1400, record_seg = 0x1500;
@@ -60,7 +62,7 @@ int main() try {
     // indexing OBJECT.DAT strings directly (aliases shift those indexes).
     std::vector<std::uint8_t> other_memory(0xa0000);
     std::vector<std::uint8_t> other_names(2);
-    constexpr unsigned other_dir = 0x18000, other_record_seg = 0x3000;
+    constexpr unsigned other_dir = 0x18001, other_record_seg = 0x3000;
     auto absolute_word = [&](unsigned at, unsigned value) {
         other_memory.at(at) = value & 255;
         other_memory.at(at + 1) = value >> 8;
@@ -102,6 +104,24 @@ int main() try {
     absolute_word(other_record_seg * 16 + 0x200 + 8 * 100, 0xffff);
     require(!gateway::inspect_legend_name_table(other_memory, other_names, 300),
             "partial/untrusted name directory must not produce misleading labels");
+    if (argc > 2) {
+        // Optional user-provided Gateway II live snapshot and original
+        // OBJECT.DAT. Both remain outside the repository.
+        auto read = [](const char *filename) {
+            std::ifstream file(filename, std::ios::binary);
+            require(bool(file), "missing optional Gateway II name fixture");
+            return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(file), {});
+        };
+        const auto snapshot = read(argv[1]);
+        const auto object_dat = read(argv[2]);
+        const auto actual = gateway::inspect_legend_name_table(snapshot, object_dat, 520);
+        require(actual && actual->directory_address == 0x38b1d &&
+                    actual->names.size() == 522 && actual->names[7] == "ground" &&
+                    actual->names[377] == "windows" &&
+                    actual->names[520] == "laser rifle",
+                "Gateway II live 521-object table with odd-aligned directory");
+        std::cout << "Gateway II live object-name snapshot checks passed\n";
+    }
     std::cout << "Gateway live object snapshot checks passed\n";
 } catch (const std::exception &error) {
     std::cerr << error.what() << '\n';
