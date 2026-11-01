@@ -9,6 +9,23 @@ HANDLER_FIELDS = [0x10, 0x22, 0x0a, 0x12, 0x14, 0x16, 0x1e, 0x16]
 LOCATION_FIELDS = {2: 0x0e, 6: 0x0a, 7: 0x0c, 8: 0x0c}
 
 
+def relation_links(kind, count, raw):
+    """Decode the ordered links traversed by EXE 0157:00c5 via 0157:05c1.
+
+    Kind 6 stores count consecutive words at +0x0a; kinds 2, 7, and 8
+    repeat their single location word for each requested link slot. Other
+    object kinds have no link accessor, even if the descriptor count is set.
+    """
+    if kind not in LOCATION_FIELDS or not count:
+        return []
+    if kind == 6:
+        if 0x0a + 2 * count > len(raw):
+            raise ValueError('type 6 relation list exceeds object record')
+        return list(struct.unpack_from('<' + 'H' * count, raw, 0x0a))
+    location = struct.unpack_from('<H', raw, LOCATION_FIELDS[kind])[0]
+    return [location] * count
+
+
 def inspect_objects(memory, ds, names=None):
     def chunk(segment, offset, size):
         address = segment * 16 + offset
@@ -34,6 +51,7 @@ def inspect_objects(memory, ds, names=None):
         if not 1 <= kind <= 8:
             raise ValueError(f'object {object_id}: unsupported type {kind}')
         offset, segment = pointer(directory, record + 2)
+        relation_count = chunk(descriptors, kind * 3 - 3, 1)[0]
         size = chunk(descriptors, kind * 3 - 1, 1)[0]
         handler_field = HANDLER_FIELDS[kind - 1]
         if size < handler_field + 2:
@@ -45,7 +63,8 @@ def inspect_objects(memory, ds, names=None):
         item = dict(object=object_id, type=kind, state_segment=segment, state_offset=offset,
                     size=size, name_token=word(segment, offset),
                     secondary_name_token=word(segment, offset + 2), handler=handler,
-                    raw_state=raw.hex())
+                    raw_state=raw.hex(), relation_count=relation_count,
+                    relation_links=relation_links(kind, relation_count, raw))
         if names is not None:
             for key, label in [('name_token', 'name'), ('secondary_name_token', 'secondary_name')]:
                 if not item[key]:

@@ -124,6 +124,25 @@ of 733 pairs when sorted by linear address; the remaining boundaries include
 allocation gaps. The 734 records total 20,650 bytes. These records are now an
 explicit comparison surface; they are not all of the game's persistent state.
 
+The **first** byte of each descriptor (`type*3-3`) is used by the original
+recursive object-relation enumerator as its link-slot count. The exporter now
+includes `relation_count` and `relation_links` in object JSON. This is distinct
+from the third-byte record length and from the single direct `location` getter:
+
+| Type | Relation accessor used by the native helper |
+| ---: | --- |
+| 2 | State word at `+0x0e`, returned for every slot |
+| 6 | Consecutive words from `+0x0a + 2*slot` |
+| 7, 8 | State word at `+0x0c`, returned for every slot |
+| 1, 3, 4, 5 | No relation; accessor returns zero |
+
+The exporter checks that a type-6 list stays inside its record, and preserves
+zero link values. The recursive consumer and its limitations are documented
+in [action-dispatch.md](action-dispatch.md#resident-recursive-object-relations).
+`tools/inspect_relation_paths.py` reads this JSON to show one chain between
+two requested object IDs. It is intentionally independent of the original
+game's visibility, permission checks, and command parser.
+
 ## State-changing replay
 
 ```sh

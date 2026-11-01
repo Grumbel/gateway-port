@@ -5,7 +5,8 @@ import sys
 import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'tools'))
-from inspect_object_state import inspect_objects, map_handler_entries, HANDLER_FIELDS
+from inspect_object_state import (inspect_objects, map_handler_entries, relation_links,
+                                  HANDLER_FIELDS)
 
 
 class ObjectStateExportTests(unittest.TestCase):
@@ -71,6 +72,30 @@ class ObjectStateExportTests(unittest.TestCase):
         self.assertNotEqual(before, after)
         self.assertEqual(after[1]['location'], 0xd3)
         self.assertEqual(before[0], after[0])
+
+    def test_relation_links_follow_original_type_specific_accessor(self):
+        # First descriptor byte (kind*3-3) bounds the recursive relation
+        # enumerator, unlike the third byte holding the record length.
+        for kind, count in [(1, 2), (2, 2), (6, 4), (7, 1), (8, 1)]:
+            self.memory[0x30000 + kind * 3 - 3] = count
+        self.word(0x4000, 0x200 + 0x0e, 0x124)
+        for index, relation in enumerate([0xd3, 0, 0x125, 0xee]):
+            self.word(0x4000, 0x600 + 0x0a + 2 * index, relation)
+        self.word(0x4000, 0x700 + 0x0c, 0x124)
+        self.word(0x4000, 0x800 + 0x0c, 0x123)
+        objects = inspect_objects(self.memory, self.ds)
+        self.assertEqual(objects[0]['relation_links'], [])
+        self.assertEqual(objects[1]['relation_links'], [0x124, 0x124])
+        self.assertEqual(objects[5]['relation_links'], [0xd3, 0, 0x125, 0xee])
+        self.assertEqual(objects[6]['relation_links'], [0x124])
+        self.assertEqual(objects[7]['relation_links'], [0x123])
+        self.assertEqual(objects[5]['location'], 0xd3)
+
+    def test_invalid_type6_relation_count_is_rejected(self):
+        self.memory[0x30000 + 6 * 3 - 3] = 8  # 0x0a + 16 > 24-byte record.
+        with self.assertRaisesRegex(ValueError, 'relation list exceeds'):
+            inspect_objects(self.memory, self.ds)
+        self.assertEqual(relation_links(6, 0, b''), [])
 
     def test_bad_type_handler_size_name_and_pointer_are_rejected(self):
         for address, value in [(0x200c0, 9), (0x30002, 1)]:
