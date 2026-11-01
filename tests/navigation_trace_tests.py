@@ -1,0 +1,96 @@
+"""Player location-change reports from synthetic native probe traces."""
+from pathlib import Path
+import json
+import subprocess
+import sys
+import tempfile
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'tools'))
+from summarize_navigation_trace import location_events, room_names, summarize
+
+TOOL = ROOT / 'tools' / 'summarize_navigation_trace.py'
+WATCH = 'object-watch ms=11100 object=d3 type=7 at=1e4c:1234 size=20 child_count=3'
+WRITE_OUT = ('object-write ms=18130 object=d3 pc=43abc cs=4319 ip=abc '
+             'offset=c size=2 before=ee00 value=f100')
+WRITE_BACK = ('object-write ms=21130 object=d3 pc=43abd cs=4319 ip=abd '
+              'offset=c size=2 before=f100 value=ee00')
+SET_OUT = ('object-location-set ms=18130 object=d3 location=f1 '
+           'write=1e4c:1240:f1,0, changed=1 return=4319:1122')
+SET_BACK = ('object-location-set ms=21130 object=d3 location=ee '
+            'write=1e4c:1240:ee,0, changed=1 return=4319:1123')
+COMMANDS = ('east', 'west', 'east', 'west', 'look', 'inventory', 'look')
+
+
+class NavigationTraceTests(unittest.TestCase):
+    def test_changed_service_and_matching_prewrite(self):
+        lines = [WATCH, SET_OUT, WRITE_OUT, SET_BACK, WRITE_BACK,
+                 'object-location-set ms=25000 object=123 location=d3 changed=1',
+                 'object-location-set ms=26000 object=d3 location=ee '
+                 'changed=0 return=1157:00ab',
+                 'object-write ms=26200 object=d3 pc=1 offset=10 size=2 '
+                 'before=0000 value=ffff']
+        events = location_events(lines)
+        self.assertEqual(len(events), 2)
+        self.assertEqual([(event['old'], event['new']) for event in events],
+                         [(0xee, 0xf1), (0xf1, 0xee)])
+        self.assertEqual(events[0]['evidence'], 'verified service')
+        self.assertEqual(events[0]['caller'], '4319:1122')
+        self.assertEqual(events[0]['pc'], '43abc')
+        world = dict(roots=[dict(id=0xee, native_type=1, name='Your Quarters',
+                                 child_slots=[]),
+                            dict(id=0xf1, native_type=1, name='Heecheetown',
+                                 child_slots=[])])
+        output = summarize(events, room_names(world), COMMANDS)
+        self.assertIn('east', output)
+        self.assertIn('west', output)
+        self.assertIn('0x0ee Your Quarters -> 0x0f1 Heecheetown', output)
+        self.assertIn('0x0f1 Heecheetown -> 0x0ee Your Quarters', output)
+        self.assertIn('timed association', output)
+
+    def test_prewrite_is_not_mistaken_for_verified_navigation(self):
+        events = location_events([WATCH, WRITE_OUT])
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]['evidence'], 'pre-write attempt')
+        self.assertIn('may not complete', summarize(events))
+        self.assertIn('no nonredundant', summarize([]))
+        with self.assertRaisesRegex(ValueError, 'without verified object-watch'):
+            location_events([WRITE_OUT])
+
+    def test_inconsistent_native_annotations_are_rejected(self):
+        unchanged = SET_OUT.replace('changed=1', 'changed=0')
+        with self.assertRaisesRegex(ValueError, 'disagrees'):
+            location_events([WATCH, unchanged, WRITE_OUT])
+        redundant = WRITE_OUT.replace('before=ee00', 'before=f100')
+        with self.assertRaisesRegex(ValueError, 'disagrees'):
+            location_events([WATCH, SET_OUT, redundant])
+        with self.assertRaisesRegex(ValueError, 'not native type 7'):
+            location_events([WATCH.replace('type=7', 'type=2')])
+        with self.assertRaisesRegex(ValueError, 'invalid native player trace'):
+            location_events([WATCH, WRITE_OUT.replace('before=ee00', 'before=z')])
+
+    def test_scripted_command_window_and_cli(self):
+        world = {'roots': [dict(id=0xee, native_type=1, name='Your Quarters',
+                                child_slots=[]),
+                           dict(id=0xf1, native_type=1, name='Heecheetown',
+                                child_slots=[])]}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            trace = root / 'native.trace'
+            trace.write_text('\n'.join([WATCH, SET_OUT, WRITE_OUT]))
+            names = root / 'world.json'
+            names.write_text(json.dumps(world))
+            command = [sys.executable, str(TOOL), str(trace), '--world', str(names),
+                       '--commands', ','.join(COMMANDS)]
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('east', result.stdout)
+            self.assertIn('Heecheetown', result.stdout)
+            bad = subprocess.run(command[:-1] + ['east'], capture_output=True, text=True)
+            self.assertEqual(bad.returncode, 2)
+            self.assertIn('expected 7', bad.stderr)
+
+
+if __name__ == '__main__':
+    unittest.main()
