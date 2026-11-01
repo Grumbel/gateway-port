@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-from summarize_action_effects import collect_effects, parse_entry
+from summarize_action_effects import collect_effects, parse_entry, parse_state_change
 
 
 class ActionEffectsTests(unittest.TestCase):
@@ -89,6 +89,33 @@ class ActionEffectsTests(unittest.TestCase):
         self.assertEqual(records[0]['handler'], '4661:14f4')
         self.assertEqual(records[0]['effects'], [])
 
+    def test_native_write_deltas_preserve_redundant_service_calls(self):
+        lines = [
+            'entry ms=25333 pc=147c0 cs=1476 stack=0,0,0,46,',
+            'entry ms=25333 pc=49121 cs=4661 stack=0,0,',
+            'entry ms=25333 pc=11950 cs=1157 stack=beef,4661,123,7,',
+            'object-flag-set ms=25333 object=123 property=7 '
+            'write=1000:2000:7, changed=0 return=4661:1004',
+            'entry ms=25356 pc=11bbb cs=1157 stack=beef,4661,123,d3,',
+            'object-location-set ms=25356 object=123 location=d3 '
+            'write=1000:3000:d3,0, changed=1 return=4661:1004',
+            'entry ms=25426 pc=11950 cs=1157 stack=beef,4661,123,2,',
+            'object-flag-set ms=25426 object=123 property=2 '
+            'changed=unsupported return=4661:1004',
+            'entry ms=25426 pc=147c5 cs=1476 ax=1 stack=0,0,0,46,',
+        ]
+        record, = collect_effects(lines)
+        self.assertEqual(record['effects'], [(25333, 'set', 0x123, 7),
+                                             (25356, 'location-set', 0x123, 0xd3),
+                                             (25426, 'set', 0x123, 2)])
+        self.assertEqual(record['effect_changes'], [False, True, 'unsupported'])
+
+    def test_invalid_state_write_annotation(self):
+        self.assertIsNone(parse_state_change('entry ms=5 pc=11950'))
+        self.assertIsNone(parse_state_change('object-flag-set ms=5 object=123 property=2'))
+        self.assertIsNone(parse_state_change('object-location-set ms=5 object=123 '
+                                             'location=ee changed=maybe'))
+
     def test_missing_or_malformed_entry(self):
         self.assertIsNone(parse_entry('key ms=42 value=1c0d'))
         self.assertIsNone(parse_entry('entry ms=abc pc=47d44 cs=4661 stack=124,c,'))
@@ -109,7 +136,30 @@ class ActionEffectsTests(unittest.TestCase):
             self.assertIn('open drawer', result.stdout)
             self.assertIn('set(0x124,0x0c)@18393', result.stdout)
             self.assertNotIn('set(0x124,0x02)', result.stdout)
-            self.assertIn('not proof of changed bytes', result.stdout)
+            self.assertIn('not a complete side-effect list', result.stdout)
+            changed = subprocess.run([sys.executable, str(script), str(trace),
+                                      '--changed-only'], capture_output=True, text=True)
+            self.assertEqual(changed.returncode, 2)
+            self.assertIn('requires a trace with state-write annotations', changed.stderr)
+
+    def test_changed_only_cli_suppresses_idempotent_flag_sets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            trace = Path(directory) / 'native.trace'
+            trace.write_text('\n'.join([
+                'entry ms=25 pc=147c0 cs=1476 stack=0,0,0,46,',
+                'entry ms=25 pc=49121 cs=4661 stack=0,0,',
+                'entry ms=25 pc=11950 cs=1157 stack=abcd,4661,123,7,',
+                'object-flag-set ms=25 object=123 property=7 changed=0',
+                'entry ms=26 pc=11bbb cs=1157 stack=abcd,4661,123,d3,',
+                'object-location-set ms=26 object=123 location=d3 changed=1',
+                'entry ms=27 pc=147c5 cs=1476 ax=1 stack=0,0,0,46,',
+            ]))
+            script = Path(__file__).resolve().parents[1] / 'tools' / 'summarize_action_effects.py'
+            result = subprocess.run([sys.executable, str(script), str(trace),
+                                     '--changed-only'], capture_output=True,
+                                    text=True, check=True)
+            self.assertIn('location-set(0x123,0xd3)@26[changed]', result.stdout)
+            self.assertNotIn('set(0x123,0x07)', result.stdout)
 
 
 if __name__ == '__main__':

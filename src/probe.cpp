@@ -478,6 +478,17 @@ void object_flags_hook(uc_engine *uc, std::uint64_t address, std::uint32_t, void
             write = gateway::object_location_write(read, ds, object, argument);
             break;
         }
+        // A native setter can be redundant: visibility/known-object flags in
+        // particular are set repeatedly during LOOK and INVENTORY. Report
+        // whether the *proposed* write differs from the bytes before the
+        // native function runs; verify mode also checks the native result.
+        std::optional<bool> changed;
+        if (write) {
+            changed = false;
+            for (unsigned i = 0; i < write->size; ++i)
+                *changed |= read(write->segment, std::uint32_t(write->offset) + i) !=
+                            write->bytes[i];
+        }
         ++state.object_service_calls[index];
         if (service == ObjectService::Flag)
             ++state.object_flags_calls;
@@ -495,6 +506,9 @@ void object_flags_hook(uc_engine *uc, std::uint64_t address, std::uint32_t, void
                 for (unsigned i = 0; i < write->size; ++i)
                     out << unsigned(write->bytes[i]) << ',';
             }
+            if (service == ObjectService::SetFlag || service == ObjectService::ClearFlag ||
+                service == ObjectService::SetLocation)
+                out << " changed=" << (changed ? (*changed ? "1" : "0") : "unsupported");
             out << " return=" << word(2) << ':' << word(0) << '\n';
         }
         if (state.object_flags_mode == "verify") {

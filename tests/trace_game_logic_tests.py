@@ -38,6 +38,23 @@ class TraceGameLogicTests(unittest.TestCase):
             self.assertEqual(result.returncode, 2)
             self.assertIn(str(build / 'gateway-probe'), result.stderr)
 
+    def test_state_write_trace_requires_native_replay_and_new_probe(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            probe = root / 'gateway-probe'
+            probe.write_bytes(b' action_code= but no changed field')
+            output = root / 'replay'
+            base = [sys.executable, str(DRIVER), '--scenario', 'objects',
+                    '--trace-state-writes', '--probe', str(probe), '--output', str(output)]
+            full = subprocess.run(base, capture_output=True, text=True)
+            self.assertEqual(full.returncode, 2)
+            self.assertIn('requires --native-only', full.stderr)
+            native = subprocess.run(base + ['--native-only'],
+                                    capture_output=True, text=True)
+            self.assertEqual(native.returncode, 2)
+            self.assertIn('lacks state-write delta tracing', native.stderr)
+            self.assertFalse(output.exists())
+
 
 if __name__ == '__main__':
     unittest.main()

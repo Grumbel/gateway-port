@@ -18,9 +18,13 @@ parser.add_argument('--verify-overlays', action='store_true')
 parser.add_argument('--hle-overlays', action='store_true', help='host section loading in HLE mode')
 parser.add_argument('--native-only', action='store_true',
                     help='collect a quick native trace without the two comparison replays')
+parser.add_argument('--trace-state-writes', action='store_true',
+                    help='verify native state services and mark actual byte changes in one replay')
 args = parser.parse_args()
 if args.native_only and args.hle_overlays:
     parser.error('--native-only and --hle-overlays cannot be combined')
+if args.trace_state_writes and not args.native_only:
+    parser.error('--trace-state-writes requires --native-only')
 if args.hle_overlays:
     args.verify_overlays = True
 # The expected action_code= field is emitted by the C++ gateway-probe, not the
@@ -34,6 +38,8 @@ if args.scenario in ['drawer', 'objects']:
     if b' action_code=' not in probe_bytes:
         parser.error(f'{args.probe} lacks action-dispatch trace support; '
                      'run gateway-build, or point --probe to the freshly built gateway-probe')
+    if args.trace_state_writes and b' changed=' not in probe_bytes:
+        parser.error(f'{args.probe} lacks state-write delta tracing; run gateway-build')
 args.output.mkdir(parents=True, exist_ok=True)
 keys = [(10000, 0x3920), (11000, 0x3920), (12000, 0x3920)]
 keys += [(14000, 0x266c), (14100, 0x186f), (14200, 0x186f),
@@ -85,6 +91,11 @@ for mode in (['native'] if args.native_only else ['native', 'verify', 'hle']):
                     # and compatibility with old traces.
                     '--trace-entry', '47d44', '--trace-entry', '47d59',
                     '--trace-entry', '46a0c']
+    if mode == 'native' and args.trace_state_writes:
+        # Observe the native implementation's writes without replacing them.
+        # Its existing verification hooks compare the predicted bytes with
+        # the guest's result at each service epilogue.
+        command += ['--object-state', 'verify']
     for time, key in sorted(keys):
         command += ['--key-at', f'{time}:{key:04x}']
     if args.verify_overlays:
