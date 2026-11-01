@@ -12,6 +12,42 @@ FIELDS = re.compile(r'\bstory_(object|event|command)=([0-9a-f]+)(?:\s|$)')
 HANDLERS = {0x49db5: 0xee, 0x4a378: 0x124}
 
 
+def collect_actions(lines):
+    """Associate observed native action dispatches with recent submitted text.
+
+    An action can be dispatched multiple times or as a nested consequence of
+    one command; this is observational context, not a lexical mapping table.
+    """
+    typed = []
+    last_input = ''
+    last_enter = -1
+    results = []
+    for line in lines:
+        key = KEY.match(line)
+        if key:
+            ms, value = int(key[1]), int(key[2], 16)
+            char = value & 0xff
+            if char == 13:
+                last_input = ''.join(typed).strip()
+                last_enter = ms
+                typed = []
+            elif char == 27:
+                typed = []
+            elif 32 <= char <= 126:
+                typed.append(chr(char))
+            continue
+        entry = ENTRY.match(line)
+        if not entry or int(entry[2], 16) != 0x147a6 or int(entry[3], 16) != 0x1476:
+            continue
+        ms = int(entry[1])
+        if not last_input or not 0 <= ms - last_enter <= 2000:
+            continue
+        action = re.search(r'\bax=([0-9a-f]+)(?:\s|$)', line)
+        if action:
+            results.append((ms, last_input, int(action[1], 16)))
+    return results
+
+
 def collect(lines):
     """Return (ms, object, event, command_or_None, recent_input) records."""
     typed = []
@@ -88,6 +124,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('trace', type=pathlib.Path)
     parser.add_argument('--details', action='store_true', help='list individual handler calls')
+    parser.add_argument('--actions', action='store_true', help='show observed action dispatcher IDs')
     args = parser.parse_args()
     lines = args.trace.read_text().splitlines()
     rows = summarize(lines)
@@ -105,6 +142,15 @@ def main():
                   f' command={code} recent_input={input_text!r}')
     if any(row[2] is None for row in rows):
         print('Command byte unavailable for some entries; event IDs recovered from the far-call stack.')
+    if args.actions:
+        actions = collect_actions(lines)
+        counts = Counter((input_text, action) for _, input_text, action in actions)
+        first = {}
+        for ms, input_text, action in actions:
+            first.setdefault((input_text, action), ms)
+        print('\nRecent input  action  calls  first_ms')
+        for (input_text, action), count in sorted(counts.items()):
+            print(f'{input_text:<18} 0x{action:02x}  {count:5}  {first[(input_text, action)]}')
     print('Recent input is a timing association, not proof of the parser command mapping.')
 
 

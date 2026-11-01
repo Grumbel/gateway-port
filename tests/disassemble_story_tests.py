@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from disassemble_story import annotate, event_targets, text_id
 from gateway_strings import GatewayStrings
 from gateway_vocab import GatewayVocabulary
-from summarize_story_trace import summarize
+from summarize_story_trace import collect_actions, summarize
 import struct
 
 
@@ -85,6 +85,15 @@ class StoryDisassemblyTests(unittest.TestCase):
                  'stack=701,2c24,6,2acd,2c24,']
         self.assertEqual(summarize(lines),
                          [(0x124, 6, 0x85, 1, 192, ())])
+
+    def test_action_ids_follow_completed_input(self):
+        lines = ['key ms=100 value=6f', 'key ms=110 value=70',
+                 'key ms=120 value=65', 'key ms=130 value=6e',
+                 'key ms=140 value=1c0d',
+                 'entry ms=185 pc=147a6 cs=1476 ax=71 stack=4da,1000,71,',
+                 'entry ms=186 pc=147a6 cs=1477 ax=46 stack=4da,1000,46,',
+                 'entry ms=3000 pc=147a6 cs=1476 ax=ff stack=4da,1000,ff,']
+        self.assertEqual(collect_actions(lines), [(185, 'open', 0x71)])
 
 
 if __name__ == '__main__':
