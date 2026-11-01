@@ -97,10 +97,10 @@ shared action logic. Static disassembly shows:
 
 This matches the drawer's known open-state property and explains why the
 drawer-specific event-6 handler can return zero: a **separate shared section-5
-action** performs the state change. The property-`0x0c` mutation callsites
-have now been confirmed at runtime (below). The property's meaning beyond
-its observed open/closed use, property `0x02`, and conditional side effects
-remain unclassified.
+action** performs the state change. Both property-`0x0c` and property-`0x02`
+setter callsites are now confirmed for the drawer at runtime (below), as is
+the property-`0x0c` clearer. The *purpose* of property `0x02` and other
+conditional side effects remain unclassified.
 
 ### Partial C-like translation of the normal paths
 
@@ -117,7 +117,7 @@ if (has_flag(target, 0x0c)) goto already_open;
 if (has_flag(target, 0x23)) goto blocked_open;
 if (!has_flag(target, 0x0e)) goto cannot_open;
 set_flag(target, 0x0c);  // OVL eb04: live drawer mutation verified
-set_flag(target, 0x02);  // OVL eb19: static disassembly; new trace hook pending
+set_flag(target, 0x02);  // OVL eb19: live drawer callsite verified
 // Print text; further conditions involving properties 0x13/0x1f follow.
 
 // CLOSE: GATEMAIN.OVL 0xd706–0xd7d4, shared handler 0xd66b.
@@ -131,6 +131,24 @@ clear_flag(target, 0x0c);  // OVL d7cc: live drawer mutation verified
 The order and predicates of these **inner branches** are directly visible in
 the original x86 instructions; entry paths and the meanings of properties
 `0x0e` and `0x23` have not been proven across different objects.
+
+### Next shared actions to decompile
+
+The other three actions also use the known section-5 image. Static inspection
+of the **original OVL file** reveals:
+
+| Action | OVL entry | Candidate operations in the entry's control flow |
+| --- | ---: | --- |
+| DROP `0x32` | `0xd9a7` | Queries current object location via `0157:0546`; other movement work is delegated to helpers. |
+| INVENTORY `0x53` | `0xe8c4` | Calls inventory/list helper `1c24:3dc9`, then emits text; no direct flag mutation in its short entry. |
+| TAKE `0x46` | `0xfee1` | On one branch sets flag `0x02` at `0x10066`, clears `0x08` at `0x1007b`, and clears `0x0a` at `0x10090`, using verified `0157` services. |
+
+These are **static candidate paths**, not confirmation that the scripted
+`take book`/`drop book` replay executed those exact instructions. The native
+object-state replay already demonstrated that the book (`0x123`) moves to the
+player (`0xd3`) when taken and to the room (`0xee`) when dropped, but did not
+identify all intervening action-specific helper calls. The new service-entry
+hooks below aim to connect those observations to top-level action dispatches.
 
 To inspect the two shared functions:
 
@@ -222,7 +240,7 @@ The user-supplied trace records these linked events:
 
 | Typed action | Section-5 handler entry | State service callsite | Stack arguments | Return |
 | --- | --- | --- | --- | --- |
-| OPEN `0x71` | `4661:1572` at 18,393 ms | `4661:1734` / OVL `0xeb04` | `(object=0x124, flag=0x0c)` | `AX=1` at 18,417 ms |
+| OPEN `0x71` | `4661:1572` at 18,393 ms | `4661:1734` / OVL `0xeb04` and `4661:1749` / OVL `0xeb19` | `(0x124, 0x0c)` then `(0x124, 0x02)` | `AX=1` at 18,417 ms |
 | CLOSE `0x1d` | `4661:029b` at 34,422 ms | `4661:03fc` / OVL `0xd7cc` | `(object=0x124, flag=0x0c)` | `AX=1` at 34,443 ms |
 
 Here the recorded `stack` begins with the object and property passed to the
@@ -232,10 +250,29 @@ correlates these callsites with the live dispatcher and reports only
 **observed** mutations. A missing mutation in its output is not evidence that
 the action had no other effects.
 
-The trace driver now additionally hooks `0x47d59`, corresponding to OVL
-`0xeb19`, to test the *second OPEN setter* for property `0x02` on a new run.
-The original `action-section5-check` trace predates that hook; its absence
-there is expected, not evidence of a skipped instruction.
+The later `action-section5-check` replay confirmed the second OPEN setter
+at linear `0x47d59` / OVL `0xeb19`, in the same millisecond as the first.
+This establishes **which routines are called and with what arguments**;
+whether every setter changes bytes must still be checked against the object's
+original flag mask and state.
+
+The next trace revision adds the three other shared action entries and hooks
+the **native object-state service entries**, which capture calls made from
+nested helpers as well as directly within the action. The known far-call ABI
+has a return IP and CS followed by `(object, property)` for flag services, or
+`(object, location)` for the location setter:
+
+| Service | Linear hook | Expected stack arguments after return pointer |
+| --- | ---: | --- |
+| Flag set (`0157:03e0`) | `0x11950` | object, flag |
+| Flag clear (`0157:0413`) | `0x11983` | object, flag |
+| Location set (`0157:064b`) | `0x11bbb` | object, destination |
+
+`summarize_action_effects.py` uses these service entries when present and
+falls back to the original OVL callsites for older traces. This avoids
+double-counting one flag mutation. New replay results are still needed to
+confirm execution of the TAKE/DROP/INVENTORY entry points and determine which
+of their nested service calls occur during the scripted commands.
 
 `--native-only` avoids two additional HLE comparison replays; omit it for the
 full three-way regression check. Guest addresses are specific to the known
@@ -245,5 +282,6 @@ residency checks when analyzing other games or actions.
 For the modern replacement action layer, we can now distinguish the global
 OPEN/CLOSE routines from object-specific event-6 handlers and reuse the
 verified object-flag service ABI. Next steps are to confirm the second OPEN
-setter, recover mode guards and other state semantics, and identify reusable
-contracts for the other actions before replacing native execution.
+setter's exact state effect, recover mode guards and other state semantics,
+and identify reusable contracts for TAKE/DROP/INVENTORY before replacing
+native execution.

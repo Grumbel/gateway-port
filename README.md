@@ -427,8 +427,11 @@ The five observed nonresident action-table pointers address **executable
 ten-byte RTLink trampolines**, not embedded reference operands. OPEN and
 CLOSE enter shared section-5 routines that respectively contain property-12
 set and clear operations. Both mutations are **confirmed in a native replay**
-for drawer object `0x124`; the shared OPEN path also appears to set property
-`0x02`, pending a second callsite trace. To summarize observed action effects:
+for drawer object `0x124`; the shared OPEN path also **calls the setter for
+property `0x02`**, as confirmed by the next callsite trace. The research replay
+now hooks all five section-5 action entries and the generic flag/location
+mutation services, including calls from nested action helpers. To summarize
+observed calls:
 
 ```sh
 python3 tools/summarize_action_effects.py build/action-section5-check/native.trace
