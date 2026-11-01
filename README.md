@@ -70,6 +70,9 @@ gateway-run ../101/S101.EXE --headless --milliseconds 15000 \
 For visual glitches that happen after a keypress, `--trace-video` prints BIOS
 mode/page changes and CRTC start/pitch/mode writes to stderr. This helps
 distinguish the renderer's state from the guest's page-flipping commands.
+When reporting a shifted framebuffer, capture the entire stderr trace from a
+run that changes from correct to incorrect, including the keypress that causes
+the transition; a screenshot alone cannot identify the responsible VGA state.
 
 Build a package with `nix build`; check it with `nix flake check`. Use `path:.`
 while testing new untracked files that Git-backed flakes would otherwise omit. The flake locks

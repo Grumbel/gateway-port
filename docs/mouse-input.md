@@ -10,7 +10,11 @@ Entering mouse mode also exercises cursor visibility (`01h`/`02h`), motion
 counters (`0Bh`), and press history (`05h`). The supported subset additionally
 provides positioning (`04h`), release history (`06h`), and software reset (`21h`).
 Unsupported calls still stop explicitly; custom cursor masks and event callbacks
-are not implemented. SDL presents the native system cursor.
+are not implemented. The current runtime draws a high-contrast software arrow
+into the presented framebuffer while the DOS driver marks it visible. SDL's
+native pointer stays hidden. This makes the pointer visible in screenshots and
+keeps its coordinates consistent with the emulated cursor. It does not yet
+honor game-provided cursor shapes (`INT 33h AX=0009h/000Ah`).
 
 SDL events are converted through the renderer's logical presentation before
 mapping to DOS's 640-column coordinate grid. Resizing and letterbox offsets are

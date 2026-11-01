@@ -13,14 +13,14 @@ int main() {
         gateway::SdlHost host;
         gateway::Vga vga;
         vga.set_mode(0x12);
-        host.present(vga, {});
         gateway::Mouse mouse;
+        host.present(vga, mouse, {});
         std::deque<std::uint16_t> keys;
         host.poll(keys, mouse, vga);
         require(!SDL_CursorVisible(), "hidden DOS cursor");
         mouse.visibility = 0;
         host.poll(keys, mouse, vga);
-        require(SDL_CursorVisible(), "visible DOS cursor");
+        require(!SDL_CursorVisible(), "native cursor should stay hidden");
         int count = 0;
         auto windows = SDL_GetWindows(&count);
         require(windows && count == 1, "runtime window");
@@ -47,7 +47,7 @@ int main() {
         toggle(SDLK_KP_ENTER, SDL_KMOD_RALT, false, true);
         toggle(SDLK_KP_ENTER, SDL_KMOD_RALT, true, true);
         toggle(SDLK_F11, SDL_KMOD_NONE, false, false);
-        host.present(vga, {});
+        host.present(vga, mouse, {});
         SDL_Event event{};
         event.type = SDL_EVENT_MOUSE_MOTION;
         event.motion.windowID = window_id;
@@ -72,7 +72,7 @@ int main() {
                 "press coordinates");
         require(SDL_SetWindowSize(SDL_GetWindowFromID(window_id), 1280, 720), "resize");
         SDL_PumpEvents();
-        host.present(vga, {});
+        host.present(vga, mouse, {});
         host.poll(keys, mouse, vga);
         event = {};
         event.type = SDL_EVENT_MOUSE_MOTION;

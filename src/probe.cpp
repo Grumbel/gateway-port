@@ -1469,7 +1469,7 @@ int main(int argc, char **argv) {
                 text_snapshot(engine.uc, state);
                 auto samples = state.opl.render(768);
                 state.pit.mix_speaker(samples);
-                host->present(state.vga, samples);
+                host->present(state.vga, state.mouse, samples);
                 std::this_thread::sleep_until(started + std::chrono::milliseconds(steps));
             }
 #endif

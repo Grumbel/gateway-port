@@ -16,7 +16,7 @@ class SdlHost {
     SdlHost(const SdlHost &) = delete;
     SdlHost &operator=(const SdlHost &) = delete;
     bool poll(std::deque<std::uint16_t> &keys, Mouse &mouse, const Vga &vga);
-    void present(const Vga &vga, std::span<const std::int16_t> samples);
+    void present(const Vga &vga, const Mouse &mouse, std::span<const std::int16_t> samples);
 
   private:
     SDL_Window *window_ = nullptr;

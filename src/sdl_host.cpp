@@ -1,4 +1,5 @@
 #include "sdl_host.hpp"
+#include "mouse_cursor.hpp"
 #include "opl.hpp"
 #include <SDL3/SDL.h>
 #include <stdexcept>
@@ -149,9 +150,8 @@ void SdlHost::close() {
     SDL_Quit();
 }
 bool SdlHost::poll(std::deque<std::uint16_t> &keys, Mouse &mouse, const Vga &vga) {
-    const bool show = mouse.visibility >= 0;
-    if (show != SDL_CursorVisible())
-        checked(show ? SDL_ShowCursor() : SDL_HideCursor());
+    if (SDL_CursorVisible())
+        checked(SDL_HideCursor());
     if (mouse.warp_pending && texture_) {
         float x, y;
         const int rows = vga.mode() == 3 ? 200 : vga.height();
@@ -206,7 +206,8 @@ bool SdlHost::poll(std::deque<std::uint16_t> &keys, Mouse &mouse, const Vga &vga
     }
     return true;
 }
-void SdlHost::present(const Vga &vga, std::span<const std::int16_t> samples) {
+void SdlHost::present(const Vga &vga, const Mouse &mouse,
+                      std::span<const std::int16_t> samples) {
     if (!texture_ || width_ != vga.width() || height_ != vga.height()) {
         if (texture_)
             SDL_DestroyTexture(texture_);
@@ -219,7 +220,8 @@ void SdlHost::present(const Vga &vga, std::span<const std::int16_t> samples) {
         checked(SDL_SetRenderLogicalPresentation(renderer_, width_, height_,
                                                  SDL_LOGICAL_PRESENTATION_LETTERBOX));
     }
-    const auto pixels = vga.pixels();
+    auto pixels = vga.pixels();
+    draw_mouse_cursor(pixels, width_, height_, mouse, vga.mode() == 3);
     checked(SDL_UpdateTexture(texture_, nullptr, pixels.data(), width_ * 4));
     checked(SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255));
     checked(SDL_RenderClear(renderer_));
