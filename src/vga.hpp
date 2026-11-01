@@ -28,6 +28,7 @@ class Vga {
     unsigned text_page() const { return text_page_; }
     void graphics_page(unsigned page);
     unsigned graphics_page() const { return graphics_page_; }
+    unsigned page_size() const;
     void attribute_palette(std::span<const std::uint8_t, 17> values);
     void palette(std::uint16_t index, std::uint8_t r, std::uint8_t g, std::uint8_t b);
 

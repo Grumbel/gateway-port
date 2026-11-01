@@ -79,3 +79,23 @@ line compare is set above the visible frame to leave splitting disabled.
 `--trace-video` includes writes to these split-screen registers alongside the
 existing CRTC start, pitch and addressing-mode traces. Real-world validation
 against the Spellcasting 101/201 intermittent offset remains necessary.
+
+## BIOS graphics page allocation
+
+The 201 `--trace-video` log shows that the picture changes only on BIOS
+`AH=05h` page changes (0 to 1 and back), without guest CRTC register writes.
+Mode `10h` uses a 32 KiB page allocation even though the visible 640x350
+16-color image occupies only 28,000 bytes per plane. The earlier implementation
+used the visible size as the page stride, causing a 4,768-byte displacement
+whenever page 1 was selected. BIOS page sizes are now mode-specific:
+
+| Mode | Page allocation |
+| --- | ---: |
+| 03h | 4 KiB |
+| 0Dh | 8 KiB |
+| 0Eh | 16 KiB |
+| 10h | 32 KiB |
+| 12h, 13h | 64 KiB |
+
+The BIOS data area's page-size and page-start values are also updated on mode
+and page changes. Unit tests verify that mode 10h page 1 starts at 32 KiB.

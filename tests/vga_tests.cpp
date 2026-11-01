@@ -84,12 +84,13 @@ int main() {
         require(pixels[0] == 0xffaa0000 && pixels[1] == 0xff00aa00, "chain-four addressing failed");
         vga.set_mode(0x10);
         require(vga.width() == 640 && vga.height() == 350, "mode 10 dimensions");
+        require(vga.page_size() == 32768, "mode 10 BIOS page allocation size");
         mask(vga, 1);
-        vga.write(28000, 0x80);
+        vga.write(32768, 0x80);
         vga.graphics_page(1);
         require(vga.graphics_page() == 1 && vga.pixels()[0] == 0xff0000aa,
                 "graphics page selection ignored");
-        vga.write(28160, 0x80);
+        vga.write(32928, 0x80);
         // Compare at scanline 1: the next line must restart at address zero,
         // rather than continue two scanlines into page one.
         vga.out(0x3d4, 0x18);

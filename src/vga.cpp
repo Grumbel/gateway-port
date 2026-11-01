@@ -256,8 +256,7 @@ void Vga::text_page(unsigned page) {
 void Vga::graphics_page(unsigned page) {
     if (mode_ == 3)
         throw std::runtime_error("graphics page in text mode");
-    const unsigned stride = width() / 8;
-    const unsigned bytes_per_page = mode_ == 0x13 ? 64000 : stride * height();
+    const unsigned bytes_per_page = page_size();
     if (page >= 65536 / bytes_per_page)
         throw std::runtime_error("invalid graphics page");
     graphics_page_ = page;
@@ -265,6 +264,17 @@ void Vga::graphics_page(unsigned page) {
     const unsigned start = page * bytes_per_page / 2;
     crtc_[0x0c] = start >> 8;
     crtc_[0x0d] = start;
+}
+unsigned Vga::page_size() const {
+    switch (mode_) {
+    case 3: return 4096;
+    case 0x0d: return 8192;
+    case 0x0e: return 16384;
+    case 0x10: return 32768;
+    case 0x12:
+    case 0x13: return 65536;
+    default: throw std::runtime_error("unsupported VGA page size");
+    }
 }
 void Vga::attribute_palette(std::span<const std::uint8_t, 17> values) {
     std::copy_n(values.begin(), 16, attr_.begin());

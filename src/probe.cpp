@@ -752,13 +752,12 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             if (state.trace_video)
                 std::cerr << "VGA ms=" << std::dec << state.elapsed_ms << " BIOS page="
                           << unsigned(page) << " mode=" << std::hex
-                          << unsigned(state.vga.mode()) << '\n';
+                          << unsigned(state.vga.mode()) << std::dec
+                          << " page_bytes=" << state.vga.page_size()
+                          << " start_bytes=" << page * state.vga.page_size() << '\n';
             const std::uint16_t start = state.vga.mode() == 3
                                             ? page * 4096
-                                            : page * (state.vga.mode() == 0x13
-                                                          ? 64000
-                                                          : state.vga.width() / 8 *
-                                                                state.vga.height());
+                                            : page * state.vga.page_size();
             check(uc_mem_write(uc, 0x44e, &start, 2));
             check(uc_mem_write(uc, 0x462, &page, 1));
         } else if (number == 0x10 && ((ax >> 8) == 2 || (ax >> 8) == 3)) {
@@ -791,6 +790,8 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
                 text_mode_state(uc, state, !(ax & 0x80));
             const std::uint8_t value = mode;
             check(uc_mem_write(uc, 0x449, &value, 1));
+            const std::uint16_t page_size = state.vga.page_size();
+            check(uc_mem_write(uc, 0x44c, &page_size, 2));
         } else if (number == 0x20 || (number == 0x21 && (ax >> 8) == 0x4c)) {
             state.exited = true;
             state.exit_code = number == 0x20 ? 0 : ax & 255;
