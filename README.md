@@ -426,8 +426,16 @@ python3 tools/inspect_action_dispatch.py build/story-commands-043/native
 The five observed nonresident action-table pointers address **executable
 ten-byte RTLink trampolines**, not embedded reference operands. OPEN and
 CLOSE enter shared section-5 routines that respectively contain property-12
-set and clear operations. See [native action dispatch](docs/action-dispatch.md)
-for their exact runtime addresses, original overlay file offsets, and the
+set and clear operations. Both mutations are **confirmed in a native replay**
+for drawer object `0x124`; the shared OPEN path also appears to set property
+`0x02`, pending a second callsite trace. To summarize observed action effects:
+
+```sh
+python3 tools/summarize_action_effects.py build/action-section5-check/native.trace
+```
+
+See [native action dispatch](docs/action-dispatch.md) for a partial C-like
+translation, exact runtime addresses, original overlay file offsets, and
 remaining branch-verification work.
 
 RTLink sections and all handler entry file offsets can now be extracted:

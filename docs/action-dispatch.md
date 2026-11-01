@@ -74,9 +74,10 @@ record (initialized image begins at OVL file `0xd3d0`), the action mapping is:
 | `look` / `0x5f` | `148e:0b90` | Resident entry, no RTLink trampoline | — |
 | `open drawer` / `0x71` | `2c24:1c59` | `4661:1572`, section 5 | `0xe942` |
 
-OPEN and CLOSE have verified live callsite/target bytes. The remaining three
-section-5 references are consistent with uniquely matching ten-byte original
-EXE trampolines; their actual execution addresses have not yet been hooked.
+OPEN and CLOSE have verified live callsite/target bytes and section-5 entry
+hooks. The remaining three section-5 references are consistent with uniquely
+matching ten-byte original EXE trampolines; their actual execution addresses
+have not yet been hooked.
 The original replay loaded section 5 once, consistent with shared actions
 remaining resident. The old inferred section-6/7/9/15 mappings were artifacts
 of reading unrelated EXE bytes and are **withdrawn**.
@@ -84,19 +85,52 @@ of reading unrelated EXE bytes and are **withdrawn**.
 Unlike the old speculative destinations, these overlay offsets really contain
 shared action logic. Static disassembly shows:
 
-- OPEN at `0xe942` eventually checks object property `0x0e` and then invokes
-  the verified property setter `0157:03e0` with property **`0x0c`** at
-  OVL file `0xeb04` (among other state updates and text handling).
-- CLOSE at `0xd66b` has a branch that invokes the verified property clearer
-  `0157:0413` with property **`0x0c`** at OVL file `0xd7cc`.
+- OPEN at `0xe942` checks object properties `0x0c`, `0x23`, and `0x0e` in
+  sequence, and on its normal success path calls the verified property setter
+  `0157:03e0` with **`0x0c`** at OVL `0xeb04`, followed by the **same setter
+  with `0x02`** at OVL `0xeb19` (among other state updates and text handling).
+- CLOSE at `0xd66b` checks `0x0e`, `0x23`, and `0x0c` in sequence; its normal
+  success path calls the verified property clearer `0157:0413` with **`0x0c`**
+  at OVL `0xd7cc`.
 - Both have `mov ax,1; retf` return paths (`0xebfd` and `0xd7fd`), matching
   the live dispatcher return `AX=1` for the two typed commands.
 
 This matches the drawer's known open-state property and explains why the
 drawer-specific event-6 handler can return zero: a **separate shared section-5
-action** performs the state change. The exact branches exercised during the
-replay still require callsite-level verification; other flags and conditional
-side effects in these routines remain unclassified.
+action** performs the state change. The property-`0x0c` mutation callsites
+have now been confirmed at runtime (below). The property's meaning beyond
+its observed open/closed use, property `0x02`, and conditional side effects
+remain unclassified.
+
+### Partial C-like translation of the normal paths
+
+The following is **only the common branch after early special cases** (mode
+checks, another-object handling, and callbacks are omitted). `has_flag`,
+`set_flag`, and `clear_flag` refer to the verified object-state service ABI;
+error labels stand for the original text and return branches, not modern
+implementations. In particular, an action's `AX=1` return marks handling and
+must not be interpreted as proof of success.
+
+```cpp
+// OPEN: GATEMAIN.OVL 0xea65–0xeb1e, shared handler 0xe942.
+if (has_flag(target, 0x0c)) goto already_open;
+if (has_flag(target, 0x23)) goto blocked_open;
+if (!has_flag(target, 0x0e)) goto cannot_open;
+set_flag(target, 0x0c);  // OVL eb04: live drawer mutation verified
+set_flag(target, 0x02);  // OVL eb19: static disassembly; new trace hook pending
+// Print text; further conditions involving properties 0x13/0x1f follow.
+
+// CLOSE: GATEMAIN.OVL 0xd706–0xd7d4, shared handler 0xd66b.
+if (!has_flag(target, 0x0e)) goto cannot_close;
+if (has_flag(target, 0x23)) goto blocked_close;
+if (!has_flag(target, 0x0c)) goto already_closed;
+// Print closing text.
+clear_flag(target, 0x0c);  // OVL d7cc: live drawer mutation verified
+```
+
+The order and predicates of these **inner branches** are directly visible in
+the original x86 instructions; entry paths and the meanings of properties
+`0x0e` and `0x23` have not been proven across different objects.
 
 To inspect the two shared functions:
 
@@ -172,15 +206,36 @@ python3 tools/inspect_action_dispatch.py build/action-dispatch-check/native \
 
 This first check uses the **existing native snapshot**; rerunning the game is
 unnecessary. Generate the manifest first (command above) if it is missing.
-The full replay can then confirm the corrected OPEN/CLOSE overlay entries and
-the property-12 mutation branches using the additional entry hooks:
+The subsequent native replay confirmed both section-5 entries and the
+property-`0x0c` mutation branches with additional hooks:
 
 ```sh
 python3 tools/trace_game_logic.py --scenario objects --native-only \
   --verify-overlays --output build/action-section5-check
 rg '^entry .*pc=(468ab|47b82|46a0c|47d44)\b' \
   build/action-section5-check/native.trace
+python3 tools/summarize_action_effects.py \
+  build/action-section5-check/native.trace
 ```
+
+The user-supplied trace records these linked events:
+
+| Typed action | Section-5 handler entry | State service callsite | Stack arguments | Return |
+| --- | --- | --- | --- | --- |
+| OPEN `0x71` | `4661:1572` at 18,393 ms | `4661:1734` / OVL `0xeb04` | `(object=0x124, flag=0x0c)` | `AX=1` at 18,417 ms |
+| CLOSE `0x1d` | `4661:029b` at 34,422 ms | `4661:03fc` / OVL `0xd7cc` | `(object=0x124, flag=0x0c)` | `AX=1` at 34,443 ms |
+
+Here the recorded `stack` begins with the object and property passed to the
+far-called flag service. The service itself is the verified native setter or
+clearer; the hook is immediately before that call. `summarize_action_effects.py`
+correlates these callsites with the live dispatcher and reports only
+**observed** mutations. A missing mutation in its output is not evidence that
+the action had no other effects.
+
+The trace driver now additionally hooks `0x47d59`, corresponding to OVL
+`0xeb19`, to test the *second OPEN setter* for property `0x02` on a new run.
+The original `action-section5-check` trace predates that hook; its absence
+there is expected, not evidence of a skipped instruction.
 
 `--native-only` avoids two additional HLE comparison replays; omit it for the
 full three-way regression check. Guest addresses are specific to the known
@@ -189,6 +244,6 @@ residency checks when analyzing other games or actions.
 
 For the modern replacement action layer, we can now distinguish the global
 OPEN/CLOSE routines from object-specific event-6 handlers and reuse the
-verified object-flag service ABI. Next steps are to trace the live branches,
-recover the full condition/state semantics, and identify reusable contracts
-for the other actions before replacing native execution.
+verified object-flag service ABI. Next steps are to confirm the second OPEN
+setter, recover mode guards and other state semantics, and identify reusable
+contracts for the other actions before replacing native execution.
