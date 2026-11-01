@@ -47,7 +47,10 @@ for mode in ['native', 'verify', 'hle']:
                '--dump-prefix', str(prefix)]
     if args.scenario in ['drawer', 'objects']:
         command += ['--trace-entry', '49db5', '--trace-entry', '4a378',
-                    '--trace-entry', '4a390']
+                    '--trace-entry', '4a390',
+                    # Runtime targets of the 2c24 RTLink action references.
+                    # A hook firing does not itself prove which section is resident.
+                    '--trace-entry', '47307', '--trace-entry', '48021']
     for time, key in sorted(keys):
         command += ['--key-at', f'{time}:{key:04x}']
     if args.verify_overlays:
