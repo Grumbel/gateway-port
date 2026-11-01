@@ -1100,6 +1100,7 @@ int main(int argc, char **argv) {
     std::string game_args, research_path, object_flags_mode;
     bool object_state_services = false;
     bool verify_overlays = false, hle_overlays = false, trace_video = false;
+    unsigned aspect_width = 4, aspect_height = 3;
     std::vector<std::uint64_t> entry_addresses;
     std::multimap<unsigned, std::uint16_t> scheduled_keys;
     std::uint16_t injected_key = 0;
@@ -1110,7 +1111,7 @@ int main(int argc, char **argv) {
                      "[--break-at HEX] [--state-dir DIR | --read-only] [--trace-blocks FILE] "
                      "[--trace-research FILE --trace-entry HEX ...] [--key-at MS:BIOSHEX ...] "
                      "[--object-flags verify|hle | --object-state verify|hle] [--verify-overlays] "
-                     "[--hle-overlays] [--trace-video]\n";
+                     "[--hle-overlays] [--trace-video] [--aspect-ratio native|W:H]\n";
     };
     if (argc < 2 || std::string(argv[1]) == "--help") {
         usage();
@@ -1123,7 +1124,29 @@ int main(int argc, char **argv) {
             verify_overlays = true;
         } else if (option == "--trace-video")
             trace_video = true;
-        else if (option == "--verify-overlays")
+        else if (option == "--aspect-ratio" && i + 1 < argc) {
+            const std::string value = argv[++i];
+            if (value == "native") {
+                aspect_width = aspect_height = 0;
+            } else {
+                const auto separator = value.find(':');
+                if (separator == std::string::npos) {
+                    usage();
+                    return 2;
+                }
+                const auto first = std::from_chars(value.data(), value.data() + separator,
+                                                   aspect_width);
+                const auto second = std::from_chars(value.data() + separator + 1,
+                                                    value.data() + value.size(), aspect_height);
+                if (first.ec != std::errc{} || first.ptr != value.data() + separator ||
+                    second.ec != std::errc{} || second.ptr != value.data() + value.size() ||
+                    !aspect_width || !aspect_height || aspect_width > 10000 ||
+                    aspect_height > 10000) {
+                    usage();
+                    return 2;
+                }
+            }
+        } else if (option == "--verify-overlays")
             verify_overlays = true;
         else if ((option == "--object-flags" || option == "--object-state") && i + 1 < argc) {
             if (!object_flags_mode.empty()) {
@@ -1409,7 +1432,8 @@ int main(int argc, char **argv) {
 #ifdef GATEWAY_SDL
         std::unique_ptr<gateway::SdlHost> host;
         if (interactive)
-            host = std::make_unique<gateway::SdlHost>();
+            host = std::make_unique<gateway::SdlHost>(
+                gateway::DisplayAspect{aspect_width, aspect_height});
 #endif
         bool requested_stop = false;
         uc_err status = UC_ERR_OK;

@@ -106,6 +106,22 @@ int main() {
         mouse.move(-100, 20);
         require(mouse.x == 10 && mouse.motion_x == -90 && mouse.motion_y == 20,
                 "movement counters and range clamp");
+        // In 640x350 mode the default 4:3 presentation stretches to 640x480,
+        // but coordinates still map back to the actual 350-line guest image.
+        mouse.min_x = 0;
+        mouse.max_x = 639;
+        mouse.min_y = 0;
+        mouse.max_y = 349;
+        vga.set_mode(0x10);
+        host.present(vga, mouse, {});
+        event = {};
+        event.type = SDL_EVENT_MOUSE_MOTION;
+        event.motion.windowID = window_id;
+        event.motion.x = 640;
+        event.motion.y = 360;
+        require(SDL_PushEvent(&event), "push aspect-ratio motion");
+        host.poll(keys, mouse, vga);
+        require(mouse.x == 320 && mouse.y == 175, "4:3 aspect input mapping");
         std::cout << "SDL mouse coordinates, click history, and focus checks passed\n";
     } catch (const std::exception &e) {
         std::cerr << e.what() << '\n';

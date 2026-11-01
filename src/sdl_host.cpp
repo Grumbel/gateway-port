@@ -118,7 +118,7 @@ std::uint16_t bios_key(const SDL_KeyboardEvent &event) {
     return (scan << 8) | ascii;
 }
 } // namespace
-SdlHost::SdlHost() {
+SdlHost::SdlHost(DisplayAspect aspect) : aspect_(aspect) {
     try {
         checked(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO));
         checked(SDL_CreateWindowAndRenderer("Gateway — original-code Linux runtime", 960, 720,
@@ -150,13 +150,15 @@ void SdlHost::close() {
     SDL_Quit();
 }
 bool SdlHost::poll(std::deque<std::uint16_t> &keys, Mouse &mouse, const Vga &vga) {
+    const int presentation_height = presentation_height_ ? presentation_height_ : vga.height();
     if (SDL_CursorVisible())
         checked(SDL_HideCursor());
     if (mouse.warp_pending && texture_) {
         float x, y;
         const int rows = vga.mode() == 3 ? 200 : vga.height();
         checked(SDL_RenderCoordinatesToWindow(renderer_, float(mouse.x) * vga.width() / 640,
-                                              float(mouse.y) * vga.height() / rows, &x, &y));
+                                              float(mouse.y) * presentation_height_ / rows,
+                                              &x, &y));
         SDL_WarpMouseInWindow(window_, x, y);
         mouse.warp_pending = false;
     }
@@ -171,8 +173,9 @@ bool SdlHost::poll(std::deque<std::uint16_t> &keys, Mouse &mouse, const Vga &vga
             const float x = motion ? event.motion.x : event.button.x;
             const float y = motion ? event.motion.y : event.button.y;
             const int rows = vga.mode() == 3 ? 200 : vga.height();
-            mouse.move(int(x * 640 / vga.width()), int(y * rows / vga.height()));
-            const bool outside = x < 0 || y < 0 || x >= vga.width() || y >= vga.height();
+            mouse.move(int(x * 640 / vga.width()), int(y * rows / presentation_height));
+            const bool outside = x < 0 || y < 0 || x >= vga.width() ||
+                                 y >= presentation_height;
             if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && outside)
                 continue;
             if (!motion) {
@@ -213,11 +216,15 @@ void SdlHost::present(const Vga &vga, const Mouse &mouse,
             SDL_DestroyTexture(texture_);
         width_ = vga.width();
         height_ = vga.height();
+        presentation_height_ = aspect_.width
+                                   ? std::max(1, int((std::uint64_t(width_) * aspect_.height +
+                                                       aspect_.width / 2) / aspect_.width))
+                                   : height_;
         texture_ = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_ARGB8888,
                                      SDL_TEXTUREACCESS_STREAMING, width_, height_);
         checked(texture_ != nullptr);
         checked(SDL_SetTextureScaleMode(texture_, SDL_SCALEMODE_NEAREST));
-        checked(SDL_SetRenderLogicalPresentation(renderer_, width_, height_,
+        checked(SDL_SetRenderLogicalPresentation(renderer_, width_, presentation_height_,
                                                  SDL_LOGICAL_PRESENTATION_LETTERBOX));
     }
     auto pixels = vga.pixels();

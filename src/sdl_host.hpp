@@ -9,9 +9,12 @@ struct SDL_Renderer;
 struct SDL_Texture;
 struct SDL_AudioStream;
 namespace gateway {
+struct DisplayAspect {
+    unsigned width = 4, height = 3; // Zero width selects native square pixels.
+};
 class SdlHost {
   public:
-    SdlHost();
+    explicit SdlHost(DisplayAspect aspect = {});
     ~SdlHost();
     SdlHost(const SdlHost &) = delete;
     SdlHost &operator=(const SdlHost &) = delete;
@@ -24,6 +27,8 @@ class SdlHost {
     SDL_Texture *texture_ = nullptr;
     SDL_AudioStream *audio_ = nullptr;
     int width_ = 0, height_ = 0;
+    int presentation_height_ = 0;
+    DisplayAspect aspect_;
     bool fullscreen_ = false;
     void close();
 };

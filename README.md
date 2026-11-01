@@ -49,6 +49,20 @@ gateway-run ../201/S201.EXE --trace-video
 gateway-run-gdb ../101/S101.EXE
 ```
 
+The SDL runtime defaults to a **4:3 display aspect ratio**, matching the
+intended proportions of conventional DOS EGA/VGA output even when the guest's
+pixel grid is not square (for example 640x350). Override it with
+`--aspect-ratio native` for uncorrected square pixels or with a custom ratio:
+
+```sh
+gateway-run ../201/S201.EXE --aspect-ratio 4:3
+gateway-run ../201/S201.EXE --aspect-ratio native
+gateway-run ../201/S201.EXE --aspect-ratio 16:10
+```
+
+The image is scaled by SDL; the guest framebuffer resolution and DOS mouse
+coordinates remain unchanged. This option does not change headless dump sizes.
+
 `gateway-configure` configures an out-of-tree Ninja Debug build (default
 `/tmp/gateway-port-build`, override with `GATEWAY_BUILD_DIR`),
 `gateway-build` builds it, and both run commands build before launching. The
@@ -66,6 +80,18 @@ not DOS `CS:IP` directly; use the bounded guest trace instead:
 gateway-run ../101/S101.EXE --headless --milliseconds 15000 \
   --dump-prefix /tmp/s101-stall --trace-blocks /tmp/s101-blocks.txt
 ```
+
+For a title-screen loop accompanied by repeated DOS reads, record the file
+offsets and actual read lengths (and a final guest block trace) with:
+
+```sh
+gateway-run ../101/S101.EXE --headless --milliseconds 15000 \
+  --trace-research /tmp/s101-reads.txt --trace-blocks /tmp/s101-blocks.txt
+```
+
+If reads advance continuously it may be an animation or music stream; repeated
+reads at the same offset, or repeated zero-length reads, suggest a stuck guest
+loop. These details are needed before changing the DOS file or timer model.
 
 For visual glitches that happen after a keypress, `--trace-video` prints BIOS
 mode/page changes and CRTC start/pitch/mode writes to stderr. This helps
