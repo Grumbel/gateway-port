@@ -54,13 +54,37 @@ class StoryDisassemblyTests(unittest.TestCase):
         self.assertEqual(vocabulary.groups, [{'key': 0, 'pairs': [(0, 7)]}])
 
     def test_story_trace_summary(self):
-        lines = ['key ms=500 value=1c0d',
-                 'entry ms=501 pc=4a378 cs=49d8 story_object=124 story_event=6 story_command=3a',
-                 'entry ms=510 pc=4a378 cs=49d8 story_object=124 story_event=6 story_command=3a',
-                 'entry ms=520 pc=49db5 cs=49d8 story_object=ee story_event=8 story_command=5f',
+        lines = ['key ms=450 value=6f', 'key ms=470 value=70',
+                 'key ms=500 value=1c0d',
+                 'entry ms=501 pc=4a378 cs=49d8 stack=701,2c24,6, '
+                 'story_object=124 story_event=6 story_command=3a',
+                 'entry ms=510 pc=4a378 cs=49d8 stack=701,2c24,6, '
+                 'story_object=124 story_event=6 story_command=3a',
+                 'entry ms=520 pc=49db5 cs=49d8 stack=701,2c24,8, '
+                 'story_object=ee story_event=8 story_command=5f',
                  'entry ms=521 pc=dead cs=1111']
-        self.assertEqual(summarize(lines), [(0xee, 8, 0x5f, 1, 520),
-                                            (0x124, 6, 0x3a, 2, 501)])
+        self.assertEqual(summarize(lines), [(0xee, 8, 0x5f, 1, 520, ('op',)),
+                                            (0x124, 6, 0x3a, 2, 501, ('op',))])
+
+    def test_legacy_entry_trace_without_command_annotations(self):
+        lines = ['key ms=100 value=6f', 'key ms=110 value=70',
+                 'key ms=120 value=65', 'key ms=130 value=6e',
+                 'key ms=140 value=1c0d',
+                 'entry ms=192 pc=4a378 cs=49d8 ds=5b46 '
+                 'stack=701,2c24,6,2acd,2c24, frames=dbc0:dc28:4c0:1000,',
+                 'entry ms=195 pc=4a378 cs=49d9 stack=701,2c24,8,',
+                 'entry ms=200 pc=12345 cs=49d8 stack=701,2c24,8,']
+        self.assertEqual(summarize(lines),
+                         [(0x124, 6, None, 1, 192, ('open',))])
+
+    def test_drawer_command_from_instruction_register(self):
+        lines = ['key ms=100 value=1c0d',
+                 'entry ms=192 pc=4a378 cs=49d8 ax=2acd '
+                 'stack=701,2c24,6,2acd,2c24,',
+                 'entry ms=192 pc=4a390 cs=49d8 ax=85 '
+                 'stack=701,2c24,6,2acd,2c24,']
+        self.assertEqual(summarize(lines),
+                         [(0x124, 6, 0x85, 1, 192, ())])
 
 
 if __name__ == '__main__':
