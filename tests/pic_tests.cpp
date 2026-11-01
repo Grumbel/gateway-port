@@ -1,3 +1,4 @@
+#include "crusher.hpp"
 #include "pic.hpp"
 #include <algorithm>
 #include <iostream>
@@ -119,6 +120,66 @@ void test_mission_critical_directory() {
     rejects([&] { gateway::parse_mc_pic_directory(bad); }, "truncated MC stream accepted");
     rejects([&] { gateway::parse_mc_pic_directory(Bytes(0x1400)); },
             "empty MC directory accepted");
+}
+
+void test_crusher() {
+    // A Crusher block with a fixed literal symbol needs no per-pixel bits. Both the literal
+    // code and the unused distance tree have zero code-length records.
+    BitWriter constant;
+    constant.put(4, 16);  // Number of tokens in this block.
+    constant.put(0, 5);   // Meta tree: fixed symbol.
+    constant.put(0, 5);
+    constant.put(0, 9);   // Literal tree: fixed symbol '*'.
+    constant.put('*', 9);
+    constant.put(0, 4);   // Distance tree: fixed class 0.
+    constant.put(0, 4);
+    require(gateway::decode_crusher(constant.bytes(), 4) == Bytes(4, '*'),
+            "Crusher fixed-symbol block");
+    rejects([&] { gateway::decode_crusher(constant.bytes(), 5); },
+            "Crusher missing next block accepted");
+    rejects([&] { gateway::decode_crusher(constant.bytes(), 3); },
+            "Crusher extra whole bytes accepted");
+
+    // The literal tree has two one-bit codes (symbols 0 and 1). Meta tree is fixed symbol 3,
+    // which expands to a length-one literal code each time it is read.
+    BitWriter variable;
+    variable.put(4, 16);
+    variable.put(0, 5);
+    variable.put(3, 5);
+    variable.put(2, 9);
+    variable.put(0, 4);
+    variable.put(0, 4);
+    for (unsigned symbol : {0, 1, 1, 0})
+        variable.put(symbol, 1);
+    require(gateway::decode_crusher(variable.bytes(), 4) == Bytes({0, 1, 1, 0}),
+            "Crusher canonical Huffman symbols");
+
+    // One literal followed by a three-byte distance-zero LZ match. The meta tree has four
+    // two-bit symbols; the long-zero code fills holes in the 510-symbol literal alphabet.
+    BitWriter match;
+    match.put(2, 16);   // Two tokens produce four output bytes.
+    match.put(4, 5);    // Four meta-tree code lengths follow.
+    for (int i = 0; i < 3; ++i)
+        match.put(2, 3);
+    match.put(0, 2);    // No zero run after the third code length.
+    match.put(2, 3);
+    match.put(257, 9);  // Literal codes 0..256 are defined.
+    match.put(2, 2);    // Meta symbol 2: long run of zero lengths.
+    match.put(45, 9);   // 65 absent symbols.
+    match.put(3, 2);    // Symbol 65: one-bit code for 'A'.
+    match.put(2, 2);
+    match.put(170, 9);  // 190 absent symbols.
+    match.put(3, 2);    // Symbol 256: one-bit three-byte match.
+    match.put(0, 4);    // Constant distance class 0.
+    match.put(0, 4);
+    match.put(0, 1);    // 'A'.
+    match.put(1, 1);    // Match at distance 1.
+    require(gateway::decode_crusher(match.bytes(), 4) == Bytes(4, 'A'),
+            "Crusher LZ back-reference and long code-length run");
+
+    rejects([] { gateway::decode_crusher(Bytes{0}, 3); }, "truncated Crusher accepted");
+    rejects([] { gateway::decode_crusher(Bytes{}, 65 * 1024 * 1024); },
+            "unbounded Crusher allocation accepted");
 }
 
 void test_dcl() {
@@ -280,6 +341,7 @@ int main() {
     try {
         test_directory();
         test_mission_critical_directory();
+        test_crusher();
         test_dcl();
         test_lzw();
         test_huffman();
