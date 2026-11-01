@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-from inspect_child_chains import resolve_chains
+from inspect_child_chains import audit_chains, resolve_chains
 
 TOOL = Path(__file__).resolve().parents[1] / 'tools' / 'inspect_child_chains.py'
 
@@ -22,6 +22,44 @@ def fixture():
              location=0x124, child_slot=0, next_sibling=0),
         dict(object=0xd3, type=2, name='Player', child_links=[0, 0, 0],
              location=0xee, child_slot=0, next_sibling=0),
+    ]
+
+
+def first_room_snapshot():
+    """Compact reproduction of the complete first-room child output supplied by user.
+
+    Values are the reported heads and sibling order, not a substitute for
+    retaining or validating their original proprietary memory dump.
+    """
+    def record(object_id, kind, name, parent=None, child_slot=0,
+               next_sibling=0, heads=None):
+        result = dict(object=object_id, type=kind, name=name,
+                      child_links=(heads if heads is not None else
+                                   [0, 0, 0] if kind in (2, 7) else []))
+        if parent is not None:
+            result.update(location=parent, child_slot=child_slot,
+                          next_sibling=next_sibling)
+        return result
+
+    return [
+        record(0xee, 1, 'Your Quarters', heads=[0x175]),
+        record(0x175, 8, 'picture', 0xee, next_sibling=0x16f),
+        record(0x16f, 8, 'plant', 0xee, next_sibling=0x150),
+        record(0x150, 2, 'wall locker', 0xee, next_sibling=0x14f),
+        record(0x14f, 2, 'bed', 0xee, next_sibling=0x14e),
+        record(0x14e, 2, 'desk chair', 0xee, next_sibling=0x131),
+        record(0x131, 2, 'PV commset', 0xee, next_sibling=0x125,
+               heads=[0, 0, 0x170]),
+        record(0x170, 8, 'PV slot', 0x131, child_slot=2),
+        record(0x125, 2, 'desk', 0xee, next_sibling=0xd3,
+               heads=[0, 0x126, 0x124]),
+        record(0x126, 2, 'debit card', 0x125, child_slot=1),
+        record(0x124, 2, 'drawer', 0x125, child_slot=2),
+        record(0xd3, 7, 'you', 0xee, heads=[0x123, 0xd7, 0]),
+        record(0x123, 2, 'book', 0xd3),
+        record(0xd7, 2, 'boots', 0xd3, child_slot=1, next_sibling=0xd5),
+        record(0xd5, 2, 'white badge', 0xd3, child_slot=1, next_sibling=0xd4),
+        record(0xd4, 2, 'blue coverall', 0xd3, child_slot=1),
     ]
 
 
@@ -50,10 +88,44 @@ class ChildChainInspectionTests(unittest.TestCase):
         objects[3]['location'] = 0x123
         output = resolve_chains(objects, 0x124, recursive=True)
         self.assertIn('0x0d3 Player', output)
-        self.assertIn('0x123 Book (type 2) child slots:', output)
+        self.assertEqual(output.count('0x123 Book (type 2)'), 1)
         objects[3]['child_links'] = [0x124]
         output = resolve_chains(objects, 0x124, recursive=True)
         self.assertIn('(recursive containment cycle)', output)
+
+    def test_first_room_mixed_type_hierarchy_and_global_audit(self):
+        objects = first_room_snapshot()
+        view = resolve_chains(objects, 0xee, recursive=True)
+        self.assertLess(view.index('0x175 picture'), view.index('0x16f plant'))
+        self.assertLess(view.index('0x16f plant'), view.index('0x150 wall locker'))
+        self.assertLess(view.index('0x131 PV commset'), view.index('0x125 desk'))
+        self.assertIn('slot 2:\n        0x170 PV slot', view)
+        self.assertIn('slot 0:\n        0x123 book', view)
+        self.assertIn('0x0d7 boots', view)
+        self.assertIn('0x0d5 white badge', view)
+        self.assertIn('0x0d4 blue coverall', view)
+        self.assertEqual(view.count('0x131 PV commset (type 2)'), 1)
+        audit = audit_chains(objects)
+        self.assertIn('Native object records: 16', audit)
+        self.assertIn('Nonzero indexed child heads: 6', audit)
+        self.assertIn('Child links traversed: 15 (15 distinct objects)', audit)
+        self.assertIn('Consistency findings: 0', audit)
+
+    def test_audit_reports_corrupt_parent_slots_cycles_and_shared_children(self):
+        objects = first_room_snapshot()
+        objects[-1]['location'] = 0xee
+        objects[-1]['child_slot'] = 2
+        result = audit_chains(objects)
+        self.assertIn('location 0x0ee != parent 0x0d3', result)
+        self.assertIn('child slot 2 != parent slot 1', result)
+        objects = first_room_snapshot()
+        objects[1]['next_sibling'] = 0x175
+        self.assertIn('sibling cycle at 0x175', audit_chains(objects))
+        objects[1]['next_sibling'] = 0x777
+        self.assertIn('missing child 0x777', audit_chains(objects))
+        objects = first_room_snapshot()
+        objects[8]['child_links'][0] = 0x175
+        self.assertIn('referenced by multiple heads/chains', audit_chains(objects))
 
     def test_rejects_broken_sibling_chain_and_unknown_objects(self):
         objects = fixture()
@@ -80,6 +152,10 @@ class ChildChainInspectionTests(unittest.TestCase):
                                  capture_output=True, text=True)
             self.assertEqual(bad.returncode, 2)
             self.assertIn('out of range', bad.stderr)
+            audited = subprocess.run([sys.executable, str(TOOL), str(state), '--audit'],
+                                     capture_output=True, text=True)
+            self.assertEqual(audited.returncode, 0, audited.stderr)
+            self.assertIn('Consistency findings:', audited.stdout)
 
 
 if __name__ == '__main__':

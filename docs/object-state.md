@@ -230,6 +230,44 @@ location and slot metadata, and fails on a dangling child or sibling cycle.
 Recursive expansion detects a containment cycle without following it forever.
 It observes one snapshot, not parser visibility or which actions succeeded.
 
+To check **all** indexed heads and their known sibling chains, rather than
+choosing one container at a time, use:
+
+```sh
+python3 tools/inspect_child_chains.py build/parser-child-writes/objects.json --audit
+```
+
+This prints the number of nonzero child heads, traversed sibling links, and
+distinct referenced objects. It reports dangling IDs, metadata disagreements,
+cycles, and children referenced from multiple chains, without following bad
+links forever. A record type lacking the decoded sibling accessor is counted
+as an **undecoded tail**, not silently treated as proof that its list ends.
+It cannot establish a complete world graph for types with unknown fields, and
+does not infer parser visibility from the absence of link inconsistencies.
+
+#### Decoded Your Quarters hierarchy from the supplied native replay
+
+The user ran the inspector against the repeated-action native snapshot after
+the second TAKE. It returned the following *actual ordered links* (not
+invented from names or reverse-mapped from screen hitboxes):
+
+| Parent | Slot | Indexed head / following siblings |
+| --- | ---: | --- |
+| Your Quarters `0x0ee` (type 1) | 0 | `0x175` picture → `0x16f` plant → `0x150` wall locker → `0x14f` bed → `0x14e` desk chair → `0x131` PV commset → `0x125` desk → `0x0d3` you |
+| PV commset `0x131` (type 2) | 2 | `0x170` PV slot |
+| Desk `0x125` (type 2) | 1 | `0x126` debit card |
+| Desk `0x125` | 2 | `0x124` drawer |
+| Player `0x0d3` (type 7) | 0 | `0x123` book |
+| Player `0x0d3` | 1 | `0x0d7` boots → `0x0d5` white badge → `0x0d4` blue coverall |
+
+The drawer's slot 0 is empty in this snapshot. Thus the `0x175` head restored
+by the guest's second TAKE is specifically the *picture*, not an unnamed
+special room entry. Type 8 pictures and plants participate in the same
+next-sibling chain as type 2 furniture, while the enclosing room is type 1.
+The scene-specific hierarchy is regression-tested with an asset-free fixture.
+No whole-snapshot `--audit` output or DOSBox comparison has yet been supplied;
+the table establishes this one final snapshot, not every intermediary state.
+
 ## State-changing replay
 
 ```sh
