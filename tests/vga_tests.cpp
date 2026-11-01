@@ -156,6 +156,15 @@ int main() {
         vga.set_mode(3);
         require(vga.text_memory()[0] == ' ' && vga.text_memory()[1] == 7,
                 "text clear did not restore blank cells");
+        vga.set_mode(2);
+        require(vga.mode() == 2 && vga.text_mode() && vga.width() == 640 &&
+                    vga.height() == 400 && vga.page_size() == 4096,
+                "mode 2 is not an 80-column text mode");
+        require(vga.text_memory()[0] == ' ' && vga.text_memory()[1] == 7,
+                "mode 2 did not clear text memory");
+        vga.text_font('G', font);
+        vga.text_snapshot(text);
+        require(vga.pixels()[0] == 0xffaa0000, "mode 2 text rendering failed");
         vga.set_mode(0x12);
         mask(vga, 1);
         vga.write(0, 0x80);

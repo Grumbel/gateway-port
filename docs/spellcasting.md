@@ -206,6 +206,13 @@ sampling also keeps its sample phase across short PIT execution slices,
 tested by comparing a 16-ms bulk render against 60-us steps. Audio quality,
 keypress response, and real-time execution speed need live verification.
 
+The 101 shutdown path later invokes `INT 10h AX=0002h`, switching to BIOS
+mode 2 (80x25 black-and-white text). This is the same `B800:` text-memory
+layout as color mode 3, not an unsupported graphics mode. The runtime now
+supports mode 2 throughout BIOS text operations, video-memory snapshots,
+and SDL presentation. Tests cover switching to mode 2 and restoring the
+text display on exit. Distorted intro audio remains unresolved.
+
 - Colors have not been compared with the running games under DOSBox.
 - Spellcasting 101 and 201 mono entries are shown as black and white.
 - Some Spellcasting 101 1-bit entries, such as `S101_C2` #19 and #40, look like

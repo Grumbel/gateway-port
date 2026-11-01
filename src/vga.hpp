@@ -11,6 +11,7 @@ class Vga {
     Vga();
     void set_mode(std::uint8_t mode, bool clear = true);
     std::uint8_t mode() const { return mode_; }
+    bool text_mode() const { return mode_ == 2 || mode_ == 3; }
     int width() const;
     int height() const;
     bool handles_port(std::uint16_t port) const;

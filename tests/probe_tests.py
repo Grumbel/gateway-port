@@ -632,6 +632,13 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('DOS exit code: 0', result.stdout)
 
+    def test_mode_2_exit_restores_text_display(self):
+        # Spellcasting 101 selects 80x25 B/W mode 2 while shutting down.
+        result = self.run_guest(bytes.fromhex('b80200cd10b8004ccd21'), dump=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.memory[0x449], 2)
+        self.assertEqual(result.memory[0xb8000:0xb8002], b' \x07')
+
     def test_execution_is_bounded(self):
         result = self.run_guest(bytes.fromhex('ebfe'))
         self.assertEqual(result.returncode, 1)

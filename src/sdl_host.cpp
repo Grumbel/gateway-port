@@ -155,7 +155,7 @@ bool SdlHost::poll(std::deque<std::uint16_t> &keys, Mouse &mouse, const Vga &vga
         checked(SDL_HideCursor());
     if (mouse.warp_pending && texture_) {
         float x, y;
-        const int rows = vga.mode() == 3 ? 200 : vga.height();
+        const int rows = vga.text_mode() ? 200 : vga.height();
         checked(SDL_RenderCoordinatesToWindow(renderer_, float(mouse.x) * vga.width() / 640,
                                               float(mouse.y) * presentation_height_ / rows,
                                               &x, &y));
@@ -172,7 +172,7 @@ bool SdlHost::poll(std::deque<std::uint16_t> &keys, Mouse &mouse, const Vga &vga
             const bool motion = event.type == SDL_EVENT_MOUSE_MOTION;
             const float x = motion ? event.motion.x : event.button.x;
             const float y = motion ? event.motion.y : event.button.y;
-            const int rows = vga.mode() == 3 ? 200 : vga.height();
+            const int rows = vga.text_mode() ? 200 : vga.height();
             mouse.move(int(x * 640 / vga.width()), int(y * rows / presentation_height));
             const bool outside = x < 0 || y < 0 || x >= vga.width() ||
                                  y >= presentation_height;
@@ -228,7 +228,7 @@ void SdlHost::present(const Vga &vga, const Mouse &mouse,
                                                  SDL_LOGICAL_PRESENTATION_LETTERBOX));
     }
     auto pixels = vga.pixels();
-    draw_mouse_cursor(pixels, width_, height_, mouse, vga.mode() == 3);
+    draw_mouse_cursor(pixels, width_, height_, mouse, vga.text_mode());
     checked(SDL_UpdateTexture(texture_, nullptr, pixels.data(), width_ * 4));
     checked(SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255));
     checked(SDL_RenderClear(renderer_));

@@ -237,7 +237,7 @@ void port_out(uc_engine *uc, std::uint32_t port, int size, std::uint32_t value,
 void video_memory(uc_engine *uc, uc_mem_type type, std::uint64_t address, int size,
                   std::int64_t value, void *opaque) noexcept {
     auto &state = *static_cast<State *>(opaque);
-    if (state.vga.mode() == 3)
+    if (state.vga.text_mode())
         return;
     try {
         if (size > 8)
@@ -261,7 +261,7 @@ void text_mode_state(uc_engine *uc, State &state, bool clear) {
     state.cursor.fill(0);
     state.cursor_shape = 0x0607;
     const std::uint16_t columns = 80, page_size = 4096, start = 0, shape = 0x0607, height = 16;
-    const std::uint8_t mode = 3, page = 0, rows = 24;
+    const std::uint8_t mode = state.vga.mode(), page = 0, rows = 24;
     check(uc_mem_write(uc, 0x449, &mode, 1));
     check(uc_mem_write(uc, 0x44a, &columns, 2));
     check(uc_mem_write(uc, 0x44c, &page_size, 2));
@@ -276,7 +276,7 @@ void text_mode_state(uc_engine *uc, State &state, bool clear) {
                            state.vga.text_memory().size()));
 }
 void text_snapshot(uc_engine *uc, State &state) {
-    if (state.vga.mode() != 3)
+    if (!state.vga.text_mode())
         return;
     std::array<std::uint8_t, 32768> memory;
     check(uc_mem_read(uc, 0xb8000, memory.data(), memory.size()));
@@ -571,7 +571,7 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             auto &mouse = state.mouse;
             if (ax == 0 || ax == 0x21) {
                 mouse = gateway::Mouse{};
-                mouse.max_y = state.vga.mode() == 3 ? 199 : state.vga.height() - 1;
+                mouse.max_y = state.vga.text_mode() ? 199 : state.vga.height() - 1;
                 mouse.y = (mouse.max_y + 1) / 2;
                 set(uc, UC_X86_REG_AX, 0xffff);
                 set(uc, UC_X86_REG_BX, 3);
@@ -692,7 +692,7 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
                 throw std::runtime_error("unsupported BIOS font selector");
             set(uc, UC_X86_REG_ES, font_segment);
             set(uc, UC_X86_REG_BP, selector == 4 ? 128 * 8 : 0);
-            set(uc, UC_X86_REG_CX, state.vga.mode() == 3 ? 16 :
+            set(uc, UC_X86_REG_CX, state.vga.text_mode() ? 16 :
                                     state.vga.mode() == 0x12 ? 16 :
                                     state.vga.mode() == 0x10 ? 14 : 8);
             set(uc, UC_X86_REG_DX, (reg(uc, UC_X86_REG_DX) & 0xff00) | 24);
@@ -709,7 +709,7 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             const auto position = state.cursor[page];
             const unsigned row = position >> 8, column = position & 255;
             const auto character = ax & 255;
-            if (state.vga.mode() == 3) {
+            if (state.vga.text_mode()) {
                 const std::uint8_t cell[]{static_cast<std::uint8_t>(character),
                                           static_cast<std::uint8_t>(bx)};
                 const auto first = row * 80 + column;
@@ -731,7 +731,7 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
                     state.vga.draw_glyph(column + i, row, std::span(glyph).first(height),
                                          bx & 255, page);
             }
-        } else if (number == 0x10 && (ax >> 8) == 8 && state.vga.mode() == 3) {
+        } else if (number == 0x10 && (ax >> 8) == 8 && state.vga.text_mode()) {
             const auto page = (reg(uc, UC_X86_REG_BX) >> 8) & 7;
             const auto position = state.cursor[page];
             const auto cell = (position >> 8) * 80 + (position & 255);
@@ -743,7 +743,7 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             const auto bx = reg(uc, UC_X86_REG_BX);
             const auto cx = reg(uc, UC_X86_REG_CX);
             const auto dx = reg(uc, UC_X86_REG_DX);
-            if (state.vga.mode() == 3) {
+            if (state.vga.text_mode()) {
                 std::array<std::uint8_t, 4096> page{};
                 const auto address = 0xb8000 + state.vga.text_page() * page.size();
                 check(uc_mem_read(uc, address, page.data(), page.size()));
@@ -756,7 +756,7 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             }
         } else if (number == 0x10 && (ax >> 8) == 5) {
             const std::uint8_t page = ax & 7;
-            if (state.vga.mode() == 3)
+            if (state.vga.text_mode())
                 state.vga.text_page(page);
             else
                 state.vga.graphics_page(page);
@@ -766,7 +766,7 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
                           << unsigned(state.vga.mode()) << std::dec
                           << " page_bytes=" << state.vga.page_size()
                           << " start_bytes=" << page * state.vga.page_size() << '\n';
-            const std::uint16_t start = state.vga.mode() == 3
+            const std::uint16_t start = state.vga.text_mode()
                                             ? page * 4096
                                             : page * state.vga.page_size();
             check(uc_mem_write(uc, 0x44e, &start, 2));
@@ -786,18 +786,18 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
             set(uc, UC_X86_REG_AX, 0x5000 | state.vga.mode());
             set(uc, UC_X86_REG_BX,
                 (reg(uc, UC_X86_REG_BX) & 255) |
-                    ((state.vga.mode() == 3 ? state.vga.text_page()
+                    ((state.vga.text_mode() ? state.vga.text_page()
                                             : state.vga.graphics_page()) << 8));
         } else if (number == 0x10 && (ax >> 8) == 0) {
             const auto mode = ax & 0x7f;
-            if (mode != 3 && mode != 0x0d && mode != 0x0e && mode != 0x10 && mode != 0x12 &&
-                mode != 0x13)
+            if (mode != 2 && mode != 3 && mode != 0x0d && mode != 0x0e && mode != 0x10 &&
+                mode != 0x12 && mode != 0x13)
                 throw std::runtime_error("unsupported VGA mode");
             state.vga.set_mode(mode, !(ax & 0x80));
             if (state.trace_video)
                 std::cerr << "VGA ms=" << std::dec << state.elapsed_ms << " BIOS mode="
                           << std::hex << unsigned(mode) << '\n';
-            if (mode == 3)
+            if (state.vga.text_mode())
                 text_mode_state(uc, state, !(ax & 0x80));
             const std::uint8_t value = mode;
             check(uc_mem_write(uc, 0x449, &value, 1));

@@ -5,12 +5,13 @@
 namespace gateway {
 Vga::Vga() { set_mode(3); }
 void Vga::set_mode(std::uint8_t mode, bool clear) {
-    if (mode != 3 && mode != 0x0d && mode != 0x0e && mode != 0x10 && mode != 0x12 && mode != 0x13)
+    if (mode != 2 && mode != 3 && mode != 0x0d && mode != 0x0e && mode != 0x10 &&
+        mode != 0x12 && mode != 0x13)
         throw std::runtime_error("unsupported VGA mode");
     mode_ = mode;
     text_page_ = 0;
     graphics_page_ = 0;
-    if (mode == 3 && clear) {
+    if (text_mode() && clear) {
         for (std::size_t i = 0; i < text_.size(); i += 2) {
             text_[i] = ' ';
             text_[i + 1] = 7;
@@ -45,7 +46,7 @@ void Vga::set_mode(std::uint8_t mode, bool clear) {
 }
 int Vga::width() const { return mode_ == 0x0d || mode_ == 0x13 ? 320 : 640; }
 int Vga::height() const {
-    return mode_ == 3 ? 400 : mode_ == 0x12 ? 480 : mode_ == 0x10 ? 350 : 200;
+    return text_mode() ? 400 : mode_ == 0x12 ? 480 : mode_ == 0x10 ? 350 : 200;
 }
 bool Vga::handles_port(std::uint16_t port) const {
     switch (port) {
@@ -212,7 +213,7 @@ void Vga::write(std::uint16_t offset, std::uint8_t value) {
 }
 void Vga::draw_glyph(unsigned column, unsigned row, std::span<const std::uint8_t> bitmap,
                      std::uint8_t attribute, unsigned page) {
-    if (mode_ == 3 || mode_ == 0x13)
+    if (text_mode() || mode_ == 0x13)
         throw std::runtime_error("unsupported BIOS glyph mode");
     if (page >= 65536 / page_size())
         throw std::runtime_error("invalid BIOS graphics glyph page");
@@ -243,7 +244,7 @@ void Vga::draw_glyph(unsigned column, unsigned row, std::span<const std::uint8_t
 
 void Vga::scroll_graphics_window(bool down, unsigned lines, std::uint8_t color,
                                  unsigned top, unsigned left, unsigned bottom, unsigned right) {
-    if (mode_ == 3 || mode_ == 0x13)
+    if (text_mode() || mode_ == 0x13)
         throw std::runtime_error("unsupported graphics scrolling mode");
     const unsigned cell_height = mode_ == 0x10 ? 14 : mode_ == 0x12 ? 16 : 8;
     const unsigned columns = width() / 8, rows = height() / cell_height;
@@ -296,7 +297,7 @@ void Vga::text_page(unsigned page) {
     text_page_ = page;
 }
 void Vga::graphics_page(unsigned page) {
-    if (mode_ == 3)
+    if (text_mode())
         throw std::runtime_error("graphics page in text mode");
     const unsigned bytes_per_page = page_size();
     if (page >= 65536 / bytes_per_page)
@@ -309,6 +310,7 @@ void Vga::graphics_page(unsigned page) {
 }
 unsigned Vga::page_size() const {
     switch (mode_) {
+    case 2:
     case 3: return 4096;
     case 0x0d: return 8192;
     case 0x0e: return 16384;
@@ -346,7 +348,7 @@ std::vector<std::uint32_t> Vga::pixels() const {
             const unsigned display_start = split ? 0 : start;
             const unsigned display_row = split ? unsigned(y) - line_compare - 1 : unsigned(y);
             unsigned color = 0;
-            if (mode_ == 3) {
+            if (text_mode()) {
                 const auto cell = text_page_ * 4096 + ((y / 16) * 80 + x / 8) * 2;
                 const auto character = text_[cell], attribute = text_[cell + 1];
                 const bool ink = text_font_[character][y % 16] & (0x80 >> (x % 8));
