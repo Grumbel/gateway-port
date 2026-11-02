@@ -81,6 +81,16 @@ not mistake a trampoline, a byte inside a function, or two sections sharing an
 address for separate C functions. Exported object labels remain aliases until
 the routine's boundaries and call sites have been checked.
 
+Use repeatable `--decompile-object 0x2a9` (with `--objects-json`) for a
+**selected** object handler to attempt as a provisional Ghidra function.
+Other object aliases do not automatically turn into 696 decompiler targets.
+Selection rejects duplicate object IDs, missing native handlers, and two
+selected objects sharing the same entry. For a discovered non-object entry,
+`--decompile-offset 0x6d564` selects an **original OVL file offset** from a
+unique file-backed RTLink section; it is marked `overlay-entry-candidate`
+and must not be represented as a verified function boundary. See the
+[membership-pin analysis](membership-pin.md) for the Beach reward example.
+
 To seed all **44 known kind-4 room-exit callback entries** as decompilation
 candidates, export `tools/inspect_room_callbacks.py --format json` from a
 native snapshot and include `--callbacks-json build/room-callbacks.json`
@@ -282,3 +292,29 @@ room ID, followed by a verified native move `0x0f5 → 0x0f6`.
 Normal puzzle progression and obtaining the pin are **not** thereby
 validated. Reproducible trace comparison commands and limits are in
 [room-callbacks.md](room-callbacks.md#controlled-positive-branch-explicitly-modified-guest-state).
+
+## Selective object and non-object native decompilation: fourth run
+
+The selected-entry options were tested on a fresh Ghidra 11.4.2/JDK21
+project with fingerprint-matching original binaries, 58 RTLink banks,
+the 44 room callback targets and all 696 object aliases. The runner
+successfully exported **70/70** contexts, adding five *selected* object
+handlers (VR Terminal `0x29b`, technician `0x2a3`, uniform `0x2a4`, pin
+`0x2a9`, reader `0x2ab`) and one manually selected non-object entry
+at `OVL:0x6d564`. No other object alias was promoted to a verified
+function. Ghidra still warns about unresolved indirect jumps and cross-bank
+reads; 70/70 is an extraction count, **not** proof of 70 correct C functions.
+
+The first attempt also exposed a Ghidra symbol-collision condition: an
+imported secondary user label already existed at a function address, and
+renaming the function to that label raised `DuplicateNameException` and
+aborted the entire script. The exporter now checks existing address symbols
+and preserves an already-named alias instead of failing a nonessential
+rename. The corrected exporter completed on the first project's existing
+analysis and on the fresh full run.
+
+The `0x6d564` decompilation displays the Beach-result flag `0x78fa`, direct
+technician/pin relationship check, move of pin `0x2a9` to room `0x29b`, and
+clear of property `0x08`. Its normal trigger path is still untraced.
+See [membership-pin.md](membership-pin.md) for the original-instruction
+cross-checks and precise scope of native validation.
