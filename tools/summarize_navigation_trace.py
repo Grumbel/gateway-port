@@ -21,6 +21,13 @@ LOCATION_OFFSET = 0x0c
 # Original five-byte direct far CALL to the native location setter 0157:064b.
 # RTLink relocates the segment word on load; compare against unrelocated OVL.
 LOCATION_SETTER_CALL = bytes.fromhex('9a4b065701')
+# Section-4 object relocation helper starts at file 0xc830, running at
+# 4319:1650 in the observed default layout. Its far return is redirected
+# through RTLink manager 2c24:0701, which is not a game-script callsite.
+MOVE_HELPER_PC = 0x447e0
+MOVE_HELPER_CS = 0x4319
+RTLINK_RETURN_IP = 0x0701
+RTLINK_RETURN_CS = 0x2c24
 
 
 def fields(line):
@@ -216,6 +223,75 @@ def summarize_room_heads(events, lines, manifest, overlay, player=PLAYER):
     return '\n'.join(output) + '\n'
 
 
+def move_helper_calls(lines, player=PLAYER):
+    """Decode only player moves with the observed RTLink-managed far ABI.
+
+    The first two words of a hooked entry are the manager's substituted
+    return IP/CS. Subsequent words are the actual object, destination and
+    slot arguments. The BP frame chain is *not* a direct-call stack trace.
+    """
+    calls = []
+    for line in lines:
+        if not line.startswith('entry '):
+            continue
+        info = fields(line)
+        try:
+            if int(info['pc'], 16) != MOVE_HELPER_PC or \
+                    int(info['cs'], 16) != MOVE_HELPER_CS:
+                continue
+            stack = [int(word, 16) for word in info['stack'].split(',') if word]
+            if len(stack) < 5 or stack[:2] != [RTLINK_RETURN_IP, RTLINK_RETURN_CS] or \
+                    stack[2] != player:
+                continue
+            frames = []
+            for frame in info.get('frames', '').split(','):
+                if not frame:
+                    continue
+                parts = [int(word, 16) for word in frame.split(':')]
+                if len(parts) != 4:
+                    raise ValueError('invalid saved BP frame')
+                frames.append(f'{parts[3]:04x}:{parts[2]:04x}')
+            calls.append(dict(ms=int(info['ms']), object=stack[2],
+                              destination=stack[3], slot=stack[4],
+                              frames=frames, trampoline='2c24:0701'))
+        except (KeyError, ValueError) as error:
+            raise ValueError(f'invalid move-helper entry ({error}): {line}') from error
+    return calls
+
+
+def summarize_move_callers(events, lines, player=PLAYER):
+    """Correlate move-helper stack arguments with verified location changes."""
+    calls = move_helper_calls(lines, player)
+    output = ['', 'Move-helper entry stacks at verified player location changes:',
+              'ms     helper args (object -> parent / slot)   saved BP return chain',
+              '------  -------------------------------------  ---------------------']
+    count = 0
+    for event in events:
+        if event['evidence'] != 'verified service' or event['old'] is None:
+            continue
+        matching = [call for call in calls
+                    if abs(call['ms'] - event['ms']) <= 1 and
+                    call['destination'] == event['new'] and call['slot'] == 0]
+        if not matching:
+            output.append(f'{event["ms"]:6}  (no matching 4319:1650 entry)')
+            continue
+        if len(matching) > 1:
+            output.append(f'{event["ms"]:6}  (ambiguous: {len(matching)} matching entries)')
+            continue
+        call = matching[0]
+        chain = ' <- '.join(call['frames'][:3]) if call['frames'] else '(no BP frames)'
+        output.append(f'{event["ms"]:6}  0x{call["object"]:03x} -> '
+                      f'0x{call["destination"]:03x} / {call["slot"]:<16}  {chain}')
+        count += 1
+    if not count:
+        output.append('(no corroborated move entries; run replay with --trace-navigation)')
+    output.append('Far return 2c24:0701 is RTLink manager plumbing, not the '
+                  'source navigation handler. Saved BP return addresses are '
+                  'upstream frames, not proven direct callsites. Entries match '
+                  'verified location changes by destination and guest time (±1 ms).')
+    return '\n'.join(output) + '\n'
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('trace', type=Path, help='native.trace from trace_game_logic.py')
@@ -228,6 +304,9 @@ def main():
     parser.add_argument('--child-heads', action='store_true',
                         help='report byte-verified child-head setter calls near moves '
                              '(requires --overlay-map and --overlay-file)')
+    parser.add_argument('--move-callers', action='store_true',
+                        help='correlate RTLink move-helper entry stacks and saved BP frames '
+                             'with verified room changes')
     args = parser.parse_args()
     try:
         if bool(args.overlay_map) != bool(args.overlay_file):
@@ -243,6 +322,8 @@ def main():
         print(summarize(events, names, commands, manifest, overlay), end='')
         if args.child_heads:
             print(summarize_room_heads(events, lines, manifest, overlay), end='')
+        if args.move_callers:
+            print(summarize_move_callers(events, lines), end='')
     except (OSError, ValueError, KeyError, TypeError) as error:
         parser.error(str(error))
 

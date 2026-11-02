@@ -9,7 +9,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 from summarize_navigation_trace import (location_events, map_location_setter_return,
-                                        room_names, summarize, summarize_room_heads)
+                                        move_helper_calls, room_names, summarize,
+                                        summarize_move_callers, summarize_room_heads)
 
 TOOL = ROOT / 'tools' / 'summarize_navigation_trace.py'
 WATCH = 'object-watch ms=11100 object=d3 type=7 at=1e4c:1234 size=20 child_count=3'
@@ -41,6 +42,13 @@ def head_call(ms, object_id, child, insert):
             f'stack={"171d" if insert else "169e"},4319,0,0 '
             f'child_set_object={object_id:x} child_set_slot=0 '
             f'child_set_value={child:x}')
+
+
+def move_entry(ms, object_id, destination, slot=0):
+    return (f'entry ms={ms} pc=447e0 cs=4319 ss=5b46 sp=db88 bp=db9a '
+            f'stack=701,2c24,{object_id:x},{destination:x},{slot:x},0,ee,343b '
+            'frames=db9a:dbb6:65a:148e,dbb6:dbc2:c28:148e,'
+            'dbc2:dc28:4da:1000,')
 
 
 class NavigationTraceTests(unittest.TestCase):
@@ -200,6 +208,52 @@ class NavigationTraceTests(unittest.TestCase):
                                      '--child-heads'], capture_output=True, text=True)
             self.assertEqual(result.returncode, 2)
             self.assertIn('--child-heads requires --overlay-map', result.stderr)
+
+    def test_helper_entry_caller_frames_and_verified_move_correlations(self):
+        entries = [move_entry(5408, 0x16d, 0x161),
+                   move_entry(18266, 0xd3, 0xf1),
+                   move_entry(21177, 0xd3, 0xee),
+                   move_entry(25260, 0xd3, 0xf1),
+                   move_entry(28177, 0xd3, 0xee),
+                   move_entry(28177, 0xd3, 0xee, slot=1),
+                   move_entry(29000, 0xd3, 0xee).replace('stack=701,2c24',
+                                                            'stack=700,2c24')]
+        calls = move_helper_calls(entries)
+        self.assertEqual(len(calls), 5)  # two at 28177, one wrong slot
+        self.assertEqual(calls[0]['frames'],
+                         ['148e:065a', '148e:0c28', '1000:04da'])
+        events = [dict(ms=ms, old=old, new=new, evidence='verified service')
+                  for ms, old, new in ((18266, 0xee, 0xf1),
+                                       (21177, 0xf1, 0xee),
+                                       (25261, 0xee, 0xf1),
+                                       (28177, 0xf1, 0xee))]
+        report = summarize_move_callers(events, entries)
+        self.assertIn('18266  0x0d3 -> 0x0f1 / 0', report)
+        self.assertIn('25261  0x0d3 -> 0x0f1 / 0', report)
+        self.assertIn('148e:065a <- 148e:0c28 <- 1000:04da', report)
+        self.assertIn('RTLink manager plumbing', report)
+        self.assertNotIn('0x161', report)
+        self.assertIn('no corroborated move entries',
+                      summarize_move_callers(events, []))
+        duplicate = entries + [move_entry(21177, 0xd3, 0xee)]
+        self.assertIn('ambiguous: 2 matching entries',
+                      summarize_move_callers(events, duplicate))
+        malformed = move_entry(21177, 0xd3, 0xee).replace(
+            'db9a:dbb6:65a:148e', 'bad:frame')
+        with self.assertRaisesRegex(ValueError, 'invalid move-helper entry'):
+            move_helper_calls([malformed])
+
+    def test_cli_move_callers_without_original_game_assets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            trace = Path(directory) / 'native.trace'
+            trace.write_text('\n'.join([WATCH,
+                                        SET_OUT.replace('return=4319:1122',
+                                                        'return=4319:16e7'),
+                                        WRITE_OUT, move_entry(18130, 0xd3, 0xf1)]))
+            result = subprocess.run([sys.executable, str(TOOL), str(trace),
+                                     '--move-callers'], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('148e:065a', result.stdout)
 
 
 if __name__ == '__main__':
