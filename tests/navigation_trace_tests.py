@@ -340,6 +340,39 @@ class NavigationTraceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'invalid kind-4 callback'):
             callback_return_entries([callback_entry(18100, 0).replace('ax=0', 'ax=oops')])
 
+    def test_kind4_gate_id_trampoline_and_two_return_values_correlate(self):
+        calls = [
+            'entry ms=28247 pc=15077 cs=148e room_callback_stage=scanner-call '
+            'room_callback_id=14 room_callback_event=f',
+            'entry ms=28247 pc=14759 cs=1474 room_callback_stage=gate-call '
+            'room_callback_id=14 room_callback_event=f '
+            'room_callback_target=2c24:14d9 room_callback_section=30',
+            'entry ms=28247 pc=1475e cs=1474 room_callback_stage=gate-return '
+            'room_callback_result=0',
+            callback_entry(28247, 0) +
+            ' room_callback_stage=scanner-return room_callback_result=0']
+        self.assertEqual(callback_return_entries(calls), [
+            dict(ms=28247, call_ms=28247, target=0, callback_id=20, event=15,
+                 target_pointer='2c24:14d9', section=48)])
+        report = summarize_callback_returns([], calls, COMMANDS)
+        self.assertIn('callback 0x14, event=0x0f, pointer=2c24:14d9, section=48', report)
+        with self.assertRaisesRegex(ValueError, 'disagree'):
+            callback_return_entries([*calls[:3], callback_entry(28247, 0xf6)])
+        self.assertEqual(callback_return_entries([
+            calls[1].replace('room_callback_event=f', 'room_callback_event=1'),
+            calls[2].replace('room_callback_result=0', 'room_callback_result=f6'),
+            callback_entry(28247, 0)]), [dict(ms=28247, target=0)])
+        with self.assertRaisesRegex(ValueError, 'arguments disagree'):
+            callback_return_entries([calls[0].replace('room_callback_id=14',
+                                                      'room_callback_id=13'), *calls[1:]])
+        # Guest time advances while the callback prints text; different
+        # timestamps between its call and return still identify one call.
+        late = [calls[0].replace('28247', '28176'),
+                calls[1].replace('28247', '28176'), *calls[2:]]
+        correlated = callback_return_entries(late)[0]
+        self.assertEqual(correlated['callback_id'], 0x14)
+        self.assertEqual((correlated['call_ms'], correlated['ms']), (28176, 28247))
+
 
 if __name__ == '__main__':
     unittest.main()

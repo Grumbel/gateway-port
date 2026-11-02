@@ -141,6 +141,8 @@ for mode in (['native'] if args.native_only else ['native', 'verify', 'hle']):
         # return, while AX still holds its candidate destination room.
         # These are default-layout original-code research hooks, not HLE.
         command += ['--trace-entry', '447e0', '--trace-entry', '14ed6',
+                    '--trace-entry', '15077', '--trace-entry', '14742',
+                    '--trace-entry', '14759', '--trace-entry', '1475e',
                     '--trace-entry', '1507c']
     if args.trace_object_writes and mode == 'native':
         # 0157:08fc (EXE 0x2e3a): native indexed child-link setter.

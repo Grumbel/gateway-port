@@ -382,16 +382,57 @@ def summarize_direction_calls(events, lines, commands=None, names=None):
 
 
 def callback_return_entries(lines):
-    """Read AX at the original room-exit kind-4 callback return address."""
+    """Read native callback AX, enriching it with a byte-verified gate call."""
     result = []
+    last_gate = None
+    last_gate_return = None
+    scanner_call = None
     for line in lines:
         if not line.startswith('entry '):
             continue
         info = fields(line)
         try:
+            stage = info.get('room_callback_stage')
+            if stage == 'scanner-call' and int(info['pc'], 16) == 0x15077 and \
+                    int(info['cs'], 16) == ROOM_CALLBACK_RETURN_CS:
+                scanner_call = (int(info['room_callback_id'], 16),
+                                int(info['room_callback_event'], 16))
+                if scanner_call[1] != 0x0f:
+                    raise ValueError('room scanner passed an unexpected callback event')
+            elif stage == 'gate-call' and int(info['pc'], 16) == 0x14759 and \
+                    int(info['cs'], 16) == 0x1474:
+                event = int(info['room_callback_event'], 16)
+                if event == 0x0f:
+                    last_gate = dict(call_ms=int(info['ms']),
+                                     callback_id=int(info['room_callback_id'], 16),
+                                     event=event,
+                                     target_pointer=info.get('room_callback_target'),
+                                     section=(int(info['room_callback_section'], 16) if
+                                              'room_callback_section' in info else None))
+                    if last_gate['callback_id'] >= 44 or (scanner_call is not None and
+                            scanner_call != (last_gate['callback_id'], event)):
+                        raise ValueError('room scanner/gate callback arguments disagree')
+                else:
+                    # The same directory is also used for object events,
+                    # notably event=1. Those results are NOT room exits.
+                    last_gate = None
+                last_gate_return = None
+            elif stage == 'gate-return' and int(info['pc'], 16) == 0x1475e and \
+                    int(info['cs'], 16) == 0x1474:
+                if last_gate is not None:
+                    last_gate_return = (int(info['ms']), int(info['room_callback_result'], 16))
             if (int(info['pc'], 16) == ROOM_CALLBACK_RETURN_PC and
                     int(info['cs'], 16) == ROOM_CALLBACK_RETURN_CS):
-                result.append(dict(ms=int(info['ms']), target=int(info['ax'], 16)))
+                record = dict(ms=int(info['ms']), target=int(info['ax'], 16))
+                if (last_gate is not None and last_gate_return is not None and
+                        last_gate['call_ms'] <= last_gate_return[0] <= record['ms']):
+                    if last_gate_return[1] != record['target']:
+                        raise ValueError('gate and scanner return AX disagree')
+                    record.update(last_gate)
+                result.append(record)
+                last_gate = None
+                last_gate_return = None
+                scanner_call = None
         except (KeyError, ValueError) as error:
             raise ValueError(f'invalid kind-4 callback return ({error}): {line}') from error
     return result
@@ -426,7 +467,12 @@ def summarize_callback_returns(events, lines, commands=None, names=None):
         else:
             evidence = '(no matching move within 500 guest ms)'
         output.append(f'{call["ms"]:6} {label:<18} '
-                      f'0x{call["target"]:04x}        {evidence}')
+                      f'0x{call["target"]:04x}        {evidence}' +
+                      (f' [callback 0x{call["callback_id"]:02x}, '
+                       f'event=0x{call["event"]:02x}, '
+                       f'pointer={call["target_pointer"] or "unknown"}, '
+                       f'section={call["section"] if call["section"] is not None else "unknown"}]'
+                       if 'callback_id' in call else ''))
     if not calls:
         output.append('(no kind-4 callback returns; choose an exit whose kind is 4)')
     output.append('The original code checks AX against the object count, zero, '

@@ -630,6 +630,81 @@ void trace_entry(uc_engine *uc, std::uint64_t address, std::uint32_t, void *opaq
                 break;
             bp = words[0];
         }
+        // GATEMAIN.EXE original file 0x592a: resident room callback gate
+        // 1474:0002 uses far pointers [ES:BX+4a22] for callback IDs 0..43.
+        // The room scanner calls it from 148e:0797 (original file 0x6270)
+        // with (callback ID, event=0x0f). Read arguments and target from live
+        // registers/stack; validate the exact original instruction bytes so
+        // the hook never silently attributes some unrelated reused address.
+        if ((address == 0x15077 || address == 0x14742 || address == 0x14759 ||
+             address == 0x1475e || address == 0x1507c) &&
+            ((reg(uc, UC_X86_REG_CS) == 0x148e &&
+              (address == 0x15077 || address == 0x1507c)) ||
+             (reg(uc, UC_X86_REG_CS) == 0x1474 &&
+              (address == 0x14742 || address == 0x14759 || address == 0x1475e)))) {
+            std::array<std::uint8_t, 7> code{};
+            check(uc_mem_read(uc, address, code.data(), code.size()));
+            const auto scanner_call = address == 0x15077 && code[0] == 0x9a &&
+                                      code[1] == 0x02 && code[2] == 0;
+            const auto gate_entry = address == 0x14742 &&
+                                    code == std::array<std::uint8_t, 7>{
+                                        0x55, 0x8b, 0xec, 0x83, 0x7e, 0x06, 0x2c};
+            const auto gate_call = address == 0x14759 &&
+                                   code[0] == 0x26 && code[1] == 0xff &&
+                                   code[2] == 0x9f && code[3] == 0x22 && code[4] == 0x4a;
+            const auto gate_return = address == 0x1475e &&
+                                     code[0] == 0x83 && code[1] == 0xc4 && code[2] == 0x02;
+            const auto scanner_return = address == 0x1507c &&
+                                        code[0] == 0x83 && code[1] == 0xc4 && code[2] == 0x04;
+            if (scanner_call || gate_entry || gate_call || gate_return || scanner_return) {
+                out << " room_callback_stage=" <<
+                    (scanner_call ? "scanner-call" : gate_entry ? "gate-entry" :
+                     gate_call ? "gate-call" : gate_return ? "gate-return" :
+                                 "scanner-return");
+                auto stack_word = [&](std::uint16_t offset) {
+                    std::uint16_t value{};
+                    check(uc_mem_read(uc, base + offset, &value, sizeof(value)));
+                    return value;
+                };
+                if (scanner_call || gate_entry || gate_call) {
+                    const auto sp = reg(uc, UC_X86_REG_SP);
+                    const auto current_bp = reg(uc, UC_X86_REG_BP);
+                    const auto id = stack_word(std::uint16_t(
+                        scanner_call ? sp : gate_entry ? sp + 4 : current_bp + 6));
+                    const auto event = stack_word(std::uint16_t(
+                        scanner_call ? sp + 2 : gate_entry ? sp + 6 : current_bp + 8));
+                    out << " room_callback_id=" << id << " room_callback_event=" << event;
+                    if (gate_call && id < 44) {
+                        const auto pointer = std::size_t(reg(uc, UC_X86_REG_ES)) * 16 +
+                                             std::uint16_t(reg(uc, UC_X86_REG_BX) + 0x4a22);
+                        if (pointer + 4 <= 0xa0000) {
+                            std::array<std::uint16_t, 2> far{};
+                            check(uc_mem_read(uc, pointer, far.data(), 4));
+                            out << " room_callback_target=" << far[1] << ':' << far[0];
+                            const auto target = std::size_t(far[1]) * 16 + far[0];
+                            if (far[1] == 0x2c24 && target + 10 <= 0xa0000) {
+                                std::array<std::uint8_t, 10> stub{};
+                                check(uc_mem_read(uc, target, stub.data(), stub.size()));
+                                const auto displacement = static_cast<std::int16_t>(
+                                    unsigned(stub[1]) | (unsigned(stub[2]) << 8));
+                                const auto gate = std::uint16_t(far[0] + 3 + displacement);
+                                const auto section = unsigned(stub[8]) | (unsigned(stub[9]) << 8);
+                                if (stub[0] == 0xe8 && stub[3] == 0xea &&
+                                    gate == 0x058d && section < 58)
+                                    out << " room_callback_section=" << section;
+                                else
+                                    out << " room_callback_probe=unverified-trampoline";
+                            }
+                        } else
+                            out << " room_callback_probe=pointer-out-of-range";
+                    }
+                }
+                if (gate_return || scanner_return)
+                    out << " room_callback_result=" << reg(uc, UC_X86_REG_AX);
+            } else {
+                out << " room_callback_probe=code-mismatch";
+            }
+        }
         // Resident parser candidate iterator (GATEMAIN.EXE file 0x0eba,
         // running at 1000:0000). The original code invokes the slot gate
         // 0385:0a9a only with [BP+0x0c] != 0, then fetches a child via
