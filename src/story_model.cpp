@@ -127,6 +127,29 @@ StoryCallbackOutcome StoryModel::apply_tanning_up(StoryObjectId player) {
     return outcome;
 }
 
+StoryCallbackOutcome StoryModel::apply_vr_terminal_up(StoryObjectId player,
+                                                       bool collar_equipped) {
+    StoryCallbackOutcome outcome;
+    // OVL 0x6954f–0x6958b: equipment-slot predicate has precedence over
+    // the direct player/room relation test. A nonzero answer prints a collar
+    // refusal; otherwise a nested player takes the shared get-up path.
+    if (!collar_equipped && location(player) != 0x29b)
+        move(outcome.changes, player, 0x29b);
+    return outcome;
+}
+
+StoryCallbackOutcome StoryModel::apply_beach_up(StoryObjectId player) {
+    StoryCallbackOutcome outcome;
+    // OVL 0x69446–0x694b5: only a player not directly located in the room
+    // takes the get-up path. Unlike the shared path, this additionally calls
+    // native 0157:0413(glass 0x2b4, property 0x0a) after the player move.
+    if (location(player) != 0x2ae) {
+        move(outcome.changes, player, 0x2ae);
+        set_flag(outcome.changes, 0x2b4, 0x0a, false);
+    }
+    return outcome;
+}
+
 StoryNormalGuard StoryModel::evaluate_normal_open_close(StoryAction action,
                                                          StoryObjectId target) const {
     switch (action) {

@@ -113,6 +113,18 @@ public:
     // ordinary navigation, or action/event dispatch.
     StoryCallbackOutcome apply_tanning_up(StoryObjectId player);
 
+    // Callback 0x2b's VR Terminal (0x29b) UP path. The caller supplies the
+    // native 0157:005e(collar 0x2a8, player, slot 1) predicate; this sparse
+    // model does not infer equipment slots from ordinary object locations.
+    // An equipped collar blocks getting up. Otherwise, nested players move
+    // into the terminal; both paths return AX=0.
+    StoryCallbackOutcome apply_vr_terminal_up(StoryObjectId player, bool collar_equipped);
+
+    // Callback 0x2b's Beach (0x2ae) UP path: get up from a nested location
+    // and clear property 0x0a on glass 0x2b4. A player already directly in
+    // Beach stays put. All paths return AX=0, not a navigable destination.
+    StoryCallbackOutcome apply_beach_up(StoryObjectId player);
+
     // Only the mutations of an already-successful action, as observed for
     // Gateway's first-room drawer/book scenario. The original DOS handlers
     // still decide reachability, action guards, and error/description text.

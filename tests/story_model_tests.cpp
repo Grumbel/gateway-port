@@ -56,6 +56,51 @@ int main() {
             !tanning.apply_tanning_up(player).changes.empty())
             throw std::runtime_error("repeat Tanning UP was not idempotent");
 
+        // In the original VR Terminal trace, an equipped collar blocks UP
+        // while player 0xd3 remains in couch 0x2a1. Removing the collar lets
+        // the same event move the player into room 0x29b, still returning 0.
+        StoryModel terminal;
+        terminal.define(player, 0x2a1);
+        terminal.define(0x29b);
+        terminal.define(0x2a1, 0x29b);
+        up = terminal.apply_vr_terminal_up(player, true);
+        if (up.return_ax != 0 || !up.changes.empty() || terminal.location(player) != 0x2a1)
+            throw std::runtime_error("equipped VR collar failed to block getting up");
+        up = terminal.apply_vr_terminal_up(player, false);
+        if (up.return_ax != 0)
+            throw std::runtime_error("VR Terminal UP returned a navigable destination");
+        expect(up.changes, {{StoryMutationKind::SetLocation, player, 0x29b}},
+               "unequipped VR Terminal UP failed to get off couch");
+        if (!terminal.apply_vr_terminal_up(player, false).changes.empty() ||
+            !terminal.apply_vr_terminal_up(player, true).changes.empty())
+            throw std::runtime_error("standing VR Terminal UP changed state");
+
+        // Beach shares callback 0x2b but has a distinct side effect: leaving
+        // nested object 0x2b1 clears property 0x0a on glass 0x2b4. Native
+        // code calls the flag clear even if the bit was already absent.
+        StoryModel beach;
+        beach.define(player, 0x2b1);
+        beach.define(0x2ae);
+        beach.define(0x2b1, 0x2ae);
+        beach.define(0x2b4);
+        beach.initial_flag(0x2b4, 0x0a);
+        up = beach.apply_beach_up(player);
+        if (up.return_ax != 0)
+            throw std::runtime_error("Beach UP returned a navigable destination");
+        expect(up.changes, {{StoryMutationKind::SetLocation, player, 0x2ae},
+                            {StoryMutationKind::ClearFlag, 0x2b4, 0x0a}},
+               "Beach get-up missed its player move or glass-property clear");
+        if (beach.flag(0x2b4, 0x0a) || beach.location(player) != 0x2ae ||
+            !beach.apply_beach_up(player).changes.empty())
+            throw std::runtime_error("repeat Beach UP unexpectedly mutated state");
+
+        StoryModel beach_without_glass_bit;
+        beach_without_glass_bit.define(player, 0x2b1);
+        beach_without_glass_bit.define(0x2b4);
+        expect(beach_without_glass_bit.apply_beach_up(player).changes,
+               {{StoryMutationKind::SetLocation, player, 0x2ae}},
+               "absent Beach glass bit produced a spurious flag mutation");
+
         // Native child-slot eligibility is distinct from relation traversal
         // and from the action handlers' OPEN/CLOSE guards.
         if (model.can_enumerate_child_slot(drawer, 2, 0) ||
