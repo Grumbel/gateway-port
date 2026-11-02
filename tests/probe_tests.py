@@ -42,7 +42,9 @@ class ProbeTests(unittest.TestCase):
             for poke in scheduled_pokes or []:
                 command += ['--research-poke16-at', poke]
             if trace_byte_write is not None:
-                command += ['--trace-byte-write', trace_byte_write]
+                for address in (trace_byte_write if isinstance(trace_byte_write, list)
+                                else [trace_byte_write]):
+                    command += ['--trace-byte-write', address]
             if milliseconds is not None:
                 command += ['--milliseconds', str(milliseconds)]
             if state or state_files is not None:
@@ -57,7 +59,9 @@ class ProbeTests(unittest.TestCase):
                 command += ['--dump-prefix', str(root / 'snapshot')]
             result = subprocess.run(command, text=True, capture_output=True, timeout=15)
             if research_entries is not None:
-                result.research_trace = (root / 'research.trace').read_text()
+                research_file = root / 'research.trace'
+                result.research_trace = (research_file.read_text()
+                                         if research_file.is_file() else '')
             if dump:
                 result.picture = (root / 'snapshot.ppm').read_bytes()
                 result.memory = (root / 'snapshot.bin').read_bytes()
@@ -114,6 +118,19 @@ class ProbeTests(unittest.TestCase):
                                    trace_byte_write='20301')
         self.assertEqual(high_byte.returncode, 0, high_byte.stderr)
         self.assertIn('size=2 before=0 value=12', high_byte.research_trace)
+        both = self.run_guest(code, dump=True, research_entries=[],
+                              trace_byte_write=['20300', '20301'])
+        self.assertEqual(both.returncode, 0, both.stderr)
+        captured = [line for line in both.research_trace.splitlines()
+                    if line.startswith('byte-write ')]
+        self.assertEqual(len(captured), 3)
+        self.assertIn('address=20301', captured[-1])
+        self.assertIn('size=2 before=0 value=12', captured[-1])
+        for invalid in (['20300', '20300'], ['20300', '20342'], ['f0000']):
+            with self.subTest(invalid=invalid):
+                self.assertNotEqual(self.run_guest(
+                    bytes.fromhex('ebfe'), milliseconds=1, research_entries=[],
+                    trace_byte_write=invalid).returncode, 0)
         rejected = self.run_guest(bytes.fromhex('ebfe'), milliseconds=4,
                                   research_entries=[], scheduled_pokes=['2:30000:0001:abcd'])
         self.assertNotEqual(rejected.returncode, 0)

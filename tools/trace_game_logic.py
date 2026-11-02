@@ -33,8 +33,9 @@ parser.add_argument('--trace-object-writes', metavar='HEX-ID',
 parser.add_argument('--command-sequence', metavar='CMD,CMD,...',
                     help='replace the seven objects commands; with --scenario puzzle, '
                          'provide 1–48 commands at three-second intervals (native only)')
-parser.add_argument('--trace-byte-write', metavar='LINEARHEX',
-                    help='native-only observer for writes to one guest physical byte')
+parser.add_argument('--trace-byte-write', action='append', metavar='LINEARHEX',
+                    help='native-only guest physical byte watcher (repeatable for up to '
+                         '16 distinct addresses within a 64-byte interval)')
 parser.add_argument('--extra-trace-entry', action='append', metavar='LINEARHEX',
                     help='native-only additional linear code address to log (repeatable)')
 parser.add_argument('--research-poke16-at', action='append', metavar='MS:ADDRESS:OLD:NEW',
@@ -172,8 +173,8 @@ for mode in (['native'] if args.native_only else ['native', 'verify', 'hle']):
         for poke in args.research_poke16_at:
             command += ['--research-poke16-at', poke]
     if mode == 'native':
-        if args.trace_byte_write:
-            command += ['--trace-byte-write', args.trace_byte_write]
+        for address in args.trace_byte_write or []:
+            command += ['--trace-byte-write', address]
         for address in args.extra_trace_entry or []:
             command += ['--trace-entry', address]
     if args.trace_object_writes and mode == 'native':

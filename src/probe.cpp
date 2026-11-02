@@ -1690,7 +1690,7 @@ int main(int argc, char **argv) {
     bool trace_timing = false;
     bool probe_adlib = false;
     std::uint16_t trace_object_writes = 0;
-    std::optional<std::uint32_t> trace_byte_write;
+    std::set<std::uint32_t> trace_byte_writes;
     unsigned aspect_width = 4, aspect_height = 3;
     std::vector<std::uint64_t> entry_addresses;
     std::multimap<unsigned, std::uint16_t> scheduled_keys;
@@ -1709,7 +1709,7 @@ int main(int argc, char **argv) {
                      "[--research-poke16-at MS:LINEARHEX:OLDHEX:NEWHEX ...] "
                      "[--object-flags verify|hle | --object-state verify|hle] [--verify-overlays] "
                      "[--hle-overlays] [--trace-video] [--trace-timing] [--adlib-driver] "
-                     "[--trace-object-writes OBJECT-HEX] [--trace-byte-write LINEARHEX] "
+                     "[--trace-object-writes OBJECT-HEX] [--trace-byte-write LINEARHEX ...] "
                      "[--aspect-ratio native|W:H] [--debug-dir DIR]\n";
     };
     if (argc < 2 || std::string(argv[1]) == "--help") {
@@ -1780,12 +1780,12 @@ int main(int argc, char **argv) {
             std::uint32_t address = 0;
             const auto result =
                 std::from_chars(value.data(), value.data() + value.size(), address, 16);
-            if (trace_byte_write || result.ec != std::errc{} ||
-                result.ptr != value.data() + value.size() || address >= 0xa0000) {
+            if (result.ec != std::errc{} || result.ptr != value.data() + value.size() ||
+                address >= 0xa0000 || trace_byte_writes.size() >= 16 ||
+                !trace_byte_writes.insert(address).second) {
                 usage();
                 return 2;
             }
-            trace_byte_write = address;
         } else if (option == "--trace-entry" && i + 1 < argc) {
             const std::string value = argv[++i];
             std::uint64_t address = 0;
@@ -1913,8 +1913,14 @@ int main(int argc, char **argv) {
         usage();
         return 2;
     }
-    if (trace_byte_write && research_path.empty()) {
+    if (!trace_byte_writes.empty() && research_path.empty()) {
         std::cerr << "--trace-byte-write requires --trace-research for an audit trail\n";
+        return 2;
+    }
+    if (!trace_byte_writes.empty() &&
+        *trace_byte_writes.rbegin() - *trace_byte_writes.begin() > 0x40) {
+        std::cerr << "--trace-byte-write addresses must lie within 64 bytes "
+                     "to keep the native memory hook bounded\n";
         return 2;
     }
     if (trace_object_writes && (research_path.empty() ||
@@ -1932,8 +1938,7 @@ int main(int argc, char **argv) {
         State state;
         state.trace_video = trace_video;
         state.probe_adlib = probe_adlib;
-        if (trace_byte_write)
-            state.watched_bytes.insert(*trace_byte_write);
+        state.watched_bytes.insert(trace_byte_writes.begin(), trace_byte_writes.end());
         state.object_flags_mode = object_flags_mode;
         state.object_state_services = object_state_services;
         if (!research_path.empty()) {
@@ -2138,11 +2143,12 @@ int main(int argc, char **argv) {
         check(uc_hook_add(engine.uc, &video_hook, UC_HOOK_MEM_READ | UC_HOOK_MEM_WRITE,
                           reinterpret_cast<void *>(video_memory), &state, 0xa0000, 0xaffff));
         uc_hook byte_write_hook_id{};
-        if (trace_byte_write)
+        if (!trace_byte_writes.empty())
             check(uc_hook_add(engine.uc, &byte_write_hook_id, UC_HOOK_MEM_WRITE,
                               reinterpret_cast<void *>(byte_write_hook), &state,
-                              *trace_byte_write >= 7 ? *trace_byte_write - 7 : 0,
-                              *trace_byte_write));
+                              *trace_byte_writes.begin() >= 7 ?
+                                  *trace_byte_writes.begin() - 7 : 0,
+                              *trace_byte_writes.rbegin()));
         uc_hook object_write_hook_id{};
 #ifdef GATEWAY_SDL
         std::unique_ptr<gateway::SdlHost> host;
