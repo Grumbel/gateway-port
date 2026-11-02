@@ -150,6 +150,12 @@ class GhidraPlanTests(unittest.TestCase):
         self.assertEqual(resident['gw_conditional_exit_case'], 'instruction')
         self.assertEqual(resident['gw_callback_exit_case'], 'instruction')
         self.assertEqual(resident['gw_room_callback_dispatch'], 'function')
+        self.assertEqual(resident['gw_room_transfer'], 'function')
+        for name in ('pending', 'exit_event', 'commit', 'player_move',
+                     'enter_event', 'text_guard', 'alternate_entry',
+                     'presentation_guard', 'presentation_call',
+                     'post_event', 'return'):
+            self.assertEqual(resident['gw_room_transfer_' + name], 'instruction')
         self.assertEqual(resident['gw_native_relation_contains'], 'function')
         self.assertEqual(resident['gw_test_object_flag'], 'function')
         self.assertEqual(resident['gw_set_object_flag'], 'function')

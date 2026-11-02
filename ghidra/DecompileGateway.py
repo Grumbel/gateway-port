@@ -62,6 +62,19 @@ for name, address, origin, role in targets:
         lines.append('INTERNAL BRANCH; decompiling Ghidra containing function at %s. '
                      'This is NOT an independently verified function entry.' %
                      function.getEntryPoint())
+        # Ghidra can carve a common jump target or a shared RETF tail out as
+        # another function, even though original 16-bit conditional jumps
+        # reach it from the verified 048e:0284 entry. Do not quietly present
+        # that auto-analysis artifact as a separate native routine.
+        if name.startswith('gw_room_transfer_'):
+            parent = report['resident_matches'].get('gw_room_transfer')
+            parent_function = getFunctionAt(toAddr(parent)) if parent else None
+            if (parent_function is not None and
+                    function.getEntryPoint() != parent_function.getEntryPoint()):
+                item['context'] = 'ghidra-split-tail'
+                lines.append('GHIDRA SPLIT TAIL: static jumps enter this code from '
+                             'resident 048e:0284; this separate containing function '
+                             'is an analyzer boundary, NOT a verified native ABI.')
     else:
         function = getFunctionAt(address)
         if function is None:
