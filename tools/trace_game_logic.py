@@ -33,6 +33,9 @@ parser.add_argument('--trace-object-writes', metavar='HEX-ID',
 parser.add_argument('--command-sequence', metavar='CMD,CMD,...',
                     help='replace the seven objects commands; with --scenario puzzle, '
                          'provide 1–48 commands at three-second intervals (native only)')
+parser.add_argument('--extra-idle-ms', type=int, default=0,
+                    help='extend a native puzzle replay after its last scripted key, '
+                         'without scheduling any additional input (0–60000 ms)')
 parser.add_argument('--trace-byte-write', action='append', metavar='LINEARHEX',
                     help='native-only guest physical byte watcher (repeatable for up to '
                          '16 distinct addresses within a 64-byte interval)')
@@ -66,6 +69,10 @@ if args.trace_object_writes:
         parser.error('--trace-object-writes requires a nonzero 16-bit hex object ID')
 if args.command_sequence and not args.native_only:
     parser.error('--command-sequence currently requires --native-only')
+if args.extra_idle_ms < 0 or args.extra_idle_ms > 60000:
+    parser.error('--extra-idle-ms must be between 0 and 60000')
+if args.extra_idle_ms and (not args.native_only or args.scenario != 'puzzle'):
+    parser.error('--extra-idle-ms requires a native-only puzzle replay')
 if args.research_poke16_at and (not args.native_only or
                                 args.scenario not in ('objects', 'puzzle') or
                                 not args.trace_navigation):
@@ -115,7 +122,8 @@ for mode in (['native'] if args.native_only else ['native', 'verify', 'hle']):
     prefix = args.output / mode
     command = [str(args.probe.resolve()), str(args.data.resolve() / 'GATE.EXE'),
                '--press', 'escape', '--state-dir', str(args.output / (mode + '-state')),
-               '--milliseconds', str(puzzle_duration(custom_commands)) if args.scenario == 'puzzle'
+               '--milliseconds', str(puzzle_duration(custom_commands) + args.extra_idle_ms)
+               if args.scenario == 'puzzle'
                else '42000' if args.scenario == 'objects' else '24000' if args.scenario == 'drawer' else '18000',
                '--trace-research', str(prefix.with_suffix('.trace')),
                '--trace-entry', '147a6', '--trace-entry', '28d2b',

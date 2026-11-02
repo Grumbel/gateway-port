@@ -170,6 +170,22 @@ class TraceGameLogicTests(unittest.TestCase):
             self.assertIn('lacks controlled research poke support', stale.stderr)
             self.assertFalse(output.exists())
 
+    def test_idle_tail_requires_bounded_native_puzzle_without_new_keys(self):
+        for args, message in (
+                (['--scenario', 'puzzle', '--command-sequence', 'east',
+                  '--extra-idle-ms', '-1', '--native-only'], 'between 0 and 60000'),
+                (['--scenario', 'puzzle', '--command-sequence', 'east',
+                  '--extra-idle-ms', '60001', '--native-only'], 'between 0 and 60000'),
+                (['--scenario', 'puzzle', '--command-sequence', 'east',
+                  '--extra-idle-ms', '1000'], 'requires --native-only'),
+                (['--scenario', 'objects', '--extra-idle-ms', '1000',
+                  '--native-only'], 'requires a native-only puzzle')):
+            with self.subTest(args=args):
+                result = subprocess.run([sys.executable, str(DRIVER)] + args,
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(message, result.stderr)
+
     def test_object_write_watch_rejects_wrong_replay_and_stale_probe(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
