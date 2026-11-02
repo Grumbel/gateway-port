@@ -135,6 +135,8 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/inspect_study_therapy_tests.py)
     add_test(NAME study-action-match-trace COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/inspect_study_action_match_tests.py)
+    add_test(NAME study-response-trace COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/inspect_study_response_tests.py)
     add_test(NAME ghidra-import-plan COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/prepare_ghidra_tests.py)
     add_test(NAME room-callback-inspect COMMAND ${Python3_EXECUTABLE}
