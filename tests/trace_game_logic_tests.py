@@ -146,6 +146,30 @@ class TraceGameLogicTests(unittest.TestCase):
             self.assertIn('lacks controlled research poke support', stale.stderr)
             self.assertFalse(output.exists())
 
+    def test_controlled_poke_supports_long_puzzle_replays_with_same_guards(self):
+        # A fresh native-only puzzle permits controlled *audited* research
+        # pokes, but a stale probe must be detected before the game runs.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            probe = root / 'gateway-probe'
+            probe.write_bytes(b' action_code= native parser without controlled poke support')
+            output = root / 'replay'
+            base = [sys.executable, str(DRIVER), '--scenario', 'puzzle',
+                    '--command-sequence', 'up,look', '--research-poke16-at',
+                    '74000:62d64:1:3', '--probe', str(probe), '--output', str(output)]
+            wrong = subprocess.run(base, capture_output=True, text=True)
+            self.assertEqual(wrong.returncode, 2)
+            self.assertIn('requires --native-only', wrong.stderr)
+            no_trace = subprocess.run(base + ['--native-only'],
+                                      capture_output=True, text=True)
+            self.assertEqual(no_trace.returncode, 2)
+            self.assertIn('--trace-navigation', no_trace.stderr)
+            stale = subprocess.run(base + ['--native-only', '--trace-navigation'],
+                                   capture_output=True, text=True)
+            self.assertEqual(stale.returncode, 2)
+            self.assertIn('lacks controlled research poke support', stale.stderr)
+            self.assertFalse(output.exists())
+
     def test_object_write_watch_rejects_wrong_replay_and_stale_probe(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

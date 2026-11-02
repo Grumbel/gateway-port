@@ -65,9 +65,10 @@ if args.trace_object_writes:
         parser.error('--trace-object-writes requires a nonzero 16-bit hex object ID')
 if args.command_sequence and not args.native_only:
     parser.error('--command-sequence currently requires --native-only')
-if args.research_poke16_at and (not args.native_only or args.scenario != 'objects' or
+if args.research_poke16_at and (not args.native_only or
+                                args.scenario not in ('objects', 'puzzle') or
                                 not args.trace_navigation):
-    parser.error('--research-poke16-at requires --native-only --scenario objects '
+    parser.error('--research-poke16-at requires --native-only --scenario objects/puzzle '
                  '--trace-navigation')
 if args.hle_overlays:
     args.verify_overlays = True
