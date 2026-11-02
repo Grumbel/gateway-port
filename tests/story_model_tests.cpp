@@ -14,6 +14,8 @@ using gateway::StoryChildCandidate;
 using gateway::StoryStudyMatch;
 using gateway::StoryStudyResponsePath;
 using gateway::StoryStudyResponseState;
+using gateway::StoryVrReturnInputs;
+using gateway::StoryVrReturnPath;
 
 void expect(std::vector<StoryMutation> actual, std::initializer_list<StoryMutation> expected,
             const char *message) {
@@ -298,6 +300,68 @@ int main() {
             response->story_token != 0x70af || response->table_stage != 20 ||
             response->next.previous_prompt_stage != 20)
             throw std::runtime_error("Study failed to select native terminal SLEEP prompt");
+
+        // VR return is a distinct native helper. The branch priority is
+        // technician relation -> Beach pin reward -> raw :7920 result.
+        // Both unmodified Study return traces take the no-result branch;
+        // earlier unmodified Beach gameplay confirms the reward side effects.
+        auto vr = StoryModel::evaluate_vr_return({});
+        if (vr.path != StoryVrReturnPath::TechnicianAbsent ||
+            vr.text_tokens != std::vector<std::uint16_t>{0x70b8} ||
+            vr.move_pin_into_terminal || vr.set_timer_44e4_to_0038)
+            throw std::runtime_error("VR return without technician printed extra text");
+
+        StoryVrReturnInputs vr_input{true, false, false, 0, false};
+        vr = StoryModel::evaluate_vr_return(vr_input);
+        if (vr.path != StoryVrReturnPath::NoResult ||
+            vr.text_tokens != std::vector<std::uint16_t>({0x70b8, 0x70be}) ||
+            !vr.set_timer_44e4_to_0038 || !vr.call_native_event_002b ||
+            vr.move_pin_into_terminal || vr.set_byte_7927)
+            throw std::runtime_error("Study return missed native no-result event");
+
+        vr_input.result_word_7920 = 4;
+        vr = StoryModel::evaluate_vr_return(vr_input);
+        if (vr.path != StoryVrReturnPath::OtherResult ||
+            vr.text_tokens != std::vector<std::uint16_t>({0x70b8, 0x70ba, 0x70bc}) ||
+            vr.set_byte_7927 || vr.call_native_service_434b)
+            throw std::runtime_error("other VR result failed first message");
+        vr_input.result_seven_seen_7927 = true;
+        vr = StoryModel::evaluate_vr_return(vr_input);
+        if (vr.path != StoryVrReturnPath::OtherResult ||
+            vr.text_tokens != std::vector<std::uint16_t>({0x70b8, 0x70ba, 0x70bb}) ||
+            vr.clear_word_6b1a || vr.set_byte_7927)
+            throw std::runtime_error("other VR result incorrectly changed one-time state");
+
+        vr_input.result_seven_seen_7927 = false;
+        vr_input.result_word_7920 = 7;
+        vr = StoryModel::evaluate_vr_return(vr_input);
+        if (vr.path != StoryVrReturnPath::ResultSevenFirst ||
+            vr.text_tokens != std::vector<std::uint16_t>({0x70b8, 0x70ba, 0x70bd}) ||
+            !vr.call_native_service_434b || !vr.clear_word_6b1a || !vr.set_byte_7927)
+            throw std::runtime_error("first result-7 return missed guarded side effects");
+        vr_input.result_seven_seen_7927 = true;
+        vr = StoryModel::evaluate_vr_return(vr_input);
+        if (vr.path != StoryVrReturnPath::ResultSevenRepeated ||
+            vr.text_tokens != std::vector<std::uint16_t>({0x70b8, 0x70ba, 0x70bb}) ||
+            vr.call_native_service_434b || !vr.clear_word_6b1a || !vr.set_byte_7927)
+            throw std::runtime_error("repeated result-7 return retriggered one-time service");
+
+        vr_input.beach_success = true;
+        vr_input.pin_directly_with_technician = true;
+        vr = StoryModel::evaluate_vr_return(vr_input);
+        if (vr.path != StoryVrReturnPath::AwardPin ||
+            vr.text_tokens != std::vector<std::uint16_t>({0x70b8, 0x70b9}) ||
+            !vr.move_pin_into_terminal || !vr.clear_pin_flag_08 ||
+            vr.call_native_service_434b || vr.clear_word_6b1a)
+            throw std::runtime_error("Beach reward did not override raw result word");
+        vr_input.pin_directly_with_technician = false;
+        if (StoryModel::evaluate_vr_return(vr_input).path !=
+            StoryVrReturnPath::ResultSevenRepeated)
+            throw std::runtime_error("Beach success without pin incorrectly awarded reward");
+        vr_input.technician_reaches_terminal = false;
+        if (StoryModel::evaluate_vr_return(vr_input).path !=
+            StoryVrReturnPath::TechnicianAbsent)
+            throw std::runtime_error("VR reward ignored absent technician guard");
 
         // Native child-slot eligibility is distinct from relation traversal
         // and from the action handlers' OPEN/CLOSE guards.

@@ -89,6 +89,37 @@ struct StoryStudyResponseOutcome {
     bool operator==(const StoryStudyResponseOutcome &) const = default;
 };
 
+// Section-51 VR-return dispatcher, OVL:0x6d564–0x6d6a9. These inputs are
+// read from native relation services and guest fields :78fa/:7920/:7927.
+// In particular, :7920 is a raw result *word*, not a known story enum.
+struct StoryVrReturnInputs {
+    bool technician_reaches_terminal = false;
+    bool beach_success = false;
+    bool pin_directly_with_technician = false;
+    std::uint16_t result_word_7920 = 0;
+    bool result_seven_seen_7927 = false;
+};
+
+enum class StoryVrReturnPath {
+    TechnicianAbsent, AwardPin, NoResult, OtherResult,
+    ResultSevenFirst, ResultSevenRepeated,
+};
+
+struct StoryVrReturnDecision {
+    StoryVrReturnPath path;
+    // Ordered F000 token offsets, not decoded or rendered text.
+    std::vector<std::uint16_t> text_tokens;
+    bool move_pin_into_terminal = false;
+    bool clear_pin_flag_08 = false;
+    bool set_timer_44e4_to_0038 = false;
+    bool call_native_event_002b = false;
+    bool call_native_service_434b = false;
+    bool clear_word_6b1a = false;
+    bool set_byte_7927 = false;
+
+    bool operator==(const StoryVrReturnDecision &) const = default;
+};
+
 // A single slot that survives the resident parser's *optional* eligibility
 // check and its nonzero-child test. This is not a resolved parser target.
 struct StoryChildCandidate {
@@ -208,6 +239,14 @@ public:
     // a valid terminal prompt pointer; a matched stage 20 calls completion.
     static std::optional<StoryStudyResponseOutcome> evaluate_study_response(
         StoryStudyResponseState state, bool player_on_couch, bool player_on_desk);
+
+    // Branch/field decisions from the VR-return helper called after Study
+    // refusal/completion and the Beach scanner result. All branches also
+    // execute the common cleanup before native room transition 048e:0284,
+    // which can yield until a later input and then resume at the subsequent
+    // couch move. This pure selection does not perform the cleanup, invoke
+    // native services, mutate objects or move the player.
+    static StoryVrReturnDecision evaluate_vr_return(StoryVrReturnInputs input);
 
     // Only the mutations of an already-successful action, as observed for
     // Gateway's first-room drawer/book scenario. The original DOS handlers

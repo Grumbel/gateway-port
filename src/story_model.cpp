@@ -118,6 +118,53 @@ std::optional<StoryStudyResponseOutcome> StoryModel::evaluate_study_response(
                                       0x70ae, 0, true};
 }
 
+StoryVrReturnDecision StoryModel::evaluate_vr_return(StoryVrReturnInputs input) {
+    // Original OVL:0x6d564 starts every return with F000:70b8. The first
+    // test is the recursive 0157:00c5 relation between technician and
+    // Terminal, *not* a direct parent comparison.
+    StoryVrReturnDecision out{StoryVrReturnPath::TechnicianAbsent, {0x70b8}};
+    if (!input.technician_reaches_terminal)
+        return out;
+
+    // The Beach reward takes precedence over all :7920 result messages.
+    // OVL:0x6d590–0x6d5e0; the pin check is direct 0157:000c.
+    if (input.beach_success && input.pin_directly_with_technician) {
+        out.path = StoryVrReturnPath::AwardPin;
+        out.text_tokens.push_back(0x70b9);
+        out.move_pin_into_terminal = true;
+        out.clear_pin_flag_08 = true;
+        return out;
+    }
+
+    if (input.result_word_7920 == 0) {
+        // OVL:0x6d67e–0x6d6a6 (both Study replays): set delay word,
+        // then call original event service 02e3:002b(0x2b,1).
+        out.path = StoryVrReturnPath::NoResult;
+        out.text_tokens.push_back(0x70be);
+        out.set_timer_44e4_to_0038 = true;
+        out.call_native_event_002b = true;
+        return out;
+    }
+
+    out.text_tokens.push_back(0x70ba);
+    if (input.result_word_7920 != 7) {
+        out.path = StoryVrReturnPath::OtherResult;
+        out.text_tokens.push_back(input.result_seven_seen_7927 ? 0x70bb : 0x70bc);
+        return out;
+    }
+
+    // OVL:0x6d62e–0x6d67c: result 7 has one-time native side effects.
+    // The recorded flag :7927 is used even on the *other-result* message
+    // path, but only result 7 actually changes it in this routine.
+    out.path = input.result_seven_seen_7927 ? StoryVrReturnPath::ResultSevenRepeated
+                                           : StoryVrReturnPath::ResultSevenFirst;
+    out.text_tokens.push_back(input.result_seven_seen_7927 ? 0x70bb : 0x70bd);
+    out.call_native_service_434b = !input.result_seven_seen_7927;
+    out.clear_word_6b1a = true;
+    out.set_byte_7927 = true;
+    return out;
+}
+
 void StoryModel::define(StoryObjectId id, std::optional<StoryObjectId> location) {
     if (!id || !objects_.emplace(id, Object{{}, location, {}}).second)
         throw std::invalid_argument("invalid or duplicate story object");
