@@ -243,8 +243,10 @@ public:
     // Branch/field decisions from the VR-return helper called after Study
     // refusal/completion and the Beach scanner result. All branches also
     // execute the common cleanup before native room transition 048e:0284,
-    // which can yield until a later input and then resume at the subsequent
-    // couch move. This pure selection does not perform the cleanup, invoke
+    // which can remain pending across native event/presentation processing
+    // before RETF and the subsequent couch move. The original idle-tail
+    // replay confirms that this particular return needs no new input.
+    // This pure selection does not perform the cleanup, invoke
     // native services, mutate objects or move the player.
     static StoryVrReturnDecision evaluate_vr_return(StoryVrReturnInputs input);
 

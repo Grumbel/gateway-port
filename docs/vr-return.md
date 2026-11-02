@@ -1,4 +1,4 @@
-# Native VR-return dispatcher: shared result branches and suspended continuation
+# Native VR-return dispatcher: shared result branches and pending far-call frame
 
 Investigation: 2026-11-02, original fingerprinted `GATEMAIN.EXE` and
 `GATEMAIN.OVL`, Ghidra 11.4.2 / JDK 21, three new **unmodified** Study
@@ -11,14 +11,17 @@ Section-51 native function **`GATEMAIN.OVL:0x6d564–0x6d747`** is shared by
 the Study therapy's refusal and terminal `SLEEP` branches and by successful
 Beach VR. It selects one of several *native story-result branches*, performs
 common cleanup, asks a resident engine service to transfer to the VR Terminal,
-and then continues **later**, when another input is processed. The player
+and then continues **later**, after that resident call returns. The player
 therefore moves from the virtual room to **Terminal room `0x29b`** before
 being placed inside **Terminal couch `0x2a1`**. A bounded snapshot stopped
 between those stages reflects a real intermediate state, not a wrong location.
 
-This is a native control-flow handoff, **not a new script opcode**. Ghidra's
-linear decompilation displays both moves, but without observing the native
-suspension one could incorrectly make them immediate in a C++ rewrite.
+This is a pending **ordinary 16-bit far-call frame**, **not a new script
+opcode or an established coroutine API**. A later no-follow-up-input control
+proved that the VR frame completes on its own after about three seconds;
+the SCREAM/LOOK input in earlier replay scripts was *not* the cause of its
+return. Ghidra's linear decompilation displays both moves, but a C++ rewrite
+must preserve any intervening room-entry/presentation work.
 
 ## Branch selection: original 16-bit instructions
 
@@ -55,18 +58,19 @@ Every branch reaches a common path beginning at **`0x6d6a9`**:
    player first gets out of leather couch `0x2be`.
 4. Call **`048e:0284(0x29b)`** at `0x6d72b`. This service invokes the
    verified native player-location move `Study 0x2bc → Terminal 0x29b`.
-   Its execution hands control back to room/input processing while the
-   original section-51 return frame is still pending.
-5. On *subsequent* command processing, resume at `0x6d73b`, issue
+   Its nested event and presentation calls can remain active while the
+   original section-51 far-call frame is still pending.
+5. Once the resident `RETF` executes (without requiring a new command in
+   the idle-tail control), continue at `0x6d73b`, issue
    `1c24:13d5(player 0x0d3, couch 0x2a1, slot 1)`, and reach the
    actual `retf` at `0x6d747`.
 
 The last step is **not unreachable dead code**, nor does it necessarily
-occur before the replay's final snapshot. The exact implementation of the
-resident `048e:0284` yield/resume contract has not yet been decompiled;
-only its observed behavior and the caller's instruction order are established.
+occur before a short replay's final snapshot. The resident call remains on
+the normal 16-bit stack until it returns; the exact nested UI/presentation
+wait mechanism is not yet completely identified. See [Resident room transfer](room-transfer.md).
 
-## Native evidence for deferred continuation
+## Native evidence for pending continuation
 
 For these fingerprinted replays, RTLink section 51 lives at `4990:0000`
 (linear `0x49900`) with original file image beginning at `0x6acd0`.
@@ -77,10 +81,11 @@ couch move `0x6d73b` is **`0x4c36b`**. No overlay-bank flattening is used.
 | Unmodified replay | Return entry `0x4c194` | Transfer `0x4c357` | Couch continuation `0x4c36b`, `retf 0x4c377` | Final player relation |
 | --- | ---: | ---: | ---: | --- |
 | Repeated LOOK refusal, then SCREAM | 81,041 ms | 81,201 ms | 84,196–84,197 ms | Couch `0x2a1` |
+| Repeated LOOK refusal, **no following input**, +10 s idle | Same refusal path (entry not hooked) | 81,201 ms | **84,196–84,197 ms** | Couch `0x2a1` |
 | All 19 exercises, SLEEP, stop | 132,278 ms | 132,439 ms | **Not yet called** | Room `0x29b` |
 | All 19 exercises, SLEEP, then LOOK | 132,278 ms | 132,439 ms | 135,180 ms | Couch `0x2a1` |
 
-The first two runs watch the native guest bytes for `:78fa`, `:7920`,
+The first two earlier runs watch the native guest bytes for `:78fa`, `:7920`,
 `:7927`, and all four Study-response fields. No value-changing writes to
 those three return-branch fields occur after gameplay begins. The true
 technician-relation result is observed as **`AX=1`** at `0x4c1c0`; both
@@ -175,7 +180,8 @@ computed-jump decompiler warnings persist. The Ghidra pseudocode alone
 cannot establish asynchronous native service behavior; the replay timings
 above are the necessary cross-check.
 
-**Next native boundary:** trace the resident `048e:0284` room-transition
-service and its later continuation mechanism. The result-7 one-time service,
+The resident `048e:0284` room transaction, entry-event sequence, preserved
+far return stack and explicit idle-tail control are now mapped in
+[Resident room transfer](room-transfer.md). The result-7 one-time service,
 the semantic meaning of `:7920`, and the `:7927` reset rules remain
 unvalidated by natural input.

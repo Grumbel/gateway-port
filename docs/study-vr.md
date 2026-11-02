@@ -346,13 +346,16 @@ positive `0x7909` write does not lead to a 20→21 counter increment.
 
 **Subsequent native follow-up:** The apparent difference between the refusal
 snapshot (player back on Terminal couch `0x2a1`) and the SLEEP snapshot
-(player standing in Terminal `0x29b`) is a **deferred return continuation**,
+(player standing in Terminal `0x29b`) is a **pending far-call continuation**,
 not different final location rules. The shared native VR-return handler
-calls resident `048e:0284(0x29b)`, yielding to subsequent room/input
-processing. An extra `LOOK` after SLEEP resumes the same section-51 frame
+calls resident `048e:0284(0x29b)`, whose nested room/presentation processing
+can outlive a short replay. An extra `LOOK` after SLEEP lets the same section-51 frame reach
 at original `0x6d73b`, moves player `0x29b → 0x2a1`, and executes `retf`
 at `0x6d747`. The original refusal replay behaves the same way after
-its following SCREAM. Exact native timestamps, the return-result guards
+its following SCREAM. Crucially, an extended **idle replay with no subsequent
+SCREAM** also reaches the continuation at 84,196 ms, so new input is **not
+required** for this particular VR return; the earlier scripted command merely
+coincided with the completion time. Exact native timestamps, the return-result guards
 and cross-replay checker are in [VR return](vr-return.md).
 
 `tools/inspect_study_response.py` verifies the **pair of native replays**

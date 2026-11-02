@@ -133,6 +133,11 @@ First symbols placed by the importer:
 
 | Original file | Offset | Ghidra label | Evidence |
 | --- | ---: | --- | --- |
+| EXE | `0x5d5d` | `gw_room_transfer` | Native `048e:0284`; one-word far-call ABI, **function start** |
+| EXE | `0x5eea` | `gw_room_transfer_commit` | Within transaction; previous/current room update, **not** function start |
+| EXE | `0x5f16` | `gw_room_transfer_player_move` | Native actor relocation, **not** function start |
+| EXE | `0x5f88` | `gw_room_transfer_text_guard` | Interior `:3942` check; room-text suppression |
+| EXE | `0x60cb` | `gw_room_transfer_return` | Shared `RETF` epilogue, **not** function start |
 | EXE | `0x60cf` | `gw_room_exit_dispatch` | Type-1 exit scanning and branch on kind |
 | EXE | `0x592a` | `gw_room_callback_dispatch` | 44-entry native far-pointer callback gate, **function start** |
 | EXE | `0x6175` | `gw_conditional_exit_gate_return` | After property 0x0c query; **not** function start |
@@ -510,7 +515,7 @@ and `tools/inspect_study_response.py` validate both original paths.
 See [Study VR](study-vr.md) for reproducible commands, exact branch offsets
 and the bounded C++ translation.
 
-## VR return dispatcher: eleventh headless run and deferred frame
+## VR return dispatcher: eleventh headless run and pending frame
 
 A fresh Ghidra 11.4.2/JDK21 import selects the shared section-51 return
 routine `OVL:0x6d564` and VR Terminal handler `0x29b` in addition to
@@ -522,10 +527,42 @@ segmented computed-jump warnings are unchanged.
 
 This routine's preliminary C-like pseudocode suggests two successive player
 moves, but native execution reveals an important frame boundary: the call
-to resident `048e:0284(0x29b)` suspends the function after moving the player
-into Terminal room `0x29b`. The frame resumes at original `0x6d73b` after
-a later command, moves player into Terminal couch `0x2a1`, then executes
-`retf` at `0x6d747`. The original Beach branch awards pin `0x2a9`; the
-Study return selects its non-award, result-zero path. Both are compared
+to resident `048e:0284(0x29b)` leaves the section-51 far-call frame pending
+after moving the player into Terminal room `0x29b`. Once the resident call
+returns, the frame continues at original `0x6d73b`, moves the player into
+Terminal couch `0x2a1`, and then executes `retf` at `0x6d747`.
+The original Beach branch awards pin `0x2a9`; the
+Study return selects its non-award, result-zero path. A later idle-tail
+control proved that no subsequent command is required for this VR frame to
+complete; see [Resident room transfer](room-transfer.md). Both are compared
 against unmodified native replays in [VR return](vr-return.md). The result-7
 branches are static-only and their story semantics are unknown.
+
+## Resident room transaction: twelfth headless run and verified native ABI
+
+The resident `048e:0284` callee is now established as **EXE file `0x5d5d`**,
+a real function separate from the room-exit scanner at `0x60cf`. Its
+successful far-call ABI accepts the destination room in `[BP+6]`, first
+dispatches event `0x0f` to the old room (possibly vetoing the transition),
+then commits `:8c4c/:35c6`, moves the native actor with `1c24:13d5`, and
+dispatches destination events `0x0d` and `0x0e` around the room-entry
+presentation path. The original successful return is `AX=1` at `0x60cb`.
+
+The Ghidra 11.4.2/JDK21 importer adds **one function entry and eleven
+byte-signature-checked instruction-only resident labels**. The fresh
+headless run verified **58/58 RTLink sections, 13,947 relocations** and
+exported **78/78 decompiler contexts**. Ghidra auto-analysis invents
+separate containing functions for **six interior tail labels** around
+`0x5f88–0x5fc8` and `0x60cb`. The export explicitly marks their
+`context` as `ghidra-split-tail`: the original x86 instructions jump there
+inside the verified transaction, rather than calling a distinct ABI.
+Other segmented computed-jump warnings remain.
+
+Native idle controls also corrected the presumed VR continuation contract.
+Without a later key, ordinary EAST remains blocked in native room text and
+retains the saved far-return frame. The Study VR return **does complete
+without another key**: presentation calls `1c24:12db` and `05bd:000a`
+account for 1,082 and 1,909 guest milliseconds respectively, then the
+resident `RETF` leads directly to the section-51 Terminal-couch move.
+See [Resident room transfer](room-transfer.md) for the original PC map,
+replay scripts, and read-only native stack and location-write verifier.

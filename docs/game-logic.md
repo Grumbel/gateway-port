@@ -258,12 +258,17 @@ the decompiler's segmented branch remains unresolved.
 
 The next native slice follows the common VR-return function
 `0x6d564–0x6d747` across its Beach reward, raw result-word `:7920`
-branches, native cleanup, and **suspended room transfer**. A freshly
+branches, native cleanup, and **pending resident room transfer**. A freshly
 replayed `SLEEP, LOOK` sequence shows the original function returning
-to its caller only after a later command: player first moves to Terminal
+to its caller after room-entry processing: player first moves to Terminal
 room `0x29b`, then from that room onto couch `0x2a1`. Ghidra now has 24
 byte-checked interior labels for this function and exports its selected
-pseudocode, but does not recover the resident yield/resume mechanism.
+pseudocode. A later **no-follow-up-input** Study-refusal replay proves that
+the return completes after about three seconds even without the later
+SCREAM; this is an intact ordinary far-call frame, not evidence for a
+separately scheduled coroutine. The resident transfer's three event phases,
+player movement, text guard and stack are documented in
+[Resident room transfer](room-transfer.md).
 `StoryModel::evaluate_vr_return` is a bounded pure branch selector with
 six paths; it is *not* an interpreter for the game or a replacement for
 the native room-transfer service. See [VR return](vr-return.md).
