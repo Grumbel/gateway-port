@@ -1,5 +1,7 @@
 """Asset-independent tests of the reviewed walkthrough-to-native-input pipeline."""
 
+import hashlib
+import json
 import pathlib
 import subprocess
 import sys
@@ -9,7 +11,9 @@ import unittest
 TOOLS = pathlib.Path(__file__).resolve().parents[1] / 'tools'
 sys.path.insert(0, str(TOOLS))
 
-from run_walkthrough import compile_steps, convert_text, parse_script
+from run_walkthrough import (compile_steps, convert_text, extract_scribd_html,
+                             import_native_save, native_save_description, parse_script)
+from run_walkthrough_campaign import (find_save, load_campaign, verified_save)
 from story_scenarios import schedule
 
 
@@ -84,6 +88,49 @@ class WalkthroughTests(unittest.TestCase):
                           markers['thom_arrives'].assertions],
                          [(0xd3, 0xf4), (0x100, 0x137)])
 
+    def test_complete_office_fixture_writes_native_save_after_both_exchanges(self):
+        fixture = pathlib.Path(__file__).parent / 'fixtures/gateway-full-office-save.walk'
+        replay = compile_steps(parse_script(fixture.read_text(encoding='utf-8')))
+        self.assertEqual((len(replay.actions), len(replay.keys), replay.duration_ms),
+                         (32, 327, 126000))
+        markers = {checkpoint.label: checkpoint for checkpoint in replay.checkpoints}
+        self.assertEqual([(obj, loc) for obj, loc, _ in
+                          markers['receptionist_magazine'].assertions], [(0x13a, 0xd3)])
+        self.assertEqual([(obj, loc) for obj, loc, _ in
+                          markers['office_both_exchanges'].assertions],
+                         [(0x123, 0), (0x130, 0xd3)])
+        self.assertEqual([(step.operation, step.argument) for step in replay.actions[-3:]],
+                         [('COMMAND', 'save'), ('TYPE', 'OFFICEFULL'), ('KEY', 'enter')])
+
+    def test_dataman_restore_stage_uses_original_save_and_menu_sequences(self):
+        fixture = pathlib.Path(__file__).parent / 'fixtures/gateway-dataman-restore-save.walk'
+        replay = compile_steps(parse_script(fixture.read_text(encoding='utf-8')))
+        self.assertEqual((len(replay.actions), len(replay.keys), replay.duration_ms),
+                         (10, 105, 168000))
+        self.assertEqual([c.label for c in replay.checkpoints],
+                         ['office_restored', 'dataman_start', 'dataman_first_library',
+                          'dataman_second_library', 'dataman_done'])
+        self.assertEqual([(obj, loc) for obj, loc, _ in replay.checkpoints[0].assertions],
+                         [(0x13a, 0xd3), (0x130, 0xd3)])
+        self.assertEqual([s.operation for s in replay.actions[-5:]],
+                         ['MENU_KEYS', 'MENU_KEYS', 'COMMAND', 'TYPE', 'KEY'])
+
+    def test_native_vr_and_armory_stages_preserve_required_rewards(self):
+        fixtures = [('gateway-vr-restore-save.walk', (38, 357, 132000),
+                     'vr_pin_received', (0x2a9, 0xd3), 'VRFULL'),
+                    ('gateway-armory-class-restore-save.walk', (30, 231, 108000),
+                     'class_badge_awarded', (0x132, 0xd3), 'CLASSFULL')]
+        for name, counts, checkpoint, item, save in fixtures:
+            with self.subTest(name=name):
+                fixture = pathlib.Path(__file__).parent / 'fixtures' / name
+                replay = compile_steps(parse_script(fixture.read_text(encoding='utf-8')))
+                self.assertEqual((len(replay.actions), len(replay.keys), replay.duration_ms),
+                                 counts)
+                mark = next(c for c in replay.checkpoints if c.label == checkpoint)
+                self.assertIn(item, [(obj, loc) for obj, loc, _ in mark.assertions])
+                self.assertEqual((replay.actions[-2].argument, replay.actions[-1].argument),
+                                 (save, 'enter'))
+
     def test_keys_menu_waits_and_review_barrier(self):
         script = parse_script('''
 COMMAND open drawer
@@ -100,6 +147,31 @@ COMMAND look
         self.assertEqual([s.operation for s in limited.actions], ['COMMAND', 'TYPE', 'KEY'])
         self.assertEqual(limited.keys[-2:], [(21000, ord('3')), (24000, 0x1c0d)])
         self.assertEqual(compile_steps(script, max_actions=4).keys[-1], (34000, 0x4800))
+
+    def test_yes_no_reply_is_a_distinct_original_modal_prompt_action(self):
+        planned = compile_steps(parse_script('COMMAND wait until 02:00\n'
+                                             'ANSWER N\nCOMMAND sleep\n'))
+        spelled = compile_steps(parse_script('COMMAND wait until 02:00\n'
+                                             'COMMAND N\nCOMMAND sleep\n'))
+        self.assertEqual(planned.keys, spelled.keys)
+        source = 'Do you want to continue waiting? } N\n}sleep\n'
+        self.assertEqual([s.operation for s in parse_script(convert_text(source))],
+                         ['ANSWER', 'COMMAND'])
+        for invalid in ('ANSWER maybe', 'ANSWER Y N', 'ANSWER 0'):
+            with self.assertRaises(ValueError):
+                parse_script(invalid)
+
+    def test_native_mouse_clicks_are_scheduled_outside_bios_key_stream(self):
+        replay = compile_steps(parse_script('COMMAND sit\nMOUSE_CLICK 144 120\n'
+                                            'MOUSE_CLICK 150 140\nCOMMAND look\n'))
+        self.assertEqual(replay.mouse_clicks, [(21000, 144, 120), (24000, 150, 140)])
+        self.assertEqual(len(replay.actions), 4)
+        self.assertEqual(replay.keys, compile_steps(parse_script(
+            'COMMAND sit\nWAIT_MS 6000\nCOMMAND look\n')).keys)
+        for invalid in ('MOUSE_CLICK -1 10', 'MOUSE_CLICK 640 20',
+                        'MOUSE_CLICK 20 480', 'MOUSE_CLICK 1', 'MOUSE_CLICK x y'):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                parse_script(invalid)
 
     def test_confirmed_pv_menu_sequence_matches_individual_raw_keys(self):
         shortcut = compile_steps(parse_script('COMMAND put card in slot\n'
@@ -154,6 +226,86 @@ LABEL dropped_book
             compile_steps(parse_script(translated))
         self.assertEqual(len(compile_steps(parse_script(translated), max_actions=3).actions), 3)
         self.assertIn('MANUAL Menu sequence:', convert_text('*** Type: password,123 ***'))
+
+    def test_extract_document_only_from_locally_obtained_guide_html(self):
+        html = ('<header>}not a command</header><div data-e2e="bot-text">'
+                '<h1>Gateway</h1><p>}open drawer<br/ >}take all<br>'
+                '*** Type: 1,N,N,0,0 ***</p></div><footer>}ignore</footer>')
+        source = extract_scribd_html(html)
+        self.assertEqual([s.operation for s in parse_script(convert_text(source))],
+                         ['COMMAND', 'COMMAND', 'MENU_KEYS'])
+        self.assertNotIn('ignore', source)
+        self.assertNotIn('not a command', source)
+        with self.assertRaisesRegex(ValueError, 'no bot-text document'):
+            extract_scribd_html('<main>}look</main>')
+
+    def test_native_save_import_preserves_authentic_description_and_refuses_conflicts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            source = root / 'GATE001.SAV'
+            source.write_bytes(b'OFFICE100'.ljust(33, b' ') + bytes(range(64)))
+            self.assertEqual(native_save_description(source), 'OFFICE100')
+            self.assertEqual(import_native_save(source, root / 'other'), 'OFFICE100')
+            self.assertEqual((root / 'other' / source.name).read_bytes(), source.read_bytes())
+            self.assertEqual(import_native_save(source, root / 'other'), 'OFFICE100')
+            (root / 'other' / source.name).write_bytes(b'OTHER'.ljust(33, b' ') + b'123')
+            with self.assertRaisesRegex(ValueError, 'cannot overwrite'):
+                import_native_save(source, root / 'other')
+            with self.assertRaisesRegex(ValueError, 'source and destination'):
+                import_native_save(source, root)
+            source.write_bytes(b'\0' * 100)
+            with self.assertRaisesRegex(ValueError, 'unrecognized'):
+                native_save_description(source)
+            bad_name = root / 'MALICIOUS.SAV'
+            bad_name.write_bytes(b'A' * 100)
+            with self.assertRaisesRegex(ValueError, 'GATE###'):
+                native_save_description(bad_name)
+
+    def test_campaign_validates_native_save_handoffs_and_plans_four_stages(self):
+        campaign = pathlib.Path(__file__).parent / 'fixtures/gateway-campaign.json'
+        stages = load_campaign(campaign)
+        self.assertEqual([stage.name for stage in stages],
+                         ['office', 'dataman', 'vr', 'armory_class'])
+        self.assertEqual([stage.description for stage in stages],
+                         ['OFFICEFULL', 'DATAMAN100', 'VRFULL', 'CLASSFULL'])
+        self.assertEqual(sum(stage.actions for stage in stages), 110)
+        result = subprocess.run([sys.executable,
+                                 str(TOOLS / 'run_walkthrough_campaign.py'),
+                                 str(campaign), '--plan-only'], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('armory_class: 30 actions', result.stdout)
+
+    def test_campaign_rejects_unreviewed_restore_and_modified_previous_save(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            (root / 'first.walk').write_text('COMMAND look\nCOMMAND save\n'
+                                             'TYPE STAGEONE\nKEY enter\n', encoding='ascii')
+            (root / 'second.walk').write_text('COMMAND look\nCOMMAND save\n'
+                                              'TYPE STAGETWO\nKEY enter\n', encoding='ascii')
+            manifest = root / 'campaign.json'
+            manifest.write_text(json.dumps({'schema_version': 1, 'stages': [
+                {'name': 'first', 'script': 'first.walk', 'save': 'STAGEONE'},
+                {'name': 'second', 'script': 'second.walk', 'save': 'STAGETWO'}]}))
+            with self.assertRaisesRegex(ValueError, 'restoring previous save'):
+                load_campaign(manifest)
+            (root / 'second.walk').write_text('COMMAND restore\nTYPE STAGEONE\n'
+                                              'KEY enter\nCOMMAND save\n'
+                                              'TYPE STAGETWO\nKEY enter\n', encoding='ascii')
+            first, second = load_campaign(manifest)
+            self.assertEqual((first.actions, second.actions), (4, 6))
+            state = root / 'output' / 'first' / 'state'
+            state.mkdir(parents=True)
+            saved = state / 'GATE001.SAV'
+            saved.write_bytes(b'STAGEONE'.ljust(33, b' ') + b'A' * 60)
+            self.assertEqual(find_save(state, 'STAGEONE'), saved)
+            meta = {'name': first.name, 'script_sha256': first.script_sha256,
+                    'save_description': first.description,
+                    'save_sha256': hashlib.sha256(saved.read_bytes()).hexdigest()}
+            (state.parent / 'stage-meta.json').write_text(json.dumps(meta), encoding='ascii')
+            self.assertEqual(verified_save(root / 'output', first), saved)
+            saved.write_bytes(saved.read_bytes() + b'B')
+            with self.assertRaisesRegex(ValueError, 'was modified'):
+                verified_save(root / 'output', first)
 
     def test_strict_input_bounds(self):
         for source in ('COMMAND\n', 'BAD abc', 'COMMAND héllo', 'COMMAND ' + 'a' * 65,

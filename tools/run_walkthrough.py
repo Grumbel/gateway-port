@@ -7,8 +7,10 @@ keystrokes and unknown mouse/menu actions. It does not guess puzzle decisions.
 
 import argparse
 from dataclasses import dataclass
+from html.parser import HTMLParser
 import pathlib
 import re
+import shutil
 import subprocess
 
 from story_scenarios import schedule
@@ -18,7 +20,8 @@ MAX_DURATION_MS = 3_600_000
 MAX_KEYS = 100_000
 KEYS = {'space': 0x3920, 'enter': 0x1c0d, 'escape': 0x011b,
         'up': 0x4800, 'down': 0x5000, 'left': 0x4b00, 'right': 0x4d00}
-OPERATIONS = {'COMMAND', 'TYPE', 'MENU_KEYS', 'KEY', 'WAIT_MS', 'LABEL', 'ASSERT_LOCATION', 'MANUAL'}
+OPERATIONS = {'COMMAND', 'ANSWER', 'TYPE', 'MENU_KEYS', 'KEY', 'WAIT_MS',
+              'MOUSE_CLICK', 'LABEL', 'ASSERT_LOCATION', 'MANUAL'}
 
 
 @dataclass(frozen=True)
@@ -42,11 +45,20 @@ def parse_script(source):
         if operation in ('COMMAND', 'TYPE'):
             if len(argument) > 64 or any(not 32 <= ord(char) <= 126 for char in argument):
                 raise ValueError(f'line {line_number}: input must be 1–64 printable ASCII bytes')
+        elif operation == 'ANSWER':
+            if argument.lower() not in ('yes', 'no', 'y', 'n'):
+                raise ValueError(f'line {line_number}: ANSWER requires yes/no/y/n')
         elif operation == 'MENU_KEYS':
             _menu_keys(argument, line_number)
         elif operation == 'KEY':
             if argument.lower() not in KEYS and not re.fullmatch(r'0x[0-9a-fA-F]{1,4}', argument):
                 raise ValueError(f'line {line_number}: unknown BIOS key {argument!r}')
+        elif operation == 'MOUSE_CLICK':
+            values = argument.split()
+            if len(values) != 2 or any(not item.isascii() or not item.isdecimal()
+                                       for item in values) or not 0 <= int(values[0]) < 640 or \
+                    not 0 <= int(values[1]) < 480:
+                raise ValueError(f'line {line_number}: MOUSE_CLICK needs DOS X=0–639 Y=0–479')
         elif operation == 'WAIT_MS':
             if not argument.isascii() or not argument.isdecimal() or not 1 <= int(argument) <= 600000:
                 raise ValueError(f'line {line_number}: WAIT_MS must be 1–600000')
@@ -79,6 +91,7 @@ def convert_text(source):
         prompt = re.match(r'^[}>]\s*(.+)$', line)
         typed = re.match(r'^\*{3}\s*Type:\s*(.*?)\s*\*{3}$', line, re.IGNORECASE)
         pressed = re.match(r'^\*{3}\s*Press:\s*(.*?)\s*\*{3}$', line, re.IGNORECASE)
+        answered = re.match(r'^.*\?\s*}\s*(Y|N|YES|NO)\s*$', line, re.IGNORECASE)
         if prompt:
             value = prompt.group(1).strip()
             steps.append(f'COMMAND {value}' if _printable(value) else
@@ -101,9 +114,52 @@ def convert_text(source):
             # A Legend UI "Press" instruction may mean clicking a screen
             # region, not typing a letter; do not silently treat it as a key.
             steps.append('MANUAL UI press: ' + pressed.group(1).strip()[:120])
+        elif answered:
+            steps.append('ANSWER ' + answered.group(1).upper())
     if not steps:
         raise ValueError('no parser prompts or menu directives found in supplied text')
     return '# Extracted from a user-provided guide; REVIEW EVERY STEP.\n' + '\n'.join(steps) + '\n'
+
+
+def extract_scribd_html(source):
+    """Extract only document text from the public HTML wrapper, never site chrome.
+
+    The external guide is a private *input* to the converter; the extracted
+    guide is not bundled or distributed with this project.
+    """
+    class DocumentText(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=True)
+            self.depth = 0
+            self.found = False
+            self.words = []
+
+        def handle_starttag(self, tag, attrs):
+            if not self.depth and tag == 'div' and ('data-e2e', 'bot-text') in attrs:
+                self.depth = 1
+                self.found = True
+            elif self.depth:
+                if tag == 'div':
+                    self.depth += 1
+                elif tag == 'br':
+                    self.words.append('\n')
+
+        def handle_endtag(self, tag):
+            if self.depth:
+                if tag == 'div':
+                    self.depth -= 1
+                elif tag in ('h1', 'h2', 'h3', 'p'):
+                    self.words.append('\n')
+
+        def handle_data(self, data):
+            if self.depth:
+                self.words.append(data)
+
+    parser = DocumentText()
+    parser.feed(source)
+    if not parser.found:
+        raise ValueError('Scribd HTML has no bot-text document; supply plaintext instead')
+    return ''.join(parser.words)
 
 
 def _printable(value):
@@ -122,6 +178,7 @@ def _menu_keys(argument, line_number):
 @dataclass
 class Replay:
     keys: list
+    mouse_clicks: list
     actions: list
     assertions: list
     checkpoints: list
@@ -138,9 +195,8 @@ class Checkpoint:
 def compile_steps(steps, max_actions=None, through=None, spacing_ms=3000, idle_ms=1500):
     """A deterministic replay prefix. Assertions describe its *final* state.
 
-    For intermediary checks, replay a chosen LABEL prefix with --through and
-    ASSERT_LOCATION before that LABEL. We never claim intermediate assertions
-    were checked during a complete uninterrupted replay.
+    The --through prefix isolates one LABEL; --check-labels captures and
+    verifies all prior label assertions in one uninterrupted native run.
     """
     if not 100 <= spacing_ms <= 120000 or not 1 <= idle_ms <= 120000:
         raise ValueError('invalid spacing or idle duration')
@@ -151,6 +207,7 @@ def compile_steps(steps, max_actions=None, through=None, spacing_ms=3000, idle_m
     if through is not None and not any(s.operation == 'LABEL' and s.argument == through for s in steps):
         raise ValueError(f'unknown label {through!r}')
     keys = schedule('look') + [(time, 0x3920) for time in (15000, 16000, 17000)]
+    mouse_clicks = []
     # The historical splash/menu bootstrap is exactly the existing 'puzzle'
     # scenario. By 18000ms the parser accepts command text.
     cursor = 18000
@@ -187,10 +244,14 @@ def compile_steps(steps, max_actions=None, through=None, spacing_ms=3000, idle_m
                         for index, char in enumerate(parts))
             end = start + (len(parts) - 1) * spacing_ms
             cursor = end + spacing_ms
-        elif op in ('COMMAND', 'TYPE'):
+        elif op == 'MOUSE_CLICK':
+            x, y = (int(value) for value in arg.split())
+            mouse_clicks.append((start, x, y))
+            end = start + 100  # Press and release, for original INT 33h mouse polling.
+        elif op in ('COMMAND', 'ANSWER', 'TYPE'):
             keys.extend((start + index * 30, ord(char)) for index, char in enumerate(arg))
             end = start + len(arg) * 30
-            if op == 'COMMAND':
+            if op in ('COMMAND', 'ANSWER'):
                 keys.append((end, KEYS['enter']))
             else:
                 end -= 30
@@ -203,13 +264,14 @@ def compile_steps(steps, max_actions=None, through=None, spacing_ms=3000, idle_m
         cursor = max(cursor, start + spacing_ms, end + 1)
     if not actions:
         raise ValueError('script prefix has no executable actions')
-    # Only checks *after* the final input/wait apply. Earlier checks can be
-    # selected using --through LABEL to replay that checkpoint separately.
+    # Only the last assertions apply to the final snapshot. Earlier checks
+    # are retained in labeled checkpoints for --check-labels.
     if not all(keys[index][0] < keys[index + 1][0] for index in range(len(keys) - 1)):
         raise ValueError('keyboard timestamps overlap; increase spacing')
-    if len(keys) > MAX_KEYS or max(cursor, last_action_finished + idle_ms) > MAX_DURATION_MS:
+    if len(keys) > MAX_KEYS or len(mouse_clicks) > 4096 or \
+            max(cursor, last_action_finished + idle_ms) > MAX_DURATION_MS:
         raise ValueError('walkthrough exceeds 100000 keys or one guest hour; split into stages')
-    return Replay(keys, actions, assertions, checkpoints,
+    return Replay(keys, mouse_clicks, actions, assertions, checkpoints,
                   max(cursor, last_action_finished + idle_ms))
 
 
@@ -228,15 +290,44 @@ def check_locations(snapshot, assertions, ds=None):
                              f'{expected:x}, observed {observed!r}')
 
 
+def native_save_description(path):
+    """Read the original 33-byte fixed-width save-game description header."""
+    if not re.fullmatch(r'GATE[0-9]{3}\.SAV', path.name.upper()):
+        raise ValueError('original save must be named GATE###.SAV')
+    data = path.read_bytes()
+    if not 34 <= len(data) <= 1024 * 1024 or any(c < 32 or c > 126 for c in data[:33]):
+        raise ValueError(f'{path}: unrecognized Gateway saved-game header')
+    return data[:33].decode('ascii').rstrip()
+
+
+def import_native_save(source, state_dir):
+    """Install one original save in an isolated DOS state directory."""
+    description = native_save_description(source)
+    state_dir.mkdir(parents=True, exist_ok=True)
+    destination = state_dir / source.name.upper()
+    if source.resolve() == destination.resolve():
+        raise ValueError('save source and destination must differ')
+    if destination.exists():
+        if destination.read_bytes() != source.read_bytes():
+            raise ValueError(f'cannot overwrite different DOS save {destination}')
+    else:
+        shutil.copyfile(source, destination)
+    return description
+
+
 def run(args, replay):
     if not args.probe.is_file() or not (args.data / 'GATE.EXE').is_file():
         raise ValueError('original GATE.EXE or compiled gateway-probe missing')
     args.output.mkdir(parents=True, exist_ok=True)
+    state_dir = args.output / 'state'
+    if args.import_save:
+        print(f'Imported original save: {import_native_save(args.import_save, state_dir)}')
+    previous_saves = {p.name: p.stat().st_mtime_ns for p in state_dir.glob('GATE[0-9][0-9][0-9].SAV')}
     key_path = args.output / 'replay.keys'
     key_path.write_text(''.join(f'{ms}:{key:04x}\n' for ms, key in replay.keys), encoding='ascii')
     prefix = args.output / 'native'
     command = [str(args.probe.resolve()), str((args.data / 'GATE.EXE').resolve()),
-               '--press', 'escape', '--state-dir', str(args.output / 'state'),
+               '--press', 'escape', '--state-dir', str(state_dir),
                '--milliseconds', str(replay.duration_ms), '--key-script', str(key_path),
                '--trace-research', str(prefix.with_suffix('.trace')),
                '--trace-entry', '147a6', '--trace-entry', '28d2b',
@@ -256,6 +347,8 @@ def run(args, replay):
         command += ['--trace-rtlink-events', str(prefix.with_suffix('.rtlink-events'))]
         for target in args.trace_target:
             command += ['--trace-rtlink-target', target]
+    for ms, x, y in replay.mouse_clicks:
+        command += ['--mouse-click-at', f'{ms}:{x}:{y}']
     if args.capture_labels or args.check_labels:
         if len(replay.checkpoints) > 32:
             raise ValueError('--capture-labels supports up to 32 selected LABELs per run')
@@ -269,6 +362,13 @@ def run(args, replay):
     if recorded != len(replay.keys):
         raise RuntimeError(f'guest stopped before all keys were delivered: '
                            f'{recorded}/{len(replay.keys)}; see native.dos')
+    if args.expect_save:
+        found = [p.name for p in state_dir.glob('GATE[0-9][0-9][0-9].SAV')
+                 if p.stat().st_mtime_ns != previous_saves.get(p.name) and
+                 native_save_description(p) == args.expect_save]
+        if not found:
+            raise ValueError(f'no newly written native save named {args.expect_save!r}')
+        print('Native saved-game slot written: ' + ', '.join(sorted(found)))
     if replay.assertions:
         check_locations(prefix, replay.assertions, args.state_ds)
     checked = 0
@@ -281,7 +381,7 @@ def run(args, replay):
     from inventory_native_handlers import parse_calls
     calls, census = parse_calls(prefix.with_suffix('.rtlink-calls').read_text().splitlines())
     print(f'Replayed {len(replay.actions)} input actions / {recorded} BIOS keys '
-          f'in {replay.duration_ms} guest ms')
+          f'/ {len(replay.mouse_clicks)} native mouse clicks in {replay.duration_ms} guest ms')
     print(f'RTLink: {census["validated_calls"]} validated calls, '
           f'{census["distinct_targets"]} distinct section-qualified targets')
     print(f'Asserted {len(replay.assertions)} final object locations; output in {args.output}')
@@ -296,6 +396,8 @@ def main():
     convert = subcommands.add_parser('convert', help='extract marked parser/menu lines from a supplied guide')
     convert.add_argument('guide', type=pathlib.Path)
     convert.add_argument('script', type=pathlib.Path)
+    convert.add_argument('--scribd-html', action='store_true',
+                         help='extract the document from a locally downloaded Scribd HTML page')
     replay = subcommands.add_parser('run', help='compile and replay an edited walkthrough DSL')
     replay.add_argument('script', type=pathlib.Path)
     replay.add_argument('--probe', type=pathlib.Path, default=pathlib.Path('build/gateway-probe'))
@@ -306,6 +408,10 @@ def main():
     replay.add_argument('--spacing-ms', type=int, default=3000)
     replay.add_argument('--idle-ms', type=int, default=1500)
     replay.add_argument('--state-ds', type=lambda value: int(value, 16), metavar='HEX')
+    replay.add_argument('--import-save', type=pathlib.Path, metavar='GATE###.SAV',
+                        help='copy a prior original save into this isolated DOS state directory')
+    replay.add_argument('--expect-save', metavar='DESCRIPTION',
+                        help='require a newly written DOS saved game with this description')
     replay.add_argument('--verify-overlays', action='store_true')
     replay.add_argument('--trace-navigation', action='store_true')
     replay.add_argument('--trace-byte-write', action='append', metavar='LINEARHEX',
@@ -324,7 +430,8 @@ def main():
         if args.mode == 'convert':
             if args.guide.resolve() == args.script.resolve():
                 raise ValueError('input and output must differ')
-            result = convert_text(args.guide.read_text(encoding='utf-8'))
+            source = args.guide.read_text(encoding='utf-8')
+            result = convert_text(extract_scribd_html(source) if args.scribd_html else source)
             parse_script(result)
             args.script.write_text(result, encoding='utf-8')
             print(f'Extracted {len(parse_script(result))} directives to {args.script}; review before replay')
