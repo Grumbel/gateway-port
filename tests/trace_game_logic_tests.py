@@ -124,6 +124,28 @@ class TraceGameLogicTests(unittest.TestCase):
             self.assertIn('requires --native-only --scenario objects', wrong_scenario.stderr)
             self.assertFalse(output.exists())
 
+    def test_controlled_poke_requires_native_navigation_and_valid_probe(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / 'replay'
+            base = [sys.executable, str(DRIVER), '--scenario', 'objects',
+                    '--research-poke16-at', '27000:35b24:2a3:d3', '--output', str(output)]
+            wrong = subprocess.run(base, capture_output=True, text=True)
+            self.assertEqual(wrong.returncode, 2)
+            self.assertIn('requires --native-only', wrong.stderr)
+            wrong_trace = subprocess.run(base + ['--native-only'],
+                                         capture_output=True, text=True)
+            self.assertEqual(wrong_trace.returncode, 2)
+            self.assertIn('--trace-navigation', wrong_trace.stderr)
+            probe = root / 'gateway-probe'
+            probe.write_bytes(b' action_code= previous native research probe')
+            stale = subprocess.run(base + ['--native-only', '--trace-navigation',
+                                           '--probe', str(probe)],
+                                   capture_output=True, text=True)
+            self.assertEqual(stale.returncode, 2)
+            self.assertIn('lacks controlled research poke support', stale.stderr)
+            self.assertFalse(output.exists())
+
     def test_object_write_watch_rejects_wrong_replay_and_stale_probe(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

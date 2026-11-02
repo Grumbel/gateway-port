@@ -31,6 +31,8 @@ parser.add_argument('--trace-object-writes', metavar='HEX-ID',
                     help='watch native writes to an object record (e.g. 124 for drawer)')
 parser.add_argument('--command-sequence', metavar='CMD,CMD,...',
                     help='replace the seven objects-scenario commands at 18,21,25,28,31,34,37 s')
+parser.add_argument('--research-poke16-at', action='append', metavar='MS:ADDRESS:OLD:NEW',
+                    help='controlled native-only guest RAM word change; address/words in hex')
 args = parser.parse_args()
 if args.native_only and args.hle_overlays:
     parser.error('--native-only and --hle-overlays cannot be combined')
@@ -53,6 +55,10 @@ if args.trace_object_writes:
         parser.error('--trace-object-writes requires a nonzero 16-bit hex object ID')
 if args.command_sequence and not args.native_only:
     parser.error('--command-sequence currently requires --native-only')
+if args.research_poke16_at and (not args.native_only or args.scenario != 'objects' or
+                                not args.trace_navigation):
+    parser.error('--research-poke16-at requires --native-only --scenario objects '
+                 '--trace-navigation')
 if args.hle_overlays:
     args.verify_overlays = True
 try:
@@ -80,6 +86,8 @@ if args.scenario in ['drawer', 'objects']:
     if args.trace_object_writes and (b'object-write ms=' not in probe_bytes or
                                      b' child_set_object=' not in probe_bytes):
         parser.error(f'{args.probe} lacks native object-write tracing; run gateway-build')
+    if args.research_poke16_at and b'research-poke16 ms=' not in probe_bytes:
+        parser.error(f'{args.probe} lacks controlled research poke support; run gateway-build')
 args.output.mkdir(parents=True, exist_ok=True)
 if custom_commands:
     print('Scripted commands: ' + ' | '.join(custom_commands))
@@ -144,6 +152,9 @@ for mode in (['native'] if args.native_only else ['native', 'verify', 'hle']):
                     '--trace-entry', '15077', '--trace-entry', '14742',
                     '--trace-entry', '14759', '--trace-entry', '1475e',
                     '--trace-entry', '1507c']
+    if args.research_poke16_at and mode == 'native':
+        for poke in args.research_poke16_at:
+            command += ['--research-poke16-at', poke]
     if args.trace_object_writes and mode == 'native':
         # 0157:08fc (EXE 0x2e3a): native indexed child-link setter.
         command += ['--trace-entry', '11e6c']
@@ -168,6 +179,11 @@ for mode in (['native'] if args.native_only else ['native', 'verify', 'hle']):
         if not any(line.startswith('object-watch ') for line in
                    prefix.with_suffix('.trace').read_text().splitlines()):
             raise RuntimeError('native object-write watch never activated; check trace and probe')
+    if mode == 'native' and args.research_poke16_at:
+        recorded = [line for line in prefix.with_suffix('.trace').read_text().splitlines()
+                    if line.startswith('research-poke16 ')]
+        if len(recorded) != len(args.research_poke16_at):
+            raise RuntimeError('controlled research pokes not all recorded by the native probe')
     if args.verify_overlays:
         lines = prefix.with_suffix('.dos').read_text().splitlines()
         summary = [line for line in lines if line.startswith('RTLink verified loads: ')]

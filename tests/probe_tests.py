@@ -11,7 +11,7 @@ PROBE = sys.argv.pop(1)
 
 
 class ProbeTests(unittest.TestCase):
-    def run_guest(self, code, files=None, dump=False, game_args=None, press=None, break_at=None, state=False, state_files=None, exe_name="TEST.EXE", research_entries=None, scheduled_keys=None, probe_adlib=False):
+    def run_guest(self, code, files=None, dump=False, game_args=None, press=None, break_at=None, state=False, state_files=None, exe_name="TEST.EXE", research_entries=None, scheduled_keys=None, probe_adlib=False, scheduled_pokes=None, milliseconds=None):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             assets = root / 'assets'
@@ -39,6 +39,10 @@ class ProbeTests(unittest.TestCase):
                     command += ['--trace-entry', address]
             for key in scheduled_keys or []:
                 command += ['--key-at', key]
+            for poke in scheduled_pokes or []:
+                command += ['--research-poke16-at', poke]
+            if milliseconds is not None:
+                command += ['--milliseconds', str(milliseconds)]
             if state or state_files is not None:
                 command += ['--state-dir', str(root / 'state')]
             if break_at is not None:
@@ -81,6 +85,22 @@ class ProbeTests(unittest.TestCase):
         self.assertIn('pc=1000a', result.research_trace)
         self.assertIn('ax=1e61', result.research_trace)
         self.assertIn('stack=', result.research_trace)
+
+    def test_research_poke_requires_matching_word_and_audit_trace(self):
+        # A controlled write runs in the guest loop and never edits DOS assets.
+        result = self.run_guest(bytes.fromhex('ebfe'), dump=True, milliseconds=4,
+                                research_entries=[], scheduled_pokes=['2:30000:0000:abcd'])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.memory[0x30000:0x30002], bytes.fromhex('cdab'))
+        self.assertIn('research-poke16 ms=2 address=30000 before=0 value=abcd',
+                      result.research_trace)
+        rejected = self.run_guest(bytes.fromhex('ebfe'), milliseconds=4,
+                                  research_entries=[], scheduled_pokes=['2:30000:0001:abcd'])
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn('research poke expected word mismatch', rejected.stderr)
+        self.assertNotEqual(self.run_guest(bytes.fromhex('ebfe'), milliseconds=1,
+                                           research_entries=[],
+                                           scheduled_pokes=['2:30000:0000:abcd']).returncode, 0)
 
     @staticmethod
     def text_font_fixture():

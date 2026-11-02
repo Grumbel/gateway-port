@@ -1663,6 +1663,11 @@ int main(int argc, char **argv) {
     unsigned aspect_width = 4, aspect_height = 3;
     std::vector<std::uint64_t> entry_addresses;
     std::multimap<unsigned, std::uint16_t> scheduled_keys;
+    struct ResearchPoke16 {
+        std::uint32_t address;
+        std::uint16_t expected, value;
+    };
+    std::multimap<unsigned, ResearchPoke16> scheduled_pokes;
     std::uint16_t injected_key = 0;
     std::uint64_t breakpoint = 0;
     auto usage = [] {
@@ -1670,6 +1675,7 @@ int main(int argc, char **argv) {
                      "[--milliseconds N] [--dump-prefix PATH] [--game-args TEXT] [--press KEY] "
                      "[--break-at HEX] [--state-dir DIR | --read-only] [--trace-blocks FILE] "
                      "[--trace-research FILE --trace-entry HEX ...] [--key-at MS:BIOSHEX ...] "
+                     "[--research-poke16-at MS:LINEARHEX:OLDHEX:NEWHEX ...] "
                      "[--object-flags verify|hle | --object-state verify|hle] [--verify-overlays] "
                      "[--hle-overlays] [--trace-video] [--trace-timing] [--adlib-driver] "
                      "[--trace-object-writes OBJECT-HEX] "
@@ -1749,6 +1755,34 @@ int main(int argc, char **argv) {
                 return 2;
             }
             entry_addresses.push_back(address);
+        } else if (option == "--research-poke16-at" && i + 1 < argc) {
+            // Explicit, one-shot compare-and-write on guest RAM, used only
+            // for controlled branch experiments. A stale expected word
+            // aborts the replay instead of corrupting an unknown location.
+            const std::string_view value = argv[++i];
+            std::array<unsigned, 4> words{};
+            std::size_t begin = 0;
+            bool valid = true;
+            for (unsigned part = 0; part < words.size(); ++part) {
+                const auto colon = value.find(':', begin);
+                const auto end = colon == std::string_view::npos ? value.size() : colon;
+                const auto result = std::from_chars(value.data() + begin, value.data() + end,
+                                                    words[part], part == 0 ? 10 : 16);
+                if (result.ec != std::errc{} || result.ptr != value.data() + end ||
+                    end == begin || (part < 3) != (colon != std::string_view::npos)) {
+                    valid = false;
+                    break;
+                }
+                begin = end + 1;
+            }
+            if (!valid || words[0] > 60000 || words[1] > 0x9fffe ||
+                words[2] > 0xffff || words[3] > 0xffff) {
+                usage();
+                return 2;
+            }
+            scheduled_pokes.emplace(words[0], ResearchPoke16{
+                words[1], static_cast<std::uint16_t>(words[2]),
+                static_cast<std::uint16_t>(words[3])});
         } else if (option == "--key-at" && i + 1 < argc) {
             const std::string value = argv[++i];
             const auto colon = value.find(':');
@@ -1828,6 +1862,10 @@ int main(int argc, char **argv) {
             usage();
             return 2;
         }
+    }
+    if (!scheduled_pokes.empty() && research_path.empty()) {
+        std::cerr << "--research-poke16-at requires --trace-research for an audit trail\n";
+        return 2;
     }
     if (!entry_addresses.empty() && research_path.empty()) {
         usage();
@@ -2069,6 +2107,24 @@ int main(int argc, char **argv) {
         std::uint64_t delivered_irq0 = 0;
         while (true) {
             state.elapsed_ms = elapsed_us / 1000;
+            while (!scheduled_pokes.empty() &&
+                   scheduled_pokes.begin()->first <= state.elapsed_ms) {
+                const auto poke = scheduled_pokes.begin()->second;
+                std::uint16_t before{};
+                check(uc_mem_read(engine.uc, poke.address, &before, sizeof(before)));
+                if (before != poke.expected) {
+                    std::ostringstream error;
+                    error << "research poke expected word mismatch at 0x" << std::hex
+                          << poke.address << ": expected 0x" << poke.expected << ", found 0x"
+                          << before;
+                    throw std::runtime_error(error.str());
+                }
+                check(uc_mem_write(engine.uc, poke.address, &poke.value, sizeof(poke.value)));
+                state.research_trace << "research-poke16 ms=" << std::dec << state.elapsed_ms
+                                     << std::hex << " address=" << poke.address
+                                     << " before=" << before << " value=" << poke.value << '\n';
+                scheduled_pokes.erase(scheduled_pokes.begin());
+            }
             if (trace_object_writes && !state.object_write_watch &&
                 state.object_service_ds) {
                 state.object_write_watch = locate_object_write_watch(
@@ -2302,6 +2358,8 @@ int main(int argc, char **argv) {
             if (!trace)
                 throw std::runtime_error("cannot write guest block trace");
         }
+        if (!scheduled_pokes.empty())
+            throw std::runtime_error("research poke was never applied before probe stopped");
         if (!dump_prefix.empty()) {
             dump_guest(engine.uc, state, dump_prefix);
         }
