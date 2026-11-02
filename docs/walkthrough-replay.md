@@ -33,8 +33,18 @@ convert it into an ignored `build/` file for editing:
 python3 tools/run_walkthrough.py convert /path/to/your-guide.txt build/full-gateway.walk
 ```
 
-The conservative converter only recognizes lines beginning `}` or `>` and
-explicit `*** Type: ... ***` / `*** Press: ... ***` annotations. A simple
+If you locally downloaded the first guide's Scribd HTML page, use
+`convert ... --scribd-html` to extract only its document element before
+converting. The original guide and downloaded page stay outside Git. The
+current page extraction yields **733 parser commands, 11 explicit yes/no
+replies, eight single-key menu sequences, and 16 manual barriers**; these
+numbers count extracted directives,
+**not** verified gameplay. In particular, the guide's embedded prose and
+generated passwords still need review.
+
+The conservative converter recognizes lines beginning `}` or `>`, explicit
+`*** Type: ... ***` / `*** Press: ... ***` annotations, and annotated
+yes/no prompt answers. A simple
 `Type` becomes raw keyboard text **without** Enter. Comma-separated lists of
 **single alphanumeric menu keys** become `MENU_KEYS`, a convention confirmed
 in the original [PV GUI](pv-commset.md). Other menu notation and every
@@ -49,8 +59,10 @@ script is **untrusted input, not a validated playthrough**.
 | Directive | Meaning |
 | --- | --- |
 | `COMMAND open drawer` | Type ASCII parser text at 30 ms/key; then Enter |
+| `ANSWER N` | Reply to a native yes/no dialog (N followed by Enter) |
 | `TYPE 1` | Type ASCII only, without Enter (e.g. a menu digit) |
 | `MENU_KEYS 1,N,N,0,0` | Five individual GUI menu keys, spaced like actions, no Enter |
+| `MOUSE_CLICK 160 114` | Position and click the original DOS left mouse button (640-wide coordinate grid) |
 | `KEY space` | One key: `space`, `enter`, `escape`, or arrow names |
 | `KEY 0x4800` | Raw 16-bit BIOS code (hex); equivalent to Up |
 | `WAIT_MS 7000` | Add 7,000 emulated milliseconds before the next action |
@@ -119,11 +131,78 @@ which logs each actual capture in `native.trace`; a guest exit before any
 scheduled capture is an error. This makes intermittent PV screens and timed
 story events inspectable without repeating every prefix from startup.
 
+GUI-only choices can be scripted through the original DOS `INT 33h` driver,
+not through story RAM writes. `MOUSE_CLICK X Y` emits a 100-ms left-button
+press/release at the current action time; coordinates use the DOS 640-column
+mouse grid and an unscaled Y row (for a 320×200 ship-panel framebuffer,
+`MOUSE_CLICK 160 114` targets approximately visible pixel `(80,114)`). The
+probe's direct `--mouse-click-at MS:X:Y` supports the same operation and
+rejects overlapping clicks, unreachable releases, malformed coordinates and
+more than 4,096 clicks. A synthetic native `INT 33h` program verifies the
+button transition and coordinates in real guest memory.
+
+The original game's [ship manual](https://www.freegameempire.com/games/Gateway-Frederik-Pohls/manual-pdf)
+also documents shortcut keys `C` (course list), `G` (go), `R` (return),
+`O` (orbit), `L` (land), `I` (info) and `V` (view). The first real cockpit
+experiment selected a displayed course-code row with a DOS mouse click and
+`TYPE G` began the original spacecraft departure animation. Full mission
+arrival and sequential course-code selection still require native checks.
+
+### Resume through the original DOS saved-game format
+
+The original [Gateway manual](https://www.freegameempire.com/games/Gateway-Frederik-Pohls/manual-pdf)
+documents `SAVE` and `RESTORE` as native parser commands. The original save
+screen accepts a description up to 33 characters, followed by Enter. A
+verified uninterrupted PV/office run executed:
+
+```text
+COMMAND save
+TYPE OFFICE100
+KEY enter
+```
+
+This wrote `GATE001.SAV`, **21,777 bytes**, with `OFFICE100` in its fixed-width
+33-byte ASCII description header. From a **fresh DOS process** with that save
+copied into its isolated writable state directory, the sequence
+
+```text
+COMMAND restore
+TYPE OFFICE100
+KEY enter
+ASSERT_LOCATION d3 ec
+ASSERT_LOCATION 123 0
+ASSERT_LOCATION 130 d3
+LABEL office_restored
+```
+
+restored the original player, book and DataMan relationships: **3/3 native
+object assertions passed**. The runner now handles the file import and
+post-save existence checks without copying DOS game binaries into Git:
+
+```sh
+# A reviewed script ending with the three save commands above:
+python3 tools/run_walkthrough.py run build/save-office.walk \
+  --data ../gateway-dos --output build/office-save --expect-save OFFICE100
+
+# A second, fresh replay beginning with the restore commands above:
+python3 tools/run_walkthrough.py run build/restore-office.walk \
+  --data ../gateway-dos --output build/office-restored \
+  --import-save build/office-save/state/GATE001.SAV --check-labels
+```
+
+`--import-save` only accepts a bounded original `GATE###.SAV` with a readable
+description; it refuses to overwrite a different existing slot.
+`--expect-save` demands a newly written named native save in that run.
+Only `.SAV` files are imported, **not** the boot-time `RESTART.DAT`. Thus
+the game, rather than an incomplete host-side emulator serialization, performs
+the story-state restoration. These saved games cannot replace intermediate
+CPU/framebuffer dumps for analysis, and their long-term compatibility with
+other DOS distributions remains untested.
+
 To extend a reviewed route beyond 48 commands, either increase the number of
 `COMMAND`/`TYPE`/`KEY` lines or run a checked prefix with `--max-actions N`.
-The duration limit is one guest hour **per replay**. For longer routes the
-runner needs explicit DOS save/restore or a further bounded-time extension;
-the current runner does not implement checkpoint save/restore.
+The duration limit is one guest hour **per replay**. Divide longer routes
+into native-save stages, each including an explicit SAVE/RESTORE interaction.
 
 ### Lower-level probe input
 
