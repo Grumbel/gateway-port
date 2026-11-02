@@ -2,6 +2,7 @@
 """Prepare Gateway RTLink sections and analyze them in a fresh Ghidra project."""
 
 import argparse
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -61,6 +62,11 @@ def run(exe, ovl, output, overlay_tool, objects_json=None,
     if not prepare_only and (project_dir / (project_name + '.gpr')).exists():
         raise ValueError('Ghidra project already exists: %s; choose --project-name '
                          'or inspect the existing project' % project_name)
+    reports = (output / 'ghidra-import-report.json',
+               output / 'ghidra-decompile-report.json', output / 'pseudocode.txt')
+    if not prepare_only and any(item.exists() for item in reports):
+        raise ValueError('Ghidra output reports already exist in %s; choose a fresh '
+                         'output directory so stale results cannot be mistaken for success' % output)
     plan_path, plan = prepare(exe, ovl, output, overlay_tool, objects_json)
     print('Verified %d isolated RTLink sections, %d fixups.' % (
         len(plan['sections']), sum(s['fixup_count'] for s in plan['sections'])), flush=True)
@@ -71,14 +77,32 @@ def run(exe, ovl, output, overlay_tool, objects_json=None,
     project_dir.mkdir(parents=True, exist_ok=True)
     command = headless_command(binary, output, project_name, plan_path)
     subprocess.run(command, check=True)
-    import_report = output / 'ghidra-import-report.json'
-    pseudocode = output / 'pseudocode.txt'
-    if not import_report.is_file() or not pseudocode.is_file():
-        raise ValueError('Ghidra did not produce the import report and pseudocode; '
+    if not all(item.is_file() for item in reports):
+        raise ValueError('Ghidra did not produce all import/decompile reports and pseudocode; '
                          'inspect %s and %s' % (
                              output / 'ghidra-script.log', output / 'ghidra.log'))
-    print('Import report: %s' % import_report)
-    print('Ghidra pseudocode: %s' % pseudocode)
+    imported = json.loads(reports[0].read_text())
+    decompiled = json.loads(reports[1].read_text())
+    expected_labels = sum(len(section['labels']) for section in plan['sections'])
+    if (imported.get('imported_sections') != len(plan['sections']) or
+        imported.get('labeled_overlay_entries') != expected_labels):
+        raise ValueError('Ghidra import counts differ from the validated RTLink plan')
+    expected = [label['name'] for section in plan['sections']
+                for label in section['labels'] if label['role'] == 'function']
+    expected.extend(label['name'] for label in plan['resident_labels']
+                    if imported.get('resident_matches', {}).get(label['name']) is not None)
+    observed = [item['name'] for item in decompiled.get('targets', [])]
+    if (decompiled.get('schema_version') != 1 or observed != expected or
+        decompiled.get('requested') != len(expected) or
+        not isinstance(decompiled.get('completed'), int) or
+        not isinstance(decompiled.get('failed'), int) or
+        decompiled.get('completed') + decompiled.get('failed') != len(expected) or
+        not reports[2].stat().st_size):
+        raise ValueError('Ghidra decompile report is incomplete or mismatches the plan')
+    print('Ghidra import report: %s' % reports[0])
+    print('Decompiled %d/%d targets (including internal branch contexts).' % (
+        decompiled['completed'], decompiled['requested']))
+    print('Ghidra pseudocode: %s' % reports[2])
     return plan_path
 
 

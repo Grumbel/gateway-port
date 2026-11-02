@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-from prepare_ghidra import name_for_object, plan_sections
+from prepare_ghidra import KNOWN_OVERLAY, KNOWN_RESIDENT, name_for_object, plan_sections
 from run_ghidra import find_headless, headless_command, run
 
 
@@ -86,6 +86,16 @@ class GhidraPlanTests(unittest.TestCase):
                          'gw_object_001_drawe')
         self.assertEqual(name_for_object({'object': 2}), 'gw_object_002_unnamed')
 
+    def test_navigation_branches_are_not_labeled_as_function_entries(self):
+        overlay = {item[1]: item[2] for item in KNOWN_OVERLAY}
+        resident = {item[1]: item[2] for item in KNOWN_RESIDENT}
+        self.assertEqual(overlay['gw_relocate_child'], 'function')
+        self.assertEqual(overlay['gw_take_precheck'], 'function')
+        self.assertEqual(overlay['gw_drop_precheck'], 'function')
+        self.assertEqual(overlay['gw_unlink_child_head_call'], 'callsite')
+        self.assertEqual(resident['gw_conditional_exit_case'], 'instruction')
+        self.assertEqual(resident['gw_callback_exit_case'], 'instruction')
+
     def test_runner_uses_scripts_in_pre_analysis_order(self):
         plan_path = self.root / 'ghidra-plan.json'
         plan_path.write_text(json.dumps(dict(exe_file='/input/GATEMAIN.EXE')))
@@ -104,13 +114,27 @@ class GhidraPlanTests(unittest.TestCase):
     def test_runner_headless_invocation(self):
         plan_path = self.root / 'ghidra-plan.json'
         plan_path.write_text(json.dumps(dict(exe_file='/input/GATEMAIN.EXE')))
-        example = dict(sections=[dict(fixup_count=17)])
+        example = dict(sections=[dict(fixup_count=17, labels=[
+            dict(name='test_routine', role='function')])], resident_labels=[])
         with patch('run_ghidra.prepare', return_value=(plan_path, example)), \
                 patch('run_ghidra.find_headless', return_value=Path('/bin/headless')), \
                 patch('run_ghidra.subprocess.run') as invoke:
-            (self.root / 'ghidra-import-report.json').write_text('{}')
+            (self.root / 'ghidra-import-report.json').write_text(json.dumps(dict(
+                imported_sections=1, labeled_overlay_entries=1)))
+            (self.root / 'ghidra-decompile-report.json').write_text(json.dumps(dict(
+                schema_version=1, targets=[dict(name='test_routine')],
+                completed=1, failed=0, requested=1)))
             (self.root / 'pseudocode.txt').write_text('verified test output')
-            run(Path('exe'), Path('ovl'), self.root, Path('tool'))
+            # Simulate fresh reports appearing *during* the headless invocation.
+            old_exists = Path.exists
+            def exists_after_invocation(path):
+                if path in (self.root / 'ghidra-import-report.json',
+                            self.root / 'ghidra-decompile-report.json',
+                            self.root / 'pseudocode.txt') and not invoke.called:
+                    return False
+                return old_exists(path)
+            with patch('run_ghidra.Path.exists', exists_after_invocation):
+                run(Path('exe'), Path('ovl'), self.root, Path('tool'))
         command = invoke.call_args[0][0]
         self.assertEqual(command[0], '/bin/headless')
         self.assertTrue(invoke.call_args[1]['check'])
@@ -123,6 +147,11 @@ class GhidraPlanTests(unittest.TestCase):
                 patch('run_ghidra.subprocess.run'):
             with self.assertRaisesRegex(ValueError, 'did not produce'):
                 run(Path('exe'), Path('ovl'), self.root, Path('tool'))
+
+    def test_runner_rejects_stale_headless_reports(self):
+        (self.root / 'pseudocode.txt').write_text('old pseudocode')
+        with self.assertRaisesRegex(ValueError, 'stale results'):
+            run(Path('exe'), Path('ovl'), self.root, Path('tool'))
 
     def test_nix_ghidra_bin_support_fallback(self):
         prefix = self.root / 'nix-store-package'

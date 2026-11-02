@@ -1,8 +1,9 @@
 #@category Gateway
 # Ghidra Jython 2.7 post-analysis script.
 # Arguments: absolute ghidra-plan.json, absolute pseudocode output path.
-# Only *confirmed* native entry points are attempted as functions. Ghidra's C
-# output is a research aid, not a verified port or source-language recovery.
+# Confirmed native entries are attempted as functions. Internal dispatcher
+# branch labels instead decompile their *containing* Ghidra functions, without
+# creating false function boundaries at jump targets.
 
 import json
 import os
@@ -27,14 +28,12 @@ for section in plan['sections']:
     for label in section['labels']:
         if label['role'] == 'function':
             targets.append((label['name'], block.getStart().add(label['offset']),
-                            'GATEMAIN.OVL:0x%x' % label['file_offset']))
+                            'GATEMAIN.OVL:0x%x' % label['file_offset'], 'function'))
 for label in plan['resident_labels']:
-    if label['role'] != 'function':
-        continue
     address = report['resident_matches'].get(label['name'])
     if address is not None:
         targets.append((label['name'], toAddr(address),
-                        'GATEMAIN.EXE:0x%x' % label['file_offset']))
+                        'GATEMAIN.EXE:0x%x' % label['file_offset'], label['role']))
 
 interface = DecompInterface()
 interface.setSimplificationStyle('decompile')
@@ -46,40 +45,74 @@ lines = [
     'segment values, state semantics, and function extents need native traces.',
     '',
 ]
-success = 0
-for name, address, origin in targets:
-    lines.append('===== %s at %s (%s) =====' % (name, address, origin))
-    function = getFunctionAt(address)
-    if function is None:
-        try:
-            disassemble(address)
-            function = createFunction(address, name)
-        except Exception as error:
-            lines.append('No function boundary: %s' % error)
+results = []
+for name, address, origin, role in targets:
+    lines.append('===== %s at %s (%s; %s) =====' % (name, address, origin, role))
+    item = dict(name=name, origin=origin, address=str(address), role=role,
+                function_entry=None, status='missing')
+    results.append(item)
+    if role == 'instruction':
+        function = getFunctionContaining(address)
+        if function is None:
+            item['error'] = 'no analyzed function contains this internal branch'
+            lines.append(item['error'])
             lines.append('')
             continue
-    if function is None:
-        lines.append('No function boundary; inspect the surrounding disassembly.')
-        lines.append('')
-        continue
+        lines.append('INTERNAL BRANCH; decompiling Ghidra containing function at %s. '
+                     'This is NOT an independently verified function entry.' %
+                     function.getEntryPoint())
+    else:
+        function = getFunctionAt(address)
+        if function is None:
+            containing = getFunctionContaining(address)
+            if containing is not None:
+                item['error'] = 'Ghidra placed entry inside function at %s' % (
+                    containing.getEntryPoint())
+                lines.append(item['error'])
+                lines.append('')
+                continue
+            try:
+                disassemble(address)
+                function = createFunction(address, name)
+            except Exception as error:
+                item['error'] = 'cannot create function: %s' % error
+                lines.append(item['error'])
+                lines.append('')
+                continue
+        if function is None:
+            item['error'] = 'Ghidra did not establish a function boundary'
+            lines.append(item['error'])
+            lines.append('')
+            continue
+    item['function_entry'] = str(function.getEntryPoint())
     try:
-        try:
-            # Pre-analysis already created the named label. A Ghidra analyzer
-            # may have promoted a different label to the function's symbol.
-            function.setName(name, SourceType.USER_DEFINED)
-        except Exception as rename_error:
-            lines.append('Function rename skipped: %s' % rename_error)
+        if role == 'function':
+            try:
+                # Never rename an internal branch's containing function.
+                function.setName(name, SourceType.USER_DEFINED)
+            except Exception as rename_error:
+                lines.append('Function rename skipped: %s' % rename_error)
         result = interface.decompileFunction(function, 120, monitor)
         if result.decompileCompleted() and result.getDecompiledFunction() is not None:
             lines.append(result.getDecompiledFunction().getC())
-            success += 1
+            item['status'] = 'ok'
         else:
-            lines.append('Decompilation failed: %s' % result.getErrorMessage())
+            item['status'] = 'failed'
+            item['error'] = str(result.getErrorMessage())
+            lines.append('Decompilation failed: %s' % item['error'])
     except Exception as error:
-        lines.append('Decompilation error: %s' % error)
+        item['status'] = 'failed'
+        item['error'] = str(error)
+        lines.append('Decompilation error: %s' % item['error'])
     lines.append('')
 interface.dispose()
 with open(args[1], 'w') as output:
     output.write('\n'.join(lines) + '\n')
-println('Gateway Ghidra: pseudocode for %d/%d verified entries: %s' % (
-    success, len(targets), args[1]))
+success = sum(item['status'] == 'ok' for item in results)
+summary = dict(schema_version=1, targets=results, completed=success,
+               requested=len(results), failed=len(results)-success)
+report_path = os.path.join(os.path.dirname(args[0]), 'ghidra-decompile-report.json')
+with open(report_path, 'w') as output:
+    json.dump(summary, output, indent=2)
+println('Gateway Ghidra: pseudocode for %d/%d entry/branch targets: %s' % (
+    success, len(results), args[1]))
