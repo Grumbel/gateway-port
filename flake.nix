@@ -96,6 +96,7 @@ except Exception:
                     '  gateway-run ../101/S101.EXE         Build and run Spellcasting 101' \
                     '  gateway-run ../201/S201.EXE         Build and run Spellcasting 201' \
                     '  gateway-run-gdb ../101/S101.EXE     Build and debug under GDB' \
+                    '  nix develop .#ghidra                Optional Ghidra reverse engineering shell' \
                     'Troubleshooting:' \
                     '  gateway-run ../201/S201.EXE --trace-video' \
                     '  gateway-run ../101/S101.EXE --headless --milliseconds 15000 \' \
@@ -106,6 +107,10 @@ except Exception:
                   ;;
               esac
             '';
+          };
+          ghidra = pkgs.mkShell {
+            inputsFrom = [ self.devShells.${system}.default ];
+            packages = [ pkgs.ghidra-bin ];
           };
         });
     };

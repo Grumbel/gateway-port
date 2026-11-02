@@ -119,6 +119,29 @@ gateway-run ../201/S201.EXE --aspect-ratio 16:10
 The image is scaled by SDL; the guest framebuffer resolution and DOS mouse
 coordinates remain unchanged. This option does not change headless dump sizes.
 
+### Ghidra: decompile the original Gateway logic
+
+The optional `nix develop .#ghidra` shell provides Ghidra without adding its
+large Java package to the normal development environment. Run `gateway-build`,
+then create a fresh headless Ghidra project containing the original
+`GATEMAIN.EXE` and all **58 individually relocated RTLink overlay sections**:
+
+```sh
+nix develop .#ghidra
+gateway-build
+python3 tools/run_ghidra.py \
+  ../gateway-dos/GATEMAIN.EXE ../gateway-dos/GATEMAIN.OVL \
+  --overlay-tool "${GATEWAY_BUILD_DIR:-build}/gateway-overlay" \
+  --output build/ghidra
+```
+
+It verifies all **13,947 RTLink fixups**, keeps overlapping sections separate,
+imports documented data types and known action/room-handler entry labels, and
+exports preliminary C-like listings to `build/ghidra/pseudocode.txt`.
+`--prepare-only` works without installing Ghidra. An optional `--objects-json`
+adds labels for the **696 mapped object/event handlers** from a native snapshot.
+See [Ghidra workflow and limitations](docs/ghidra.md).
+
 ### In-game Gateway debugger (F10)
 
 Launch the original Gateway 1 executable, enter a room, then press **F10**:

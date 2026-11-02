@@ -21,6 +21,12 @@
    movement/save/restore before replacing the manager.
    DOS reads can load executable overlay sections; invalidate Unicorn's translated blocks after
    these writes. Keep regression coverage for replacement code execution.
+   [Ghidra import](docs/ghidra.md) now prepares 58 independent overlay banks,
+   validates all 13,947 fixups, and seeds the confirmed native handler/room
+   entries for static decompilation. Run the headless import on a Nix machine,
+   verify its decompiled output against native traces, then recover the
+   kind-4 room-exit callback and its section-specific callees. This has not
+   yet established complete function boundaries or the RTLink call graph.
 4. Validate AdLib playback and scheduler timing against DOSBox recordings.
    SDL audio submission is tested and the user confirms audible output works.
 5. Compare startup, menus, scene palettes, and transitions with DOSBox. Full intro
