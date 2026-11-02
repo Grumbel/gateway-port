@@ -213,7 +213,8 @@ class GhidraPlanTests(unittest.TestCase):
                 patch('run_ghidra.subprocess.run') as invoke:
             (self.root / 'ghidra-import-report.json').write_text(json.dumps(dict(
                 imported_sections=1, labeled_overlay_entries=1,
-                study_event_table_words=23, study_matcher_path_labels=9)))
+                study_event_table_words=23, study_event_flow_edges=7,
+                study_matcher_path_labels=9, study_response_path_labels=18)))
             (self.root / 'ghidra-decompile-report.json').write_text(json.dumps(dict(
                 schema_version=1, targets=[dict(name='test_routine')],
                 completed=1, failed=0, requested=1)))
@@ -270,7 +271,8 @@ class GhidraPlanTests(unittest.TestCase):
                 patch('run_ghidra.subprocess.run') as invoke:
             (self.root / 'ghidra-import-report.json').write_text(json.dumps(dict(
                 imported_sections=1, labeled_overlay_entries=1,
-                study_event_table_words=23, study_matcher_path_labels=8)))
+                study_event_table_words=23, study_event_flow_edges=7,
+                study_matcher_path_labels=8, study_response_path_labels=18)))
             (self.root / 'ghidra-decompile-report.json').write_text(json.dumps(dict(
                 schema_version=1, targets=[dict(name='test_routine')],
                 completed=1, failed=0, requested=1)))
@@ -287,6 +289,42 @@ class GhidraPlanTests(unittest.TestCase):
             with patch('run_ghidra.Path.exists', exists_after_invocation):
                 with self.assertRaisesRegex(ValueError, '9 native Study matcher'):
                     run(Path('exe'), Path('ovl'), self.root, Path('tool'))
+
+    def test_runner_rejects_missing_study_flow_and_response_annotations(self):
+        plan_path = self.root / 'ghidra-plan.json'
+        plan_path.write_text(json.dumps(dict(exe_file='/input/GATEMAIN.EXE')))
+        example = dict(fingerprinted_gateway=True, sections=[dict(
+            fixup_count=17, labels=[dict(name='test_routine', role='function')])],
+            resident_labels=[])
+        for bad_key, error in (('study_event_flow_edges', '7 unique Study'),
+                               ('study_response_path_labels', '18 native Study')):
+            with self.subTest(bad_key=bad_key), \
+                    patch('run_ghidra.prepare', return_value=(plan_path, example)), \
+                    patch('run_ghidra.find_headless', return_value=Path('/bin/headless')), \
+                    patch('run_ghidra.subprocess.run') as invoke:
+                import_report = dict(imported_sections=1, labeled_overlay_entries=1,
+                                     study_event_table_words=23, study_event_flow_edges=7,
+                                     study_matcher_path_labels=9,
+                                     study_response_path_labels=18)
+                import_report[bad_key] -= 1
+                (self.root / 'ghidra-import-report.json').write_text(
+                    json.dumps(import_report))
+                (self.root / 'ghidra-decompile-report.json').write_text(json.dumps(dict(
+                    schema_version=1, targets=[dict(name='test_routine')],
+                    completed=1, failed=0, requested=1)))
+                (self.root / 'pseudocode.txt').write_text('mock decompiler output')
+                old_exists = Path.exists
+
+                def exists_after_invocation(path):
+                    if path in (self.root / 'ghidra-import-report.json',
+                                self.root / 'ghidra-decompile-report.json',
+                                self.root / 'pseudocode.txt') and not invoke.called:
+                        return False
+                    return old_exists(path)
+
+                with patch('run_ghidra.Path.exists', exists_after_invocation):
+                    with self.assertRaisesRegex(ValueError, error):
+                        run(Path('exe'), Path('ovl'), self.root, Path('tool'))
 
     def test_runner_detects_failed_ghidra_scripts(self):
         plan_path = self.root / 'ghidra-plan.json'

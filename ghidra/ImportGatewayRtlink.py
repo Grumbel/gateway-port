@@ -89,7 +89,7 @@ def annotate_study_event_table(section, start):
     RTLink *overlay address space* can still hold correct data references.
     """
     if section['id'] != 51:
-        return 0
+        return (0, 0)
     # These exact offsets are from the known, SHA-256-verified Gateway OVL.
     # Never apply them to an arbitrary section-51-like synthetic image.
     require(section['original_file_offset'] == 0x6acd0,
@@ -104,13 +104,17 @@ def annotate_study_event_table(section, start):
     listing = currentProgram.getListing()
     refs = currentProgram.getReferenceManager()
     table = start.add(0x0b82)
+    computed_jump = start.add(0x6b539 - section['original_file_offset'])
     require(0x0b82 + 2 * len(original_targets) <= section['file_bytes'],
             'Study jump table is not within file-backed image')
+    require((int(memory.getByte(computed_jump)) & 0xff) == 0x2e,
+            'Study event dispatcher CS-relative JMP opcode differs')
     currentProgram.getSymbolTable().createLabel(
         table, 'gw_study_event_jump_table',
         currentProgram.getGlobalNamespace(), SourceType.USER_DEFINED)
     note(table, 'OVL:0x6b852, 23 original Study event branches (1-based); '
          'CS-relative near offsets, NOT separate function entries')
+    branch_targets = set()
     for index, file_target in enumerate(original_targets):
         slot = table.add(2 * index)
         relative_target = file_target - section['original_file_offset']
@@ -121,9 +125,17 @@ def annotate_study_event_table(section, start):
         listing.createData(slot, UnsignedShortDataType.dataType)
         destination = start.add(relative_target)
         refs.addMemoryReference(slot, destination, RefType.DATA, SourceType.USER_DEFINED, 0)
+        if relative_target not in branch_targets:
+            # A reference from the actual CS:[BX+0b82] opcode, not just
+            # from the table slot, may allow Ghidra to follow its verified
+            # computed edges during analysis. The original table has only
+            # seven *unique* branch destinations for 23 event numbers.
+            refs.addMemoryReference(computed_jump, destination, RefType.COMPUTED_JUMP,
+                                    SourceType.USER_DEFINED, 0)
+            branch_targets.add(relative_target)
         note(slot, 'Study event %d -> original OVL:0x%x; internal jump target' %
              (index + 1, file_target))
-    return len(original_targets)
+    return (len(original_targets), len(branch_targets))
 
 
 def annotate_study_matcher_path(section, start):
@@ -170,6 +182,57 @@ def annotate_study_matcher_path(section, start):
     return len(anchors)
 
 
+def annotate_study_response_path(section, start):
+    """Expose verified interior branches of the native Study dialogue state machine."""
+    if section['id'] != 51:
+        return 0
+    require(section['original_file_offset'] == 0x6acd0,
+            'Study response expected original section-51 file base')
+    anchors = (
+        (0x6ce97, 0x26, 'gw_study_initialize_progress', 'initialize :7904 from 0 to 1'),
+        (0x6ceb4, 0xb8, 'gw_study_stage3_couch_check',
+         'native direct membership query for player and couch 0x2be'),
+        (0x6ced4, 0xb8, 'gw_study_stage13_desk_check',
+         'native direct membership query for player and desk 0x2bf'),
+        (0x6ceec, 0x26, 'gw_study_posture_match_write',
+         'set :7909 after successful UP/DOWN no longer on old parent'),
+        (0x6cef6, 0x26, 'gw_study_response_match_gate',
+         'branch to acceptance when :7909 is nonzero'),
+        (0x6cf0d, 0x26, 'gw_study_previous_prompt_check',
+         'compare last prompted stage :7906 with current :7904'),
+        (0x6cf20, 0x8e, 'gw_study_repeat_instruction',
+         'select prompt far pointer at :03a2 when :7908 is zero'),
+        (0x6cf4c, 0x26, 'gw_study_reminder_flag_write', 'set :7908 to 1'),
+        (0x6cf55, 0xb8, 'gw_study_insistence_text',
+         'F000:70ae and auxiliary handler on repeated refusal'),
+        (0x6cf66, 0xe8, 'gw_study_insistence_auxiliary_call',
+         'near call to original OVL:0x6d564'),
+        (0x6cf6f, 0x8e, 'gw_study_new_instruction',
+         'select :03a2 prompt, print F000:70af'),
+        (0x6cfd4, 0x26, 'gw_study_record_prompt_stage', 'store :7906 = :7904'),
+        (0x6cfda, 0x8e, 'gw_study_acceptance_branch',
+         'accepted action tests progress signed >19 before response'),
+        (0x6cfe6, 0xb8, 'gw_study_completion_text',
+         'F000:70b0 on matched stage >19'),
+        (0x6cff1, 0x26, 'gw_study_progress_increment',
+         'increment :7904 before reading response far pointer at :03f2'),
+        (0x6d01c, 0x26, 'gw_study_clear_match_flag', 'reset :7909 to 0'),
+        (0x6d026, 0x26, 'gw_study_clear_previous_prompt', 'reset :7906 to 0'),
+        (0x6d031, 0x26, 'gw_study_clear_reminder', 'reset :7908 to 0'),
+    )
+    for file_offset, byte, name, detail in anchors:
+        relative = file_offset - section['original_file_offset']
+        require(0 <= relative < section['file_bytes'] and
+                (int(memory.getByte(start.add(relative))) & 0xff) == byte,
+                '%s original x86 anchor differs' % name)
+        currentProgram.getSymbolTable().createLabel(
+            start.add(relative), name, currentProgram.getGlobalNamespace(),
+            SourceType.USER_DEFINED)
+        note(start.add(relative), '%s; OVL:0x%x; %s; interior code, NOT a new function' %
+             (name, file_offset, detail))
+    return len(anchors)
+
+
 args = getScriptArgs()
 require(len(args) == 1, 'usage: ImportGatewayRtlink.py /absolute/ghidra-plan.json')
 plan_path = os.path.abspath(args[0])
@@ -188,7 +251,9 @@ register_types()
 imported = 0
 imported_labels = 0
 study_event_table_words = 0
+study_event_flow_edges = 0
 study_matcher_path_labels = 0
+study_response_path_labels = 0
 for section in plan['sections']:
     sid = section['id']
     prefix = 'GW_RT_%03d' % sid
@@ -230,8 +295,11 @@ for section in plan['sections']:
     if plan.get('fingerprinted_gateway', False):
         # The preparer has fingerprinted these original assets. Keep the
         # fixed table mapping out of unknown-image synthetic fixtures.
-        study_event_table_words += annotate_study_event_table(section, start)
+        words, edges = annotate_study_event_table(section, start)
+        study_event_table_words += words
+        study_event_flow_edges += edges
         study_matcher_path_labels += annotate_study_matcher_path(section, start)
+        study_response_path_labels += annotate_study_response_path(section, start)
     for label in section['labels']:
         address = start.add(label['offset'])
         annotate(address, label)
@@ -260,7 +328,9 @@ for label in plan['resident_labels']:
 
 report = dict(imported_sections=imported, labeled_overlay_entries=imported_labels,
               study_event_table_words=study_event_table_words,
+              study_event_flow_edges=study_event_flow_edges,
               study_matcher_path_labels=study_matcher_path_labels,
+              study_response_path_labels=study_response_path_labels,
               resident_matches=resident_matches)
 report_path = os.path.join(os.path.dirname(plan_path), 'ghidra-import-report.json')
 with open(report_path, 'w') as output:
