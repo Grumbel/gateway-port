@@ -23,13 +23,19 @@ EXPECTED_HASHES = {
 # These are *original file offsets*, established by native disassembly/traces.
 # A callsite is not a function boundary. The import script labels those only.
 KNOWN_OVERLAY = (
+    (0xc830, 'gw_relocate_child', 'function',
+     'section-4 linked-child unlink/move/prepend helper; native TAKE and room moves'),
     (0xc879, 'gw_unlink_child_head_call', 'callsite', 'section-4 head setter call'),
     (0xc8c2, 'gw_location_set_call', 'callsite', 'section-4 location setter call'),
     (0xc8f8, 'gw_insert_child_head_call', 'callsite', 'section-4 head setter call'),
     (0xd66b, 'gw_close_drawer', 'function', 'action 0x1d; section 5'),
+    (0xd804, 'gw_drop_precheck', 'function',
+     'action 0x32 selector-4 callback; intercepts book when not carried'),
     (0xd9a7, 'gw_drop_book', 'function', 'action 0x32; section 5'),
     (0xe8c4, 'gw_inventory', 'function', 'action 0x53; section 5'),
     (0xe942, 'gw_open_drawer', 'function', 'action 0x71; section 5'),
+    (0xfbaf, 'gw_take_precheck', 'function',
+     'action 0x46 selector-8 callback; intercepts book when already carried'),
     (0xfee1, 'gw_take_book', 'function', 'action 0x46; section 5'),
     (0x514b5, 'gw_your_quarters_handler', 'function', 'room 0x0ee; section 38'),
     (0x519b2, 'gw_book_handler', 'function', 'object 0x123; section 38'),
@@ -39,6 +45,8 @@ KNOWN_OVERLAY = (
 KNOWN_RESIDENT = (
     (0x60cf, 'gw_room_exit_dispatch', 'function',
      'type-1 room exit scan; original EXE file 0x60cf'),
+    (0x6156, 'gw_conditional_exit_case', 'instruction',
+     'kind-2 guard begins here; internal jump target, NOT a function entry'),
     (0x6175, 'gw_conditional_exit_gate_return', 'instruction',
      'instruction immediately after flag 0x0c query in the room dispatcher'),
     (0x6269, 'gw_callback_exit_case', 'instruction',
