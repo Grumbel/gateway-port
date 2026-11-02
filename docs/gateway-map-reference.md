@@ -73,10 +73,10 @@ state at every point in the story.
 
 ## Next native probes
 
-1. The ordinary **Your Quarters ↔ Heecheetown** connection is now native-
-   observed without a type-6 pair; see below. Verify the source callsite
-   against the original overlay and capture the corresponding child-list
-   mutations. A general direction-to-room lookup is still unrecovered.
+1. The ordinary **Your Quarters ↔ Heecheetown** connection is native-observed
+   without a type-6 pair. The source location-setter callsite and multiple
+   child-head writes now match the original OVL; see below. Next trace
+   the *caller of the move helper* to find who selects the destination.
 2. Separately observe a named type-6 passage (e.g. the Dock's cabin hatch) to
    see where its two relation words enter the room-change decision. Test both
    directions without assuming the hintbook arrow is a one-way constraint.
@@ -106,7 +106,8 @@ python3 tools/summarize_navigation_trace.py \
   --world build/parser-child-writes/world.json \
   --commands 'east,west,east,west,look,inventory,look' \
   --overlay-map build/rtlink-manifest.json \
-  --overlay-file ../gateway-dos/GATEMAIN.OVL
+  --overlay-file ../gateway-dos/GATEMAIN.OVL \
+  --child-heads
 ```
 
 The report shows candidate player-location changes, the native far-return
@@ -142,14 +143,13 @@ edge. It does **not** establish that every game room uses this path.
 
 All four setter calls return to `4319:16e7`. Under the verified section-4
 RTLink base (`0x4319` maps to OVL file offset `0xb1e0`), the return maps to
-OVL `0xc8c7`; a direct five-byte far call would begin at **`0xc8c2`**. That
-falls inside the already disassembled shared child-list relocation helper
-`GATEMAIN.OVL:0xc830–0xc911`, whose location-setter call targets
-`0157:064b`. This is compelling evidence that cardinal travel reuses the
-same object-move machinery as TAKE and DROP, but **the caller byte signature
-has not yet been checked against the original OVL**. The optional mapping
-above makes that check; it reports `unresolved` if the opcode/target doesn't
-match, rather than silently accepting this arithmetic inference.
+OVL `0xc8c7`. The user's subsequent run **verified the actual original
+five-byte far call at `GATEMAIN.OVL:0xc8c2`**, targeting `0157:064b`.
+That call falls inside the disassembled shared child-list relocation helper
+`GATEMAIN.OVL:0xc830–0xc911`. Cardinal travel therefore **uses the same
+location-update machinery as TAKE and DROP**, not a separate movement-only
+field setter. The optional mapping above checks both section identity and
+original call bytes; it rejects unverified/ambiguous addresses.
 
 The player is a **middle member** of the original room's linked child list,
 so a move may use a sibling setter for unlinking rather than the child-head
@@ -164,9 +164,57 @@ python3 tools/summarize_object_writes.py \
   --overlay-file ../gateway-dos/GATEMAIN.OVL
 ```
 
-`--relocations` reports only *adjacent old-head/new-head setter pairs*;
-it cannot capture a non-head removal on its own. A missing relocation pair
-is therefore not evidence that the player did not move between child lists.
+The user's report also confirmed two distinct far-call sites inside that
+same helper: `GATEMAIN.OVL:0xc879` unlinks a head, and `0xc8f8` inserts a
+head. Both calls target `0157:08fc`, the native indexed-child setter.
+
+| Guest ms | Player move | Old room's head replacement | New room's head insertion |
+| ---: | --- | --- | --- |
+| 18,266 | Quarters → Heecheetown | No head setter observed | Heecheetown (`0x0f1`) → player `0x0d3` |
+| 21,177 | Heecheetown → Quarters | Heecheetown (`0x0f1`) → `0x194` | Quarters (`0x0ee`) → player `0x0d3` |
+| 25,260–261 | Quarters → Heecheetown | Quarters (`0x0ee`) → `0x175` | Heecheetown (`0x0f1`) → player `0x0d3` |
+| 28,177 | Heecheetown → Quarters | Heecheetown (`0x0f1`) → `0x194` | Quarters (`0x0ee`) → player `0x0d3` |
+
+These are **native child-setter entry observations**, not independently
+verified post-write head values. The separate `0x0d3` location-setter
+service deltas *were* verified. The `--child-heads` option merges both
+sources into one report, filters out the unrelated `0x161` setters at
+similar timestamps, and requires original-byte-verified section-4 callers.
+
+The first EAST move begins with the player *within* the room's original
+sibling chain, so no old-head setter is expected. WEST inserts the player
+as Quarters' new head. The next EAST removes that head and restores
+`0x175` (**picture**), matching the previously decoded room list. Likewise,
+`0x194` is the head restored when leaving Heecheetown. This strongly
+supports the **shared unlink/prepend object-move algorithm** for room travel.
+It does not directly observe the first departure's *middle-sibling* update
+(`0157:0a4b`); a future trace must confirm it. `--relocations` only pairs
+adjacent old-head and new-head calls, so it naturally misses the initial
+middle-sibling removal and also includes unrelated `0x161` bookkeeping.
+
+### Next: identify the caller choosing the destination
+
+The known setter return `4319:16e7` points **inside** the move helper, not
+to the direction parser. The helper's entry at original section-4 file
+`0xc830` corresponds to runtime linear `0x447e0` in this default layout.
+To capture the entry stack and caller in another bounded replay, run:
+
+```sh
+python3 tools/trace_game_logic.py \
+  --scenario objects --native-only --verify-overlays \
+  --trace-state-writes --trace-object-writes d3 --trace-navigation \
+  --command-sequence 'east,west,east,west,look,inventory,look' \
+  --output build/room-navigation-caller
+
+rg '^entry .*pc=447e0\b' build/room-navigation-caller/native.trace
+```
+
+Each entry carries its guest CS, full initial stack words and frame chain.
+Check that `cs=4319` at the event and that the entry coincides with a
+verified player location transition; other overlay code may occupy the
+same linear address at other times. Identifying its **actual** caller and
+the input/destination argument flow is still future work, and this hook
+does not itself decode the navigation table.
 
 If nothing is reported, check whether the commands actually reached normal
 gameplay and whether another state variable tracks the current room. A

@@ -623,10 +623,15 @@ The scripted EAST/WEST replay has now **verified four native player moves**:
 `tools/summarize_navigation_trace.py` correlates those `0x0d3` location-set
 services with direct record writes, their guest return addresses, and—when
 given the original `GATEMAIN.OVL` and RTLink manifest—**byte-verified**
-original far-call sites. All four calls returned to `4319:16e7`, placing
-the predicted original location-setter call at OVL `0xc8c2` inside the
-same shared object-move helper used by TAKE/DROP. This original callsite
-still needs checking against the on-disk bytes; see
+original far-call sites. All four calls returned to `4319:16e7`, and the
+user's original-overlay check **confirmed** direct `CALL 0157:064b` at OVL
+`0xc8c2` inside the same shared object-move helper used by TAKE/DROP. The
+child-head setter trace independently maps the original unlink/insert sites
+and shows the player being prepended to each destination room; the second
+EAST restores Quarters' former head, picture `0x175`. The optional
+`--child-heads` report combines these observations. A `--trace-navigation`
+replay hook now records entry stacks at the shared move helper, to find the
+still-unidentified direction dispatcher; see
 [the navigation trace and next probes](docs/gateway-map-reference.md#verified-ordinary-first-room-movement).
 
 The standalone C++ model exposes the corresponding *local slot-filtering*

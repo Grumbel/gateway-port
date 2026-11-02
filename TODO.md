@@ -69,14 +69,17 @@ emulation. Keep the original executable as a behavioral reference while mapping:
   rooms; see `docs/gateway-map-reference.md`. The first ordinary compass
   replay now verifies four player `0x0d3` location changes: EAST moves
   Your Quarters (`0x0ee`) → Heecheetown (`0x0f1`), WEST moves back, and
-  both repeat. Every setter returns to `4319:16e7`, arithmetically pointing
-  to the shared relocation helper's direct CALL at original OVL `0xc8c2`.
-  `summarize_navigation_trace.py --overlay-map ... --overlay-file ...` must
-  **byte-verify** that call before the original offset can be confirmed.
-  Inspect middle-sibling unlink and child-head insertion during these moves;
-  the player starts in the room's *middle* child list, so head-only pairing
-  is incomplete. Next trace a named passage (Dock/cabin hatch) and recover
-  the actual direction-to-room decision. Verify passage restrictions,
+  both repeat. Every setter returns to `4319:16e7`: the user's original
+  overlay-byte verification confirms direct `CALL 0157:064b` at OVL
+  `0xc8c2` in the shared move helper. The original child-head setter calls
+  also verify the `0xc879` unlink and `0xc8f8` insertion sites. After the
+  first EAST (player initially in the *middle* room list), WEST inserts the
+  player as Quarters' new head; the next EAST restores head `0x175`
+  (picture). The first middle-sibling unlink is not traced yet.
+  `summarize_navigation_trace.py --child-heads` now correlates head calls
+  with verified player location changes. Trace the helper's **caller** with
+  `trace_game_logic.py --trace-navigation` to find direction-to-room
+  dispatch, then test a named passage (Dock/cabin hatch). Verify restrictions,
   bidirectionality, and actual PIC selection independently of map arrows.
   Also trace real non-head sibling and nested moves, extend to other record
   types, and establish which callers enable

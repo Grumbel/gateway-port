@@ -1000,24 +1000,28 @@ between Your Quarters (`0x0ee`) and Heecheetown (`0x0f1`), twice in each
 direction. Each returned to `4319:16e7`; the native writer was `0x11c32`,
 inside resident `0157:064b`. With the verified section-4 RTLink mapping,
 that far return corresponds to OVL file offset `0xc8c7`, immediately after
-a **predicted** five-byte call at `0xc8c2` in this shared helper.
+the five-byte direct call at `0xc8c2` in this shared helper.
 
-The optional original-overlay validation in
-`tools/summarize_navigation_trace.py` checks that `0xc8c2` really contains
-the direct `CALL 0157:064b` (`9a 4b 06 57 01`) before assigning this
-file offset. The user's observed return address by itself does not verify
-the on-disk opcode. The move destination choice is still unknown; these
-events reveal the *state-update mechanism*, not the code that selects the
-Heecheetown destination. See
+The user's original-overlay validation through
+`tools/summarize_navigation_trace.py` **confirmed** the direct
+`CALL 0157:064b` (`9a 4b 06 57 01`) at `0xc8c2` in original section 4.
+The move destination choice is still unknown; these events reveal the
+*state-update mechanism*, not the code that selects Heecheetown. See
 [the native navigation evidence](gateway-map-reference.md#verified-ordinary-first-room-movement).
 
 The player initially lies in the **middle** of Your Quarters' linked child
 list. Consequently, on travel the removal path may call the *sibling setter*
-`0157:0a4b`, not the indexed-head setter `0157:08fc`. The existing
-`summarize_object_writes.py --all-setters --relocations` report therefore
-cannot be used as a complete account of player list changes. Its positive
-original-byte-verified head insertions remain useful; a missing adjacent
-head-unlink pair is expected for middle-sibling removal.
+`0157:0a4b`, not the indexed-head setter `0157:08fc`. The user's child-head
+setter report confirms that the first EAST only recorded the new Heecheetown
+head `0x0d3`, while WEST recorded an unlink restoring Heecheetown head
+`0x194` and a prepend of `0x0d3` to Your Quarters. On the second EAST,
+the old Quarters head is restored to **`0x175` (picture)**;
+on the second WEST, Heecheetown again restores `0x194`. The two indexed-
+head sites are source-verified as original OVL `0xc879` (unlink) and
+`0xc8f8` (insert). These entry snapshots are not themselves post-write
+verification, and the first move's middle-sibling write remains unobserved.
+The new `summarize_navigation_trace.py --child-heads` correlates these
+calls with each independently verified player-location transition.
 
 The two unlink cases are visible at OVL `0xc869–0xc87e` (head) and
 `0xc883–0xc8b6` (middle). The new-head insertion is at `0xc8de–0xc90b`.
