@@ -12,6 +12,8 @@ using gateway::StoryNormalGuard;
 using gateway::StoryCarryPrecheck;
 using gateway::StoryChildCandidate;
 using gateway::StoryStudyMatch;
+using gateway::StoryStudyResponsePath;
+using gateway::StoryStudyResponseState;
 
 void expect(std::vector<StoryMutation> actual, std::initializer_list<StoryMutation> expected,
             const char *message) {
@@ -165,15 +167,16 @@ int main() {
         // records are independent of the response-handler counter update.
         // Each rule below was read from the ORIGINAL [DS:9652] table in an
         // unmodified Stage-20 native RAM snapshot, not inferred from prose.
-        constexpr std::array<gateway::StoryStudyActionRule, 19> expected_study{{
+        constexpr std::array<gateway::StoryStudyActionRule, 20> expected_study{{
             {0xb1, 0}, {0xa4, 0x2be}, {0x47, 0}, {0x52, 0},
             {0x08, 0xd3, 0x55, 0x56, true}, {0x18, 0xe4}, {0x96, 0xe4},
             {0x16, 0x165}, {0x52, 0x2bf, 0x18, 0, true}, {0x94, 0},
             {0x23, 0}, {0x23, 0}, {0x1c, 0, 0x1b, 0, true},
             {0x08, 0x2be, 0x55, 0x56, true}, {0x15, 0x2bf}, {0x1f, 0},
             {0x88, 0xe4}, {0x57, 0x2de}, {0x92, 0x2be, 0x19, 0x18, true},
+            {0x84, 0},
         }};
-        for (int i = 1; i <= 19; ++i) {
+        for (int i = 1; i <= 20; ++i) {
             const auto rule = StoryModel::study_action_rule(static_cast<std::int16_t>(i));
             if (!rule || *rule != expected_study[i - 1])
                 throw std::runtime_error("Study stage record differs from original RAM");
@@ -203,7 +206,7 @@ int main() {
                     throw std::runtime_error("Study alternate action codes were omitted");
             }
         }
-        for (std::int16_t progress : {-32768, -1, 0, 20, 32767}) {
+        for (std::int16_t progress : {-32768, -1, 0, 21, 32767}) {
             if (StoryModel::study_action_rule(progress) ||
                 StoryModel::evaluate_study_action(progress, 0xb1, 0, player, false) !=
                     StoryStudyMatch::Ineligible)
@@ -226,6 +229,75 @@ int main() {
             StoryModel::evaluate_study_action(19, 0, 0x2be, player, false) !=
                 StoryStudyMatch::WrongAction)
             throw std::runtime_error("Study zero-valued alternative was misinterpreted");
+
+        // The original response function at OVL 0x6ce85 decides prompts,
+        // reminders, insistence and accepted progress independently of the
+        // room's action matcher. It always returns AX=1; these results are
+        // a bounded *pure control-flow* translation, not rendered dialogue.
+        StoryStudyResponseState therapy{};
+        auto response = StoryModel::evaluate_study_response(therapy, true, false);
+        if (!response || response->path != StoryStudyResponsePath::NewPrompt ||
+            response->story_token != 0x70af || response->table_stage != 1 ||
+            response->calls_auxiliary_handler ||
+            response->next != StoryStudyResponseState{1, 1, false, false})
+            throw std::runtime_error("Study new-prompt path did not initialize stage 1");
+        therapy = response->next;
+        response = StoryModel::evaluate_study_response(therapy, true, false);
+        if (!response || response->path != StoryStudyResponsePath::RepeatPrompt ||
+            response->story_token != 0x70ad || response->table_stage != 1 ||
+            response->next != StoryStudyResponseState{1, 1, true, false})
+            throw std::runtime_error("Study first repeated prompt failed to set :7908");
+        therapy = response->next;
+        response = StoryModel::evaluate_study_response(therapy, true, false);
+        if (!response || response->path != StoryStudyResponsePath::Insistence ||
+            response->story_token != 0x70ae || response->table_stage != 0 ||
+            !response->calls_auxiliary_handler || response->next != therapy)
+            throw std::runtime_error("Study second repetition skipped native auxiliary path");
+        therapy.action_matched = true;
+        response = StoryModel::evaluate_study_response(therapy, true, false);
+        if (!response || response->path != StoryStudyResponsePath::Accepted ||
+            response->story_token != 0x70b1 || response->table_stage != 1 ||
+            response->next != StoryStudyResponseState{2, 0, false, false})
+            throw std::runtime_error("Study acceptance failed to reset three guest fields");
+        // At stages 3 and 13 the response handler's direct-membership
+        // predicate marks success *after* UP/DOWN moved the player away.
+        for (int stage : {3, 13}) {
+            therapy = StoryStudyResponseState{static_cast<std::int16_t>(stage),
+                                               static_cast<std::uint16_t>(stage), false, false};
+            const bool couch = stage == 3, desk = stage == 13;
+            auto still_nested = StoryModel::evaluate_study_response(therapy, couch, desk);
+            if (!still_nested || still_nested->path != StoryStudyResponsePath::RepeatPrompt)
+                throw std::runtime_error("Study response ignored unchanged couch/desk posture");
+            auto after_move = StoryModel::evaluate_study_response(therapy, false, false);
+            if (!after_move || after_move->path != StoryStudyResponsePath::Accepted ||
+                after_move->table_stage != stage || after_move->next.progress != stage + 1 ||
+                after_move->next.action_matched)
+                throw std::runtime_error("Study UP/DOWN completion missed native posture check");
+        }
+        for (int stage = 1; stage <= 19; ++stage) {
+            therapy = StoryStudyResponseState{static_cast<std::int16_t>(stage), 0, true, true};
+            response = StoryModel::evaluate_study_response(therapy, true, true);
+            if (!response || response->path != StoryStudyResponsePath::Accepted ||
+                response->table_stage != stage || response->next.progress != stage + 1 ||
+                response->next.previous_prompt_stage != 0 ||
+                response->next.reminder_shown || response->next.action_matched)
+                throw std::runtime_error("Study response stage acceptance skipped reset");
+        }
+        therapy = StoryStudyResponseState{20, 0, false, true};
+        response = StoryModel::evaluate_study_response(therapy, true, true);
+        if (!response || response->path != StoryStudyResponsePath::Completion ||
+            response->story_token != 0x70b0 || !response->calls_auxiliary_handler ||
+            response->next != therapy)
+            throw std::runtime_error("Study completion path failed original >19 comparison");
+        for (std::int16_t stage : {-32768, -1, 21, 32767}) {
+            if (StoryModel::evaluate_study_response({stage, 0, false, true}, true, true))
+                throw std::runtime_error("Study response admitted an unbounded native stage");
+        }
+        response = StoryModel::evaluate_study_response({20, 0, false, false}, true, true);
+        if (!response || response->path != StoryStudyResponsePath::NewPrompt ||
+            response->story_token != 0x70af || response->table_stage != 20 ||
+            response->next.previous_prompt_stage != 20)
+            throw std::runtime_error("Study failed to select native terminal SLEEP prompt");
 
         // Native child-slot eligibility is distinct from relation traversal
         // and from the action handlers' OPEN/CLOSE guards.

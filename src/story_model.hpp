@@ -63,6 +63,32 @@ struct StoryStudyActionRule {
 
 enum class StoryStudyMatch { Ineligible, WrongObject, WrongAction, Matched };
 
+// Guest fields [DS:9660]:7904, [DS:967a]:7906, [DS:967c]:7908,
+// [DS:9662]:7909, expressed as a small value object. This has no authority
+// over parser state, object locations or the real DOS narrative output.
+struct StoryStudyResponseState {
+    std::int16_t progress = 0;
+    std::uint16_t previous_prompt_stage = 0;
+    bool reminder_shown = false;
+    bool action_matched = false;
+
+    bool operator==(const StoryStudyResponseState &) const = default;
+};
+
+enum class StoryStudyResponsePath {
+    NewPrompt, RepeatPrompt, Insistence, Accepted, Completion,
+};
+
+struct StoryStudyResponseOutcome {
+    StoryStudyResponseState next;
+    StoryStudyResponsePath path;
+    std::uint16_t story_token = 0;  // Original F000 offset only, not a C string.
+    std::uint16_t table_stage = 0;  // 0 means no far-pointer table lookup.
+    bool calls_auxiliary_handler = false;
+
+    bool operator==(const StoryStudyResponseOutcome &) const = default;
+};
+
 // A single slot that survives the resident parser's *optional* eligibility
 // check and its nonzero-child test. This is not a resolved parser target.
 struct StoryChildCandidate {
@@ -161,7 +187,8 @@ public:
     // action code at [DS:9654]:e664 and parsed object at [DS:9658]:055e
     // against per-stage records [DS:9652]:02a8 + 4*progress and five
     // alternate-code records at :02fc. Only player actor 0x0d3, stages
-    // 1..19, and an unset :7909 completion byte enter this bounded path.
+    // 1..20 (20 = terminal SLEEP), and an unset :7909 completion byte enter
+    // this bounded path.
     // The native code handles other event-1 branches and writes :7909;
     // this read-only predicate neither implements those nor advances :7904.
     static std::optional<StoryStudyActionRule> study_action_rule(std::int16_t progress);
@@ -170,6 +197,17 @@ public:
                                                  StoryObjectId parsed_object,
                                                  StoryObjectId actor,
                                                  bool action_already_matched);
+
+    // Original section-51 function OVL:0x6ce85–0x6d04d. The *caller*
+    // supplies native 0157:000c direct-membership results for couch 0x2be
+    // and desk 0x2bf; they are not inferred from the model's locations.
+    // This models only the bounded prompt/retry/acceptance control path and
+    // four guest fields, not the actual text service or auxiliary call.
+    // Nullopt marks unsupported/corrupt stages which could index beyond the
+    // original action/prompt table. Stage 20's *unmatched* branch still has
+    // a valid terminal prompt pointer; a matched stage 20 calls completion.
+    static std::optional<StoryStudyResponseOutcome> evaluate_study_response(
+        StoryStudyResponseState state, bool player_on_couch, bool player_on_desk);
 
     // Only the mutations of an already-successful action, as observed for
     // Gateway's first-room drawer/book scenario. The original DOS handlers

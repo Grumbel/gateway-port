@@ -10,9 +10,10 @@ namespace {
 // Native RAM table at [DS:9652]:02a8 + 4*stage (stage zero is unused),
 // and the five :02fc alternative entries, extracted from the unmodified
 // Study snapshot. The order is the signed :7904 dialogue stage, not an
-// ordering of ordinary parser verbs. A zero alternative is a real byte
+// ordering of ordinary parser verbs. The stage-20 terminal SLEEP record is
+// at :02f8, directly before the alternate table. A zero alternative is a real byte
 // comparison in the DOS loop, rather than a missing alternative.
-constexpr std::array<StoryStudyActionRule, 19> study_rules{{
+constexpr std::array<StoryStudyActionRule, 20> study_rules{{
     {0xb1, 0x0000},
     {0xa4, 0x02be},
     {0x47, 0x0000},
@@ -32,6 +33,7 @@ constexpr std::array<StoryStudyActionRule, 19> study_rules{{
     {0x88, 0x00e4},
     {0x57, 0x02de},
     {0x92, 0x02be, 0x19, 0x18, true},
+    {0x84, 0x0000},  // Terminal instruction from :02f8: sleep.
 }};
 
 } // namespace
@@ -62,6 +64,58 @@ StoryStudyMatch StoryModel::evaluate_study_action(std::int16_t progress,
           native_action_code == rule->alternative_code_2)))
         return StoryStudyMatch::Matched;
     return StoryStudyMatch::WrongAction;
+}
+
+std::optional<StoryStudyResponseOutcome> StoryModel::evaluate_study_response(
+    StoryStudyResponseState state, bool player_on_couch, bool player_on_desk) {
+    // OVL 0x6ce85–0x6d04d: initialize an empty Study counter, then test
+    // completion before choosing either a new/repeated prompt or a response.
+    // The original prompt table has a valid stage-20 terminal pointer
+    // (shared with response entry zero), but per-stage responses only run
+    // through 19. The terminal matched branch prints F000:70b0 instead.
+    if (state.progress < 0 || state.progress > 20)
+        return std::nullopt;
+    if (state.progress == 0)
+        state.progress = 1;
+
+    // A successful UP at stage 3 or DOWN at stage 13 is detected by the
+    // *absence* of the player's old direct parent, after native callback
+    // 0x2b or 0x05 has already moved them. The room event-1 action matcher
+    // does not have to write :7909 for these two actions.
+    if (!state.action_matched &&
+        ((state.progress == 3 && !player_on_couch) ||
+         (state.progress == 13 && !player_on_desk)))
+        state.action_matched = true;
+
+    if (state.action_matched) {
+        if (state.progress == 20)
+            return StoryStudyResponseOutcome{state, StoryStudyResponsePath::Completion,
+                                              0x70b0, 0, true};
+        const auto stage = static_cast<std::uint16_t>(state.progress);
+        ++state.progress;  // OVL 0x6cff1, BEFORE the response far-pointer call.
+        state.action_matched = false;  // OVL 0x6d01c.
+        state.previous_prompt_stage = 0;  // OVL 0x6d026.
+        state.reminder_shown = false;  // OVL 0x6d031.
+        return StoryStudyResponseOutcome{state, StoryStudyResponsePath::Accepted,
+                                          0x70b1, stage, false};
+    }
+
+    if (state.previous_prompt_stage != static_cast<std::uint16_t>(state.progress)) {
+        state.previous_prompt_stage = static_cast<std::uint16_t>(state.progress);
+        return StoryStudyResponseOutcome{state, StoryStudyResponsePath::NewPrompt,
+                                          0x70af,
+                                          static_cast<std::uint16_t>(state.progress), false};
+    }
+    if (!state.reminder_shown) {
+        state.reminder_shown = true;  // OVL 0x6cf4c.
+        return StoryStudyResponseOutcome{state, StoryStudyResponsePath::RepeatPrompt,
+                                          0x70ad,
+                                          static_cast<std::uint16_t>(state.progress), false};
+    }
+    // OVL 0x6cf55–0x6cf69 calls the same auxiliary native handler as the
+    // >19 completion path, but does not clear :7908 or :7906 itself.
+    return StoryStudyResponseOutcome{state, StoryStudyResponsePath::Insistence,
+                                      0x70ae, 0, true};
 }
 
 void StoryModel::define(StoryObjectId id, std::optional<StoryObjectId> location) {
