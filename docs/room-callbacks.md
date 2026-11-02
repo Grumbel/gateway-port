@@ -12,6 +12,9 @@ The resident room scanner passes **event `0x000f`** to the callback gate.
 The same table is also called by object/event logic with **event `0x0001`**:
 the observed Casino callback `0x14` returns `AX=0x00f6` in that *other*
 context. Do not infer a traversable room exit from those non-room calls.
+The section-qualified RTLink manager census now corroborates these calls
+across four ordinary gameplay replays; the event/AX breakdown and independent
+movement checks are in [callback-event-coverage.md](callback-event-coverage.md).
 
 ## Complete static directory from one native snapshot
 

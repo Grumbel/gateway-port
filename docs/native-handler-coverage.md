@@ -176,3 +176,6 @@ of the game's story has been understood. Previously confirmed room transfer,
 action selection and object mutation logic remains documented in
 [`room-transfer.md`](room-transfer.md), [`game-logic.md`](game-logic.md),
 and [`action-dispatch.md`](action-dispatch.md).
+
+For event-aware callback coverage across ordinary Casino, Beach reward, and
+VR `UP` replays, see [callback-event-coverage.md](callback-event-coverage.md).
