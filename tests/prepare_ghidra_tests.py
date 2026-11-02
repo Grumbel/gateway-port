@@ -226,11 +226,16 @@ class GhidraPlanTests(unittest.TestCase):
                 schema_version=1, targets=[dict(name='test_routine')],
                 completed=1, failed=0, requested=1)))
             (self.root / 'pseudocode.txt').write_text('verified test output')
+            (self.root / 'ghidra-callgraph.json').write_text(json.dumps(dict(
+                schema_version=1, targets=[dict(name='test_routine', edges=[],
+                                                unresolved_calls=[])],
+                unique_containing_functions=1, static_call_references=0)))
             # Simulate fresh reports appearing *during* the headless invocation.
             old_exists = Path.exists
             def exists_after_invocation(path):
                 if path in (self.root / 'ghidra-import-report.json',
                             self.root / 'ghidra-decompile-report.json',
+                            self.root / 'ghidra-callgraph.json',
                             self.root / 'pseudocode.txt') and not invoke.called:
                     return False
                 return old_exists(path)
@@ -256,15 +261,49 @@ class GhidraPlanTests(unittest.TestCase):
                 schema_version=1, targets=[dict(name='test_routine')],
                 completed=1, failed=0, requested=1)))
             (self.root / 'pseudocode.txt').write_text('mock decompiler output')
+            (self.root / 'ghidra-callgraph.json').write_text('{}')
             old_exists = Path.exists
             def exists_after_invocation(path):
                 if path in (self.root / 'ghidra-import-report.json',
                             self.root / 'ghidra-decompile-report.json',
+                            self.root / 'ghidra-callgraph.json',
                             self.root / 'pseudocode.txt') and not invoke.called:
                     return False
                 return old_exists(path)
             with patch('run_ghidra.Path.exists', exists_after_invocation):
                 with self.assertRaisesRegex(ValueError, '23 native Study event branches'):
+                    run(Path('exe'), Path('ovl'), self.root, Path('tool'))
+
+    def test_runner_rejects_incomplete_static_callgraph(self):
+        plan_path = self.root / 'ghidra-plan.json'
+        plan_path.write_text(json.dumps(dict(exe_file='/input/GATEMAIN.EXE')))
+        example = dict(fingerprinted_gateway=False, sections=[dict(
+            fixup_count=0, labels=[dict(name='test_routine', role='function')])],
+            resident_labels=[])
+        with patch('run_ghidra.prepare', return_value=(plan_path, example)), \
+                patch('run_ghidra.find_headless', return_value=Path('/bin/headless')), \
+                patch('run_ghidra.subprocess.run') as invoke:
+            (self.root / 'ghidra-import-report.json').write_text(json.dumps(dict(
+                imported_sections=1, labeled_overlay_entries=1)))
+            (self.root / 'ghidra-decompile-report.json').write_text(json.dumps(dict(
+                schema_version=1, targets=[dict(name='test_routine')],
+                completed=1, failed=0, requested=1)))
+            (self.root / 'pseudocode.txt').write_text('mock pseudocode')
+            (self.root / 'ghidra-callgraph.json').write_text(json.dumps(dict(
+                schema_version=1, targets=[], unique_containing_functions=0,
+                static_call_references=0)))
+            old_exists = Path.exists
+
+            def exists_after_invocation(path):
+                if path in (self.root / 'ghidra-import-report.json',
+                            self.root / 'ghidra-decompile-report.json',
+                            self.root / 'ghidra-callgraph.json',
+                            self.root / 'pseudocode.txt') and not invoke.called:
+                    return False
+                return old_exists(path)
+
+            with patch('run_ghidra.Path.exists', exists_after_invocation):
+                with self.assertRaisesRegex(ValueError, 'static callgraph'):
                     run(Path('exe'), Path('ovl'), self.root, Path('tool'))
 
     def test_runner_rejects_incomplete_fingerprinted_study_matcher(self):
@@ -285,11 +324,13 @@ class GhidraPlanTests(unittest.TestCase):
                 schema_version=1, targets=[dict(name='test_routine')],
                 completed=1, failed=0, requested=1)))
             (self.root / 'pseudocode.txt').write_text('mock decompiler output')
+            (self.root / 'ghidra-callgraph.json').write_text('{}')
             old_exists = Path.exists
 
             def exists_after_invocation(path):
                 if path in (self.root / 'ghidra-import-report.json',
                             self.root / 'ghidra-decompile-report.json',
+                            self.root / 'ghidra-callgraph.json',
                             self.root / 'pseudocode.txt') and not invoke.called:
                     return False
                 return old_exists(path)
@@ -323,11 +364,13 @@ class GhidraPlanTests(unittest.TestCase):
                     schema_version=1, targets=[dict(name='test_routine')],
                     completed=1, failed=0, requested=1)))
                 (self.root / 'pseudocode.txt').write_text('mock decompiler output')
+                (self.root / 'ghidra-callgraph.json').write_text('{}')
                 old_exists = Path.exists
 
                 def exists_after_invocation(path):
                     if path in (self.root / 'ghidra-import-report.json',
                                 self.root / 'ghidra-decompile-report.json',
+                                self.root / 'ghidra-callgraph.json',
                                 self.root / 'pseudocode.txt') and not invoke.called:
                         return False
                     return old_exists(path)

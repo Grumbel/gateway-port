@@ -64,7 +64,8 @@ def run(exe, ovl, output, overlay_tool, objects_json=None,
         raise ValueError('Ghidra project already exists: %s; choose --project-name '
                          'or inspect the existing project' % project_name)
     reports = (output / 'ghidra-import-report.json',
-               output / 'ghidra-decompile-report.json', output / 'pseudocode.txt')
+               output / 'ghidra-decompile-report.json', output / 'pseudocode.txt',
+               output / 'ghidra-callgraph.json')
     if not prepare_only and any(item.exists() for item in reports):
         raise ValueError('Ghidra output reports already exist in %s; choose a fresh '
                          'output directory so stale results cannot be mistaken for success' % output)
@@ -87,6 +88,7 @@ def run(exe, ovl, output, overlay_tool, objects_json=None,
                              output / 'ghidra-script.log', output / 'ghidra.log'))
     imported = json.loads(reports[0].read_text())
     decompiled = json.loads(reports[1].read_text())
+    callgraph = json.loads(reports[3].read_text())
     expected_labels = sum(len(section['labels']) for section in plan['sections'])
     if (imported.get('imported_sections') != len(plan['sections']) or
         imported.get('labeled_overlay_entries') != expected_labels):
@@ -115,10 +117,19 @@ def run(exe, ovl, output, overlay_tool, objects_json=None,
         decompiled.get('completed') + decompiled.get('failed') != len(expected) or
         not reports[2].stat().st_size):
         raise ValueError('Ghidra decompile report is incomplete or mismatches the plan')
+    graph_targets = callgraph.get('targets', [])
+    if (callgraph.get('schema_version') != 1 or
+        [item.get('name') for item in graph_targets] != expected or
+        not all(isinstance(item.get('edges'), list) and
+                isinstance(item.get('unresolved_calls'), list) for item in graph_targets) or
+        not isinstance(callgraph.get('unique_containing_functions'), int) or
+        not isinstance(callgraph.get('static_call_references'), int)):
+        raise ValueError('Ghidra static callgraph is incomplete or mismatches the plan')
     print('Ghidra import report: %s' % reports[0])
     print('Decompiled %d/%d targets (including internal branch contexts).' % (
         decompiled['completed'], decompiled['requested']))
     print('Ghidra pseudocode: %s' % reports[2])
+    print('Ghidra static callgraph: %s' % reports[3])
     return plan_path
 
 

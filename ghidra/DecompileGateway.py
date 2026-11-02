@@ -47,11 +47,67 @@ lines = [
     '',
 ]
 results = []
+callgraph_targets = []
+section_blocks = {}
+for section in plan['sections']:
+    section_blocks['GW_RT_%03d' % section['id']] = section
+known_entries = dict((str(address), name) for name, address, origin, role in targets)
+callgraph_cache = {}
+
+
+def source_offset(address):
+    block = memory.getBlock(address)
+    if block is None or block.getName() not in section_blocks:
+        return None
+    section = section_blocks[block.getName()]
+    offset = address.subtract(block.getStart())
+    if offset < 0 or offset >= section['file_bytes']:
+        return None
+    return section['original_file_offset'] + offset
+
+
+def static_calls(function):
+    """References Ghidra resolved statically; not an executed RTLink call graph."""
+    key = str(function.getEntryPoint())
+    if key in callgraph_cache:
+        return callgraph_cache[key]
+    edges = []
+    unresolved = []
+    instructions = currentProgram.getListing().getInstructions(function.getBody(), True)
+    while instructions.hasNext():
+        instruction = instructions.next()
+        from_address = instruction.getAddress()
+        references = [ref for ref in instruction.getReferencesFrom()
+                      if ref.getReferenceType().isCall()]
+        for ref in references:
+            target = ref.getToAddress()
+            destination = getFunctionAt(target)
+            if destination is None:
+                destination = getFunctionContaining(target)
+            edges.append(dict(callsite=str(from_address),
+                              source_ovl_file_offset=source_offset(from_address),
+                              destination=str(target),
+                              destination_ovl_file_offset=source_offset(target),
+                              known_target=known_entries.get(str(target)),
+                              containing_function=str(destination.getEntryPoint())
+                              if destination is not None else None,
+                              ref_type=str(ref.getReferenceType())))
+        if instruction.getFlowType().isCall() and not references:
+            unresolved.append(str(from_address))
+    value = dict(function_entry=key, edges=edges, unresolved_calls=unresolved)
+    callgraph_cache[key] = value
+    return value
+
+
 for name, address, origin, role in targets:
     lines.append('===== %s at %s (%s; %s) =====' % (name, address, origin, role))
     item = dict(name=name, origin=origin, address=str(address), role=role,
                 function_entry=None, status='missing')
     results.append(item)
+    graph_item = dict(name=name, origin=origin, role=role,
+                      requested_address=str(address), function_entry=None,
+                      edges=[], unresolved_calls=[])
+    callgraph_targets.append(graph_item)
     if role == 'instruction':
         function = getFunctionContaining(address)
         if function is None:
@@ -108,6 +164,8 @@ for name, address, origin, role in targets:
             lines.append('')
             continue
     item['function_entry'] = str(function.getEntryPoint())
+    graph = static_calls(function)
+    graph_item.update(graph)
     try:
         if role in ('function', 'callback-entry', 'object-entry-candidate',
                     'overlay-entry-candidate'):
@@ -143,5 +201,13 @@ summary = dict(schema_version=1, targets=results, completed=success,
 report_path = os.path.join(os.path.dirname(args[0]), 'ghidra-decompile-report.json')
 with open(report_path, 'w') as output:
     json.dump(summary, output, indent=2)
+callgraph_path = os.path.join(os.path.dirname(args[0]), 'ghidra-callgraph.json')
+with open(callgraph_path, 'w') as output:
+    json.dump(dict(schema_version=1, targets=callgraph_targets,
+                   unique_containing_functions=len(callgraph_cache),
+                   unresolved_call_instructions=sum(len(v['unresolved_calls'])
+                                                    for v in callgraph_cache.values()),
+                   static_call_references=sum(len(v['edges'])
+                                              for v in callgraph_cache.values())), output, indent=2)
 println('Gateway Ghidra: pseudocode for %d/%d entry/branch targets: %s' % (
     success, len(results), args[1]))
