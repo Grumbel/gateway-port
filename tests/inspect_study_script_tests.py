@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Asset-independent tests for native Study far-pointer table decoding."""
+"""Asset-independent tests for Study event-1 matcher and text tables."""
 
 from pathlib import Path
 import struct
@@ -9,6 +9,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 
 from inspect_study_script import (decode_study_script, MEMORY_LIMIT,
+                                  ACTION_TABLE_OFFSET, ALTERNATIVES_OFFSET,
                                   PROMPT_TABLE_OFFSET, RESPONSE_TABLE_OFFSET)
 
 
@@ -28,10 +29,21 @@ class StudyScriptTests(unittest.TestCase):
         self.memory = bytearray(MEMORY_LIMIT)
         self.words(DS * 16 + 0x9652, TABLE)
         for stage in range(1, 20):
+            address = TABLE * 16 + ACTION_TABLE_OFFSET + 4 * stage
+            self.memory[address] = 0x30 + stage
+            self.words(address + 2, 0x100 + stage)
             self.words(TABLE * 16 + PROMPT_TABLE_OFFSET + 4 * stage,
                        0x7000 + stage, 0xf000)
             self.words(TABLE * 16 + RESPONSE_TABLE_OFFSET + 4 * stage,
                        0x7010 + stage, 0xf000)
+        for index, (stage, first, second) in enumerate(((5, 0x55, 0x56),
+                                                       (9, 0x18, 0),
+                                                       (13, 0x1b, 0),
+                                                       (14, 0x55, 0x56),
+                                                       (19, 0x19, 0x18))):
+            address = TABLE * 16 + ALTERNATIVES_OFFSET + 4 * index
+            self.words(address, stage)
+            self.memory[address + 2:address + 4] = bytes((first, second))
 
     def words(self, address, *words):
         struct.pack_into('<' + 'H' * len(words), self.memory, address, *words)
@@ -43,9 +55,26 @@ class StudyScriptTests(unittest.TestCase):
         stages = self.decode()
         self.assertEqual(len(stages), 19)
         self.assertEqual(stages[0], dict(stage=1, instruction='token 1',
-                                         response='token 17'))
+                                         response='token 17', action_code=0x31,
+                                         target_object=0x101, alternative_codes=[]))
         self.assertEqual(stages[-1], dict(stage=19, instruction='token 19',
-                                          response='token 35'))
+                                          response='token 35', action_code=0x43,
+                                          target_object=0x113,
+                                          alternative_codes=[0x19, 0x18]))
+        self.assertEqual(stages[8]['alternative_codes'], [0x18, 0])
+        self.assertEqual(stages[12]['alternative_codes'], [0x1b, 0])
+        self.assertEqual(stages[6]['alternative_codes'], [])
+
+    def test_rejects_duplicate_invalid_or_zero_alternative_stage(self):
+        first_address = TABLE * 16 + ALTERNATIVES_OFFSET
+        second_address = first_address + 4
+        for malformed_stage in (0, 20, 0xffff, 5):
+            with self.subTest(malformed_stage=malformed_stage):
+                self.words(second_address, malformed_stage)
+                with self.assertRaisesRegex(ValueError, 'alternative stage'):
+                    self.decode()
+        self.words(second_address, 9)
+        self.assertEqual(len(self.decode()), 19)
 
     def test_mixed_real_segment_and_f000_tokens(self):
         self.words(TABLE * 16 + PROMPT_TABLE_OFFSET + 4, 0x40, 0x1200)

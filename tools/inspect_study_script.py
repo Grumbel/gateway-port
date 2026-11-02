@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""Decode the 19 native Study therapy instructions from a guest RAM snapshot.
+"""Decode the 19 native Study therapy stages from a guest RAM snapshot.
 
 Original GATEMAIN.OVL:0x6cf24/0x6cf7c/0x6cffa indexes two far-pointer
 tables through [DS:9652]. These are read-only research records, not a story
 bytecode interpreter. Each pointer is either a F000 text token or an actual
 guest memory C string; the response table is used after the native action.
+The event-1 matcher at OVL:0x6b6ec/0x6b735/0x6b7dc uses two additional
+tables in the same segment for action codes, object targets and alternatives.
 """
 
 import argparse
+import json
 from pathlib import Path
 import struct
 
@@ -17,6 +20,9 @@ from inspect_beach_pin import inspect_snapshot
 
 MEMORY_LIMIT = 0xa0000
 TABLE_POINTER_OFFSET = 0x9652
+ACTION_TABLE_OFFSET = 0x02a8
+ALTERNATIVES_OFFSET = 0x02fc
+ALTERNATIVES_COUNT = 5
 PROMPT_TABLE_OFFSET = 0x03a2
 RESPONSE_TABLE_OFFSET = 0x03f2
 FIRST_STAGE = 1
@@ -31,7 +37,7 @@ def _word(memory, linear):
 
 
 def decode_study_script(memory, ds, strings):
-    """Return stage, instruction and response with strict guest pointer checks.
+    """Return native stage matching data and text with strict guest pointer checks.
 
     `strings` can be any object exposing `get(segment_index, string_index)`;
     a synthetic provider keeps the pointer/array tests asset-independent.
@@ -61,20 +67,42 @@ def decode_study_script(memory, ds, strings):
             raise ValueError('unterminated native Study script string')
         return memory[address:end].decode('cp437')
 
+    alternatives = {}
+    for index in range(ALTERNATIVES_COUNT):
+        linear = table_segment * 16 + ALTERNATIVES_OFFSET + 4 * index
+        stage = _word(memory, linear)
+        if not FIRST_STAGE <= stage <= LAST_STAGE or stage in alternatives:
+            raise ValueError('invalid or duplicate native Study alternative stage')
+        # Original code compares both bytes, including a zero-valued byte.
+        alternatives[stage] = [_byte(memory, linear + 2),
+                               _byte(memory, linear + 3)]
+
     stages = []
     for stage in range(FIRST_STAGE, LAST_STAGE + 1):
+        linear = table_segment * 16 + ACTION_TABLE_OFFSET + 4 * stage
         stages.append(dict(
             stage=stage,
+            action_code=_byte(memory, linear),
+            target_object=_word(memory, linear + 2),
+            alternative_codes=alternatives.get(stage, []),
             instruction=far_text(PROMPT_TABLE_OFFSET + 4 * stage),
             response=far_text(RESPONSE_TABLE_OFFSET + 4 * stage),
         ))
     return stages
 
 
+def _byte(memory, linear):
+    if not 0 <= linear < MEMORY_LIMIT or linear >= len(memory):
+        raise ValueError('Study table byte outside conventional guest memory')
+    return memory[linear]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('snapshot', type=Path, help='native dump prefix without .bin/.regs')
     parser.add_argument('--strings', type=Path, required=True, help='original GATESTR.DAT')
+    parser.add_argument('--format', choices=('text', 'json'), default='text',
+                        help='emit a human-readable listing or structured records')
     args = parser.parse_args()
     try:
         state = inspect_snapshot(args.snapshot)
@@ -83,11 +111,16 @@ def main():
                                      GatewayStrings(args.strings.read_bytes()))
     except (OSError, ValueError, KeyError, struct.error) as error:
         parser.exit(1, 'inspect_study_script: %s\n' % error)
-    for stage in stages:
-        print('%2d: %-44s | %s' % (stage['stage'],
-                                    stage['instruction'], stage['response']))
-    print('19 far-pointer stages from an original native snapshot; these strings '
-          'do not establish that any corresponding player action succeeded.')
+    if args.format == 'json':
+        print(json.dumps(stages, indent=2, ensure_ascii=False))
+    else:
+        for stage in stages:
+            alternatives = ','.join('%02x' % code for code in stage['alternative_codes'])
+            print('%2d: action=%02x target=%04x alternatives=%-5s | %-44s | %s' % (
+                stage['stage'], stage['action_code'], stage['target_object'],
+                alternatives or '-', stage['instruction'], stage['response']))
+        print('19 original native stages; the decoded matcher entries do not establish '
+              'that every corresponding player command succeeded.')
 
 
 if __name__ == '__main__':
