@@ -187,3 +187,9 @@ standalone script language.
 The first full room-event table and partial `look` translation are now recorded
 in [Your Quarters](room-your-quarters.md), including confirmed text 3/0–3/5,
 all 24 jump destinations, object flag reads/writes and outstanding field names.
+
+The kind-4 room-exit path also has a [complete 44-entry native callback
+directory](room-callbacks.md): 236 records map to verified RTLink trampolines
+in 22 overlay sections. Ghidra now emits pseudocode for every entry, and a
+Casino EAST Unicorn replay validates one callback's event `0x0f`, `AX=0`
+result and no-move outcome. Other callbacks' branches remain static leads.

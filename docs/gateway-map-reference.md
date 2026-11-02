@@ -43,6 +43,13 @@ appears on several otherwise separate planetary maps. This suggests a
 context-dependent connection or reused room object; the precise mechanism
 must be observed in a native transition before it can be modeled.
 
+A subsequent native-code inspection provides a **specific mechanism**:
+kind-4 callback `0x00` checks flag `0x0c` on cabin hatch `0x1b7` and,
+when true, returns shared room ID `0x1b1`. Its 14 indexed exits span seven
+landing-area rooms. This is verified static x86 control flow, while the
+flag-true traversal remains to be replayed. See
+[native room callbacks](room-callbacks.md#two-more-statically-decoded-patterns).
+
 ## Cross-check of all eight populated type-6 relation pairs
 
 The independently derived type-6 endpoint pairs in
@@ -371,6 +378,11 @@ entries are **not unlinked by definition**: they can represent dynamically
 resolved destinations that no static room-ID graph can discover. Their
 original callback semantics and actual destinations need runtime tracing.
 
+The next replay resolved the entire 44-entry callback directory and
+**traced Casino EAST's callback `0x14`** returning `AX=0`, without a
+player movement. The full native table, original OVL addresses and the
+initial decompilation are in [room-callbacks.md](room-callbacks.md).
+
 `--trace-navigation` now also hooks **linear `0x1507c`** (`148e:079c`,
 original EXE file `0x6275`), the instruction immediately after that far
 callback returns. At this point AX is still the callback result. On a
@@ -386,6 +398,11 @@ python3 tools/summarize_navigation_trace.py \
 The original EAST/WEST scenario uses kind 2, so **no kind-4 return is
 expected there**. First choose a reachable room and direction whose
 exported record has `kind=4`, then replay that direction with the new hook.
+The verified example instead reaches Casino using **three EAST moves**
+and attempts a fourth; `--trace-navigation` now also captures the scanner's
+callsite, the resident far-pointer gate, the selected RTLink trampoline and
+the gate's return. It filters event `0x01` object-handler calls separately
+from event `0x0f` room-exit decisions.
 
 Use the new **read-only snapshot exporter** on an existing native replay:
 

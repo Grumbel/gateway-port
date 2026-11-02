@@ -81,6 +81,16 @@ not mistake a trampoline, a byte inside a function, or two sections sharing an
 address for separate C functions. Exported object labels remain aliases until
 the routine's boundaries and call sites have been checked.
 
+To seed all **44 known kind-4 room-exit callback entries** as decompilation
+candidates, export `tools/inspect_room_callbacks.py --format json` from a
+native snapshot and include `--callbacks-json build/room-callbacks.json`
+on the `run_ghidra.py` command. This is a separate optional input from
+the object aliases; the preparer checks each callback's claimed OVL offset
+against a fresh RTLink manifest. Full reproducible commands, ID→section
+mapping and the first traced example are in
+[room-callbacks.md](room-callbacks.md). Use a fresh output directory for
+each run.
+
 ## Imported structures and first analysis targets
 
 Ghidra's Data Type Manager receives these *confirmed* little-endian structs:
@@ -114,6 +124,7 @@ First symbols placed by the importer:
 | Original file | Offset | Ghidra label | Evidence |
 | --- | ---: | --- | --- |
 | EXE | `0x60cf` | `gw_room_exit_dispatch` | Type-1 exit scanning and branch on kind |
+| EXE | `0x592a` | `gw_room_callback_dispatch` | 44-entry native far-pointer callback gate, **function start** |
 | EXE | `0x6175` | `gw_conditional_exit_gate_return` | After property 0x0c query; **not** function start |
 | EXE | `0x6269` | `gw_callback_exit_case` | Inside dispatcher; kind-4 callback, **not** function start |
 | OVL §5 | `0xe942` | `gw_open_drawer` | Action 0x71, room object 0x124 |
@@ -174,11 +185,10 @@ standard Jython/Java APIs, rather than an unsupported RTLink-aware MZ loader.
   `trace_game_logic.py` native/verification/HLE replay before translating a
   routine to C++.
 
-Useful next trace target: a kind-4 exit callback (236 of the 518 indexed native
-exit entries have this kind). The resident dispatcher at EXE `0x6269` receives
-its return value, which can be correlated with `--trace-navigation` output and
-the corresponding overlay callback pseudocode. This is a promising path toward
-the modern engine's room-navigation layer.
+The kind-4 callback gate is now mapped. A later Casino EAST replay verifies
+**one** result, and the 44-entry directory has been imported into a subsequent
+Ghidra run. See [room-callbacks.md](room-callbacks.md). Further callbacks
+and their successful movement paths still require native traces.
 
 ## First real Ghidra execution (2026-11-02)
 
@@ -223,12 +233,33 @@ fallback branch. The original 16-bit instructions at file `0x611d`, `0x6139`,
 | 1 | `0x611d`: use exit argument directly as destination | Additional target validation outside first-room moves |
 | 2 | `0x6156`: index conditional record, check guard object's `0x0c`, then `0x10`; if `0x10` is set, emit text and set `0x0c` before movement | Purpose of the extra `1c24:13b7` call and flag meanings |
 | 3 | `0x6139`: index a four-byte far text-pointer table through `DS:8dd0`, then take the shared message path | Which exits use this path and exact displayed text |
-| 4 | `0x6269`: call generic callback with `(argument, 0x0f)`; reject zero/current-room results and check against object count before moving | Which callback handlers are invoked, their conditions, and their live return values |
+| 4 | `0x6269`: call generic callback with `(argument, 0x0f)`; reject zero/current-room results and check against object count before moving | Most callbacks' conditions and live results; one Casino no-move branch now traced |
 | 5 | `0x6207`: index an eight-byte record through `DS:8dd4`; test a byte through a stored offset, use one word as a destination when nonzero, otherwise select an optional far message pointer | Table field semantics and runtime outcomes |
 
 This table is a static control-flow result, **not** a new native navigation
 replay. The existing EAST/WEST and kind-2 flag observations remain the live
-validation. No kind-4 callback-return trace was available for this run, and
-Ghidra cannot supply one by static decompilation. Preserve the generated
+validation. No kind-4 callback-return trace was available for *this earlier*
+run; one has since been recorded and [documented](room-callbacks.md).
+Ghidra cannot supply live outcomes by static decompilation. Preserve the generated
 project/listing under ignored build output; they contain the original game's
 code and should not be checked into Git or shipped in bundles.
+
+## Callback directory expansion: second Ghidra run
+
+A fresh headless run against the unchanged fingerprinted EXE/OVL using
+**Ghidra 11.4.2** and **JDK 21** imported **58/58** RTLink spaces and all
+**58 overlay labels** (14 pre-existing entries/callsites plus 44 callback
+candidates). All five resident signatures matched uniquely. The post-analysis
+report covers **60/60** target contexts, with zero decompiler failures:
+44 callback entries, 13 previously mapped native functions, and three
+internal resident branch contexts. The verified callback gate entry is
+`GATEMAIN.EXE:0x592a`, decompiled at Ghidra's `1000:590a`.
+
+For Casino callback `0x14`, the decompiler produced the `event == 0x0f`
+case split, text-token arguments `f000:5cc1`/`f000:5cc2`, a flag-clear
+call targeting object `0x1ad`/property `0x0c`, and returns `0` or `0xf6`.
+Independent original-instruction disassembly supplies the **two stack
+arguments** of the relation check that the inferred decompiler prototype
+omits. Unicorn independently verifies the event-`0x0f`, `AX=0` branch
+and zero movement in Casino, but has not tested its alternative branch.
+The output statuses indicate successful **pseudocode extraction only**.

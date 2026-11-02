@@ -1066,6 +1066,11 @@ hooks the callback's return at `148e:079c` (linear `0x1507c`), and
 `summarize_navigation_trace.py --callback-returns` reports any resulting
 native location changes. This is a dynamic room-selection mechanism, not
 proof that all kind-4 callbacks succeed or return type-1 room objects.
+The later [room callback analysis](room-callbacks.md) resolves the 44-entry
+resident callback directory across 22 RTLink sections, seeds all entries
+for Ghidra and validates one native Casino EAST no-move outcome. The trace
+also distinguishes the same callback's event `0x01` object-handler calls
+from the event `0x0f` room-exit invocation.
 
 The two unlink cases are visible at OVL `0xc869–0xc87e` (head) and
 `0xc883–0xc8b6` (middle). The new-head insertion is at `0xc8de–0xc90b`.
