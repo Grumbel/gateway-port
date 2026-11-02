@@ -6,14 +6,15 @@ import os
 import pathlib
 import subprocess
 from inspect_object_state import inspect_objects
-from story_scenarios import parse_sequence, schedule
+from inspect_beach_pin import snapshot_objects
+from story_scenarios import parse_puzzle_sequence, parse_sequence, puzzle_duration, schedule
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--probe', type=pathlib.Path,
                     default=pathlib.Path(os.environ.get('GATEWAY_BUILD_DIR', 'build')) / 'gateway-probe')
 parser.add_argument('--data', type=pathlib.Path, default=pathlib.Path('../gateway-dos'))
 parser.add_argument('--output', type=pathlib.Path, default=pathlib.Path('build/game-logic'))
-parser.add_argument('--scenario', choices=['look', 'drawer', 'objects'], default='look')
+parser.add_argument('--scenario', choices=['look', 'drawer', 'objects', 'puzzle'], default='look')
 parser.add_argument('--services', choices=['flags', 'state'], default='flags')
 parser.add_argument('--verify-overlays', action='store_true')
 parser.add_argument('--hle-overlays', action='store_true', help='host section loading in HLE mode')
@@ -30,23 +31,32 @@ parser.add_argument('--trace-navigation', action='store_true',
 parser.add_argument('--trace-object-writes', metavar='HEX-ID',
                     help='watch native writes to an object record (e.g. 124 for drawer)')
 parser.add_argument('--command-sequence', metavar='CMD,CMD,...',
-                    help='replace the seven objects-scenario commands at 18,21,25,28,31,34,37 s')
+                    help='replace the seven objects commands; with --scenario puzzle, '
+                         'provide 1–40 commands at three-second intervals (native only)')
+parser.add_argument('--trace-byte-write', metavar='LINEARHEX',
+                    help='native-only observer for writes to one guest physical byte')
+parser.add_argument('--extra-trace-entry', action='append', metavar='LINEARHEX',
+                    help='native-only additional linear code address to log (repeatable)')
 parser.add_argument('--research-poke16-at', action='append', metavar='MS:ADDRESS:OLD:NEW',
                     help='controlled native-only guest RAM word change; address/words in hex')
 args = parser.parse_args()
 if args.native_only and args.hle_overlays:
     parser.error('--native-only and --hle-overlays cannot be combined')
+if args.scenario == 'puzzle' and (not args.native_only or not args.command_sequence):
+    parser.error('--scenario puzzle requires --native-only and --command-sequence')
+if (args.trace_byte_write or args.extra_trace_entry) and not args.native_only:
+    parser.error('--trace-byte-write and --extra-trace-entry require --native-only')
 if args.trace_state_writes and not args.native_only:
     parser.error('--trace-state-writes requires --native-only')
-if args.trace_admission and (not args.native_only or args.scenario != 'objects'):
-    parser.error('--trace-admission requires --native-only --scenario objects')
-if args.trace_visibility and (not args.native_only or args.scenario != 'objects'):
-    parser.error('--trace-visibility requires --native-only --scenario objects')
-if args.trace_navigation and (not args.native_only or args.scenario != 'objects'):
-    parser.error('--trace-navigation requires --native-only --scenario objects')
+if args.trace_admission and (not args.native_only or args.scenario not in ('objects', 'puzzle')):
+    parser.error('--trace-admission requires --native-only --scenario objects/puzzle')
+if args.trace_visibility and (not args.native_only or args.scenario not in ('objects', 'puzzle')):
+    parser.error('--trace-visibility requires --native-only --scenario objects/puzzle')
+if args.trace_navigation and (not args.native_only or args.scenario not in ('objects', 'puzzle')):
+    parser.error('--trace-navigation requires --native-only --scenario objects/puzzle')
 if args.trace_object_writes:
-    if not args.native_only or args.scenario != 'objects':
-        parser.error('--trace-object-writes requires --native-only --scenario objects')
+    if not args.native_only or args.scenario not in ('objects', 'puzzle'):
+        parser.error('--trace-object-writes requires --native-only --scenario objects/puzzle')
     try:
         watched = int(args.trace_object_writes, 16)
         if not 0 < watched <= 0xffff:
@@ -62,14 +72,16 @@ if args.research_poke16_at and (not args.native_only or args.scenario != 'object
 if args.hle_overlays:
     args.verify_overlays = True
 try:
-    custom_commands = parse_sequence(args.command_sequence) if args.command_sequence else None
+    custom_commands = (parse_puzzle_sequence(args.command_sequence)
+                       if args.scenario == 'puzzle' else
+                       parse_sequence(args.command_sequence) if args.command_sequence else None)
     keys = schedule(args.scenario, custom_commands)
 except ValueError as error:
     parser.error(str(error))
 # The expected action_code= field is emitted by the C++ gateway-probe, not the
 # Python driver. An old binary accepts --trace-entry but silently omits the
 # new fields, wasting an entire replay and leaving misleading diagnostics.
-if args.scenario in ['drawer', 'objects']:
+if args.scenario in ['drawer', 'objects', 'puzzle']:
     try:
         probe_bytes = args.probe.read_bytes()
     except OSError as error:
@@ -88,6 +100,8 @@ if args.scenario in ['drawer', 'objects']:
         parser.error(f'{args.probe} lacks native object-write tracing; run gateway-build')
     if args.research_poke16_at and b'research-poke16 ms=' not in probe_bytes:
         parser.error(f'{args.probe} lacks controlled research poke support; run gateway-build')
+    if args.trace_byte_write and b'byte-write ms=' not in probe_bytes:
+        parser.error(f'{args.probe} lacks byte-write tracing; run gateway-build')
 args.output.mkdir(parents=True, exist_ok=True)
 if custom_commands:
     print('Scripted commands: ' + ' | '.join(custom_commands))
@@ -99,11 +113,12 @@ for mode in (['native'] if args.native_only else ['native', 'verify', 'hle']):
     prefix = args.output / mode
     command = [str(args.probe.resolve()), str(args.data.resolve() / 'GATE.EXE'),
                '--press', 'escape', '--state-dir', str(args.output / (mode + '-state')),
-               '--milliseconds', '42000' if args.scenario == 'objects' else '24000' if args.scenario == 'drawer' else '18000',
+               '--milliseconds', str(puzzle_duration(custom_commands)) if args.scenario == 'puzzle'
+               else '42000' if args.scenario == 'objects' else '24000' if args.scenario == 'drawer' else '18000',
                '--trace-research', str(prefix.with_suffix('.trace')),
                '--trace-entry', '147a6', '--trace-entry', '28d2b',
                '--dump-prefix', str(prefix)]
-    if args.scenario in ['drawer', 'objects']:
+    if args.scenario in ['drawer', 'objects', 'puzzle']:
         command += ['--trace-entry', '49db5', '--trace-entry', '4a378',
                     '--trace-entry', '4a390',
                     # Check the resident action dispatcher before/after its
@@ -155,6 +170,11 @@ for mode in (['native'] if args.native_only else ['native', 'verify', 'hle']):
     if args.research_poke16_at and mode == 'native':
         for poke in args.research_poke16_at:
             command += ['--research-poke16-at', poke]
+    if mode == 'native':
+        if args.trace_byte_write:
+            command += ['--trace-byte-write', args.trace_byte_write]
+        for address in args.extra_trace_entry or []:
+            command += ['--trace-entry', address]
     if args.trace_object_writes and mode == 'native':
         # 0157:08fc (EXE 0x2e3a): native indexed child-link setter.
         command += ['--trace-entry', '11e6c']
@@ -221,7 +241,17 @@ for mode in (['native'] if args.native_only else ['native', 'verify', 'hle']):
     digest = hashlib.sha256(prefix.with_suffix('.ppm').read_bytes()).hexdigest()
     hashes.append(digest)
     regs = dict(line.split('=') for line in prefix.with_suffix('.regs').read_text().splitlines())
-    object_states.append(inspect_objects(prefix.with_suffix('.bin').read_bytes(), int(regs['DS'], 16)))
+    if args.scenario == 'puzzle':
+        native_memory = prefix.with_suffix('.bin').read_bytes()
+        data_ds, records = snapshot_objects(native_memory, int(regs['DS'], 16),
+                                            prefix.with_suffix('.trace').read_text().splitlines())
+        if data_ds != int(regs['DS'], 16):
+            print(f'{mode}: final CPU DS was inside a far service; recovered native '
+                  f'Gateway data segment {data_ds:04x} from action-dispatch trace')
+        object_states.append(records)
+    else:
+        object_states.append(inspect_objects(prefix.with_suffix('.bin').read_bytes(),
+                                             int(regs['DS'], 16)))
     print(f'{mode} framebuffer SHA-256: {digest}')
 if args.native_only:
     print('Native trace complete; no verification/HLE equivalence was tested.')

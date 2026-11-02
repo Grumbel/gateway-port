@@ -4,7 +4,8 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-from story_scenarios import DEFAULT_OBJECT_COMMANDS, parse_sequence, schedule
+from story_scenarios import (DEFAULT_OBJECT_COMMANDS, parse_puzzle_sequence, parse_sequence,
+                             puzzle_duration, schedule)
 
 
 class StoryScenariosTests(unittest.TestCase):
@@ -48,8 +49,38 @@ class StoryScenariosTests(unittest.TestCase):
                       'a,b,c,d,e,f,' + 'x' * 65, 'a,b,c,d,e,f,\n'):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 parse_sequence(value)
-        with self.assertRaisesRegex(ValueError, 'objects scenario'):
+        with self.assertRaisesRegex(ValueError, 'objects or puzzle scenario'):
             schedule('drawer', DEFAULT_OBJECT_COMMANDS)
+
+    def test_long_native_puzzle_script_preserves_startup_and_bounds_duration(self):
+        commands = parse_puzzle_sequence('east,northwest,up,take pin,wait,look')
+        keys = schedule('puzzle', commands)
+        self.assertEqual(keys[:8], schedule('look')[:8])
+        self.assertIn((18000, ord('e')), keys)
+        self.assertIn((27000, ord('t')), keys)
+        self.assertIn((33000, ord('l')), keys)
+        self.assertNotIn((22000, 0x3920), keys)  # no background pagination keys
+        self.assertEqual(puzzle_duration(commands), 35500)
+        many = parse_puzzle_sequence(','.join('wait' for _ in range(40)))
+        self.assertEqual(puzzle_duration(many), 137500)
+        self.assertEqual(schedule('puzzle', many)[-1][0], 135120)
+
+    def test_puzzle_rejects_empty_invalid_and_overlong_sequences(self):
+        for sequence in ('', ',look', 'look,', 'look,é', 'a' * 65,
+                         'look,@unverified',
+                         ','.join('wait' for _ in range(41))):
+            with self.subTest(sequence=sequence[:30]), self.assertRaises(ValueError):
+                parse_puzzle_sequence(sequence)
+        with self.assertRaisesRegex(ValueError, 'requires 1–40 commands'):
+            schedule('puzzle')
+
+    def test_puzzle_supports_one_shot_keys_without_typing_their_names(self):
+        commands = parse_puzzle_sequence('lie on couch,@space,@enter,@escape,wait')
+        keys = schedule('puzzle', commands)
+        self.assertIn((21000, 0x3920), keys)
+        self.assertIn((24000, 0x1c0d), keys)
+        self.assertIn((27000, 0x011b), keys)
+        self.assertNotIn((21000, ord('@')), keys)
 
 
 if __name__ == '__main__':

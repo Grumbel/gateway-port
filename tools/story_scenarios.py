@@ -9,6 +9,10 @@ DEFAULT_OBJECT_COMMANDS = (
     'open drawer', 'look', 'take book', 'inventory',
     'drop book', 'close drawer', 'look',
 )
+PUZZLE_FIRST_COMMAND_MS = 18000
+PUZZLE_COMMAND_SPACING_MS = 3000
+PUZZLE_MAX_COMMANDS = 40
+PUZZLE_KEYS = {'@space': 0x3920, '@enter': 0x1c0d, '@escape': 0x011b}
 
 
 def parse_sequence(sequence):
@@ -23,12 +27,46 @@ def parse_sequence(sequence):
     return commands
 
 
+def parse_puzzle_sequence(sequence):
+    """Up to 40 commands in a bounded native-only experiment (3 seconds apart)."""
+    commands = tuple(command.strip() for command in sequence.split(','))
+    if not 1 <= len(commands) <= PUZZLE_MAX_COMMANDS:
+        raise ValueError('puzzle scenario requires 1–40 comma-separated commands')
+    for command in commands:
+        if not command or len(command) > 64 or any(not 32 <= ord(ch) <= 126
+                                                  for ch in command):
+            raise ValueError('commands must contain 1–64 printable ASCII characters')
+        if command.startswith('@') and command not in PUZZLE_KEYS:
+            raise ValueError('unknown puzzle key directive: ' + command)
+    return commands
+
+
+def puzzle_duration(commands):
+    if not 1 <= len(commands) <= PUZZLE_MAX_COMMANDS:
+        raise ValueError('puzzle scenario requires 1–40 commands')
+    return PUZZLE_FIRST_COMMAND_MS + (len(commands) - 1) * PUZZLE_COMMAND_SPACING_MS + 2500
+
+
 def schedule(scenario, commands=None):
     """Return the exact BIOS-key schedule passed to gateway-probe."""
-    if scenario not in ('look', 'drawer', 'objects'):
+    if scenario not in ('look', 'drawer', 'objects', 'puzzle'):
         raise ValueError(f'unknown scenario: {scenario}')
-    if commands is not None and scenario != 'objects':
-        raise ValueError('custom commands require the objects scenario')
+    if commands is not None and scenario not in ('objects', 'puzzle'):
+        raise ValueError('custom commands require the objects or puzzle scenario')
+    if scenario == 'puzzle':
+        if commands is None or not 1 <= len(commands) <= PUZZLE_MAX_COMMANDS:
+            raise ValueError('puzzle scenario requires 1–40 commands')
+        if any(not command or len(command) > 64 for command in commands):
+            raise ValueError('puzzle commands must contain 1–64 characters')
+        keys = schedule('look') + [(time, 0x3920) for time in (15000, 16000, 17000)]
+        for index, command in enumerate(commands):
+            start = PUZZLE_FIRST_COMMAND_MS + index * PUZZLE_COMMAND_SPACING_MS
+            if command in PUZZLE_KEYS:
+                keys.append((start, PUZZLE_KEYS[command]))
+            else:
+                keys += [(start + i * 30, ord(char)) for i, char in enumerate(command)]
+                keys.append((start + len(command) * 30, 0x1c0d))
+        return sorted(keys)
     keys = [(10000, 0x3920), (11000, 0x3920), (12000, 0x3920)]
     keys += [(14000, 0x266c), (14100, 0x186f), (14200, 0x186f),
              (14300, 0x256b), (14400, 0x1c0d)]
