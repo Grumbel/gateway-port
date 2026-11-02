@@ -631,7 +631,12 @@ and shows the player being prepended to each destination room; the second
 EAST restores Quarters' former head, picture `0x175`. The optional
 `--child-heads` report combines these observations. A `--trace-navigation`
 replay hook now records entry stacks at the shared move helper, to find the
-still-unidentified direction dispatcher; see
+still-unidentified direction dispatcher. Its first native replay confirms
+the player/destination/slot arguments and identifies the RTLink manager
+return at `2c24:0701`; saved BP returns consistently reach `148e:065a`,
+`148e:0c28`, and `1000:04da`. The new `--move-callers` summary filters out
+unrelated startup object moves, and the notes give resident-memory
+disassembly commands for those frames; see
 [the navigation trace and next probes](docs/gateway-map-reference.md#verified-ordinary-first-room-movement).
 
 The standalone C++ model exposes the corresponding *local slot-filtering*

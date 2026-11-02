@@ -1023,6 +1023,17 @@ verification, and the first move's middle-sibling write remains unobserved.
 The new `summarize_navigation_trace.py --child-heads` correlates these
 calls with each independently verified player-location transition.
 
+The follow-up `--trace-navigation` replay intercepted section-4 helper
+entry `4319:1650` (`GATEMAIN.OVL:0xc830`) at the same four transitions.
+Its far-call stack includes `(object=0x0d3, new_parent=0x0f1/0x0ee,
+new_slot=0)` after the RTLink-substituted return `2c24:0701`. The manager
+return is not the game script's direct callsite; all four BP chains include
+saved return addresses `148e:065a`, `148e:0c28`, and `1000:04da`.
+`summarize_navigation_trace.py --move-callers` now correlates these entries
+with verified native location changes. The actual destination-selection
+branch and any direction table are still unknown; see
+[the next resident-code investigation](gateway-map-reference.md#first-caller-stack-result-the-direction-handler-is-above-rtlink).
+
 The two unlink cases are visible at OVL `0xc869–0xc87e` (head) and
 `0xc883–0xc8b6` (middle). The new-head insertion is at `0xc8de–0xc90b`.
 `StoryLinkedChildren` now models the **logical head/sibling operations**

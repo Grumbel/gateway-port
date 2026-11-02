@@ -216,6 +216,58 @@ same linear address at other times. Identifying its **actual** caller and
 the input/destination argument flow is still future work, and this hook
 does not itself decode the navigation table.
 
+### First caller-stack result: the direction handler is above RTLink
+
+The user's `--trace-navigation` replay produced **four player-specific
+move-helper entries** alongside unrelated startup/`0x161` object moves.
+Its far-call arguments, in order after the substituted return IP/CS, are
+the player (`0x0d3`), destination room, and destination slot (`0`):
+
+| Guest ms | Object | Destination room | Slot | Immediate far return | Saved BP return chain |
+| ---: | --- | --- | ---: | --- | --- |
+| 18,266 | `0x0d3` | `0x0f1` | 0 | `2c24:0701` | `148e:065a` ← `148e:0c28` ← `1000:04da` |
+| 21,177 | `0x0d3` | `0x0ee` | 0 | `2c24:0701` | Same chain |
+| 25,260 | `0x0d3` | `0x0f1` | 0 | `2c24:0701` | Same chain |
+| 28,177 | `0x0d3` | `0x0ee` | 0 | `2c24:0701` | Same chain |
+
+This is consistent with the earlier room and child-list transition reports.
+In particular, the destination room was already chosen **before** entering
+the shared object mover at runtime `4319:1650` (`0x447e0`). As established
+in [RTLink's return management](rtlink.md#parent-sections-and-lifetime),
+`2c24:0701` is a **manager redirect trampoline**, not an original direction
+script or dispatch callsite. Neither the first saved BP return
+`148e:065a` nor its ancestors is guaranteed to be the direct call that
+chose the destination; they are leads to inspect at higher levels.
+
+The new summary option filters entry-stack observations by the same verified
+player-location service deltas, omitting unrelated object moves:
+
+```sh
+python3 tools/summarize_navigation_trace.py \
+  build/room-navigation-caller/native.trace \
+  --world build/parser-child-writes/world.json \
+  --commands 'east,west,east,west,look,inventory,look' \
+  --move-callers
+```
+
+To inspect those persistent resident-code ranges in the **guest-memory
+snapshot** (not presumed original EXE file offsets), disassemble the saved
+`native.bin` around both BP returns:
+
+```sh
+objdump -D -b binary -m i8086 -M intel \
+  --start-address=0x14ec0 --stop-address=0x14f80 \
+  build/room-navigation-caller/native.bin
+
+objdump -D -b binary -m i8086 -M intel \
+  --start-address=0x154a0 --stop-address=0x15560 \
+  build/room-navigation-caller/native.bin
+```
+
+Here `148e:065a` is linear `0x14f3a` and `148e:0c28` is linear `0x15508`.
+`objdump` performs a linear sweep and can misidentify instruction boundaries
+or decode inline data, so validate candidate calls with runtime traces.
+
 If nothing is reported, check whether the commands actually reached normal
 gameplay and whether another state variable tracks the current room. A
 negative result is not proof that the game's navigation is static or that

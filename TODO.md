@@ -77,9 +77,15 @@ emulation. Keep the original executable as a behavioral reference while mapping:
   player as Quarters' new head; the next EAST restores head `0x175`
   (picture). The first middle-sibling unlink is not traced yet.
   `summarize_navigation_trace.py --child-heads` now correlates head calls
-  with verified player location changes. Trace the helper's **caller** with
-  `trace_game_logic.py --trace-navigation` to find direction-to-room
-  dispatch, then test a named passage (Dock/cabin hatch). Verify restrictions,
+  with verified player location changes. The `--trace-navigation` replay
+  shows the helper receives `(0x0d3, destination, slot=0)` and returns via
+  RTLink `2c24:0701`; the same three upstream saved BP returns
+  (`148e:065a`, `148e:0c28`, `1000:04da`) appear for all four moves.
+  `summarize_navigation_trace.py --move-callers` now filters these stack
+  observations against verified location changes. **Disassemble and trace
+  the resident code around `148e:065a` (linear `0x14f3a`) and `148e:0c28`
+  (`0x15508`)** to find the actual direction-to-room decision, then test a
+  named passage (Dock/cabin hatch). Verify restrictions,
   bidirectionality, and actual PIC selection independently of map arrows.
   Also trace real non-head sibling and nested moves, extend to other record
   types, and establish which callers enable
