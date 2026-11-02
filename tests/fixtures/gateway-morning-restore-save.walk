@@ -1,0 +1,27 @@
+# Native sleep/wake and first-ship boarding from Terri's saved state.
+COMMAND restore
+TYPE TERRIFULL
+KEY enter
+ASSERT_LOCATION 139 d3
+LABEL terri_restored
+COMMAND wait
+COMMAND west
+COMMAND west
+COMMAND wait until 02:00
+LABEL night_wait
+ANSWER N
+LABEL stopped_waiting
+COMMAND sleep
+LABEL slept
+COMMAND take all
+COMMAND east
+COMMAND north
+COMMAND down
+COMMAND south
+COMMAND south
+COMMAND south
+COMMAND up
+LABEL first_ship
+COMMAND save
+TYPE HANGARFULL
+KEY enter

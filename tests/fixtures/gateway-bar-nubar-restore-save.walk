@@ -1,0 +1,65 @@
+# Native class save -> timed Thom/Nubar bar events -> perfect Casino trivia.
+COMMAND restore
+TYPE CLASSFULL
+KEY enter
+ASSERT_LOCATION 132 d3
+ASSERT_LOCATION 14c d3
+ASSERT_LOCATION 13a d3
+ASSERT_LOCATION 2a9 d3
+LABEL class_restored
+COMMAND east
+COMMAND up
+COMMAND south
+COMMAND east
+ASSERT_LOCATION d3 f4
+LABEL blue_hell_bar
+COMMAND wait until 20:01
+COMMAND wait
+ASSERT_LOCATION 100 137
+LABEL thom_arrives
+COMMAND sit
+COMMAND drink
+COMMAND wait
+COMMAND wait
+COMMAND wait
+COMMAND buy thom a drink
+COMMAND wait
+COMMAND wait
+COMMAND wait
+COMMAND wait
+COMMAND wait
+COMMAND wait
+COMMAND wait
+COMMAND wait
+COMMAND wait
+COMMAND wait
+COMMAND wait
+LABEL thom_second_drink
+COMMAND buy thom a drink
+COMMAND wait
+COMMAND wait
+COMMAND wait
+COMMAND wait
+COMMAND wait
+COMMAND wait
+COMMAND wait
+COMMAND wait
+COMMAND wait
+LABEL nubar_arrives
+COMMAND buy nubar a drink
+COMMAND wait
+COMMAND wait
+COMMAND wait
+COMMAND wait
+COMMAND wait
+ASSERT_LOCATION d3 f5
+LABEL nubar_challenge
+COMMAND play trivia
+MENU_KEYS 3,3,2,4,1,1,3,2,4,3,4
+KEY enter
+COMMAND inventory
+ASSERT_LOCATION 12d d3
+LABEL medallion_received
+COMMAND save
+TYPE FULLCASINO
+KEY enter

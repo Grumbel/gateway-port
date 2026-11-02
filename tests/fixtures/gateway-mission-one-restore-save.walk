@@ -1,0 +1,16 @@
+# Select the first original prospector code with the ship's real mouse UI.
+COMMAND restore
+TYPE HANGARFULL
+KEY enter
+ASSERT_LOCATION 139 d3
+LABEL ship_restored
+COMMAND sit
+TYPE C
+MOUSE_CLICK 160 114
+TYPE G
+WAIT_MS 70000
+ASSERT_LOCATION 113 d3
+LABEL first_mission_complete
+COMMAND save
+TYPE MISSIONFULL1
+KEY enter

@@ -7,11 +7,12 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 TOOLS = pathlib.Path(__file__).resolve().parents[1] / 'tools'
 sys.path.insert(0, str(TOOLS))
 
-from run_walkthrough import (compile_steps, convert_text, extract_scribd_html,
+from run_walkthrough import (check_locations, compile_steps, convert_text, extract_scribd_html,
                              import_native_save, native_save_description, parse_script)
 from run_walkthrough_campaign import (find_save, load_campaign, verified_save)
 from story_scenarios import schedule
@@ -131,6 +132,50 @@ class WalkthroughTests(unittest.TestCase):
                 self.assertEqual((replay.actions[-2].argument, replay.actions[-1].argument),
                                  (save, 'enter'))
 
+    def test_full_item_bar_stage_reaches_casino_and_claims_medallion(self):
+        fixture = pathlib.Path(__file__).parent / 'fixtures/gateway-bar-nubar-restore-save.walk'
+        replay = compile_steps(parse_script(fixture.read_text(encoding='utf-8')))
+        self.assertEqual((len(replay.actions), len(replay.keys), replay.duration_ms),
+                         (49, 322, 195000))
+        markers = {mark.label: mark for mark in replay.checkpoints}
+        self.assertEqual([(obj, loc) for obj, loc, _ in
+                          markers['class_restored'].assertions],
+                         [(0x132, 0xd3), (0x14c, 0xd3), (0x13a, 0xd3),
+                          (0x2a9, 0xd3)])
+        self.assertEqual([(obj, loc) for obj, loc, _ in
+                          markers['medallion_received'].assertions], [(0x12d, 0xd3)])
+
+    def test_fork_stage_transfers_original_tuning_fork_into_inventory(self):
+        fixture = pathlib.Path(__file__).parent / 'fixtures/gateway-fork-restore-save.walk'
+        replay = compile_steps(parse_script(fixture.read_text(encoding='utf-8')))
+        self.assertEqual((len(replay.actions), len(replay.keys), replay.duration_ms),
+                         (16, 172, 66000))
+        self.assertEqual([(obj, loc) for obj, loc, _ in
+                          replay.checkpoints[-1].assertions], [(0x127, 0xd3)])
+
+    def test_native_terri_morning_and_first_ship_mission_checkpoints(self):
+        fixtures = [
+            ('gateway-terri-restore-save.walk', 'napkin_received',
+             (0x139, 0xd3), 'TERRIFULL'),
+            ('gateway-morning-restore-save.walk', 'terri_restored',
+             (0x139, 0xd3), 'HANGARFULL'),
+            ('gateway-mission-one-restore-save.walk', 'first_mission_complete',
+             (0x113, 0xd3), 'MISSIONFULL1'),
+        ]
+        for filename, label, item, save in fixtures:
+            with self.subTest(filename=filename):
+                fixture = pathlib.Path(__file__).parent / 'fixtures' / filename
+                replay = compile_steps(parse_script(fixture.read_text(encoding='utf-8')))
+                marks = {mark.label: mark for mark in replay.checkpoints}
+                self.assertIn(item, [(obj, loc) for obj, loc, _ in marks[label].assertions])
+                self.assertEqual(replay.actions[-2].argument, save)
+                self.assertEqual(replay.actions[-1].argument, 'enter')
+        mission = pathlib.Path(__file__).parent / 'fixtures/gateway-mission-one-restore-save.walk'
+        replay = compile_steps(parse_script(mission.read_text(encoding='utf-8')))
+        self.assertEqual(replay.mouse_clicks, [(33000, 160, 114)])
+        self.assertEqual((len(replay.actions), len(replay.keys), replay.duration_ms),
+                         (10, 54, 118000))
+
     def test_keys_menu_waits_and_review_barrier(self):
         script = parse_script('''
 COMMAND open drawer
@@ -207,6 +252,25 @@ LABEL dropped_book
         with self.assertRaisesRegex(ValueError, 'cannot be combined'):
             compile_steps(steps, through='got_book', max_actions=1)
 
+    def test_checkpoint_accepts_verified_object_table_in_saved_es(self):
+        with tempfile.TemporaryDirectory() as directory:
+            prefix = pathlib.Path(directory) / 'snapshot'
+            prefix.with_suffix('.regs').write_text('DS=2c24\nES=5b46\n', encoding='ascii')
+            prefix.with_suffix('.bin').write_bytes(b'RAM')
+            objects = [{'location': 0}] * 734
+            objects[0x130 - 1] = {'location': 0xd3}
+            visited = []
+
+            def fake_inspect(memory, ds):
+                visited.append(ds)
+                return objects if ds == 0x5b46 else []
+
+            with mock.patch('inspect_object_state.inspect_objects', side_effect=fake_inspect):
+                check_locations(prefix, [(0x130, 0xd3, 5)])
+                self.assertEqual(visited, [0x2c24, 0x5b46])
+                with self.assertRaisesRegex(ValueError, 'no verified 734-object table'):
+                    check_locations(prefix, [(0x130, 0xd3, 5)], ds=0x2c24)
+
     def test_converter_keeps_unknown_ui_action_explicit(self):
         source = '''Instructions:
 }open drawer
@@ -261,19 +325,21 @@ LABEL dropped_book
             with self.assertRaisesRegex(ValueError, 'GATE###'):
                 native_save_description(bad_name)
 
-    def test_campaign_validates_native_save_handoffs_and_plans_four_stages(self):
+    def test_campaign_validates_native_save_handoffs_and_plans_stages(self):
         campaign = pathlib.Path(__file__).parent / 'fixtures/gateway-campaign.json'
         stages = load_campaign(campaign)
         self.assertEqual([stage.name for stage in stages],
-                         ['office', 'dataman', 'vr', 'armory_class'])
+                         ['office', 'dataman', 'vr', 'armory_class', 'bar_nubar', 'fork',
+                          'terri', 'morning', 'mission_one'])
         self.assertEqual([stage.description for stage in stages],
-                         ['OFFICEFULL', 'DATAMAN100', 'VRFULL', 'CLASSFULL'])
-        self.assertEqual(sum(stage.actions for stage in stages), 110)
+                         ['OFFICEFULL', 'DATAMAN100', 'VRFULL', 'CLASSFULL', 'FULLCASINO',
+                          'FORKFULL', 'TERRIFULL', 'HANGARFULL', 'MISSIONFULL1'])
+        self.assertEqual(sum(stage.actions for stage in stages), 225)
         result = subprocess.run([sys.executable,
                                  str(TOOLS / 'run_walkthrough_campaign.py'),
                                  str(campaign), '--plan-only'], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('armory_class: 30 actions', result.stdout)
+        self.assertIn('bar_nubar: 49 actions', result.stdout)
 
     def test_campaign_rejects_unreviewed_restore_and_modified_previous_save(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -333,6 +399,19 @@ LABEL dropped_book
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn('Plan: 1 actions', result.stdout)
+
+    def test_verify_existing_refuses_stale_input_without_rerunning_original_game(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            source = root / 'route.walk'
+            source.write_text('COMMAND look\n', encoding='ascii')
+            (root / 'replay.keys').write_text('0:1234\n', encoding='ascii')
+            result = subprocess.run([sys.executable, str(TOOLS / 'run_walkthrough.py'),
+                                     'run', str(source), '--verify-existing',
+                                     '--output', str(root)], capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('recorded replay.keys differs', result.stderr)
+            self.assertNotIn('original GATE.EXE', result.stderr)
 
 
 if __name__ == '__main__':

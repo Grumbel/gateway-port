@@ -20,6 +20,31 @@
       "name": "armory_class",
       "script": "gateway-armory-class-restore-save.walk",
       "save": "CLASSFULL"
+    },
+    {
+      "name": "bar_nubar",
+      "script": "gateway-bar-nubar-restore-save.walk",
+      "save": "FULLCASINO"
+    },
+    {
+      "name": "fork",
+      "script": "gateway-fork-restore-save.walk",
+      "save": "FORKFULL"
+    },
+    {
+      "name": "terri",
+      "script": "gateway-terri-restore-save.walk",
+      "save": "TERRIFULL"
+    },
+    {
+      "name": "morning",
+      "script": "gateway-morning-restore-save.walk",
+      "save": "HANGARFULL"
+    },
+    {
+      "name": "mission_one",
+      "script": "gateway-mission-one-restore-save.walk",
+      "save": "MISSIONFULL1"
     }
   ]
 }

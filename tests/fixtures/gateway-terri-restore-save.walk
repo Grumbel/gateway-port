@@ -1,0 +1,26 @@
+# Native continuation of the complete-opening path through Terri's Orion lead.
+COMMAND restore
+TYPE FORKFULL
+KEY enter
+ASSERT_LOCATION 127 d3
+LABEL fork_restored
+COMMAND north
+COMMAND north
+COMMAND east
+COMMAND sit
+COMMAND read memo
+COMMAND wait until 22:00
+COMMAND wait
+LABEL terri_arrives
+COMMAND ask terri about orion
+COMMAND wait
+COMMAND wait
+COMMAND wait
+COMMAND wait
+COMMAND wait
+COMMAND read napkin
+ASSERT_LOCATION 139 d3
+LABEL napkin_received
+COMMAND save
+TYPE TERRIFULL
+KEY enter

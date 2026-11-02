@@ -1,0 +1,21 @@
+# Verified full-item Casino -> medallion depression and tuning-fork puzzle.
+COMMAND restore
+TYPE FULLCASINO
+KEY enter
+ASSERT_LOCATION 12d d3
+LABEL casino_restored
+COMMAND west
+COMMAND west
+COMMAND south
+COMMAND south
+COMMAND put medallion in depression
+COMMAND take fork
+COMMAND put fork in device
+COMMAND take hologram
+COMMAND put hologram on pedestal
+COMMAND take fork
+ASSERT_LOCATION 127 d3
+LABEL fork_received
+COMMAND save
+TYPE FORKFULL
+KEY enter
