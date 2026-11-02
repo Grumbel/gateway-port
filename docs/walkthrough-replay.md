@@ -145,8 +145,11 @@ The original game's [ship manual](https://www.freegameempire.com/games/Gateway-F
 also documents shortcut keys `C` (course list), `G` (go), `R` (return),
 `O` (orbit), `L` (land), `I` (info) and `V` (view). The first real cockpit
 experiment selected a displayed course-code row with a DOS mouse click and
-`TYPE G` began the original spacecraft departure animation. Full mission
-arrival and sequential course-code selection still require native checks.
+`TYPE G` began the original spacecraft departure animation. The first code
+completes a native +25-point prospecting mission and awards object `0x113`
+(bangle) to the player. The second code reaches planetary orbit, and `TYPE L`
+successfully lands the ship on the surface. The full-item campaign reproduces
+the initial course reward from a genuine restored save.
 
 ### Resume through the original DOS saved-game format
 
@@ -203,6 +206,41 @@ To extend a reviewed route beyond 48 commands, either increase the number of
 `COMMAND`/`TYPE`/`KEY` lines or run a checked prefix with `--max-actions N`.
 The duration limit is one guest hour **per replay**. Divide longer routes
 into native-save stages, each including an explicit SAVE/RESTORE interaction.
+
+### Verified, resumable story campaign
+
+[`gateway-campaign.json`](../tests/fixtures/gateway-campaign.json) lists the
+reviewed full-inventory route, beginning with the office maintenance sequence,
+DataMan, Beach VR, armory and class, Nubar's trivia, the tuning fork puzzle,
+Terri's phone-number napkin, the following morning, and the first ship code.
+Each fixture ends by saving a **named original DOS game**, and the next begins
+by restoring that exact name. This avoids implicitly resetting story flags or
+hand-editing memory between chapters. The generated saved games live in ignored
+`build/` directories; only scripts and expected object relationships enter Git.
+
+```sh
+# Show all stages and required save names without starting DOS.
+python3 tools/run_walkthrough_campaign.py tests/fixtures/gateway-campaign.json --plan-only
+
+# Run or resume from an already validated earlier stage. The runner checks
+# script digests, previous save digests, and each stage's native assertions.
+python3 tools/run_walkthrough_campaign.py tests/fixtures/gateway-campaign.json \
+  --probe build/gateway-probe --data ../gateway-dos \
+  --output build/gateway-campaign --through-stage mission_one
+```
+
+For an expensive single run that has already produced snapshots, use
+`run ... --verify-existing` with the **same script**, `--output`, `--check-labels`
+and `--expect-save` arguments. It checks the recorded BIOS key plan, delivery
+counts, native mouse presses, saved-game description and object assertions
+without spending another minute in the DOS emulator. It fails if the reviewed
+inputs changed. Native checkpoints may capture an overlay callback with a
+temporary `DS`; object checks accept `ES` as an alternative **only after**
+validating the exact original 734-entry object table.
+
+The campaign is a collection of **verified milestones**, not a full-game
+autoplayer. Further original spacecraft missions, the Orion plot and the
+endgame remain to be replayed and independently checked.
 
 ### Lower-level probe input
 
