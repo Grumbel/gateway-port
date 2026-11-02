@@ -202,3 +202,8 @@ the legitimate pickup and entry without intervention. A subsequent
 kind-4 outcome: event `0x0f` returns `AX=0` **after** moving the player
 from a couch back to its enclosing room. A modern engine must model such
 side effects separately from the room destination returned in AX.
+The later [Terminal and Beach `UP` replays](vr-up-callback.md) establish
+two more branches of callback `0x2b`: a worn-collar refusal in the Terminal,
+and a nested Beach get-up followed by a native glass-property clear call.
+Both return `AX=0` even when the player moves; room `0x2bc` remains
+only statically examined.

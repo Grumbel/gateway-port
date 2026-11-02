@@ -36,7 +36,9 @@ direct original 16-bit instructions establish the critical branch:
 
 The same `0x2b` callback also handles VR Terminal `0x29b`, Beach `0x2ae`,
 and another virtual location `0x2bc`, with different tests and text. Those
-branches have **not** been translated as equivalent C++ behavior.
+branches are not equivalent. The subsequent [VR Terminal and Beach `UP`
+analysis](vr-up-callback.md) verifies the collar guard and Beach nested
+movement. The `0x2bc` path remains unmodeled.
 
 A narrow C++ model method, `StoryModel::apply_tanning_up`, reproduces only
 the Tanning branch's observed direct-location test and mutation. Its outcome

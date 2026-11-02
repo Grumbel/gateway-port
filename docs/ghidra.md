@@ -361,3 +361,20 @@ it nevertheless invokes the native setter to move the player to room
 `0x29a`; otherwise it leaves the player standing. See the new
 [Tanning Room native analysis](tanning-room.md) for evidence, reproducible
 commands and the limited C++ translation.
+
+## Callback `0x2b`: Terminal and Beach native cross-check
+
+The sixth Ghidra export's `GATEMAIN.OVL:0x693fc` callback has now been
+cross-checked against **two additional native Unicorn replays**. At VR
+Terminal `0x29b`, the collar equipment predicate prevents getting up from
+couch `0x2a1` while worn; after removing it, `UP` writes player
+`0x2a1 → 0x29b`. At Beach `0x2ae`, `UP` from nested `0x2b1` writes player
+`0x2b1 → 0x2ae`; direct room `UP` makes no move. Each event `0x0f`
+returns `AX=0`, including those which change the player's relation.
+
+The original Beach branch also calls a native clear of glass property `0x0a`
+(not independently validated as a changed bit by the player-only trace).
+Ghidra's C-like output still needs original-instruction ABI cross-checks.
+The [VR callback investigation](vr-up-callback.md) documents both traces,
+original offsets, asset-independent tests and bounded C++ model. No seventh
+Ghidra import was needed for this step.

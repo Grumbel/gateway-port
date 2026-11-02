@@ -193,8 +193,15 @@ same room** but still returns `AX=0` to the room scanner. The standing
 branch also returns zero but makes no movement. Both branches are validated
 without memory intervention. See [tanning-room.md](tanning-room.md) for
 original instruction ranges, actual byte writes, the C++ bounded branch
-model and a paired native replay verifier. The other VR contexts using
-callback `0x2b` have not been modeled.
+model and a paired native replay verifier. The **VR Terminal `0x29b`** and
+**Beach `0x2ae`** branches of the same callback have since been exercised
+in two more original-game replays. A worn collar prevents Terminal `UP`
+from moving the reclining player; removing it permits getting up. A nested
+Beach player gets up into the room; a player directly in Beach does not
+move. All four callback returns are **`AX=0`**, and the nested Beach path
+also calls a glass-property clear. See
+[VR `UP` callback analysis](vr-up-callback.md) for instructions, watched
+writes and bounded modeling.
 
 ## Two more statically decoded patterns
 
