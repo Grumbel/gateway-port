@@ -202,6 +202,12 @@ the story-state restoration. These saved games cannot replace intermediate
 CPU/framebuffer dumps for analysis, and their long-term compatibility with
 other DOS distributions remains untested.
 
+The native [`GATE###.SAV` layout](save-games.md) is now structurally decoded:
+33 description bytes plus NUL, all 734 original object records, fixed global
+state, and a counted queue of four-byte scheduled timer events. Use
+`tools/inspect_gateway_save.py` to inspect those fields without restoring a
+save, optionally comparing every object with a native RAM snapshot.
+
 To extend a reviewed route beyond 48 commands, either increase the number of
 `COMMAND`/`TYPE`/`KEY` lines or run a checked prefix with `--max-actions N`.
 The duration limit is one guest hour **per replay**. Divide longer routes
