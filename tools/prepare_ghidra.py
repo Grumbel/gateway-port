@@ -44,6 +44,14 @@ KNOWN_OVERLAY = (
 )
 
 KNOWN_RESIDENT = (
+    (0x254a, 'gw_native_relation_contains', 'function',
+     '0157:000c direct native relation-slot membership test; not recursive'),
+    (0x28e4, 'gw_test_object_flag', 'function',
+     '0157:03a6 check type-dependent object property bit; returns 0/1'),
+    (0x291e, 'gw_set_object_flag', 'function',
+     '0157:03e0 type-dependent object property bit setter'),
+    (0x2951, 'gw_clear_object_flag', 'function',
+     '0157:0413 type-dependent object property bit clearer'),
     (0x592a, 'gw_room_callback_dispatch', 'function',
      '44-entry room callback table; argument ID 0..43 and event word 0x0f'),
     (0x60cf, 'gw_room_exit_dispatch', 'function',
