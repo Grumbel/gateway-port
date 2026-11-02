@@ -1,0 +1,40 @@
+# Import VRFULL save; retrieve gun via both vents and attend T20 class.
+COMMAND restore
+TYPE VRFULL
+KEY enter
+ASSERT_LOCATION 2a9 d3
+ASSERT_LOCATION 13a d3
+LABEL vr_restored
+COMMAND down
+COMMAND southeast
+COMMAND north
+COMMAND down
+COMMAND north
+COMMAND west
+COMMAND take gun
+ASSERT_LOCATION 14c d3
+LABEL armory_gun
+COMMAND open vent
+COMMAND press button
+COMMAND wait
+COMMAND put gun in box
+COMMAND east
+COMMAND south
+COMMAND west
+COMMAND open vent
+COMMAND press button
+COMMAND wait
+COMMAND take gun
+COMMAND close vent
+ASSERT_LOCATION 14c d3
+LABEL armory_finished
+COMMAND wait until 15:00
+COMMAND wait
+COMMAND wait
+COMMAND wait
+COMMAND wait
+ASSERT_LOCATION 132 d3
+LABEL class_badge_awarded
+COMMAND save
+TYPE CLASSFULL
+KEY enter

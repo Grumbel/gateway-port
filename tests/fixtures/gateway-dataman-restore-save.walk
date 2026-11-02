@@ -1,0 +1,18 @@
+# Native second stage. Import OFFICEFULL GATE001.SAV, then produce DATAMAN100.
+COMMAND restore
+TYPE OFFICEFULL
+KEY enter
+ASSERT_LOCATION 13a d3
+ASSERT_LOCATION 130 d3
+LABEL office_restored
+COMMAND turn on dataman
+LABEL dataman_start
+MENU_KEYS 1,1,0,2,0,3,0,4,0,5,0,6,0,7,0,8,0,9,0,0
+LABEL dataman_first_library
+MENU_KEYS 2,1,0,2,0,3,0,4,0,5,0,6,0,7,0,8,0,9,0,0
+LABEL dataman_second_library
+MENU_KEYS 3,0,0
+LABEL dataman_done
+COMMAND save
+TYPE DATAMAN100
+KEY enter

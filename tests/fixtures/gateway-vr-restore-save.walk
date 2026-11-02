@@ -1,0 +1,45 @@
+# Import DATAMAN100 save; restore and earn original Beach VR membership pin.
+COMMAND restore
+TYPE DATAMAN100
+KEY enter
+ASSERT_LOCATION 13a d3
+ASSERT_LOCATION 130 d3
+LABEL dataman_restored
+COMMAND up
+COMMAND lie on couch
+KEY space
+KEY space
+KEY space
+KEY space
+KEY space
+KEY space
+KEY space
+COMMAND lie on couch
+COMMAND wear collar
+COMMAND push button
+KEY space
+KEY space
+KEY space
+LABEL vr_bar
+COMMAND take glass
+COMMAND give glass to bartender
+COMMAND take glass
+COMMAND give glass to bartender
+COMMAND take glass
+COMMAND give glass to bartender
+COMMAND take glass
+COMMAND give glass to bartender
+COMMAND take glass
+COMMAND give glass to bartender
+COMMAND take glass
+COMMAND put glass on scanner
+KEY space
+KEY space
+COMMAND remove collar
+COMMAND stand up
+COMMAND take membership pin
+ASSERT_LOCATION 2a9 d3
+LABEL vr_pin_received
+COMMAND save
+TYPE VRFULL
+KEY enter

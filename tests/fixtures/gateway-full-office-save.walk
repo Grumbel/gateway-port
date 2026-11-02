@@ -1,0 +1,46 @@
+# Verified original opening with maintenance puzzle and both receptionist trades.
+# Produces a real GATE001.SAV called OFFICEFULL in the run's state directory.
+COMMAND open drawer
+COMMAND take all
+ASSERT_LOCATION 123 d3
+ASSERT_LOCATION 126 d3
+LABEL initial_items
+COMMAND read book
+COMMAND put card in slot
+MENU_KEYS 1,N,N,0,0
+COMMAND east
+COMMAND north
+COMMAND north
+COMMAND take rose
+ASSERT_LOCATION 13f d3
+LABEL maintenance_rose
+COMMAND flip lever
+COMMAND wait
+COMMAND wait
+COMMAND wait
+COMMAND wait
+COMMAND put screwdriver in toolbox
+COMMAND wait
+COMMAND wait
+COMMAND put wrench in toolbox
+COMMAND wait
+COMMAND wait
+COMMAND put pliers in toolbox
+COMMAND wait
+COMMAND wait
+LABEL tool_job_done
+COMMAND south
+COMMAND south
+COMMAND northwest
+COMMAND give rose to receptionist
+ASSERT_LOCATION 13a d3
+LABEL receptionist_magazine
+COMMAND read magazine
+COMMAND give book to receptionist
+ASSERT_LOCATION 123 0
+ASSERT_LOCATION 130 d3
+LABEL office_both_exchanges
+COMMAND save
+TYPE OFFICEFULL
+KEY enter
+LABEL office_saved

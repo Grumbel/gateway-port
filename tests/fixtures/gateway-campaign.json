@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "stages": [
+    {
+      "name": "office",
+      "script": "gateway-full-office-save.walk",
+      "save": "OFFICEFULL"
+    },
+    {
+      "name": "dataman",
+      "script": "gateway-dataman-restore-save.walk",
+      "save": "DATAMAN100"
+    },
+    {
+      "name": "vr",
+      "script": "gateway-vr-restore-save.walk",
+      "save": "VRFULL"
+    },
+    {
+      "name": "armory_class",
+      "script": "gateway-armory-class-restore-save.walk",
+      "save": "CLASSFULL"
+    }
+  ]
+}
