@@ -1882,6 +1882,8 @@ int main(int argc, char **argv) {
     unsigned aspect_width = 4, aspect_height = 3;
     std::vector<std::uint64_t> entry_addresses;
     std::multimap<unsigned, std::uint16_t> scheduled_keys;
+    std::multimap<unsigned, std::string> scheduled_dumps;
+    std::set<std::string> scheduled_dump_prefixes;
     struct ResearchPoke16 {
         std::uint32_t address;
         std::uint16_t expected, value;
@@ -1895,6 +1897,7 @@ int main(int argc, char **argv) {
                      "[--break-at HEX] [--state-dir DIR | --read-only] [--trace-blocks FILE] "
                      "[--trace-rtlink-calls FILE] "
                      "[--key-script FILE --milliseconds N] "
+                     "[--dump-at MS:PREFIX ...] "
                      "[--trace-rtlink-events FILE --trace-rtlink-target SECTION:CS:IP ...] "
                      "[--trace-research FILE --trace-entry HEX ...] [--key-at MS:BIOSHEX ...] "
                      "[--research-poke16-at MS:LINEARHEX:OLDHEX:NEWHEX ...] "
@@ -2044,6 +2047,23 @@ int main(int argc, char **argv) {
                 usage();
                 return 2;
             }
+        } else if (option == "--dump-at" && i + 1 < argc) {
+            const std::string value = argv[++i];
+            const auto colon = value.find(':');
+            unsigned time = 0;
+            bool valid = colon != std::string::npos && colon > 0 &&
+                         colon + 1 < value.size();
+            if (valid) {
+                const auto parsed = std::from_chars(value.data(), value.data() + colon, time);
+                valid = parsed.ec == std::errc{} && parsed.ptr == value.data() + colon &&
+                        time <= 3600000 && value.size() - colon - 1 <= 260 &&
+                        scheduled_dumps.size() < 32;
+            }
+            if (!valid || !scheduled_dump_prefixes.insert(value.substr(colon + 1)).second) {
+                usage();
+                return 2;
+            }
+            scheduled_dumps.emplace(time, value.substr(colon + 1));
         } else if (option == "--headless")
             interactive = false;
         else if (option == "--trace-blocks" && i + 1 < argc)
@@ -2189,6 +2209,11 @@ int main(int argc, char **argv) {
             std::cerr << "keyboard script is empty, unreadable, or exceeds --milliseconds\n";
             return 2;
         }
+    }
+    if (!scheduled_dumps.empty() &&
+        (!milliseconds || scheduled_dumps.rbegin()->first >= milliseconds)) {
+        std::cerr << "--dump-at timestamps must precede --milliseconds\n";
+        return 2;
     }
     if (!scheduled_pokes.empty() && research_path.empty()) {
         std::cerr << "--research-poke16-at requires --trace-research for an audit trail\n";
@@ -2468,6 +2493,15 @@ int main(int argc, char **argv) {
         std::uint64_t delivered_irq0 = 0;
         while (true) {
             state.elapsed_ms = elapsed_us / 1000;
+            while (!scheduled_dumps.empty() &&
+                   scheduled_dumps.begin()->first <= state.elapsed_ms) {
+                const auto at = scheduled_dumps.begin();
+                dump_guest(engine.uc, state, at->second);
+                if (state.research_trace.is_open())
+                    state.research_trace << "snapshot ms=" << std::dec << state.elapsed_ms
+                                         << " prefix=" << at->second << '\n';
+                scheduled_dumps.erase(at);
+            }
             while (!scheduled_pokes.empty() &&
                    scheduled_pokes.begin()->first <= state.elapsed_ms) {
                 const auto poke = scheduled_pokes.begin()->second;
@@ -2746,6 +2780,8 @@ int main(int argc, char **argv) {
         }
         if (!scheduled_pokes.empty())
             throw std::runtime_error("research poke was never applied before probe stopped");
+        if (!scheduled_dumps.empty())
+            throw std::runtime_error("scheduled snapshot was never captured before probe stopped");
         if (!dump_prefix.empty()) {
             dump_guest(engine.uc, state, dump_prefix);
         }

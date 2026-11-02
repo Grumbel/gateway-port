@@ -11,7 +11,7 @@ PROBE = sys.argv.pop(1)
 
 
 class ProbeTests(unittest.TestCase):
-    def run_guest(self, code, files=None, dump=False, game_args=None, press=None, break_at=None, state=False, state_files=None, exe_name="TEST.EXE", research_entries=None, scheduled_keys=None, probe_adlib=False, scheduled_pokes=None, milliseconds=None, trace_byte_write=None, trace_rtlink_calls=False, rtlink_event_targets=None, key_script_lines=None):
+    def run_guest(self, code, files=None, dump=False, game_args=None, press=None, break_at=None, state=False, state_files=None, exe_name="TEST.EXE", research_entries=None, scheduled_keys=None, probe_adlib=False, scheduled_pokes=None, milliseconds=None, trace_byte_write=None, trace_rtlink_calls=False, rtlink_event_targets=None, key_script_lines=None, dump_at=None):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             assets = root / 'assets'
@@ -49,6 +49,8 @@ class ProbeTests(unittest.TestCase):
                 key_script = root / 'keys.txt'
                 key_script.write_text(key_script_lines, encoding='ascii')
                 command += ['--key-script', str(key_script)]
+            for time, label in dump_at or []:
+                command += ['--dump-at', f'{time}:{root / label}']
             for poke in scheduled_pokes or []:
                 command += ['--research-poke16-at', poke]
             if trace_byte_write is not None:
@@ -83,6 +85,15 @@ class ProbeTests(unittest.TestCase):
                 result.memory = (root / 'snapshot.bin').read_bytes()
                 result.registers = dict(line.split('=') for line in
                                         (root / 'snapshot.regs').read_text().splitlines())
+            result.snapshots = {}
+            for _, label in dump_at or []:
+                path = root / label
+                try:
+                    if path.with_suffix('.bin').is_file():
+                        result.snapshots[label] = (path.with_suffix('.bin').read_bytes(),
+                                                   path.with_suffix('.ppm').read_bytes())
+                except OSError:
+                    pass  # The probe must reject an overlong output prefix.
             result.files = {name: (assets / name).read_bytes() for name in (files or {})}
             result.state_files = {path.name: path.read_bytes() for path in (root / 'state').glob('*')
                                   if path.is_file()}
@@ -133,6 +144,28 @@ class ProbeTests(unittest.TestCase):
         self.assertNotEqual(self.run_guest(code, milliseconds=30,
                                           key_script_lines='3:1c0d\n',
                                           scheduled_keys=['4:3920']).returncode, 0)
+
+    def test_timed_native_snapshots_and_rejected_unreached_checkpoints(self):
+        # Snapshot the running guest twice without terminating or modifying it.
+        code = bytes.fromhex('ebfe')
+        result = self.run_guest(code, milliseconds=5, research_entries=[],
+                                dump_at=[('1', 'first'), ('3', 'second')])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(set(result.snapshots), {'first', 'second'})
+        for memory, ppm in result.snapshots.values():
+            self.assertEqual(len(memory), 1024 * 1024)
+            self.assertTrue(ppm.startswith(b'P6\n'))
+        self.assertIn('snapshot ms=1 ', result.research_trace)
+        self.assertIn('snapshot ms=3 ', result.research_trace)
+        for values in ([('5', 'late')], [('1', 'same'), ('2', 'same')],
+                       [('nan', 'bad')], [('1', 'x' * 300)]):
+            with self.subTest(values=values):
+                bad = self.run_guest(code, milliseconds=5, dump_at=values)
+                self.assertNotEqual(bad.returncode, 0)
+        too_early = self.run_guest(bytes.fromhex('b8004ccd21'), milliseconds=5,
+                                   dump_at=[('3', 'never')])
+        self.assertNotEqual(too_early.returncode, 0)
+        self.assertIn('scheduled snapshot was never captured', too_early.stderr)
 
     def test_rtlink_manager_counts_section_qualified_trampoline_without_overlays(self):
         # Build a synthetic ten-byte Gateway trampoline and one-instruction
