@@ -255,3 +255,15 @@ effects and emits original text-token identifiers, not a story renderer.
 terminal/refusal state writes. The Ghidra importer now exposes 18 interior
 response instructions and seven exact computed-switch references, though
 the decompiler's segmented branch remains unresolved.
+
+The next native slice follows the common VR-return function
+`0x6d564–0x6d747` across its Beach reward, raw result-word `:7920`
+branches, native cleanup, and **suspended room transfer**. A freshly
+replayed `SLEEP, LOOK` sequence shows the original function returning
+to its caller only after a later command: player first moves to Terminal
+room `0x29b`, then from that room onto couch `0x2a1`. Ghidra now has 24
+byte-checked interior labels for this function and exports its selected
+pseudocode, but does not recover the resident yield/resume mechanism.
+`StoryModel::evaluate_vr_return` is a bounded pure branch selector with
+six paths; it is *not* an interpreter for the game or a replacement for
+the native room-transfer service. See [VR return](vr-return.md).

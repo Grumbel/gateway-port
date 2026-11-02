@@ -344,6 +344,17 @@ Every one of those 19 matched actions advances via OVL `0x6cff1` and clears
 the flag via `0x6d01c`. The terminal SLEEP match is *different*: its
 positive `0x7909` write does not lead to a 20→21 counter increment.
 
+**Subsequent native follow-up:** The apparent difference between the refusal
+snapshot (player back on Terminal couch `0x2a1`) and the SLEEP snapshot
+(player standing in Terminal `0x29b`) is a **deferred return continuation**,
+not different final location rules. The shared native VR-return handler
+calls resident `048e:0284(0x29b)`, yielding to subsequent room/input
+processing. An extra `LOOK` after SLEEP resumes the same section-51 frame
+at original `0x6d73b`, moves player `0x29b → 0x2a1`, and executes `retf`
+at `0x6d747`. The original refusal replay behaves the same way after
+its following SCREAM. Exact native timestamps, the return-result guards
+and cross-replay checker are in [VR return](vr-return.md).
+
 `tools/inspect_study_response.py` verifies the **pair of native replays**
 against those exact PC origins and field-write sequences, the real
 stage-20 action/prompt bytes, the two verified player moves, correct final

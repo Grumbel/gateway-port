@@ -509,3 +509,23 @@ back to Terminal without advancing past stage 1. A new multi-byte watcher
 and `tools/inspect_study_response.py` validate both original paths.
 See [Study VR](study-vr.md) for reproducible commands, exact branch offsets
 and the bounded C++ translation.
+
+## VR return dispatcher: eleventh headless run and deferred frame
+
+A fresh Ghidra 11.4.2/JDK21 import selects the shared section-51 return
+routine `OVL:0x6d564` and VR Terminal handler `0x29b` in addition to
+the Study code. It validates the same **58 RTLink sections, 13,947 fixups,
+23 Study event words, seven computed-flow edges, nine action-matcher labels,
+18 response labels**, and the new **24 byte-checked VR-return instruction
+labels**. All **71/71 selected decompiler contexts** exported. The remaining
+segmented computed-jump warnings are unchanged.
+
+This routine's preliminary C-like pseudocode suggests two successive player
+moves, but native execution reveals an important frame boundary: the call
+to resident `048e:0284(0x29b)` suspends the function after moving the player
+into Terminal room `0x29b`. The frame resumes at original `0x6d73b` after
+a later command, moves player into Terminal couch `0x2a1`, then executes
+`retf` at `0x6d747`. The original Beach branch awards pin `0x2a9`; the
+Study return selects its non-award, result-zero path. Both are compared
+against unmodified native replays in [VR return](vr-return.md). The result-7
+branches are static-only and their story semantics are unknown.

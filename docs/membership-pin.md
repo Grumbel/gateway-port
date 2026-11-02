@@ -88,7 +88,16 @@ replay confirms the original object setter changes the pin's relation
 the Casino callback independently before the complete route was known.
 
 The later branch at `0x6d5e3` handles the non-award return paths, including
-other VR-result state and messages. These have not been modeled.
+other VR-result state and messages. Its purpose was unresolved in the initial
+Beach reward investigation.
+
+**Follow-up:** That branch is now decoded and cross-checked with unmodified
+Study refusal/SLEEP replays. The native helper selects the Beach reward
+*before* testing raw result word `:7920`; zero result emits `F000:70be`
+and schedules a separate event. Crucially, the common return routine calls
+`048e:0284` to transfer to the Terminal and **resumes later**, after the
+next input, to put the player on couch `0x2a1`. The exact branch table,
+24 Ghidra labels and native evidence are in [VR return](vr-return.md).
 
 ## Casino access: independently and normally validated in Unicorn
 
