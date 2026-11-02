@@ -102,8 +102,8 @@ uint16_t casino_callback_14(uint16_t event) {
 **Pedroza Lounge**. `0157:000c` checks a direct relation slot, not a
 recursive inventory search. Its flag and text routines are invoked by the
 original binary. The prose/text-token meaning remains unidentified; the
-positive condition has now been tested under a controlled guest-memory
-intervention, separately from normal gameplay.
+positive condition was initially tested under a controlled guest-memory
+intervention, and has since been **replayed through ordinary game inputs**.
 
 On a fresh native Unicorn replay with command sequence
 `east,east,east,east,look,inventory,look`:
@@ -120,7 +120,31 @@ On a fresh native Unicorn replay with command sequence
 - Subsequent object-event calls to the **same** callback index pass event
   `0x01` and return `0x00f6`; they are not room-exit decisions.
 
-### Controlled positive branch (explicitly modified guest state)
+### Normal positive branch: rewarded pin, genuine player inventory
+
+The 39-step unmodified native replay in [beach-vr-replay.md](beach-vr-replay.md)
+completes Beach VR with five drinks, places the gold membership pin in the VR
+Terminal, removes the collar, stands up, and picks up the pin using the
+original TAKE handler. The native pin relation word changes from
+**`0x029b → 0x00d3`** at **117678 ms** (the ordinary location setter).
+The player then navigates back to Casino through the lobby, Heecheetown
+and Blue Hell Bar.
+
+| Native trace, unmodified game | Observation |
+| --- | --- |
+| `129609` ms | Original room state changes to Casino `0x0f5` |
+| `132176` ms | Room scanner passes callback `0x14`, **event `0x0f`** |
+| `132268` ms | The original gate returns **`AX=0x00f6`** |
+| `132268` ms | Original setter changes player relation `0x0f5 → 0x0f6` |
+| Final binary state | Player in Pedroza Lounge `0x0f6`, membership pin attached directly to player `0x0d3` |
+
+The original display says that the bouncer notices the membership pin and
+lets the player inside Pedroza Lounge. The success flag, pin pickup, callback
+return and player relocation have all been checked from the real native
+trace, with **no guest-memory modification**. The new
+`inspect_beach_pin.py --expect-beach-casino` verifies their order and state.
+
+### Earlier controlled positive branch (explicitly modified guest state)
 
 The original native snapshot places membership pin `0x2a9` (type 8) at
 `0x2a3`, with its location/relation word at guest physical `0x35b24`.
@@ -153,9 +177,11 @@ the player location from `0x0f5` to `0x0f6`, and was correlated with
 the original kind-4 callback return. The corresponding full-framebuffer
 hashes differ, as expected for different rooms.
 
-This tests **both return branches of the actual x86 handler**. It still
-does not demonstrate the real command sequence for obtaining or equipping
-the pin, and it leaves the original text-token meanings unresolved.
+This independently tested **both return branches of the actual x86
+handler** before the ordinary gameplay route was known. The later normal
+replay above now demonstrates obtaining the pin and passing that same gate,
+without intervention. Other callback targets and story conditions remain
+unresolved.
 
 ## Two more statically decoded patterns
 

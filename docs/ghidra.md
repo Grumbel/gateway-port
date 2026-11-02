@@ -315,6 +315,30 @@ analysis and on the fresh full run.
 
 The `0x6d564` decompilation displays the Beach-result flag `0x78fa`, direct
 technician/pin relationship check, move of pin `0x2a9` to room `0x29b`, and
-clear of property `0x08`. Its normal trigger path is still untraced.
+clear of property `0x08`. The later Beach native replay traced its normal
+trigger path; see below.
 See [membership-pin.md](membership-pin.md) for the original-instruction
 cross-checks and precise scope of native validation.
+
+## Beach VR object handlers: fifth run and live reward confirmation
+
+A further fingerprinted Ghidra 11.4.2/JDK21 run selected four more section-50
+object handlers: Beach room `0x2ae` (`OVL:0x69170`), scanner `0x2b3`
+(`0x69cd1`), frosted glass `0x2b4` (`0x69d63`) and bartender `0x2bb`
+(`0x69649`). All **74/74** contexts exported with their original file offsets
+and provisional roles. The Beach room's event jump table still has unresolved
+indirect jumps. The glass handler's plain conditional branches expose the
+drink-refresh word `0x78f6` and success byte `0x78fa`.
+
+The original game was then navigated through real typed inputs to Beach,
+glass pickup, repeated bartender interactions, and scanner placement. Native
+traces verify the counter reaching **5**, success byte changing **0 → 1**
+at 109250 ms, section-51 return at 109251 ms, and membership pin relocation
+into VR Terminal at 111158 ms. This validates the earlier static reward
+path; unlike the controlled Casino gate test, **no guest state was poked**.
+The subsequent 39-command original-game replay also removed the VR collar,
+stood up, took the awarded pin (at 117678 ms), and walked from the Casino
+through its event-`0x0f` callback into Pedroza Lounge (at 132268 ms).
+The final native pin relation is player `0x0d3` and player room is `0x0f6`.
+The entire sequence, native watch interpretation and ordered-event assertion
+are documented in [beach-vr-replay.md](beach-vr-replay.md).

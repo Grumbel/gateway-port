@@ -1,10 +1,19 @@
 # Membership pin: from the Beach VR to the Casino
 
-This is a **native-code reconstruction**, not yet a playable puzzle replay.
-It joins three previously separate observations: the pin's starting location,
+This analysis began as a **native-code reconstruction** and now has a
+successful original-game replay **through the Beach reward, actual pin
+pickup and normal Casino entry**. It joins three
+previously separate observations: the pin's starting location,
 the Beach virtual-reality completion branch, and the tested Casino EAST gate.
 Addresses below are **original, unmodified** `GATEMAIN.OVL` file offsets;
 the file's RTLink sections are loaded into different overlay banks at runtime.
+
+**Update:** The Beach-success, technician pin-drop, player pickup and
+Casino EAST positive branches have all been exercised without intervention
+in an original-game Unicorn replay.
+See [beach-vr-replay.md](beach-vr-replay.md) for the scripted input, live
+byte/record writes and limitations. The sections below retain the earlier
+static-analysis provenance to distinguish evidence obtained at each stage.
 
 ## Native starting state and pin handler
 
@@ -33,7 +42,9 @@ confirmed by prior input traces; other verb names remain unresolved):
 Both text tokens decode through `GATESTR.DAT` (resource group 14, indices
 `0x42` and `0x43`). The previously verified TAKE action-dispatch behavior
 applies only when the pin handler does **not** intercept the action; there is
-not yet a native TAKE-pin trace proving the complete downstream mutation.
+now native TAKE-pin traces for both the *blocked* technician-owned state and
+the *successful* pickup after the Beach reward (pin `0x29b → 0x0d3` at
+117678 ms in the full replay).
 
 ## Beach VR success flag: the first half of the normal reward path
 
@@ -47,10 +58,9 @@ glass is `0x2b4` (handler `0x69d63`). The original glass-handler code at
 
 Immediately before this code, the handler emits `f000:bc51`. That text
 describes putting the frosted glass onto the scanner and a runaway cascade
-of virtual drinks that breaks the simulation. The byte is therefore a
-**strong candidate for the Beach-success flag**; the value and assignment
-are exact original instructions, while the gameplay conditions for arriving
-at that instruction have not been traced. In the earlier native startup
+of virtual drinks that breaks the simulation. The byte is now **verified as
+the Beach-success flag**: the original replay observed the write from 0 to 1
+at 109250 ms after five drink interactions. In the earlier native startup
 snapshot this byte is **0** (the segment pointer `DS:9644` resolves to the
 original `DS`, with the byte at offset `0x78fa`).
 
@@ -71,17 +81,16 @@ function entry. Its native instructions establish this order:
 | **`0x6d5c0–0x6d5d2`** | **`1c24:13d5(0x2a9,0x29b,0)`** | **Move pin from technician into VR Terminal room** (third argument is relation slot) |
 | `0x6d5d3–0x6d5df` | `0157:0413(0x2a9,8)` | Clear property/flag `0x08` on the pin |
 
-The destination `0x29b` is a room, **not the player `0xd3`**. The normal
-remaining puzzle step is to pick up the now-accessible pin; the exact
-TAKE-pin outcome needs a native trace. This distinction explains why the
-earlier Casino replay had to poke the pin relation *directly to the player*
-to exercise the successful EAST callback: it bypassed both the Beach reward
-and the later pickup.
+The destination `0x29b` is a room, **not the player `0xd3`**. The player must
+remove the VR collar, stand up, and TAKE MEMBERSHIP PIN. The full native
+replay confirms the original object setter changes the pin's relation
+`0x29b → 0x0d3`; earlier controlled research bypassed these steps to test
+the Casino callback independently before the complete route was known.
 
 The later branch at `0x6d5e3` handles the non-award return paths, including
 other VR-result state and messages. These have not been modeled.
 
-## Casino access: already validated in Unicorn
+## Casino access: independently and normally validated in Unicorn
 
 The Casino's kind-4 EAST exit invokes callback ID `0x14` in section **48**,
 OVL file `0x665f9`. It performs the direct membership check
@@ -91,6 +100,10 @@ player stays in Casino `0x0f5`. In the controlled research replay, replacing
 just the pin's relation word with `0xd3` causes the native callback to
 return `0x0f6` and moves the player there. That earlier replay validates the
 **gate**, but does **not** validate obtaining the pin through gameplay.
+The later **unmodified** 39-step replay did both: native scanner event
+`0x0f` at 132176 ms, callback return `AX=0x00f6` at 132268 ms, and a
+player move `0x0f5 → 0x0f6` with the pin directly in inventory. See
+[beach-vr-replay.md](beach-vr-replay.md) for the reproducible commands.
 
 ## Reproduce the decompilation
 
@@ -113,8 +126,9 @@ python3 tools/run_ghidra.py \
 
 Only the selected objects are seeded as *candidate* entries; the other native
 object pointers remain aliases. Ghidra's output is preliminary C-like
-pseudocode, with unresolved far calls and indirect jumps. To extend the
-chain, also select Beach glass `--decompile-object 0x2b4`. Native validation
-still needed: solve the Beach puzzle through typed commands, capture the
-`0x78fa` mutation and `0x6d5c0` call, TAKE the dropped pin, and finally
-attempt Casino EAST without a research memory poke.
+pseudocode, with unresolved far calls and indirect jumps. The subsequent
+74/74 headless run also selected Beach `0x2ae`, scanner `0x2b3`, glass
+`0x2b4`, and bartender `0x2bb`. The Beach reward has now been traced through
+typed commands; follow [beach-vr-replay.md](beach-vr-replay.md) to reproduce
+it. The formerly open validation of TAKE after the award and native Casino
+EAST traversal has now succeeded without a research memory poke.
