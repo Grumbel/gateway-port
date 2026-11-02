@@ -92,12 +92,17 @@ Decoded text under the addressing rule below:
 | `0xf00070b2` | 28/178 | Response explaining that `PASSWORD` is not the password |
 
 These are native branching/state-changing routines that directly choose story
-responses. The later [Study VR replay](study-vr.md) identifies `0x7904`
-as the Study's signed progress word, confirms native initialization from
-`0 → 1`, and traces a **controlled** `3 → 4` increment through `0x6cff1`.
-Ghidra places this offset inside a function beginning at `0x6ce85`; the
-complete natural dialogue sequence needed to advance the counter has **not**
-yet been recovered.
+responses. The [Study VR investigation](study-vr.md) identifies `0x7904`
+as the signed Study therapy progress word, confirms original initialization
+from `0 → 1`, and subsequently recovers **all 19 ordinary player actions**
+needed to advance it naturally through **`1 → 2 → ... → 20`**. Two native
+far-pointer tables (`[DS:9652]:0x3a2` and `:0x3f2`, four-byte entries)
+provide prompts and responses; original x86 at `0x6cff1` performs every
+successful increment. Ghidra recognizes the containing section-51 function
+at `0x6ce85`; a reproducible snapshot decoder reads the real mixed F000
+tokens and guest-resident strings. The earlier single-word intervention
+is retained as a historical cross-check but is no longer needed to reach
+Study `UP`'s positive branch.
 
 ## Text tokens: correction to the earlier hypothesis
 
@@ -215,4 +220,8 @@ only statically examined in those earlier runs. The subsequent
 as a signed Study progress counter. Original input confirms the blocked
 `UP` at value 1; a separately audited word intervention confirms the
 positive `3–19` branch moves the player from the leather couch back into
-the Study room, **also returning `AX=0`**.
+the Study room, **also returning `AX=0`**. The subsequent normal gameplay
+replay independently takes that branch at counter **3**, completes all
+19 native therapy stages through counter **20**, and validates the shared
+desk/scale `DOWN` callback `0x05`: a natural desk refusal at counter **10**
+and a native desk-to-Study move at **13**, both returning zero.

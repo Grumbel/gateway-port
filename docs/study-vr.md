@@ -25,7 +25,7 @@ room **Study `0x2bc`** at **60674 ms**, then into its **leather couch
 `0x2be`** at **63801 ms**. The Study contains Sigfreid `0x2ca`, a maple
 desk `0x2bf`, leather chair `0x2c0`, and other native objects. It has two
 kind-4 exits: `UP` calls callback `0x2b`, `DOWN` calls callback `0x05`.
-The latter is **not** part of this model.
+The latter was investigated separately in the subsequent 19-stage replay below.
 
 ## Original handler: signed counter and direct parent
 
@@ -152,3 +152,159 @@ For the Ghidra context, export object state with
 and `--decompile-offset 0x6cfda` to `tools/run_ghidra.py` in a **fresh**
 output directory. The imported `pseudocode.txt` contains original game
 instructions, so it remains generated/ignored rather than committed.
+
+## Follow-up: all 19 Study therapy stages recovered with original input
+
+The previous controlled `3 → 4` experiment is **no longer needed to reach
+the successful branch**. A complete, unmodified native replay now follows
+the therapeutic instructions and advances the original signed word
+`[DS:9634]:7904` from `0 → 1 → ... → 20`, with every `1 → 2` through
+`19 → 20` write executed by **`GATEMAIN.OVL:0x6cff1`** (`4990:2321`,
+physical `0x4bc21`). The native initialization is at `0x6ce97`.
+
+The source of the instructions is **not a script bytecode**. Ghidra shows a
+single section-51 native function starting at original `0x6ce85` using:
+
+- `[DS:9652]:0x03a2 + 4*progress` for a far-pointer prompt table;
+- `[DS:9652]:0x03f2 + 4*progress` for a far-pointer response table;
+- text calls `f000:70ad` / `f000:70af` for prompts and `f000:70b1` for
+  responses, with `f000:70ae` for a repeat and `f000:70b0` past stage 19;
+- the native word `0x7904`, previous-instruction word `0x7906`, and bytes
+  `0x7908`, `0x7909` to select a prompt/repeat/response path.
+
+These tables contain **19 four-byte far pointers each** (indices 1–19).
+Some entries are `F000` story tokens, others are ordinary DS or section-data
+NUL-terminated strings. `tools/inspect_study_script.py` reads both kinds
+through a checked native snapshot and the original `GATESTR.DAT`, without
+hardcoding the displayed dialogue in the repository. The following commands
+were accepted, in order, by the original game's parser; each corresponded
+to one contiguous native progress increment:
+
+| Stage / counter before action | Natural typed input | Observed native effect |
+| ---: | --- | --- |
+| 1 | `SCREAM` | Counter 1→2 |
+| 2 | `FEEL COUCH` | Counter 2→3 |
+| 3 | `UP` | **Player couch `0x2be` → Study `0x2bc`**, AX=0, then 3→4 |
+| 4 | `HOP` | 4→5 |
+| 5 | `HIT MYSELF` | 5→6 |
+| 6 | `STEP ON HAND` | 6→7 |
+| 7 | `SMELL HAND` | 7→8 |
+| 8 | `CLIMB WALLS` | 8→9 |
+| 9 | `JUMP ON DESK` | **Player Study → desk `0x2bf`**, then 9→10 |
+| 10 | `SING` | 10→11 |
+| 11 | `DANCE` | 11→12 |
+| 12 | `DANCE` | 12→13 |
+| 13 | `DOWN` | **Player desk → Study**, AX=0, then 13→14 |
+| 14 | `ATTACK COUCH` | 14→15 |
+| 15 | `CLEAN DESK` | 15→16 |
+| 16 | `CRY` | 16→17 |
+| 17 | `RUB HAND` | 17→18 |
+| 18 | `KISS FLOOR` | 18→19 |
+| 19 | `SIT ON COUCH` | **Player Study → leather couch**, then 19→20 |
+
+An additional `UP` at counter **20** returns AX=0 without moving. It is
+outside callback `0x2b`'s signed 3–19 get-up window. The native snapshot
+finishes with player directly in couch `0x2be`, enclosing room Study and
+counter `20`. Unlike the earlier 3→4 test, **no RAM intervention was used**.
+
+## Callback `0x05`: desk and scale DOWN, including a natural refusal
+
+The original `GATEMAIN.OVL:0x6958d–0x69648` (section 50, live
+`4990:047d`, trampoline `2c24:156f`) is a **shared** callback, referenced
+by `DOWN` in Study `0x2bc` and in Guess Your Weight booth `0x047`.
+It accepts event `0x0f` and always returns `AX=0`. Its first native
+`0157:000c(player, 0x2bf)` tests the type-7 player's *direct relation*
+to the maple desk; the second tests direct relation to scale `0x087`.
+This service is **relation-slot membership**, not recursive containment.
+
+If on the desk, the code blocks `DOWN` for signed `0x7904` in **9–12**
+inclusive (original `0x695af–0x695d3`, text `f000:bc12`). Otherwise it
+describes getting down (`f000:bc13`) and invokes the original location
+setter with the current room from `[DS:9632]:35c6`. The scale branch
+uses text `f000:bc14` and the same setter, **without** a Study counter
+test. Neither branch returns a navigable room ID in AX.
+
+In a second **unmodified** keyboard replay, `DOWN` immediately after
+`JUMP ON DESK`, with progress **10**, entered callback `0x05`, returned
+zero and **did not move**. After `SING`, `DANCE`, `DANCE`, progress was
+**13**. `DOWN` at **114200 ms** executed the same original callback,
+wrote player **`0x2bf → 0x2bc`** through the verified native service,
+returned `AX=0`, and then advanced progress 13→14. The full replay's
+non-interrupted stage-13 `DOWN` makes that same move at **111200 ms**.
+The `0x087` scale positive path is *statically* decoded but has not been
+replayed. `StoryModel::apply_desk_scale_down` deliberately models only
+the bounded type-7 player location effect, not its dialogue output.
+
+`tools/inspect_study_therapy.py` verifies the full and early-DOWN traces
+as a **pair**: original counter initialization and every contiguous stage
+increment, 19 action-specific time slots, watched player word writes,
+correct callback ID/section/trampoline/AX, the actual `0x6958d` event
+entry, refusal at counter 10, success at counter 13 and final refusal at
+counter 20. It rejects missing/reordered writes, extra pokes, missing
+native callback execution and spurious movement. Thirteen synthetic
+negative/positive tests exercise these constraints.
+
+### Reproduce the two unmodified native replays
+
+```sh
+prefix='east,northwest,up,lie on couch,@space,@space,@space,@space,@space,@space,@space,lie on couch,wear collar,set switch to study,push button,@space,@space,@space,look'
+phases='scream,feel couch,up,hop,hit myself,step on hand,smell hand,climb walls,jump on desk,sing,dance,dance,down,attack couch,clean desk,cry,rub hand,kiss floor,sit on couch,look,up'
+gate='scream,feel couch,up,hop,hit myself,step on hand,smell hand,climb walls,jump on desk,down,sing,dance,dance,down,look'
+
+python3 tools/trace_game_logic.py --scenario puzzle --native-only \
+  --probe "${GATEWAY_BUILD_DIR:-build}/gateway-probe" --data ../gateway-dos \
+  --verify-overlays --trace-navigation --trace-object-writes d3 \
+  --trace-byte-write 62d64 --extra-trace-entry 49d7d \
+  --extra-trace-entry 4bab5 --output build/study-therapy-full \
+  --command-sequence "$prefix,$phases"
+python3 tools/trace_game_logic.py --scenario puzzle --native-only \
+  --probe "${GATEWAY_BUILD_DIR:-build}/gateway-probe" --data ../gateway-dos \
+  --verify-overlays --trace-navigation --trace-object-writes d3 \
+  --trace-byte-write 62d64 --extra-trace-entry 49d7d \
+  --extra-trace-entry 4bab5 --output build/study-therapy-desk-gate \
+  --command-sequence "$prefix,$gate"
+python3 tools/inspect_study_therapy.py \
+  build/study-therapy-full/native build/study-therapy-desk-gate/native
+python3 tools/inspect_study_script.py build/study-therapy-full/native \
+  --strings ../gateway-dos/GATESTR.DAT
+```
+
+The physical `0x62d64` counter watch is specific to the fingerprinted
+replays' DS/segment allocation: the inspector independently follows the
+actual native pointer and rejects a different address. An alternate DOS
+layout must derive a new watched address before reproducing it.
+
+## Study room handler jump table: 23 exact targets, Ghidra limitation
+
+The original Study object handler begins at **OVL `0x6b521`**, section 51.
+At `0x6b528–0x6b539`, it subtracts one from the event, bounds it to
+`0..22`, doubles the index and jumps through **`CS:[BX+0x0b82]`**.
+The section's verified file image base is `0x6acd0`, so the table begins
+at original **OVL `0x6b852`** and has **23 u16 offsets**, each relative
+to that section base. The original bytes give:
+
+| Native event IDs | Target OVL file offset |
+| --- | ---: |
+| `1` | `0x6b692` |
+| `6` | `0x6b82d` |
+| `8`, `9`, `11` | `0x6b56b` |
+| `14` | `0x6b5bf` |
+| `22` | `0x6b53e` |
+| `23` | `0x6b555` |
+| `2–5`, `7`, `10`, `12–13`, `15–21` | `0x6b5ba` (default) |
+
+These target offsets have been decoded from the verified table, **not**
+represented as separately validated Ghidra function entries. Reproduce
+them with `tools/disassemble_story.py --start 0x6b521 --size 0x1f
+--section-base 0x6acd0 --event-table 0x6b852 --events 23` and the
+original OVL file path. Their detailed event semantics remain partial.
+
+A fresh Ghidra 11.4.2/JDK21 import with 44 callback labels, three selected
+Study objects and two selected native code offsets (`0x6ce85`,
+`0x6cfda`) exported **69/69 contexts** and revalidated all **58 overlay
+sections / 13,947 fixups**. It recognized `0x6ce85` as a function entry
+and `0x6cfda` as an interior context of that same function. Ghidra still
+reports an unresolved read of `ram:4000:0b82` for the Study object's
+computed event jump. The table above is the original-instruction cross-
+check; **69/69 decompilations are not proof of correct indirect control
+flow**, and no synthetic overlay-bank flattening has been introduced.

@@ -210,7 +210,22 @@ x86 requires the signed counter to lie in **3–19**; a separate audited
 single-word guest-RAM intervention reached that branch and verified the
 native **`0x2be → 0x2bc`** location write, still returning **`AX=0`**.
 The [Study investigation](study-vr.md) strictly distinguishes that
-controlled condition from normal gameplay.
+controlled condition from normal gameplay. A later **unmodified 19-stage
+Study therapy replay** also reaches that identical native `UP` branch at
+counter **3**, moving the player off couch `0x2be` at 81140 ms and advancing
+the counter to 4. Continued natural inputs complete through counter 20,
+at which point `UP` is blocked again. See the follow-up in [Study](study-vr.md).
+
+**Callback `0x05`: Study desk and Guess Your Weight scale `DOWN`.** This
+other section-50 callback at OVL `0x6958d` tests the type-7 player's direct
+relation to desk `0x2bf`, or otherwise to scale `0x087`. The desk refuses
+`DOWN` for **signed progress 9–12**; other desk values move the player to
+the current room, as does the scale path regardless of Study progress.
+Both the refusal at native counter **10** and the successful desk
+**`0x2bf → 0x2bc`** relocation at **13** were exercised through ordinary
+keyboard commands. Both return `AX=0`; the scale move has only static
+instruction evidence. `StoryModel::apply_desk_scale_down` represents the
+bounded state effects, not the original text/command parser.
 
 ## Two more statically decoded patterns
 

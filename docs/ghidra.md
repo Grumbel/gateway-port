@@ -401,3 +401,31 @@ Original Unicorn replay verified a normal `AX=0` refusal at counter `1`
 and a **controlled, explicitly logged** `AX=0` get-up at counter `3`;
 both use the same callback and the successful native move writes player
 `0x2be → 0x2bc`. Details and commands in [Study VR](study-vr.md).
+
+## Study therapy: eighth headless run and recovered native jump table
+
+The earlier controlled Study get-up has been superseded by a complete
+**unmodified 19-stage therapy sequence**. An original-game Unicorn replay
+advances signed state word `0x7904` naturally from 1 through 20 using the
+two original far-pointer prompt/response tables in section 51. The original
+Study DOWN callback `0x05` in section 50 was also exercised: it refuses
+leaving the desk at progress 10 and moves player `0x2bf → 0x2bc` at 13,
+still returning AX=0. The [Study native analysis](study-vr.md) gives every
+command, watched word writes, and the bounded C++ translation.
+
+A fresh Ghidra **11.4.2/JDK21** run supplied the complete **44 callback
+directory**, three selected Study handlers, and manual code offsets
+`0x6ce85` and `0x6cfda`, yielding **69/69 exported contexts**. It again
+validated 58 independent overlay sections and 13,947 relocations.
+The decompiler confirms that `0x6ce85` is the enclosing Study progress
+function and `0x6cfda` an interior context—not another function.
+
+Study room handler `0x6b521` still warns about a computed indirect jump:
+Ghidra cannot read `ram:4000:0b82`, the reference it infers for
+`CS:[BX+0x0b82]` inside RTLink section 51. The original OVL contains a
+**23-word jump table at `0x6b852`**, verified by the section-51 image base
+`0x6acd0`. Its exact event→file-offset mapping has now been decoded in
+[Study](study-vr.md); these remain internal branches, not invented
+function entries. This highlights why the isolated overlay spaces and
+original-instruction cross-checks remain essential for Ghidra's preliminary
+C-like output.
