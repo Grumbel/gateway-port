@@ -101,6 +101,13 @@ mapping and the first traced example are in
 [room-callbacks.md](room-callbacks.md). Use a fresh output directory for
 each run.
 
+For triaging the full handler table, `tools/inventory_native_handlers.py`
+maps the 696 section-qualified entries, finds byte-identical entry-prefix
+groups, and optionally correlates a complete native trampoline-call census
+with object handlers and room callbacks. See
+[native-handler-coverage.md](native-handler-coverage.md) for reproducible
+first-room measurements, limitations, and decompilation priorities.
+
 ## Imported structures and first analysis targets
 
 Ghidra's Data Type Manager receives these *confirmed* little-endian structs:
