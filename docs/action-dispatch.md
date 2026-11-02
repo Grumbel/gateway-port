@@ -1005,8 +1005,8 @@ the five-byte direct call at `0xc8c2` in this shared helper.
 The user's original-overlay validation through
 `tools/summarize_navigation_trace.py` **confirmed** the direct
 `CALL 0157:064b` (`9a 4b 06 57 01`) at `0xc8c2` in original section 4.
-The move destination choice is still unknown; these events reveal the
-*state-update mechanism*, not the code that selects Heecheetown. See
+These events establish the *state-update mechanism*; they do not themselves
+show which direction-table entry selected Heecheetown. See
 [the native navigation evidence](gateway-map-reference.md#verified-ordinary-first-room-movement).
 
 The player initially lies in the **middle** of Your Quarters' linked child
@@ -1031,8 +1031,13 @@ return is not the game script's direct callsite; all four BP chains include
 saved return addresses `148e:065a`, `148e:0c28`, and `1000:04da`.
 `summarize_navigation_trace.py --move-callers` now correlates these entries
 with verified native location changes. The actual destination-selection
-branch and any direction table are still unknown; see
-[the next resident-code investigation](gateway-map-reference.md#first-caller-stack-result-the-direction-handler-is-above-rtlink).
+branch was traced back to the **resident type-1 exit-table scanner** at
+`148e:05f6` (original EXE file `0x60cf`), via the saved `148e:0c28`
+return. The original scanner reads room record `+0x16` (count) and `+0x18`
+(first one-based entry), then scans four-byte entries at
+`[word DS:8dcc]:417e`. Kind 1 provides a direct destination; remaining
+exit kinds and the direction-byte/compass mapping need a new replay. See
+[the recovered exit scanner and next native probe](gateway-map-reference.md#recovered-native-room-exit-table-and-resident-scanner).
 
 The two unlink cases are visible at OVL `0xc869–0xc87e` (head) and
 `0xc883–0xc8b6` (middle). The new-head insertion is at `0xc8de–0xc90b`.

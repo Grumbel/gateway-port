@@ -363,6 +363,19 @@ Legend's [original hintbook maps](gateway-map-reference.md) independently
 place all eight endpoint pairs and provide a separate reference for ordinary
 movement edges, with puzzle gates and up/down notation.
 
+Separately, the **resident type-1 room-exit scanner** has now been recovered
+from original `GATEMAIN.EXE` file offset `0x60cf` (runtime `148e:05f6`).
+For type-1 records specifically, byte `+0x16` stores the exit-entry count,
+and word `+0x18` stores its one-based first index into a global four-byte
+`{direction, kind, argument}` table at `[word DS:8dcc]:417e`.
+`tools/inspect_room_exits.py` reads those fields from the **same native
+guest-memory snapshots** as this object inspector and exports raw entries,
+JSON or a directed graph of kind-1 destination-room candidates. Unlike the
+type-6 passage endpoint pairs above, its direct edges originate in the
+native room-exit data. Neither representation establishes that a conditional
+exit is currently open or that a parser command will traverse it; see
+[room-exit tracing](gateway-map-reference.md#recovered-native-room-exit-table-and-resident-scanner).
+
 Next, correlate a native room transition through one of these named passage
 objects with the type-6 record, the changing current-room variable, and the
 handler that performs the change. In particular, distinguish the recursive

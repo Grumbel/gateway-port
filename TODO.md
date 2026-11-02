@@ -81,11 +81,17 @@ emulation. Keep the original executable as a behavioral reference while mapping:
   shows the helper receives `(0x0d3, destination, slot=0)` and returns via
   RTLink `2c24:0701`; the same three upstream saved BP returns
   (`148e:065a`, `148e:0c28`, `1000:04da`) appear for all four moves.
-  `summarize_navigation_trace.py --move-callers` now filters these stack
-  observations against verified location changes. **Disassemble and trace
-  the resident code around `148e:065a` (linear `0x14f3a`) and `148e:0c28`
-  (`0x15508`)** to find the actual direction-to-room decision, then test a
-  named passage (Dock/cabin hatch). Verify restrictions,
+  `summarize_navigation_trace.py --move-callers` filters these stack
+  observations against verified location changes. The follow-up disassembly
+  located the **resident room-exit scanner at `148e:05f6` / original EXE
+  `0x60cf`**, and recovered the type-1 exit count/first index at
+  `+0x16/+0x18` and four-byte global exit entries at `[word DS:8dcc]:417e`.
+  `tools/inspect_room_exits.py` exports raw entries and a conservative
+  direct-destination candidate graph. **Next:** run that exporter against a
+  native snapshot; rerun `--trace-navigation` with the new `14ed6` hook
+  and `summarize_navigation_trace.py --direction-calls` to correlate numeric
+  direction bytes with EAST/WEST. Then test a named passage (Dock/cabin
+  hatch), decode conditional exit kinds 2–5, verify restrictions,
   bidirectionality, and actual PIC selection independently of map arrows.
   Also trace real non-head sibling and nested moves, extend to other record
   types, and establish which callers enable

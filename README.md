@@ -630,13 +630,20 @@ child-head setter trace independently maps the original unlink/insert sites
 and shows the player being prepended to each destination room; the second
 EAST restores Quarters' former head, picture `0x175`. The optional
 `--child-heads` report combines these observations. A `--trace-navigation`
-replay hook now records entry stacks at the shared move helper, to find the
-still-unidentified direction dispatcher. Its first native replay confirms
+replay hook records entry stacks at the shared move helper. Its first native replay confirms
 the player/destination/slot arguments and identifies the RTLink manager
 return at `2c24:0701`; saved BP returns consistently reach `148e:065a`,
 `148e:0c28`, and `1000:04da`. The new `--move-callers` summary filters out
-unrelated startup object moves, and the notes give resident-memory
-disassembly commands for those frames; see
+unrelated startup object moves. Disassembling those resident frames led to
+the **original EXE room-exit scanner** at `148e:05f6` (file offset `0x60cf`):
+type-1 rooms provide an exit count and one-based first entry, and the global
+exit table contains four-byte `{direction, kind, argument}` records.
+`tools/inspect_room_exits.py` exports every room's entries from a native
+memory snapshot as text, JSON or a conservative direct-destination DOT graph.
+The replay now also hooks the scanner; `summarize_navigation_trace.py
+--direction-calls` correlates its direction argument with nearby verified
+player movement. Numeric direction codes and other exit kinds still need a
+new native replay. See
 [the navigation trace and next probes](docs/gateway-map-reference.md#verified-ordinary-first-room-movement).
 
 The standalone C++ model exposes the corresponding *local slot-filtering*

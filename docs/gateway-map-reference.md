@@ -1,8 +1,9 @@
 # Gateway: published map reference
 
 We can now compare the native room/object snapshot with the game's **original
-printed maps**. This is an external reference for reverse engineering, not
-a recovered native navigation table or a source of executable game logic.
+printed maps** and a recovered **native room-exit table layout**. The maps
+are an independent reference, not executable game logic. Direction codes and
+conditional traversal still require live native trace verification.
 
 Primary source: Legend Entertainment, *Frederik Pohl's Gateway: The Official
 Hint Book*, [scanned PDF](https://www.mocagh.org/legend/gateway1-hintbook.pdf),
@@ -75,8 +76,9 @@ state at every point in the story.
 
 1. The ordinary **Your Quarters ↔ Heecheetown** connection is native-observed
    without a type-6 pair. The source location-setter callsite and multiple
-   child-head writes now match the original OVL; see below. Next trace
-   the *caller of the move helper* to find who selects the destination.
+   child-head writes match the original OVL; see below. The resident exit
+   scanner has now been located; export its table entries and correlate its
+   direction argument with verified movement (below).
 2. Separately observe a named type-6 passage (e.g. the Dock's cabin hatch) to
    see where its two relation words enter the room-change decision. Test both
    directions without assuming the hintbook arrow is a one-way constraint.
@@ -267,6 +269,96 @@ objdump -D -b binary -m i8086 -M intel \
 Here `148e:065a` is linear `0x14f3a` and `148e:0c28` is linear `0x15508`.
 `objdump` performs a linear sweep and can misidentify instruction boundaries
 or decode inline data, so validate candidate calls with runtime traces.
+
+### Recovered native room-exit table and resident scanner
+
+The saved return `148e:0c28` is immediately after `push cs; call near
+148e:05f6` at linear `0x15505`. Comparing the resident code with the
+original `GATEMAIN.EXE` establishes that `148e:05f6` is original EXE file
+offset **`0x60cf`**, not an RTLink entry point. It is the **type-1 room-exit
+scanner**. Its caller pushes the direction argument (a byte zero-extended
+to a word) before pushing CS; the scanner therefore sees the entry stack
+`0c28,148e,<direction>`. This is a code-verified ABI; the compass meaning
+of each numeric direction remains to be correlated with live input.
+
+Two original resident getters (`0157:0e83` / `0157:0ed5`, EXE file offsets
+`0x33c1` / `0x3413`) read these type-1 room record fields:
+
+| Type-1 record offset | Size | Native meaning |
+| --- | ---: | --- |
+| `+0x16` | byte | Number of exit entries |
+| `+0x18` | word | One-based index of the first exit entry; zero means no indexed exits |
+
+The scanner reads the current-room ID from the word at
+`[word DS:8dba]:35c6`. For each exit, it forms `(first - 1 + i) * 4`
+and uses the global table at **`[word DS:8dcc]:417e`**, comparing the
+first byte with the argument. The original EXE loop at **`0x6322`–`0x637a`**
+reveals the four-byte record:
+
+| Exit entry byte | Width | Meaning |
+| --- | ---: | --- |
+| `+0` | 1 | Direction code |
+| `+1` | 1 | Exit kind |
+| `+2` | 2 | Argument (meaning depends on kind) |
+
+Kind **1** passes its argument as the destination-room ID to the normal
+room-changing function (EXE file `0x5d5d`). Kinds **2–5** branch into
+conditional, text, callback and extended handling that is not yet fully
+decoded. It would be wrong to treat every table row as a traversable route.
+
+Use the new **read-only snapshot exporter** on an existing native replay:
+
+```sh
+python3 tools/inspect_room_exits.py \
+  build/room-navigation-caller/native \
+  --names ../gateway-dos/OBJECT.DAT --room 0x0ee --room 0x0f1
+
+# All type-1 room entries and direct type-1 destinations:
+python3 tools/inspect_room_exits.py \
+  build/room-navigation-caller/native \
+  --names ../gateway-dos/OBJECT.DAT --format json \
+  > build/room-exits.json
+
+# Candidate *direct* route graph (not a verified world map):
+python3 tools/inspect_room_exits.py \
+  build/room-navigation-caller/native \
+  --names ../gateway-dos/OBJECT.DAT --format dot \
+  > build/room-exits.dot
+dot -Tsvg build/room-exits.dot -o build/room-exits.svg
+```
+
+The exporter uses the existing `inspect_object_state.py` descriptor and
+object directory logic, does not modify the dump or game files, and validates
+record and guest-memory bounds. A DOT edge means only that a kind-1 record
+refers to another decoded type-1 room; unverified conditional/scripted exits
+do not appear. Room names are optional; the raw IDs remain stable.
+
+To recover direction codes from the **actual first-room EAST/WEST replay**,
+rerun with `--trace-navigation` (now hooks both `0x447e0` and `0x14ed6`):
+
+```sh
+python3 tools/trace_game_logic.py \
+  --scenario objects --native-only --verify-overlays \
+  --trace-state-writes --trace-object-writes d3 --trace-navigation \
+  --command-sequence 'east,west,east,west,look,inventory,look' \
+  --output build/room-direction-check
+
+python3 tools/summarize_navigation_trace.py \
+  build/room-direction-check/native.trace \
+  --world build/parser-child-writes/world.json \
+  --commands 'east,west,east,west,look,inventory,look' \
+  --direction-calls
+
+# To inspect the untouched stack/argument words directly:
+rg '^entry .*pc=14ed6\b' build/room-direction-check/native.trace
+```
+
+The `--direction-calls` filter only accepts the exact `0c28,148e` entry
+frame and displays a nearby verified player-location change, if any. This
+is a **bounded guest-time correlation**, not yet proof of the parser's
+accepted EAST/WEST codes; repeated matching calls and a check against the
+exported room records can establish that mapping. The scanner is reached
+through a call distinct from the section-4 RTLink mover.
 
 If nothing is reported, check whether the commands actually reached normal
 gameplay and whether another state variable tracks the current room. A
