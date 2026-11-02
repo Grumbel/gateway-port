@@ -204,7 +204,8 @@ def plan_sections(manifest, images_dir, objects=None, decompile_objects=(),
         if (section['id'], offset) in selected_entries:
             raise ValueError('selected OVL offset duplicates a selected object handler')
         label_at(offset, 'gw_ovl_%x_candidate' % offset, 'overlay-entry-candidate',
-                 'manually selected original OVL instruction; provisional function boundary')
+                 'manually selected original OVL instruction; candidate context, '
+                 'not necessarily a function boundary')
     return result, label_at
 
 

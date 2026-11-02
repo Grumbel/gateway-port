@@ -119,6 +119,8 @@ class GhidraPlanTests(unittest.TestCase):
                           for label in sections[0]['labels']],
                          [('gw_ovl_10f_candidate', 15, 'overlay-entry-candidate'),
                           ('gw_ovl_100_candidate', 0, 'overlay-entry-candidate')])
+        self.assertTrue(all('not necessarily a function boundary' in label['explanation']
+                            for label in sections[0]['labels']))
         for offsets, error in [([0x110], 'no unique file-backed'),
                                ([0xff], 'no unique file-backed'),
                                ([-1], 'duplicate or invalid'),

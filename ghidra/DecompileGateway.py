@@ -2,8 +2,8 @@
 # Ghidra Jython 2.7 post-analysis script.
 # Arguments: absolute ghidra-plan.json, absolute pseudocode output path.
 # Confirmed native entries are attempted as functions. Internal dispatcher
-# branch labels instead decompile their *containing* Ghidra functions, without
-# creating false function boundaries at jump targets.
+# branches and user-selected *candidate* offsets inside a larger analyzed
+# function decompile that containing function, without inventing new entries.
 
 import json
 import os
@@ -67,19 +67,28 @@ for name, address, origin, role in targets:
         if function is None:
             containing = getFunctionContaining(address)
             if containing is not None:
-                item['error'] = 'Ghidra placed entry inside function at %s' % (
-                    containing.getEntryPoint())
-                lines.append(item['error'])
-                lines.append('')
-                continue
-            try:
-                disassemble(address)
-                function = createFunction(address, name)
-            except Exception as error:
-                item['error'] = 'cannot create function: %s' % error
-                lines.append(item['error'])
-                lines.append('')
-                continue
+                if role == 'overlay-entry-candidate':
+                    function = containing
+                    item['context'] = 'inside-containing-function'
+                    lines.append('OFFSET CANDIDATE is inside Ghidra function at %s. '
+                                 'Decompiling containing function, NOT asserting '
+                                 'an independent native entry.' %
+                                 containing.getEntryPoint())
+                else:
+                    item['error'] = 'Ghidra placed entry inside function at %s' % (
+                        containing.getEntryPoint())
+                    lines.append(item['error'])
+                    lines.append('')
+                    continue
+            else:
+                try:
+                    disassemble(address)
+                    function = createFunction(address, name)
+                except Exception as error:
+                    item['error'] = 'cannot create function: %s' % error
+                    lines.append(item['error'])
+                    lines.append('')
+                    continue
         if function is None:
             item['error'] = 'Ghidra did not establish a function boundary'
             lines.append(item['error'])
@@ -96,7 +105,8 @@ for name, address, origin, role in targets:
             # authoritative; a cosmetic rename is not worth aborting export.
             existing_names = [symbol.getName() for symbol in
                               currentProgram.getSymbolTable().getSymbols(address)]
-            if name not in existing_names and function.getName() != name:
+            if (function.getEntryPoint() == address and
+                    name not in existing_names and function.getName() != name):
                 function.setName(name, SourceType.USER_DEFINED)
         result = interface.decompileFunction(function, 120, monitor)
         if result.decompileCompleted() and result.getDecompiledFunction() is not None:
