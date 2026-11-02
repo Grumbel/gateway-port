@@ -12,6 +12,7 @@ import argparse
 import json
 import pathlib
 import struct
+from rtlink_trampoline import decode_trampoline, map_reference, sections_by_id
 
 
 ACTION_COUNT = 195
@@ -31,21 +32,6 @@ def inspect_actions(memory, ds, action_ids):
         if address < 0 or address + 2 > min(len(memory), 0xa0000):
             raise ValueError('action table word outside guest conventional memory')
         return struct.unpack_from('<H', memory, address)[0]
-
-    def trampoline(segment, offset):
-        # Both shared actions and selector callbacks may point to identical
-        # ten-byte RTLink trampolines. Validate the manager CALL/JMP prefix.
-        address = segment * 16 + offset
-        if segment != 0x2c24 or address + 10 > min(len(memory), 0xa0000):
-            return None
-        displacement = struct.unpack_from('<h', memory, address + 1)[0]
-        gate = (offset + 3 + displacement) & 0xffff
-        if memory[address] != 0xe8 or memory[address + 3] != 0xea or gate != 0x058d:
-            return None
-        target_ip, target_cs, section_id = struct.unpack_from('<3H', memory, address + 4)
-        if section_id >= 58:
-            raise ValueError('invalid section ID in RTLink trampoline')
-        return dict(section=section_id, target_segment=target_cs, target_offset=target_ip)
 
     if not 0 < ds <= 0xffff:
         raise ValueError('invalid original Gateway data segment')
@@ -71,19 +57,18 @@ def inspect_actions(memory, ds, action_ids):
             callback_offset = 4 * (selector - 1)
             entry['selector_callback'] = dict(segment=word(directory_segment, callback_offset + 2),
                                               offset=word(directory_segment, callback_offset))
-        if reference := trampoline(cs, ip):
+        if reference := decode_trampoline(memory, cs, ip):
             entry['rtlink_reference'] = reference
-        if selector and (reference := trampoline(entry['selector_callback']['segment'],
-                                                entry['selector_callback']['offset'])):
+        if selector and (reference := decode_trampoline(
+                memory, entry['selector_callback']['segment'],
+                entry['selector_callback']['offset'])):
             entry['selector_reference'] = reference
         results.append(entry)
     return results
 
 
 def map_action_entries(entries, manifest):
-    sections = {item['id']: item for item in manifest['sections']}
-    if len(sections) != len(manifest['sections']):
-        raise ValueError('duplicate RTLink section IDs')
+    sections = sections_by_id(manifest)
     output = []
     for item in entries:
         result = dict(item)
@@ -92,16 +77,7 @@ def map_action_entries(entries, manifest):
             ref = item.get(reference_key)
             if not ref:
                 continue
-            section = sections.get(ref['section'])
-            if section is None:
-                raise ValueError('action RTLink reference has no section in manifest')
-            displacement = (ref['target_segment'] - section['runtime_segment']) * 16
-            image_offset = displacement + ref['target_offset']
-            if not 0 <= image_offset < section['file_bytes']:
-                raise ValueError('action target outside RTLink section file-backed bytes')
-            result[native_key] = dict(filename=section['filename'], section=section['id'],
-                                      image_offset=image_offset,
-                                      file_offset=section['image_file_offset'] + image_offset)
+            result[native_key] = map_reference(ref, sections)
         output.append(result)
     return output
 
