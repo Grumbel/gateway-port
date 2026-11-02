@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Decode the 19 native Study therapy stages from a guest RAM snapshot.
+"""Decode the 19 Study exercises and terminal SLEEP stage from native RAM.
 
 Original GATEMAIN.OVL:0x6cf24/0x6cf7c/0x6cffa indexes two far-pointer
 tables through [DS:9652]. These are read-only research records, not a story
@@ -26,7 +26,8 @@ ALTERNATIVES_COUNT = 5
 PROMPT_TABLE_OFFSET = 0x03a2
 RESPONSE_TABLE_OFFSET = 0x03f2
 FIRST_STAGE = 1
-LAST_STAGE = 19
+LAST_STAGE = 20
+LAST_RESPONSE_STAGE = 19
 MAX_C_STRING = 4096
 
 
@@ -86,7 +87,10 @@ def decode_study_script(memory, ds, strings):
             target_object=_word(memory, linear + 2),
             alternative_codes=alternatives.get(stage, []),
             instruction=far_text(PROMPT_TABLE_OFFSET + 4 * stage),
-            response=far_text(RESPONSE_TABLE_OFFSET + 4 * stage),
+            # Stage 20 intentionally has no per-stage response pointer:
+            # the native accepted path prints F000:70b0 and calls 0x6d564.
+            response=(far_text(RESPONSE_TABLE_OFFSET + 4 * stage)
+                      if stage <= LAST_RESPONSE_STAGE else None),
         ))
     return stages
 
@@ -119,7 +123,7 @@ def main():
             print('%2d: action=%02x target=%04x alternatives=%-5s | %-44s | %s' % (
                 stage['stage'], stage['action_code'], stage['target_object'],
                 alternatives or '-', stage['instruction'], stage['response']))
-        print('19 original native stages; the decoded matcher entries do not establish '
+        print('19 exercises plus terminal SLEEP stage; the decoded matcher entries do not establish '
               'that every corresponding player command succeeded.')
 
 

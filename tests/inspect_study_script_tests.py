@@ -28,14 +28,15 @@ class StudyScriptTests(unittest.TestCase):
     def setUp(self):
         self.memory = bytearray(MEMORY_LIMIT)
         self.words(DS * 16 + 0x9652, TABLE)
-        for stage in range(1, 20):
+        for stage in range(1, 21):
             address = TABLE * 16 + ACTION_TABLE_OFFSET + 4 * stage
-            self.memory[address] = 0x30 + stage
-            self.words(address + 2, 0x100 + stage)
+            self.memory[address] = 0x84 if stage == 20 else 0x30 + stage
+            self.words(address + 2, 0 if stage == 20 else 0x100 + stage)
             self.words(TABLE * 16 + PROMPT_TABLE_OFFSET + 4 * stage,
                        0x7000 + stage, 0xf000)
-            self.words(TABLE * 16 + RESPONSE_TABLE_OFFSET + 4 * stage,
-                       0x7010 + stage, 0xf000)
+            if stage <= 19:
+                self.words(TABLE * 16 + RESPONSE_TABLE_OFFSET + 4 * stage,
+                           0x7010 + stage, 0xf000)
         for index, (stage, first, second) in enumerate(((5, 0x55, 0x56),
                                                        (9, 0x18, 0),
                                                        (13, 0x1b, 0),
@@ -51,16 +52,19 @@ class StudyScriptTests(unittest.TestCase):
     def decode(self):
         return decode_study_script(self.memory, DS, FakeStrings())
 
-    def test_all_nineteen_stages_and_two_table_strides(self):
+    def test_nineteen_responses_and_terminal_action_table_strides(self):
         stages = self.decode()
-        self.assertEqual(len(stages), 19)
+        self.assertEqual(len(stages), 20)
         self.assertEqual(stages[0], dict(stage=1, instruction='token 1',
                                          response='token 17', action_code=0x31,
                                          target_object=0x101, alternative_codes=[]))
-        self.assertEqual(stages[-1], dict(stage=19, instruction='token 19',
+        self.assertEqual(stages[-2], dict(stage=19, instruction='token 19',
                                           response='token 35', action_code=0x43,
                                           target_object=0x113,
                                           alternative_codes=[0x19, 0x18]))
+        self.assertEqual(stages[-1], dict(stage=20, instruction='token 20',
+                                          response=None, action_code=0x84,
+                                          target_object=0, alternative_codes=[]))
         self.assertEqual(stages[8]['alternative_codes'], [0x18, 0])
         self.assertEqual(stages[12]['alternative_codes'], [0x1b, 0])
         self.assertEqual(stages[6]['alternative_codes'], [])
@@ -68,13 +72,13 @@ class StudyScriptTests(unittest.TestCase):
     def test_rejects_duplicate_invalid_or_zero_alternative_stage(self):
         first_address = TABLE * 16 + ALTERNATIVES_OFFSET
         second_address = first_address + 4
-        for malformed_stage in (0, 20, 0xffff, 5):
+        for malformed_stage in (0, 21, 0xffff, 5):
             with self.subTest(malformed_stage=malformed_stage):
                 self.words(second_address, malformed_stage)
                 with self.assertRaisesRegex(ValueError, 'alternative stage'):
                     self.decode()
         self.words(second_address, 9)
-        self.assertEqual(len(self.decode()), 19)
+        self.assertEqual(len(self.decode()), 20)
 
     def test_mixed_real_segment_and_f000_tokens(self):
         self.words(TABLE * 16 + PROMPT_TABLE_OFFSET + 4, 0x40, 0x1200)
@@ -83,7 +87,7 @@ class StudyScriptTests(unittest.TestCase):
         self.memory[0x12060:0x12064] = b'ok!\0'
         stages = self.decode()
         self.assertEqual(stages[0]['instruction'], 'feelé')
-        self.assertEqual(stages[-1]['response'], 'ok!')
+        self.assertEqual(stages[-2]['response'], 'ok!')
 
     def test_invalid_ds_and_missing_ram(self):
         for ds in (-1, 0, 0x10000):
