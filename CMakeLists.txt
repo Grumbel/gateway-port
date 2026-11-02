@@ -123,6 +123,8 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/prepare_ghidra_tests.py)
     add_test(NAME room-callback-inspect COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/room_callback_inspect_tests.py)
+    add_test(NAME room-callback-compare COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/room_callback_compare_tests.py)
     add_test(NAME story-child-chain COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/child_chain_inspect_tests.py)
     add_test(NAME story-world-export COMMAND ${Python3_EXECUTABLE}
