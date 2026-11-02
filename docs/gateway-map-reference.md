@@ -382,6 +382,9 @@ The next replay resolved the entire 44-entry callback directory and
 **traced Casino EAST's callback `0x14`** returning `AX=0`, without a
 player movement. The full native table, original OVL addresses and the
 initial decompilation are in [room-callbacks.md](room-callbacks.md).
+A later *controlled guest-memory experiment* also made this callback
+return lounge `0x0f6` and verified the corresponding original native
+room movement. It does not establish a legal gameplay path to that state.
 
 `--trace-navigation` now also hooks **linear `0x1507c`** (`148e:079c`,
 original EXE file `0x6275`), the instruction immediately after that far

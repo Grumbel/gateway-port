@@ -72,7 +72,7 @@ Counts are *records*, not distinct destinations, actual visits or proven
 reachable exits. Every entry is a **static code-entry candidate**; the
 snapshot cannot establish the conditions and AX results of every handler.
 
-## Casino east: one live callback and native return
+## Casino east: both branches through original native execution
 
 The exit records for room `0x0f5` **Casino** have kind 4, argument `0x14`,
 directions `0x03` and `0x0b` (indexes 265 and 266). The live table pointer
@@ -101,8 +101,9 @@ uint16_t casino_callback_14(uint16_t event) {
 `0x02a9` is the **membership pin**, `0x00d3` the player, and `0x00f6`
 **Pedroza Lounge**. `0157:000c` checks a direct relation slot, not a
 recursive inventory search. Its flag and text routines are invoked by the
-original binary; the prose/text-token meaning and the positive condition
-have not been verified by a live replay.
+original binary. The prose/text-token meaning remains unidentified; the
+positive condition has now been tested under a controlled guest-memory
+intervention, separately from normal gameplay.
 
 On a fresh native Unicorn replay with command sequence
 `east,east,east,east,look,inventory,look`:
@@ -119,9 +120,42 @@ On a fresh native Unicorn replay with command sequence
 - Subsequent object-event calls to the **same** callback index pass event
   `0x01` and return `0x00f6`; they are not room-exit decisions.
 
-This distinguishes a **verified no-move branch** from a plausible but
-untested membership-pin success branch. Do not transplant the latter into
-the bounded C++ model as verified puzzle behavior yet.
+### Controlled positive branch (explicitly modified guest state)
+
+The original native snapshot places membership pin `0x2a9` (type 8) at
+`0x2a3`, with its location/relation word at guest physical `0x35b24`.
+Since `0157:000c` checks whether object `0x2a9` has relation `0x0d3`,
+the research probe was instructed to perform exactly **one** compare-and-write
+at guest 27000 ms, *after* the first three ordinary moves and *before*
+the fourth EAST:
+
+`[0x35b24]: 0x02a3 → 0x00d3`
+
+The word is checked before the write; a different value aborts the replay.
+No disk file is changed and the injected modification is explicitly marked
+`research-poke16` in the native trace. This deliberately bypasses normal
+inventory and sibling-list bookkeeping; it is **not** a reconstructed player
+action or proof of puzzle reachability.
+
+| Observed behavior | Unmodified run | Controlled pin relation |
+| --- | --- | --- |
+| First three EAST moves | `0x0ee → 0x0f1 → 0x0f4 → 0x0f5` | Identical |
+| Fourth EAST callback ID/event | `0x14` / `0x0f` | `0x14` / `0x0f` |
+| Native target | `2c24:14d9`, section 48 | Same |
+| Native callback AX | `0x0000` at 28247 ms | **`0x00f6`** at 28266 ms |
+| Verified native player move | None | **Casino `0x0f5` → Pedroza Lounge `0x0f6`** |
+| RTLink loads | 159 | 165 |
+
+Both runs were independently re-executed with the player's native
+location-word write watched (`--trace-object-writes d3`). The additional
+controlled-run service call executed the original location setter, wrote
+the player location from `0x0f5` to `0x0f6`, and was correlated with
+the original kind-4 callback return. The corresponding full-framebuffer
+hashes differ, as expected for different rooms.
+
+This tests **both return branches of the actual x86 handler**. It still
+does not demonstrate the real command sequence for obtaining or equipping
+the pin, and it leaves the original text-token meanings unresolved.
 
 ## Two more statically decoded patterns
 
@@ -176,6 +210,38 @@ python3 tools/summarize_navigation_trace.py build/casino-replay/native.trace \
   --commands 'east,east,east,east,look,inventory,look' --callback-returns
 ```
 
+To compare the Casino experiment, build the Unicorn probe and use the
+original DOS directory; the two runs differ only by the one explicitly
+recorded guest-memory poke:
+
+```sh
+python3 tools/trace_game_logic.py \
+  --data ../gateway-dos --scenario objects --native-only \
+  --verify-overlays --trace-state-writes --trace-navigation \
+  --trace-object-writes d3 \
+  --command-sequence 'east,east,east,east,look,inventory,look' \
+  --output build/casino-baseline
+python3 tools/trace_game_logic.py \
+  --data ../gateway-dos --scenario objects --native-only \
+  --verify-overlays --trace-state-writes --trace-navigation \
+  --trace-object-writes d3 \
+  --research-poke16-at '27000:35b24:02a3:00d3' \
+  --command-sequence 'east,east,east,east,look,inventory,look' \
+  --output build/casino-controlled-pin
+python3 tools/compare_room_callback_traces.py \
+  build/casino-baseline/native.trace build/casino-controlled-pin/native.trace \
+  --callback 0x14 --destination 0xf6 \
+  --poke '27000:35b24:02a3:00d3'
+```
+
+The comparison rejects missing/mismatched interventions, different pre-poke
+movement sequences, mismatched far-pointer targets or AX values, and a
+claimed extra move without a corroborated native location service **and**
+the matching raw player-record word write. If Gateway's runtime allocation
+changes, do **not** reuse the hardcoded physical address: inspect the current
+native `0x2a9` object record and its type-8 location offset `+0x0c`
+first. The experiment intentionally relies on the observed allocation.
+
 `tools/inspect_room_callbacks.py` can also print readable text and accept
 repeated `--room 0x...` filters. It rejects invalid guest-memory pointers,
 out-of-section overlay targets and invalid RTLink section IDs; out-of-range
@@ -189,3 +255,11 @@ contexts** (44 callback entries, 13 other functions, 3 resident internal
 branch contexts). Some calls have missing arguments or unresolved external
 segments because Ghidra does not fully infer this game's far-call ABI.
 The 44 decompilation statuses are *tool completion*, not 44 behavior proofs.
+
+A subsequent fresh run also labels the four verified resident native
+services: `0157:000c` relation-slot membership (EXE `0x254a`),
+`0157:03a6` flag test (`0x28e4`), `0157:03e0` flag set (`0x291e`), and
+`0157:0413` flag clear (`0x2951`). All nine resident signatures matched
+uniquely, and Ghidra exported **64/64** target contexts. The decompiled
+services agree with the existing bounded C++ object-flag model: resolve a
+type-dependent bit address, then test, OR or AND the corresponding mask.

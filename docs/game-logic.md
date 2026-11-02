@@ -193,3 +193,6 @@ directory](room-callbacks.md): 236 records map to verified RTLink trampolines
 in 22 overlay sections. Ghidra now emits pseudocode for every entry, and a
 Casino EAST Unicorn replay validates one callback's event `0x0f`, `AX=0`
 result and no-move outcome. Other callbacks' branches remain static leads.
+An opt-in, logged single-word pin-relation intervention now also validates
+that callback's positive return `AX=0x0f6` and corresponding original
+native room move; it is deliberately not described as ordinary gameplay.

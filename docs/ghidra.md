@@ -263,3 +263,22 @@ arguments** of the relation check that the inferred decompiler prototype
 omits. Unicorn independently verifies the event-`0x0f`, `AX=0` branch
 and zero movement in Casino, but has not tested its alternative branch.
 The output statuses indicate successful **pseudocode extraction only**.
+
+## Resident service functions and controlled native branch test
+
+A third headless Ghidra 11.4.2/JDK21 run additionally labels native
+relation membership (`EXE:0x254a`) and flag test/set/clear services
+(`0x28e4`, `0x291e`, `0x2951`) as function entries. **All nine resident
+signatures matched**; all **64/64** decompilation contexts completed
+(44 room callbacks, 17 other functions, 3 internal branch contexts).
+The bit-test, bit-set and bit-clear pseudocode agrees with the source's
+independently established type-dependent descriptor/flag layout, and the
+relation-slot loop does not recursively search inventory.
+
+The Casino callback's previously untested `AX=0x0f6` branch now has
+**controlled native execution evidence**: a logged one-word intervention
+on membership pin `0x2a9` caused the original callback to return the lounge
+room ID, followed by a verified native move `0x0f5 → 0x0f6`.
+Normal puzzle progression and obtaining the pin are **not** thereby
+validated. Reproducible trace comparison commands and limits are in
+[room-callbacks.md](room-callbacks.md#controlled-positive-branch-explicitly-modified-guest-state).

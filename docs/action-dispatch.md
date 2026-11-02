@@ -1071,6 +1071,11 @@ resident callback directory across 22 RTLink sections, seeds all entries
 for Ghidra and validates one native Casino EAST no-move outcome. The trace
 also distinguishes the same callback's event `0x01` object-handler calls
 from the event `0x0f` room-exit invocation.
+With an explicitly logged type-8 membership-pin relation intervention,
+the original native callback's alternative `AX=0x0f6` branch also executes
+and moves the player from Casino to Pedroza Lounge. This validates the
+conditional code path, **not** the player actions that would establish
+the required pin relationship in unmodified gameplay.
 
 The two unlink cases are visible at OVL `0xc869–0xc87e` (head) and
 `0xc883–0xc8b6` (middle). The new-head insertion is at `0xc8de–0xc90b`.
