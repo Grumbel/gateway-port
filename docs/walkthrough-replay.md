@@ -1,4 +1,4 @@
-# Long-form native walkthrough replay (bundle 098)
+# Long-form native walkthrough replay (bundles 098–099)
 
 The original Gateway runs inside `gateway-probe` with a reviewed sequence of
 BIOS keys. Unlike the first-room `--scenario puzzle` experiments, this input
@@ -6,11 +6,12 @@ format supports **more than 48 commands**, up to **100,000 timed keys over one
 hour of emulated time**. It can drive additional original story code for RTLink
 call census, object-state snapshots, exit traces and Ghidra target selection.
 
-It is **not a verified start-to-finish autoplay yet**. Current native proof is
-the seven-command opening below. Completing a full route requires interpreting
-menu interactions, waiting for story events, choosing dynamic values, and
-checking the resulting state. In particular, merely injecting every key does
-not prove the game accepted every command.
+It is **not a verified start-to-finish autoplay yet**. Native proof now
+includes the seven-command opening, the 55-action Beach VR/Casino route, and a
+24-action PV/office/class/Blue Hell route with six checked native milestones.
+Completing a full route requires interpreting other menu interactions,
+waiting for story events, choosing dynamic values, and checking the resulting
+state. Merely injecting every key does not prove the game accepted a command.
 
 ## Walkthrough sources and input provenance
 
@@ -22,6 +23,9 @@ this repository**; their text is third-party content:
 - [Walkthrough King](https://www.walkthroughking.com/text/gateway.aspx): a prose cross-check for puzzle ordering.
 - [Original hint booklet](https://mocagh.org/legend/gateway1-hintbook.pdf): contemporary background for rooms, puzzles and scoring.
 
+The first real native menu/office/class replay is documented separately in
+[PV commset and T20](pv-commset.md).
+
 Use an independently obtained **plain-text** copy of the first guide, then
 convert it into an ignored `build/` file for editing:
 
@@ -31,9 +35,10 @@ python3 tools/run_walkthrough.py convert /path/to/your-guide.txt build/full-gate
 
 The conservative converter only recognizes lines beginning `}` or `>` and
 explicit `*** Type: ... ***` / `*** Press: ... ***` annotations. A simple
-`Type` becomes raw keyboard text **without** Enter. Comma-separated menu
-notation and every `Press` instruction become `MANUAL`: commas may mean
-several successive PV/menu choices, and a screen button may need a mouse
+`Type` becomes raw keyboard text **without** Enter. Comma-separated lists of
+**single alphanumeric menu keys** become `MENU_KEYS`, a convention confirmed
+in the original [PV GUI](pv-commset.md). Other menu notation and every
+`Press` instruction still become `MANUAL`: a screen button may need a mouse
 click. Unmarked prose about waiting, dynamic passwords and special controls
 is **not automatically recovered**. Inspect the original document, remove
 duplicate text, encode the timing/choices, and check missing steps. A converted
@@ -45,10 +50,11 @@ script is **untrusted input, not a validated playthrough**.
 | --- | --- |
 | `COMMAND open drawer` | Type ASCII parser text at 30 ms/key; then Enter |
 | `TYPE 1` | Type ASCII only, without Enter (e.g. a menu digit) |
+| `MENU_KEYS 1,N,N,0,0` | Five individual GUI menu keys, spaced like actions, no Enter |
 | `KEY space` | One key: `space`, `enter`, `escape`, or arrow names |
 | `KEY 0x4800` | Raw 16-bit BIOS code (hex); equivalent to Up |
 | `WAIT_MS 7000` | Add 7,000 emulated milliseconds before the next action |
-| `LABEL got_book` | Named prefix boundary selected with `--through` |
+| `LABEL got_book` | Named boundary selected with `--through`, or native snapshot |
 | `ASSERT_LOCATION 123 d3` | Assert *final snapshot* object `0x123` is at `0xd3` |
 | `MANUAL click screen button` | Stop before injecting an unverified UI step |
 
@@ -61,8 +67,10 @@ initial `look` command, and three more spaces. This is the same bootstrap as
 
 `ASSERT_LOCATION` applies to the **last selected input prefix only**, not to
 earlier intermediate states in a full replay. To assert progress at each
-milestone, replay the prefix ending at its label separately. This costs extra
-simulation but avoids falsely claiming in-flight checks were made. The
+milestone, use `--check-labels`, which captures and validates all intermediate
+assertions during **one native execution**, or replay a prefix with `--through`
+for isolated experiments. Without `--check-labels`, the earlier assertions
+are deliberately not checked during a full replay. The
 snapshot inspector requires exactly 734 original Gateway object records; an
 unrecognized object table aborts assertion checking.
 
@@ -102,6 +110,14 @@ addresses, not `GATEMAIN.OVL` file offsets. Use
 [`inventory_native_handlers.py`](../tools/inventory_native_handlers.py),
 [`handler-evidence.md`](handler-evidence.md), and the Ghidra imports to
 correlate new section-qualified targets with handler offsets.
+
+`--capture-labels` records up to 32 native RAM/CPU/framebuffer snapshots at
+named milestones (one millisecond before the next planned action). With
+`--check-labels`, the replay also checks every `ASSERT_LOCATION` immediately
+preceding each label. The underlying probe accepts `--dump-at MS:PREFIX`,
+which logs each actual capture in `native.trace`; a guest exit before any
+scheduled capture is an error. This makes intermittent PV screens and timed
+story events inspectable without repeating every prefix from startup.
 
 To extend a reviewed route beyond 48 commands, either increase the number of
 `COMMAND`/`TYPE`/`KEY` lines or run a checked prefix with `--max-actions N`.

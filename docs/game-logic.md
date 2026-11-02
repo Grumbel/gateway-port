@@ -2,6 +2,9 @@
 
 For reproducible longer native story paths from independently obtained
 walkthroughs, see [long-form walkthrough replay](walkthrough-replay.md).
+The [PV/office/class investigation](pv-commset.md) traces the first
+normal-play book-for-DataMan exchange, its five-point state change,
+and time-driven blue-badge and bar encounters.
 
 Investigation: 2026-10-31, original Gateway distribution. Binary identities are
 in [executable.md](executable.md). In particular, `GATEMAIN.OVL` SHA-256 is

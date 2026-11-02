@@ -1,5 +1,10 @@
 # Ghidra: original Gateway native code and RTLink overlays
 
+For the independently replayed receptionist event-4 handler
+(`GATEMAIN.OVL:0x56f9f`, `GIVE BOOK` branch `0x570a9–0x57114`),
+native entry/return/object-write corroboration, and a five-object Ghidra
+decompilation pass, see [PV commset and receptionist](pv-commset.md).
+
 The first reproducible Ghidra workflow imports **the original, unchanged**
 `GATEMAIN.EXE` with Ghidra's DOS/MZ loader, then imports the 58 separately
 relocated `GATEMAIN.OVL` sections into **58 distinct overlay address spaces**.
