@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 from summarize_navigation_trace import (location_events, map_location_setter_return,
                                         move_helper_calls, room_names, summarize,
+                                        summarize_direction_calls, direction_dispatch_calls,
                                         summarize_move_callers, summarize_room_heads)
 
 TOOL = ROOT / 'tools' / 'summarize_navigation_trace.py'
@@ -49,6 +50,12 @@ def move_entry(ms, object_id, destination, slot=0):
             f'stack=701,2c24,{object_id:x},{destination:x},{slot:x},0,ee,343b '
             'frames=db9a:dbb6:65a:148e,dbb6:dbc2:c28:148e,'
             'dbc2:dc28:4da:1000,')
+
+
+def direction_entry(ms, code):
+    return (f'entry ms={ms} pc=14ed6 cs=148e ds=5b46 '
+            f'ss=5b46 sp=dbba bp=dbc2 stack=c28,148e,{code:x},0,40e '
+            'frames=dbc2:dc28:4da:1000,')
 
 
 class NavigationTraceTests(unittest.TestCase):
@@ -254,6 +261,53 @@ class NavigationTraceTests(unittest.TestCase):
                                      '--move-callers'], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn('148e:065a', result.stdout)
+
+    def test_resident_exit_direction_byte_is_verified_by_far_return_frame(self):
+        lines = [direction_entry(18250, 0x42),
+                 direction_entry(21160, 0x57),
+                 direction_entry(28000, 0x99).replace('cs=148e', 'cs=148f'),
+                 direction_entry(28300, 0x7f).replace('stack=c28', 'stack=abc'),
+                 'entry ms=30000 pc=14f3a cs=148e stack=c28,148e,57']
+        self.assertEqual(direction_dispatch_calls(lines), [
+            dict(ms=18250, direction=0x42, return_address='148e:0c28'),
+            dict(ms=21160, direction=0x57, return_address='148e:0c28')])
+        events = [dict(ms=18266, old=0xee, new=0xf1,
+                       evidence='verified service'),
+                  dict(ms=21177, old=0xf1, new=0xee,
+                       evidence='verified service'),
+                  dict(ms=21178, old=0xf1, new=0xee,
+                       evidence='pre-write attempt')]
+        output = summarize_direction_calls(events, lines, COMMANDS,
+                                           {0xee: 'Quarters', 0xf1: 'Town'})
+        self.assertIn('18250 east               0x42', output)
+        self.assertIn('Quarters -> 0x0f1 Town @18266', output)
+        self.assertIn('21160 west               0x57', output)
+        self.assertNotIn('21178', output)
+        self.assertIn('scheduled time slots', output)
+        with self.assertRaisesRegex(ValueError, 'not a byte'):
+            direction_dispatch_calls([direction_entry(18100, 0x100)])
+        self.assertIn('no verified 148e:05f6 call frames',
+                      summarize_direction_calls(events, []))
+
+    def test_direction_entries_do_not_attach_distant_or_ambiguous_moves(self):
+        calls = [direction_entry(18300, 0x01),
+                 direction_entry(21000, 0x02),
+                 direction_entry(26000, 0x03),
+                 direction_entry(26100, 0x04)]
+        events = [dict(ms=18400, old=1, new=2, evidence='verified service'),
+                  dict(ms=18500, old=2, new=3, evidence='verified service'),
+                  dict(ms=21600, old=4, new=5, evidence='verified service'),
+                  dict(ms=26150, old=6, new=7, evidence='verified service')]
+        report = summarize_direction_calls(events, calls)
+        self.assertIn('ambiguous: 2 verified moves', report)
+        self.assertIn('none within 500 guest ms', report)
+        self.assertIn('0x03             (none', report)
+        self.assertIn('0x04             0x006 -> 0x007 @26150', report)
+        boundary = summarize_direction_calls(
+            [dict(ms=26050, old=1, new=2, evidence='verified service')],
+            [direction_entry(26000, 0x03), direction_entry(26050, 0x04)])
+        self.assertIn('0x03             (none', boundary)
+        self.assertIn('0x04             0x001 -> 0x002 @26050', boundary)
 
 
 if __name__ == '__main__':

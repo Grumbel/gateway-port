@@ -26,7 +26,7 @@ parser.add_argument('--trace-admission', action='store_true',
 parser.add_argument('--trace-visibility', action='store_true',
                     help='trace restricted candidate child-slot checks in the resident parser')
 parser.add_argument('--trace-navigation', action='store_true',
-                    help='trace entry into the original shared OVL section-4 move helper')
+                    help='trace the resident room-exit dispatcher and original OVL move helper')
 parser.add_argument('--trace-object-writes', metavar='HEX-ID',
                     help='watch native writes to an object record (e.g. 124 for drawer)')
 parser.add_argument('--command-sequence', metavar='CMD,CMD,...',
@@ -133,8 +133,11 @@ for mode in (['native'] if args.native_only else ['native', 'verify', 'hle']):
         # the native child-list relocation helper starts at file 0xc830.
         # Capturing its entry stack identifies its *caller*, unlike the
         # location setter return at 4319:16e7 inside the helper itself.
-        # This is a default-layout, original-code research hook, not HLE.
-        command += ['--trace-entry', '447e0']
+        # GATEMAIN.EXE file 0x60cf (runtime 148e:05f6) looks up a raw
+        # direction in each room's four-byte exit table. The caller uses a
+        # push cs / near call, yielding return stack 0c28,148e,direction.
+        # Both are default-layout original-code research hooks, not HLE.
+        command += ['--trace-entry', '447e0', '--trace-entry', '14ed6']
     if args.trace_object_writes and mode == 'native':
         # 0157:08fc (EXE 0x2e3a): native indexed child-link setter.
         command += ['--trace-entry', '11e6c']

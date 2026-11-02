@@ -28,6 +28,13 @@ MOVE_HELPER_PC = 0x447e0
 MOVE_HELPER_CS = 0x4319
 RTLINK_RETURN_IP = 0x0701
 RTLINK_RETURN_CS = 0x2c24
+# Original GATEMAIN.EXE file 0x60cf: type-1 room exit-table scanner.
+# The resident caller at 148e:0c1d pushes AX=direction, then CS before
+# CALL 148e:05f6, producing an effective far-return frame on entry.
+ROOM_DISPATCH_PC = 0x14ed6
+ROOM_DISPATCH_CS = 0x148e
+ROOM_DISPATCH_RETURN_IP = 0x0c28
+ROOM_DISPATCH_RETURN_CS = 0x148e
 
 
 def fields(line):
@@ -292,6 +299,84 @@ def summarize_move_callers(events, lines, player=PLAYER):
     return '\n'.join(output) + '\n'
 
 
+def direction_dispatch_calls(lines):
+    """Decode only the byte argument of the known resident exit scanner.
+
+    This checks the original code's effective far-call frame. Other calls
+    to the same routine are deliberately excluded until their ABI is known.
+    The direction byte's compass meaning is *not* asserted here.
+    """
+    calls = []
+    for line in lines:
+        if not line.startswith('entry '):
+            continue
+        info = fields(line)
+        try:
+            if (int(info['pc'], 16) != ROOM_DISPATCH_PC or
+                    int(info['cs'], 16) != ROOM_DISPATCH_CS):
+                continue
+            stack = [int(word, 16) for word in info['stack'].split(',') if word]
+            if len(stack) < 3 or stack[:2] != [ROOM_DISPATCH_RETURN_IP,
+                                               ROOM_DISPATCH_RETURN_CS]:
+                continue
+            if stack[2] > 0xff:
+                raise ValueError('direction argument is not a byte')
+            calls.append(dict(ms=int(info['ms']), direction=stack[2],
+                              return_address='148e:0c28'))
+        except (KeyError, ValueError) as error:
+            raise ValueError(f'invalid resident exit-dispatch entry ({error}): '
+                             f'{line}') from error
+    return calls
+
+
+def summarize_direction_calls(events, lines, commands=None, names=None):
+    """Show a native direction argument and nearby *verified* location move.
+
+    Match the first verified move after each entry, before the next entry,
+    and at most half a guest-second later. A timestamp/slot match is an
+    observation, not proof that the dispatcher itself authorized the move.
+    """
+    calls = direction_dispatch_calls(lines)
+    names = names or {}
+    verified = [event for event in events if event['evidence'] == 'verified service'
+                and event['old'] is not None]
+    output = ['', 'Resident type-1 exit-dispatch entries (original EXE file 0x60cf):',
+              'ms     recent input       direction byte   subsequent verified move',
+              '------  -----------------  ---------------  ------------------------']
+    for i, call in enumerate(calls):
+        slot = bisect_right(OBJECT_SLOTS, call['ms']) - 1
+        label = (commands[slot] if commands and 0 <= slot < len(commands) else
+                 f'slot {slot + 1}' if slot >= 0 else 'startup')
+        until = call['ms'] + 500
+        next_entry = calls[i + 1]['ms'] if i + 1 < len(calls) else None
+        matching = [event for event in verified
+                    if call['ms'] <= event['ms'] <= until and
+                    (next_entry is None or event['ms'] < next_entry)]
+        if len(matching) == 1:
+            move = matching[0]
+            before = f'0x{move["old"]:03x}'
+            after = f'0x{move["new"]:03x}'
+            if move['old'] in names:
+                before += f' {names[move["old"]]}'
+            if move['new'] in names:
+                after += f' {names[move["new"]]}'
+            evidence = f'{before} -> {after} @{move["ms"]}'
+        elif matching:
+            evidence = f'ambiguous: {len(matching)} verified moves'
+        else:
+            evidence = '(none within 500 guest ms)'
+        output.append(f'{call["ms"]:6} {label:<18} '
+                      f'0x{call["direction"]:02x}             {evidence}')
+    if not calls:
+        output.append('(no verified 148e:05f6 call frames; rerun with '
+                      '--trace-navigation and a freshly built probe)')
+    output.append('Only the 148e:0c28 effective far-return frame is decoded. '
+                  'Input labels are scheduled time slots, and nearby moves '
+                  'are separate native service observations; exit codes and '
+                  'their reachability are not independently proven.')
+    return '\n'.join(output) + '\n'
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('trace', type=Path, help='native.trace from trace_game_logic.py')
@@ -307,6 +392,9 @@ def main():
     parser.add_argument('--move-callers', action='store_true',
                         help='correlate RTLink move-helper entry stacks and saved BP frames '
                              'with verified room changes')
+    parser.add_argument('--direction-calls', action='store_true',
+                        help='decode the resident exit-dispatch direction argument and '
+                             'correlate nearby verified room changes')
     args = parser.parse_args()
     try:
         if bool(args.overlay_map) != bool(args.overlay_file):
@@ -324,6 +412,8 @@ def main():
             print(summarize_room_heads(events, lines, manifest, overlay), end='')
         if args.move_callers:
             print(summarize_move_callers(events, lines), end='')
+        if args.direction_calls:
+            print(summarize_direction_calls(events, lines, commands, names), end='')
     except (OSError, ValueError, KeyError, TypeError) as error:
         parser.error(str(error))
 
