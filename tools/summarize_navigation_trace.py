@@ -11,7 +11,8 @@ from bisect import bisect_right
 from pathlib import Path
 import json
 
-from story_scenarios import OBJECT_SLOTS, parse_sequence
+from story_scenarios import (OBJECT_SLOTS, PUZZLE_COMMAND_SPACING_MS,
+                             PUZZLE_FIRST_COMMAND_MS, parse_puzzle_sequence, parse_sequence)
 from summarize_object_writes import (HEAD_INSERT_CALL, HEAD_UNLINK_CALL,
                                      child_setter_calls, map_child_setter_return)
 
@@ -155,7 +156,25 @@ def map_location_setter_return(return_address, manifest, overlay):
     return matches[0] if matches else None
 
 
-def summarize(events, names=None, commands=None, manifest=None, overlay=None):
+def recent_input(ms, commands, slots=OBJECT_SLOTS):
+    """Associate a trace timestamp with a configured input, not with its acceptance."""
+    slot = bisect_right(slots, ms) - 1
+    if slot < 0:
+        return 'startup'
+    if commands and slot < len(commands):
+        return commands[slot]
+    return f'slot {slot + 1}'
+
+
+def puzzle_input_slots(commands):
+    if not commands:
+        raise ValueError('puzzle input sequence must not be empty')
+    return tuple(PUZZLE_FIRST_COMMAND_MS + index * PUZZLE_COMMAND_SPACING_MS
+                 for index in range(len(commands)))
+
+
+def summarize(events, names=None, commands=None, manifest=None, overlay=None,
+              slots=OBJECT_SLOTS):
     if (manifest is None) != (overlay is None):
         raise ValueError('RTLink manifest and original overlay must be supplied together')
     names = names or {}
@@ -168,9 +187,7 @@ def summarize(events, names=None, commands=None, manifest=None, overlay=None):
     lines = ['ms     recent input       player location before -> after'
              '                        evidence / native caller / writer PC']
     for event in events:
-        slot = bisect_right(OBJECT_SLOTS, event['ms']) - 1
-        label = (commands[slot] if commands and slot >= 0 else
-                 f'slot {slot + 1}' if slot >= 0 else 'startup')
+        label = recent_input(event['ms'], commands, slots)
         detail = (f'{event["evidence"]}; return={event["caller"]}; pc={event["pc"]}')
         if manifest is not None and event['caller'] != '?':
             location = map_location_setter_return(event['caller'], manifest, overlay)
@@ -333,7 +350,8 @@ def direction_dispatch_calls(lines):
     return calls
 
 
-def summarize_direction_calls(events, lines, commands=None, names=None):
+def summarize_direction_calls(events, lines, commands=None, names=None,
+                              slots=OBJECT_SLOTS):
     """Show a native direction argument and nearby *verified* location move.
 
     Match the first verified move after each entry, before the next entry,
@@ -342,15 +360,12 @@ def summarize_direction_calls(events, lines, commands=None, names=None):
     """
     calls = direction_dispatch_calls(lines)
     names = names or {}
-    verified = [event for event in events if event['evidence'] == 'verified service'
-                and event['old'] is not None]
+    verified = [event for event in events if event['evidence'] == 'verified service']
     output = ['', 'Resident type-1 exit-dispatch entries (original EXE file 0x60cf):',
               'ms     recent input       direction byte   subsequent verified move',
               '------  -----------------  ---------------  ------------------------']
     for i, call in enumerate(calls):
-        slot = bisect_right(OBJECT_SLOTS, call['ms']) - 1
-        label = (commands[slot] if commands and 0 <= slot < len(commands) else
-                 f'slot {slot + 1}' if slot >= 0 else 'startup')
+        label = recent_input(call['ms'], commands, slots)
         until = call['ms'] + 500
         next_entry = calls[i + 1]['ms'] if i + 1 < len(calls) else None
         matching = [event for event in verified
@@ -358,13 +373,15 @@ def summarize_direction_calls(events, lines, commands=None, names=None):
                     (next_entry is None or event['ms'] < next_entry)]
         if len(matching) == 1:
             move = matching[0]
-            before = f'0x{move["old"]:03x}'
+            before = f'0x{move["old"]:03x}' if move['old'] is not None else '?'
             after = f'0x{move["new"]:03x}'
-            if move['old'] in names:
+            if move['old'] is not None and move['old'] in names:
                 before += f' {names[move["old"]]}'
             if move['new'] in names:
                 after += f' {names[move["new"]]}'
             evidence = f'{before} -> {after} @{move["ms"]}'
+            if move['old'] is None:
+                evidence += ' (unwatched source)'
         elif matching:
             evidence = f'ambiguous: {len(matching)} verified moves'
         else:
@@ -438,19 +455,17 @@ def callback_return_entries(lines):
     return result
 
 
-def summarize_callback_returns(events, lines, commands=None, names=None):
+def summarize_callback_returns(events, lines, commands=None, names=None,
+                               slots=OBJECT_SLOTS):
     """Correlate kind-4 AX targets with subsequent verified location changes."""
     calls = callback_return_entries(lines)
     names = names or {}
-    verified = [event for event in events if event['evidence'] == 'verified service'
-                and event['old'] is not None]
+    verified = [event for event in events if event['evidence'] == 'verified service']
     output = ['', 'Kind-4 room callback returns (original EXE file 0x6275):',
               'ms     recent input       return AX     subsequent verified move',
               '------  -----------------  ------------  ------------------------']
     for index, call in enumerate(calls):
-        slot = bisect_right(OBJECT_SLOTS, call['ms']) - 1
-        label = (commands[slot] if commands and 0 <= slot < len(commands) else
-                 f'slot {slot + 1}' if slot >= 0 else 'startup')
+        label = recent_input(call['ms'], commands, slots)
         next_entry = calls[index + 1]['ms'] if index + 1 < len(calls) else None
         matching = [event for event in verified
                     if call['ms'] <= event['ms'] <= call['ms'] + 500 and
@@ -462,6 +477,8 @@ def summarize_callback_returns(events, lines, commands=None, names=None):
             if move['new'] in names:
                 destination += f' {names[move["new"]]}'
             evidence = f'to {destination} @{move["ms"]}'
+            if move['old'] is None:
+                evidence += ' (unwatched source)'
         elif matching:
             evidence = f'ambiguous: {len(matching)} matching moves'
         else:
@@ -477,8 +494,9 @@ def summarize_callback_returns(events, lines, commands=None, names=None):
         output.append('(no kind-4 callback returns; choose an exit whose kind is 4)')
     output.append('The original code checks AX against the object count, zero, '
                   'and the current room before moving. Matching a later native '
-                  'service delta confirms the move, but timed input associations '
-                  'do not prove parser acceptance.')
+                  'service delta confirms the destination change; without a player '
+                  'object-write watch the previous room is unknown. Timed input '
+                  'associations do not prove parser acceptance.')
     return '\n'.join(output) + '\n'
 
 
@@ -486,7 +504,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('trace', type=Path, help='native.trace from trace_game_logic.py')
     parser.add_argument('--world', type=Path, help='export_story_world.py JSON for room names')
-    parser.add_argument('--commands', help='the seven scheduled comma-separated commands')
+    commands_group = parser.add_mutually_exclusive_group()
+    commands_group.add_argument('--commands', help='the seven scheduled comma-separated commands')
+    commands_group.add_argument('--puzzle-commands',
+                                help='the 1–48 scheduled native puzzle inputs (including @space)')
     parser.add_argument('--overlay-map', type=Path,
                         help='RTLink JSON manifest (used with --overlay-file)')
     parser.add_argument('--overlay-file', type=Path,
@@ -509,21 +530,23 @@ def main():
             parser.error('--overlay-map and --overlay-file must be used together')
         if args.child_heads and not args.overlay_map:
             parser.error('--child-heads requires --overlay-map and --overlay-file')
-        commands = parse_sequence(args.commands) if args.commands else None
+        commands = (parse_puzzle_sequence(args.puzzle_commands) if args.puzzle_commands else
+                    parse_sequence(args.commands) if args.commands else None)
+        slots = puzzle_input_slots(commands) if args.puzzle_commands else OBJECT_SLOTS
         names = room_names(json.loads(args.world.read_text())) if args.world else {}
         lines = args.trace.read_text().splitlines()
         events = location_events(lines)
         manifest = json.loads(args.overlay_map.read_text()) if args.overlay_map else None
         overlay = args.overlay_file.read_bytes() if args.overlay_file else None
-        print(summarize(events, names, commands, manifest, overlay), end='')
+        print(summarize(events, names, commands, manifest, overlay, slots), end='')
         if args.child_heads:
             print(summarize_room_heads(events, lines, manifest, overlay), end='')
         if args.move_callers:
             print(summarize_move_callers(events, lines), end='')
         if args.direction_calls:
-            print(summarize_direction_calls(events, lines, commands, names), end='')
+            print(summarize_direction_calls(events, lines, commands, names, slots), end='')
         if args.callback_returns:
-            print(summarize_callback_returns(events, lines, commands, names), end='')
+            print(summarize_callback_returns(events, lines, commands, names, slots), end='')
     except (OSError, ValueError, KeyError, TypeError) as error:
         parser.error(str(error))
 

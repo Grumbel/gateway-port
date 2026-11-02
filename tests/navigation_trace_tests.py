@@ -13,7 +13,8 @@ from summarize_navigation_trace import (location_events, map_location_setter_ret
                                         summarize_direction_calls, direction_dispatch_calls,
                                         summarize_callback_returns,
                                         callback_return_entries, summarize_move_callers,
-                                        summarize_room_heads)
+                                        summarize_room_heads, puzzle_input_slots,
+                                        recent_input)
 
 TOOL = ROOT / 'tools' / 'summarize_navigation_trace.py'
 WATCH = 'object-watch ms=11100 object=d3 type=7 at=1e4c:1234 size=20 child_count=3'
@@ -65,6 +66,37 @@ def callback_entry(ms, target):
 
 
 class NavigationTraceTests(unittest.TestCase):
+    def test_extended_puzzle_input_labels_keep_the_original_seven_slots(self):
+        commands = ('wait',) * 41 + ('out',)
+        slots = puzzle_input_slots(commands)
+        self.assertEqual((slots[0], slots[-1]), (18000, 141000))
+        self.assertEqual(recent_input(141175, commands, slots), 'out')
+        self.assertEqual(recent_input(17700, commands, slots), 'startup')
+        self.assertEqual(recent_input(21200, COMMANDS), 'west')
+        with self.assertRaisesRegex(ValueError, 'must not be empty'):
+            puzzle_input_slots(())
+
+        line = callback_entry(141175, 0)
+        report = summarize_callback_returns([], [line], commands, slots=slots)
+        self.assertIn('141175 out                0x0000', report)
+        direction = summarize_direction_calls([], [direction_entry(141175, 9)],
+                                              commands, slots=slots)
+        self.assertIn('141175 out                0x09', direction)
+        event = [dict(ms=141175, old=0x29a, new=0x0f6,
+                      evidence='verified service', caller='4319:1122', pc='1')]
+        self.assertIn('141175 out', summarize(event, commands=commands, slots=slots))
+
+    def test_verified_move_without_player_watch_reports_destination_not_source(self):
+        # A pin record watch still records original player-location setter
+        # results, but cannot recover the old player location word.
+        move = [dict(ms=132268, old=None, new=0x0f6,
+                     evidence='verified service', caller='4319:16e7', pc='?')]
+        scan = summarize_callback_returns(move, [callback_entry(132268, 0x0f6)])
+        self.assertIn('to 0x0f6 @132268 (unwatched source)', scan)
+        move_report = summarize_direction_calls(move, [direction_entry(132176, 3)])
+        self.assertIn('? -> 0x0f6 @132268 (unwatched source)', move_report)
+        self.assertNotIn('0x000 ->', move_report)
+
     def test_changed_service_and_matching_prewrite(self):
         lines = [WATCH, SET_OUT, WRITE_OUT, SET_BACK, WRITE_BACK,
                  'object-location-set ms=25000 object=123 location=d3 changed=1',
