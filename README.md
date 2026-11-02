@@ -649,7 +649,14 @@ and an object ID whose flags gate movement. The inspector now decodes those
 records and optionally draws **dashed conditional candidate edges** with
 `--format dot --include-conditional`; `--format stats` reports coverage.
 Other compass codes, kind-2 flag behavior and scripted exit kinds still need
-native verification. See
+native verification. The follow-up snapshot identifies **`0x1ab` room
+door** as the shared condition object for the three first-room entries.
+`--condition-flags` reports guard bits in the final guest snapshot. Across
+the full world there are **518 exit records**, including **236 kind-4
+callbacks**. Original EXE disassembly verifies that these callbacks can
+return dynamic destination IDs; the replay now captures their AX returns,
+and `summarize_navigation_trace.py --callback-returns` correlates them with
+verified movement when a kind-4 exit is exercised. See
 [the navigation trace and next probes](docs/gateway-map-reference.md#verified-ordinary-first-room-movement).
 
 The standalone C++ model exposes the corresponding *local slot-filtering*

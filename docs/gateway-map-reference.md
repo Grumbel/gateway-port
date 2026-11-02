@@ -348,12 +348,57 @@ it excludes kind-2 edges, so Your Quarters is missing even though the
 replay proved that its east exit works. That is a limitation of the original
 direct-only exporter, not evidence of a disconnected game world.
 
+A follow-up full snapshot report established **110 type-1 rooms**, **107**
+with indexed exits, and **518** records: 232 kind 1, 35 kind 2, 13 kind 3,
+**236 kind 4**, and 2 kind 5. All kind-1 and kind-2 records resolve to a
+type-1 destination, spanning **100 distinct candidate room nodes**.
+Crucially, the three Quarters/Heecheetown kind-2 records all use **object
+`0x1ab` (`room door`)** as their condition: index `0x00e` (Quarters EAST),
+`0x00f` (Quarters direction `0x0c`), and `0x010` (Heecheetown WEST).
+Their common flag state can therefore control these entrances as a unit.
+The two directions from Quarters lead to the *same* room and guard, but the
+meaning of `0x0c` has not yet been mapped to an input command.
+
+#### Kind-4 callback may choose a dynamic room
+
+The original EXE's kind-4 branch at file offsets **`0x6269–0x62a5`**
+passes `(exit.argument, 0x0f)` to a far callback (original unrelocated
+operand `0474:0002`). It interprets the returned AX as a **candidate
+destination object ID**: zero or the current room performs no movement;
+a value beyond the current object count also does not move. Otherwise the
+branch feeds AX into the **same room mover** as kind 1. Thus the 236 kind-4
+entries are **not unlinked by definition**: they can represent dynamically
+resolved destinations that no static room-ID graph can discover. Their
+original callback semantics and actual destinations need runtime tracing.
+
+`--trace-navigation` now also hooks **linear `0x1507c`** (`148e:079c`,
+original EXE file `0x6275`), the instruction immediately after that far
+callback returns. At this point AX is still the callback result. On a
+replay that genuinely exercises a kind-4 exit, use:
+
+```sh
+python3 tools/summarize_navigation_trace.py \
+  build/room-direction-check/native.trace \
+  --commands 'east,west,east,west,look,inventory,look' \
+  --callback-returns
+```
+
+The original EAST/WEST scenario uses kind 2, so **no kind-4 return is
+expected there**. First choose a reachable room and direction whose
+exported record has `kind=4`, then replay that direction with the new hook.
+
 Use the new **read-only snapshot exporter** on an existing native replay:
 
 ```sh
 python3 tools/inspect_room_exits.py \
   build/room-navigation-caller/native \
   --names ../gateway-dos/OBJECT.DAT --room 0x0ee --room 0x0f1
+
+# Decode the final memory snapshot's 0x1ab property flags as well:
+python3 tools/inspect_room_exits.py \
+  build/room-navigation-caller/native \
+  --names ../gateway-dos/OBJECT.DAT --room 0x0ee --room 0x0f1 \
+  --condition-flags
 
 # All type-1 room entries and direct type-1 destinations:
 python3 tools/inspect_room_exits.py \
@@ -388,6 +433,11 @@ kind-1 direct-room candidates. Optional dashed kind-2 edges identify the
 table's destination and annotate the condition-object ID, but deliberately
 do not claim the current flags permit traversal. Other scripted exit kinds
 still do not appear. Room names are optional; the raw IDs remain stable.
+`--condition-flags` uses the original `0157:03a6` property descriptor and
+type mask to report the guard's flag `0x0c` and `0x10` **at dump time**.
+It does not reconstruct the earlier values when the player used the exit;
+`--trace-state-writes` plus the native `object-flag[-set|-clear]` service
+entries are still needed for that timeline.
 
 To repeat the **confirmed first-room EAST/WEST trace**, use
 `--trace-navigation` (hooks both `0x447e0` and `0x14ed6`):

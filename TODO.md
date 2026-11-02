@@ -94,10 +94,20 @@ emulation. Keep the original executable as a behavioral reference while mapping:
   tests flags `0x0c` and `0x10`, and uses the normal mover if the first
   test passes. The inspector now exports this table and draws optional
   dashed conditional links, including the previously absent Quarters exits.
-  **Next:** inspect the condition-object IDs for kind-2 table indices
-  `0x00e`, `0x00f`, `0x010`, verify the actual flag values across movement,
-  and compare the larger graph to hintbook maps. Then test a named passage
-  (Dock/cabin hatch), decode remaining kinds 3–5, verify restrictions,
+  The follow-up snapshot identifies the **same `0x1ab` room door** guard for
+  all three first-room transitions (`0x00e`, `0x00f`, `0x010`). A flag
+  inspector now decodes property bits `0x0c` and `0x10` at snapshot time;
+  these alone do not prove the flags' earlier values during the moves.
+  The full snapshot has 518 exits (232 kind 1, 35 kind 2, 13 kind 3,
+  **236 kind 4**, 2 kind 5), with 100 room nodes named by static kind-1/2
+  edges. Original EXE kind 4 **calls a room-ID-returning callback** and
+  moves when its AX result is a valid different object. `--trace-navigation`
+  now hooks the callback return at linear `0x1507c`; use
+  `summarize_navigation_trace.py --callback-returns` on an actual kind-4
+  transition. **Next:** compare snapshot and observed `0x1ab` flag events,
+  identify a reachable kind-4 transition and its return AX, correlate the
+  larger graph with hintbook maps, and test a named passage (Dock/cabin
+  hatch). Decode remaining kinds 3 and 5, verify restrictions,
   bidirectionality, and actual PIC selection independently of map arrows.
   Also trace real non-head sibling and nested moves, extend to other record
   types, and establish which callers enable

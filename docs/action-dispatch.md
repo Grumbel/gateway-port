@@ -1050,6 +1050,23 @@ conditional candidates. Remaining exit kinds and the meaning of the
 flag-`0x10` branch's additional service call require further tracing. See
 [the recovered exit scanner and next native probe](gateway-map-reference.md#recovered-native-room-exit-table-and-resident-scanner).
 
+The user's next native snapshot supplies a concrete kind-2 guard:
+object `0x1ab` (`room door`) backs the Quarters EAST (`0x03`) and second
+`0x0c` exits and Heecheetown WEST (`0x07`), with the corresponding table
+indices `0x00e`, `0x00f`, `0x010`. The exporter can now decode the guard's
+actual property bits **at snapshot time**, while native flag-service traces
+are required to reconstruct the earlier gate transitions.
+
+The much more common **kind-4** exit (236 records in the supplied snapshot)
+is not a fixed destination in the table. Original EXE `0x6269–0x62a5` calls
+the generic far callback with the exit argument and constant `0x0f`, then
+compares its returned AX against the object count, zero and the current room.
+For a valid different ID, the same room mover is invoked. The replay now
+hooks the callback's return at `148e:079c` (linear `0x1507c`), and
+`summarize_navigation_trace.py --callback-returns` reports any resulting
+native location changes. This is a dynamic room-selection mechanism, not
+proof that all kind-4 callbacks succeed or return type-1 room objects.
+
 The two unlink cases are visible at OVL `0xc869–0xc87e` (head) and
 `0xc883–0xc8b6` (middle). The new-head insertion is at `0xc8de–0xc90b`.
 `StoryLinkedChildren` now models the **logical head/sibling operations**

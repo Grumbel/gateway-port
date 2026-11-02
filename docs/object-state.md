@@ -378,6 +378,12 @@ type-6 passage endpoint pairs above, its direct edges originate in the
 native room-exit data. Neither representation establishes that a conditional
 exit is currently open or that a parser command will traverse it; see
 [room-exit tracing](gateway-map-reference.md#recovered-native-room-exit-table-and-resident-scanner).
+`--condition-flags` optionally evaluates native property bits `0x0c` and
+`0x10` on a kind-2 guard object using the original `0157:03a6` descriptor
+layout, including type-specific support masks. For the first room's three
+conditional records this guard is object **`0x1ab` (`room door`)**. The
+reported bits belong to the **final guest snapshot**, not necessarily the
+state when a previous movement command executed.
 
 Next, correlate a native room transition through one of these named passage
 objects with the type-6 record, the changing current-room variable, and the
