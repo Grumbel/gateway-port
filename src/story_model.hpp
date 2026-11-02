@@ -48,6 +48,21 @@ struct StoryCallbackOutcome {
     bool operator==(const StoryCallbackOutcome &) const = default;
 };
 
+// Section-51 Study room event-1's inner therapy-action matcher. These are
+// byte-sized *native parser action codes*, not StoryAction enum values or
+// player-facing command strings. A zero target is a native wildcard.
+struct StoryStudyActionRule {
+    std::uint8_t action_code;
+    StoryObjectId target_object;
+    std::uint8_t alternative_code_1 = 0;
+    std::uint8_t alternative_code_2 = 0;
+    bool has_alternatives = false;
+
+    bool operator==(const StoryStudyActionRule &) const = default;
+};
+
+enum class StoryStudyMatch { Ineligible, WrongObject, WrongAction, Matched };
+
 // A single slot that survives the resident parser's *optional* eligibility
 // check and its nonzero-child test. This is not a resolved parser target.
 struct StoryChildCandidate {
@@ -141,6 +156,20 @@ public:
     StoryCallbackOutcome apply_desk_scale_down(StoryObjectId player,
                                                StoryObjectId current_room,
                                                std::int16_t study_progress);
+
+    // GATEMAIN.OVL 0x6b6c0–0x6b7e8 (Study room event 1) compares the
+    // action code at [DS:9654]:e664 and parsed object at [DS:9658]:055e
+    // against per-stage records [DS:9652]:02a8 + 4*progress and five
+    // alternate-code records at :02fc. Only player actor 0x0d3, stages
+    // 1..19, and an unset :7909 completion byte enter this bounded path.
+    // The native code handles other event-1 branches and writes :7909;
+    // this read-only predicate neither implements those nor advances :7904.
+    static std::optional<StoryStudyActionRule> study_action_rule(std::int16_t progress);
+    static StoryStudyMatch evaluate_study_action(std::int16_t progress,
+                                                 std::uint8_t native_action_code,
+                                                 StoryObjectId parsed_object,
+                                                 StoryObjectId actor,
+                                                 bool action_already_matched);
 
     // Only the mutations of an already-successful action, as observed for
     // Gateway's first-room drawer/book scenario. The original DOS handlers

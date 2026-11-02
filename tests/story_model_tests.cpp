@@ -11,6 +11,7 @@ using gateway::StoryMutationKind;
 using gateway::StoryNormalGuard;
 using gateway::StoryCarryPrecheck;
 using gateway::StoryChildCandidate;
+using gateway::StoryStudyMatch;
 
 void expect(std::vector<StoryMutation> actual, std::initializer_list<StoryMutation> expected,
             const char *message) {
@@ -158,6 +159,73 @@ int main() {
         in_study_room.define(player, 0x2bc);
         if (!in_study_room.apply_desk_scale_down(player, 0x2bc, 0).changes.empty())
             throw std::runtime_error("Study DOWN moved a player not on the desk");
+
+        // The Study room's event-1 handler matches a byte-sized parser
+        // action and optionally a parsed object before setting :7909. Its
+        // records are independent of the response-handler counter update.
+        // Each rule below was read from the ORIGINAL [DS:9652] table in an
+        // unmodified Stage-20 native RAM snapshot, not inferred from prose.
+        constexpr std::array<gateway::StoryStudyActionRule, 19> expected_study{{
+            {0xb1, 0}, {0xa4, 0x2be}, {0x47, 0}, {0x52, 0},
+            {0x08, 0xd3, 0x55, 0x56, true}, {0x18, 0xe4}, {0x96, 0xe4},
+            {0x16, 0x165}, {0x52, 0x2bf, 0x18, 0, true}, {0x94, 0},
+            {0x23, 0}, {0x23, 0}, {0x1c, 0, 0x1b, 0, true},
+            {0x08, 0x2be, 0x55, 0x56, true}, {0x15, 0x2bf}, {0x1f, 0},
+            {0x88, 0xe4}, {0x57, 0x2de}, {0x92, 0x2be, 0x19, 0x18, true},
+        }};
+        for (int i = 1; i <= 19; ++i) {
+            const auto rule = StoryModel::study_action_rule(static_cast<std::int16_t>(i));
+            if (!rule || *rule != expected_study[i - 1])
+                throw std::runtime_error("Study stage record differs from original RAM");
+            const auto target = rule->target_object ? rule->target_object : 0xffff;
+            const auto matches = [&](std::uint8_t action, gateway::StoryObjectId parsed,
+                                     gateway::StoryObjectId actor, bool already) {
+                return StoryModel::evaluate_study_action(
+                    static_cast<std::int16_t>(i), action, parsed, actor, already);
+            };
+            if (matches(rule->action_code, target, player, false) != StoryStudyMatch::Matched ||
+                matches(rule->action_code, target, player, true) != StoryStudyMatch::Ineligible ||
+                matches(rule->action_code, target, 0x2ca, false) != StoryStudyMatch::Ineligible ||
+                matches(0xff, target, player, false) != StoryStudyMatch::WrongAction)
+                throw std::runtime_error("Study matcher misclassified stage action or guard");
+            if (rule->target_object &&
+                matches(rule->action_code, 0xffff, player, false) !=
+                    StoryStudyMatch::WrongObject)
+                throw std::runtime_error("Study matcher failed to check parsed object first");
+            if (!rule->target_object &&
+                matches(rule->action_code, 0, player, false) != StoryStudyMatch::Matched)
+                throw std::runtime_error("Study matcher failed its zero-target wildcard");
+            if (rule->has_alternatives) {
+                if (matches(rule->alternative_code_1, target, player, false) !=
+                        StoryStudyMatch::Matched ||
+                    matches(rule->alternative_code_2, target, player, false) !=
+                        StoryStudyMatch::Matched)
+                    throw std::runtime_error("Study alternate action codes were omitted");
+            }
+        }
+        for (std::int16_t progress : {-32768, -1, 0, 20, 32767}) {
+            if (StoryModel::study_action_rule(progress) ||
+                StoryModel::evaluate_study_action(progress, 0xb1, 0, player, false) !=
+                    StoryStudyMatch::Ineligible)
+                throw std::runtime_error("Study matcher read beyond its bounded stage table");
+        }
+        for (int progress : {6, 7, 17}) {
+            const auto action = expected_study[progress - 1].action_code;
+            if (StoryModel::evaluate_study_action(progress, action, 0xe3, player, false) !=
+                StoryStudyMatch::Matched ||
+                StoryModel::evaluate_study_action(progress, action, 0xe2, player, false) !=
+                StoryStudyMatch::WrongObject)
+                throw std::runtime_error("Study hand-0xe3 alias is not equivalent to 0xe4");
+        }
+        // Stage-9 and stage-13 zero alternatives are not sentinels in x86:
+        // the original loop explicitly compares both bytes, even if zero.
+        if (StoryModel::evaluate_study_action(9, 0, 0x2bf, player, false) !=
+                StoryStudyMatch::Matched ||
+            StoryModel::evaluate_study_action(13, 0, 0, player, false) !=
+                StoryStudyMatch::Matched ||
+            StoryModel::evaluate_study_action(19, 0, 0x2be, player, false) !=
+                StoryStudyMatch::WrongAction)
+            throw std::runtime_error("Study zero-valued alternative was misinterpreted");
 
         // Native child-slot eligibility is distinct from relation traversal
         // and from the action handlers' OPEN/CLOSE guards.

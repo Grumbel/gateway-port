@@ -1,8 +1,68 @@
 #include "story_model.hpp"
 #include <algorithm>
+#include <array>
 #include <stdexcept>
 
 namespace gateway {
+
+namespace {
+
+// Native RAM table at [DS:9652]:02a8 + 4*stage (stage zero is unused),
+// and the five :02fc alternative entries, extracted from the unmodified
+// Study snapshot. The order is the signed :7904 dialogue stage, not an
+// ordering of ordinary parser verbs. A zero alternative is a real byte
+// comparison in the DOS loop, rather than a missing alternative.
+constexpr std::array<StoryStudyActionRule, 19> study_rules{{
+    {0xb1, 0x0000},
+    {0xa4, 0x02be},
+    {0x47, 0x0000},
+    {0x52, 0x0000},
+    {0x08, 0x00d3, 0x55, 0x56, true},
+    {0x18, 0x00e4},
+    {0x96, 0x00e4},
+    {0x16, 0x0165},
+    {0x52, 0x02bf, 0x18, 0x00, true},
+    {0x94, 0x0000},
+    {0x23, 0x0000},
+    {0x23, 0x0000},
+    {0x1c, 0x0000, 0x1b, 0x00, true},
+    {0x08, 0x02be, 0x55, 0x56, true},
+    {0x15, 0x02bf},
+    {0x1f, 0x0000},
+    {0x88, 0x00e4},
+    {0x57, 0x02de},
+    {0x92, 0x02be, 0x19, 0x18, true},
+}};
+
+} // namespace
+
+std::optional<StoryStudyActionRule> StoryModel::study_action_rule(std::int16_t progress) {
+    if (progress < 1 || progress > static_cast<std::int16_t>(study_rules.size()))
+        return std::nullopt;
+    return study_rules[static_cast<std::size_t>(progress - 1)];
+}
+
+StoryStudyMatch StoryModel::evaluate_study_action(std::int16_t progress,
+                                                  std::uint8_t native_action_code,
+                                                  StoryObjectId parsed_object,
+                                                  StoryObjectId actor,
+                                                  bool action_already_matched) {
+    const auto rule = study_action_rule(progress);
+    if (actor != 0x0d3 || !rule || action_already_matched)
+        return StoryStudyMatch::Ineligible;
+    // Object checks precede action-code comparisons in 0x6b6f9–0x6b735.
+    // When native expected object is a hand (0xe4), its alias 0xe3 also
+    // passes. All other nonzero object IDs require equality.
+    if (rule->target_object != 0 && parsed_object != rule->target_object &&
+        !(rule->target_object == 0xe4 && parsed_object == 0xe3))
+        return StoryStudyMatch::WrongObject;
+    if (native_action_code == rule->action_code ||
+        (rule->has_alternatives &&
+         (native_action_code == rule->alternative_code_1 ||
+          native_action_code == rule->alternative_code_2)))
+        return StoryStudyMatch::Matched;
+    return StoryStudyMatch::WrongAction;
+}
 
 void StoryModel::define(StoryObjectId id, std::optional<StoryObjectId> location) {
     if (!id || !objects_.emplace(id, Object{{}, location, {}}).second)
