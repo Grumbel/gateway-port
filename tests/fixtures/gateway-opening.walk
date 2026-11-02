@@ -1,0 +1,16 @@
+# Original Gateway first-room actions, independently reproduced by native
+# command traces. No third-party walkthrough text is bundled here.
+# Replay starts after the launcher's splash screens and an initial LOOK.
+COMMAND open drawer
+COMMAND look
+COMMAND take book
+ASSERT_LOCATION 123 d3
+LABEL book_taken
+COMMAND inventory
+COMMAND drop book
+ASSERT_LOCATION 123 ee
+LABEL book_dropped
+COMMAND close drawer
+COMMAND look
+ASSERT_LOCATION 123 ee
+LABEL opening_complete

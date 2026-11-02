@@ -1,0 +1,291 @@
+#!/usr/bin/env python3
+"""Compile a reviewed Gateway walkthrough into BIOS keys and replay the original DOS game.
+
+The plain-text walkthrough DSL deliberately separates parser commands from raw
+keystrokes and unknown mouse/menu actions. It does not guess puzzle decisions.
+"""
+
+import argparse
+from dataclasses import dataclass
+import pathlib
+import re
+import subprocess
+
+from story_scenarios import schedule
+
+
+MAX_DURATION_MS = 3_600_000
+MAX_KEYS = 100_000
+KEYS = {'space': 0x3920, 'enter': 0x1c0d, 'escape': 0x011b,
+        'up': 0x4800, 'down': 0x5000, 'left': 0x4b00, 'right': 0x4d00}
+OPERATIONS = {'COMMAND', 'TYPE', 'KEY', 'WAIT_MS', 'LABEL', 'ASSERT_LOCATION', 'MANUAL'}
+
+
+@dataclass(frozen=True)
+class Step:
+    operation: str
+    argument: str
+    line: int
+
+
+def parse_script(source):
+    steps = []
+    labels = set()
+    for line_number, raw in enumerate(source.splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith('#'):
+            continue
+        operation, _, argument = line.partition(' ')
+        operation, argument = operation.upper(), argument.strip()
+        if operation not in OPERATIONS or not argument:
+            raise ValueError(f'line {line_number}: unknown or incomplete directive')
+        if operation in ('COMMAND', 'TYPE'):
+            if len(argument) > 64 or any(not 32 <= ord(char) <= 126 for char in argument):
+                raise ValueError(f'line {line_number}: input must be 1–64 printable ASCII bytes')
+        elif operation == 'KEY':
+            if argument.lower() not in KEYS and not re.fullmatch(r'0x[0-9a-fA-F]{1,4}', argument):
+                raise ValueError(f'line {line_number}: unknown BIOS key {argument!r}')
+        elif operation == 'WAIT_MS':
+            if not argument.isascii() or not argument.isdecimal() or not 1 <= int(argument) <= 600000:
+                raise ValueError(f'line {line_number}: WAIT_MS must be 1–600000')
+        elif operation == 'LABEL':
+            if not re.fullmatch(r'[A-Za-z0-9_-]{1,48}', argument) or argument in labels:
+                raise ValueError(f'line {line_number}: invalid/duplicate label')
+            labels.add(argument)
+        elif operation == 'ASSERT_LOCATION':
+            values = argument.split()
+            if len(values) != 2 or any(not re.fullmatch(r'(?:0x)?[0-9a-fA-F]{1,4}', value)
+                                           for value in values):
+                raise ValueError(f'line {line_number}: expected hex object ID and location')
+            if not 1 <= int(values[0], 16) <= 734:
+                raise ValueError(f'line {line_number}: object ID must be 1–2de')
+        steps.append(Step(operation, argument, line_number))
+    if not steps:
+        raise ValueError('empty walkthrough script')
+    return steps
+
+
+def convert_text(source):
+    """Conservatively extract only explicitly marked commands/menu instructions.
+
+    A user-provided guide is input, not a redistributable bundled asset. Any
+    unrecognized UI operation remains MANUAL and halts automatic replay.
+    """
+    steps = []
+    for line in source.splitlines():
+        line = line.strip()
+        prompt = re.match(r'^[}>]\s*(.+)$', line)
+        typed = re.match(r'^\*{3}\s*Type:\s*(.*?)\s*\*{3}$', line, re.IGNORECASE)
+        pressed = re.match(r'^\*{3}\s*Press:\s*(.*?)\s*\*{3}$', line, re.IGNORECASE)
+        if prompt:
+            value = prompt.group(1).strip()
+            steps.append(f'COMMAND {value}' if _printable(value) else
+                         'MANUAL Unrecognized parser input')
+        elif typed:
+            value = typed.group(1).strip()
+            # In published walkthroughs commas often separate *successive*
+            # PV/Dataman menu choices, rather than literal comma keystrokes.
+            # The meaning must be established on the native UI first.
+            if ',' in value:
+                steps.append('MANUAL Menu sequence: ' + value[:120])
+            else:
+                steps.append(f'TYPE {value}' if _printable(value) else
+                             'MANUAL Unrecognized menu text')
+        elif pressed:
+            # A Legend UI "Press" instruction may mean clicking a screen
+            # region, not typing a letter; do not silently treat it as a key.
+            steps.append('MANUAL UI press: ' + pressed.group(1).strip()[:120])
+    if not steps:
+        raise ValueError('no parser prompts or menu directives found in supplied text')
+    return '# Extracted from a user-provided guide; REVIEW EVERY STEP.\n' + '\n'.join(steps) + '\n'
+
+
+def _printable(value):
+    return 0 < len(value) <= 64 and all(32 <= ord(char) <= 126 for char in value)
+
+
+@dataclass
+class Replay:
+    keys: list
+    actions: list
+    assertions: list
+    duration_ms: int
+
+
+def compile_steps(steps, max_actions=None, through=None, spacing_ms=3000, idle_ms=1500):
+    """A deterministic replay prefix. Assertions describe its *final* state.
+
+    For intermediary checks, replay a chosen LABEL prefix with --through and
+    ASSERT_LOCATION before that LABEL. We never claim intermediate assertions
+    were checked during a complete uninterrupted replay.
+    """
+    if not 100 <= spacing_ms <= 120000 or not 1 <= idle_ms <= 120000:
+        raise ValueError('invalid spacing or idle duration')
+    if max_actions is not None and max_actions < 1:
+        raise ValueError('max-actions must be positive')
+    if max_actions is not None and through is not None:
+        raise ValueError('--max-actions and --through cannot be combined')
+    if through is not None and not any(s.operation == 'LABEL' and s.argument == through for s in steps):
+        raise ValueError(f'unknown label {through!r}')
+    keys = schedule('look') + [(time, 0x3920) for time in (15000, 16000, 17000)]
+    # The historical splash/menu bootstrap is exactly the existing 'puzzle'
+    # scenario. By 18000ms the parser accepts command text.
+    cursor = 18000
+    actions = []
+    assertions = []
+    last_action_finished = 17000
+    for step in steps:
+        if max_actions is not None and len(actions) >= max_actions:
+            break
+        op, arg = step.operation, step.argument
+        if op == 'LABEL':
+            if through == arg:
+                break
+            continue
+        if op == 'ASSERT_LOCATION':
+            obj, location = arg.split()
+            assertions.append((int(obj, 16), int(location, 16), step.line))
+            continue
+        if op == 'WAIT_MS':
+            assertions = []  # only the terminal checkpoint's checks apply
+            cursor += int(arg)
+            continue
+        if op == 'MANUAL':
+            raise ValueError(f'line {step.line}: human review required: {arg}')
+        assertions = []
+        start = cursor
+        if op in ('COMMAND', 'TYPE'):
+            keys.extend((start + index * 30, ord(char)) for index, char in enumerate(arg))
+            end = start + len(arg) * 30
+            if op == 'COMMAND':
+                keys.append((end, KEYS['enter']))
+            else:
+                end -= 30
+        else:
+            keys.append((start, KEYS.get(arg.lower(), int(arg, 16)
+                         if arg.lower().startswith('0x') else 0)))
+            end = start
+        actions.append(step)
+        last_action_finished = end
+        cursor = max(start + spacing_ms, end + 1)
+    if not actions:
+        raise ValueError('script prefix has no executable actions')
+    # Only checks *after* the final input/wait apply. Earlier checks can be
+    # selected using --through LABEL to replay that checkpoint separately.
+    if not all(keys[index][0] < keys[index + 1][0] for index in range(len(keys) - 1)):
+        raise ValueError('keyboard timestamps overlap; increase spacing')
+    if len(keys) > MAX_KEYS or max(cursor, last_action_finished + idle_ms) > MAX_DURATION_MS:
+        raise ValueError('walkthrough exceeds 100000 keys or one guest hour; split into stages')
+    return Replay(keys, actions, assertions, max(cursor, last_action_finished + idle_ms))
+
+
+def check_locations(snapshot, assertions, ds=None):
+    from inspect_object_state import inspect_objects
+
+    regs = dict(line.split('=', 1) for line in snapshot.with_suffix('.regs').read_text().splitlines())
+    current_ds = int(regs['DS'], 16) if ds is None else ds
+    objects = inspect_objects(snapshot.with_suffix('.bin').read_bytes(), current_ds)
+    if len(objects) != 734:
+        raise ValueError(f'unexpected object layout: {len(objects)} objects, expected 734')
+    for object_id, expected, line in assertions:
+        observed = objects[object_id - 1].get('location')
+        if observed != expected:
+            raise ValueError(f'line {line}: object {object_id:x} location expected '
+                             f'{expected:x}, observed {observed!r}')
+
+
+def run(args, replay):
+    if not args.probe.is_file() or not (args.data / 'GATE.EXE').is_file():
+        raise ValueError('original GATE.EXE or compiled gateway-probe missing')
+    args.output.mkdir(parents=True, exist_ok=True)
+    key_path = args.output / 'replay.keys'
+    key_path.write_text(''.join(f'{ms}:{key:04x}\n' for ms, key in replay.keys), encoding='ascii')
+    prefix = args.output / 'native'
+    command = [str(args.probe.resolve()), str((args.data / 'GATE.EXE').resolve()),
+               '--press', 'escape', '--state-dir', str(args.output / 'state'),
+               '--milliseconds', str(replay.duration_ms), '--key-script', str(key_path),
+               '--trace-research', str(prefix.with_suffix('.trace')),
+               '--trace-entry', '147a6', '--trace-entry', '28d2b',
+               '--trace-rtlink-calls', str(prefix.with_suffix('.rtlink-calls')),
+               '--dump-prefix', str(prefix)]
+    if args.verify_overlays:
+        command.append('--verify-overlays')
+    if args.trace_navigation:
+        for entry in ('447e0', '14ed6', '15077', '14742', '14759', '1475e', '1507c'):
+            command += ['--trace-entry', entry]
+    for address in args.trace_byte_write or []:
+        command += ['--trace-byte-write', address]
+    if args.trace_object_writes:
+        command += ['--object-state', 'verify', '--trace-object-writes',
+                    args.trace_object_writes, '--trace-entry', '11e6c']
+    if args.trace_target:
+        command += ['--trace-rtlink-events', str(prefix.with_suffix('.rtlink-events'))]
+        for target in args.trace_target:
+            command += ['--trace-rtlink-target', target]
+    with prefix.with_suffix('.out').open('w') as out, prefix.with_suffix('.dos').open('w') as err:
+        subprocess.run(command, stdout=out, stderr=err, timeout=args.timeout, check=True)
+    recorded = sum(line.startswith('key ms=') for line in
+                   prefix.with_suffix('.trace').read_text().splitlines())
+    if recorded != len(replay.keys):
+        raise RuntimeError(f'guest stopped before all keys were delivered: '
+                           f'{recorded}/{len(replay.keys)}; see native.dos')
+    if replay.assertions:
+        check_locations(prefix, replay.assertions, args.state_ds)
+    from inventory_native_handlers import parse_calls
+    calls, census = parse_calls(prefix.with_suffix('.rtlink-calls').read_text().splitlines())
+    print(f'Replayed {len(replay.actions)} input actions / {recorded} BIOS keys '
+          f'in {replay.duration_ms} guest ms')
+    print(f'RTLink: {census["validated_calls"]} validated calls, '
+          f'{census["distinct_targets"]} distinct section-qualified targets')
+    print(f'Asserted {len(replay.assertions)} final object locations; output in {args.output}')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    subcommands = parser.add_subparsers(dest='mode', required=True)
+    convert = subcommands.add_parser('convert', help='extract marked parser/menu lines from a supplied guide')
+    convert.add_argument('guide', type=pathlib.Path)
+    convert.add_argument('script', type=pathlib.Path)
+    replay = subcommands.add_parser('run', help='compile and replay an edited walkthrough DSL')
+    replay.add_argument('script', type=pathlib.Path)
+    replay.add_argument('--probe', type=pathlib.Path, default=pathlib.Path('build/gateway-probe'))
+    replay.add_argument('--data', type=pathlib.Path, default=pathlib.Path('../gateway-dos'))
+    replay.add_argument('--output', type=pathlib.Path, default=pathlib.Path('build/walkthrough'))
+    replay.add_argument('--max-actions', type=int)
+    replay.add_argument('--through', metavar='LABEL')
+    replay.add_argument('--spacing-ms', type=int, default=3000)
+    replay.add_argument('--idle-ms', type=int, default=1500)
+    replay.add_argument('--state-ds', type=lambda value: int(value, 16), metavar='HEX')
+    replay.add_argument('--verify-overlays', action='store_true')
+    replay.add_argument('--trace-navigation', action='store_true')
+    replay.add_argument('--trace-byte-write', action='append', metavar='LINEARHEX',
+                        help='observe guest byte mutations (up to 16, within 64 bytes)')
+    replay.add_argument('--trace-object-writes', metavar='OBJECTHEX',
+                        help='verify state services and watch one native object record')
+    replay.add_argument('--trace-target', action='append', metavar='SECTION:CS:IP')
+    replay.add_argument('--timeout', type=int, default=1800, help='wall-clock timeout, seconds')
+    replay.add_argument('--plan-only', action='store_true', help='validate and show planned replay without execution')
+    args = parser.parse_args()
+    try:
+        if args.mode == 'convert':
+            if args.guide.resolve() == args.script.resolve():
+                raise ValueError('input and output must differ')
+            result = convert_text(args.guide.read_text(encoding='utf-8'))
+            parse_script(result)
+            args.script.write_text(result, encoding='utf-8')
+            print(f'Extracted {len(parse_script(result))} directives to {args.script}; review before replay')
+            return
+        steps = parse_script(args.script.read_text(encoding='utf-8'))
+        planned = compile_steps(steps, args.max_actions, args.through,
+                                args.spacing_ms, args.idle_ms)
+        print(f'Plan: {len(planned.actions)} actions, {len(planned.keys)} keys, '
+              f'{planned.duration_ms} guest ms, {len(planned.assertions)} final assertions')
+        if not args.plan_only:
+            run(args, planned)
+    except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError,
+            subprocess.TimeoutExpired) as error:
+        parser.error(str(error))
+
+
+if __name__ == '__main__':
+    main()

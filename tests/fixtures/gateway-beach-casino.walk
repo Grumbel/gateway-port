@@ -1,0 +1,66 @@
+# Independently documented original native route to Beach VR, membership pin
+# and the Pedroza Lounge callback. See docs/beach-vr-replay.md.
+COMMAND east
+COMMAND northwest
+COMMAND up
+COMMAND lie on couch
+KEY space
+KEY space
+KEY space
+KEY space
+KEY space
+KEY space
+KEY space
+COMMAND lie on couch
+COMMAND wear collar
+COMMAND push button
+KEY space
+KEY space
+KEY space
+COMMAND take glass
+COMMAND give glass to bartender
+COMMAND take glass
+COMMAND give glass to bartender
+COMMAND take glass
+COMMAND give glass to bartender
+COMMAND take glass
+COMMAND give glass to bartender
+COMMAND take glass
+COMMAND give glass to bartender
+COMMAND take glass
+COMMAND put glass on scanner
+KEY space
+KEY space
+COMMAND remove collar
+COMMAND stand up
+COMMAND take membership pin
+COMMAND down
+COMMAND southeast
+COMMAND east
+COMMAND east
+COMMAND east
+ASSERT_LOCATION d3 f6
+ASSERT_LOCATION 2a9 d3
+LABEL casino_arrival
+
+# Sixteen additional harmless observational commands exercise long-file
+# scheduling past the old 48-command / 180-second limits.
+COMMAND look
+COMMAND inventory
+COMMAND look
+COMMAND inventory
+COMMAND look
+COMMAND inventory
+COMMAND look
+COMMAND inventory
+COMMAND look
+COMMAND inventory
+COMMAND look
+COMMAND inventory
+COMMAND look
+COMMAND inventory
+COMMAND look
+COMMAND inventory
+ASSERT_LOCATION d3 f6
+ASSERT_LOCATION 2a9 d3
+LABEL long_replay_complete
