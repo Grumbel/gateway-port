@@ -70,6 +70,7 @@ struct State {
     std::string debug_status;
     std::ofstream research_trace;
     unsigned elapsed_ms = 0;
+    std::set<std::uint64_t> watched_bytes;
     bool overlays_active = false;
     std::optional<gateway::RtlinkDirectory> overlays;
     std::vector<unsigned> overlay_loads;
@@ -598,6 +599,35 @@ void object_write_hook(uc_engine *uc, uc_mem_type, std::uint64_t address, int si
             out << std::setw(2) << std::setfill('0') << unsigned((std::uint64_t(value) >>
                                                                  (i * 8)) & 0xff);
         out << std::setfill(' ') << '\n';
+    } catch (const std::exception &e) {
+        hardware_failure(uc, state, e.what());
+    }
+}
+
+// Narrow opt-in watch for a known guest physical byte. It also recognizes
+// writes through larger word/dword operands, and reports the proposed value
+// from Unicorn's pre-write callback without changing the running guest.
+void byte_write_hook(uc_engine *uc, uc_mem_type, std::uint64_t address, int size,
+                     std::int64_t value, void *opaque) noexcept {
+    auto &state = *static_cast<State *>(opaque);
+    try {
+        if (size <= 0 || size > 8 || address + size > 0xa0000)
+            throw std::runtime_error("watched byte received an invalid guest write");
+        for (const auto watched : state.watched_bytes) {
+            if (watched < address || watched >= address + size)
+                continue;
+            std::uint8_t before{};
+            check(uc_mem_read(uc, watched, &before, 1));
+            const auto after = unsigned((std::uint64_t(value) >> (8 * (watched - address))) & 0xff);
+            state.research_trace << "byte-write ms=" << std::dec << state.elapsed_ms << std::hex
+                                 << " address=" << watched << " pc="
+                                 << (unsigned(reg(uc, UC_X86_REG_CS)) * 16 +
+                                     reg(uc, UC_X86_REG_IP))
+                                 << " cs=" << reg(uc, UC_X86_REG_CS)
+                                 << " ip=" << reg(uc, UC_X86_REG_IP)
+                                 << " size=" << size << " before=" << unsigned(before)
+                                 << " value=" << after << '\n';
+        }
     } catch (const std::exception &e) {
         hardware_failure(uc, state, e.what());
     }
@@ -1660,6 +1690,7 @@ int main(int argc, char **argv) {
     bool trace_timing = false;
     bool probe_adlib = false;
     std::uint16_t trace_object_writes = 0;
+    std::optional<std::uint32_t> trace_byte_write;
     unsigned aspect_width = 4, aspect_height = 3;
     std::vector<std::uint64_t> entry_addresses;
     std::multimap<unsigned, std::uint16_t> scheduled_keys;
@@ -1678,7 +1709,7 @@ int main(int argc, char **argv) {
                      "[--research-poke16-at MS:LINEARHEX:OLDHEX:NEWHEX ...] "
                      "[--object-flags verify|hle | --object-state verify|hle] [--verify-overlays] "
                      "[--hle-overlays] [--trace-video] [--trace-timing] [--adlib-driver] "
-                     "[--trace-object-writes OBJECT-HEX] "
+                     "[--trace-object-writes OBJECT-HEX] [--trace-byte-write LINEARHEX] "
                      "[--aspect-ratio native|W:H] [--debug-dir DIR]\n";
     };
     if (argc < 2 || std::string(argv[1]) == "--help") {
@@ -1744,6 +1775,17 @@ int main(int argc, char **argv) {
                 return 2;
             }
             trace_object_writes = static_cast<std::uint16_t>(parsed);
+        } else if (option == "--trace-byte-write" && i + 1 < argc) {
+            const std::string value = argv[++i];
+            std::uint32_t address = 0;
+            const auto result =
+                std::from_chars(value.data(), value.data() + value.size(), address, 16);
+            if (trace_byte_write || result.ec != std::errc{} ||
+                result.ptr != value.data() + value.size() || address >= 0xa0000) {
+                usage();
+                return 2;
+            }
+            trace_byte_write = address;
         } else if (option == "--trace-entry" && i + 1 < argc) {
             const std::string value = argv[++i];
             std::uint64_t address = 0;
@@ -1775,7 +1817,7 @@ int main(int argc, char **argv) {
                 }
                 begin = end + 1;
             }
-            if (!valid || words[0] > 60000 || words[1] > 0x9fffe ||
+            if (!valid || words[0] > 150000 || words[1] > 0x9fffe ||
                 words[2] > 0xffff || words[3] > 0xffff) {
                 usage();
                 return 2;
@@ -1795,7 +1837,7 @@ int main(int argc, char **argv) {
             const auto b =
                 std::from_chars(value.data() + colon + 1, value.data() + value.size(), key, 16);
             if (a.ec != std::errc{} || a.ptr != value.data() + colon || b.ec != std::errc{} ||
-                b.ptr != value.data() + value.size() || time > 60000 || key > 65535) {
+                b.ptr != value.data() + value.size() || time > 150000 || key > 65535) {
                 usage();
                 return 2;
             }
@@ -1854,7 +1896,7 @@ int main(int argc, char **argv) {
             const auto result =
                 std::from_chars(value.data(), value.data() + value.size(), milliseconds);
             if (result.ec != std::errc{} || result.ptr != value.data() + value.size() ||
-                !milliseconds || milliseconds > 60000) {
+                !milliseconds || milliseconds > 150000) {
                 usage();
                 return 2;
             }
@@ -1869,6 +1911,10 @@ int main(int argc, char **argv) {
     }
     if (!entry_addresses.empty() && research_path.empty()) {
         usage();
+        return 2;
+    }
+    if (trace_byte_write && research_path.empty()) {
+        std::cerr << "--trace-byte-write requires --trace-research for an audit trail\n";
         return 2;
     }
     if (trace_object_writes && (research_path.empty() ||
@@ -1886,6 +1932,8 @@ int main(int argc, char **argv) {
         State state;
         state.trace_video = trace_video;
         state.probe_adlib = probe_adlib;
+        if (trace_byte_write)
+            state.watched_bytes.insert(*trace_byte_write);
         state.object_flags_mode = object_flags_mode;
         state.object_state_services = object_state_services;
         if (!research_path.empty()) {
@@ -2089,6 +2137,12 @@ int main(int argc, char **argv) {
         uc_hook video_hook;
         check(uc_hook_add(engine.uc, &video_hook, UC_HOOK_MEM_READ | UC_HOOK_MEM_WRITE,
                           reinterpret_cast<void *>(video_memory), &state, 0xa0000, 0xaffff));
+        uc_hook byte_write_hook_id{};
+        if (trace_byte_write)
+            check(uc_hook_add(engine.uc, &byte_write_hook_id, UC_HOOK_MEM_WRITE,
+                              reinterpret_cast<void *>(byte_write_hook), &state,
+                              *trace_byte_write >= 7 ? *trace_byte_write - 7 : 0,
+                              *trace_byte_write));
         uc_hook object_write_hook_id{};
 #ifdef GATEWAY_SDL
         std::unique_ptr<gateway::SdlHost> host;

@@ -11,7 +11,7 @@ PROBE = sys.argv.pop(1)
 
 
 class ProbeTests(unittest.TestCase):
-    def run_guest(self, code, files=None, dump=False, game_args=None, press=None, break_at=None, state=False, state_files=None, exe_name="TEST.EXE", research_entries=None, scheduled_keys=None, probe_adlib=False, scheduled_pokes=None, milliseconds=None):
+    def run_guest(self, code, files=None, dump=False, game_args=None, press=None, break_at=None, state=False, state_files=None, exe_name="TEST.EXE", research_entries=None, scheduled_keys=None, probe_adlib=False, scheduled_pokes=None, milliseconds=None, trace_byte_write=None):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             assets = root / 'assets'
@@ -41,6 +41,8 @@ class ProbeTests(unittest.TestCase):
                 command += ['--key-at', key]
             for poke in scheduled_pokes or []:
                 command += ['--research-poke16-at', poke]
+            if trace_byte_write is not None:
+                command += ['--trace-byte-write', trace_byte_write]
             if milliseconds is not None:
                 command += ['--milliseconds', str(milliseconds)]
             if state or state_files is not None:
@@ -94,6 +96,24 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(result.memory[0x30000:0x30002], bytes.fromhex('cdab'))
         self.assertIn('research-poke16 ms=2 address=30000 before=0 value=abcd',
                       result.research_trace)
+
+    def test_byte_watch_records_native_byte_and_word_writes_without_changing_them(self):
+        # mov ds,2000; mov byte [0300],5a; mov word [0300],1234; DOS exit.
+        code = bytes.fromhex('b800208ed8c60600035ac70600033412b8004ccd21')
+        result = self.run_guest(code, dump=True, research_entries=[],
+                                trace_byte_write='20300')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.memory[0x20300:0x20302], bytes.fromhex('3412'))
+        writes = [line for line in result.research_trace.splitlines()
+                  if line.startswith('byte-write ')]
+        self.assertEqual(len(writes), 2)
+        self.assertIn('address=20300', writes[0])
+        self.assertIn('size=1 before=0 value=5a', writes[0])
+        self.assertIn('size=2 before=5a value=34', writes[1])
+        high_byte = self.run_guest(code, dump=True, research_entries=[],
+                                   trace_byte_write='20301')
+        self.assertEqual(high_byte.returncode, 0, high_byte.stderr)
+        self.assertIn('size=2 before=0 value=12', high_byte.research_trace)
         rejected = self.run_guest(bytes.fromhex('ebfe'), milliseconds=4,
                                   research_entries=[], scheduled_pokes=['2:30000:0001:abcd'])
         self.assertNotEqual(rejected.returncode, 0)
