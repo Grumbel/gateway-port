@@ -32,7 +32,7 @@ parser.add_argument('--trace-object-writes', metavar='HEX-ID',
                     help='watch native writes to an object record (e.g. 124 for drawer)')
 parser.add_argument('--command-sequence', metavar='CMD,CMD,...',
                     help='replace the seven objects commands; with --scenario puzzle, '
-                         'provide 1–40 commands at three-second intervals (native only)')
+                         'provide 1–48 commands at three-second intervals (native only)')
 parser.add_argument('--trace-byte-write', metavar='LINEARHEX',
                     help='native-only observer for writes to one guest physical byte')
 parser.add_argument('--extra-trace-entry', action='append', metavar='LINEARHEX',

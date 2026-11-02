@@ -24,7 +24,7 @@ The original game's screen and native object-state snapshot confirm this
 route. The earlier scripted attempts failed because commands sent during
 the technician's modal briefing were consumed as *more-text* input. The
 new `puzzle` scenario supports one-shot `@space`, `@enter`, and `@escape`
-steps, up to 40 commands spaced three seconds apart (bounded to 150,000
+steps, up to 48 commands spaced three seconds apart (bounded to 180,000
 guest milliseconds). The existing seven-slot `objects` scenario is unchanged.
 
 ## Glass and bartender: the native progression

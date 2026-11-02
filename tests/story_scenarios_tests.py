@@ -61,17 +61,17 @@ class StoryScenariosTests(unittest.TestCase):
         self.assertIn((33000, ord('l')), keys)
         self.assertNotIn((22000, 0x3920), keys)  # no background pagination keys
         self.assertEqual(puzzle_duration(commands), 35500)
-        many = parse_puzzle_sequence(','.join('wait' for _ in range(40)))
-        self.assertEqual(puzzle_duration(many), 137500)
-        self.assertEqual(schedule('puzzle', many)[-1][0], 135120)
+        many = parse_puzzle_sequence(','.join('wait' for _ in range(48)))
+        self.assertEqual(puzzle_duration(many), 161500)
+        self.assertEqual(schedule('puzzle', many)[-1][0], 159120)
 
     def test_puzzle_rejects_empty_invalid_and_overlong_sequences(self):
         for sequence in ('', ',look', 'look,', 'look,é', 'a' * 65,
                          'look,@unverified',
-                         ','.join('wait' for _ in range(41))):
+                         ','.join('wait' for _ in range(49))):
             with self.subTest(sequence=sequence[:30]), self.assertRaises(ValueError):
                 parse_puzzle_sequence(sequence)
-        with self.assertRaisesRegex(ValueError, 'requires 1–40 commands'):
+        with self.assertRaisesRegex(ValueError, 'requires 1–48 commands'):
             schedule('puzzle')
 
     def test_puzzle_supports_one_shot_keys_without_typing_their_names(self):

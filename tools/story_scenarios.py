@@ -11,7 +11,7 @@ DEFAULT_OBJECT_COMMANDS = (
 )
 PUZZLE_FIRST_COMMAND_MS = 18000
 PUZZLE_COMMAND_SPACING_MS = 3000
-PUZZLE_MAX_COMMANDS = 40
+PUZZLE_MAX_COMMANDS = 48
 PUZZLE_KEYS = {'@space': 0x3920, '@enter': 0x1c0d, '@escape': 0x011b}
 
 
@@ -28,10 +28,10 @@ def parse_sequence(sequence):
 
 
 def parse_puzzle_sequence(sequence):
-    """Up to 40 commands in a bounded native-only experiment (3 seconds apart)."""
+    """Up to 48 commands in a bounded native-only experiment (3 seconds apart)."""
     commands = tuple(command.strip() for command in sequence.split(','))
     if not 1 <= len(commands) <= PUZZLE_MAX_COMMANDS:
-        raise ValueError('puzzle scenario requires 1–40 comma-separated commands')
+        raise ValueError('puzzle scenario requires 1–48 comma-separated commands')
     for command in commands:
         if not command or len(command) > 64 or any(not 32 <= ord(ch) <= 126
                                                   for ch in command):
@@ -43,7 +43,7 @@ def parse_puzzle_sequence(sequence):
 
 def puzzle_duration(commands):
     if not 1 <= len(commands) <= PUZZLE_MAX_COMMANDS:
-        raise ValueError('puzzle scenario requires 1–40 commands')
+        raise ValueError('puzzle scenario requires 1–48 commands')
     return PUZZLE_FIRST_COMMAND_MS + (len(commands) - 1) * PUZZLE_COMMAND_SPACING_MS + 2500
 
 
@@ -55,7 +55,7 @@ def schedule(scenario, commands=None):
         raise ValueError('custom commands require the objects or puzzle scenario')
     if scenario == 'puzzle':
         if commands is None or not 1 <= len(commands) <= PUZZLE_MAX_COMMANDS:
-            raise ValueError('puzzle scenario requires 1–40 commands')
+            raise ValueError('puzzle scenario requires 1–48 commands')
         if any(not command or len(command) > 64 for command in commands):
             raise ValueError('puzzle commands must contain 1–64 characters')
         keys = schedule('look') + [(time, 0x3920) for time in (15000, 16000, 17000)]

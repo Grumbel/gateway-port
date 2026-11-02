@@ -1817,7 +1817,7 @@ int main(int argc, char **argv) {
                 }
                 begin = end + 1;
             }
-            if (!valid || words[0] > 150000 || words[1] > 0x9fffe ||
+            if (!valid || words[0] > 180000 || words[1] > 0x9fffe ||
                 words[2] > 0xffff || words[3] > 0xffff) {
                 usage();
                 return 2;
@@ -1837,7 +1837,7 @@ int main(int argc, char **argv) {
             const auto b =
                 std::from_chars(value.data() + colon + 1, value.data() + value.size(), key, 16);
             if (a.ec != std::errc{} || a.ptr != value.data() + colon || b.ec != std::errc{} ||
-                b.ptr != value.data() + value.size() || time > 150000 || key > 65535) {
+                b.ptr != value.data() + value.size() || time > 180000 || key > 65535) {
                 usage();
                 return 2;
             }
@@ -1896,7 +1896,7 @@ int main(int argc, char **argv) {
             const auto result =
                 std::from_chars(value.data(), value.data() + value.size(), milliseconds);
             if (result.ec != std::errc{} || result.ptr != value.data() + value.size() ||
-                !milliseconds || milliseconds > 150000) {
+                !milliseconds || milliseconds > 180000) {
                 usage();
                 return 2;
             }
