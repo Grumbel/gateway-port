@@ -11,7 +11,7 @@ PROBE = sys.argv.pop(1)
 
 
 class ProbeTests(unittest.TestCase):
-    def run_guest(self, code, files=None, dump=False, game_args=None, press=None, break_at=None, state=False, state_files=None, exe_name="TEST.EXE", research_entries=None, scheduled_keys=None, probe_adlib=False, scheduled_pokes=None, milliseconds=None, trace_byte_write=None, trace_rtlink_calls=False, rtlink_event_targets=None, key_script_lines=None, dump_at=None):
+    def run_guest(self, code, files=None, dump=False, game_args=None, press=None, break_at=None, state=False, state_files=None, exe_name="TEST.EXE", research_entries=None, scheduled_keys=None, probe_adlib=False, scheduled_pokes=None, milliseconds=None, trace_byte_write=None, trace_rtlink_calls=False, rtlink_event_targets=None, key_script_lines=None, dump_at=None, mouse_clicks=None):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             assets = root / 'assets'
@@ -51,6 +51,8 @@ class ProbeTests(unittest.TestCase):
                 command += ['--key-script', str(key_script)]
             for time, label in dump_at or []:
                 command += ['--dump-at', f'{time}:{root / label}']
+            for click in mouse_clicks or []:
+                command += ['--mouse-click-at', click]
             for poke in scheduled_pokes or []:
                 command += ['--research-poke16-at', poke]
             if trace_byte_write is not None:
@@ -166,6 +168,29 @@ class ProbeTests(unittest.TestCase):
                                    dump_at=[('3', 'never')])
         self.assertNotEqual(too_early.returncode, 0)
         self.assertIn('scheduled snapshot was never captured', too_early.stderr)
+
+    def test_scheduled_mouse_click_is_visible_to_original_int33h_poll(self):
+        # AX=3 queries the actual DOS mouse-service fields. Save BX (buttons),
+        # CX and DX continuously in guest RAM to prove button press/release.
+        code = bytes.fromhex('b80300cd33891e0002890e020289160402ebed')
+        result = self.run_guest(code, dump=True, milliseconds=105,
+                                research_entries=[], mouse_clicks=['1:200:75'],
+                                dump_at=[('50', 'pressed'), ('103', 'released')])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        addr = int(result.registers['DS'], 16) * 16 + 0x200
+        self.assertEqual(struct.unpack_from('<HHH', result.snapshots['pressed'][0], addr),
+                         (1, 200, 75))
+        self.assertEqual(struct.unpack_from('<HHH', result.snapshots['released'][0], addr),
+                         (0, 200, 75))
+        self.assertIn('mouse ms=1 x=200 y=75 left=1', result.research_trace)
+        self.assertIn('mouse ms=101 x=200 y=75 left=0', result.research_trace)
+        for click in ('nan:1:2', '1:640:2', '1:4:480', '104:1:2', '1:1', '1:2:3:4'):
+            with self.subTest(click=click):
+                invalid = self.run_guest(code, milliseconds=105, mouse_clicks=[click])
+                self.assertNotEqual(invalid.returncode, 0)
+        overlapping = self.run_guest(code, milliseconds=300,
+                                     mouse_clicks=['1:100:75', '20:200:75'])
+        self.assertNotEqual(overlapping.returncode, 0)
 
     def test_rtlink_manager_counts_section_qualified_trampoline_without_overlays(self):
         # Build a synthetic ten-byte Gateway trampoline and one-instruction

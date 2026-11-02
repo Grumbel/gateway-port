@@ -1884,6 +1884,12 @@ int main(int argc, char **argv) {
     std::multimap<unsigned, std::uint16_t> scheduled_keys;
     std::multimap<unsigned, std::string> scheduled_dumps;
     std::set<std::string> scheduled_dump_prefixes;
+    struct ScheduledMouse {
+        unsigned x, y;
+        bool down;
+    };
+    std::multimap<unsigned, ScheduledMouse> scheduled_mouse;
+    unsigned scheduled_clicks = 0;
     struct ResearchPoke16 {
         std::uint32_t address;
         std::uint16_t expected, value;
@@ -1898,6 +1904,7 @@ int main(int argc, char **argv) {
                      "[--trace-rtlink-calls FILE] "
                      "[--key-script FILE --milliseconds N] "
                      "[--dump-at MS:PREFIX ...] "
+                     "[--mouse-click-at MS:X:Y ...] "
                      "[--trace-rtlink-events FILE --trace-rtlink-target SECTION:CS:IP ...] "
                      "[--trace-research FILE --trace-entry HEX ...] [--key-at MS:BIOSHEX ...] "
                      "[--research-poke16-at MS:LINEARHEX:OLDHEX:NEWHEX ...] "
@@ -2064,6 +2071,36 @@ int main(int argc, char **argv) {
                 return 2;
             }
             scheduled_dumps.emplace(time, value.substr(colon + 1));
+        } else if (option == "--mouse-click-at" && i + 1 < argc) {
+            const std::string_view value = argv[++i];
+            std::array<unsigned, 3> values{};
+            std::size_t begin = 0;
+            bool valid = true;
+            for (unsigned part = 0; part < values.size(); ++part) {
+                const auto colon = value.find(':', begin);
+                const auto end = colon == std::string_view::npos ? value.size() : colon;
+                const auto parsed = std::from_chars(value.data() + begin, value.data() + end,
+                                                    values[part]);
+                if (begin == end || parsed.ec != std::errc{} ||
+                    parsed.ptr != value.data() + end ||
+                    (part < 2) != (colon != std::string_view::npos)) {
+                    valid = false;
+                    break;
+                }
+                begin = end + 1;
+            }
+            const auto nearby = scheduled_mouse.lower_bound(
+                values[0] >= 100 ? values[0] - 100 : 0);
+            if (!valid || values[0] > 3599899 || values[1] >= 640 || values[2] >= 480 ||
+                scheduled_clicks >= 4096 ||
+                (nearby != scheduled_mouse.end() && nearby->first <= values[0] + 100)) {
+                usage();
+                return 2;
+            }
+            scheduled_mouse.emplace(values[0], ScheduledMouse{values[1], values[2], true});
+            scheduled_mouse.emplace(values[0] + 100,
+                                    ScheduledMouse{values[1], values[2], false});
+            ++scheduled_clicks;
         } else if (option == "--headless")
             interactive = false;
         else if (option == "--trace-blocks" && i + 1 < argc)
@@ -2213,6 +2250,11 @@ int main(int argc, char **argv) {
     if (!scheduled_dumps.empty() &&
         (!milliseconds || scheduled_dumps.rbegin()->first >= milliseconds)) {
         std::cerr << "--dump-at timestamps must precede --milliseconds\n";
+        return 2;
+    }
+    if (!scheduled_mouse.empty() &&
+        (!milliseconds || scheduled_mouse.rbegin()->first >= milliseconds)) {
+        std::cerr << "--mouse-click-at release timestamps must precede --milliseconds\n";
         return 2;
     }
     if (!scheduled_pokes.empty() && research_path.empty()) {
@@ -2520,6 +2562,18 @@ int main(int argc, char **argv) {
                                      << " before=" << before << " value=" << poke.value << '\n';
                 scheduled_pokes.erase(scheduled_pokes.begin());
             }
+            while (!scheduled_mouse.empty() &&
+                   scheduled_mouse.begin()->first <= state.elapsed_ms) {
+                const auto at = scheduled_mouse.begin();
+                const auto &event = at->second;
+                state.mouse.move(event.x, event.y);
+                state.mouse.button(0, event.down);
+                if (state.research_trace.is_open())
+                    state.research_trace << "mouse ms=" << std::dec << state.elapsed_ms
+                                         << " x=" << state.mouse.x << " y=" << state.mouse.y
+                                         << " left=" << (event.down ? 1 : 0) << '\n';
+                scheduled_mouse.erase(at);
+            }
             if (trace_object_writes && !state.object_write_watch &&
                 state.object_service_ds) {
                 state.object_write_watch = locate_object_write_watch(
@@ -2782,6 +2836,8 @@ int main(int argc, char **argv) {
             throw std::runtime_error("research poke was never applied before probe stopped");
         if (!scheduled_dumps.empty())
             throw std::runtime_error("scheduled snapshot was never captured before probe stopped");
+        if (!scheduled_mouse.empty())
+            throw std::runtime_error("scheduled mouse click was not completed before probe stopped");
         if (!dump_prefix.empty()) {
             dump_guest(engine.uc, state, dump_prefix);
         }
