@@ -151,6 +151,8 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/native_handler_inventory_tests.py)
     add_test(NAME native-callback-coverage COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/audit_callback_coverage_tests.py)
+    add_test(NAME native-handler-evidence COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/handler_evidence_tests.py)
     add_test(NAME story-child-chain COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/child_chain_inspect_tests.py)
     add_test(NAME story-world-export COMMAND ${Python3_EXECUTABLE}

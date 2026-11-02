@@ -179,3 +179,7 @@ and [`action-dispatch.md`](action-dispatch.md).
 
 For event-aware callback coverage across ordinary Casino, Beach reward, and
 VR `UP` replays, see [callback-event-coverage.md](callback-event-coverage.md).
+Bundle 097's [handler evidence pipeline](handler-evidence.md) adds selected
+native function entry/return snapshots, byte-level object-record deltas and
+Ghidra static call-reference cross-checks without conflating them with total
+story-logic coverage.

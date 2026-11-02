@@ -41,6 +41,7 @@ Expected output (generated, ignored by Git, contains original game code):
 | `build/ghidra/project/Gateway.gpr` | Ghidra project, with DOS MZ program and independent overlay spaces |
 | `build/ghidra/ghidra-import-report.json` | Exact label counts and original-MZ signature matches |
 | `build/ghidra/ghidra-decompile-report.json` | One status, original address and Ghidra-containing function per target |
+| `build/ghidra/ghidra-callgraph.json` | Static call references and unresolved-call sites in the selected containing functions (not an executed RTLink call graph) |
 | `build/ghidra/pseudocode.txt` | Decompiler output for confirmed native function-entry candidates, or explicit errors |
 
 Preparation can be run independently of Ghidra, useful on machines where the
@@ -107,6 +108,9 @@ groups, and optionally correlates a complete native trampoline-call census
 with object handlers and room callbacks. See
 [native-handler-coverage.md](native-handler-coverage.md) for reproducible
 first-room measurements, limitations, and decompilation priorities.
+For joining its inventory to the selected static call references and sampled
+native entry/return/object-record deltas, see
+[handler-evidence.md](handler-evidence.md).
 
 ## Imported structures and first analysis targets
 
