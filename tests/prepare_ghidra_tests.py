@@ -82,6 +82,57 @@ class GhidraPlanTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'wrong section'):
             plan_sections(self.manifest, self.root, objects)
 
+    def test_selected_object_entries_are_provisional_and_unselected_are_aliases(self):
+        objects = [dict(object=0x2a3, handler=644, name='technician',
+                        native_code=dict(section=0, file_offset=0x104)),
+                   dict(object=0x2a9, handler=650, name='membership pin',
+                        native_code=dict(section=0, file_offset=0x108)),
+                   dict(object=0x2ab, handler=652, name='reader',
+                        native_code=dict(section=0, file_offset=0x10c))]
+        sections, _ = plan_sections(self.manifest, self.root, objects,
+                                    decompile_objects=[0x2a3, 0x2a9])
+        self.assertEqual([label['role'] for label in sections[0]['labels']],
+                         ['object-entry-candidate', 'object-entry-candidate', 'object-entry'])
+        self.assertEqual(sections[0]['labels'][1]['name'],
+                         'gw_object_2a9_membership_pin')
+        self.assertIn('provisional', sections[0]['labels'][1]['explanation'])
+
+    def test_rejects_unresolved_or_duplicated_selected_object_entries(self):
+        item = dict(object=0x2a3, handler=644,
+                    native_code=dict(section=0, file_offset=0x104))
+        with self.assertRaisesRegex(ValueError, 'requires an objects snapshot'):
+            plan_sections(self.manifest, self.root, decompile_objects=[0x2a3])
+        with self.assertRaisesRegex(ValueError, 'absent'):
+            plan_sections(self.manifest, self.root, [item], [0x2a9])
+        with self.assertRaisesRegex(ValueError, 'duplicate or invalid'):
+            plan_sections(self.manifest, self.root, [item], [0x2a3, 0x2a3])
+        with self.assertRaisesRegex(ValueError, 'no native handler'):
+            plan_sections(self.manifest, self.root, [dict(object=0x2a3)], [0x2a3])
+        with self.assertRaisesRegex(ValueError, 'share an entry'):
+            plan_sections(self.manifest, self.root,
+                          [item, dict(item, object=0x2a9)], [0x2a3, 0x2a9])
+
+    def test_explicit_overlay_candidates_are_file_backed_and_provisional(self):
+        sections, _ = plan_sections(self.manifest, self.root,
+                                    decompile_offsets=[0x10f, 0x100])
+        self.assertEqual([(label['name'], label['offset'], label['role'])
+                          for label in sections[0]['labels']],
+                         [('gw_ovl_10f_candidate', 15, 'overlay-entry-candidate'),
+                          ('gw_ovl_100_candidate', 0, 'overlay-entry-candidate')])
+        for offsets, error in [([0x110], 'no unique file-backed'),
+                               ([0xff], 'no unique file-backed'),
+                               ([-1], 'duplicate or invalid'),
+                               ([0x100, 0x100], 'duplicate or invalid')]:
+            with self.subTest(offsets=offsets), self.assertRaisesRegex(ValueError, error):
+                plan_sections(self.manifest, self.root, decompile_offsets=offsets)
+
+    def test_explicit_offset_cannot_duplicate_selected_object_handler(self):
+        objects = [dict(object=0x2a9, handler=650, name='membership pin',
+                        native_code=dict(section=0, file_offset=0x104))]
+        with self.assertRaisesRegex(ValueError, 'duplicates a selected object handler'):
+            plan_sections(self.manifest, self.root, objects,
+                          decompile_objects=[0x2a9], decompile_offsets=[0x104])
+
     def test_normalizes_cp437_and_unlabeled_objects(self):
         self.assertEqual(name_for_object({'object': 1, 'name': 'Drawe®'}),
                          'gw_object_001_drawe')

@@ -26,7 +26,8 @@ for section in plan['sections']:
     if block is None:
         raise ValueError('overlay section %d was not imported' % section['id'])
     for label in section['labels']:
-        if label['role'] in ('function', 'callback-entry'):
+        if label['role'] in ('function', 'callback-entry', 'object-entry-candidate',
+                             'overlay-entry-candidate'):
             targets.append((label['name'], block.getStart().add(label['offset']),
                             'GATEMAIN.OVL:0x%x' % label['file_offset'], label['role']))
 for label in plan['resident_labels']:
@@ -86,12 +87,17 @@ for name, address, origin, role in targets:
             continue
     item['function_entry'] = str(function.getEntryPoint())
     try:
-        if role in ('function', 'callback-entry'):
-            try:
-                # Never rename an internal branch's containing function.
+        if role in ('function', 'callback-entry', 'object-entry-candidate',
+                    'overlay-entry-candidate'):
+            # ImportGatewayRtlink creates a user label first. When analysis
+            # chooses a different primary symbol for the function, Ghidra
+            # rejects renaming it to that still-existing secondary label
+            # with DuplicateNameException. The address and report name are
+            # authoritative; a cosmetic rename is not worth aborting export.
+            existing_names = [symbol.getName() for symbol in
+                              currentProgram.getSymbolTable().getSymbols(address)]
+            if name not in existing_names and function.getName() != name:
                 function.setName(name, SourceType.USER_DEFINED)
-            except Exception as rename_error:
-                lines.append('Function rename skipped: %s' % rename_error)
         result = interface.decompileFunction(function, 120, monitor)
         if result.decompileCompleted() and result.getDecompiledFunction() is not None:
             lines.append(result.getDecompiledFunction().getC())

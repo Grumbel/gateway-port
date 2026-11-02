@@ -89,7 +89,8 @@ def name_for_object(entry):
     return 'gw_object_%03x_%s' % (entry['object'], name.lower() or 'unnamed')
 
 
-def plan_sections(manifest, images_dir, objects=None):
+def plan_sections(manifest, images_dir, objects=None, decompile_objects=(),
+                  decompile_offsets=()):
     """Check every fixup and image extent; return address-space-specific labels."""
     relocation = manifest['relocation']
     if not 0 <= relocation <= 0xffff:
@@ -155,14 +156,55 @@ def plan_sections(manifest, images_dir, objects=None):
 
     # Known offsets apply only to the fingerprinted Gateway pair, not synthetic
     # RTLink fixture images or other games.
+    chosen = list(decompile_objects)
+    if len(chosen) != len(set(chosen)) or any(not isinstance(item, int) or item <= 0
+                                             for item in chosen):
+        raise ValueError('duplicate or invalid selected object ID')
+    if chosen and objects is None:
+        raise ValueError('selected object decompilation requires an objects snapshot')
     if objects is not None:
+        by_object = {obj['object']: obj for obj in objects}
+        if len(by_object) != len(objects):
+            raise ValueError('duplicate object IDs in Ghidra snapshot')
+        if set(chosen) - set(by_object):
+            raise ValueError('selected object ID absent from Ghidra snapshot')
+        chosen_entries = set()
         for obj in objects:
             native = obj.get('native_code')
+            selected = obj['object'] in chosen
+            if selected and not native:
+                raise ValueError('selected object has no native handler entry')
             if not native:
                 continue
-            label_at(native['file_offset'], name_for_object(obj), 'object-entry',
-                     'object 0x%03x handler %d' % (obj['object'], obj['handler']),
+            if selected:
+                entry = (native['section'], native['file_offset'])
+                if entry in chosen_entries:
+                    raise ValueError('selected object handlers share an entry point')
+                chosen_entries.add(entry)
+            label_at(native['file_offset'], name_for_object(obj),
+                     'object-entry-candidate' if selected else 'object-entry',
+                     'object 0x%03x handler %d%s' %
+                     (obj['object'], obj['handler'],
+                      '; selected for provisional decompilation' if selected else ''),
                      native['section'])
+    offsets = list(decompile_offsets)
+    if (len(offsets) != len(set(offsets)) or
+        any(not isinstance(offset, int) or offset < 0 for offset in offsets)):
+        raise ValueError('duplicate or invalid selected OVL file offset')
+    selected_entries = {(native['section'], native['file_offset']) for obj in
+                        (objects or []) if obj['object'] in chosen
+                        for native in [obj['native_code']]}
+    for offset in offsets:
+        matches = [s for s in result if s['original_file_offset'] <= offset <
+                   s['original_file_offset'] + s['file_bytes']]
+        if len(matches) != 1:
+            raise ValueError('selected OVL offset 0x%x has no unique file-backed section' %
+                             offset)
+        section = matches[0]
+        if (section['id'], offset) in selected_entries:
+            raise ValueError('selected OVL offset duplicates a selected object handler')
+        label_at(offset, 'gw_ovl_%x_candidate' % offset, 'overlay-entry-candidate',
+                 'manually selected original OVL instruction; provisional function boundary')
     return result, label_at
 
 
@@ -195,7 +237,7 @@ def add_callback_labels(callbacks, manifest, label_at):
 
 
 def prepare(exe, ovl, output, extractor, objects_json=None, allow_unknown=False,
-            callbacks_json=None):
+            callbacks_json=None, decompile_objects=(), decompile_offsets=()):
     hashes = checked_files(exe, ovl, allow_unknown)
     output = output.resolve()
     images = output / 'sections'
@@ -213,7 +255,8 @@ def prepare(exe, ovl, output, extractor, objects_json=None, allow_unknown=False,
             raise ValueError('objects JSON lacks an objects array')
         from inspect_object_state import map_handler_entries
         objects = map_handler_entries(doc['objects'], manifest)
-    sections, label_at = plan_sections(manifest, images, objects)
+    sections, label_at = plan_sections(manifest, images, objects, decompile_objects,
+                                       decompile_offsets)
     if callbacks_json:
         if allow_unknown:
             raise ValueError('native room callback labels require fingerprinted Gateway binaries')
@@ -252,6 +295,12 @@ def main():
     parser.add_argument('--overlay-tool', type=Path, default=Path('build/gateway-overlay'))
     parser.add_argument('--objects-json', type=Path,
                         help='optional inspect_object_state.py JSON with handler pointers')
+    parser.add_argument('--decompile-object', action='append', type=lambda s: int(s, 0),
+                        help='selected native object ID to attempt as a Ghidra function; '
+                             'requires --objects-json (repeatable)')
+    parser.add_argument('--decompile-offset', action='append', type=lambda s: int(s, 0),
+                        help='original GATEMAIN.OVL file offset of a provisional native '
+                             'entry; must lie in one file-backed RTLink section (repeatable)')
     parser.add_argument('--callbacks-json', type=Path,
                         help='optional native inspect_room_callbacks.py JSON with kind-4 entries')
     parser.add_argument('--allow-unknown-binaries', action='store_true',
@@ -260,7 +309,8 @@ def main():
     try:
         target, plan = prepare(args.exe, args.ovl, args.output, args.overlay_tool,
                                args.objects_json, args.allow_unknown_binaries,
-                               args.callbacks_json)
+                               args.callbacks_json, args.decompile_object or (),
+                               args.decompile_offset or ())
     except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
         parser.exit(1, 'prepare_ghidra: %s\n' % error)
     print('Prepared %d isolated RTLink sections, %d fixups; plan: %s' % (
