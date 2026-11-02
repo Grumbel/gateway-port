@@ -11,7 +11,9 @@ sys.path.insert(0, str(ROOT / 'tools'))
 from summarize_navigation_trace import (location_events, map_location_setter_return,
                                         move_helper_calls, room_names, summarize,
                                         summarize_direction_calls, direction_dispatch_calls,
-                                        summarize_move_callers, summarize_room_heads)
+                                        summarize_callback_returns,
+                                        callback_return_entries, summarize_move_callers,
+                                        summarize_room_heads)
 
 TOOL = ROOT / 'tools' / 'summarize_navigation_trace.py'
 WATCH = 'object-watch ms=11100 object=d3 type=7 at=1e4c:1234 size=20 child_count=3'
@@ -56,6 +58,10 @@ def direction_entry(ms, code):
     return (f'entry ms={ms} pc=14ed6 cs=148e ds=5b46 '
             f'ss=5b46 sp=dbba bp=dbc2 stack=c28,148e,{code:x},0,40e '
             'frames=dbc2:dc28:4da:1000,')
+
+
+def callback_entry(ms, target):
+    return f'entry ms={ms} pc=1507c cs=148e ax={target:x} stack=0,0,0'
 
 
 class NavigationTraceTests(unittest.TestCase):
@@ -308,6 +314,31 @@ class NavigationTraceTests(unittest.TestCase):
             [direction_entry(26000, 0x03), direction_entry(26050, 0x04)])
         self.assertIn('0x03             (none', boundary)
         self.assertIn('0x04             0x001 -> 0x002 @26050', boundary)
+
+    def test_scripted_exit_kind4_callback_returns_are_separate_from_moves(self):
+        lines = [callback_entry(18200, 0xf1),
+                 callback_entry(21200, 0),
+                 callback_entry(25190, 0x124),
+                 callback_entry(28200, 0xee).replace('cs=148e', 'cs=148f'),
+                 callback_entry(31200, 0xf1).replace('pc=1507c', 'pc=15070')]
+        self.assertEqual(callback_return_entries(lines), [
+            dict(ms=18200, target=0xf1), dict(ms=21200, target=0),
+            dict(ms=25190, target=0x124)])
+        events = [dict(ms=18266, old=0xee, new=0xf1,
+                       evidence='verified service'),
+                  dict(ms=25195, old=0xee, new=0x124,
+                       evidence='pre-write attempt')]
+        report = summarize_callback_returns(events, lines, COMMANDS, {0xf1: 'Town'})
+        self.assertIn('18200 east               0x00f1', report)
+        self.assertIn('to 0x0f1 Town @18266', report)
+        self.assertIn('21200 west               0x0000', report)
+        self.assertIn('no matching move within 500 guest ms', report)
+        self.assertNotIn('25195', report)
+        self.assertIn('not prove parser acceptance', report)
+        self.assertIn('no kind-4 callback returns',
+                      summarize_callback_returns(events, []))
+        with self.assertRaisesRegex(ValueError, 'invalid kind-4 callback'):
+            callback_return_entries([callback_entry(18100, 0).replace('ax=0', 'ax=oops')])
 
 
 if __name__ == '__main__':

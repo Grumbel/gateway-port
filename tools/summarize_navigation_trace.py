@@ -35,6 +35,10 @@ ROOM_DISPATCH_PC = 0x14ed6
 ROOM_DISPATCH_CS = 0x148e
 ROOM_DISPATCH_RETURN_IP = 0x0c28
 ROOM_DISPATCH_RETURN_CS = 0x148e
+# Original EXE file 0x6275, at runtime 148e:079c (linear 1507c).
+# The preceding kind-4 far callback has just returned an object ID in AX.
+ROOM_CALLBACK_RETURN_PC = 0x1507c
+ROOM_CALLBACK_RETURN_CS = 0x148e
 
 
 def fields(line):
@@ -377,6 +381,61 @@ def summarize_direction_calls(events, lines, commands=None, names=None):
     return '\n'.join(output) + '\n'
 
 
+def callback_return_entries(lines):
+    """Read AX at the original room-exit kind-4 callback return address."""
+    result = []
+    for line in lines:
+        if not line.startswith('entry '):
+            continue
+        info = fields(line)
+        try:
+            if (int(info['pc'], 16) == ROOM_CALLBACK_RETURN_PC and
+                    int(info['cs'], 16) == ROOM_CALLBACK_RETURN_CS):
+                result.append(dict(ms=int(info['ms']), target=int(info['ax'], 16)))
+        except (KeyError, ValueError) as error:
+            raise ValueError(f'invalid kind-4 callback return ({error}): {line}') from error
+    return result
+
+
+def summarize_callback_returns(events, lines, commands=None, names=None):
+    """Correlate kind-4 AX targets with subsequent verified location changes."""
+    calls = callback_return_entries(lines)
+    names = names or {}
+    verified = [event for event in events if event['evidence'] == 'verified service'
+                and event['old'] is not None]
+    output = ['', 'Kind-4 room callback returns (original EXE file 0x6275):',
+              'ms     recent input       return AX     subsequent verified move',
+              '------  -----------------  ------------  ------------------------']
+    for index, call in enumerate(calls):
+        slot = bisect_right(OBJECT_SLOTS, call['ms']) - 1
+        label = (commands[slot] if commands and 0 <= slot < len(commands) else
+                 f'slot {slot + 1}' if slot >= 0 else 'startup')
+        next_entry = calls[index + 1]['ms'] if index + 1 < len(calls) else None
+        matching = [event for event in verified
+                    if call['ms'] <= event['ms'] <= call['ms'] + 500 and
+                    (next_entry is None or event['ms'] < next_entry) and
+                    event['new'] == call['target']]
+        if len(matching) == 1:
+            move = matching[0]
+            destination = f'0x{move["new"]:03x}'
+            if move['new'] in names:
+                destination += f' {names[move["new"]]}'
+            evidence = f'to {destination} @{move["ms"]}'
+        elif matching:
+            evidence = f'ambiguous: {len(matching)} matching moves'
+        else:
+            evidence = '(no matching move within 500 guest ms)'
+        output.append(f'{call["ms"]:6} {label:<18} '
+                      f'0x{call["target"]:04x}        {evidence}')
+    if not calls:
+        output.append('(no kind-4 callback returns; choose an exit whose kind is 4)')
+    output.append('The original code checks AX against the object count, zero, '
+                  'and the current room before moving. Matching a later native '
+                  'service delta confirms the move, but timed input associations '
+                  'do not prove parser acceptance.')
+    return '\n'.join(output) + '\n'
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('trace', type=Path, help='native.trace from trace_game_logic.py')
@@ -395,6 +454,9 @@ def main():
     parser.add_argument('--direction-calls', action='store_true',
                         help='decode the resident exit-dispatch direction argument and '
                              'correlate nearby verified room changes')
+    parser.add_argument('--callback-returns', action='store_true',
+                        help='decode kind-4 room callback return AX values and '
+                             'correlate verified destination changes')
     args = parser.parse_args()
     try:
         if bool(args.overlay_map) != bool(args.overlay_file):
@@ -414,6 +476,8 @@ def main():
             print(summarize_move_callers(events, lines), end='')
         if args.direction_calls:
             print(summarize_direction_calls(events, lines, commands, names), end='')
+        if args.callback_returns:
+            print(summarize_callback_returns(events, lines, commands, names), end='')
     except (OSError, ValueError, KeyError, TypeError) as error:
         parser.error(str(error))
 

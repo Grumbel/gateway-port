@@ -27,10 +27,17 @@ class RoomExitInspectTests(unittest.TestCase):
         self.ds = 0x1000
         self.table_segment = 0x2400
         self.conditional_segment = 0x2500
+        self.property_segment = 0x2600
         struct.pack_into('<H', self.memory, self.ds * 16 + 0x8dcc,
                          self.table_segment)
         struct.pack_into('<H', self.memory, self.ds * 16 + 0x8dd2,
                          self.conditional_segment)
+        struct.pack_into('<H', self.memory, self.ds * 16 + 0x8d56,
+                         self.property_segment)
+        for property_id, bit in [(0x0c, 0), (0x10, 1)]:
+            descriptor = self.property_segment * 16 + 0x14 + property_id * 4
+            self.memory[descriptor] = bit
+            struct.pack_into('<H', self.memory, descriptor + 2, 1)
         self.objects = [room(0xee, 'Your Quarters', 1, 1),
                         room(0xf1, 'Heecheetown', 2, 2),
                         room(0xf2, 'Inactive', 2, 0),
@@ -110,6 +117,32 @@ class RoomExitInspectTests(unittest.TestCase):
         self.assertEqual(world['rooms'][0]['exits'][0]['condition_object'], 0xee)
         self.assertEqual(world['rooms'][0]['exits'][0]['conditional_room'], 0xf1)
 
+    def test_original_property_bits_in_final_native_snapshot(self):
+        state = bytearray.fromhex(self.objects[1]['raw_state'])
+        state[4] = 0x01  # flag 0x0c set, 0x10 clear
+        self.objects[1]['raw_state'] = state.hex()
+        world = inspect_exits(self.memory, self.ds, self.objects, condition_flags=True)
+        condition = world['rooms'][1]['exits'][1]
+        self.assertEqual(condition['snapshot_flags'], {'0x0c': True, '0x10': False})
+        self.assertIn('snapshot_flags=0x0c:set,0x10:clear', format_text(world))
+        self.assertTrue(world['snapshot_conditions'])
+        self.assertNotIn('snapshot_flags', inspect_exits(
+            self.memory, self.ds, self.objects)['rooms'][1]['exits'][1])
+        # Type mask zero means unsupported, not an asserted clear bit.
+        struct.pack_into('<H', self.memory,
+                         self.property_segment * 16 + 0x14 + 0x10 * 4 + 2, 0)
+        unsupported_world = inspect_exits(self.memory, self.ds, self.objects,
+                                          condition_flags=True)
+        unsupported = unsupported_world['rooms'][1]['exits'][1]
+        self.assertIsNone(unsupported['snapshot_flags']['0x10'])
+        self.assertIn('0x10:unsupported', format_text(unsupported_world))
+        self.memory[self.property_segment * 16 + 0x14 + 0x0c * 4] = 0xff
+        with self.assertRaisesRegex(ValueError, 'flag bit outside native record'):
+            inspect_exits(self.memory, self.ds, self.objects, condition_flags=True)
+        struct.pack_into('<H', self.memory, self.ds * 16 + 0x8d56, 0)
+        with self.assertRaisesRegex(ValueError, 'no native property-table segment'):
+            inspect_exits(self.memory, self.ds, self.objects, condition_flags=True)
+
     def test_snapshot_room_selection_and_structural_validation(self):
         selected = inspect_exits(self.memory, self.ds, self.objects, [0xee])
         self.assertEqual([room['id'] for room in selected['rooms']], [0xee])
@@ -158,6 +191,8 @@ class RoomExitInspectTests(unittest.TestCase):
                 bytes.fromhex(raw))
             struct.pack_into('<H', self.memory, 0x40000 + state_offset,
                              name_token)
+            if object_id == 2:
+                self.memory[0x40000 + state_offset + 4] = 0x01
         self.entry(0, 0x11, 1, 2)
         self.entry(1, 0x12, 1, 1)
         self.entry(2, 0x07, 2, 0x0e)
@@ -179,6 +214,11 @@ class RoomExitInspectTests(unittest.TestCase):
             self.assertEqual(data['rooms'][0]['exits'][0]['direct_room'], 2)
             self.assertEqual(data['rooms'][1]['exits'][1]['conditional_room'], 1)
             self.assertEqual(data['rooms'][1]['exits'][1]['condition_object'], 2)
+            with_flags = subprocess.run(command + ['--condition-flags'],
+                                        capture_output=True, text=True)
+            self.assertEqual(with_flags.returncode, 0, with_flags.stderr)
+            flags = json.loads(with_flags.stdout)['rooms'][1]['exits'][1]['snapshot_flags']
+            self.assertEqual(flags, {'0x0c': True, '0x10': False})
             graph = subprocess.run(command[:-1] + ['dot'], capture_output=True,
                                    text=True)
             self.assertEqual(graph.returncode, 0, graph.stderr)

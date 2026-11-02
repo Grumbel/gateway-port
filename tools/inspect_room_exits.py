@@ -35,7 +35,36 @@ KIND_MEANING = {
 }
 
 
-def inspect_exits(memory, ds, objects, room_ids=None):
+def snapshot_flags(memory, descriptor_segment, entry):
+    """Read the native 0157:03a6 property-bit layout for flags 0x0c/0x10.
+
+    Unsupported properties are null, not false: a null means the object's
+    native type mask does not admit that property. This is an end-of-replay
+    snapshot, not a record of the bits during any earlier move.
+    """
+    kind = entry['type']
+    if not 1 <= kind <= 8:
+        raise ValueError('invalid condition-object type')
+    raw = bytes.fromhex(entry['raw_state'])
+    result = {}
+    for property_id in (0x0c, 0x10):
+        index = descriptor_segment * 16 + 0x14 + property_id * 4
+        if index + 4 > min(len(memory), 0xa0000):
+            raise ValueError('property descriptor outside conventional memory')
+        bit = memory[index]
+        allowed = struct.unpack_from('<H', memory, index + 2)[0]
+        if not allowed & (1 << (kind - 1)):
+            result[f'0x{property_id:02x}'] = None
+            continue
+        offset = 4 + bit // 8
+        if offset >= len(raw):
+            raise ValueError(f'object 0x{entry["object"]:03x}: '
+                             'flag bit outside native record')
+        result[f'0x{property_id:02x}'] = bool(raw[offset] & (1 << (bit & 7)))
+    return result
+
+
+def inspect_exits(memory, ds, objects, room_ids=None, condition_flags=False):
     """Decode exits without inventing cardinal meanings for direction bytes."""
     if not 0 < ds <= 0xffff:
         raise ValueError('invalid native data segment')
@@ -58,6 +87,7 @@ def inspect_exits(memory, ds, objects, room_ids=None):
 
     table_segment = pointer(EXIT_TABLE_POINTER, 'exit-table')
     conditional_segment = None
+    property_segment = None
     by_id = {entry['object']: entry for entry in objects}
     if len(by_id) != len(objects):
         raise ValueError('duplicate object IDs in native snapshot')
@@ -101,6 +131,11 @@ def inspect_exits(memory, ds, objects, room_ids=None):
                     row['condition_object'] = condition
                     if condition in by_id:
                         row['condition_name'] = by_id[condition].get('name', '')
+                        if condition_flags:
+                            if property_segment is None:
+                                property_segment = pointer(0x8d56, 'property-table')
+                            row['snapshot_flags'] = snapshot_flags(
+                                memory, property_segment, by_id[condition])
                     if destination in by_id and by_id[destination]['type'] == 1:
                         row['conditional_room'] = destination
                         row['conditional_room_name'] = by_id[destination].get('name', '')
@@ -114,6 +149,7 @@ def inspect_exits(memory, ds, objects, room_ids=None):
                 table_segment=table_segment, table_offset=EXIT_TABLE_OFFSET,
                 conditional_table_segment=conditional_segment,
                 conditional_table_offset=CONDITIONAL_TABLE_OFFSET,
+                snapshot_conditions=condition_flags,
                 rooms=rooms)
 
 
@@ -136,6 +172,13 @@ def format_text(world):
                            f' condition_object=0x{route["condition_object"]:03x}'
                            f' {route.get("condition_name", "")}'
                            ' (flag 0x0c moves; flag 0x10 sets 0x0c then moves)')
+                if 'snapshot_flags' in route:
+                    status = route['snapshot_flags']
+                    def fmt(value):
+                        return 'unsupported' if value is None else 'set' if value else 'clear'
+                    target += (' snapshot_flags='
+                               f'0x0c:{fmt(status["0x0c"])},'
+                               f'0x10:{fmt(status["0x10"])}')
             lines.append(f'  [{route["index"]:3}] direction=0x{route["direction_code"]:02x} '
                          f'kind={route["kind"]} ({route["kind_meaning"]}) '
                          f'argument=0x{route["argument"]:03x}{target}')
@@ -208,6 +251,9 @@ def main():
     parser.add_argument('--format', choices=('text', 'json', 'dot', 'stats'), default='text')
     parser.add_argument('--include-conditional', action='store_true',
                         help='include kind-2 candidate destinations as dashed DOT edges')
+    parser.add_argument('--condition-flags', action='store_true',
+                        help='decode flag 0x0c/0x10 on condition objects at snapshot time '
+                             '(not the earlier command time)')
     args = parser.parse_args()
     try:
         if args.include_conditional and args.format != 'dot':
@@ -223,7 +269,8 @@ def main():
             names = file[2:]
         ds = int(regs['DS'], 16)
         records = inspect_objects(memory, ds, names)
-        world = inspect_exits(memory, ds, records, args.room)
+        world = inspect_exits(memory, ds, records, args.room,
+                              condition_flags=args.condition_flags)
         if args.format == 'json':
             print(json.dumps(world, indent=2))
         elif args.format == 'dot':

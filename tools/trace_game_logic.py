@@ -136,8 +136,12 @@ for mode in (['native'] if args.native_only else ['native', 'verify', 'hle']):
         # GATEMAIN.EXE file 0x60cf (runtime 148e:05f6) looks up a raw
         # direction in each room's four-byte exit table. The caller uses a
         # push cs / near call, yielding return stack 0c28,148e,direction.
-        # Both are default-layout original-code research hooks, not HLE.
-        command += ['--trace-entry', '447e0', '--trace-entry', '14ed6']
+        # Kind 4 routes through a far callback (original EXE 0x6270);
+        # 148e:079c (linear 1507c) is the first instruction after its
+        # return, while AX still holds its candidate destination room.
+        # These are default-layout original-code research hooks, not HLE.
+        command += ['--trace-entry', '447e0', '--trace-entry', '14ed6',
+                    '--trace-entry', '1507c']
     if args.trace_object_writes and mode == 'native':
         # 0157:08fc (EXE 0x2e3a): native indexed child-link setter.
         command += ['--trace-entry', '11e6c']
