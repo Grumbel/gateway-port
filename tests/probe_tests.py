@@ -11,7 +11,7 @@ PROBE = sys.argv.pop(1)
 
 
 class ProbeTests(unittest.TestCase):
-    def run_guest(self, code, files=None, dump=False, game_args=None, press=None, break_at=None, state=False, state_files=None, exe_name="TEST.EXE", research_entries=None, scheduled_keys=None, probe_adlib=False, scheduled_pokes=None, milliseconds=None, trace_byte_write=None, trace_rtlink_calls=False):
+    def run_guest(self, code, files=None, dump=False, game_args=None, press=None, break_at=None, state=False, state_files=None, exe_name="TEST.EXE", research_entries=None, scheduled_keys=None, probe_adlib=False, scheduled_pokes=None, milliseconds=None, trace_byte_write=None, trace_rtlink_calls=False, rtlink_event_targets=None):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             assets = root / 'assets'
@@ -39,6 +39,10 @@ class ProbeTests(unittest.TestCase):
                     command += ['--trace-entry', address]
             if trace_rtlink_calls:
                 command += ['--trace-rtlink-calls', str(root / 'rtlink.calls')]
+            if rtlink_event_targets is not None:
+                command += ['--trace-rtlink-events', str(root / 'rtlink.events')]
+                for target in rtlink_event_targets:
+                    command += ['--trace-rtlink-target', target]
             for key in scheduled_keys or []:
                 command += ['--key-at', key]
             for poke in scheduled_pokes or []:
@@ -67,6 +71,9 @@ class ProbeTests(unittest.TestCase):
             if trace_rtlink_calls:
                 call_file = root / 'rtlink.calls'
                 result.rtlink_calls = call_file.read_text() if call_file.is_file() else ''
+            if rtlink_event_targets is not None:
+                event_file = root / 'rtlink.events'
+                result.rtlink_events = event_file.read_text() if event_file.is_file() else ''
             if dump:
                 result.picture = (root / 'snapshot.ppm').read_bytes()
                 result.memory = (root / 'snapshot.bin').read_bytes()
@@ -114,6 +121,21 @@ class ProbeTests(unittest.TestCase):
                       result.rtlink_calls)
         self.assertIn(f'rtlink-call section=5 target=1000:{target:x} count=1',
                       result.rtlink_calls)
+        events = self.run_guest(code, rtlink_event_targets=[f'5:1000:{target:x}'])
+        self.assertEqual(events.returncode, 0, events.stderr)
+        self.assertIn(f'rtlink-enter id=1 ms=', events.rtlink_events)
+        self.assertIn(f'section=5 target=1000:{target:x}', events.rtlink_events)
+        self.assertIn('rtlink-return id=1 ', events.rtlink_events)
+        self.assertIn('ax=2c24', events.rtlink_events)
+        self.assertIn('object_state=unavailable', events.rtlink_events)
+        self.assertIn('rtlink-events selected=1 returned=1 unfinished=0', events.rtlink_events)
+        unused = self.run_guest(code, rtlink_event_targets=['4:1000:0'])
+        self.assertEqual(unused.returncode, 0, unused.stderr)
+        self.assertIn('rtlink-events selected=0 returned=0 unfinished=0', unused.rtlink_events)
+        for bad in ([], ['58:1000:0'], ['5:10000:0'], ['5:1000:fffff'],
+                    ['5:1000:0', '5:1000:0'], ['5:1000:0:1']):
+            with self.subTest(bad=bad):
+                self.assertNotEqual(self.run_guest(code, rtlink_event_targets=bad).returncode, 0)
 
     def test_research_poke_requires_matching_word_and_audit_trace(self):
         # A controlled write runs in the guest loop and never edits DOS assets.

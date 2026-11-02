@@ -147,6 +147,18 @@ struct State {
     std::map<std::tuple<std::uint16_t, std::uint16_t, std::uint16_t>, RtlinkCallCount>
         rtlink_calls;
     std::uint64_t rtlink_manager_hits = 0, rtlink_unrecognized_calls = 0;
+    std::ofstream rtlink_events;
+    std::set<std::tuple<std::uint16_t, std::uint16_t, std::uint16_t>> rtlink_event_targets;
+    struct RtlinkFrame {
+        std::uint64_t id, return_pc;
+        std::uint16_t ss, return_sp;
+        std::optional<gateway::DebugGameState> objects_before;
+    };
+    std::vector<RtlinkFrame> rtlink_frames;
+    std::set<std::uint64_t> rtlink_return_addresses;
+    std::vector<uc_hook> rtlink_return_hooks;
+    std::uint64_t rtlink_event_calls = 0, rtlink_event_returns = 0;
+    static constexpr unsigned rtlink_event_limit = 256;
     bool breakpoint_hit = false;
     bool exited = false;
     unsigned exit_code = 0;
@@ -976,6 +988,87 @@ void trace_block(uc_engine *uc, std::uint64_t address, std::uint32_t size, void 
     }
 }
 
+// Capture only a selected function's entry and *observed far return*. This
+// captures inclusive effects (nested helpers may mutate state) and is not a
+// claim about every intervening instruction or global state word.
+std::optional<gateway::DebugGameState> rtlink_objects(uc_engine *uc, State &state) {
+    std::vector<std::uint8_t> memory(0xa0000);
+    check(uc_mem_read(uc, 0, memory.data(), memory.size()));
+    const auto inspect = [&](std::uint16_t ds) {
+        auto objects = gateway::inspect_gateway_state(memory, ds);
+        if (objects && objects->objects.size() == 734)
+            return objects;
+        return std::optional<gateway::DebugGameState>{};
+    };
+    if (auto objects = inspect(reg(uc, UC_X86_REG_DS))) {
+        state.debug_object_ds = objects->ds;
+        return objects;
+    }
+    if (state.debug_object_ds)
+        if (auto objects = inspect(*state.debug_object_ds))
+            return objects;
+    if (state.object_service_ds)
+        if (auto objects = inspect(*state.object_service_ds))
+            return objects;
+    return {};
+}
+
+void trace_rtlink_return(uc_engine *uc, std::uint64_t address, std::uint32_t,
+                         void *opaque) noexcept {
+    auto &state = *static_cast<State *>(opaque);
+    try {
+        const auto ss = reg(uc, UC_X86_REG_SS), sp = reg(uc, UC_X86_REG_SP);
+        for (std::size_t i = state.rtlink_frames.size(); i > 0; --i) {
+            const auto &frame = state.rtlink_frames[i - 1];
+            // A RETF may pop callee-owned arguments. Never pair merely on the
+            // reused linear address: SS and the original far-return stack
+            // location must also agree. Other overlay uses are ignored.
+            if (frame.return_pc != address || frame.ss != ss ||
+                std::uint16_t(sp - frame.return_sp) > 16)
+                continue;
+            const auto id = frame.id;
+            auto before = std::move(state.rtlink_frames[i - 1].objects_before);
+            state.rtlink_frames.erase(state.rtlink_frames.begin() + (i - 1));
+            auto after = before ? rtlink_objects(uc, state)
+                                : std::optional<gateway::DebugGameState>{};
+            auto &out = state.rtlink_events;
+            unsigned changed = 0;
+            if (before && after &&
+                (before->objects.size() != after->objects.size() ||
+                 !std::equal(before->objects.begin(), before->objects.end(),
+                             after->objects.begin(), [](const auto &a, const auto &b) {
+                                 return a.id == b.id && a.type == b.type &&
+                                        a.raw.size() == b.raw.size();
+                             })))
+                after.reset(); // A changed directory/layout cannot produce a bytewise delta.
+            if (before && after && before->objects.size() == after->objects.size()) {
+                for (std::size_t obj = 0; obj < before->objects.size(); ++obj) {
+                    const auto &a = before->objects[obj].raw;
+                    const auto &b = after->objects[obj].raw;
+                    for (std::size_t byte = 0; byte < a.size(); ++byte)
+                        if (a[byte] != b[byte]) {
+                            ++changed;
+                            out << "rtlink-change id=" << std::dec << id << " object=" << std::hex
+                                << before->objects[obj].id << " byte=" << byte
+                                << " before=" << unsigned(a[byte])
+                                << " after=" << unsigned(b[byte]) << '\n';
+                        }
+                }
+            }
+            out << "rtlink-return id=" << std::dec << id << " ms=" << state.elapsed_ms
+                << std::hex << " ax=" << reg(uc, UC_X86_REG_AX)
+                << " bx=" << reg(uc, UC_X86_REG_BX) << " cx=" << reg(uc, UC_X86_REG_CX)
+                << " dx=" << reg(uc, UC_X86_REG_DX) << " ss=" << ss << " sp=" << sp
+                << std::dec << " object_bytes_changed=" << changed
+                << " object_state=" << (before && after ? "verified" : "unavailable") << '\n';
+            ++state.rtlink_event_returns;
+            break;
+        }
+    } catch (const std::exception &e) {
+        hardware_failure(uc, state, e.what());
+    }
+}
+
 // A ten-byte RTLink trampoline calls 2c24:058d before its far JMP. The
 // manager's near-return IP identifies the *trampoline*, including its section
 // word, even when multiple sections reuse the same physical code bank.
@@ -1019,6 +1112,42 @@ void trace_rtlink_call(uc_engine *uc, std::uint64_t, std::uint32_t,
             count.first_ms = state.elapsed_ms;
         ++count.calls;
         count.last_ms = state.elapsed_ms;
+        if (!state.rtlink_events.is_open() ||
+            !state.rtlink_event_targets.contains({section, target_cs, target_ip}) ||
+            state.rtlink_event_calls >= State::rtlink_event_limit)
+            return;
+        // The manager was called from the ten-byte far trampoline. Below
+        // its near return address is the far return to the original caller.
+        // Keep that actual CS:IP; the target overlay bank may be evicted.
+        std::array<std::uint16_t, 6> stack{};
+        check(uc_mem_read(uc, std::uint64_t(ss) * 16 + std::uint16_t(sp + 2),
+                          stack.data(), stack.size() * sizeof(std::uint16_t)));
+        const auto caller_pc = std::uint64_t(stack[1]) * 16 + stack[0];
+        if (caller_pc >= 0xa0000)
+            return;
+        const auto id = ++state.rtlink_event_calls;
+        auto objects = rtlink_objects(uc, state);
+        state.rtlink_events << "rtlink-enter id=" << std::dec << id << " ms=" << state.elapsed_ms
+                            << " section=" << section << std::hex << " target=" << target_cs
+                            << ':' << target_ip << " caller=" << stack[1] << ':' << stack[0]
+                            << " ss=" << ss << " sp=" << std::uint16_t(sp + 6)
+                            << " ax=" << reg(uc, UC_X86_REG_AX)
+                            << " bx=" << reg(uc, UC_X86_REG_BX)
+                            << " cx=" << reg(uc, UC_X86_REG_CX)
+                            << " dx=" << reg(uc, UC_X86_REG_DX)
+                            << " args=" << stack[2] << ',' << stack[3] << ',' << stack[4]
+                            << ',' << stack[5] << std::dec
+                            << " object_state=" << (objects ? "verified" : "unavailable")
+                            << '\n';
+        state.rtlink_frames.push_back({id, caller_pc, ss, std::uint16_t(sp + 6),
+                                       std::move(objects)});
+        if (state.rtlink_return_addresses.insert(caller_pc).second) {
+            uc_hook hook{};
+            check(uc_hook_add(uc, &hook, UC_HOOK_CODE,
+                              reinterpret_cast<void *>(trace_rtlink_return), &state,
+                              caller_pc, caller_pc));
+            state.rtlink_return_hooks.push_back(hook);
+        }
     } catch (const std::exception &e) {
         hardware_failure(uc, state, e.what());
     }
@@ -1739,7 +1868,8 @@ int main(int argc, char **argv) {
     std::filesystem::path state_directory;
     std::filesystem::path debug_directory;
     unsigned milliseconds = 0;
-    std::string dump_prefix, block_trace_path, rtlink_calls_path;
+    std::string dump_prefix, block_trace_path, rtlink_calls_path, rtlink_events_path;
+    std::set<std::tuple<std::uint16_t, std::uint16_t, std::uint16_t>> rtlink_event_targets;
     std::string game_args, research_path, object_flags_mode;
     bool object_state_services = false;
     bool verify_overlays = false, hle_overlays = false, trace_video = false;
@@ -1762,6 +1892,7 @@ int main(int argc, char **argv) {
                      "[--milliseconds N] [--dump-prefix PATH] [--game-args TEXT] [--press KEY] "
                      "[--break-at HEX] [--state-dir DIR | --read-only] [--trace-blocks FILE] "
                      "[--trace-rtlink-calls FILE] "
+                     "[--trace-rtlink-events FILE --trace-rtlink-target SECTION:CS:IP ...] "
                      "[--trace-research FILE --trace-entry HEX ...] [--key-at MS:BIOSHEX ...] "
                      "[--research-poke16-at MS:LINEARHEX:OLDHEX:NEWHEX ...] "
                      "[--object-flags verify|hle | --object-state verify|hle] [--verify-overlays] "
@@ -1905,6 +2036,34 @@ int main(int argc, char **argv) {
             block_trace_path = argv[++i];
         else if (option == "--trace-rtlink-calls" && i + 1 < argc)
             rtlink_calls_path = argv[++i];
+        else if (option == "--trace-rtlink-events" && i + 1 < argc)
+            rtlink_events_path = argv[++i];
+        else if (option == "--trace-rtlink-target" && i + 1 < argc) {
+            const std::string_view value = argv[++i];
+            std::array<unsigned, 3> parts{};
+            std::size_t start = 0;
+            bool valid = true;
+            for (unsigned i = 0; i < parts.size(); ++i) {
+                const auto colon = value.find(':', start);
+                const auto end = colon == std::string_view::npos ? value.size() : colon;
+                const auto result = std::from_chars(value.data() + start, value.data() + end,
+                                                    parts[i], i == 0 ? 10 : 16);
+                if (start == end || result.ec != std::errc{} ||
+                    result.ptr != value.data() + end ||
+                    (i < 2) != (colon != std::string_view::npos)) {
+                    valid = false;
+                    break;
+                }
+                start = end + 1;
+            }
+            if (!valid || parts[0] >= 58 || parts[1] > 0xffff || parts[2] > 0xffff ||
+                !rtlink_event_targets.insert({static_cast<std::uint16_t>(parts[0]),
+                                              static_cast<std::uint16_t>(parts[1]),
+                                              static_cast<std::uint16_t>(parts[2])}).second) {
+                usage();
+                return 2;
+            }
+        }
         else if (option == "--read-only") {
             writable_state = false;
             state_directory.clear();
@@ -1976,6 +2135,11 @@ int main(int argc, char **argv) {
         std::cerr << "--trace-byte-write requires --trace-research for an audit trail\n";
         return 2;
     }
+    if (rtlink_events_path.empty() != rtlink_event_targets.empty()) {
+        std::cerr << "--trace-rtlink-events requires one or more --trace-rtlink-target "
+                     "and vice versa\n";
+        return 2;
+    }
     if (!trace_byte_writes.empty() &&
         *trace_byte_writes.rbegin() - *trace_byte_writes.begin() > 0x40) {
         std::cerr << "--trace-byte-write addresses must lie within 64 bytes "
@@ -1998,6 +2162,12 @@ int main(int argc, char **argv) {
         state.trace_video = trace_video;
         state.probe_adlib = probe_adlib;
         state.watched_bytes.insert(trace_byte_writes.begin(), trace_byte_writes.end());
+        state.rtlink_event_targets = rtlink_event_targets;
+        if (!rtlink_events_path.empty()) {
+            state.rtlink_events.open(rtlink_events_path);
+            if (!state.rtlink_events)
+                throw std::runtime_error("cannot open RTLink event trace");
+        }
         state.object_flags_mode = object_flags_mode;
         state.object_state_services = object_state_services;
         if (!research_path.empty()) {
@@ -2172,7 +2342,7 @@ int main(int argc, char **argv) {
             check(uc_hook_add(engine.uc, &block_hook, UC_HOOK_BLOCK,
                               reinterpret_cast<void *>(trace_block), &state, 1, 0));
         uc_hook rtlink_call_hook;
-        if (!rtlink_calls_path.empty())
+        if (!rtlink_calls_path.empty() || !rtlink_events_path.empty())
             check(uc_hook_add(engine.uc, &rtlink_call_hook, UC_HOOK_CODE,
                               reinterpret_cast<void *>(trace_rtlink_call), &state,
                               0x2c7cd, 0x2c7cd));
@@ -2497,6 +2667,15 @@ int main(int argc, char **argv) {
             trace.close();
             if (!trace)
                 throw std::runtime_error("cannot write RTLink call census");
+        }
+        if (state.rtlink_events.is_open()) {
+            state.rtlink_events << "rtlink-events selected=" << state.rtlink_event_calls
+                                << " returned=" << state.rtlink_event_returns
+                                << " unfinished=" << state.rtlink_frames.size()
+                                << " limit=" << State::rtlink_event_limit << '\n';
+            state.rtlink_events.close();
+            if (!state.rtlink_events)
+                throw std::runtime_error("cannot write RTLink event trace");
         }
         if (!scheduled_pokes.empty())
             throw std::runtime_error("research poke was never applied before probe stopped");

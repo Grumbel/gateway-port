@@ -140,6 +140,28 @@ class TraceGameLogicTests(unittest.TestCase):
             self.assertIn('requires --native-only --scenario objects', wrong_scenario.stderr)
             self.assertFalse(output.exists())
 
+    def test_rtlink_event_samples_require_native_census_and_updated_probe(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            probe = root / 'gateway-probe'
+            probe.write_bytes(b' action_code= rtlink-census manager_hits= old probe')
+            output = root / 'replay'
+            base = [sys.executable, str(DRIVER), '--scenario', 'objects',
+                    '--trace-rtlink-target', '48:4990:1a19', '--probe', str(probe),
+                    '--output', str(output)]
+            unsupported = subprocess.run(base, capture_output=True, text=True)
+            self.assertEqual(unsupported.returncode, 2)
+            self.assertIn('--native-only --trace-rtlink-calls', unsupported.stderr)
+            without_census = subprocess.run(base + ['--native-only'],
+                                            capture_output=True, text=True)
+            self.assertEqual(without_census.returncode, 2)
+            self.assertIn('--trace-rtlink-calls', without_census.stderr)
+            stale = subprocess.run(base + ['--native-only', '--trace-rtlink-calls'],
+                                   capture_output=True, text=True)
+            self.assertEqual(stale.returncode, 2)
+            self.assertIn('lacks RTLink event tracing', stale.stderr)
+            self.assertFalse(output.exists())
+
     def test_controlled_poke_requires_native_navigation_and_valid_probe(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

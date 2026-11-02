@@ -44,6 +44,9 @@ parser.add_argument('--extra-trace-entry', action='append', metavar='LINEARHEX',
 parser.add_argument('--trace-rtlink-calls', action='store_true',
                     help='native-only complete RTLink trampoline-call census, including '
                          'section-qualified target addresses')
+parser.add_argument('--trace-rtlink-target', action='append', metavar='SECTION:CS:IP',
+                    help='native-only sampled RTLink arguments, returns and object-record deltas '
+                         '(repeatable, up to 256 combined calls; requires --trace-rtlink-calls)')
 parser.add_argument('--research-poke16-at', action='append', metavar='MS:ADDRESS:OLD:NEW',
                     help='controlled native-only guest RAM word change; address/words in hex')
 args = parser.parse_args()
@@ -55,6 +58,8 @@ if (args.trace_byte_write or args.extra_trace_entry) and not args.native_only:
     parser.error('--trace-byte-write and --extra-trace-entry require --native-only')
 if args.trace_rtlink_calls and not args.native_only:
     parser.error('--trace-rtlink-calls requires --native-only')
+if args.trace_rtlink_target and (not args.native_only or not args.trace_rtlink_calls):
+    parser.error('--trace-rtlink-target requires --native-only --trace-rtlink-calls')
 if args.trace_state_writes and not args.native_only:
     parser.error('--trace-state-writes requires --native-only')
 if args.trace_admission and (not args.native_only or args.scenario not in ('objects', 'puzzle')):
@@ -118,6 +123,8 @@ if args.scenario in ['drawer', 'objects', 'puzzle']:
         parser.error(f'{args.probe} lacks byte-write tracing; run gateway-build')
     if args.trace_rtlink_calls and b'rtlink-census manager_hits=' not in probe_bytes:
         parser.error(f'{args.probe} lacks RTLink call census support; run gateway-build')
+    if args.trace_rtlink_target and b'rtlink-events selected=' not in probe_bytes:
+        parser.error(f'{args.probe} lacks RTLink event tracing; run gateway-build')
 args.output.mkdir(parents=True, exist_ok=True)
 if custom_commands:
     print('Scripted commands: ' + ' | '.join(custom_commands))
@@ -190,6 +197,10 @@ for mode in (['native'] if args.native_only else ['native', 'verify', 'hle']):
     if mode == 'native':
         if args.trace_rtlink_calls:
             command += ['--trace-rtlink-calls', str(prefix.with_suffix('.rtlink-calls'))]
+        if args.trace_rtlink_target:
+            command += ['--trace-rtlink-events', str(prefix.with_suffix('.rtlink-events'))]
+            for target in args.trace_rtlink_target:
+                command += ['--trace-rtlink-target', target]
         for address in args.trace_byte_write or []:
             command += ['--trace-byte-write', address]
         for address in args.extra_trace_entry or []:
