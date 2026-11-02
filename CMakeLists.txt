@@ -123,6 +123,8 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/story_scenarios_tests.py)
     add_test(NAME beach-pin-state COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/inspect_beach_pin_tests.py)
+    add_test(NAME tanning-up-callback COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/inspect_tanning_up_tests.py)
     add_test(NAME ghidra-import-plan COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/prepare_ghidra_tests.py)
     add_test(NAME room-callback-inspect COMMAND ${Python3_EXECUTABLE}
