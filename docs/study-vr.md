@@ -172,7 +172,11 @@ single section-51 native function starting at original `0x6ce85` using:
 - the native word `0x7904`, previous-instruction word `0x7906`, and bytes
   `0x7908`, `0x7909` to select a prompt/repeat/response path.
 
-These tables contain **19 four-byte far pointers each** (indices 1–19).
+The earlier decoder recognized **19 prompt/response pairs**. A further native
+snapshot shows a **20th prompt** at `:03a2 + 4*20 = :03f2` (the response
+table's *index zero*); it is the live guest string `sleep`. There are
+still only 19 stage-specific response pointers (indices 1–19), because a
+successful stage 20 follows the native completion branch instead.
 Some entries are `F000` story tokens, others are ordinary DS or section-data
 NUL-terminated strings. `tools/inspect_study_script.py` reads both kinds
 through a checked native snapshot and the original `GATESTR.DAT`, without
@@ -201,6 +205,7 @@ to one contiguous native progress increment:
 | 17 | `RUB HAND` | `88` | `00e4` | — | 17→18 |
 | 18 | `KISS FLOOR` | `57` | `02de` | — | 18→19 |
 | 19 | `SIT ON COUCH` | `92` | `02be` | `19`, `18` | **Player Study → leather couch**, then 19→20 |
+| 20 (terminal) | `SLEEP` | `84` | any | — | Native completion: no 20→21 increment; player returns to VR Terminal `0x29b` |
 
 The raw action bytes and expected objects in this table are **additional
 original guest RAM data**, not translations inferred from the typed input.
@@ -234,7 +239,7 @@ the therapy matcher at `0x6b6c0`. Its core decision sequence is:
 
 This is a translation of **one native conditional predicate**, not a full
 event dispatcher, parser, or new bytecode. `StoryModel::study_action_rule`
-exposes the 19 recovered records and
+exposes the 19 exercises **plus the stage-20 SLEEP record** and
 `StoryModel::evaluate_study_action(progress, action_code, object, actor,
 already_matched)` implements only the bounded decision. It reports whether
 the match was ineligible, targeted the wrong object, used a wrong action
@@ -256,7 +261,7 @@ the response entry at `0x4bab5` executes for each stage. The native final
 snapshot has progress **4**, player standing in Study, and no RAM
 intervention. Stage 3 illustrates a crucial boundary: the successful `UP`
 **is not** evidence that the room event-1 primary action comparator ran.
-The earlier all-19-stage replay separately proves every progress increment;
+The earlier all-19-exercise replay separately proves every progress increment;
 these additional watched bytes directly validate only stages 1–3's flag
 mechanism. `tools/inspect_study_action_match.py` checks the three exact
 native set/clear origins, event/response entries, action time slots, no
@@ -284,6 +289,101 @@ An additional `UP` at counter **20** returns AX=0 without moving. It is
 outside callback `0x2b`'s signed 3–19 get-up window. The native snapshot
 finishes with player directly in couch `0x2be`, enclosing room Study and
 counter `20`. Unlike the earlier 3→4 test, **no RAM intervention was used**.
+It was *not yet* the terminal `SLEEP` action resolved below.
+
+## The response state machine and terminal SLEEP, validated in native x86
+
+The original section-51 function at **OVL `0x6ce85–0x6d04d`** (live
+`4990:21b5`, physical `0x4bab5`) is a small but genuine native story state
+machine. Its inputs are the four guest fields listed above, plus native
+`0157:000c` direct-membership checks of player `0x0d3` against the Study
+couch `0x2be` and desk `0x2bf`. Its bounded decision order is:
+
+| Condition in original x86 | Control path and text token | Field changes |
+| --- | --- | --- |
+| Progress 0 (`0x6ce8f`) | Initialize to 1 | `:7904 = 1` |
+| Progress 3, player no longer on couch; or progress 13, player no longer on desk (`0x6ceac–0x6ceec`) | Mark action success after UP/DOWN exit callback | `:7909 = 1` |
+| Matched, progress 1–19 (`0x6cfda–0x6d031`) | Response pointer from `:03f2 + 4*old_progress`; text `f000:70b1` | Increment `:7904`, then clear `:7909`, `:7906`, `:7908` |
+| Matched, progress above 19 (`0x6cfe6`) | `f000:70b0` (sleep), call auxiliary OVL `0x6d564` | No increment and no match-flag clear within this function |
+| Not matched, prompted stage differs from current (`0x6cf6f`) | New instruction via `:03a2` and `f000:70af` | `:7906 = :7904` |
+| Not matched, already prompted but `:7908` zero (`0x6cf20`) | Repeat instruction with `f000:70ad` | `:7908 = 1` |
+| Not matched, prompted and `:7908` nonzero (`0x6cf55–0x6cf69`) | Stronger insistence `f000:70ae`, call auxiliary OVL `0x6d564` | No local counter advance |
+
+`StoryModel::evaluate_study_response()` now translates only those guarded
+state transitions. It returns the selected original `F000` token, far-table
+stage, and whether the auxiliary native handler would be invoked; **it does
+not generate story text or perform that handler's side effects**. The caller
+must supply the two direct-parent predicates. It rejects invalid native
+counter values that could index outside the verified table. Unlike the
+previously bounded 19-action matcher, the native stage-20 action byte
+`0x84` is now included in `StoryModel::study_action_rule()`.
+
+Two independent, entirely **unmodified** Unicorn replays validate both
+branches that previously remained static:
+
+1. Repeatedly entering `LOOK` instead of following the first instruction
+   sets the original `:7908` reminder byte at **78001 ms**
+   (`4990:227c`, OVL `0x6cf4c`). The stronger refusal subsequently calls
+   OVL `0x6d564` at **81041 ms**. Progress remains **1**, previous prompt
+   remains 1, reminder remains 1, and the player is back on the VR Terminal
+   couch `0x2a1` (enclosing room `0x29b`). There is **no progress increment**.
+2. The complete 19-exercise sequence followed immediately by `SLEEP` sets
+   `:7909` in the Study event-1 **primary** matcher at **132205 ms**, with
+   stage 20. The response function enters at **132232 ms**, then invokes
+   OVL `0x6d564` at **132277 ms**. The native location setter performs
+   **two consecutive writes** at **132438 ms**: player from couch `0x2be`
+   to Study `0x2bc`, then Study to VR Terminal `0x29b`. Final progress is
+   **20**, `:7909` remains **1**, and the native player is standing in
+   VR Terminal (rather than remaining on its couch).
+
+The same six-byte watches over the *whole* completion replay establish the
+19-stage match origins: **16** primary room matches at OVL `0x6b740`, **one
+alternative match** for `JUMP ON DESK` (stage 9, OVL `0x6b7b7`), and **two
+posture matches** for `UP` and `DOWN` (stages 3 and 13, OVL `0x6ceec`).
+Every one of those 19 matched actions advances via OVL `0x6cff1` and clears
+the flag via `0x6d01c`. The terminal SLEEP match is *different*: its
+positive `0x7909` write does not lead to a 20→21 counter increment.
+
+`tools/inspect_study_response.py` verifies the **pair of native replays**
+against those exact PC origins and field-write sequences, the real
+stage-20 action/prompt bytes, the two verified player moves, correct final
+states, and absence of guest-RAM pokes. Its own synthetic tests reject
+missing counter writes, a mislabeled stage-9 alternative, missing
+posture matches or final moves, and spurious state changes. The terminal
+prompt is read from guest RAM rather than hardcoded in the decoder.
+
+### Reproduce the native state-machine cross-check
+
+```sh
+prefix='east,northwest,up,lie on couch,@space,@space,@space,@space,@space,@space,@space,lie on couch,wear collar,set switch to study,push button,@space,@space,@space,look'
+exercises='scream,feel couch,up,hop,hit myself,step on hand,smell hand,climb walls,jump on desk,sing,dance,dance,down,attack couch,clean desk,cry,rub hand,kiss floor,sit on couch'
+
+watch=(--trace-byte-write 62d64 --trace-byte-write 62d65 \
+       --trace-byte-write 62d66 --trace-byte-write 62d67 \
+       --trace-byte-write 62d68 --trace-byte-write 62d69)
+
+python3 tools/trace_game_logic.py --scenario puzzle --native-only \
+  --probe "${GATEWAY_BUILD_DIR:-build}/gateway-probe" --data ../gateway-dos \
+  --verify-overlays --trace-navigation --trace-object-writes d3 \
+  "${watch[@]}" --extra-trace-entry 4bab5 --extra-trace-entry 4bb85 \
+  --extra-trace-entry 4c194 --output build/study-refusal \
+  --command-sequence "$prefix,look,look,look,scream"
+
+python3 tools/trace_game_logic.py --scenario puzzle --native-only \
+  --probe "${GATEWAY_BUILD_DIR:-build}/gateway-probe" --data ../gateway-dos \
+  --verify-overlays --trace-navigation --trace-object-writes d3 \
+  "${watch[@]}" --extra-trace-entry 4bab5 --extra-trace-entry 4c194 \
+  --output build/study-sleep --command-sequence "$prefix,$exercises,sleep"
+
+python3 tools/inspect_study_response.py \
+  build/study-refusal/native build/study-sleep/native
+```
+
+The repeated `--trace-byte-write` option is a small research-only addition
+to the native probe. It accepts at most **16 distinct guest addresses**
+within a **64-byte span**, checking word writes that overlap those bytes
+without modifying original execution. Wide arbitrary-memory tracing remains
+intentionally disallowed.
 
 ## Callback `0x05`: desk and scale DOWN, including a natural refusal
 

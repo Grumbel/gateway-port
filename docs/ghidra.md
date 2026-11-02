@@ -444,7 +444,7 @@ reconstruct the indirect switch**.
 ## Study event-1 matcher: ninth headless import and native byte watches
 
 Event 1 at original OVL `0x6b692` leads to a native action/object matcher
-at `0x6b6c0–0x6b7e8`. It indexes `[DS:9652]:02a8` for 19 action bytes,
+at `0x6b6c0–0x6b7e8`. It indexes `[DS:9652]:02a8` for 20 action bytes,
 `:02aa` for corresponding expected object words, and `:02fc` for five
 alternate action-code pairs; original guest RAM and disassembly agree.
 The read-only decoder `tools/inspect_study_script.py --format json` exports
@@ -471,3 +471,41 @@ OVL `0x6d01c` and native progress reached 4. The inspector
 and refuses a guest-RAM intervention or incorrect trace origin. This
 narrows what is *actually* demonstrated by decompilation of event 1; the
 19-stage progress replay remains separate evidence for the full therapy.
+
+## Study response and terminal SLEEP: tenth headless run
+
+The original section-51 response function at `0x6ce85–0x6d04d` has been
+cross-checked instruction-by-instruction. Its native state machine uses
+progress `:7904`, previous-prompt `:7906`, reminder `:7908`, and match flag
+`:7909`, plus direct player-parent tests at stages 3 and 13. It selects
+instruction `f000:70af`, repeat `f000:70ad`, insistence `f000:70ae`,
+successful response `f000:70b1` or final sleep `f000:70b0`.
+
+The Study jump-table import now also adds **seven unique COMPUTED_JUMP
+references from the actual CS:[BX+0x0b82] opcode**, in addition to the
+23 data-word references. The importer byte-checks and names **18 interior
+response-state-machine instructions**, including the two posture checks,
+the four state fields' writes, stage advancement, and the exceptional
+`0x6d564` auxiliary call. Its fresh Ghidra 11.4.2/JDK21 import report
+confirms **58 overlay sections, 13,947 relocations, 23 event words, 7 flow
+edges, 9 action matcher labels, 18 response labels, 69/69 contexts**.
+The runner rejects incomplete counts for fingerprinted originals.
+
+Despite the correct user-defined computed edges, Ghidra still warns about
+`ram:4000:0b82` when decompiling the Study room handler. Thus the references
+make the seven destinations navigable but **do not repair the segmented
+decompiler switch**; source-offset/ABI checking remains essential. The
+response handler itself decompiles with the state branches shown above.
+
+The earlier 19-stage exercise table has one more record at stage **20**:
+action byte `0x84`, wildcard object target, prompt string `sleep` (a valid
+guest pointer located at prompt index 20 / response index zero). This is
+an end action, not a twentieth counter increment. An original native
+`SLEEP` replay sets `:7909` at 132205 ms, calls auxiliary OVL `0x6d564`
+at 132277 ms, and returns player to VR Terminal in two verified location
+writes at 132438 ms, with progress still 20. A contrasting original
+repeated-LOOK replay sets reminder `:7908` and takes the insistence path
+back to Terminal without advancing past stage 1. A new multi-byte watcher
+and `tools/inspect_study_response.py` validate both original paths.
+See [Study VR](study-vr.md) for reproducible commands, exact branch offsets
+and the bounded C++ translation.

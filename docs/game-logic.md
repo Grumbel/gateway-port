@@ -239,3 +239,19 @@ without claiming full parser, event, or text behavior. The original RAM
 tables are recoverable as JSON through `tools/inspect_study_script.py`;
 the native flag path is checked by `tools/inspect_study_action_match.py`.
 See [Study VR](study-vr.md) for exact offsets and evidence boundaries.
+
+Further original instruction and **two unmodified native replays** reveal
+the follow-on Study response state machine (`0x6ce85–0x6d04d`) and a
+**20th terminal instruction, `SLEEP`**, with action byte `0x84`. Unlike
+the preceding 19 exercise instructions, SLEEP triggers native text
+`f000:70b0` and auxiliary handler `0x6d564` without incrementing progress
+beyond 20. Two original location writes move the player from the Study
+couch through the Study room back to VR Terminal. A contrasting repeated
+LOOK sequence sets reminder byte `:7908`, calls the same auxiliary native
+handler on insistence, and leaves the therapy counter at 1. The new
+`StoryModel::evaluate_study_response` expresses only the branch/field
+effects and emits original text-token identifiers, not a story renderer.
+`tools/inspect_study_response.py` checks all 19 match origins and the
+terminal/refusal state writes. The Ghidra importer now exposes 18 interior
+response instructions and seven exact computed-switch references, though
+the decompiler's segmented branch remains unresolved.
