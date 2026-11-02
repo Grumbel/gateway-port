@@ -12,6 +12,8 @@ from pathlib import Path
 import json
 
 from story_scenarios import OBJECT_SLOTS, parse_sequence
+from summarize_object_writes import (HEAD_INSERT_CALL, HEAD_UNLINK_CALL,
+                                     child_setter_calls, map_child_setter_return)
 
 
 PLAYER = 0x0d3
@@ -168,6 +170,52 @@ def summarize(events, names=None, commands=None, manifest=None, overlay=None):
     return '\n'.join(lines) + '\n'
 
 
+def summarize_room_heads(events, lines, manifest, overlay, player=PLAYER):
+    """Show original-callsite-verified head writes near player location changes.
+
+    The setter is intercepted on entry, before its actual write. Absence of
+    an old-head update is consistent with a *middle-sibling* unlink; it does
+    not establish that a sibling write occurred or that a move succeeded.
+    """
+    calls = child_setter_calls(lines)
+    classified = [(call, map_child_setter_return(call['return_address'], manifest, overlay))
+                  for call in calls]
+    output = ['', 'Indexed room child-head setters near player moves '
+              '(original direct CALL sites verified):',
+              'ms     old-room head replacement             new-room head insertion',
+              '------  ------------------------------------  ------------------------------------']
+    if not calls:
+        output.append('(no indexed-child setter entry hooks in trace; rerun with '
+                      '--trace-object-writes d3)')
+    for event in events:
+        if event['evidence'] != 'verified service' or event['old'] is None:
+            continue
+        old = [call for call, site in classified
+               if site == HEAD_UNLINK_CALL and call['object'] == event['old']
+               and call['slot'] == 0 and abs(call['ms'] - event['ms']) <= 1]
+        new = [call for call, site in classified
+               if site == HEAD_INSERT_CALL and call['object'] == event['new']
+               and call['slot'] == 0 and call['value'] == player
+               and abs(call['ms'] - event['ms']) <= 1]
+
+        def result(candidates, parent, value_label):
+            if len(candidates) > 1:
+                return f'0x{parent:03x}: ambiguous ({len(candidates)} setters)'
+            if not candidates:
+                return f'0x{parent:03x}: not observed'
+            call = candidates[0]
+            return f'0x{parent:03x}: {value_label(call)} @{call["ms"]}'
+
+        before = result(old, event['old'], lambda call: f'0x{call["value"]:03x}')
+        after = result(new, event['new'], lambda call: f'0x{call["value"]:03x}')
+        output.append(f'{event["ms"]:6}  {before:<36}  {after}')
+    output.append('Head-setter entry observations are pre-write attempts, not verified '
+                  'head deltas. A missing old-head setter can mean a middle-sibling '
+                  'unlink; it does not prove one. Unrelated setters and other '
+                  'RTLink sections are excluded by object ID and original callsite.')
+    return '\n'.join(output) + '\n'
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('trace', type=Path, help='native.trace from trace_game_logic.py')
@@ -177,16 +225,24 @@ def main():
                         help='RTLink JSON manifest (used with --overlay-file)')
     parser.add_argument('--overlay-file', type=Path,
                         help='original GATEMAIN.OVL for direct-call byte verification')
+    parser.add_argument('--child-heads', action='store_true',
+                        help='report byte-verified child-head setter calls near moves '
+                             '(requires --overlay-map and --overlay-file)')
     args = parser.parse_args()
     try:
         if bool(args.overlay_map) != bool(args.overlay_file):
             parser.error('--overlay-map and --overlay-file must be used together')
+        if args.child_heads and not args.overlay_map:
+            parser.error('--child-heads requires --overlay-map and --overlay-file')
         commands = parse_sequence(args.commands) if args.commands else None
         names = room_names(json.loads(args.world.read_text())) if args.world else {}
-        events = location_events(args.trace.read_text().splitlines())
+        lines = args.trace.read_text().splitlines()
+        events = location_events(lines)
         manifest = json.loads(args.overlay_map.read_text()) if args.overlay_map else None
         overlay = args.overlay_file.read_bytes() if args.overlay_file else None
         print(summarize(events, names, commands, manifest, overlay), end='')
+        if args.child_heads:
+            print(summarize_room_heads(events, lines, manifest, overlay), end='')
     except (OSError, ValueError, KeyError, TypeError) as error:
         parser.error(str(error))
 

@@ -25,6 +25,8 @@ parser.add_argument('--trace-admission', action='store_true',
                     help='trace the earlier resident action-selector callback and return')
 parser.add_argument('--trace-visibility', action='store_true',
                     help='trace restricted candidate child-slot checks in the resident parser')
+parser.add_argument('--trace-navigation', action='store_true',
+                    help='trace entry into the original shared OVL section-4 move helper')
 parser.add_argument('--trace-object-writes', metavar='HEX-ID',
                     help='watch native writes to an object record (e.g. 124 for drawer)')
 parser.add_argument('--command-sequence', metavar='CMD,CMD,...',
@@ -38,6 +40,8 @@ if args.trace_admission and (not args.native_only or args.scenario != 'objects')
     parser.error('--trace-admission requires --native-only --scenario objects')
 if args.trace_visibility and (not args.native_only or args.scenario != 'objects'):
     parser.error('--trace-visibility requires --native-only --scenario objects')
+if args.trace_navigation and (not args.native_only or args.scenario != 'objects'):
+    parser.error('--trace-navigation requires --native-only --scenario objects')
 if args.trace_object_writes:
     if not args.native_only or args.scenario != 'objects':
         parser.error('--trace-object-writes requires --native-only --scenario objects')
@@ -124,6 +128,13 @@ for mode in (['native'] if args.native_only else ['native', 'verify', 'hle']):
         # before/after call, and child-link accessor before/after call.
         command += ['--trace-entry', '10063', '--trace-entry', '10068',
                     '--trace-entry', '10075', '--trace-entry', '1007a']
+    if args.trace_navigation and mode == 'native':
+        # Section 4 image starts at GATEMAIN.OVL:0xb1e0 in 4319:0000;
+        # the native child-list relocation helper starts at file 0xc830.
+        # Capturing its entry stack identifies its *caller*, unlike the
+        # location setter return at 4319:16e7 inside the helper itself.
+        # This is a default-layout, original-code research hook, not HLE.
+        command += ['--trace-entry', '447e0']
     if args.trace_object_writes and mode == 'native':
         # 0157:08fc (EXE 0x2e3a): native indexed child-link setter.
         command += ['--trace-entry', '11e6c']

@@ -107,6 +107,23 @@ class TraceGameLogicTests(unittest.TestCase):
             self.assertIn('lacks candidate-visibility trace support', native.stderr)
             self.assertFalse(output.exists())
 
+    def test_navigation_entry_hook_requires_native_objects(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            probe = root / 'gateway-probe'
+            probe.write_bytes(b' action_code= old probe')
+            output = root / 'replay'
+            command = [sys.executable, str(DRIVER), '--trace-navigation',
+                       '--probe', str(probe), '--output', str(output)]
+            wrong = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(wrong.returncode, 2)
+            self.assertIn('requires --native-only --scenario objects', wrong.stderr)
+            wrong_scenario = subprocess.run(command + ['--native-only'],
+                                            capture_output=True, text=True)
+            self.assertEqual(wrong_scenario.returncode, 2)
+            self.assertIn('requires --native-only --scenario objects', wrong_scenario.stderr)
+            self.assertFalse(output.exists())
+
     def test_object_write_watch_rejects_wrong_replay_and_stale_probe(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

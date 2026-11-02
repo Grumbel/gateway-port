@@ -9,7 +9,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 from summarize_navigation_trace import (location_events, map_location_setter_return,
-                                        room_names, summarize)
+                                        room_names, summarize, summarize_room_heads)
 
 TOOL = ROOT / 'tools' / 'summarize_navigation_trace.py'
 WATCH = 'object-watch ms=11100 object=d3 type=7 at=1e4c:1234 size=20 child_count=3'
@@ -34,6 +34,13 @@ def overlay_fixture():
     overlay = bytearray(0xd000)
     overlay[0xc8c2:0xc8c7] = bytes.fromhex('9a4b065701')
     return manifest, overlay
+
+
+def head_call(ms, object_id, child, insert):
+    return (f'entry ms={ms} pc=11e6c cs=1157 '
+            f'stack={"171d" if insert else "169e"},4319,0,0 '
+            f'child_set_object={object_id:x} child_set_slot=0 '
+            f'child_set_value={child:x}')
 
 
 class NavigationTraceTests(unittest.TestCase):
@@ -128,12 +135,13 @@ class NavigationTraceTests(unittest.TestCase):
 
     def test_cli_overlay_verification_and_pair_requirement(self):
         manifest, overlay = overlay_fixture()
+        overlay[0xc8f8:0xc8fd] = bytes.fromhex('9afc085701')
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             trace = root / 'native.trace'
             trace.write_text('\n'.join([
                 WATCH, SET_OUT.replace('return=4319:1122', 'return=4319:16e7'),
-                WRITE_OUT]))
+                WRITE_OUT, head_call(18130, 0xf1, 0xd3, True)]))
             manifest_path = root / 'manifest.json'
             manifest_path.write_text(json.dumps(manifest))
             overlay_path = root / 'GATEMAIN.OVL'
@@ -144,9 +152,54 @@ class NavigationTraceTests(unittest.TestCase):
             result = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn('section=4 GATEMAIN.OVL:0xc8c2', result.stdout)
+            with_heads = subprocess.run(command + ['--child-heads'],
+                                        capture_output=True, text=True)
+            self.assertEqual(with_heads.returncode, 0, with_heads.stderr)
+            self.assertIn('0x0f1: 0x0d3 @18130', with_heads.stdout)
             missing = subprocess.run(command[:-2], capture_output=True, text=True)
             self.assertEqual(missing.returncode, 2)
             self.assertIn('--overlay-map and --overlay-file', missing.stderr)
+
+    def test_child_heads_follow_initial_middle_then_head_removals(self):
+        manifest, overlay = overlay_fixture()
+        for address in (0xc879, 0xc8f8):
+            overlay[address:address + 5] = bytes.fromhex('9afc085701')
+        commands = [
+            (18266, 0xee, 0xf1), (21177, 0xf1, 0xee),
+            (25261, 0xee, 0xf1), (28177, 0xf1, 0xee)]
+        events = [dict(ms=ms, old=old, new=new, evidence='verified service')
+                  for ms, old, new in commands]
+        lines = [
+            head_call(18266, 0xf1, 0xd3, True),
+            head_call(21177, 0xf1, 0x194, False),
+            head_call(21177, 0xee, 0xd3, True),
+            head_call(21177, 0x161, 0, False),  # unrelated same-time setter
+            head_call(25260, 0xee, 0x175, False),
+            head_call(25261, 0xf1, 0xd3, True),
+            head_call(28177, 0xf1, 0x194, False),
+            head_call(28177, 0xee, 0xd3, True)]
+        report = summarize_room_heads(events, lines, manifest, overlay)
+        self.assertIn('18266  0x0ee: not observed', report)
+        self.assertIn('0x0f1: 0x0d3 @18266', report)
+        self.assertIn('0x0f1: 0x194 @21177', report)
+        self.assertIn('0x0ee: 0x175 @25260', report)
+        self.assertIn('0x0ee: 0x0d3 @28177', report)
+        self.assertIn('pre-write attempts, not verified', report)
+        self.assertNotIn('0x161', report)
+        self.assertIn('rerun with --trace-object-writes',
+                      summarize_room_heads(events, [], manifest, overlay))
+        repeated = lines + [head_call(25261, 0xf1, 0xd3, True)]
+        self.assertIn('ambiguous (2 setters)',
+                      summarize_room_heads(events, repeated, manifest, overlay))
+
+    def test_cli_child_heads_requires_verified_original_overlay(self):
+        with tempfile.TemporaryDirectory() as directory:
+            trace = Path(directory) / 'native.trace'
+            trace.write_text('\n'.join([WATCH, SET_OUT, WRITE_OUT]))
+            result = subprocess.run([sys.executable, str(TOOL), str(trace),
+                                     '--child-heads'], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn('--child-heads requires --overlay-map', result.stderr)
 
 
 if __name__ == '__main__':
