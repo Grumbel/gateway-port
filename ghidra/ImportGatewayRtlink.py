@@ -11,7 +11,7 @@ from ghidra.program.model.data import (CategoryPath, DataTypeConflictHandler,
                                       StructureDataType, UnsignedCharDataType,
                                       UnsignedShortDataType)
 from ghidra.program.model.listing import CodeUnit
-from ghidra.program.model.symbol import SourceType
+from ghidra.program.model.symbol import RefType, SourceType
 from jarray import array as byte_array
 
 
@@ -80,6 +80,52 @@ def find_original_signature(blocks, signature):
     return found
 
 
+def annotate_study_event_table(section, start):
+    """Expose verified internal branch words without inventing C functions.
+
+    Section 51's original Study object handler (OVL 0x6b521) uses a near
+    CS:[BX+0x0b82] jump, with event IDs 1..23. Ghidra's segmented decompiler
+    currently tries ram:4000:0b82 and cannot follow the switch. The actual
+    RTLink *overlay address space* can still hold correct data references.
+    """
+    if section['id'] != 51:
+        return 0
+    # These exact offsets are from the known, SHA-256-verified Gateway OVL.
+    # Never apply them to an arbitrary section-51-like synthetic image.
+    require(section['original_file_offset'] == 0x6acd0,
+            'Study jump table expected original section-51 file base')
+    original_targets = (
+        0x6b692, 0x6b5ba, 0x6b5ba, 0x6b5ba, 0x6b5ba,
+        0x6b82d, 0x6b5ba, 0x6b56b, 0x6b56b, 0x6b5ba,
+        0x6b56b, 0x6b5ba, 0x6b5ba, 0x6b5bf, 0x6b5ba,
+        0x6b5ba, 0x6b5ba, 0x6b5ba, 0x6b5ba, 0x6b5ba,
+        0x6b5ba, 0x6b53e, 0x6b555,
+    )
+    listing = currentProgram.getListing()
+    refs = currentProgram.getReferenceManager()
+    table = start.add(0x0b82)
+    require(0x0b82 + 2 * len(original_targets) <= section['file_bytes'],
+            'Study jump table is not within file-backed image')
+    currentProgram.getSymbolTable().createLabel(
+        table, 'gw_study_event_jump_table',
+        currentProgram.getGlobalNamespace(), SourceType.USER_DEFINED)
+    note(table, 'OVL:0x6b852, 23 original Study event branches (1-based); '
+         'CS-relative near offsets, NOT separate function entries')
+    for index, file_target in enumerate(original_targets):
+        slot = table.add(2 * index)
+        relative_target = file_target - section['original_file_offset']
+        require((int(memory.getShort(slot)) & 0xffff) == relative_target,
+                'Study event %d jump-table bytes differ from original' % (index + 1))
+        require(0 <= relative_target < section['file_bytes'],
+                'Study event %d targets non-file-backed bytes' % (index + 1))
+        listing.createData(slot, UnsignedShortDataType.dataType)
+        destination = start.add(relative_target)
+        refs.addMemoryReference(slot, destination, RefType.DATA, SourceType.USER_DEFINED, 0)
+        note(slot, 'Study event %d -> original OVL:0x%x; internal jump target' %
+             (index + 1, file_target))
+    return len(original_targets)
+
+
 args = getScriptArgs()
 require(len(args) == 1, 'usage: ImportGatewayRtlink.py /absolute/ghidra-plan.json')
 plan_path = os.path.abspath(args[0])
@@ -97,6 +143,7 @@ original_blocks = list(memory.getBlocks())
 register_types()
 imported = 0
 imported_labels = 0
+study_event_table_words = 0
 for section in plan['sections']:
     sid = section['id']
     prefix = 'GW_RT_%03d' % sid
@@ -135,6 +182,10 @@ for section in plan['sections']:
             prefix + '_ZERO_BSS', start.add(section['initialized_size']),
             bss_size, 0, monitor, False)
         zero.setComment('RTLink zeroes this BSS interval on each load')
+    if plan.get('fingerprinted_gateway', False):
+        # The preparer has fingerprinted these original assets. Keep the
+        # fixed table mapping out of unknown-image synthetic fixtures.
+        study_event_table_words += annotate_study_event_table(section, start)
     for label in section['labels']:
         address = start.add(label['offset'])
         annotate(address, label)
@@ -162,6 +213,7 @@ for label in plan['resident_labels']:
     resident_matches[label['name']] = str(address)
 
 report = dict(imported_sections=imported, labeled_overlay_entries=imported_labels,
+              study_event_table_words=study_event_table_words,
               resident_matches=resident_matches)
 report_path = os.path.join(os.path.dirname(plan_path), 'ghidra-import-report.json')
 with open(report_path, 'w') as output:

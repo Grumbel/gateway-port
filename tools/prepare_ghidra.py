@@ -277,6 +277,7 @@ def prepare(exe, ovl, output, extractor, objects_json=None, allow_unknown=False,
             resident.append(dict(file_offset=offset, name=name, role=role,
                                  explanation=explanation, signature=data[offset:offset+24].hex()))
     plan = dict(schema_version=1, game='Gateway 1 (1992)',
+                fingerprinted_gateway=not allow_unknown,
                 exe_file=str(exe.resolve()), exe_sha256=hashes['exe'],
                 ovl_file=str(ovl.resolve()), ovl_sha256=hashes['ovl'],
                 relocation=manifest['relocation'], sections=sections,

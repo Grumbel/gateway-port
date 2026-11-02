@@ -91,6 +91,8 @@ def run(exe, ovl, output, overlay_tool, objects_json=None,
     if (imported.get('imported_sections') != len(plan['sections']) or
         imported.get('labeled_overlay_entries') != expected_labels):
         raise ValueError('Ghidra import counts differ from the validated RTLink plan')
+    if plan.get('fingerprinted_gateway') and imported.get('study_event_table_words') != 23:
+        raise ValueError('Ghidra did not annotate all 23 native Study event branches')
     expected = [label['name'] for section in plan['sections']
                 for label in section['labels'] if label['role'] in
                 ('function', 'callback-entry', 'object-entry-candidate',

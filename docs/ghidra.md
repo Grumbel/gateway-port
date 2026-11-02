@@ -429,3 +429,14 @@ Ghidra cannot read `ram:4000:0b82`, the reference it infers for
 function entries. This highlights why the isolated overlay spaces and
 original-instruction cross-checks remain essential for Ghidra's preliminary
 C-like output.
+
+The importer now also **marks the 23 jump-table entries as typed u16 data**
+and creates 23 same-overlay data references to the verified internal targets.
+It labels the table `gw_study_event_jump_table` at section-51 offset
+`0x0b82`, adding per-entry event→original-file-offset comments. Every word
+is compared with the original bytes before Ghidra creates its reference;
+the preparer excludes this Gateway-specific annotation for synthetic/unknown
+image fixtures. The import report now exposes `study_event_table_words=23`,
+and the runner rejects a fingerprinted import missing those annotations.
+This makes the table navigable **without claiming the decompiler can
+reconstruct the indirect switch**.

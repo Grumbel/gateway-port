@@ -308,3 +308,11 @@ reports an unresolved read of `ram:4000:0b82` for the Study object's
 computed event jump. The table above is the original-instruction cross-
 check; **69/69 decompilations are not proof of correct indirect control
 flow**, and no synthetic overlay-bank flattening has been introduced.
+
+The importer now marks `gw_study_event_jump_table` at section-51 offset
+`0x0b82`, types all 23 verified words as u16 data, and creates same-overlay
+references to their internal branches. Ghidra remains unable to resolve
+the segmented indirect branch in its C-like output; the explicit references
+provide an original-byte-checked navigable fallback. The runner verifies
+the import report's 23 annotations for fingerprinted Gateway originals,
+without imposing this mapping on synthetic images.
