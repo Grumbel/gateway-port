@@ -93,6 +93,8 @@ def run(exe, ovl, output, overlay_tool, objects_json=None,
         raise ValueError('Ghidra import counts differ from the validated RTLink plan')
     if plan.get('fingerprinted_gateway') and imported.get('study_event_table_words') != 23:
         raise ValueError('Ghidra did not annotate all 23 native Study event branches')
+    if plan.get('fingerprinted_gateway') and imported.get('study_matcher_path_labels') != 9:
+        raise ValueError('Ghidra did not annotate all 9 native Study matcher instructions')
     expected = [label['name'] for section in plan['sections']
                 for label in section['labels'] if label['role'] in
                 ('function', 'callback-entry', 'object-entry-candidate',

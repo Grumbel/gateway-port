@@ -126,6 +126,50 @@ def annotate_study_event_table(section, start):
     return len(original_targets)
 
 
+def annotate_study_matcher_path(section, start):
+    """Name verified *interior instructions* of Study event 1, not functions.
+
+    These labels make the action/object table comparisons navigable in the
+    overlay bank even while Ghidra cannot recover the handler's switch.
+    Byte anchors also ensure a mismatched original section cannot be marked.
+    """
+    if section['id'] != 51:
+        return 0
+    require(section['original_file_offset'] == 0x6acd0,
+            'Study matcher expected original section-51 file base')
+    anchors = (
+        (0x6b6c0, 0x8e, 'gw_study_actor_guard',
+         'event 1: actor at [DS:965e]:35c8 must be player 0x0d3'),
+        (0x6b6ec, 0x26, 'gw_study_target_lookup',
+         'expected object u16 from [DS:9652]:02aa + 4*progress; zero is any'),
+        (0x6b71c, 0x8e, 'gw_study_action_lookup',
+         'native parser action byte at [DS:9654]:e664'),
+        (0x6b735, 0x26, 'gw_study_primary_compare',
+         'compare action byte with [DS:9652]:02a8 + 4*progress'),
+        (0x6b73c, 0x8e, 'gw_study_primary_match',
+         'primary match writes [DS:9662]:7909 = 1 at original 0x6b740'),
+        (0x6b740, 0x26, 'gw_study_primary_flag_write',
+         'native :7909 write proven by unmodified SCREAM and FEEL COUCH'),
+        (0x6b786, 0xc7, 'gw_study_alternative_loop',
+         'scan five {stage:u16, action1:u8, action2:u8} records at :02fc'),
+        (0x6b7b3, 0x8e, 'gw_study_alternative_match',
+         'alternative action match writes [DS:9662]:7909 = 1'),
+        (0x6b7dc, 0x26, 'gw_study_alternative_stage_compare',
+         'compare current signed stage with each :02fc alternative record'),
+    )
+    for file_offset, byte, name, detail in anchors:
+        relative = file_offset - section['original_file_offset']
+        require(0 <= relative < section['file_bytes'] and
+                (int(memory.getByte(start.add(relative))) & 0xff) == byte,
+                '%s original x86 anchor differs' % name)
+        currentProgram.getSymbolTable().createLabel(
+            start.add(relative), name, currentProgram.getGlobalNamespace(),
+            SourceType.USER_DEFINED)
+        note(start.add(relative), '%s; OVL:0x%x; %s; interior code, NOT a function entry' %
+             (name, file_offset, detail))
+    return len(anchors)
+
+
 args = getScriptArgs()
 require(len(args) == 1, 'usage: ImportGatewayRtlink.py /absolute/ghidra-plan.json')
 plan_path = os.path.abspath(args[0])
@@ -144,6 +188,7 @@ register_types()
 imported = 0
 imported_labels = 0
 study_event_table_words = 0
+study_matcher_path_labels = 0
 for section in plan['sections']:
     sid = section['id']
     prefix = 'GW_RT_%03d' % sid
@@ -186,6 +231,7 @@ for section in plan['sections']:
         # The preparer has fingerprinted these original assets. Keep the
         # fixed table mapping out of unknown-image synthetic fixtures.
         study_event_table_words += annotate_study_event_table(section, start)
+        study_matcher_path_labels += annotate_study_matcher_path(section, start)
     for label in section['labels']:
         address = start.add(label['offset'])
         annotate(address, label)
@@ -214,6 +260,7 @@ for label in plan['resident_labels']:
 
 report = dict(imported_sections=imported, labeled_overlay_entries=imported_labels,
               study_event_table_words=study_event_table_words,
+              study_matcher_path_labels=study_matcher_path_labels,
               resident_matches=resident_matches)
 report_path = os.path.join(os.path.dirname(plan_path), 'ghidra-import-report.json')
 with open(report_path, 'w') as output:
