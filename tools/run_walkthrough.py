@@ -18,7 +18,7 @@ MAX_DURATION_MS = 3_600_000
 MAX_KEYS = 100_000
 KEYS = {'space': 0x3920, 'enter': 0x1c0d, 'escape': 0x011b,
         'up': 0x4800, 'down': 0x5000, 'left': 0x4b00, 'right': 0x4d00}
-OPERATIONS = {'COMMAND', 'TYPE', 'KEY', 'WAIT_MS', 'LABEL', 'ASSERT_LOCATION', 'MANUAL'}
+OPERATIONS = {'COMMAND', 'TYPE', 'MENU_KEYS', 'KEY', 'WAIT_MS', 'LABEL', 'ASSERT_LOCATION', 'MANUAL'}
 
 
 @dataclass(frozen=True)
@@ -42,6 +42,8 @@ def parse_script(source):
         if operation in ('COMMAND', 'TYPE'):
             if len(argument) > 64 or any(not 32 <= ord(char) <= 126 for char in argument):
                 raise ValueError(f'line {line_number}: input must be 1–64 printable ASCII bytes')
+        elif operation == 'MENU_KEYS':
+            _menu_keys(argument, line_number)
         elif operation == 'KEY':
             if argument.lower() not in KEYS and not re.fullmatch(r'0x[0-9a-fA-F]{1,4}', argument):
                 raise ValueError(f'line {line_number}: unknown BIOS key {argument!r}')
@@ -83,11 +85,15 @@ def convert_text(source):
                          'MANUAL Unrecognized parser input')
         elif typed:
             value = typed.group(1).strip()
-            # In published walkthroughs commas often separate *successive*
-            # PV/Dataman menu choices, rather than literal comma keystrokes.
-            # The meaning must be established on the native UI first.
+            # Original Gateway PV commset: a comma-separated guide sequence
+            # denotes individual menu keys, with no Enter after each. Only
+            # *single-character* items are known to obey this convention.
             if ',' in value:
-                steps.append('MANUAL Menu sequence: ' + value[:120])
+                try:
+                    parts = _menu_keys(value, 0)
+                    steps.append('MENU_KEYS ' + ','.join(parts))
+                except ValueError:
+                    steps.append('MANUAL Menu sequence: ' + value[:120])
             else:
                 steps.append(f'TYPE {value}' if _printable(value) else
                              'MANUAL Unrecognized menu text')
@@ -104,12 +110,29 @@ def _printable(value):
     return 0 < len(value) <= 64 and all(32 <= ord(char) <= 126 for char in value)
 
 
+def _menu_keys(argument, line_number):
+    parts = [part.strip() for part in argument.split(',')]
+    if not 2 <= len(parts) <= 64 or any(len(part) != 1 or not part.isascii() or
+                                          not part.isalnum() for part in parts):
+        raise ValueError(f'line {line_number}: MENU_KEYS requires 2–64 single '
+                         'ASCII alphanumeric menu choices')
+    return parts
+
+
 @dataclass
 class Replay:
     keys: list
     actions: list
     assertions: list
+    checkpoints: list
     duration_ms: int
+
+
+@dataclass(frozen=True)
+class Checkpoint:
+    label: str
+    time_ms: int
+    assertions: tuple
 
 
 def compile_steps(steps, max_actions=None, through=None, spacing_ms=3000, idle_ms=1500):
@@ -133,12 +156,16 @@ def compile_steps(steps, max_actions=None, through=None, spacing_ms=3000, idle_m
     cursor = 18000
     actions = []
     assertions = []
+    checkpoints = []
     last_action_finished = 17000
     for step in steps:
         if max_actions is not None and len(actions) >= max_actions:
             break
         op, arg = step.operation, step.argument
         if op == 'LABEL':
+            # Capture one guest millisecond before the next planned action;
+            # scheduled input at that action's start cannot affect the dump.
+            checkpoints.append(Checkpoint(arg, cursor - 1, tuple(assertions)))
             if through == arg:
                 break
             continue
@@ -154,7 +181,13 @@ def compile_steps(steps, max_actions=None, through=None, spacing_ms=3000, idle_m
             raise ValueError(f'line {step.line}: human review required: {arg}')
         assertions = []
         start = cursor
-        if op in ('COMMAND', 'TYPE'):
+        if op == 'MENU_KEYS':
+            parts = _menu_keys(arg, step.line)
+            keys.extend((start + index * spacing_ms, ord(char))
+                        for index, char in enumerate(parts))
+            end = start + (len(parts) - 1) * spacing_ms
+            cursor = end + spacing_ms
+        elif op in ('COMMAND', 'TYPE'):
             keys.extend((start + index * 30, ord(char)) for index, char in enumerate(arg))
             end = start + len(arg) * 30
             if op == 'COMMAND':
@@ -167,7 +200,7 @@ def compile_steps(steps, max_actions=None, through=None, spacing_ms=3000, idle_m
             end = start
         actions.append(step)
         last_action_finished = end
-        cursor = max(start + spacing_ms, end + 1)
+        cursor = max(cursor, start + spacing_ms, end + 1)
     if not actions:
         raise ValueError('script prefix has no executable actions')
     # Only checks *after* the final input/wait apply. Earlier checks can be
@@ -176,7 +209,8 @@ def compile_steps(steps, max_actions=None, through=None, spacing_ms=3000, idle_m
         raise ValueError('keyboard timestamps overlap; increase spacing')
     if len(keys) > MAX_KEYS or max(cursor, last_action_finished + idle_ms) > MAX_DURATION_MS:
         raise ValueError('walkthrough exceeds 100000 keys or one guest hour; split into stages')
-    return Replay(keys, actions, assertions, max(cursor, last_action_finished + idle_ms))
+    return Replay(keys, actions, assertions, checkpoints,
+                  max(cursor, last_action_finished + idle_ms))
 
 
 def check_locations(snapshot, assertions, ds=None):
@@ -222,6 +256,12 @@ def run(args, replay):
         command += ['--trace-rtlink-events', str(prefix.with_suffix('.rtlink-events'))]
         for target in args.trace_target:
             command += ['--trace-rtlink-target', target]
+    if args.capture_labels or args.check_labels:
+        if len(replay.checkpoints) > 32:
+            raise ValueError('--capture-labels supports up to 32 selected LABELs per run')
+        for checkpoint in replay.checkpoints:
+            command += ['--dump-at',
+                        f'{checkpoint.time_ms}:{args.output / ("checkpoint-" + checkpoint.label)}']
     with prefix.with_suffix('.out').open('w') as out, prefix.with_suffix('.dos').open('w') as err:
         subprocess.run(command, stdout=out, stderr=err, timeout=args.timeout, check=True)
     recorded = sum(line.startswith('key ms=') for line in
@@ -231,6 +271,13 @@ def run(args, replay):
                            f'{recorded}/{len(replay.keys)}; see native.dos')
     if replay.assertions:
         check_locations(prefix, replay.assertions, args.state_ds)
+    checked = 0
+    if args.check_labels:
+        for checkpoint in replay.checkpoints:
+            if checkpoint.assertions:
+                check_locations(args.output / ('checkpoint-' + checkpoint.label),
+                                checkpoint.assertions, args.state_ds)
+                checked += len(checkpoint.assertions)
     from inventory_native_handlers import parse_calls
     calls, census = parse_calls(prefix.with_suffix('.rtlink-calls').read_text().splitlines())
     print(f'Replayed {len(replay.actions)} input actions / {recorded} BIOS keys '
@@ -238,6 +285,9 @@ def run(args, replay):
     print(f'RTLink: {census["validated_calls"]} validated calls, '
           f'{census["distinct_targets"]} distinct section-qualified targets')
     print(f'Asserted {len(replay.assertions)} final object locations; output in {args.output}')
+    if args.capture_labels or args.check_labels:
+        print(f'Captured {len(replay.checkpoints)} timestamped native snapshots '
+              f'and checked {checked} intermediate object locations')
 
 
 def main():
@@ -263,6 +313,10 @@ def main():
     replay.add_argument('--trace-object-writes', metavar='OBJECTHEX',
                         help='verify state services and watch one native object record')
     replay.add_argument('--trace-target', action='append', metavar='SECTION:CS:IP')
+    replay.add_argument('--capture-labels', action='store_true',
+                        help='save a native framebuffer, RAM, and CPU snapshot at each LABEL')
+    replay.add_argument('--check-labels', action='store_true',
+                        help='also validate ASSERT_LOCATION before each LABEL in one run')
     replay.add_argument('--timeout', type=int, default=1800, help='wall-clock timeout, seconds')
     replay.add_argument('--plan-only', action='store_true', help='validate and show planned replay without execution')
     args = parser.parse_args()
@@ -279,7 +333,8 @@ def main():
         planned = compile_steps(steps, args.max_actions, args.through,
                                 args.spacing_ms, args.idle_ms)
         print(f'Plan: {len(planned.actions)} actions, {len(planned.keys)} keys, '
-              f'{planned.duration_ms} guest ms, {len(planned.assertions)} final assertions')
+              f'{planned.duration_ms} guest ms, {len(planned.assertions)} final assertions, '
+              f'{len(planned.checkpoints)} labels')
         if not args.plan_only:
             run(args, planned)
     except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError,

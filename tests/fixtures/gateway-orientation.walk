@@ -1,0 +1,31 @@
+# Original Gateway opening, PV messages, receptionist exchange, and T20 class.
+# Checked checkpoints can be validated in one replay with --check-labels.
+COMMAND take debit card
+COMMAND put debit card in pv slot
+MENU_KEYS 1,N,N,0,0
+ASSERT_LOCATION 126 d3
+LABEL pv_messages_read
+COMMAND open drawer
+COMMAND take book
+COMMAND read book
+COMMAND east
+COMMAND northwest
+COMMAND give book to receptionist
+ASSERT_LOCATION d3 ec
+ASSERT_LOCATION 123 0
+ASSERT_LOCATION 130 d3
+LABEL office_book_exchange
+COMMAND southeast
+COMMAND north
+COMMAND down
+COMMAND west
+ASSERT_LOCATION d3 f7
+LABEL room_t20
+COMMAND wait until 15:00
+COMMAND wait
+COMMAND wait
+COMMAND wait
+COMMAND wait
+ASSERT_LOCATION d3 f7
+ASSERT_LOCATION 132 d3
+LABEL class_badge_awarded

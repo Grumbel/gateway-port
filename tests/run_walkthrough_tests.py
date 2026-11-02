@@ -42,6 +42,48 @@ class WalkthroughTests(unittest.TestCase):
         self.assertEqual(len(extended.actions), 55)
         self.assertGreater(extended.duration_ms, 180000)
 
+    def test_pv_office_fixture_menu_and_named_location_checkpoints(self):
+        fixture = pathlib.Path(__file__).parent / 'fixtures/gateway-pv-office.walk'
+        replay = compile_steps(parse_script(fixture.read_text(encoding='utf-8')))
+        self.assertEqual(len(replay.actions), 9)
+        self.assertEqual(replay.duration_ms, 57000)
+        self.assertEqual([(ms, key) for ms, key in replay.keys
+                          if 24000 <= ms <= 36000],
+                         [(24000, ord('1')), (27000, ord('N')),
+                          (30000, ord('N')), (33000, ord('0')),
+                          (36000, ord('0'))])
+        self.assertEqual(len(replay.checkpoints), 2)
+        self.assertEqual([c.label for c in replay.checkpoints],
+                         ['pv_messages_read', 'office_book_exchange'])
+        self.assertEqual([(obj, loc) for obj, loc, _ in replay.checkpoints[0].assertions],
+                         [(0x126, 0xd3), (0xd3, 0xee)])
+        self.assertEqual([(obj, loc) for obj, loc, _ in replay.checkpoints[1].assertions],
+                         [(0xd3, 0xec), (0x123, 0), (0x130, 0xd3)])
+
+    def test_orientation_fixture_asserts_blue_badge_after_native_waits(self):
+        fixture = pathlib.Path(__file__).parent / 'fixtures/gateway-orientation.walk'
+        replay = compile_steps(parse_script(fixture.read_text(encoding='utf-8')))
+        self.assertEqual(len(replay.actions), 18)
+        self.assertEqual(replay.duration_ms, 84000)
+        self.assertEqual([c.label for c in replay.checkpoints],
+                         ['pv_messages_read', 'office_book_exchange', 'room_t20',
+                          'class_badge_awarded'])
+        self.assertEqual([(obj, loc) for obj, loc, _ in replay.assertions],
+                         [(0xd3, 0xf7), (0x132, 0xd3)])
+
+    def test_bar_fixture_tracks_npc_spawn_as_native_location_transition(self):
+        fixture = pathlib.Path(__file__).parent / 'fixtures/gateway-bar-evening.walk'
+        replay = compile_steps(parse_script(fixture.read_text(encoding='utf-8')))
+        self.assertEqual(len(replay.actions), 24)
+        self.assertEqual(replay.duration_ms, 102000)
+        markers = {checkpoint.label: checkpoint for checkpoint in replay.checkpoints}
+        self.assertEqual([(obj, loc) for obj, loc, _ in
+                          markers['blue_hell_before_thom'].assertions],
+                         [(0xd3, 0xf4), (0x100, 0)])
+        self.assertEqual([(obj, loc) for obj, loc, _ in
+                          markers['thom_arrives'].assertions],
+                         [(0xd3, 0xf4), (0x100, 0x137)])
+
     def test_keys_menu_waits_and_review_barrier(self):
         script = parse_script('''
 COMMAND open drawer
@@ -59,6 +101,16 @@ COMMAND look
         self.assertEqual(limited.keys[-2:], [(21000, ord('3')), (24000, 0x1c0d)])
         self.assertEqual(compile_steps(script, max_actions=4).keys[-1], (34000, 0x4800))
 
+    def test_confirmed_pv_menu_sequence_matches_individual_raw_keys(self):
+        shortcut = compile_steps(parse_script('COMMAND put card in slot\n'
+                                              'MENU_KEYS 1, N,N,0,0\nCOMMAND look\n'))
+        expanded = compile_steps(parse_script('COMMAND put card in slot\n'
+                                              'TYPE 1\nTYPE N\nTYPE N\nTYPE 0\n'
+                                              'TYPE 0\nCOMMAND look\n'))
+        self.assertEqual(shortcut.keys, expanded.keys)
+        self.assertEqual(shortcut.duration_ms, expanded.duration_ms)
+        self.assertEqual(shortcut.keys[-5:], expanded.keys[-5:])
+
     def test_checkpoint_selects_replay_prefix_and_final_assertions_only(self):
         steps = parse_script('''
 COMMAND take book
@@ -70,9 +122,14 @@ LABEL dropped_book
 ''')
         first = compile_steps(steps, through='got_book')
         self.assertEqual(first.assertions, [(0x123, 0xd3, 3)])
+        self.assertEqual(first.checkpoints[0].label, 'got_book')
+        self.assertEqual(first.checkpoints[0].assertions, ((0x123, 0xd3, 3),))
+        self.assertEqual(first.checkpoints[0].time_ms, 20999)
         self.assertEqual(len(first.actions), 1)
         full = compile_steps(steps)
         self.assertEqual(full.assertions, [(0x123, 0xee, 6)])
+        self.assertEqual([(mark.label, mark.time_ms) for mark in full.checkpoints],
+                         [('got_book', 20999), ('dropped_book', 23999)])
         with self.assertRaisesRegex(ValueError, 'unknown label'):
             compile_steps(steps, through='unknown')
         with self.assertRaisesRegex(ValueError, 'cannot be combined'):
@@ -90,18 +147,23 @@ LABEL dropped_book
 '''
         translated = convert_text(source)
         self.assertEqual([s.operation for s in parse_script(translated)],
-                         ['COMMAND', 'COMMAND', 'TYPE', 'MANUAL', 'MANUAL', 'COMMAND'])
-        self.assertIn('MANUAL Menu sequence: 1,N,N,0,0', translated)
+                         ['COMMAND', 'COMMAND', 'TYPE', 'MENU_KEYS', 'MANUAL', 'COMMAND'])
+        self.assertIn('MENU_KEYS 1,N,N,0,0', translated)
         self.assertIn('MANUAL UI press: left image', translated)
         with self.assertRaisesRegex(ValueError, 'human review'):
             compile_steps(parse_script(translated))
         self.assertEqual(len(compile_steps(parse_script(translated), max_actions=3).actions), 3)
+        self.assertIn('MANUAL Menu sequence:', convert_text('*** Type: password,123 ***'))
 
     def test_strict_input_bounds(self):
         for source in ('COMMAND\n', 'BAD abc', 'COMMAND héllo', 'COMMAND ' + 'a' * 65,
                        'KEY f13', 'WAIT_MS 0', 'WAIT_MS 600001', 'LABEL a\nLABEL a',
                        'ASSERT_LOCATION dead beef', 'ASSERT_LOCATION 0 1',
                        'ASSERT_LOCATION 1 garbage'):
+            with self.subTest(source=source), self.assertRaises(ValueError):
+                parse_script(source)
+        for source in ('MENU_KEYS 1', 'MENU_KEYS 1,', 'MENU_KEYS 1,enter',
+                       'MENU_KEYS 1,#', 'MENU_KEYS 1,ü'):
             with self.subTest(source=source), self.assertRaises(ValueError):
                 parse_script(source)
         with self.assertRaisesRegex(ValueError, 'one guest hour'):

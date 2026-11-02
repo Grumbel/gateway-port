@@ -1,0 +1,18 @@
+# Opening errands, independently checked against the original Gateway.
+# One menu directive sends five individual PV keys without Enter.
+COMMAND take debit card
+COMMAND put debit card in pv slot
+MENU_KEYS 1,N,N,0,0
+ASSERT_LOCATION 126 d3
+ASSERT_LOCATION d3 ee
+LABEL pv_messages_read
+COMMAND open drawer
+COMMAND take book
+COMMAND read book
+COMMAND east
+COMMAND northwest
+COMMAND give book to receptionist
+ASSERT_LOCATION d3 ec
+ASSERT_LOCATION 123 0
+ASSERT_LOCATION 130 d3
+LABEL office_book_exchange
