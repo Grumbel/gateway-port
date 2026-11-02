@@ -124,6 +124,41 @@ int main() {
                 throw std::runtime_error("Study UP moved a player already in the room");
         }
 
+        // Callback 0x05 is used for DOWN in both Study and the scale booth.
+        // The original 0157:000c tests the type-7 player's one immediate
+        // relation slot. Signed Study counter 9–12 locks the desk but does
+        // not restrict climbing off the scale in the unrelated booth.
+        for (std::int16_t progress : {9, 10, 11, 12}) {
+            StoryModel on_desk;
+            on_desk.define(player, 0x2bf);
+            auto down = on_desk.apply_desk_scale_down(player, 0x2bc, progress);
+            if (down.return_ax != 0 || !down.changes.empty() ||
+                on_desk.location(player) != 0x2bf)
+                throw std::runtime_error("Study desk DOWN ignored locked counter window");
+        }
+        for (std::int16_t progress : {-32768, -1, 0, 8, 13, 19, 32767}) {
+            StoryModel on_desk;
+            on_desk.define(player, 0x2bf);
+            auto down = on_desk.apply_desk_scale_down(player, 0x2bc, progress);
+            if (down.return_ax != 0)
+                throw std::runtime_error("Study DOWN returned a destination in AX");
+            expect(down.changes, {{StoryMutationKind::SetLocation, player, 0x2bc}},
+                   "Study desk DOWN ignored signed outside-window branch");
+            if (!on_desk.apply_desk_scale_down(player, 0x2bc, progress).changes.empty())
+                throw std::runtime_error("repeat Study DOWN moved a standing player");
+        }
+        StoryModel on_scale;
+        on_scale.define(player, 0x87);
+        up = on_scale.apply_desk_scale_down(player, 0x47, 10);
+        if (up.return_ax != 0)
+            throw std::runtime_error("scale DOWN returned a room destination");
+        expect(up.changes, {{StoryMutationKind::SetLocation, player, 0x47}},
+               "booth DOWN must ignore the Study-only counter gate");
+        StoryModel in_study_room;
+        in_study_room.define(player, 0x2bc);
+        if (!in_study_room.apply_desk_scale_down(player, 0x2bc, 0).changes.empty())
+            throw std::runtime_error("Study DOWN moved a player not on the desk");
+
         // Native child-slot eligibility is distinct from relation traversal
         // and from the action handlers' OPEN/CLOSE guards.
         if (model.can_enumerate_child_slot(drawer, 2, 0) ||

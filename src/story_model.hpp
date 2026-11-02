@@ -132,6 +132,16 @@ public:
     // gets off the couch, returning AX=0 rather than a room destination.
     StoryCallbackOutcome apply_study_up(StoryObjectId player, std::int16_t progress);
 
+    // Callback 0x05, shared by Study DOWN and Guess Your Weight booth DOWN.
+    // For the type-7 player, native 0157:000c checks its single direct
+    // relation slot: maple desk 0x2bf or scale 0x087. On the desk, signed
+    // progress 9..12 forbids getting down; the scale has no progress gate.
+    // The caller supplies the current enclosing room and native Study word.
+    // AX remains zero even when 1c24:13d5 moves the player into that room.
+    StoryCallbackOutcome apply_desk_scale_down(StoryObjectId player,
+                                               StoryObjectId current_room,
+                                               std::int16_t study_progress);
+
     // Only the mutations of an already-successful action, as observed for
     // Gateway's first-room drawer/book scenario. The original DOS handlers
     // still decide reachability, action guards, and error/description text.

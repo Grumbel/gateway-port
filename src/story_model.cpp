@@ -162,6 +162,21 @@ StoryCallbackOutcome StoryModel::apply_study_up(StoryObjectId player,
     return outcome;
 }
 
+StoryCallbackOutcome StoryModel::apply_desk_scale_down(StoryObjectId player,
+                                                       StoryObjectId current_room,
+                                                       std::int16_t study_progress) {
+    StoryCallbackOutcome outcome;
+    // OVL 0x6958d–0x69647: event=0x0f; 0157:000c(player, 0x2bf)
+    // precedes 0157:000c(player, 0x87). The signed JLE 8 / JGE 13 tests
+    // only guard the desk. The original player object is type 7, so its
+    // native membership test has one location slot, not recursive ancestry.
+    const auto parent = location(player);
+    if ((parent == 0x2bf && (study_progress <= 8 || study_progress >= 13)) ||
+        parent == 0x87)
+        move(outcome.changes, player, current_room);
+    return outcome;
+}
+
 StoryNormalGuard StoryModel::evaluate_normal_open_close(StoryAction action,
                                                          StoryObjectId target) const {
     switch (action) {
