@@ -196,3 +196,9 @@ result and no-move outcome. Other callbacks' branches remain static leads.
 An opt-in, logged single-word pin-relation intervention now also validates
 that callback's positive return `AX=0x0f6` and corresponding original
 native room move; it is deliberately not described as ordinary gameplay.
+The later [complete Beach-to-Casino replay](beach-vr-replay.md) established
+the legitimate pickup and entry without intervention. A subsequent
+[Tanning Room callback analysis](tanning-room.md) demonstrates a different
+kind-4 outcome: event `0x0f` returns `AX=0` **after** moving the player
+from a couch back to its enclosing room. A modern engine must model such
+side effects separately from the room destination returned in AX.

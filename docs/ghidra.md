@@ -342,3 +342,22 @@ through its event-`0x0f` callback into Pedroza Lounge (at 132268 ms).
 The final native pin relation is player `0x0d3` and player room is `0x0f6`.
 The entire sequence, native watch interpretation and ordered-event assertion
 are documented in [beach-vr-replay.md](beach-vr-replay.md).
+
+## Tanning Room and VR couch handlers: sixth headless run
+
+A fresh Ghidra 11.4.2 / JDK 21 import of the same fingerprinted binaries
+revalidated **58** overlay spaces, **13,947** relocations and **696** object
+aliases; **81/81** requested pseudocode contexts exported. Seven additional
+selected object handlers cover Casino `0x0f5`, Pedroza Lounge `0x0f6`,
+Tanning Room `0x29a`, its couch `0x29c` and couches collection `0x29d`,
+VR Terminal couch `0x2a1`, and collar `0x2a8`. The preliminary handlers
+contain event branches and native location/relation checks; several room
+wrappers still have computed jump tables and unresolved Ghidra edges.
+
+An original-instruction and two-replay cross-check resolves Tanning Room
+`UP`: callback `0x2b` (`OVL:0x693fc`) sees event `0x0f` and returns
+`AX=0` in both cases. If the player is directly inside couch `0x29c`,
+it nevertheless invokes the native setter to move the player to room
+`0x29a`; otherwise it leaves the player standing. See the new
+[Tanning Room native analysis](tanning-room.md) for evidence, reproducible
+commands and the limited C++ translation.

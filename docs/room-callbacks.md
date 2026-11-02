@@ -183,6 +183,19 @@ replay above now demonstrates obtaining the pin and passing that same gate,
 without intervention. Other callback targets and story conditions remain
 unresolved.
 
+## Callback `0x2b`: Tanning Room UP can mutate state with `AX=0`
+
+Native replay has now exercised both the standing and reclining branches
+of another kind-4 exit handler. For Tanning Room `0x29a`, the `UP` exit
+calls `0x2b` in RTLink section 50 (`OVL:0x693fc`). It tests whether player
+`0x0d3` is inside couch `0x29c`; if so, it moves the player **back into the
+same room** but still returns `AX=0` to the room scanner. The standing
+branch also returns zero but makes no movement. Both branches are validated
+without memory intervention. See [tanning-room.md](tanning-room.md) for
+original instruction ranges, actual byte writes, the C++ bounded branch
+model and a paired native replay verifier. The other VR contexts using
+callback `0x2b` have not been modeled.
+
 ## Two more statically decoded patterns
 
 **Callback `0x00`: return to the shared ship cabin.** Its 14 exits come in
