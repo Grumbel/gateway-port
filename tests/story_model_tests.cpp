@@ -101,6 +101,29 @@ int main() {
                {{StoryMutationKind::SetLocation, player, 0x2ae}},
                "absent Beach glass bit produced a spurious flag mutation");
 
+        // Study callback 0x2b refuses UP before the native dialogue counter
+        // reaches 3 (observed in the unmodified Study replay). Static x86
+        // establishes the two signed bounds and common get-up destination.
+        for (std::int16_t progress : {-1, 0, 1, 2, 20, 21, 0x7fff}) {
+            StoryModel blocked;
+            blocked.define(player, 0x2be);
+            if (blocked.apply_study_up(player, progress).return_ax != 0 ||
+                !blocked.apply_study_up(player, progress).changes.empty() ||
+                blocked.location(player) != 0x2be)
+                throw std::runtime_error("Study UP ignored a signed counter bound");
+        }
+        for (std::int16_t progress : {3, 12, 19}) {
+            StoryModel permitted;
+            permitted.define(player, 0x2be);
+            up = permitted.apply_study_up(player, progress);
+            if (up.return_ax != 0)
+                throw std::runtime_error("Study UP returned a navigable destination");
+            expect(up.changes, {{StoryMutationKind::SetLocation, player, 0x2bc}},
+                   "Study UP failed to get off couch in counter window");
+            if (!permitted.apply_study_up(player, progress).changes.empty())
+                throw std::runtime_error("Study UP moved a player already in the room");
+        }
+
         // Native child-slot eligibility is distinct from relation traversal
         // and from the action handlers' OPEN/CLOSE guards.
         if (model.can_enumerate_child_slot(drawer, 2, 0) ||

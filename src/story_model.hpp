@@ -125,6 +125,13 @@ public:
     // Beach stays put. All paths return AX=0, not a navigable destination.
     StoryCallbackOutcome apply_beach_up(StoryObjectId player);
 
+    // Callback 0x2b's Study (0x2bc) UP path. Original 0157:0546 first tests
+    // the player's immediate parent against leather couch 0x2be, then signed
+    // word ES:7904 must lie in [3,19]. The caller supplies that native word;
+    // its dialogue/state progression is not reconstructed here. In-range UP
+    // gets off the couch, returning AX=0 rather than a room destination.
+    StoryCallbackOutcome apply_study_up(StoryObjectId player, std::int16_t progress);
+
     // Only the mutations of an already-successful action, as observed for
     // Gateway's first-room drawer/book scenario. The original DOS handlers
     // still decide reachability, action guards, and error/description text.

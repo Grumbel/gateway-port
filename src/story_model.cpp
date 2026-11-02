@@ -150,6 +150,18 @@ StoryCallbackOutcome StoryModel::apply_beach_up(StoryObjectId player) {
     return outcome;
 }
 
+StoryCallbackOutcome StoryModel::apply_study_up(StoryObjectId player,
+                                                std::int16_t progress) {
+    StoryCallbackOutcome outcome;
+    // OVL 0x69515–0x6954d: native direct-parent accessor 0157:0546 and
+    // signed jl/jle on [DS:9634]:7904. An out-of-range couch occupant gets
+    // a refusal, while an eligible occupant uses the common 0x694cf get-up
+    // path. Neither branch supplies a new room ID in AX.
+    if (location(player) == 0x2be && progress >= 3 && progress <= 19)
+        move(outcome.changes, player, 0x2bc);
+    return outcome;
+}
+
 StoryNormalGuard StoryModel::evaluate_normal_open_close(StoryAction action,
                                                          StoryObjectId target) const {
     switch (action) {
