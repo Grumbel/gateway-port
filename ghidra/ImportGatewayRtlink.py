@@ -233,6 +233,56 @@ def annotate_study_response_path(section, start):
     return len(anchors)
 
 
+def annotate_vr_return_path(section, start):
+    """Name 24 byte-verified instructions in the native VR-return dispatcher.
+
+    OVL 0x6d564 is reached both by Study and by the Beach scanner. The
+    branches are not separate function entries. Resident 048e:0284 can
+    suspend the return frame; a later input resumes at the next instruction.
+    """
+    if section['id'] != 51:
+        return 0
+    require(section['original_file_offset'] == 0x6acd0,
+            'VR return expected original section-51 file base')
+    anchors = (
+        (0x6d579, 0xb8, 'gw_vr_return_technician_guard', 'recursive relation: technician 0x2a3 reaches Terminal 0x29b'),
+        (0x6d590, 0x8e, 'gw_vr_return_beach_success_guard', 'check guest byte :78fa for Beach success'),
+        (0x6d59c, 0xb8, 'gw_vr_return_pin_guard', 'direct relation: pin 0x2a9 belongs to technician'),
+        (0x6d5b0, 0xb8, 'gw_vr_return_pin_text', 'award pin, F000:70b9'),
+        (0x6d5c0, 0x2b, 'gw_vr_return_pin_move', 'move pin 0x2a9 to Terminal 0x29b'),
+        (0x6d5d3, 0xb8, 'gw_vr_return_pin_unhide', 'clear pin flag 0x08'),
+        (0x6d5e3, 0x8e, 'gw_vr_return_result_guard', 'branch on raw guest result word :7920'),
+        (0x6d5f2, 0xb8, 'gw_vr_return_result_text', 'nonzero result: F000:70ba'),
+        (0x6d602, 0x8e, 'gw_vr_return_result_seven_guard', 'test raw result word :7920 == 7'),
+        (0x6d60e, 0x8e, 'gw_vr_return_other_repeat_guard', 'other result: test :7927 for F000:70bb/70bc'),
+        (0x6d62e, 0x8e, 'gw_vr_return_seven_repeat_guard', 'result 7: test :7927 for F000:70bb/70bd'),
+        (0x6d65b, 0xb8, 'gw_vr_return_seven_first_service', 'on first result 7 only: 1c24:434b(3)'),
+        (0x6d667, 0x8e, 'gw_vr_return_seven_clear_word', 'result 7 clears guest word :6b1a'),
+        (0x6d672, 0x8e, 'gw_vr_return_seven_mark_seen', 'result 7 sets guest byte :7927 to 1'),
+        (0x6d67e, 0xb8, 'gw_vr_return_no_result_text', 'zero result: F000:70be'),
+        (0x6d68e, 0x8e, 'gw_vr_return_no_result_timer', 'zero result sets guest word :44e4 = 0x38'),
+        (0x6d699, 0xb8, 'gw_vr_return_no_result_event', 'zero result calls 02e3:002b(0x2b,1)'),
+        (0x6d6a9, 0x2b, 'gw_vr_return_cleanup_start', 'shared cleanup after all result branches'),
+        (0x6d6b9, 0x8e, 'gw_vr_return_cleanup_flag', 'set :3942 to 1 after removing object 0xe4'),
+        (0x6d6c3, 0xb8, 'gw_vr_return_cleanup_wall', 'set flag 0x0b on wall object 0x165'),
+        (0x6d70f, 0x2b, 'gw_vr_return_cleanup_unseat', 'move player to native current room :35c6'),
+        (0x6d727, 0xb8, 'gw_vr_return_room_transfer', 'call 048e:0284(Terminal 0x29b); may yield to later input'),
+        (0x6d73b, 0xb8, 'gw_vr_return_couch_resume', 'after deferred room-transfer return: place player in couch 0x2a1'),
+        (0x6d747, 0xcb, 'gw_vr_return_retf', 'far return after deferred couch move'),
+    )
+    for file_offset, byte, name, detail in anchors:
+        relative = file_offset - section['original_file_offset']
+        require(0 <= relative < section['file_bytes'] and
+                (int(memory.getByte(start.add(relative))) & 0xff) == byte,
+                '%s original x86 anchor differs' % name)
+        currentProgram.getSymbolTable().createLabel(
+            start.add(relative), name, currentProgram.getGlobalNamespace(),
+            SourceType.USER_DEFINED)
+        note(start.add(relative), '%s; OVL:0x%x; %s; interior code, NOT a function entry' %
+             (name, file_offset, detail))
+    return len(anchors)
+
+
 args = getScriptArgs()
 require(len(args) == 1, 'usage: ImportGatewayRtlink.py /absolute/ghidra-plan.json')
 plan_path = os.path.abspath(args[0])
@@ -254,6 +304,7 @@ study_event_table_words = 0
 study_event_flow_edges = 0
 study_matcher_path_labels = 0
 study_response_path_labels = 0
+vr_return_path_labels = 0
 for section in plan['sections']:
     sid = section['id']
     prefix = 'GW_RT_%03d' % sid
@@ -300,6 +351,7 @@ for section in plan['sections']:
         study_event_flow_edges += edges
         study_matcher_path_labels += annotate_study_matcher_path(section, start)
         study_response_path_labels += annotate_study_response_path(section, start)
+        vr_return_path_labels += annotate_vr_return_path(section, start)
     for label in section['labels']:
         address = start.add(label['offset'])
         annotate(address, label)
@@ -331,6 +383,7 @@ report = dict(imported_sections=imported, labeled_overlay_entries=imported_label
               study_event_flow_edges=study_event_flow_edges,
               study_matcher_path_labels=study_matcher_path_labels,
               study_response_path_labels=study_response_path_labels,
+              vr_return_path_labels=vr_return_path_labels,
               resident_matches=resident_matches)
 report_path = os.path.join(os.path.dirname(plan_path), 'ghidra-import-report.json')
 with open(report_path, 'w') as output:

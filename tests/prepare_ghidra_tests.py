@@ -214,7 +214,8 @@ class GhidraPlanTests(unittest.TestCase):
             (self.root / 'ghidra-import-report.json').write_text(json.dumps(dict(
                 imported_sections=1, labeled_overlay_entries=1,
                 study_event_table_words=23, study_event_flow_edges=7,
-                study_matcher_path_labels=9, study_response_path_labels=18)))
+                study_matcher_path_labels=9, study_response_path_labels=18,
+                vr_return_path_labels=24)))
             (self.root / 'ghidra-decompile-report.json').write_text(json.dumps(dict(
                 schema_version=1, targets=[dict(name='test_routine')],
                 completed=1, failed=0, requested=1)))
@@ -272,7 +273,8 @@ class GhidraPlanTests(unittest.TestCase):
             (self.root / 'ghidra-import-report.json').write_text(json.dumps(dict(
                 imported_sections=1, labeled_overlay_entries=1,
                 study_event_table_words=23, study_event_flow_edges=7,
-                study_matcher_path_labels=8, study_response_path_labels=18)))
+                study_matcher_path_labels=8, study_response_path_labels=18,
+                vr_return_path_labels=24)))
             (self.root / 'ghidra-decompile-report.json').write_text(json.dumps(dict(
                 schema_version=1, targets=[dict(name='test_routine')],
                 completed=1, failed=0, requested=1)))
@@ -297,7 +299,8 @@ class GhidraPlanTests(unittest.TestCase):
             fixup_count=17, labels=[dict(name='test_routine', role='function')])],
             resident_labels=[])
         for bad_key, error in (('study_event_flow_edges', '7 unique Study'),
-                               ('study_response_path_labels', '18 native Study')):
+                               ('study_response_path_labels', '18 native Study'),
+                               ('vr_return_path_labels', '24 native VR-return')):
             with self.subTest(bad_key=bad_key), \
                     patch('run_ghidra.prepare', return_value=(plan_path, example)), \
                     patch('run_ghidra.find_headless', return_value=Path('/bin/headless')), \
@@ -305,7 +308,8 @@ class GhidraPlanTests(unittest.TestCase):
                 import_report = dict(imported_sections=1, labeled_overlay_entries=1,
                                      study_event_table_words=23, study_event_flow_edges=7,
                                      study_matcher_path_labels=9,
-                                     study_response_path_labels=18)
+                                     study_response_path_labels=18,
+                                     vr_return_path_labels=24)
                 import_report[bad_key] -= 1
                 (self.root / 'ghidra-import-report.json').write_text(
                     json.dumps(import_report))

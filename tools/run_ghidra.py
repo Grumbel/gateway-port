@@ -99,6 +99,8 @@ def run(exe, ovl, output, overlay_tool, objects_json=None,
         raise ValueError('Ghidra did not annotate all 9 native Study matcher instructions')
     if plan.get('fingerprinted_gateway') and imported.get('study_response_path_labels') != 18:
         raise ValueError('Ghidra did not annotate all 18 native Study response instructions')
+    if plan.get('fingerprinted_gateway') and imported.get('vr_return_path_labels') != 24:
+        raise ValueError('Ghidra did not annotate all 24 native VR-return instructions')
     expected = [label['name'] for section in plan['sections']
                 for label in section['labels'] if label['role'] in
                 ('function', 'callback-entry', 'object-entry-candidate',
