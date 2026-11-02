@@ -129,6 +129,8 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/inspect_vr_up_tests.py)
     add_test(NAME study-up-callback COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/inspect_study_up_tests.py)
+    add_test(NAME study-script-inspect COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/inspect_study_script_tests.py)
     add_test(NAME ghidra-import-plan COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/prepare_ghidra_tests.py)
     add_test(NAME room-callback-inspect COMMAND ${Python3_EXECUTABLE}
