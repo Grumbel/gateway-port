@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-from inspect_room_exits import format_dot, format_text, inspect_exits
+from inspect_room_exits import format_dot, format_stats, format_text, inspect_exits
 
 
 TOOL = Path(__file__).resolve().parents[1] / 'tools' / 'inspect_room_exits.py'
@@ -26,8 +26,11 @@ class RoomExitInspectTests(unittest.TestCase):
         self.memory = bytearray(0xa0000)
         self.ds = 0x1000
         self.table_segment = 0x2400
+        self.conditional_segment = 0x2500
         struct.pack_into('<H', self.memory, self.ds * 16 + 0x8dcc,
                          self.table_segment)
+        struct.pack_into('<H', self.memory, self.ds * 16 + 0x8dd2,
+                         self.conditional_segment)
         self.objects = [room(0xee, 'Your Quarters', 1, 1),
                         room(0xf1, 'Heecheetown', 2, 2),
                         room(0xf2, 'Inactive', 2, 0),
@@ -35,6 +38,9 @@ class RoomExitInspectTests(unittest.TestCase):
         self.entry(0, 0x11, 1, 0xf1)
         self.entry(1, 0x12, 1, 0xee)
         self.entry(2, 0x33, 2, 0x27)
+        struct.pack_into('<HH', self.memory,
+                         self.conditional_segment * 16 + 0x4996 + 4 * 0x27,
+                         0xee, 0xf1)
 
     def entry(self, index, direction, kind, argument):
         struct.pack_into('<BBH', self.memory,
@@ -53,13 +59,23 @@ class RoomExitInspectTests(unittest.TestCase):
         self.assertEqual([route['index'] for route in town['exits']], [1, 2])
         self.assertNotIn('direct_room', town['exits'][1])
         self.assertEqual(town['exits'][1]['kind_meaning'], 'conditional')
+        self.assertEqual(town['exits'][1]['conditional_destination'], 0xee)
+        self.assertEqual(town['exits'][1]['conditional_room'], 0xee)
+        self.assertEqual(town['exits'][1]['condition_object'], 0xf1)
+        self.assertEqual(town['exits'][1]['condition_name'], 'Heecheetown')
+        self.assertEqual(snapshot['conditional_table_segment'], self.conditional_segment)
         self.assertFalse(inactive['active'])
         self.assertEqual(inactive['exits'], [])
         report = format_text(snapshot)
         self.assertIn('0x0ee Your Quarters: count=1 first=1', report)
         self.assertIn('direction=0x11 kind=1 (direct-room) argument=0x0f1', report)
         self.assertIn('native dispatcher skips', report)
+        self.assertIn('conditional_destination=0x0ee condition_object=0x0f1', report)
         self.assertIn('not verified reachable', report)
+        stats = format_stats(snapshot)
+        self.assertIn('Native type-1 rooms: 3 (2 with indexed exits)', stats)
+        self.assertIn('Exit kinds: 1=2, 2=1', stats)
+        self.assertIn('Kind-2 resolved room targets: 1 of 1', stats)
 
     def test_dot_uses_only_direct_edges_and_escapes_names(self):
         self.objects[1]['name'] = 'Heecheetown "A"'
@@ -69,6 +85,10 @@ class RoomExitInspectTests(unittest.TestCase):
         self.assertIn('n0f1 -> n0ee [label="0x12"]', graph)
         self.assertIn('Heecheetown \\"A\\"', graph)
         self.assertNotIn('0x33', graph)  # conditional branch is not a direct room edge
+        with_condition = format_dot(inspect_exits(self.memory, self.ds, self.objects),
+                                    include_conditional=True)
+        self.assertIn('n0f1 -> n0ee [label="0x33", style=dashed', with_condition)
+        self.assertIn('tooltip="object 0x0f1: flags 0x0c/0x10"', with_condition)
 
     def test_preserves_unknown_kinds_and_unresolved_direct_targets(self):
         self.entry(0, 0xaa, 9, 0xf1)
@@ -77,6 +97,18 @@ class RoomExitInspectTests(unittest.TestCase):
         self.assertEqual(world['rooms'][0]['exits'][0]['kind_meaning'], 'unknown')
         self.assertNotIn('direct_room', world['rooms'][1]['exits'][0])
         self.assertNotIn('n0ee', format_dot(world))
+
+    def test_conditional_only_room_is_visible_in_optional_graph(self):
+        self.entry(0, 0x03, 2, 0x0e)
+        struct.pack_into('<HH', self.memory,
+                         self.conditional_segment * 16 + 0x4996 + 4 * 0x0e,
+                         0xf1, 0xee)
+        world = inspect_exits(self.memory, self.ds, self.objects)
+        self.assertNotIn('n0ee -> n0f1', format_dot(world))
+        optional = format_dot(world, include_conditional=True)
+        self.assertIn('n0ee -> n0f1 [label="0x03", style=dashed', optional)
+        self.assertEqual(world['rooms'][0]['exits'][0]['condition_object'], 0xee)
+        self.assertEqual(world['rooms'][0]['exits'][0]['conditional_room'], 0xf1)
 
     def test_snapshot_room_selection_and_structural_validation(self):
         selected = inspect_exits(self.memory, self.ds, self.objects, [0xee])
@@ -88,10 +120,19 @@ class RoomExitInspectTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'record too short'):
             inspect_exits(self.memory, self.ds, [room(0xee, '', 1, 1) |
                                                  {'raw_state': bytes(20).hex()}])
-        with self.assertRaisesRegex(ValueError, 'exit table wraps segment'):
+        with self.assertRaisesRegex(ValueError, 'exit table entry wraps segment'):
             inspect_exits(self.memory, self.ds, [room(0xee, '', 255, 0x3000)])
         with self.assertRaisesRegex(ValueError, 'duplicate object IDs'):
             inspect_exits(self.memory, self.ds, self.objects + [self.objects[0]])
+        self.entry(2, 0x33, 2, 0x3000)
+        with self.assertRaisesRegex(ValueError, 'conditional entry wraps segment'):
+            inspect_exits(self.memory, self.ds, self.objects)
+        self.entry(2, 0x33, 2, 0x27)
+        struct.pack_into('<H', self.memory, self.ds * 16 + 0x8dd2, 0)
+        with self.assertRaisesRegex(ValueError, 'no native conditional-exit-table segment'):
+            inspect_exits(self.memory, self.ds, self.objects)
+        struct.pack_into('<H', self.memory, self.ds * 16 + 0x8dd2,
+                         self.conditional_segment)
         struct.pack_into('<H', self.memory, self.ds * 16 + 0x8dcc, 0)
         with self.assertRaisesRegex(ValueError, 'no native exit-table segment'):
             inspect_exits(self.memory, self.ds, self.objects)
@@ -106,19 +147,23 @@ class RoomExitInspectTests(unittest.TestCase):
         struct.pack_into('<H', self.memory, ds * 16 + 0x38dc, 2)
         self.memory[0x30000 + 2] = 26  # type-1 descriptor: 26-byte record
         payload = b'Quarters\0Town\0'
-        for object_id, state_offset, name_token, first in [
-                (1, 0x100, 1, 1), (2, 0x200, 10, 2)]:
+        for object_id, state_offset, name_token, first, count in [
+                (1, 0x100, 1, 1, 1), (2, 0x200, 10, 2, 2)]:
             descriptor = 0x20000 + 0xba + object_id * 6
             self.memory[descriptor] = 1
             struct.pack_into('<HH', self.memory, descriptor + 2,
                              state_offset, 0x4000)
-            raw = room(object_id, '', 1, first)['raw_state']
+            raw = room(object_id, '', count, first)['raw_state']
             self.memory[0x40000 + state_offset:0x40000 + state_offset + 26] = (
                 bytes.fromhex(raw))
             struct.pack_into('<H', self.memory, 0x40000 + state_offset,
                              name_token)
         self.entry(0, 0x11, 1, 2)
         self.entry(1, 0x12, 1, 1)
+        self.entry(2, 0x07, 2, 0x0e)
+        struct.pack_into('<HH', self.memory,
+                         self.conditional_segment * 16 + 0x4996 + 4 * 0x0e,
+                         1, 2)
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory) / 'native'
             base.with_suffix('.bin').write_bytes(self.memory)
@@ -132,10 +177,20 @@ class RoomExitInspectTests(unittest.TestCase):
             data = json.loads(result.stdout)
             self.assertEqual([r['name'] for r in data['rooms']], ['Quarters', 'Town'])
             self.assertEqual(data['rooms'][0]['exits'][0]['direct_room'], 2)
+            self.assertEqual(data['rooms'][1]['exits'][1]['conditional_room'], 1)
+            self.assertEqual(data['rooms'][1]['exits'][1]['condition_object'], 2)
             graph = subprocess.run(command[:-1] + ['dot'], capture_output=True,
                                    text=True)
             self.assertEqual(graph.returncode, 0, graph.stderr)
             self.assertIn('n001 -> n002 [label="0x11"]', graph.stdout)
+            optional = subprocess.run(command[:-1] + ['dot', '--include-conditional'],
+                                      capture_output=True, text=True)
+            self.assertEqual(optional.returncode, 0, optional.stderr)
+            self.assertIn('n002 -> n001 [label="0x07", style=dashed', optional.stdout)
+            invalid_format = subprocess.run(command + ['--include-conditional'],
+                                            capture_output=True, text=True)
+            self.assertEqual(invalid_format.returncode, 2)
+            self.assertIn('requires --format dot', invalid_format.stderr)
             wrong = subprocess.run(command + ['--room', '0x3'],
                                    capture_output=True, text=True)
             self.assertEqual(wrong.returncode, 2)
