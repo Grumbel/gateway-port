@@ -203,6 +203,15 @@ also calls a glass-property clear. See
 [VR `UP` callback analysis](vr-up-callback.md) for instructions, watched
 writes and bounded modeling.
 
+**Study `0x2bc`: fourth branch confirmed.** `SET SWITCH TO STUDY` enters
+the virtual Study and places the player in leather couch `0x2be`. A normal
+`UP` with native counter `1` returns `AX=0` without movement. The original
+x86 requires the signed counter to lie in **3–19**; a separate audited
+single-word guest-RAM intervention reached that branch and verified the
+native **`0x2be → 0x2bc`** location write, still returning **`AX=0`**.
+The [Study investigation](study-vr.md) strictly distinguishes that
+controlled condition from normal gameplay.
+
 ## Two more statically decoded patterns
 
 **Callback `0x00`: return to the shared ship cabin.** Its 14 exits come in

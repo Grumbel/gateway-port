@@ -38,7 +38,7 @@ python3 tools/disassemble_story.py ../gateway-dos/GATEMAIN.OVL \
 | `0x694cf–0x69512` | Common get-up: display token `f000:bc0e`; call `1c24:13d5(player,current room,0)` and return zero |
 | `0x69446–0x6945f` | Beach direct-relation branch selects blocked-direction token `f000:bc0f` and returns zero |
 | `0x69462–0x694b5` | Beach nested path displays get-up text, moves player, **then** calls `0157:0413(0x2b4,0x0a)` to clear the glass flag |
-| `0x69515–0x6954d` | Separate `0x2bc` branch checks object `0x2be` and word `ES:7904`; still only a static lead |
+| `0x69515–0x6954d` | Study `0x2bc` checks player in couch `0x2be` and signed state word `ES:7904`; now replayed separately in [Study VR](study-vr.md) |
 
 Text tokens `bc0e`, `bc0f`, and `bc11` correspond respectively to a get-up
 response, a blocked-direction response, and a worn-collar refusal. Ghidra
@@ -77,7 +77,8 @@ is not inferred from the model's ordinary location field.
 `StoryModel::apply_beach_up(player)` models the nested move and glass flag
 clear (when that bit exists in supplied state). Both return
 `StoryCallbackOutcome{return_ax=0, changes=...}`; they do not translate
-parser text, ordinary room movement, or the `0x2bc` branch.
+parser text, ordinary room movement, or the Study `0x2bc` branch (which is
+now translated separately in [Study VR](study-vr.md)).
 
 `tools/inspect_vr_up.py` rejects mismatched callback entries, nonzero AX,
 research pokes, absent native player writes, reversed collar order, forbidden

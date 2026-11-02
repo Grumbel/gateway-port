@@ -92,8 +92,12 @@ Decoded text under the addressing rule below:
 | `0xf00070b2` | 28/178 | Response explaining that `PASSWORD` is not the password |
 
 These are native branching/state-changing routines that directly choose story
-responses. The exact character, counter meaning, and dispatch entry are not yet
-traced through gameplay.
+responses. The later [Study VR replay](study-vr.md) identifies `0x7904`
+as the Study's signed progress word, confirms native initialization from
+`0 → 1`, and traces a **controlled** `3 → 4` increment through `0x6cff1`.
+Ghidra places this offset inside a function beginning at `0x6ce85`; the
+complete natural dialogue sequence needed to advance the counter has **not**
+yet been recovered.
 
 ## Text tokens: correction to the earlier hypothesis
 
@@ -206,4 +210,9 @@ The later [Terminal and Beach `UP` replays](vr-up-callback.md) establish
 two more branches of callback `0x2b`: a worn-collar refusal in the Terminal,
 and a nested Beach get-up followed by a native glass-property clear call.
 Both return `AX=0` even when the player moves; room `0x2bc` remains
-only statically examined.
+only statically examined in those earlier runs. The subsequent
+[Study VR investigation](study-vr.md) identifies the state word `ES:7904`
+as a signed Study progress counter. Original input confirms the blocked
+`UP` at value 1; a separately audited word intervention confirms the
+positive `3–19` branch moves the player from the leather couch back into
+the Study room, **also returning `AX=0`**.

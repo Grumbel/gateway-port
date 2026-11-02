@@ -378,3 +378,26 @@ Ghidra's C-like output still needs original-instruction ABI cross-checks.
 The [VR callback investigation](vr-up-callback.md) documents both traces,
 original offsets, asset-independent tests and bounded C++ model. No seventh
 Ghidra import was needed for this step.
+
+## Study VR: selected interior offset context and seventh run
+
+An original-game `SET SWITCH TO STUDY` replay identified the final
+`0x2b` current-room branch (room `0x2bc`, leather couch `0x2be`). A fresh
+Ghidra 11.4.2 / JDK21 import selected its room, couch, desk, chair and
+Sigfreid `0x2ca` object handlers plus original OVL offset `0x6cfda`.
+The first attempt exported **25/26** contexts; Ghidra correctly placed
+`0x6cfda` *inside* the containing function at `0x6ce85`, so the earlier
+export script treated the offset as a missing independent function.
+
+`DecompileGateway.py` now uses the containing function for a manually
+selected `overlay-entry-candidate` that lies in analyzed code, records
+`context=inside-containing-function`, and avoids renaming or fabricating
+an independent entry. It retains strict entry checks for confirmed handler
+addresses. The fresh retry exported **26/26** contexts, revalidating **58
+overlays, 13,947 fixups**, and the signed `ES:7904` Study counter logic.
+Its room handler still has an unresolved computed event jump.
+
+Original Unicorn replay verified a normal `AX=0` refusal at counter `1`
+and a **controlled, explicitly logged** `AX=0` get-up at counter `3`;
+both use the same callback and the successful native move writes player
+`0x2be → 0x2bc`. Details and commands in [Study VR](study-vr.md).
