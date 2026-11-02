@@ -1,5 +1,8 @@
 # Game logic: native code and RTLink overlays
 
+For reproducible longer native story paths from independently obtained
+walkthroughs, see [long-form walkthrough replay](walkthrough-replay.md).
+
 Investigation: 2026-10-31, original Gateway distribution. Binary identities are
 in [executable.md](executable.md). In particular, `GATEMAIN.OVL` SHA-256 is
 `05e14a53904c356cba5f9fbbc9de98cf8fb1a5bdb3b6bcbeff2ae97482982d71`.

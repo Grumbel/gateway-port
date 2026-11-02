@@ -1,5 +1,8 @@
 # Section-qualified handler evidence pipeline (bundle 097)
 
+The [walkthrough replay driver](walkthrough-replay.md) can collect these same
+RTLink census and native entry traces across longer, checked story paths.
+
 The object inventory contains **696** distinct native object handler entries,
 and the room callback table contains **44** more entries. Neither an entry
 label nor provisional C pseudocode proves a handler's complete behavior.
