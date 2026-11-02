@@ -11,7 +11,7 @@ PROBE = sys.argv.pop(1)
 
 
 class ProbeTests(unittest.TestCase):
-    def run_guest(self, code, files=None, dump=False, game_args=None, press=None, break_at=None, state=False, state_files=None, exe_name="TEST.EXE", research_entries=None, scheduled_keys=None, probe_adlib=False, scheduled_pokes=None, milliseconds=None, trace_byte_write=None, trace_rtlink_calls=False, rtlink_event_targets=None):
+    def run_guest(self, code, files=None, dump=False, game_args=None, press=None, break_at=None, state=False, state_files=None, exe_name="TEST.EXE", research_entries=None, scheduled_keys=None, probe_adlib=False, scheduled_pokes=None, milliseconds=None, trace_byte_write=None, trace_rtlink_calls=False, rtlink_event_targets=None, key_script_lines=None):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             assets = root / 'assets'
@@ -45,6 +45,10 @@ class ProbeTests(unittest.TestCase):
                     command += ['--trace-rtlink-target', target]
             for key in scheduled_keys or []:
                 command += ['--key-at', key]
+            if key_script_lines is not None:
+                key_script = root / 'keys.txt'
+                key_script.write_text(key_script_lines, encoding='ascii')
+                command += ['--key-script', str(key_script)]
             for poke in scheduled_pokes or []:
                 command += ['--research-poke16-at', poke]
             if trace_byte_write is not None:
@@ -103,6 +107,32 @@ class ProbeTests(unittest.TestCase):
         self.assertIn('pc=1000a', result.research_trace)
         self.assertIn('ax=1e61', result.research_trace)
         self.assertIn('stack=', result.research_trace)
+
+    def test_keyboard_script_long_timeline_and_input_validation(self):
+        # Reuse the BIOS polling guest. Comments/blank lines are allowed, but
+        # record times must be strict and increasing and keys must fit 16 bits.
+        code = bytes.fromhex('b401cd1674fa31c0cd16a30003b8004ccd21')
+        valid = self.run_guest(code, dump=True, research_entries=[], milliseconds=30,
+                               key_script_lines='# first command\n\n3:1e61 # a\n4:1c0d\n')
+        self.assertEqual(valid.returncode, 0, valid.stderr)
+        self.assertEqual(struct.unpack_from('<H', valid.memory, 0x0ff00 + 0x300)[0], 0x1e61)
+        self.assertIn('key ms=3 value=1e61', valid.research_trace)
+        self.assertNotEqual(self.run_guest(code, milliseconds=200000).returncode, 0)
+        # A late key is valid when the explicit long-run mode is enabled,
+        # even if this tiny test program exits before reaching it.
+        long = self.run_guest(bytes.fromhex('b8004ccd21'), milliseconds=201000,
+                              key_script_lines='200000:1c0d\n')
+        self.assertEqual(long.returncode, 0, long.stderr)
+        for body in ('', '# only a comment\n', '3:1c0d\n3:3920\n',
+                     '5:1c0d\n4:3920\n', '3:10000\n', '3:1c0d:3920\n',
+                     '3:1c0d\n2:3920\n', '30:1c0d\n', 'x:1c0d\n',
+                     ' 3:1c0d\n', '3:1c0d \n'):
+            with self.subTest(body=body):
+                bad = self.run_guest(code, milliseconds=30, key_script_lines=body)
+                self.assertNotEqual(bad.returncode, 0)
+        self.assertNotEqual(self.run_guest(code, milliseconds=30,
+                                          key_script_lines='3:1c0d\n',
+                                          scheduled_keys=['4:3920']).returncode, 0)
 
     def test_rtlink_manager_counts_section_qualified_trampoline_without_overlays(self):
         # Build a synthetic ten-byte Gateway trampoline and one-instruction

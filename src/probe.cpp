@@ -1869,6 +1869,8 @@ int main(int argc, char **argv) {
     std::filesystem::path debug_directory;
     unsigned milliseconds = 0;
     std::string dump_prefix, block_trace_path, rtlink_calls_path, rtlink_events_path;
+    std::filesystem::path key_script_path;
+    bool key_at_used = false;
     std::set<std::tuple<std::uint16_t, std::uint16_t, std::uint16_t>> rtlink_event_targets;
     std::string game_args, research_path, object_flags_mode;
     bool object_state_services = false;
@@ -1892,6 +1894,7 @@ int main(int argc, char **argv) {
                      "[--milliseconds N] [--dump-prefix PATH] [--game-args TEXT] [--press KEY] "
                      "[--break-at HEX] [--state-dir DIR | --read-only] [--trace-blocks FILE] "
                      "[--trace-rtlink-calls FILE] "
+                     "[--key-script FILE --milliseconds N] "
                      "[--trace-rtlink-events FILE --trace-rtlink-target SECTION:CS:IP ...] "
                      "[--trace-research FILE --trace-entry HEX ...] [--key-at MS:BIOSHEX ...] "
                      "[--research-poke16-at MS:LINEARHEX:OLDHEX:NEWHEX ...] "
@@ -2014,6 +2017,7 @@ int main(int argc, char **argv) {
                 words[1], static_cast<std::uint16_t>(words[2]),
                 static_cast<std::uint16_t>(words[3])});
         } else if (option == "--key-at" && i + 1 < argc) {
+            key_at_used = true;
             const std::string value = argv[++i];
             const auto colon = value.find(':');
             unsigned time = 0, key = 0;
@@ -2030,6 +2034,16 @@ int main(int argc, char **argv) {
                 return 2;
             }
             scheduled_keys.emplace(time, key);
+        } else if (option == "--key-script" && i + 1 < argc) {
+            if (!key_script_path.empty()) {
+                usage();
+                return 2;
+            }
+            key_script_path = argv[++i];
+            if (key_script_path.empty()) {
+                usage();
+                return 2;
+            }
         } else if (option == "--headless")
             interactive = false;
         else if (option == "--trace-blocks" && i + 1 < argc)
@@ -2114,12 +2128,65 @@ int main(int argc, char **argv) {
             const auto result =
                 std::from_chars(value.data(), value.data() + value.size(), milliseconds);
             if (result.ec != std::errc{} || result.ptr != value.data() + value.size() ||
-                !milliseconds || milliseconds > 180000) {
+                !milliseconds || milliseconds > 3600000) {
                 usage();
                 return 2;
             }
         } else {
             usage();
+            return 2;
+        }
+    }
+    if (key_at_used && !key_script_path.empty()) {
+        std::cerr << "--key-script and --key-at cannot be combined\n";
+        return 2;
+    }
+    if (key_script_path.empty() && milliseconds > 180000) {
+        std::cerr << "--milliseconds above 180000 requires --key-script\n";
+        return 2;
+    }
+    if (!key_script_path.empty()) {
+        std::ifstream script(key_script_path);
+        if (!script) {
+            std::cerr << "cannot open keyboard script: " << key_script_path << '\n';
+            return 2;
+        }
+        std::string line;
+        unsigned previous = 0, last_key = 0;
+        std::size_t count = 0, line_number = 0;
+        while (std::getline(script, line)) {
+            ++line_number;
+            if (const auto comment = line.find('#'); comment != std::string::npos) {
+                line.resize(comment);
+                const auto last = line.find_last_not_of(" \t\r");
+                line.resize(last == std::string::npos ? 0 : last + 1);
+            }
+            if (line.find_first_not_of(" \t\r") == std::string::npos)
+                continue;
+            const auto colon = line.find(':');
+            unsigned time = 0, key = 0;
+            bool valid = colon != std::string::npos &&
+                         line.find(':', colon + 1) == std::string::npos;
+            if (valid) {
+                const auto first = std::from_chars(line.data(), line.data() + colon, time);
+                const auto second = std::from_chars(line.data() + colon + 1,
+                                                    line.data() + line.size(), key, 16);
+                valid = first.ec == std::errc{} && first.ptr == line.data() + colon &&
+                        second.ec == std::errc{} &&
+                        second.ptr == line.data() + line.size() &&
+                        key <= 0xffff && time <= 3600000 &&
+                        (!count || time > previous) && count < 100000;
+            }
+            if (!valid) {
+                std::cerr << "invalid keyboard script record at line " << line_number << '\n';
+                return 2;
+            }
+            scheduled_keys.emplace(time, static_cast<std::uint16_t>(key));
+            previous = last_key = time;
+            ++count;
+        }
+        if (!script.eof() || !count || !milliseconds || last_key >= milliseconds) {
+            std::cerr << "keyboard script is empty, unreadable, or exceeds --milliseconds\n";
             return 2;
         }
     }
