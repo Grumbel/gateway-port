@@ -54,7 +54,7 @@ def find_headless(explicit=None):
 
 
 def run(exe, ovl, output, overlay_tool, objects_json=None,
-        headless=None, project_name='Gateway', prepare_only=False):
+        headless=None, project_name='Gateway', prepare_only=False, callbacks_json=None):
     if not project_name or not project_name.replace('_', '').isalnum():
         raise ValueError('project name must contain only letters, digits and underscores')
     output = output.resolve()
@@ -67,7 +67,8 @@ def run(exe, ovl, output, overlay_tool, objects_json=None,
     if not prepare_only and any(item.exists() for item in reports):
         raise ValueError('Ghidra output reports already exist in %s; choose a fresh '
                          'output directory so stale results cannot be mistaken for success' % output)
-    plan_path, plan = prepare(exe, ovl, output, overlay_tool, objects_json)
+    plan_path, plan = prepare(exe, ovl, output, overlay_tool, objects_json,
+                              callbacks_json=callbacks_json)
     print('Verified %d isolated RTLink sections, %d fixups.' % (
         len(plan['sections']), sum(s['fixup_count'] for s in plan['sections'])), flush=True)
     print('Plan: %s' % plan_path, flush=True)
@@ -88,7 +89,7 @@ def run(exe, ovl, output, overlay_tool, objects_json=None,
         imported.get('labeled_overlay_entries') != expected_labels):
         raise ValueError('Ghidra import counts differ from the validated RTLink plan')
     expected = [label['name'] for section in plan['sections']
-                for label in section['labels'] if label['role'] == 'function']
+                for label in section['labels'] if label['role'] in ('function', 'callback-entry')]
     expected.extend(label['name'] for label in plan['resident_labels']
                     if imported.get('resident_matches', {}).get(label['name']) is not None)
     observed = [item['name'] for item in decompiled.get('targets', [])]
@@ -114,6 +115,8 @@ def main():
     parser.add_argument('--overlay-tool', type=Path, default=Path('build/gateway-overlay'))
     parser.add_argument('--objects-json', type=Path,
                         help='optional native inspect_object_state.py export (adds object labels)')
+    parser.add_argument('--callbacks-json', type=Path,
+                        help='optional native inspect_room_callbacks.py export (decompile candidates)')
     parser.add_argument('--headless', type=Path, help='path to Ghidra analyzeHeadless')
     parser.add_argument('--project-name', default='Gateway',
                         help='new project name; existing projects are never overwritten')
@@ -122,7 +125,7 @@ def main():
     args = parser.parse_args()
     try:
         run(args.exe, args.ovl, args.output, args.overlay_tool, args.objects_json,
-            args.headless, args.project_name, args.prepare_only)
+            args.headless, args.project_name, args.prepare_only, args.callbacks_json)
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
         parser.exit(1, 'run_ghidra: %s\n' % error)
 

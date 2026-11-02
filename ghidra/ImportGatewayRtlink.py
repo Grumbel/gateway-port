@@ -138,7 +138,7 @@ for section in plan['sections']:
     for label in section['labels']:
         address = start.add(label['offset'])
         annotate(address, label)
-        if label['role'] == 'function':
+        if label['role'] in ('function', 'callback-entry'):
             # Seeding disassembly BEFORE the headless auto-analysis ensures
             # these verified entries are explored, without pretending that
             # all object/event pointers identify distinct C functions.

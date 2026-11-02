@@ -10,7 +10,8 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-from prepare_ghidra import KNOWN_OVERLAY, KNOWN_RESIDENT, name_for_object, plan_sections
+from prepare_ghidra import (KNOWN_OVERLAY, KNOWN_RESIDENT, add_callback_labels,
+                            name_for_object, plan_sections)
 from run_ghidra import find_headless, headless_command, run
 
 
@@ -95,6 +96,40 @@ class GhidraPlanTests(unittest.TestCase):
         self.assertEqual(overlay['gw_unlink_child_head_call'], 'callsite')
         self.assertEqual(resident['gw_conditional_exit_case'], 'instruction')
         self.assertEqual(resident['gw_callback_exit_case'], 'instruction')
+        self.assertEqual(resident['gw_room_callback_dispatch'], 'function')
+
+    def test_callback_entries_are_distinct_provisional_function_targets(self):
+        sections, label_at = plan_sections(self.manifest, self.root)
+        callbacks = dict(schema_version=1, table_count=44, exit_count=2, callbacks=[
+            dict(callback_id=0x14, status='rtlink',
+                 uses=[dict(room=0xf5), dict(room=0xf5)],
+                 rtlink_reference=dict(section=0, target_segment=0x3000,
+                                       target_offset=4),
+                 native_code=dict(filename='GATEMAIN.OVL', section=0,
+                                  image_offset=4, file_offset=0x104))])
+        self.section['filename'] = 'GATEMAIN.OVL'
+        add_callback_labels(callbacks, self.manifest, label_at)
+        self.assertEqual(sections[0]['labels'][0]['role'], 'callback-entry')
+        self.assertEqual(sections[0]['labels'][0]['name'], 'gw_room_callback_14')
+        callbacks['callbacks'][0]['native_code']['file_offset'] = 0x105
+        with self.assertRaisesRegex(ValueError, 'mismatches manifest'):
+            add_callback_labels(callbacks, self.manifest, label_at)
+
+    def test_callback_rejects_duplicate_ids_and_use_count_mismatch(self):
+        _, label_at = plan_sections(self.manifest, self.root)
+        self.section['filename'] = 'GATEMAIN.OVL'
+        item = dict(callback_id=2, status='rtlink', uses=[dict(room=1)],
+                    rtlink_reference=dict(section=0, target_segment=0x3000,
+                                          target_offset=4),
+                    native_code=dict(filename='GATEMAIN.OVL', section=0,
+                                     image_offset=4, file_offset=0x104))
+        callbacks = dict(schema_version=1, table_count=44, exit_count=2,
+                         callbacks=[item, dict(item)])
+        with self.assertRaisesRegex(ValueError, 'duplicate or invalid'):
+            add_callback_labels(callbacks, self.manifest, label_at)
+        callbacks['callbacks'] = [item]
+        with self.assertRaisesRegex(ValueError, 'use count mismatch'):
+            add_callback_labels(callbacks, self.manifest, label_at)
 
     def test_runner_uses_scripts_in_pre_analysis_order(self):
         plan_path = self.root / 'ghidra-plan.json'

@@ -26,9 +26,9 @@ for section in plan['sections']:
     if block is None:
         raise ValueError('overlay section %d was not imported' % section['id'])
     for label in section['labels']:
-        if label['role'] == 'function':
+        if label['role'] in ('function', 'callback-entry'):
             targets.append((label['name'], block.getStart().add(label['offset']),
-                            'GATEMAIN.OVL:0x%x' % label['file_offset'], 'function'))
+                            'GATEMAIN.OVL:0x%x' % label['file_offset'], label['role']))
 for label in plan['resident_labels']:
     address = report['resident_matches'].get(label['name'])
     if address is not None:
@@ -86,7 +86,7 @@ for name, address, origin, role in targets:
             continue
     item['function_entry'] = str(function.getEntryPoint())
     try:
-        if role == 'function':
+        if role in ('function', 'callback-entry'):
             try:
                 # Never rename an internal branch's containing function.
                 function.setName(name, SourceType.USER_DEFINED)

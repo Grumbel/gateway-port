@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 import struct
 import subprocess
+from rtlink_trampoline import map_reference, sections_by_id
 
 
 EXPECTED_HASHES = {
@@ -43,6 +44,8 @@ KNOWN_OVERLAY = (
 )
 
 KNOWN_RESIDENT = (
+    (0x592a, 'gw_room_callback_dispatch', 'function',
+     '44-entry room callback table; argument ID 0..43 and event word 0x0f'),
     (0x60cf, 'gw_room_exit_dispatch', 'function',
      'type-1 room exit scan; original EXE file 0x60cf'),
     (0x6156, 'gw_conditional_exit_case', 'instruction',
@@ -155,7 +158,36 @@ def plan_sections(manifest, images_dir, objects=None):
     return result, label_at
 
 
-def prepare(exe, ovl, output, extractor, objects_json=None, allow_unknown=False):
+def add_callback_labels(callbacks, manifest, label_at):
+    """Seed candidates from a native snapshot, checking every mapped offset."""
+    if callbacks.get('schema_version') != 1 or not isinstance(callbacks.get('callbacks'), list):
+        raise ValueError('unsupported room callback report')
+    if callbacks.get('table_count') != 44:
+        raise ValueError('room callback report has unexpected dispatch-table size')
+    sections = sections_by_id(manifest)
+    seen = set()
+    for item in callbacks['callbacks']:
+        index = item.get('callback_id')
+        if not isinstance(index, int) or not 0 <= index < 44 or index in seen:
+            raise ValueError('duplicate or invalid room callback ID')
+        seen.add(index)
+        if item.get('status') != 'rtlink' or not item.get('uses'):
+            raise ValueError('room callback has no validated RTLink uses')
+        reference = item['rtlink_reference']
+        mapped = map_reference(reference, sections)
+        if mapped != item.get('native_code') or mapped['filename'] != 'GATEMAIN.OVL':
+            raise ValueError('room callback original-code mapping mismatches manifest')
+        label_at(mapped['file_offset'], 'gw_room_callback_%02x' % index,
+                 'callback-entry',
+                 'kind-4 exit callback ID 0x%02x; %d room exit records; '
+                 'entry is mapped statically, behavior unverified' %
+                 (index, len(item['uses'])), mapped['section'])
+    if callbacks.get('exit_count') != sum(len(item['uses']) for item in callbacks['callbacks']):
+        raise ValueError('room callback exit use count mismatch')
+
+
+def prepare(exe, ovl, output, extractor, objects_json=None, allow_unknown=False,
+            callbacks_json=None):
     hashes = checked_files(exe, ovl, allow_unknown)
     output = output.resolve()
     images = output / 'sections'
@@ -174,6 +206,10 @@ def prepare(exe, ovl, output, extractor, objects_json=None, allow_unknown=False)
         from inspect_object_state import map_handler_entries
         objects = map_handler_entries(doc['objects'], manifest)
     sections, label_at = plan_sections(manifest, images, objects)
+    if callbacks_json:
+        if allow_unknown:
+            raise ValueError('native room callback labels require fingerprinted Gateway binaries')
+        add_callback_labels(json.loads(callbacks_json.read_text()), manifest, label_at)
     if not allow_unknown:
         if len(sections) != 58 or sum(s['fixup_count'] for s in sections) != 13947:
             raise ValueError('Gateway section/fixup counts unexpectedly changed')
@@ -208,12 +244,15 @@ def main():
     parser.add_argument('--overlay-tool', type=Path, default=Path('build/gateway-overlay'))
     parser.add_argument('--objects-json', type=Path,
                         help='optional inspect_object_state.py JSON with handler pointers')
+    parser.add_argument('--callbacks-json', type=Path,
+                        help='optional native inspect_room_callbacks.py JSON with kind-4 entries')
     parser.add_argument('--allow-unknown-binaries', action='store_true',
                         help='for synthetic RTLink fixtures; omit Gateway-only labels')
     args = parser.parse_args()
     try:
         target, plan = prepare(args.exe, args.ovl, args.output, args.overlay_tool,
-                               args.objects_json, args.allow_unknown_binaries)
+                               args.objects_json, args.allow_unknown_binaries,
+                               args.callbacks_json)
     except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
         parser.exit(1, 'prepare_ghidra: %s\n' % error)
     print('Prepared %d isolated RTLink sections, %d fixups; plan: %s' % (
