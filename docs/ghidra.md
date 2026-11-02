@@ -40,6 +40,7 @@ Expected output (generated, ignored by Git, contains original game code):
 | `build/ghidra/sections/section-NNN.relocated.bin` | RTLink images with 13,947 validated segment fixups across 58 sections |
 | `build/ghidra/project/Gateway.gpr` | Ghidra project, with DOS MZ program and independent overlay spaces |
 | `build/ghidra/ghidra-import-report.json` | Exact label counts and original-MZ signature matches |
+| `build/ghidra/ghidra-decompile-report.json` | One status, original address and Ghidra-containing function per target |
 | `build/ghidra/pseudocode.txt` | Decompiler output for confirmed native function-entry candidates, or explicit errors |
 
 Preparation can be run independently of Ghidra, useful on machines where the
@@ -127,6 +128,14 @@ First symbols placed by the importer:
 Further labels mark the exact section-4 **call instructions** at `0xc879`,
 `0xc8c2`, and `0xc8f8`. Those are not invented function boundaries.
 
+Additional confirmed entries are now included: section-4 linked-child
+relocation helper `0xc830`, section-5 DROP selector callback `0xd804`, and
+section-5 TAKE selector callback `0xfbaf`. They were previously established
+through native location/child writes and selector-return traces in
+[action-dispatch.md](action-dispatch.md). The kind-2 case at resident EXE
+`0x6156` is explicitly labeled as an **internal instruction**, alongside
+`0x6175` and the kind-4 case at `0x6269`.
+
 The resident MZ labels are located by **unique 24-byte code signatures within
 the original imported memory blocks**, not by adding a guessed runtime/load
 base to the file offsets. If Ghidra's MZ importer changes or omits those bytes,
@@ -139,7 +148,14 @@ section, source evidence and role (function vs callsite).
 The `ImportGatewayRtlink.py` Ghidra *pre-analysis* script adds the overlay
 blocks and seeds disassembly at established entry points before autoanalysis.
 `DecompileGateway.py` runs **after** analysis and exports pseudocode for the
-known entry points that Ghidra accepts as functions. The scripts use Ghidra's
+known entry points that Ghidra accepts as functions. It also exports the
+*containing* pseudocode for annotated resident branch instructions, but
+never creates a new function at those jump targets. Its JSON report preserves
+each target's role, actual containing function entry, and success/failure.
+The runner checks that both reports and the listing are present, that the
+import counts match the prepared plan, and that every planned target has a
+result. It refuses stale reports or a previously created project rather than
+misreporting an earlier success. The scripts use Ghidra's
 standard Jython/Java APIs, rather than an unsupported RTLink-aware MZ loader.
 
 - A section's `runtime_segment` models the verified **0x1000 load-segment**
@@ -164,8 +180,55 @@ its return value, which can be correlated with `--trace-navigation` output and
 the corresponding overlay callback pseudocode. This is a promising path toward
 the modern engine's room-navigation layer.
 
-The headless Ghidra runtime could **not** be executed in the agent's workspace
-because Ghidra/Nix are not installed there. The preparation was exercised
-against fingerprint-matching original binaries (58 sections, 13,947 fixups)
-and its asset-independent tests; the user's first `nix develop .#ghidra` run
-will validate the installed Ghidra version's import/decompile APIs.
+## First real Ghidra execution (2026-11-02)
+
+The importer and post-analysis decompiler were executed end-to-end on the
+fingerprint-matching originals with **Ghidra 11.4.2** and **JDK 21**, using
+the checked `gateway-overlay` binary. Nix was unavailable in this workspace;
+the user-facing `nix develop .#ghidra` entry point remains to be checked
+against the version supplied by nixpkgs.
+
+- Exactly **58** independent RTLink overlay memory spaces were created and
+  **14** known overlay labels placed (11 function entries, 3 call instructions).
+  All four resident signatures matched uniquely against the MZ-loaded bytes.
+- The first run exported **9/9** function targets. With the three additional
+  native entries and three resident internal-branch targets, the subsequent
+  run exported **15/15** target contexts, with no failed decompilations.
+- Ghidra's original-MZ mapping placed file `0x60cf` at `1000:60af`; the
+  runtime segment alias of its inferred function entry was `105e:5acf`.
+  Neither address is an assumed original load address. The three branch
+  contexts resolved to the automatically inferred `105e:5b56` (kind 2) and
+  `105e:5c69` (kind 4) fragments. These are **not original independent
+  function entries**. In particular, their decompiled `unaff_BP` variables
+  reuse the resident dispatcher's existing stack frame.
+- The section-4 child relocator at `0xc830` decompiled as the expected ordered
+  *unlink head or middle sibling → set location and slot → prepend to new
+  parent*. The exact callsite comments at `0xc879`, `0xc8c2`, and `0xc8f8`
+  remained on their instructions. The earlier native TAKE and EAST/WEST
+  movement traces independently validate the location and head-setter calls.
+- The section-5 TAKE (`0xfbaf`) and DROP (`0xd804`) selector callbacks
+  decompiled with the previously traced `AX=1` interception and `AX=0`
+  continuation paths. Ghidra also exposed more branches and object IDs;
+  **those other paths have not been exercised and must not be treated as
+  validated C++ behavior**.
+
+### Resident room-exit dispatch: verified structure, incomplete semantics
+
+The Ghidra scanner output enumerates native kinds **1 through 5** and a
+fallback branch. The original 16-bit instructions at file `0x611d`, `0x6139`,
+`0x6156`, `0x6207`, and `0x6269` distinguish their paths:
+
+| Kind | Native handling established from original instructions | Remaining gap |
+| --- | --- | --- |
+| 1 | `0x611d`: use exit argument directly as destination | Additional target validation outside first-room moves |
+| 2 | `0x6156`: index conditional record, check guard object's `0x0c`, then `0x10`; if `0x10` is set, emit text and set `0x0c` before movement | Purpose of the extra `1c24:13b7` call and flag meanings |
+| 3 | `0x6139`: index a four-byte far text-pointer table through `DS:8dd0`, then take the shared message path | Which exits use this path and exact displayed text |
+| 4 | `0x6269`: call generic callback with `(argument, 0x0f)`; reject zero/current-room results and check against object count before moving | Which callback handlers are invoked, their conditions, and their live return values |
+| 5 | `0x6207`: index an eight-byte record through `DS:8dd4`; test a byte through a stored offset, use one word as a destination when nonzero, otherwise select an optional far message pointer | Table field semantics and runtime outcomes |
+
+This table is a static control-flow result, **not** a new native navigation
+replay. The existing EAST/WEST and kind-2 flag observations remain the live
+validation. No kind-4 callback-return trace was available for this run, and
+Ghidra cannot supply one by static decompilation. Preserve the generated
+project/listing under ignored build output; they contain the original game's
+code and should not be checked into Git or shipped in bundles.
