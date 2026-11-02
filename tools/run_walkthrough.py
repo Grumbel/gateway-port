@@ -279,10 +279,24 @@ def check_locations(snapshot, assertions, ds=None):
     from inspect_object_state import inspect_objects
 
     regs = dict(line.split('=', 1) for line in snapshot.with_suffix('.regs').read_text().splitlines())
-    current_ds = int(regs['DS'], 16) if ds is None else ds
-    objects = inspect_objects(snapshot.with_suffix('.bin').read_bytes(), current_ds)
-    if len(objects) != 734:
-        raise ValueError(f'unexpected object layout: {len(objects)} objects, expected 734')
+    # A timed checkpoint can interrupt a native callback while DS names a
+    # temporary code/overlay segment. The object's resident data segment is
+    # then often preserved in ES. Accept either only after the exact 734-entry
+    # table validates; never silently infer relations from an unknown layout.
+    candidates = [ds] if ds is not None else list(dict.fromkeys(
+        int(regs[name], 16) for name in ('DS', 'ES') if name in regs))
+    memory = snapshot.with_suffix('.bin').read_bytes()
+    objects = None
+    for current_ds in candidates:
+        try:
+            found = inspect_objects(memory, current_ds)
+        except ValueError:
+            continue
+        if len(found) == 734:
+            objects = found
+            break
+    if objects is None:
+        raise ValueError('unexpected object layout: no verified 734-object table at DS/ES')
     for object_id, expected, line in assertions:
         observed = objects[object_id - 1].get('location')
         if observed != expected:
@@ -315,7 +329,64 @@ def import_native_save(source, state_dir):
     return description
 
 
+def verify_recorded(args, replay, previous_saves=None):
+    """Recheck a native recording without mutating or restarting the guest."""
+    key_path = args.output / 'replay.keys'
+    expected_keys = ''.join(f'{ms}:{key:04x}\n' for ms, key in replay.keys)
+    if key_path.read_text(encoding='ascii') != expected_keys:
+        raise ValueError('recorded replay.keys differs from the reviewed script')
+    prefix = args.output / 'native'
+    trace = prefix.with_suffix('.trace').read_text().splitlines()
+    recorded = sum(line.startswith('key ms=') for line in trace)
+    if recorded != len(replay.keys):
+        raise RuntimeError(f'guest stopped before all keys were delivered: '
+                           f'{recorded}/{len(replay.keys)}; see native.dos')
+    mouse_presses = sum(line.startswith('mouse ms=') and line.endswith('left=1')
+                        for line in trace)
+    if mouse_presses != len(replay.mouse_clicks):
+        raise RuntimeError(f'guest delivered only {mouse_presses}/{len(replay.mouse_clicks)} '
+                           'scheduled mouse clicks')
+    if args.expect_save:
+        state_dir = args.output / 'state'
+        found = [p.name for p in state_dir.glob('GATE[0-9][0-9][0-9].SAV')
+                 if (previous_saves is None or
+                     p.stat().st_mtime_ns != previous_saves.get(p.name)) and
+                 native_save_description(p) == args.expect_save]
+        if not found:
+            qualified = 'newly written ' if previous_saves is not None else ''
+            raise ValueError(f'no {qualified}native save named {args.expect_save!r}')
+        print('Native saved-game slot verified: ' + ', '.join(sorted(found)))
+    if replay.assertions:
+        check_locations(prefix, replay.assertions, args.state_ds)
+    checked = 0
+    if args.check_labels:
+        for checkpoint in replay.checkpoints:
+            if checkpoint.assertions:
+                check_locations(args.output / ('checkpoint-' + checkpoint.label),
+                                checkpoint.assertions, args.state_ds)
+                checked += len(checkpoint.assertions)
+    if args.capture_labels or args.check_labels:
+        for checkpoint in replay.checkpoints:
+            for suffix in ('.bin', '.regs', '.ppm'):
+                path = (args.output / ('checkpoint-' + checkpoint.label)).with_suffix(suffix)
+                if not path.is_file():
+                    raise ValueError(f'missing scheduled native snapshot {path}')
+    from inventory_native_handlers import parse_calls
+    _, census = parse_calls(prefix.with_suffix('.rtlink-calls').read_text().splitlines())
+    print(f'Verified {len(replay.actions)} input actions / {recorded} BIOS keys '
+          f'/ {mouse_presses} native mouse clicks in {replay.duration_ms} guest ms')
+    print(f'RTLink: {census["validated_calls"]} validated calls, '
+          f'{census["distinct_targets"]} distinct section-qualified targets')
+    print(f'Asserted {len(replay.assertions)} final object locations; output in {args.output}')
+    if args.capture_labels or args.check_labels:
+        print(f'Captured {len(replay.checkpoints)} native snapshots; '
+              f'checked {checked} intermediate object locations')
+
+
 def run(args, replay):
+    if args.verify_existing:
+        verify_recorded(args, replay)
+        return
     if not args.probe.is_file() or not (args.data / 'GATE.EXE').is_file():
         raise ValueError('original GATE.EXE or compiled gateway-probe missing')
     args.output.mkdir(parents=True, exist_ok=True)
@@ -357,37 +428,7 @@ def run(args, replay):
                         f'{checkpoint.time_ms}:{args.output / ("checkpoint-" + checkpoint.label)}']
     with prefix.with_suffix('.out').open('w') as out, prefix.with_suffix('.dos').open('w') as err:
         subprocess.run(command, stdout=out, stderr=err, timeout=args.timeout, check=True)
-    recorded = sum(line.startswith('key ms=') for line in
-                   prefix.with_suffix('.trace').read_text().splitlines())
-    if recorded != len(replay.keys):
-        raise RuntimeError(f'guest stopped before all keys were delivered: '
-                           f'{recorded}/{len(replay.keys)}; see native.dos')
-    if args.expect_save:
-        found = [p.name for p in state_dir.glob('GATE[0-9][0-9][0-9].SAV')
-                 if p.stat().st_mtime_ns != previous_saves.get(p.name) and
-                 native_save_description(p) == args.expect_save]
-        if not found:
-            raise ValueError(f'no newly written native save named {args.expect_save!r}')
-        print('Native saved-game slot written: ' + ', '.join(sorted(found)))
-    if replay.assertions:
-        check_locations(prefix, replay.assertions, args.state_ds)
-    checked = 0
-    if args.check_labels:
-        for checkpoint in replay.checkpoints:
-            if checkpoint.assertions:
-                check_locations(args.output / ('checkpoint-' + checkpoint.label),
-                                checkpoint.assertions, args.state_ds)
-                checked += len(checkpoint.assertions)
-    from inventory_native_handlers import parse_calls
-    calls, census = parse_calls(prefix.with_suffix('.rtlink-calls').read_text().splitlines())
-    print(f'Replayed {len(replay.actions)} input actions / {recorded} BIOS keys '
-          f'/ {len(replay.mouse_clicks)} native mouse clicks in {replay.duration_ms} guest ms')
-    print(f'RTLink: {census["validated_calls"]} validated calls, '
-          f'{census["distinct_targets"]} distinct section-qualified targets')
-    print(f'Asserted {len(replay.assertions)} final object locations; output in {args.output}')
-    if args.capture_labels or args.check_labels:
-        print(f'Captured {len(replay.checkpoints)} timestamped native snapshots '
-              f'and checked {checked} intermediate object locations')
+    verify_recorded(args, replay, previous_saves)
 
 
 def main():
@@ -425,6 +466,8 @@ def main():
                         help='also validate ASSERT_LOCATION before each LABEL in one run')
     replay.add_argument('--timeout', type=int, default=1800, help='wall-clock timeout, seconds')
     replay.add_argument('--plan-only', action='store_true', help='validate and show planned replay without execution')
+    replay.add_argument('--verify-existing', action='store_true',
+                        help='check an existing recording and saved-game slot without rerunning DOS')
     args = parser.parse_args()
     try:
         if args.mode == 'convert':
