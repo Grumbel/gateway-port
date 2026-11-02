@@ -48,6 +48,18 @@ struct StoryCallbackOutcome {
     bool operator==(const StoryCallbackOutcome &) const = default;
 };
 
+// The original receptionist's event-4 / action-0x3c / book-0x123 branch.
+// This records the *inner handled path* once the native parser and action
+// services have admitted it. No generic GIVE permission or score model is
+// implied. Text is the low 16 bits of a verified F000 story token.
+struct StoryReceptionistBookOutcome {
+    std::uint16_t text_token = 0xa83e;
+    std::uint16_t score_delta = 5;
+    std::vector<StoryMutation> changes;
+
+    bool operator==(const StoryReceptionistBookOutcome &) const = default;
+};
+
 // Section-51 Study room event-1's inner therapy-action matcher. These are
 // byte-sized *native parser action codes*, not StoryAction enum values or
 // player-facing command strings. A zero target is a native wildcard.
@@ -221,6 +233,16 @@ public:
     // This model records state deltas, not no-op native flag service calls or
     // displayed text. It does not perform the resident room transfer.
     StoryCallbackOutcome apply_casino_callback(StoryObjectId player, std::uint16_t event);
+
+    // Section-40 receptionist (OVL 0x56f9f, branch 0x570a9–0x57114).
+    // The original branch first relocates DataMan 0x130 to receptionist
+    // 0x0ff, awards five points, removes book 0x123 from the world, then
+    // issues the common give-to-player helper for DataMan. Only those
+    // verified object/score effects are reproduced here; the caller must
+    // provide the original event, native action code and parsed object.
+    std::optional<StoryReceptionistBookOutcome> apply_receptionist_book_exchange(
+        StoryObjectId player, std::uint16_t event, std::uint8_t action_code,
+        StoryObjectId parsed_object);
 
     // GATEMAIN.OVL 0x6b6c0–0x6b7e8 (Study room event 1) compares the
     // action code at [DS:9654]:e664 and parsed object at [DS:9658]:055e

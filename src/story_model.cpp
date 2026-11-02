@@ -353,6 +353,23 @@ StoryCallbackOutcome StoryModel::apply_casino_callback(StoryObjectId player,
     return outcome;
 }
 
+std::optional<StoryReceptionistBookOutcome> StoryModel::apply_receptionist_book_exchange(
+    StoryObjectId player, std::uint16_t event, std::uint8_t action_code,
+    StoryObjectId parsed_object) {
+    // OVL 0x56f9f: event 4 -> :e664 action 0x3c -> :055e book 0x123.
+    // The original control-flow branch at 0x570c9 selects F000:a83e,
+    // uses 1c24:13d5 twice and score service 048e:0a7e(5), then the
+    // 048e:0ad6(DataMan) helper. The latter is verified against native
+    // end state; this sparse model performs its final location change.
+    if (event != 4 || action_code != 0x3c || parsed_object != 0x123)
+        return std::nullopt;
+    StoryReceptionistBookOutcome result;
+    move(result.changes, 0x130, 0x0ff);
+    move(result.changes, 0x123, 0);
+    move(result.changes, 0x130, player);
+    return result;
+}
+
 StoryNormalGuard StoryModel::evaluate_normal_open_close(StoryAction action,
                                                          StoryObjectId target) const {
     switch (action) {

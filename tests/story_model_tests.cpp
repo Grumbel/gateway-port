@@ -2,6 +2,7 @@
 #include <array>
 #include <iostream>
 #include <stdexcept>
+#include <tuple>
 #include <vector>
 
 using gateway::StoryAction;
@@ -74,6 +75,34 @@ int main() {
         nested_pin.define(oak_door);
         if (nested_pin.apply_casino_callback(player, 0x0f).return_ax != 0)
             throw std::runtime_error("Casino used recursive instead of direct pin relation");
+
+        // Original receptionist event-4, action 0x3c with book 0x123:
+        // section-40 0x570c9–0x57114 shows the ordered object moves and
+        // score-service argument 5. The native office replay confirms the
+        // terminal book=0, DataMan=player state and visible +5 points.
+        StoryModel receptionist;
+        constexpr gateway::StoryObjectId dataman = 0x130, receptionist_id = 0xff;
+        receptionist.define(book, player);
+        receptionist.define(dataman, 0);
+        receptionist.define(receptionist_id, 0xec);
+        for (const auto [event, action, target] :
+             std::array<std::tuple<std::uint16_t, std::uint8_t, gateway::StoryObjectId>, 3>{
+                 {{6, 0x3c, book}, {4, 0x71, book}, {4, 0x3c, drawer}}}) {
+            if (receptionist.apply_receptionist_book_exchange(player, event, action, target) ||
+                receptionist.location(book) != player || receptionist.location(dataman) != 0)
+                throw std::runtime_error("receptionist incorrectly admitted another branch");
+        }
+        const auto exchanged =
+            receptionist.apply_receptionist_book_exchange(player, 4, 0x3c, book);
+        if (!exchanged || exchanged->text_token != 0xa83e || exchanged->score_delta != 5)
+            throw std::runtime_error("receptionist book exchange lost text or score evidence");
+        expect(exchanged->changes,
+               {{StoryMutationKind::SetLocation, dataman, receptionist_id},
+                {StoryMutationKind::SetLocation, book, 0},
+                {StoryMutationKind::SetLocation, dataman, player}},
+               "receptionist exchange failed its ordered native object moves");
+        if (receptionist.location(book) != 0 || receptionist.location(dataman) != player)
+            throw std::runtime_error("receptionist exchange final state differs from DOS");
 
         // Callback 0x2b's Tanning Room UP branch is a posture reset, not a
         // room transition. Native standing/reclining runs both returned AX=0;
