@@ -642,8 +642,14 @@ exit table contains four-byte `{direction, kind, argument}` records.
 memory snapshot as text, JSON or a conservative direct-destination DOT graph.
 The replay now also hooks the scanner; `summarize_navigation_trace.py
 --direction-calls` correlates its direction argument with nearby verified
-player movement. Numeric direction codes and other exit kinds still need a
-new native replay. See
+player movement. The user's repeated replay confirms numeric **EAST `0x03`**
+and **WEST `0x07`** and finds both use kind-2 exits. Original EXE code
+verifies that kind 2 indexes a second four-byte table containing a destination
+and an object ID whose flags gate movement. The inspector now decodes those
+records and optionally draws **dashed conditional candidate edges** with
+`--format dot --include-conditional`; `--format stats` reports coverage.
+Other compass codes, kind-2 flag behavior and scripted exit kinds still need
+native verification. See
 [the navigation trace and next probes](docs/gateway-map-reference.md#verified-ordinary-first-room-movement).
 
 The standalone C++ model exposes the corresponding *local slot-filtering*

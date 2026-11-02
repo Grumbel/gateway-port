@@ -370,7 +370,10 @@ and word `+0x18` stores its one-based first index into a global four-byte
 `{direction, kind, argument}` table at `[word DS:8dcc]:417e`.
 `tools/inspect_room_exits.py` reads those fields from the **same native
 guest-memory snapshots** as this object inspector and exports raw entries,
-JSON or a directed graph of kind-1 destination-room candidates. Unlike the
+JSON or a directed graph of kind-1 destination-room candidates. Its optional
+`--include-conditional` mode adds dashed kind-2 candidate links by following
+the table at `[word DS:8dd2]:4996`, which gives destination and condition
+object IDs. `--format stats` reports room/exit coverage. Unlike the
 type-6 passage endpoint pairs above, its direct edges originate in the
 native room-exit data. Neither representation establishes that a conditional
 exit is currently open or that a parser command will traverse it; see

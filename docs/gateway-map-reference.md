@@ -278,8 +278,9 @@ original `GATEMAIN.EXE` establishes that `148e:05f6` is original EXE file
 offset **`0x60cf`**, not an RTLink entry point. It is the **type-1 room-exit
 scanner**. Its caller pushes the direction argument (a byte zero-extended
 to a word) before pushing CS; the scanner therefore sees the entry stack
-`0c28,148e,<direction>`. This is a code-verified ABI; the compass meaning
-of each numeric direction remains to be correlated with live input.
+`0c28,148e,<direction>`. This is a code-verified ABI. The user's repeated
+EAST/WEST replay subsequently established **`0x03` = EAST and `0x07` = WEST**
+for the two ordinary first-room transitions.
 
 Two original resident getters (`0157:0e83` / `0157:0ed5`, EXE file offsets
 `0x33c1` / `0x3413`) read these type-1 room record fields:
@@ -302,9 +303,50 @@ reveals the four-byte record:
 | `+2` | 2 | Argument (meaning depends on kind) |
 
 Kind **1** passes its argument as the destination-room ID to the normal
-room-changing function (EXE file `0x5d5d`). Kinds **2–5** branch into
-conditional, text, callback and extended handling that is not yet fully
-decoded. It would be wrong to treat every table row as a traversable route.
+room-changing function (EXE file `0x5d5d`). Kind **2** uses the argument
+as an **index into another four-byte table** at `[word DS:8dd2]:4996`:
+
+| Kind-2 indexed record | Size | Meaning |
+| --- | ---: | --- |
+| `+0` | word | Candidate destination-room ID |
+| `+2` | word | Object ID to test for flags |
+
+The original EXE handler at file `0x6156–0x61fe` calls native object-flag
+test `0157:03a6` with flag `0x0c`. When that test succeeds, it passes the
+table's destination ID into the same room-change function as kind 1. If
+the test fails, it checks flag `0x10`. If `0x10` is set, it calls another
+service, sets flag `0x0c` using native `0157:03e0`, and then calls the room
+mover. With neither flag, it follows a message path without calling the
+mover. The additional service's visible effects remain unclassified.
+Thus flag `0x0c` alone does not decide whether an exit is usable; this is
+code-derived control flow, not yet a replay of the transitions' actual
+condition-object state. Kinds **3–5** branch
+into additional text, callback and extended handling and remain incomplete.
+It would be wrong to treat every row as an unconditionally traversable route.
+
+#### First native direction-byte replay and supplied graph
+
+The user's second bounded EAST/WEST replay produced these entry/move pairs:
+
+| Input | Direction argument | Exit record | Verified native player move |
+| --- | --- | --- | --- |
+| EAST at 18,176 ms | `0x03` | Quarters entry 244, kind 2, index `0x00e` | `0x0ee` → `0x0f1` at 18,266 ms |
+| WEST at 21,176 ms | `0x07` | Heecheetown entry 255, kind 2, index `0x010` | `0x0f1` → `0x0ee` at 21,177 ms |
+| EAST at 25,176 ms | `0x03` | Same kind-2 entry | `0x0ee` → `0x0f1` at 25,261 ms |
+| WEST at 28,176 ms | `0x07` | Same kind-2 entry | `0x0f1` → `0x0ee` at 28,177 ms |
+
+Both are actual *verified player location writes*. The match to a particular
+exit-table row is an inference from the scanner's comparison and supplied
+snapshot, not a separate trace of that record's selection. The snapshot
+also lists Quarters direction `0x0c` as kind 2, argument `0x00f`; its
+compass meaning is not yet established. Heecheetown's other four routes
+are kind-1 direct entries: `0x01` → Corridor D4, `0x03` → Blue Hell Bar,
+`0x05` → Corridor D6, and `0x08` → Corporation Office Lobby.
+
+The attached DOT export has **232 kind-1 edges across 87 room nodes**;
+it excludes kind-2 edges, so Your Quarters is missing even though the
+replay proved that its east exit works. That is a limitation of the original
+direct-only exporter, not evidence of a disconnected game world.
 
 Use the new **read-only snapshot exporter** on an existing native replay:
 
@@ -325,16 +367,30 @@ python3 tools/inspect_room_exits.py \
   --names ../gateway-dos/OBJECT.DAT --format dot \
   > build/room-exits.dot
 dot -Tsvg build/room-exits.dot -o build/room-exits.svg
+
+# Include kind-2 destination candidates as dashed, flag-gated edges:
+python3 tools/inspect_room_exits.py \
+  build/room-navigation-caller/native \
+  --names ../gateway-dos/OBJECT.DAT --format dot --include-conditional \
+  > build/room-exits-with-conditions.dot
+dot -Tsvg build/room-exits-with-conditions.dot \
+  -o build/room-exits-with-conditions.svg
+
+# Check how many rooms and exit kinds each graph covers:
+python3 tools/inspect_room_exits.py \
+  build/room-navigation-caller/native --format stats
 ```
 
 The exporter uses the existing `inspect_object_state.py` descriptor and
 object directory logic, does not modify the dump or game files, and validates
-record and guest-memory bounds. A DOT edge means only that a kind-1 record
-refers to another decoded type-1 room; unverified conditional/scripted exits
-do not appear. Room names are optional; the raw IDs remain stable.
+record and guest-memory bounds. The default DOT graph contains only solid
+kind-1 direct-room candidates. Optional dashed kind-2 edges identify the
+table's destination and annotate the condition-object ID, but deliberately
+do not claim the current flags permit traversal. Other scripted exit kinds
+still do not appear. Room names are optional; the raw IDs remain stable.
 
-To recover direction codes from the **actual first-room EAST/WEST replay**,
-rerun with `--trace-navigation` (now hooks both `0x447e0` and `0x14ed6`):
+To repeat the **confirmed first-room EAST/WEST trace**, use
+`--trace-navigation` (hooks both `0x447e0` and `0x14ed6`):
 
 ```sh
 python3 tools/trace_game_logic.py \
@@ -355,10 +411,11 @@ rg '^entry .*pc=14ed6\b' build/room-direction-check/native.trace
 
 The `--direction-calls` filter only accepts the exact `0c28,148e` entry
 frame and displays a nearby verified player-location change, if any. This
-is a **bounded guest-time correlation**, not yet proof of the parser's
-accepted EAST/WEST codes; repeated matching calls and a check against the
-exported room records can establish that mapping. The scanner is reached
-through a call distinct from the section-4 RTLink mover.
+is a **bounded guest-time correlation**. The two repeat transitions and the
+supplied exit table strongly corroborate EAST/WEST's codes. This does not
+prove which other numeric codes correspond to compass words or how the
+kind-2 flag-`0x10` branch behaves. The scanner is reached through a call
+distinct from the section-4 RTLink mover.
 
 If nothing is reported, check whether the commands actually reached normal
 gameplay and whether another state variable tracks the current room. A

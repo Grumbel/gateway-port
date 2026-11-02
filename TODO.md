@@ -87,11 +87,17 @@ emulation. Keep the original executable as a behavioral reference while mapping:
   `0x60cf`**, and recovered the type-1 exit count/first index at
   `+0x16/+0x18` and four-byte global exit entries at `[word DS:8dcc]:417e`.
   `tools/inspect_room_exits.py` exports raw entries and a conservative
-  direct-destination candidate graph. **Next:** run that exporter against a
-  native snapshot; rerun `--trace-navigation` with the new `14ed6` hook
-  and `summarize_navigation_trace.py --direction-calls` to correlate numeric
-  direction bytes with EAST/WEST. Then test a named passage (Dock/cabin
-  hatch), decode conditional exit kinds 2–5, verify restrictions,
+  direct-destination candidate graph. The user's new replay confirms
+  **EAST `0x03`** from Quarters and **WEST `0x07`** from Heecheetown, twice
+  each. Both use **kind-2 exits**: original EXE `0x6156–0x61fe` indexes
+  `[word DS:8dd2]:4996` for a destination room and a flag-object ID,
+  tests flags `0x0c` and `0x10`, and uses the normal mover if the first
+  test passes. The inspector now exports this table and draws optional
+  dashed conditional links, including the previously absent Quarters exits.
+  **Next:** inspect the condition-object IDs for kind-2 table indices
+  `0x00e`, `0x00f`, `0x010`, verify the actual flag values across movement,
+  and compare the larger graph to hintbook maps. Then test a named passage
+  (Dock/cabin hatch), decode remaining kinds 3–5, verify restrictions,
   bidirectionality, and actual PIC selection independently of map arrows.
   Also trace real non-head sibling and nested moves, extend to other record
   types, and establish which callers enable

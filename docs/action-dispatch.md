@@ -1035,8 +1035,19 @@ branch was traced back to the **resident type-1 exit-table scanner** at
 `148e:05f6` (original EXE file `0x60cf`), via the saved `148e:0c28`
 return. The original scanner reads room record `+0x16` (count) and `+0x18`
 (first one-based entry), then scans four-byte entries at
-`[word DS:8dcc]:417e`. Kind 1 provides a direct destination; remaining
-exit kinds and the direction-byte/compass mapping need a new replay. See
+`[word DS:8dcc]:417e`. Kind 1 provides a direct destination; the user's
+subsequent EAST/WEST replay establishes numeric codes **`0x03` and `0x07`**
+and shows that both first-room transitions use **kind 2**. The handler at
+original EXE `0x6156–0x61fe` uses its argument as an index into four-byte
+records at `[word DS:8dd2]:4996`, reading a destination-room word and an
+object-ID word. Flag-test service `0157:03a6` checks flag `0x0c` on that
+object and, if true, passes the destination to the normal room mover;
+otherwise it tests flag `0x10`. A true `0x10` triggers additional service
+work, sets `0x0c` via `0157:03e0`, and then moves. With neither flag it
+takes a message path without calling the mover.
+`inspect_room_exits.py` now decodes both tables and optionally draws dashed
+conditional candidates. Remaining exit kinds and the meaning of the
+flag-`0x10` branch's additional service call require further tracing. See
 [the recovered exit scanner and next native probe](gateway-map-reference.md#recovered-native-room-exit-table-and-resident-scanner).
 
 The two unlink cases are visible at OVL `0xc869–0xc87e` (head) and
