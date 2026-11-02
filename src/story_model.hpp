@@ -214,6 +214,14 @@ public:
                                                StoryObjectId current_room,
                                                std::int16_t study_progress);
 
+    // Section-48 callback 0x14 (Casino -> Pedroza Lounge). Native event 1
+    // returns the Lounge object ID without a room transfer. Only event 0x0f
+    // checks the membership pin's *direct* relation to the player; failure
+    // returns zero and attempts to clear the heavy oak door's property 0x0c.
+    // This model records state deltas, not no-op native flag service calls or
+    // displayed text. It does not perform the resident room transfer.
+    StoryCallbackOutcome apply_casino_callback(StoryObjectId player, std::uint16_t event);
+
     // GATEMAIN.OVL 0x6b6c0–0x6b7e8 (Study room event 1) compares the
     // action code at [DS:9654]:e664 and parsed object at [DS:9658]:055e
     // against per-stage records [DS:9652]:02a8 + 4*progress and five

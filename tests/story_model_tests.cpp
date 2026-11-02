@@ -37,6 +37,44 @@ int main() {
         model.initial_flag(room, 0x07);
         model.initial_flag(player, 0x07);
 
+        // Original section-48 callback 0x14 is used for both event 1 and
+        // kind-4 room exit event 0x0f. Native Casino replays prove that
+        // the former returns Lounge 0x0f6 without performing navigation,
+        // while the latter requires the pin directly attached to the player.
+        StoryModel casino;
+        constexpr gateway::StoryObjectId pin = 0x2a9, oak_door = 0x1ad;
+        casino.define(pin, 0x2a3);
+        casino.define(oak_door);
+        casino.initial_flag(oak_door, 0x0c);
+        auto callback = casino.apply_casino_callback(player, 1);
+        if (callback.return_ax != 0x0f6 || !callback.changes.empty() ||
+            !casino.flag(oak_door, 0x0c))
+            throw std::runtime_error("Casino non-exit event incorrectly gated the Lounge ID");
+        callback = casino.apply_casino_callback(player, 0x0f);
+        if (callback.return_ax != 0)
+            throw std::runtime_error("Casino admitted a player lacking the membership pin");
+        expect(callback.changes, {{StoryMutationKind::ClearFlag, oak_door, 0x0c}},
+               "Casino pin-refusal failed to clear the heavy oak door flag");
+        if (casino.flag(oak_door, 0x0c) ||
+            !casino.apply_casino_callback(player, 0x0f).changes.empty())
+            throw std::runtime_error("Casino repeated flag clear changed already-clear state");
+
+        StoryModel admitted;
+        admitted.define(pin, player);
+        admitted.define(oak_door);
+        admitted.initial_flag(oak_door, 0x0c);
+        callback = admitted.apply_casino_callback(player, 0x0f);
+        if (callback.return_ax != 0x0f6 || !callback.changes.empty() ||
+            !admitted.flag(oak_door, 0x0c))
+            throw std::runtime_error("Casino rejected an actual pin holder or cleared door");
+
+        StoryModel nested_pin;
+        nested_pin.define(pin, 0x0300);
+        nested_pin.define(0x0300, player); // Indirectly inside a carried container.
+        nested_pin.define(oak_door);
+        if (nested_pin.apply_casino_callback(player, 0x0f).return_ax != 0)
+            throw std::runtime_error("Casino used recursive instead of direct pin relation");
+
         // Callback 0x2b's Tanning Room UP branch is a posture reset, not a
         // room transition. Native standing/reclining runs both returned AX=0;
         // only the latter wrote player location 0x029c -> 0x029a.

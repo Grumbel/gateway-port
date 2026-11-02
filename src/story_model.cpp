@@ -338,6 +338,21 @@ StoryCallbackOutcome StoryModel::apply_desk_scale_down(StoryObjectId player,
     return outcome;
 }
 
+StoryCallbackOutcome StoryModel::apply_casino_callback(StoryObjectId player,
+                                                        std::uint16_t event) {
+    // OVL:0x665f9–0x6664e. The native 0157:000c predicate is the one-slot
+    // relation accessor for type-8 membership pin 0x2a9, not recursive
+    // inventory containment. Event !=0x0f bypasses the predicate and simply
+    // returns 0x0f6. The original zero-result branch invokes flag-clear
+    // 0157:0413(0x1ad,0x0c), even when the flag was already clear.
+    StoryCallbackOutcome outcome{0x0f6, {}};
+    if (event == 0x000f && location(0x02a9) != player) {
+        outcome.return_ax = 0;
+        set_flag(outcome.changes, 0x01ad, 0x000c, false);
+    }
+    return outcome;
+}
+
 StoryNormalGuard StoryModel::evaluate_normal_open_close(StoryAction action,
                                                          StoryObjectId target) const {
     switch (action) {
