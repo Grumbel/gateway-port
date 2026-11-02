@@ -39,6 +39,15 @@ struct StoryMutation {
     bool operator==(const StoryMutation &) const = default;
 };
 
+// A room-exit callback's AX is not an action-handled flag. In particular,
+// zero may accompany real state mutations that do *not* leave the room.
+struct StoryCallbackOutcome {
+    StoryObjectId return_ax = 0;
+    std::vector<StoryMutation> changes;
+
+    bool operator==(const StoryCallbackOutcome &) const = default;
+};
+
 // A single slot that survives the resident parser's *optional* eligibility
 // check and its nonzero-child test. This is not a resolved parser target.
 struct StoryChildCandidate {
@@ -96,6 +105,13 @@ public:
     // the parser can currently resolve or reach the object.
     StoryCarryPrecheck evaluate_carry_precheck(StoryAction action, StoryObjectId target,
                                               StoryObjectId player) const;
+
+    // Only callback 0x2b's Tanning Room (0x29a) UP/event-0x0f branch:
+    // if the player's *direct* relation is couch 0x29c, get up into room
+    // 0x29a, but return AX=0 either way. Verified against two native replays.
+    // This does not translate the callback's other VR-room paths, text output,
+    // ordinary navigation, or action/event dispatch.
+    StoryCallbackOutcome apply_tanning_up(StoryObjectId player);
 
     // Only the mutations of an already-successful action, as observed for
     // Gateway's first-room drawer/book scenario. The original DOS handlers

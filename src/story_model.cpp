@@ -117,6 +117,16 @@ StoryCarryPrecheck StoryModel::evaluate_carry_precheck(StoryAction action,
     }
 }
 
+StoryCallbackOutcome StoryModel::apply_tanning_up(StoryObjectId player) {
+    StoryCallbackOutcome outcome;
+    // OVL 0x694b8–0x69512: native 0157:000c(player, 0x29c), followed by
+    // location setter 1c24:13d5(player, current room, 0) on the true branch.
+    // Both original paths return AX=0 to the resident exit scanner.
+    if (location(player) == 0x29c)
+        move(outcome.changes, player, 0x29a);
+    return outcome;
+}
+
 StoryNormalGuard StoryModel::evaluate_normal_open_close(StoryAction action,
                                                          StoryObjectId target) const {
     switch (action) {

@@ -32,6 +32,30 @@ int main() {
         model.initial_flag(room, 0x07);
         model.initial_flag(player, 0x07);
 
+        // Callback 0x2b's Tanning Room UP branch is a posture reset, not a
+        // room transition. Native standing/reclining runs both returned AX=0;
+        // only the latter wrote player location 0x029c -> 0x029a.
+        StoryModel tanning;
+        constexpr gateway::StoryObjectId tanning_room = 0x29a, couch = 0x29c;
+        tanning.define(player, tanning_room);
+        tanning.define(tanning_room);
+        tanning.define(couch, tanning_room);
+        auto up = tanning.apply_tanning_up(player);
+        if (up.return_ax != 0 || !up.changes.empty() ||
+            tanning.location(player) != tanning_room)
+            throw std::runtime_error("standing Tanning UP incorrectly changed state");
+        expect(tanning.apply_success(StoryAction::Drop, player, player, couch),
+               {{StoryMutationKind::SetLocation, player, couch}},
+               "tanning fixture did not place player on couch");
+        up = tanning.apply_tanning_up(player);
+        if (up.return_ax != 0)
+            throw std::runtime_error("Tanning UP returned a navigable room ID");
+        expect(up.changes, {{StoryMutationKind::SetLocation, player, tanning_room}},
+               "reclining Tanning UP failed to get off couch");
+        if (tanning.location(player) != tanning_room ||
+            !tanning.apply_tanning_up(player).changes.empty())
+            throw std::runtime_error("repeat Tanning UP was not idempotent");
+
         // Native child-slot eligibility is distinct from relation traversal
         // and from the action handlers' OPEN/CLOSE guards.
         if (model.can_enumerate_child_slot(drawer, 2, 0) ||
