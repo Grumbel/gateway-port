@@ -180,27 +180,105 @@ hardcoding the displayed dialogue in the repository. The following commands
 were accepted, in order, by the original game's parser; each corresponded
 to one contiguous native progress increment:
 
-| Stage / counter before action | Natural typed input | Observed native effect |
-| ---: | --- | --- |
-| 1 | `SCREAM` | Counter 1→2 |
-| 2 | `FEEL COUCH` | Counter 2→3 |
-| 3 | `UP` | **Player couch `0x2be` → Study `0x2bc`**, AX=0, then 3→4 |
-| 4 | `HOP` | 4→5 |
-| 5 | `HIT MYSELF` | 5→6 |
-| 6 | `STEP ON HAND` | 6→7 |
-| 7 | `SMELL HAND` | 7→8 |
-| 8 | `CLIMB WALLS` | 8→9 |
-| 9 | `JUMP ON DESK` | **Player Study → desk `0x2bf`**, then 9→10 |
-| 10 | `SING` | 10→11 |
-| 11 | `DANCE` | 11→12 |
-| 12 | `DANCE` | 12→13 |
-| 13 | `DOWN` | **Player desk → Study**, AX=0, then 13→14 |
-| 14 | `ATTACK COUCH` | 14→15 |
-| 15 | `CLEAN DESK` | 15→16 |
-| 16 | `CRY` | 16→17 |
-| 17 | `RUB HAND` | 17→18 |
-| 18 | `KISS FLOOR` | 18→19 |
-| 19 | `SIT ON COUCH` | **Player Study → leather couch**, then 19→20 |
+| Stage | Natural typed input | Native action byte | Expected object | Other accepted bytes | Observed native effect |
+| ---: | --- | ---: | ---: | --- | --- |
+| 1 | `SCREAM` | `b1` | any | — | Counter 1→2 |
+| 2 | `FEEL COUCH` | `a4` | `02be` | — | Counter 2→3 |
+| 3 | `UP` | `47` | any | — | **Player couch `0x2be` → Study `0x2bc`**, AX=0, then 3→4 |
+| 4 | `HOP` | `52` | any | — | 4→5 |
+| 5 | `HIT MYSELF` | `08` | `00d3` | `55`, `56` | 5→6 |
+| 6 | `STEP ON HAND` | `18` | `00e4` | — | 6→7 |
+| 7 | `SMELL HAND` | `96` | `00e4` | — | 7→8 |
+| 8 | `CLIMB WALLS` | `16` | `0165` | — | 8→9 |
+| 9 | `JUMP ON DESK` | `52` | `02bf` | `18`, `00` | **Player Study → desk `0x2bf`**, then 9→10 |
+| 10 | `SING` | `94` | any | — | 10→11 |
+| 11 | `DANCE` | `23` | any | — | 11→12 |
+| 12 | `DANCE` | `23` | any | — | 12→13 |
+| 13 | `DOWN` | `1c` | any | `1b`, `00` | **Player desk → Study**, AX=0, then 13→14 |
+| 14 | `ATTACK COUCH` | `08` | `02be` | `55`, `56` | 14→15 |
+| 15 | `CLEAN DESK` | `15` | `02bf` | — | 15→16 |
+| 16 | `CRY` | `1f` | any | — | 16→17 |
+| 17 | `RUB HAND` | `88` | `00e4` | — | 17→18 |
+| 18 | `KISS FLOOR` | `57` | `02de` | — | 18→19 |
+| 19 | `SIT ON COUCH` | `92` | `02be` | `19`, `18` | **Player Study → leather couch**, then 19→20 |
+
+The raw action bytes and expected objects in this table are **additional
+original guest RAM data**, not translations inferred from the typed input.
+The special `00e4` expected-hand record also accepts parsed object `00e3`
+in native x86; `any` means a zero object word. The alternative byte `00`
+at stages 9 and 13 is genuinely compared by the original loop and is not a
+terminator. An entry matching the original *inner* predicate does not imply
+the full parser can resolve and perform an arbitrary command with that byte.
+
+### Decompiled event-1 predicate and independently watched match flag
+
+The room handler's original **event 1** branch at OVL `0x6b692` performs a
+special check for native action `0x96` with a zero parsed object, then enters
+the therapy matcher at `0x6b6c0`. Its core decision sequence is:
+
+1. Require native actor `[DS:965e]:35c8 == 0x00d3` (player), nonzero
+   `[DS:9660]:7904` (therapy stage), and zero completion byte
+   `[DS:9662]:7909`.
+2. Index the two-byte target at `[DS:9652]:02aa + 4*stage`. If not zero,
+   compare with parsed object `[DS:9658]:055e`, treating expected hand
+   `0x00e4` as matching either `0x00e4` or `0x00e3`. Object mismatch
+   bypasses the action check.
+3. Compare native parser action byte `[DS:9654]:e664` with
+   `[DS:9652]:02a8 + 4*stage` at OVL `0x6b735`. If equal, store `1`
+   at completion byte `:7909` at **OVL `0x6b740`**.
+4. Otherwise, at `0x6b786–0x6b7e8`, scan **five** four-byte records
+   `{stage:u16, alt1:u8, alt2:u8}` at `[DS:9652]:02fc`, comparing *both*
+   alternative bytes only for records with the current stage. Any match
+   writes `:7909=1` at `0x6b7b7`. A separate event-1 branch handles
+   action `0x84` and leather-couch reclining; it is not modeled.
+
+This is a translation of **one native conditional predicate**, not a full
+event dispatcher, parser, or new bytecode. `StoryModel::study_action_rule`
+exposes the 19 recovered records and
+`StoryModel::evaluate_study_action(progress, action_code, object, actor,
+already_matched)` implements only the bounded decision. It reports whether
+the match was ineligible, targeted the wrong object, used a wrong action
+byte, or matched. It does not set `:7909`, move the player, print text, or
+advance the counter. Unlike the original unchecked 16-bit indexing, the
+C++ method rejects out-of-range progress.
+
+An additional **unmodified** Unicorn replay watched byte `0x62d69`
+(`DS:9662:7909`) and hooked the original Study handler and response entry:
+
+| Typed action / stage | Native set at guest physical PC | Time | Native clear |
+| --- | --- | ---: | --- |
+| `SCREAM` / 1 | `0x4a370` = OVL `0x6b740`, primary room matcher | 75235 ms | 75356 ms |
+| `FEEL COUCH` / 2 | `0x4a370` = OVL `0x6b740`, primary room matcher | 78361 ms | 78501 ms |
+| `UP` / 3 | `0x4bb1c` = OVL `0x6ceec`, response handler after exit callback | 81141 ms | 81212 ms |
+
+All three original clears execute at `0x4bc4c` = OVL `0x6d01c` and
+the response entry at `0x4bab5` executes for each stage. The native final
+snapshot has progress **4**, player standing in Study, and no RAM
+intervention. Stage 3 illustrates a crucial boundary: the successful `UP`
+**is not** evidence that the room event-1 primary action comparator ran.
+The earlier all-19-stage replay separately proves every progress increment;
+these additional watched bytes directly validate only stages 1–3's flag
+mechanism. `tools/inspect_study_action_match.py` checks the three exact
+native set/clear origins, event/response entries, action time slots, no
+extra watched writes, no guest pokes and final state.
+
+```sh
+prefix='east,northwest,up,lie on couch,@space,@space,@space,@space,@space,@space,@space,lie on couch,wear collar,set switch to study,push button,@space,@space,@space,look'
+python3 tools/trace_game_logic.py --scenario puzzle --native-only \
+  --probe "${GATEWAY_BUILD_DIR:-build}/gateway-probe" --data ../gateway-dos \
+  --verify-overlays --trace-navigation --trace-object-writes d3 \
+  --trace-byte-write 62d69 --extra-trace-entry 4a151 \
+  --extra-trace-entry 4a370 --extra-trace-entry 4bab5 \
+  --output build/study-action-match \
+  --command-sequence "$prefix,scream,feel couch,up"
+python3 tools/inspect_study_action_match.py build/study-action-match/native
+python3 tools/inspect_study_script.py build/study-action-match/native \
+  --strings ../gateway-dos/GATESTR.DAT --format json
+```
+
+The JSON decoder reads the **two** native matcher tables and the two
+far-text tables from the snapshot at runtime. No original game dialogue or
+generated decompiler output is bundled into source control.
 
 An additional `UP` at counter **20** returns AX=0 without moving. It is
 outside callback `0x2b`'s signed 3–19 get-up window. The native snapshot
@@ -297,7 +375,15 @@ These target offsets have been decoded from the verified table, **not**
 represented as separately validated Ghidra function entries. Reproduce
 them with `tools/disassemble_story.py --start 0x6b521 --size 0x1f
 --section-base 0x6acd0 --event-table 0x6b852 --events 23` and the
-original OVL file path. Their detailed event semantics remain partial.
+original OVL file path. Their detailed event semantics remain partial:
+event 14 prints an introduction and invokes the known property-set service
+`0157:03e0(object, 0x07)` on **12 objects**: `0x2be–0x2c8` plus
+Sigfreid `0x2ca` (OVL `0x6b5bf–0x6b68f`). Events 8, 9 and 11 print a
+Study description selected by property `0x09` of `0x2c8` (`0x6b56b`).
+Event 6 (`0x6b82d`) checks current room and native action `0x3a`;
+events 22 and 23 call distinct `1c24` services with section-data pointers,
+but their higher-level meanings remain unresolved. These details come
+from static x86, not separately verified runtime branches.
 
 A fresh Ghidra 11.4.2/JDK21 import with 44 callback labels, three selected
 Study objects and two selected native code offsets (`0x6ce85`,
@@ -316,3 +402,13 @@ the segmented indirect branch in its C-like output; the explicit references
 provide an original-byte-checked navigable fallback. The runner verifies
 the import report's 23 annotations for fingerprinted Gateway originals,
 without imposing this mapping on synthetic images.
+
+A subsequent fresh headless import additionally verified **nine** original
+instruction byte anchors within event 1, giving them named *interior-code*
+labels (`gw_study_actor_guard`, `gw_study_target_lookup`,
+`gw_study_primary_compare`, `gw_study_alternative_loop`, and five related
+match/write labels). The import report records
+`study_matcher_path_labels=9` alongside the 23 jump-table words, and the
+runner checks both counts. The fresh run exported **69/69** contexts,
+again with 58 overlays and 13,947 relocations. These labels create no
+fictitious C functions and do not claim to repair Ghidra's segmented switch.

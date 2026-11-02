@@ -440,3 +440,34 @@ image fixtures. The import report now exposes `study_event_table_words=23`,
 and the runner rejects a fingerprinted import missing those annotations.
 This makes the table navigable **without claiming the decompiler can
 reconstruct the indirect switch**.
+
+## Study event-1 matcher: ninth headless import and native byte watches
+
+Event 1 at original OVL `0x6b692` leads to a native action/object matcher
+at `0x6b6c0–0x6b7e8`. It indexes `[DS:9652]:02a8` for 19 action bytes,
+`:02aa` for corresponding expected object words, and `:02fc` for five
+alternate action-code pairs; original guest RAM and disassembly agree.
+The read-only decoder `tools/inspect_study_script.py --format json` exports
+these alongside both far-pointer text tables. Its native semantics are
+represented by a bounded C++ predicate and tested independently of assets.
+
+The importer now checks nine verified original opcode anchors and creates
+named **interior instruction labels** for actor, target, action, primary
+comparison/flag write and alternate-record traversal. The new
+`study_matcher_path_labels=9` import report field is checked by
+`tools/run_ghidra.py` for fingerprinted original binaries. No new function
+boundaries are claimed and no addresses are attached to synthetic overlays.
+The fresh Ghidra 11.4.2/JDK21 run again validated **58 sections, 13,947
+fixups, 23 table entries, 9 matcher labels and 69/69 contexts**. Its
+`ram:4000:0b82` warning persists; decompiler output remains preliminary.
+
+An independent, *unmodified* Unicorn replay watched the physical `:7909`
+completion byte: the original room matcher at OVL `0x6b740` set it for
+`SCREAM` at 75235 ms and `FEEL COUCH` at 78361 ms. The `UP` stage set
+it through the separate response handler at OVL `0x6ceec` (81141 ms),
+following the exit callback. All three clears executed at original
+OVL `0x6d01c` and native progress reached 4. The inspector
+`tools/inspect_study_action_match.py` proves these exact execution paths
+and refuses a guest-RAM intervention or incorrect trace origin. This
+narrows what is *actually* demonstrated by decompilation of event 1; the
+19-stage progress replay remains separate evidence for the full therapy.

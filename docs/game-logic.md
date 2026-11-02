@@ -225,3 +225,17 @@ replay independently takes that branch at counter **3**, completes all
 19 native therapy stages through counter **20**, and validates the shared
 desk/scale `DOWN` callback `0x05`: a natural desk refusal at counter **10**
 and a native desk-to-Study move at **13**, both returning zero.
+
+The next native slice reconstructs the **Study room event-1 therapy
+action matcher** (`GATEMAIN.OVL:0x6b6c0–0x6b7e8`): 19 records each
+contain an original parser action byte and expected object ID, with five
+additional two-action alternative records. Its 16-bit stage index comes
+from `ES:7904`; a successful comparison writes completion byte `ES:7909`,
+which the *separate* section-51 response function consumes. Native watches
+confirmed `SCREAM` and `FEEL COUCH` matching in the room handler, while
+`UP` marks completion in the response handler after its exit callback.
+`StoryModel::evaluate_study_action` expresses the bounded inner predicate
+without claiming full parser, event, or text behavior. The original RAM
+tables are recoverable as JSON through `tools/inspect_study_script.py`;
+the native flag path is checked by `tools/inspect_study_action_match.py`.
+See [Study VR](study-vr.md) for exact offsets and evidence boundaries.
