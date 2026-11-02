@@ -11,7 +11,7 @@ PROBE = sys.argv.pop(1)
 
 
 class ProbeTests(unittest.TestCase):
-    def run_guest(self, code, files=None, dump=False, game_args=None, press=None, break_at=None, state=False, state_files=None, exe_name="TEST.EXE", research_entries=None, scheduled_keys=None, probe_adlib=False, scheduled_pokes=None, milliseconds=None, trace_byte_write=None):
+    def run_guest(self, code, files=None, dump=False, game_args=None, press=None, break_at=None, state=False, state_files=None, exe_name="TEST.EXE", research_entries=None, scheduled_keys=None, probe_adlib=False, scheduled_pokes=None, milliseconds=None, trace_byte_write=None, trace_rtlink_calls=False):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             assets = root / 'assets'
@@ -37,6 +37,8 @@ class ProbeTests(unittest.TestCase):
                 command += ['--trace-research', str(root / 'research.trace')]
                 for address in research_entries:
                     command += ['--trace-entry', address]
+            if trace_rtlink_calls:
+                command += ['--trace-rtlink-calls', str(root / 'rtlink.calls')]
             for key in scheduled_keys or []:
                 command += ['--key-at', key]
             for poke in scheduled_pokes or []:
@@ -62,6 +64,9 @@ class ProbeTests(unittest.TestCase):
                 research_file = root / 'research.trace'
                 result.research_trace = (research_file.read_text()
                                          if research_file.is_file() else '')
+            if trace_rtlink_calls:
+                call_file = root / 'rtlink.calls'
+                result.rtlink_calls = call_file.read_text() if call_file.is_file() else ''
             if dump:
                 result.picture = (root / 'snapshot.ppm').read_bytes()
                 result.memory = (root / 'snapshot.bin').read_bytes()
@@ -91,6 +96,24 @@ class ProbeTests(unittest.TestCase):
         self.assertIn('pc=1000a', result.research_trace)
         self.assertIn('ax=1e61', result.research_trace)
         self.assertIn('stack=', result.research_trace)
+
+    def test_rtlink_manager_counts_section_qualified_trampoline_without_overlays(self):
+        # Build a synthetic ten-byte Gateway trampoline and one-instruction
+        # manager at 2c24:058d. The near CALL returns to the far JMP; the
+        # JMP target uses RETF to return to the caller's DOS-exit instruction.
+        head = bytes.fromhex('b8242c8ec00e1f')  # ES=2c24, DS=CS
+        body = bytes.fromhex('bf0006b90a00fcf3a426c6068d05c39a0006242c'
+                             'b8004ccd21cb')
+        source = len(head) + 3 + len(body)
+        target = len(head) + 3 + len(body) - 1  # RETF at the end of the body
+        stub = bytes.fromhex('e88affea') + struct.pack('<HHH', target, 0x1000, 5)
+        code = head + b'\xbe' + struct.pack('<H', source) + body + stub
+        result = self.run_guest(code, trace_rtlink_calls=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('rtlink-census manager_hits=1 validated=1 unrecognized=0',
+                      result.rtlink_calls)
+        self.assertIn(f'rtlink-call section=5 target=1000:{target:x} count=1',
+                      result.rtlink_calls)
 
     def test_research_poke_requires_matching_word_and_audit_trace(self):
         # A controlled write runs in the guest loop and never edits DOS assets.

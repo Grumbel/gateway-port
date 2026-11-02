@@ -41,6 +41,9 @@ parser.add_argument('--trace-byte-write', action='append', metavar='LINEARHEX',
                          '16 distinct addresses within a 64-byte interval)')
 parser.add_argument('--extra-trace-entry', action='append', metavar='LINEARHEX',
                     help='native-only additional linear code address to log (repeatable)')
+parser.add_argument('--trace-rtlink-calls', action='store_true',
+                    help='native-only complete RTLink trampoline-call census, including '
+                         'section-qualified target addresses')
 parser.add_argument('--research-poke16-at', action='append', metavar='MS:ADDRESS:OLD:NEW',
                     help='controlled native-only guest RAM word change; address/words in hex')
 args = parser.parse_args()
@@ -50,6 +53,8 @@ if args.scenario == 'puzzle' and (not args.native_only or not args.command_seque
     parser.error('--scenario puzzle requires --native-only and --command-sequence')
 if (args.trace_byte_write or args.extra_trace_entry) and not args.native_only:
     parser.error('--trace-byte-write and --extra-trace-entry require --native-only')
+if args.trace_rtlink_calls and not args.native_only:
+    parser.error('--trace-rtlink-calls requires --native-only')
 if args.trace_state_writes and not args.native_only:
     parser.error('--trace-state-writes requires --native-only')
 if args.trace_admission and (not args.native_only or args.scenario not in ('objects', 'puzzle')):
@@ -111,6 +116,8 @@ if args.scenario in ['drawer', 'objects', 'puzzle']:
         parser.error(f'{args.probe} lacks controlled research poke support; run gateway-build')
     if args.trace_byte_write and b'byte-write ms=' not in probe_bytes:
         parser.error(f'{args.probe} lacks byte-write tracing; run gateway-build')
+    if args.trace_rtlink_calls and b'rtlink-census manager_hits=' not in probe_bytes:
+        parser.error(f'{args.probe} lacks RTLink call census support; run gateway-build')
 args.output.mkdir(parents=True, exist_ok=True)
 if custom_commands:
     print('Scripted commands: ' + ' | '.join(custom_commands))
@@ -181,6 +188,8 @@ for mode in (['native'] if args.native_only else ['native', 'verify', 'hle']):
         for poke in args.research_poke16_at:
             command += ['--research-poke16-at', poke]
     if mode == 'native':
+        if args.trace_rtlink_calls:
+            command += ['--trace-rtlink-calls', str(prefix.with_suffix('.rtlink-calls'))]
         for address in args.trace_byte_write or []:
             command += ['--trace-byte-write', address]
         for address in args.extra_trace_entry or []:
@@ -214,6 +223,13 @@ for mode in (['native'] if args.native_only else ['native', 'verify', 'hle']):
                     if line.startswith('research-poke16 ')]
         if len(recorded) != len(args.research_poke16_at):
             raise RuntimeError('controlled research pokes not all recorded by the native probe')
+    if mode == 'native' and args.trace_rtlink_calls:
+        from inventory_native_handlers import parse_calls
+        calls, census = parse_calls(prefix.with_suffix('.rtlink-calls').read_text().splitlines())
+        if not calls:
+            raise RuntimeError('no verified RTLink trampoline calls captured')
+        print(f"Native RTLink calls: {census['validated_calls']} "
+              f"to {census['distinct_targets']} distinct targets")
     if args.verify_overlays:
         lines = prefix.with_suffix('.dos').read_text().splitlines()
         summary = [line for line in lines if line.startswith('RTLink verified loads: ')]

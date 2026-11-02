@@ -11,6 +11,22 @@ DRIVER = Path(__file__).resolve().parents[1] / 'tools' / 'trace_game_logic.py'
 
 
 class TraceGameLogicTests(unittest.TestCase):
+    def test_rtlink_census_requires_native_and_updated_probe(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            probe = root / 'gateway-probe'
+            probe.write_bytes(b' action_code= no census support')
+            output = root / 'replay'
+            base = [sys.executable, str(DRIVER), '--scenario', 'objects',
+                    '--trace-rtlink-calls', '--probe', str(probe), '--output', str(output)]
+            wrong = subprocess.run(base, capture_output=True, text=True)
+            self.assertEqual(wrong.returncode, 2)
+            self.assertIn('requires --native-only', wrong.stderr)
+            native = subprocess.run(base + ['--native-only'], capture_output=True, text=True)
+            self.assertEqual(native.returncode, 2)
+            self.assertIn('lacks RTLink call census support', native.stderr)
+            self.assertFalse(output.exists())
+
     def test_command_sequence_validation_precedes_probe_and_output_creation(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / 'should-not-exist'

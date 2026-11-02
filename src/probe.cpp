@@ -38,6 +38,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <unicorn/unicorn.h>
 
 namespace {
@@ -139,6 +140,13 @@ struct State {
     };
     std::array<BlockTrace, 256> blocks{};
     std::size_t block_count = 0;
+    struct RtlinkCallCount {
+        std::uint64_t calls = 0;
+        unsigned first_ms = 0, last_ms = 0;
+    };
+    std::map<std::tuple<std::uint16_t, std::uint16_t, std::uint16_t>, RtlinkCallCount>
+        rtlink_calls;
+    std::uint64_t rtlink_manager_hits = 0, rtlink_unrecognized_calls = 0;
     bool breakpoint_hit = false;
     bool exited = false;
     unsigned exit_code = 0;
@@ -968,6 +976,54 @@ void trace_block(uc_engine *uc, std::uint64_t address, std::uint32_t size, void 
     }
 }
 
+// A ten-byte RTLink trampoline calls 2c24:058d before its far JMP. The
+// manager's near-return IP identifies the *trampoline*, including its section
+// word, even when multiple sections reuse the same physical code bank.
+// Count invocations through validated stubs, not assumed handler executions.
+void trace_rtlink_call(uc_engine *uc, std::uint64_t, std::uint32_t,
+                       void *opaque) noexcept {
+    auto &state = *static_cast<State *>(opaque);
+    try {
+        if (reg(uc, UC_X86_REG_CS) != 0x2c24)
+            return; // The intro can temporarily reuse the linear address.
+        ++state.rtlink_manager_hits;
+        const auto sp = reg(uc, UC_X86_REG_SP);
+        const auto ss = reg(uc, UC_X86_REG_SS);
+        std::uint16_t return_ip = 0;
+        check(uc_mem_read(uc, std::uint64_t(ss) * 16 + sp, &return_ip, 2));
+        if (return_ip < 3 || return_ip > 0xfff9) {
+            ++state.rtlink_unrecognized_calls;
+            return;
+        }
+        const auto stub_ip = std::uint16_t(return_ip - 3);
+        std::array<std::uint8_t, 10> stub{};
+        check(uc_mem_read(uc, 0x2c240 + stub_ip, stub.data(), stub.size()));
+        const auto displacement = std::int16_t(unsigned(stub[1]) | unsigned(stub[2]) << 8);
+        if (stub[0] != 0xe8 || stub[3] != 0xea ||
+            std::uint16_t(return_ip + displacement) != 0x058d) {
+            ++state.rtlink_unrecognized_calls;
+            return;
+        }
+        const auto word = [&](unsigned index) {
+            return std::uint16_t(unsigned(stub[index]) | unsigned(stub[index + 1]) << 8);
+        };
+        const auto section = word(8);
+        const auto target_ip = word(4);
+        const auto target_cs = word(6);
+        if (section >= 58 || std::uint32_t(target_cs) * 16 + target_ip >= 0xa0000) {
+            ++state.rtlink_unrecognized_calls;
+            return;
+        }
+        auto &count = state.rtlink_calls[{section, target_cs, target_ip}];
+        if (!count.calls)
+            count.first_ms = state.elapsed_ms;
+        ++count.calls;
+        count.last_ms = state.elapsed_ms;
+    } catch (const std::exception &e) {
+        hardware_failure(uc, state, e.what());
+    }
+}
+
 void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
     auto &state = *static_cast<State *>(opaque);
     try {
@@ -1683,7 +1739,7 @@ int main(int argc, char **argv) {
     std::filesystem::path state_directory;
     std::filesystem::path debug_directory;
     unsigned milliseconds = 0;
-    std::string dump_prefix, block_trace_path;
+    std::string dump_prefix, block_trace_path, rtlink_calls_path;
     std::string game_args, research_path, object_flags_mode;
     bool object_state_services = false;
     bool verify_overlays = false, hle_overlays = false, trace_video = false;
@@ -1705,6 +1761,7 @@ int main(int argc, char **argv) {
         std::cout << "Usage: gateway[-probe] <DOS executable> [--headless] "
                      "[--milliseconds N] [--dump-prefix PATH] [--game-args TEXT] [--press KEY] "
                      "[--break-at HEX] [--state-dir DIR | --read-only] [--trace-blocks FILE] "
+                     "[--trace-rtlink-calls FILE] "
                      "[--trace-research FILE --trace-entry HEX ...] [--key-at MS:BIOSHEX ...] "
                      "[--research-poke16-at MS:LINEARHEX:OLDHEX:NEWHEX ...] "
                      "[--object-flags verify|hle | --object-state verify|hle] [--verify-overlays] "
@@ -1846,6 +1903,8 @@ int main(int argc, char **argv) {
             interactive = false;
         else if (option == "--trace-blocks" && i + 1 < argc)
             block_trace_path = argv[++i];
+        else if (option == "--trace-rtlink-calls" && i + 1 < argc)
+            rtlink_calls_path = argv[++i];
         else if (option == "--read-only") {
             writable_state = false;
             state_directory.clear();
@@ -2112,6 +2171,11 @@ int main(int argc, char **argv) {
         if (!block_trace_path.empty())
             check(uc_hook_add(engine.uc, &block_hook, UC_HOOK_BLOCK,
                               reinterpret_cast<void *>(trace_block), &state, 1, 0));
+        uc_hook rtlink_call_hook;
+        if (!rtlink_calls_path.empty())
+            check(uc_hook_add(engine.uc, &rtlink_call_hook, UC_HOOK_CODE,
+                              reinterpret_cast<void *>(trace_rtlink_call), &state,
+                              0x2c7cd, 0x2c7cd));
         std::vector<uc_hook> entry_hooks(entry_addresses.size());
         for (std::size_t i = 0; i < entry_addresses.size(); ++i)
             check(uc_hook_add(engine.uc, &entry_hooks[i], UC_HOOK_CODE,
@@ -2417,6 +2481,22 @@ int main(int argc, char **argv) {
             trace.close();
             if (!trace)
                 throw std::runtime_error("cannot write guest block trace");
+        }
+        if (!rtlink_calls_path.empty()) {
+            std::ofstream trace(rtlink_calls_path);
+            trace << "rtlink-census manager_hits=" << state.rtlink_manager_hits
+                  << " validated=" << (state.rtlink_manager_hits - state.rtlink_unrecognized_calls)
+                  << " unrecognized=" << state.rtlink_unrecognized_calls << '\n';
+            for (const auto &[key, count] : state.rtlink_calls) {
+                const auto [section, cs, ip] = key;
+                trace << "rtlink-call section=" << std::dec << section << std::hex
+                      << " target=" << cs << ':' << ip << std::dec
+                      << " count=" << count.calls << " first_ms=" << count.first_ms
+                      << " last_ms=" << count.last_ms << '\n';
+            }
+            trace.close();
+            if (!trace)
+                throw std::runtime_error("cannot write RTLink call census");
         }
         if (!scheduled_pokes.empty())
             throw std::runtime_error("research poke was never applied before probe stopped");
