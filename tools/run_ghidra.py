@@ -4,6 +4,7 @@
 """Prepare Gateway RTLink sections and analyze them in a fresh Ghidra project."""
 
 import argparse
+import csv
 import importlib.util
 import json
 import os
@@ -13,6 +14,29 @@ import subprocess
 import sys
 
 from prepare_ghidra import prepare
+
+
+def tracked_handler_offsets(path):
+    """Recreate manually verified Ghidra entry points from the source tracker.
+
+    Only offsets backed by successful explicit-entry evidence are included;
+    the tracker records no generated source or pseudocode.
+    """
+    offsets = []
+    with path.open(newline='') as stream:
+        reader = csv.DictReader(stream, delimiter='\t')
+        needed = {'file', 'offset', 'kind', 'notes'}
+        if not needed <= set(reader.fieldnames or ()):
+            raise ValueError(f'{path}: not a recovery tracker')
+        for row in reader:
+            if 'Ghidra explicit entry: native handler-table target;' not in row['notes']:
+                continue
+            if row['file'] != 'ovl' or row['kind'] != 'handler':
+                raise ValueError(f'{path}: explicit handler note on non-overlay-handler')
+            offsets.append(int(row['offset'], 16))
+    if len(set(offsets)) != len(offsets):
+        raise ValueError(f'{path}: duplicate explicit handler offsets')
+    return offsets
 
 
 def headless_command(launcher, output, project_name, plan_path):
@@ -185,6 +209,9 @@ def main():
     parser.add_argument('--decompile-offset', action='append', type=lambda s: int(s, 0),
                         help='original OVL file offset of a provisional native entry '
                              '(repeatable)')
+    parser.add_argument('--tracked-handler-boundaries', type=Path,
+                        help='replay validated provisional handler entry points from '
+                             'decomp/functions.tsv')
     parser.add_argument('--callbacks-json', type=Path,
                         help='optional native inspect_room_callbacks.py export (decompile candidates)')
     parser.add_argument('--actions-json', type=Path,
@@ -201,9 +228,14 @@ def main():
                         help='validate/extract without launching Ghidra')
     args = parser.parse_args()
     try:
+        offsets = list(args.decompile_offset or ())
+        if args.tracked_handler_boundaries:
+            offsets.extend(tracked_handler_offsets(args.tracked_handler_boundaries))
+        if len(offsets) != len(set(offsets)):
+            raise ValueError('duplicate --decompile-offset or tracked handler entry')
         run(args.exe, args.ovl, args.output, args.overlay_tool, args.objects_json,
             args.headless, args.project_name, args.prepare_only, args.callbacks_json,
-            args.decompile_object or (), args.decompile_offset or (),
+            args.decompile_object or (), offsets,
             args.ghidra_install_dir, args.actions_json)
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
         parser.exit(1, 'run_ghidra: %s\n' % error)

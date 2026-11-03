@@ -16,7 +16,8 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from prepare_ghidra import (KNOWN_OVERLAY, KNOWN_RESIDENT, add_action_labels,
                             add_callback_labels, name_for_object, plan_sections)
-from run_ghidra import find_headless, headless_command, pyghidra_launcher, run
+from run_ghidra import (find_headless, headless_command, pyghidra_launcher, run,
+                        tracked_handler_offsets)
 
 
 class GhidraPlanTests(unittest.TestCase):
@@ -42,6 +43,19 @@ class GhidraPlanTests(unittest.TestCase):
                             missing_paragraph_tail=0, parent=None, overlaps=[],
                             fixups=[dict(offset=4, segment=0x2000, image_offset=4)])
         self.manifest = dict(relocation=0x1000, sections=[self.section])
+
+    def test_replay_provisional_handler_boundaries(self):
+        path = self.root / 'functions.tsv'
+        path.write_text('file\toffset\tkind\tnotes\n'
+                        'ovl\t0x0514b5\thandler\tGhidra explicit entry: '
+                        'native handler-table target; provisional boundary\n'
+                        'ovl\t0x0514b6\thandler\t\n'
+                        'exe\t0x002000\taction\t\n')
+        self.assertEqual(tracked_handler_offsets(path), [0x514b5])
+        path.write_text(path.read_text() + 'exe\t0x000010\taction\t'
+                        'Ghidra explicit entry: native handler-table target; bogus\n')
+        with self.assertRaisesRegex(ValueError, 'non-overlay-handler'):
+            tracked_handler_offsets(path)
 
     def test_valid_relocation_bss_label_and_object_entry(self):
         objects = [dict(object=0x124, name='drawer/Thing', handler=7,

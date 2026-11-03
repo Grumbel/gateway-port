@@ -227,10 +227,16 @@ Steps:
    | `0xaf` | `0x006722` | 214 |
 
    Runtime segment `148e` is snapshot-specific, not a routine identity.
-3. **[ ] Handlers without a function.** For each of the 75 handler rows without
-   a size, decide whether it is a Ghidra boundary failure (create the
-   function), a shared tail inside another routine (note the containing
-   offset), or data (`state=data`, with evidence).
+3. **[x] Handlers without a function.** All 75 missing handler-table entries
+   were Ghidra boundary failures: with explicit `--decompile-offset` entries,
+   Ghidra reported 75/75 successful independent function entries at their
+   original OVL offsets (no containing function or data case). Their recovered
+   sizes are in the tracker. The `notes` field records *provisional* function
+   boundaries; native calling conventions have not been independently verified.
+   `mark-handler-boundaries` validates the report before annotating, and
+   `run_ghidra.py --tracked-handler-boundaries decomp/functions.tsv` reproduces
+   those entry points on subsequent runs. The 14 remaining unsized routines
+   are services, outside this step.
 4. **[ ] Classify `unclassified` rows** as they are touched; do not mass-label.
 
 ### 3.3 [ ] Compiler and runtime-library identification
@@ -485,6 +491,7 @@ passes with `--replace-verified`.
 | 2026-11-03 | 3.2 | Tracker seeded: 1,778 routines (696 handlers, 191 actions, 44 callbacks, 51 services, 796 unclassified), 266 without Ghidra functions, 20 named |
 | 2026-11-03 | 3.2.1 | `--actions-json`: 191 validated RTLink entries; Ghidra 267/267 targets, 1,709 functions; tracker 1,803 rows after reseed (25 new unclassified), no action missing a size, 89 still without functions (75 handlers, 14 services); repeat seed 0 added, 0 updated |
 | 2026-11-03 | 3.2.2 | Four resident actions byte-verified at EXE offsets `0x006669`, `0x00670e`, `0x006681`, `0x006722`; Ghidra 271/271 targets, 1,712 functions; tracker now 1,807 routines including all 195 actions with sizes; repeat seed 0 added, 0 updated |
+| 2026-11-03 | 3.2.3 | Explicitly seeded 75 previously unsized native object handlers spanning 39 OVL sections: Ghidra decompiled 346/346 targets with 75 independent entries, 1,792 exported functions; all 696 handlers now have sizes. Tracker now 1,813 rows, 14 unsized services; boundary evidence marked provisional in notes; repeat seed 0 added, 0 updated. |
 
 ## 10. Risks and how to react
 
@@ -535,12 +542,16 @@ python3 tools/inspect_action_dispatch.py $H/native --all \
 python3 tools/run_ghidra.py ../gateway-dos/GATEMAIN.EXE ../gateway-dos/GATEMAIN.OVL \
   --overlay-tool $B/gateway-overlay --objects-json $H/objects.json \
   --callbacks-json $H/callbacks.json --actions-json $H/actions.json \
+  --tracked-handler-boundaries decomp/functions.tsv \
   --output build/ghidra
 python3 tools/inventory_native_handlers.py $H/objects.json build/ghidra/ghidra-plan.json \
   --callbacks-json $H/callbacks.json --rtlink-calls $H/native.rtlink-calls \
   --format json > $H/inventory.json
 python3 tools/decomp_status.py seed --functions build/ghidra/ghidra-functions.tsv \
   --inventory $H/inventory.json --actions $H/actions.json
+python3 tools/decomp_status.py mark-handler-boundaries \
+  --decompile build/ghidra/ghidra-decompile-report.json \
+  --functions build/ghidra/ghidra-functions.tsv
 ```
 
 `run_ghidra.py` refuses an existing output directory; delete `build/ghidra`

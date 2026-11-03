@@ -13,6 +13,7 @@ docs/decompilation-plan.md, sections 3 and 4.
 Commands:
   seed     merge a Ghidra function export, the native handler inventory and
            the action table
+  mark-handler-boundaries  validate explicitly recovered handler entries
   summary  print counts per state, kind and shape
   next     propose the next routines to recover
   check    validate the tracker (used by nix flake check)
@@ -50,7 +51,9 @@ STARTED_STATES = ('analyzed', 'ported')
 # their own (object aliases also embed game text); keep the name empty.
 AUTO_NAME = re.compile(r'^(FUN|thunk_FUN|LAB|SUB|caseD|switchD)_[0-9A-Za-z_]+$|'
                        r'^gw_object_[0-9a-f]{3}(_.*)?$|^gw_room_callback_[0-9a-f]+$|'
-                       r'^gw_action_[0-9a-f]{2}$')
+                       r'^gw_action_[0-9a-f]{2}$|^gw_ovl_[0-9a-f]+_candidate$')
+HANDLER_BOUNDARY_NOTE = ('Ghidra explicit entry: native handler-table target; '
+                         'provisional independent function boundary (ABI unverified)')
 NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 MODULE = re.compile(r'^src/story/[a-z0-9_]+\.(cpp|hpp)$')
 KIND_ORDER = {'service': 0, 'action': 1, 'callback': 2, 'handler': 3, 'unclassified': 4}
@@ -179,6 +182,13 @@ def seed(tracker_path, functions_path=None, inventory_path=None, actions_path=No
     """Merge new evidence; never discard manually recorded columns."""
     rows = {key_of(row): row for row in read_tracker(tracker_path)}
     added = updated = 0
+    # An earlier export may have seeded its temporary label before it was
+    # recognized as an AUTO_NAME. Do not preserve such a label as analysis.
+    for row in rows.values():
+        if row['state'] == 'named' and row['name'] and AUTO_NAME.match(row['name']):
+            row['name'] = ''
+            row['state'] = 'unknown'
+            updated += 2
 
     def get(key, section):
         nonlocal added
@@ -233,6 +243,45 @@ def seed(tracker_path, functions_path=None, inventory_path=None, actions_path=No
             updated += 1
     write_tracker(tracker_path, rows.values())
     return added, updated
+
+
+def mark_handler_boundaries(tracker_path, decompile_path, functions_path):
+    """Record successful explicit Ghidra handler entries without claiming native ABI proof."""
+    report = json.loads(decompile_path.read_text())
+    if report.get('schema_version') != 1:
+        raise TrackerError('unsupported Ghidra decompile report')
+    selected = [item for item in report['targets']
+                if item.get('role') == 'overlay-entry-candidate']
+    if not selected:
+        raise TrackerError('no explicitly selected handler boundaries in Ghidra report')
+    with functions_path.open(newline='') as stream:
+        functions = {(row['file'], parse_offset(row['offset'])): row for row in
+                     csv.DictReader(stream, delimiter='\t')}
+    rows = read_tracker(tracker_path)
+    by_key = {key_of(row): row for row in rows}
+    additions = []
+    seen = set()
+    for item in selected:
+        origin = re.fullmatch(r'GATEMAIN\.OVL:0x([0-9a-f]+)', item.get('origin', ''))
+        if origin is None:
+            raise TrackerError('explicit handler target has no original OVL identity')
+        key = ('ovl', int(origin.group(1), 16))
+        if key in seen or key not in by_key or by_key[key]['kind'] != 'handler':
+            raise TrackerError(f'{key}: duplicate or non-handler Ghidra candidate')
+        seen.add(key)
+        row = by_key[key]
+        function = functions.get(key)
+        if (item.get('status') != 'ok' or item.get('context') or
+                function is None or function['ghidra_address'] != item.get('function_entry') or
+                row['size'] != function['body_bytes']):
+            raise TrackerError(f'{key}: explicit Ghidra candidate is not an independent '
+                               'function at its recorded original offset')
+        if HANDLER_BOUNDARY_NOTE not in row['notes']:
+            additions.append(row)
+    for row in additions:
+        row['notes'] = (row['notes'] + '; ' if row['notes'] else '') + HANDLER_BOUNDARY_NOTE
+    write_tracker(tracker_path, rows)
+    return len(selected), len(additions)
 
 
 def summary(rows, out=sys.stdout):
@@ -358,6 +407,11 @@ def main(argv=None):
     next_parser.add_argument('--kind', choices=KINDS)
     next_parser.add_argument('--limit', type=int, default=10)
     sub.add_parser('check')
+    boundary_parser = sub.add_parser('mark-handler-boundaries')
+    boundary_parser.add_argument('--decompile', type=Path, required=True,
+                                 help='Ghidra decompile report with explicit handler candidates')
+    boundary_parser.add_argument('--functions', type=Path, required=True,
+                                 help='matching Ghidra function inventory')
     args = parser.parse_args(argv)
     try:
         if args.command == 'seed':
@@ -365,6 +419,12 @@ def main(argv=None):
                 parser.error('seed needs --functions, --inventory and/or --actions')
             added, updated = seed(args.tracker, args.functions, args.inventory, args.actions)
             print(f'tracker: {added} added, {updated} fields updated; {args.tracker}')
+            return 0
+        if args.command == 'mark-handler-boundaries':
+            selected, marked = mark_handler_boundaries(args.tracker, args.decompile,
+                                                       args.functions)
+            print(f'tracker: {selected} explicit handler boundaries validated, '
+                  f'{marked} notes added; {args.tracker}')
             return 0
         rows = read_tracker(args.tracker)
         if args.command == 'summary':

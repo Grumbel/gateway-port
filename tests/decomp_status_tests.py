@@ -62,6 +62,39 @@ class TrackerTests(unittest.TestCase):
         row = tracker.read_tracker(self.path)[0]
         self.assertEqual((row['size'], row['name'], row['state']), ('64', '', 'unknown'))
 
+    def test_generated_candidate_label_is_not_a_manual_name(self):
+        self.functions.write_text('file\toffset\tsection\tghidra_address\tbody_bytes\tname\tsource\n'
+                                  'ovl\t0x0514b5\t38\tGW_RT_038::0042\t64\t'
+                                  'gw_ovl_514b5_candidate\tUSER_DEFINED\n')
+        tracker.seed(self.path, self.functions, self.inventory)
+        self.assertEqual(tracker.read_tracker(self.path)[0]['name'], '')
+        rows = tracker.read_tracker(self.path)
+        rows[0].update(name='gw_ovl_514b5_candidate', state='named')
+        tracker.write_tracker(self.path, rows)
+        self.assertEqual(tracker.seed(self.path, self.functions), (0, 2))
+        self.assertEqual(tracker.read_tracker(self.path)[0]['state'], 'unknown')
+
+    def test_mark_explicit_handler_boundary_and_reject_tail(self):
+        self.seeded()
+        report = self.root / 'decompile.json'
+        report.write_text(json.dumps(dict(schema_version=1, targets=[
+            dict(role='overlay-entry-candidate', origin='GATEMAIN.OVL:0x514b5',
+                 function_entry='49d8:0035', status='ok')
+        ])))
+        self.assertEqual(tracker.mark_handler_boundaries(self.path, report, self.functions),
+                         (1, 1))
+        self.assertIn(tracker.HANDLER_BOUNDARY_NOTE, self.path.read_text())
+        original = self.path.read_text()
+        self.assertEqual(tracker.mark_handler_boundaries(self.path, report, self.functions),
+                         (1, 0))
+        self.assertEqual(self.path.read_text(), original)
+        bad = json.loads(report.read_text())
+        bad['targets'][0]['context'] = 'contains another function'
+        report.write_text(json.dumps(bad))
+        with self.assertRaisesRegex(tracker.TrackerError, 'not an independent'):
+            tracker.mark_handler_boundaries(self.path, report, self.functions)
+        self.assertEqual(self.path.read_text(), original)
+
     def test_resident_action_is_seeded_as_exe_action(self):
         self.actions.write_text(json.dumps(dict(schema_version=1, action_count=1,
                                                 actions=[dict(action=0x5f, native_code=dict(
