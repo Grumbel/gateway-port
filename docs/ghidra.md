@@ -71,6 +71,15 @@ Expected output (generated, ignored by Git, contains original game code):
 | `build/ghidra/ghidra-callgraph.json` | Static call references and unresolved-call sites in the selected containing functions (not an executed RTLink call graph) |
 | `build/ghidra/pseudocode.txt` | Decompiler output for confirmed native function-entry candidates, or explicit errors |
 | `build/ghidra/ghidra-functions.tsv` | Every Ghidra function by original file offset (`exe`, or `ovl` plus RTLink section), body size and name; resident entries are byte-checked against `GATEMAIN.EXE`. Input for `tools/decomp_status.py seed` |
+| `build/ghidra/ghidra-facts.json` | Every recovered function's static callees, validated ten-byte RTLink trampoline destinations, direct DS/ES offsets, possible loops and instruction counts; input for `tools/classify_shapes.py` (triage, not native ABI proof) |
+
+After running Ghidra with the replay's objects, callbacks, actions and
+`--tracked-handler-boundaries decomp/functions.tsv` as in
+[plan §11](decompilation-plan.md#11-quick-reference-for-a-work-session), run
+`python3 tools/classify_shapes.py build/ghidra/ghidra-facts.json --write`.
+This annotates 935 handler/action/callback shapes without storing executable
+bytes, decompiler text or object names in Git. Plain `classify_shapes.py`
+without `--write` prints the current decision and leaves the tracker unchanged.
 
 Preparation can be run independently of Ghidra, useful on machines where the
 Java application is unavailable:

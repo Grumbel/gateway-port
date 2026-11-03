@@ -292,6 +292,7 @@ class GhidraPlanTests(unittest.TestCase):
         self.assertLess(cmd.index('-preScript'), cmd.index('-postScript'))
         self.assertEqual(cmd[cmd.index('-preScript')+1], 'ImportGatewayRtlink.py')
         self.assertEqual(cmd[cmd.index('-postScript')+1], 'DecompileGateway.py')
+        self.assertIn('ExportGatewayFacts.py', cmd)
 
     def test_runner_refuses_existing_project(self):
         (self.root / 'project').mkdir()
@@ -320,13 +321,23 @@ class GhidraPlanTests(unittest.TestCase):
                 schema_version=1, targets=[dict(name='test_routine', edges=[],
                                                 unresolved_calls=[])],
                 unique_containing_functions=1, static_call_references=0)))
+            (self.root / 'ghidra-facts.json').write_text(json.dumps(dict(
+                schema_version=1, functions=[dict(identity=dict(file='ovl', offset=0x100),
+                                                  instruction_count=1, calls=[],
+                                                  far_trampolines=[], direct_memory=[],
+                                                  has_loop=False)])))
+            (self.root / 'ghidra-functions.tsv').write_text(
+                'file\toffset\tsection\tghidra_address\tbody_bytes\tname\tsource\n'
+                'ovl\t0x000100\t0\tGW_RT_000::0000\t1\ttest_routine\tUSER_DEFINED\n')
             # Simulate fresh reports appearing *during* the headless invocation.
             old_exists = Path.exists
             def exists_after_invocation(path):
                 if path in (self.root / 'ghidra-import-report.json',
                             self.root / 'ghidra-decompile-report.json',
                             self.root / 'ghidra-callgraph.json',
-                            self.root / 'pseudocode.txt') and not invoke.called:
+                            self.root / 'pseudocode.txt',
+                            self.root / 'ghidra-facts.json',
+                            self.root / 'ghidra-functions.tsv') and not invoke.called:
                     return False
                 return old_exists(path)
             with patch('run_ghidra.Path.exists', exists_after_invocation):

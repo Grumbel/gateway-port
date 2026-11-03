@@ -278,9 +278,9 @@ Microsoft CRT implementations reside in `GATE.RTL`, outside this tracker's
 without a library signature. Additional anonymous helpers remain unclassified
 until §3.4 supplies call and memory facts.
 
-### 3.4 [ ] Measure handler shapes (decides how much to automate)
+### 3.4 [x] Measure handler shapes (decides how much to automate)
 
-Add a Ghidra post-script `ExportGatewayFacts.py` that writes, per function:
+The Ghidra post-script `ExportGatewayFacts.py` writes, per function:
 
 - callees, with original offsets;
 - far calls through trampolines, with section;
@@ -288,7 +288,7 @@ Add a Ghidra post-script `ExportGatewayFacts.py` that writes, per function:
 - whether the function has loops;
 - its instruction count.
 
-Then add `tools/classify_shapes.py`, which fills the tracker `shape`
+`tools/classify_shapes.py` conservatively fills the tracker `shape`
 column:
 
 | Shape | Rule |
@@ -302,6 +302,25 @@ Record the counts in §9. **Decision point:**
 - If `formulaic` covers 70% or more of handlers and actions, build the
   semi-automatic translator (§6.2) before hand-porting at scale.
 - Otherwise, hand-port and revisit after 100 routines.
+
+**Result (2026-11-03): hand-port first; revisit after 100 routines.** The
+fresh 58-bank Ghidra run exported 1,792 native functions, 143,722 decoded
+instructions and 622 RTLink trampoline targets with original section/offset
+identities. Across the 891 story handlers and actions (696 + 195), the static
+classifier finds **44 formulaic (4.9%), 195 direct-memory (21.9%), and 652
+complex (73.2%)**. Shapes are also recorded for the 44 callbacks, 935 entries
+in all. Formulaic is far below 70% even when allowing for analyzer errors.
+
+The classification is deliberately an **estimate, not routine verification**:
+Ghidra's back-edges indicate possible loops; BX/SI/DI indexing is treated as
+pointer arithmetic; any unproven DS/ES absolute reference counts as shared
+memory rather than a constant table. One computed jump is allowed as a switch,
+but multiple computed jumps, computed calls or over 400 instructions make a
+routine complex. Ghidra often omits direct read/write qualifiers, so the fact
+export records offsets without pretending to know their access direction.
+Far-call trampoline destinations are resolved from validated original
+`CALL`/RTLink stub patterns, not the unstable Ghidra segment address. The
+generated JSON and all original bytes remain in `build/`.
 
 ### 3.5 [ ] Engine-service catalogue (`docs/engine-services.md`)
 
@@ -519,6 +538,7 @@ passes with `--replace-verified`.
 | 2026-11-03 | 3.2.2 | Four resident actions byte-verified at EXE offsets `0x006669`, `0x00670e`, `0x006681`, `0x006722`; Ghidra 271/271 targets, 1,712 functions; tracker now 1,807 routines including all 195 actions with sizes; repeat seed 0 added, 0 updated |
 | 2026-11-03 | 3.2.3 | Explicitly seeded 75 previously unsized native object handlers spanning 39 OVL sections: Ghidra decompiled 346/346 targets with 75 independent entries, 1,792 exported functions; all 696 handlers now have sizes. Tracker now 1,813 rows, 14 unsized services; boundary evidence marked provisional in notes; repeat seed 0 added, 0 updated. |
 | 2026-11-03 | 3.3 | Identified Microsoft C 5.x-era CRT in `GATE.RTL` from 1988 vendor marker and R6005–R6007 codes; compiler family likely Microsoft C large model (exact version unresolved). Classified three confirmed RTLink routines at `exe:0x000671`, `exe:0x00a23c`, `exe:0x00a630` as library; CRT remains external to tracked files. |
+| 2026-11-03 | 3.4 | Exported 1,792 function fact records, 143,722 decoded instructions, 622 resolved RTLink stub destinations; classified all 891 handlers/actions: formulaic 44 (4.9%), direct-memory 195 (21.9%), complex 652 (73.2%); 44 callbacks also measured. Decision: hand-port, revisit after 100 routines. |
 
 ## 10. Risks and how to react
 
@@ -579,6 +599,7 @@ python3 tools/decomp_status.py seed --functions build/ghidra/ghidra-functions.ts
 python3 tools/decomp_status.py mark-handler-boundaries \
   --decompile build/ghidra/ghidra-decompile-report.json \
   --functions build/ghidra/ghidra-functions.tsv
+python3 tools/classify_shapes.py build/ghidra/ghidra-facts.json --write
 ```
 
 `run_ghidra.py` refuses an existing output directory; delete `build/ghidra`

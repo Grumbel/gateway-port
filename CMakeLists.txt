@@ -145,6 +145,8 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/prepare_ghidra_tests.py)
     add_test(NAME decomp-tracker COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/decomp_status_tests.py)
+    add_test(NAME classify-shapes COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/classify_shapes_tests.py)
     add_test(NAME room-callback-inspect COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/room_callback_inspect_tests.py)
     add_test(NAME room-callback-compare COMMAND ${Python3_EXECUTABLE}

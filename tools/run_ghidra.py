@@ -53,6 +53,8 @@ def headless_command(launcher, output, project_name, plan_path):
             str((output / 'pseudocode.txt').resolve()),
             '-postScript', 'ExportGatewayFunctions.py', str(plan_path),
             str((output / 'ghidra-functions.tsv').resolve()),
+            '-postScript', 'ExportGatewayFacts.py', str(plan_path),
+            str((output / 'ghidra-facts.json').resolve()),
             '-scriptlog', str((output / 'ghidra-script.log').resolve()),
             '-log', str((output / 'ghidra.log').resolve())]
 
@@ -120,7 +122,8 @@ def run(exe, ovl, output, overlay_tool, objects_json=None,
     reports = (output / 'ghidra-import-report.json',
                output / 'ghidra-decompile-report.json', output / 'pseudocode.txt',
                output / 'ghidra-callgraph.json')
-    if not prepare_only and any(item.exists() for item in reports):
+    fact_report = output / 'ghidra-facts.json'
+    if not prepare_only and any(item.exists() for item in reports + (fact_report,)):
         raise ValueError('Ghidra output reports already exist in %s; choose a fresh '
                          'output directory so stale results cannot be mistaken for success' % output)
     plan_path, plan = prepare(exe, ovl, output, overlay_tool, objects_json,
@@ -184,14 +187,36 @@ def run(exe, ovl, output, overlay_tool, objects_json=None,
         not isinstance(callgraph.get('unique_containing_functions'), int) or
         not isinstance(callgraph.get('static_call_references'), int)):
         raise ValueError('Ghidra static callgraph is incomplete or mismatches the plan')
+    if not fact_report.is_file():
+        raise ValueError('Ghidra did not produce ghidra-facts.json')
+    facts = json.loads(fact_report.read_text())
+    entries = facts.get('functions', [])
+    if (facts.get('schema_version') != 1 or not entries or
+            not all(item.get('identity', {}).get('file') in ('exe', 'ovl') and
+                    isinstance(item.get('instruction_count'), int) and
+                    item['instruction_count'] >= 0 and
+                    isinstance(item.get('calls'), list) and
+                    isinstance(item.get('far_trampolines'), list) and
+                    isinstance(item.get('direct_memory'), list) and
+                    isinstance(item.get('has_loop'), bool) for item in entries)):
+        raise ValueError('Ghidra function facts are incomplete')
+    functions = output / 'ghidra-functions.tsv'
+    if not functions.is_file():
+        raise ValueError('Ghidra did not export its native function inventory')
+    with functions.open(newline='') as stream:
+        exported_ids = [(row['file'], int(row['offset'], 16)) for row in
+                        csv.DictReader(stream, delimiter='\t')]
+    fact_ids = [(item['identity']['file'], item['identity']['offset']) for item in entries]
+    if (len(set(exported_ids)) != len(exported_ids) or
+            len(set(fact_ids)) != len(fact_ids) or set(exported_ids) != set(fact_ids)):
+        raise ValueError('Ghidra facts do not cover exactly the exported native functions')
     print('Ghidra import report: %s' % reports[0])
     print('Decompiled %d/%d targets (including internal branch contexts).' % (
         decompiled['completed'], decompiled['requested']))
     print('Ghidra pseudocode: %s' % reports[2])
     print('Ghidra static callgraph: %s' % reports[3])
-    functions = output / 'ghidra-functions.tsv'
-    if functions.is_file():
-        print('Ghidra function inventory: %s' % functions)
+    print('Ghidra function inventory: %s' % functions)
+    print('Ghidra function facts: %s (%d functions)' % (fact_report, len(entries)))
     return plan_path
 
 

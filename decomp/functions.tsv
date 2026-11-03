@@ -213,10 +213,10 @@ exe	0x0064ab		8	unclassified						unknown
 exe	0x0064b3		164	unclassified						unknown				
 exe	0x006557		88	unclassified						unknown				
 exe	0x0065af		186	unclassified						unknown				
-exe	0x006669		24	action				0x5f		unknown				
-exe	0x006681		141	action				0x98		unknown				
-exe	0x00670e		20	action				0x6d		unknown				
-exe	0x006722		214	action				0xaf		unknown				
+exe	0x006669		24	action				0x5f		unknown	direct-memory			
+exe	0x006681		141	action				0x98		unknown	direct-memory			
+exe	0x00670e		20	action				0x6d		unknown	formulaic			
+exe	0x006722		214	action				0xaf		unknown	complex			
 exe	0x006783		23	unclassified						unknown				
 exe	0x00686d		55	unclassified						unknown				
 exe	0x0068a4		74	unclassified						unknown				
@@ -644,209 +644,209 @@ ovl	0x00cac0	4	55	service						unknown
 ovl	0x00cb1e	4		service						unknown				
 ovl	0x00cb89	4	90	unclassified						unknown				
 ovl	0x00d3d0	5		service						unknown				selector callback for actions 0xc3
-ovl	0x00d667	5	4	action				0xc3		unknown				
-ovl	0x00d66b	5	409	action				0x1d	gw_close_drawer	named				
+ovl	0x00d667	5	4	action				0xc3		unknown	formulaic			
+ovl	0x00d66b	5	409	action				0x1d	gw_close_drawer	named	direct-memory			
 ovl	0x00d804	5	419	service					gw_drop_precheck	named				selector callback for actions 0x32,0x3c,0x3d
-ovl	0x00d9a7	5	251	action				0x32	gw_drop_book	named				
-ovl	0x00daa2	5	919	action				0x37		unknown				
-ovl	0x00de39	5	239	action				0x38		unknown				
+ovl	0x00d9a7	5	251	action				0x32	gw_drop_book	named	complex			
+ovl	0x00daa2	5	919	action				0x37		unknown	complex			
+ovl	0x00de39	5	239	action				0x38		unknown	direct-memory			
 ovl	0x00df28	5		service						unknown				selector callback for actions 0x18,0x19
-ovl	0x00e0d4	5	610	action				0x18		unknown				
+ovl	0x00e0d4	5	610	action				0x18		unknown	complex			
 ovl	0x00e336	5		service						unknown				selector callback for actions 0x3a
-ovl	0x00e339	5	648	action				0x3a		unknown				
-ovl	0x00e5c1	5	366	action				0x1b		unknown				
-ovl	0x00e7f4	5	208	action				0x3c		unknown				
-ovl	0x00e8c4	5	126	action				0x53	gw_inventory	named				
-ovl	0x00e942	5	706	action				0x71	gw_open_drawer	named				
-ovl	0x00ec04	5	628	action				0x79		unknown				
+ovl	0x00e339	5	648	action				0x3a		unknown	complex			
+ovl	0x00e5c1	5	366	action				0x1b		unknown	complex			
+ovl	0x00e7f4	5	208	action				0x3c		unknown	direct-memory			
+ovl	0x00e8c4	5	126	action				0x53	gw_inventory	named	direct-memory			
+ovl	0x00e942	5	706	action				0x71	gw_open_drawer	named	complex			
+ovl	0x00ec04	5	628	action				0x79		unknown	complex			
 ovl	0x00ee78	5		service						unknown				selector callback for actions 0x33,0x35,0x81
-ovl	0x00f17d	5	668	action				0x33		unknown				
-ovl	0x00f419	5	688	action				0x35		unknown				
-ovl	0x00f6c9	5	129	action				0x4a		unknown				
-ovl	0x00f74a	5	57	action				0xb3		unknown				
-ovl	0x00f783	5	16	action				0xb4		unknown				
-ovl	0x00f793	5	16	action				0xb5		unknown				
-ovl	0x00f7a3	5	608	action				0x8a		unknown				
-ovl	0x00fa03	5	428	action				0x2c		unknown				
+ovl	0x00f17d	5	668	action				0x33		unknown	complex			
+ovl	0x00f419	5	688	action				0x35		unknown	complex			
+ovl	0x00f6c9	5	129	action				0x4a		unknown	direct-memory			
+ovl	0x00f74a	5	57	action				0xb3		unknown	formulaic			
+ovl	0x00f783	5	16	action				0xb4		unknown	formulaic			
+ovl	0x00f793	5	16	action				0xb5		unknown	formulaic			
+ovl	0x00f7a3	5	608	action				0x8a		unknown	complex			
+ovl	0x00fa03	5	428	action				0x2c		unknown	complex			
 ovl	0x00fbaf	5	818	service					gw_take_precheck	named				selector callback for actions 0x46
-ovl	0x00fee1	5	487	action				0x46	gw_take_book	named				
-ovl	0x0100c8	5	71	action				0x14		unknown				
-ovl	0x01010f	5	33	action				0xac		unknown				
-ovl	0x010130	5	512	action				0xae		unknown				
-ovl	0x010330	5	51	action				0xad		unknown				
-ovl	0x010ba0	6	276	action				0xc1		unknown				
-ovl	0x010cb4	6	252	action				0xc2		unknown				
-ovl	0x010db0	6	107	action				0x03		unknown				
-ovl	0x010e1b	6	125	action				0x05		unknown				
+ovl	0x00fee1	5	487	action				0x46	gw_take_book	named	direct-memory			
+ovl	0x0100c8	5	71	action				0x14		unknown	direct-memory			
+ovl	0x01010f	5	33	action				0xac		unknown	formulaic			
+ovl	0x010130	5	512	action				0xae		unknown	complex			
+ovl	0x010330	5	51	action				0xad		unknown	direct-memory			
+ovl	0x010ba0	6	276	action				0xc1		unknown	complex			
+ovl	0x010cb4	6	252	action				0xc2		unknown	complex			
+ovl	0x010db0	6	107	action				0x03		unknown	complex			
+ovl	0x010e1b	6	125	action				0x05		unknown	direct-memory			
 ovl	0x010e98	6	107	unclassified						unknown				
-ovl	0x010f03	6	12	action				0x04		unknown				
-ovl	0x010f0f	6	12	action				0x06		unknown				
-ovl	0x010f1b	6	66	action				0x07		unknown				
-ovl	0x010f5d	6	279	action				0x08		unknown				
-ovl	0x011074	6	157	action				0x09		unknown				
-ovl	0x011111	6	43	action				0x0a		unknown				
-ovl	0x01113c	6	151	action				0x0d		unknown				
-ovl	0x0111d3	6	47	action				0x0f		unknown				
-ovl	0x011202	6	73	action				0x13		unknown				
-ovl	0x01124b	6	253	action				0x24		unknown				
+ovl	0x010f03	6	12	action				0x04		unknown	formulaic			
+ovl	0x010f0f	6	12	action				0x06		unknown	formulaic			
+ovl	0x010f1b	6	66	action				0x07		unknown	direct-memory			
+ovl	0x010f5d	6	279	action				0x08		unknown	complex			
+ovl	0x011074	6	157	action				0x09		unknown	direct-memory			
+ovl	0x011111	6	43	action				0x0a		unknown	direct-memory			
+ovl	0x01113c	6	151	action				0x0d		unknown	direct-memory			
+ovl	0x0111d3	6	47	action				0x0f		unknown	direct-memory			
+ovl	0x011202	6	73	action				0x13		unknown	direct-memory			
+ovl	0x01124b	6	253	action				0x24		unknown	complex			
 ovl	0x011348	6	71	unclassified						unknown				
-ovl	0x01138f	6	197	action				0x2f		unknown				
-ovl	0x011454	6	29	action				0x45		unknown				
-ovl	0x011471	6	29	action				0x4c		unknown				
-ovl	0x01148e	6	20	action				0x4e		unknown				
-ovl	0x0114a2	6	9	action				0x50		unknown				
-ovl	0x0114ab	6	25	action				0x51		unknown				
-ovl	0x0114c4	6	29	action				0x54		unknown				
-ovl	0x0114e1	6	161	action				0x52		unknown				
-ovl	0x011582	6	31	action				0x55		unknown				
+ovl	0x01138f	6	197	action				0x2f		unknown	complex			
+ovl	0x011454	6	29	action				0x45		unknown	formulaic			
+ovl	0x011471	6	29	action				0x4c		unknown	formulaic			
+ovl	0x01148e	6	20	action				0x4e		unknown	formulaic			
+ovl	0x0114a2	6	9	action				0x50		unknown	formulaic			
+ovl	0x0114ab	6	25	action				0x51		unknown	direct-memory			
+ovl	0x0114c4	6	29	action				0x54		unknown	formulaic			
+ovl	0x0114e1	6	161	action				0x52		unknown	complex			
+ovl	0x011582	6	31	action				0x55		unknown	direct-memory			
 ovl	0x0115a1	6		service						unknown				selector callback for actions 0x08,0x56
-ovl	0x011640	6	227	action				0x56		unknown				
-ovl	0x011723	6	252	action				0x57		unknown				
-ovl	0x01181f	6	127	action				0x59		unknown				
-ovl	0x01189e	6	227	action				0x5a		unknown				
-ovl	0x011981	6	106	action				0x5d		unknown				
-ovl	0x0119eb	6	171	action				0x5b		unknown				
-ovl	0x011a96	6	193	action				0x5e		unknown				
-ovl	0x011b57	6	20	action				0x61		unknown				
-ovl	0x011b6b	6	96	action				0x62		unknown				
-ovl	0x011bcb	6	675	action				0x64		unknown				
-ovl	0x011e6e	6	29	action				0x67		unknown				
-ovl	0x011e8b	6	25	action				0x60		unknown				
-ovl	0x011f30	6	99	action				0x66		unknown				
-ovl	0x011f93	6	47	action				0x65		unknown				
-ovl	0x011fc2	6	53	action				0x63		unknown				
-ovl	0x011ff7	6	28	action				0x6a		unknown				
-ovl	0x012013	6	175	action				0x6b		unknown				
-ovl	0x0120c2	6	189	action				0x6c		unknown				
-ovl	0x01217f	6	20	action				0x6e		unknown				
-ovl	0x012193	6	46	action				0x70		unknown				
-ovl	0x0121c1	6	20	action				0x42		unknown				
-ovl	0x0121d5	6	20	action				0x29		unknown				
-ovl	0x0121e9	6	150	action				0x7d		unknown				
-ovl	0x01227f	6	73	action				0x73		unknown				
-ovl	0x0122c8	6	14	action				0x74		unknown				
-ovl	0x0122d6	6	43	action				0x76		unknown				
-ovl	0x012301	6	29	action				0x75		unknown				
-ovl	0x01231e	6	41	action				0x0e		unknown				
-ovl	0x012347	6	180	action				0x7b		unknown				
-ovl	0x0123fb	6	196	action				0x7c		unknown				
-ovl	0x0124bf	6	93	action				0x81		unknown				
-ovl	0x01251c	6	203	action				0x83		unknown				
+ovl	0x011640	6	227	action				0x56		unknown	complex			
+ovl	0x011723	6	252	action				0x57		unknown	direct-memory			
+ovl	0x01181f	6	127	action				0x59		unknown	direct-memory			
+ovl	0x01189e	6	227	action				0x5a		unknown	complex			
+ovl	0x011981	6	106	action				0x5d		unknown	complex			
+ovl	0x0119eb	6	171	action				0x5b		unknown	direct-memory			
+ovl	0x011a96	6	193	action				0x5e		unknown	direct-memory			
+ovl	0x011b57	6	20	action				0x61		unknown	formulaic			
+ovl	0x011b6b	6	96	action				0x62		unknown	complex			
+ovl	0x011bcb	6	675	action				0x64		unknown	complex			
+ovl	0x011e6e	6	29	action				0x67		unknown	formulaic			
+ovl	0x011e8b	6	25	action				0x60		unknown	direct-memory			
+ovl	0x011f30	6	99	action				0x66		unknown	direct-memory			
+ovl	0x011f93	6	47	action				0x65		unknown	direct-memory			
+ovl	0x011fc2	6	53	action				0x63		unknown	direct-memory			
+ovl	0x011ff7	6	28	action				0x6a		unknown	formulaic			
+ovl	0x012013	6	175	action				0x6b		unknown	direct-memory			
+ovl	0x0120c2	6	189	action				0x6c		unknown	direct-memory			
+ovl	0x01217f	6	20	action				0x6e		unknown	formulaic			
+ovl	0x012193	6	46	action				0x70		unknown	direct-memory			
+ovl	0x0121c1	6	20	action				0x42		unknown	formulaic			
+ovl	0x0121d5	6	20	action				0x29		unknown	formulaic			
+ovl	0x0121e9	6	150	action				0x7d		unknown	complex			
+ovl	0x01227f	6	73	action				0x73		unknown	direct-memory			
+ovl	0x0122c8	6	14	action				0x74		unknown	direct-memory			
+ovl	0x0122d6	6	43	action				0x76		unknown	direct-memory			
+ovl	0x012301	6	29	action				0x75		unknown	formulaic			
+ovl	0x01231e	6	41	action				0x0e		unknown	formulaic			
+ovl	0x012347	6	180	action				0x7b		unknown	direct-memory			
+ovl	0x0123fb	6	196	action				0x7c		unknown	direct-memory			
+ovl	0x0124bf	6	93	action				0x81		unknown	direct-memory			
+ovl	0x01251c	6	203	action				0x83		unknown	direct-memory			
 ovl	0x0125e7	6		service						unknown				selector callback for actions 0x85
-ovl	0x01264c	6	334	action				0x85		unknown				
-ovl	0x01279a	6	31	action				0x86		unknown				
-ovl	0x0127b9	6	118	action				0x20		unknown				
-ovl	0x01282f	6	249	action				0x89		unknown				
-ovl	0x012928	6	29	action				0x8b		unknown				
-ovl	0x012945	6	144	action				0x8c		unknown				
-ovl	0x0129d5	6	43	action				0x8e		unknown				
+ovl	0x01264c	6	334	action				0x85		unknown	complex			
+ovl	0x01279a	6	31	action				0x86		unknown	direct-memory			
+ovl	0x0127b9	6	118	action				0x20		unknown	direct-memory			
+ovl	0x01282f	6	249	action				0x89		unknown	direct-memory			
+ovl	0x012928	6	29	action				0x8b		unknown	formulaic			
+ovl	0x012945	6	144	action				0x8c		unknown	direct-memory			
+ovl	0x0129d5	6	43	action				0x8e		unknown	direct-memory			
 ovl	0x012a00	6		service						unknown				selector callback for actions 0x90
-ovl	0x012a6a	6	264	action				0x90		unknown				
-ovl	0x012b72	6	154	action				0x8f		unknown				
-ovl	0x012c0c	6	200	action				0x92		unknown				
-ovl	0x012cd4	6	43	action				0x93		unknown				
-ovl	0x012cff	6	128	action				0x96		unknown				
-ovl	0x012d7f	6	111	action				0x97		unknown				
-ovl	0x012dee	6	265	action				0x49		unknown				
-ovl	0x012f83	6	76	action				0x9c		unknown				
-ovl	0x012fcf	6	216	action				0x9d		unknown				
-ovl	0x0130a7	6	4	action				0x9e		unknown				
-ovl	0x0130ab	6	14	action				0xa0		unknown				
-ovl	0x0130b9	6	20	action				0xa2		unknown				
-ovl	0x0130cd	6	207	action				0xa4		unknown				
-ovl	0x01319c	6	244	action				0x7f		unknown				
-ovl	0x013290	6	273	action				0x01		unknown				
-ovl	0x0133a1	6	43	action				0xa5		unknown				
-ovl	0x0133cc	6	25	action				0xa6		unknown				
-ovl	0x0133e5	6	212	action				0xa8		unknown				
-ovl	0x0134b9	6	130	action				0xa9		unknown				
-ovl	0x01353b	6	45	action				0xaa		unknown				
-ovl	0x013568	6	28	action				0xb8		unknown				
-ovl	0x013584	6	29	action				0xab		unknown				
-ovl	0x0135a1	6	179	action				0x7e		unknown				
-ovl	0x013654	6	74	action				0xb1		unknown				
-ovl	0x01369e	6	142	action				0xb9		unknown				
-ovl	0x01372c	6	42	action				0xba		unknown				
-ovl	0x013756	6	92	action				0xbb		unknown				
-ovl	0x0137b2	6	13	action				0xbc		unknown				
-ovl	0x0137bf	6	42	action				0xbd		unknown				
-ovl	0x0137e9	6	80	action				0xbe		unknown				
-ovl	0x013839	6	45	action				0xbf		unknown				
-ovl	0x013866	6	118	action				0xc0		unknown				
-ovl	0x0138dc	6	134	action				0xb6		unknown				
-ovl	0x013962	6	25	action				0xb7		unknown				
-ovl	0x014150	7	197	action				0x02		unknown				
-ovl	0x014215	7	171	action				0x0c		unknown				
-ovl	0x0142c0	7	420	action				0x0b		unknown				
-ovl	0x014464	7	43	action				0x10		unknown				
-ovl	0x01448f	7	182	action				0x11		unknown				
-ovl	0x014545	7	133	action				0x15		unknown				
-ovl	0x0145ca	7	119	action				0x16		unknown				
-ovl	0x014641	7	69	action				0x17		unknown				
-ovl	0x014686	7	25	action				0x1a		unknown				
-ovl	0x01469f	7	31	action				0x80		unknown				
-ovl	0x0146be	7	20	action				0x1e		unknown				
-ovl	0x0146d2	7	55	action				0x21		unknown				
-ovl	0x014709	7	42	action				0x1f		unknown				
+ovl	0x012a6a	6	264	action				0x90		unknown	complex			
+ovl	0x012b72	6	154	action				0x8f		unknown	direct-memory			
+ovl	0x012c0c	6	200	action				0x92		unknown	complex			
+ovl	0x012cd4	6	43	action				0x93		unknown	direct-memory			
+ovl	0x012cff	6	128	action				0x96		unknown	complex			
+ovl	0x012d7f	6	111	action				0x97		unknown	direct-memory			
+ovl	0x012dee	6	265	action				0x49		unknown	complex			
+ovl	0x012f83	6	76	action				0x9c		unknown	direct-memory			
+ovl	0x012fcf	6	216	action				0x9d		unknown	complex			
+ovl	0x0130a7	6	4	action				0x9e		unknown	formulaic			
+ovl	0x0130ab	6	14	action				0xa0		unknown	direct-memory			
+ovl	0x0130b9	6	20	action				0xa2		unknown	formulaic			
+ovl	0x0130cd	6	207	action				0xa4		unknown	direct-memory			
+ovl	0x01319c	6	244	action				0x7f		unknown	direct-memory			
+ovl	0x013290	6	273	action				0x01		unknown	complex			
+ovl	0x0133a1	6	43	action				0xa5		unknown	direct-memory			
+ovl	0x0133cc	6	25	action				0xa6		unknown	direct-memory			
+ovl	0x0133e5	6	212	action				0xa8		unknown	complex			
+ovl	0x0134b9	6	130	action				0xa9		unknown	direct-memory			
+ovl	0x01353b	6	45	action				0xaa		unknown	direct-memory			
+ovl	0x013568	6	28	action				0xb8		unknown	formulaic			
+ovl	0x013584	6	29	action				0xab		unknown	formulaic			
+ovl	0x0135a1	6	179	action				0x7e		unknown	direct-memory			
+ovl	0x013654	6	74	action				0xb1		unknown	direct-memory			
+ovl	0x01369e	6	142	action				0xb9		unknown	complex			
+ovl	0x01372c	6	42	action				0xba		unknown	direct-memory			
+ovl	0x013756	6	92	action				0xbb		unknown	direct-memory			
+ovl	0x0137b2	6	13	action				0xbc		unknown	formulaic			
+ovl	0x0137bf	6	42	action				0xbd		unknown	direct-memory			
+ovl	0x0137e9	6	80	action				0xbe		unknown	direct-memory			
+ovl	0x013839	6	45	action				0xbf		unknown	direct-memory			
+ovl	0x013866	6	118	action				0xc0		unknown	direct-memory			
+ovl	0x0138dc	6	134	action				0xb6		unknown	complex			
+ovl	0x013962	6	25	action				0xb7		unknown	formulaic			
+ovl	0x014150	7	197	action				0x02		unknown	direct-memory			
+ovl	0x014215	7	171	action				0x0c		unknown	direct-memory			
+ovl	0x0142c0	7	420	action				0x0b		unknown	complex			
+ovl	0x014464	7	43	action				0x10		unknown	direct-memory			
+ovl	0x01448f	7	182	action				0x11		unknown	direct-memory			
+ovl	0x014545	7	133	action				0x15		unknown	direct-memory			
+ovl	0x0145ca	7	119	action				0x16		unknown	direct-memory			
+ovl	0x014641	7	69	action				0x17		unknown	direct-memory			
+ovl	0x014686	7	25	action				0x1a		unknown	direct-memory			
+ovl	0x01469f	7	31	action				0x80		unknown	direct-memory			
+ovl	0x0146be	7	20	action				0x1e		unknown	formulaic			
+ovl	0x0146d2	7	55	action				0x21		unknown	direct-memory			
+ovl	0x014709	7	42	action				0x1f		unknown	direct-memory			
 ovl	0x014733	7		service						unknown				selector callback for actions 0x22
-ovl	0x014861	7	334	action				0x22		unknown				
-ovl	0x0149af	7	40	action				0x23		unknown				
-ovl	0x0149d7	7	76	action				0x26		unknown				
-ovl	0x014a23	7	100	action				0x25		unknown				
-ovl	0x014a87	7	150	action				0x2a		unknown				
-ovl	0x014b1d	7	393	action				0x27		unknown				
-ovl	0x014ca6	7	26	action				0x28		unknown				
-ovl	0x014cc0	7	177	action				0x1c		unknown				
-ovl	0x014d71	7	140	action				0x2b		unknown				
-ovl	0x014dfd	7	74	action				0x2d		unknown				
-ovl	0x014e47	7	344	action				0x30		unknown				
-ovl	0x014f9f	7	309	action				0x31		unknown				
-ovl	0x0150d4	7	233	action				0x36		unknown				
-ovl	0x0151bd	7	327	action				0x3b		unknown				
-ovl	0x015304	7	87	action				0x3d		unknown				
-ovl	0x01535b	7	103	action				0x3e		unknown				
-ovl	0x0153c2	7	97	action				0x3f		unknown				
-ovl	0x015423	7	141	action				0x40		unknown				
-ovl	0x0154b0	7	103	action				0x41		unknown				
-ovl	0x015517	7	126	action				0x43		unknown				
-ovl	0x015595	7	17	action				0x44		unknown				
-ovl	0x0155a6	7	162	action				0x4b		unknown				
-ovl	0x015648	7	56	action				0x4d		unknown				
-ovl	0x015680	7	20	action				0x2e		unknown				
-ovl	0x015694	7	20	action				0x4f		unknown				
-ovl	0x0156a8	7	58	action				0x58		unknown				
-ovl	0x0156e2	7	81	action				0x5c		unknown				
-ovl	0x015733	7	43	action				0x68		unknown				
-ovl	0x01575e	7	56	action				0x69		unknown				
-ovl	0x015796	7	116	action				0x19		unknown				
-ovl	0x01580a	7	97	action				0x12		unknown				
-ovl	0x01586b	7	17	action				0x72		unknown				
-ovl	0x01587c	7	148	action				0x77		unknown				
-ovl	0x015910	7	100	action				0x78		unknown				
-ovl	0x015974	7	69	action				0x7a		unknown				
-ovl	0x0159b9	7	73	action				0x82		unknown				
-ovl	0x015a02	7	43	action				0x88		unknown				
-ovl	0x015a2d	7	31	action				0x87		unknown				
-ovl	0x015a4c	7	124	action				0x91		unknown				
-ovl	0x015ac8	7	20	action				0x94		unknown				
-ovl	0x015adc	7	133	action				0x95		unknown				
-ovl	0x015b61	7	266	action				0x84		unknown				
-ovl	0x015c6b	7	191	action				0x47		unknown				
-ovl	0x015d2a	7	37	action				0x48		unknown				
-ovl	0x015d4f	7	207	action				0x8d		unknown				
-ovl	0x015e1e	7	43	action				0x9a		unknown				
-ovl	0x015e49	7	73	action				0x99		unknown				
-ovl	0x015e92	7	29	action				0x9b		unknown				
-ovl	0x015eaf	7	43	action				0x9f		unknown				
+ovl	0x014861	7	334	action				0x22		unknown	complex			
+ovl	0x0149af	7	40	action				0x23		unknown	complex			
+ovl	0x0149d7	7	76	action				0x26		unknown	direct-memory			
+ovl	0x014a23	7	100	action				0x25		unknown	direct-memory			
+ovl	0x014a87	7	150	action				0x2a		unknown	direct-memory			
+ovl	0x014b1d	7	393	action				0x27		unknown	complex			
+ovl	0x014ca6	7	26	action				0x28		unknown	direct-memory			
+ovl	0x014cc0	7	177	action				0x1c		unknown	complex			
+ovl	0x014d71	7	140	action				0x2b		unknown	direct-memory			
+ovl	0x014dfd	7	74	action				0x2d		unknown	direct-memory			
+ovl	0x014e47	7	344	action				0x30		unknown	complex			
+ovl	0x014f9f	7	309	action				0x31		unknown	complex			
+ovl	0x0150d4	7	233	action				0x36		unknown	complex			
+ovl	0x0151bd	7	327	action				0x3b		unknown	complex			
+ovl	0x015304	7	87	action				0x3d		unknown	direct-memory			
+ovl	0x01535b	7	103	action				0x3e		unknown	direct-memory			
+ovl	0x0153c2	7	97	action				0x3f		unknown	direct-memory			
+ovl	0x015423	7	141	action				0x40		unknown	complex			
+ovl	0x0154b0	7	103	action				0x41		unknown	direct-memory			
+ovl	0x015517	7	126	action				0x43		unknown	complex			
+ovl	0x015595	7	17	action				0x44		unknown	formulaic			
+ovl	0x0155a6	7	162	action				0x4b		unknown	direct-memory			
+ovl	0x015648	7	56	action				0x4d		unknown	direct-memory			
+ovl	0x015680	7	20	action				0x2e		unknown	formulaic			
+ovl	0x015694	7	20	action				0x4f		unknown	formulaic			
+ovl	0x0156a8	7	58	action				0x58		unknown	direct-memory			
+ovl	0x0156e2	7	81	action				0x5c		unknown	complex			
+ovl	0x015733	7	43	action				0x68		unknown	direct-memory			
+ovl	0x01575e	7	56	action				0x69		unknown	direct-memory			
+ovl	0x015796	7	116	action				0x19		unknown	direct-memory			
+ovl	0x01580a	7	97	action				0x12		unknown	direct-memory			
+ovl	0x01586b	7	17	action				0x72		unknown	formulaic			
+ovl	0x01587c	7	148	action				0x77		unknown	complex			
+ovl	0x015910	7	100	action				0x78		unknown	direct-memory			
+ovl	0x015974	7	69	action				0x7a		unknown	direct-memory			
+ovl	0x0159b9	7	73	action				0x82		unknown	direct-memory			
+ovl	0x015a02	7	43	action				0x88		unknown	direct-memory			
+ovl	0x015a2d	7	31	action				0x87		unknown	direct-memory			
+ovl	0x015a4c	7	124	action				0x91		unknown	direct-memory			
+ovl	0x015ac8	7	20	action				0x94		unknown	formulaic			
+ovl	0x015adc	7	133	action				0x95		unknown	direct-memory			
+ovl	0x015b61	7	266	action				0x84		unknown	complex			
+ovl	0x015c6b	7	191	action				0x47		unknown	complex			
+ovl	0x015d2a	7	37	action				0x48		unknown	direct-memory			
+ovl	0x015d4f	7	207	action				0x8d		unknown	complex			
+ovl	0x015e1e	7	43	action				0x9a		unknown	direct-memory			
+ovl	0x015e49	7	73	action				0x99		unknown	direct-memory			
+ovl	0x015e92	7	29	action				0x9b		unknown	direct-memory			
+ovl	0x015eaf	7	43	action				0x9f		unknown	direct-memory			
 ovl	0x015eda	7		service						unknown				selector callback for actions 0x34,0xa3
-ovl	0x0160c3	7	1116	action				0xa3		unknown				
-ovl	0x01651f	7	92	action				0x34		unknown				
-ovl	0x01657b	7	87	action				0xa1		unknown				
-ovl	0x0165d2	7	118	action				0x39		unknown				
-ovl	0x016648	7	43	action				0xa7		unknown				
-ovl	0x016673	7	76	action				0xb0		unknown				
-ovl	0x0166bf	7	859	action				0xb2		unknown				
-ovl	0x016c5e	7	906	action				0x6f		unknown				
+ovl	0x0160c3	7	1116	action				0xa3		unknown	complex			
+ovl	0x01651f	7	92	action				0x34		unknown	direct-memory			
+ovl	0x01657b	7	87	action				0xa1		unknown	direct-memory			
+ovl	0x0165d2	7	118	action				0x39		unknown	direct-memory			
+ovl	0x016648	7	43	action				0xa7		unknown	direct-memory			
+ovl	0x016673	7	76	action				0xb0		unknown	direct-memory			
+ovl	0x0166bf	7	859	action				0xb2		unknown	complex			
+ovl	0x016c5e	7	906	action				0x6f		unknown	complex			
 ovl	0x0176ba	8	103	unclassified						unknown				
 ovl	0x017721	8	54	unclassified						unknown				
 ovl	0x017757	8	67	unclassified						unknown				
@@ -861,62 +861,62 @@ ovl	0x018af1	9	120	unclassified						unknown
 ovl	0x018b69	9	282	unclassified						unknown				
 ovl	0x018c83	9	493	unclassified						unknown				
 ovl	0x018e70	9	391	unclassified						unknown				
-ovl	0x019b9a	9	39	handler	405	0x1b1				unknown				
+ovl	0x019b9a	9	39	handler	405	0x1b1				unknown	complex			
 ovl	0x01a0b7	9	46	unclassified						unknown				
-ovl	0x01a0e5	9	515	handler	407	0x1b3				unknown				
-ovl	0x01a2e8	9	141	handler	406	0x1b2				unknown				
-ovl	0x01a375	9	71	handler	408	0x1b4				unknown				
-ovl	0x01a3bc	9	56	handler	409	0x1b5				unknown				
-ovl	0x01a3f4	9	71	handler	410	0x1b6				unknown				
-ovl	0x01a43b	9	736	handler	411	0x1b7				unknown				
-ovl	0x01a71b	9	51	handler	412	0x1b8				unknown				
-ovl	0x01a74e	9	90	handler	413	0x1b9				unknown				
-ovl	0x01a7a8	9	137	callback			0x17			unknown				
-ovl	0x01a831	9	74	callback			0x00			unknown				
+ovl	0x01a0e5	9	515	handler	407	0x1b3				unknown	complex			
+ovl	0x01a2e8	9	141	handler	406	0x1b2				unknown	complex			
+ovl	0x01a375	9	71	handler	408	0x1b4				unknown	complex			
+ovl	0x01a3bc	9	56	handler	409	0x1b5				unknown	direct-memory			
+ovl	0x01a3f4	9	71	handler	410	0x1b6				unknown	complex			
+ovl	0x01a43b	9	736	handler	411	0x1b7				unknown	complex			
+ovl	0x01a71b	9	51	handler	412	0x1b8				unknown	direct-memory			
+ovl	0x01a74e	9	90	handler	413	0x1b9				unknown	complex			
+ovl	0x01a7a8	9	137	callback			0x17			unknown	direct-memory			
+ovl	0x01a831	9	74	callback			0x00			unknown	complex			
 ovl	0x01a87b	9	22	unclassified						unknown				
-ovl	0x01a891	9	208	handler	208	0x0d1				unknown				
+ovl	0x01a891	9	208	handler	208	0x0d1				unknown	complex			
 ovl	0x01b82d	10	263	unclassified						unknown				
 ovl	0x01b9a3	10	546	unclassified						unknown				
 ovl	0x01bbc5	10	243	unclassified						unknown				
 ovl	0x01bcb8	10	36	unclassified						unknown				
 ovl	0x01c52f	10	186	unclassified						unknown				
 ovl	0x01cbf0	11	810	unclassified						unknown				
-ovl	0x01cf44	11	31	handler	627	0x290				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x01d00e	11	424	handler	628	0x291				unknown				
-ovl	0x01d1b6	11	74	handler	629	0x292				unknown				
-ovl	0x01d200	11	479	handler	630	0x293				unknown				
-ovl	0x01d3df	11	87	handler	631	0x296				unknown				
-ovl	0x01d436	11	566	handler	632	0x297				unknown				
-ovl	0x01d66c	11	95	handler	633	0x298				unknown				
-ovl	0x01d6cb	11	314	handler	634	0x299				unknown				
-ovl	0x01d805	11	217	handler	22	0x016				unknown				
-ovl	0x01d8de	11	40	callback			0x2a			unknown				
+ovl	0x01cf44	11	31	handler	627	0x290				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x01d00e	11	424	handler	628	0x291				unknown	complex			
+ovl	0x01d1b6	11	74	handler	629	0x292				unknown	direct-memory			
+ovl	0x01d200	11	479	handler	630	0x293				unknown	complex			
+ovl	0x01d3df	11	87	handler	631	0x296				unknown	complex			
+ovl	0x01d436	11	566	handler	632	0x297				unknown	complex			
+ovl	0x01d66c	11	95	handler	633	0x298				unknown	complex			
+ovl	0x01d6cb	11	314	handler	634	0x299				unknown	complex			
+ovl	0x01d805	11	217	handler	22	0x016				unknown	complex			
+ovl	0x01d8de	11	40	callback			0x2a			unknown	direct-memory			
 ovl	0x01d906	11	49	unclassified						unknown				
 ovl	0x01da56	12	54	unclassified						unknown				
-ovl	0x01db90	13	29	handler	155	0x09c				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x01dca9	13	386	handler	157	0x09e				unknown				
-ovl	0x01de8a	13	71	handler	171	0x0ac				unknown				
-ovl	0x01ded1	13	51	handler	176	0x0b1				unknown				
-ovl	0x01df04	13	51	handler	180	0x0b5				unknown				
-ovl	0x01df37	13	51	handler	177	0x0b2				unknown				
-ovl	0x01df6a	13	51	handler	178	0x0b3				unknown				
-ovl	0x01df9d	13	51	handler	179	0x0b4				unknown				
-ovl	0x01dfd0	13	51	handler	172	0x0ad				unknown				
-ovl	0x01e003	13	51	handler	173	0x0ae				unknown				
-ovl	0x01e036	13	51	handler	175	0x0b0				unknown				
-ovl	0x01e069	13	51	handler	174	0x0af				unknown				
-ovl	0x01e09c	13	49	handler	194	0x0c3				unknown				
-ovl	0x01e181	13	88	handler	192	0x0c1				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x01e1d9	13	81	handler	193	0x0c2				unknown				
-ovl	0x01e22a	13	85	handler	188	0x0bd				unknown				
-ovl	0x01e27f	13	51	handler	158	0x09f				unknown				
-ovl	0x01e2b2	13	51	handler	159	0x0a0				unknown				
-ovl	0x01e2e5	13	51	handler	187	0x0bc				unknown				
-ovl	0x01e318	13	29	callback			0x0a			unknown				
-ovl	0x01e335	13	90	callback			0x0c			unknown				
-ovl	0x01e38f	13	95	callback			0x0b			unknown				
-ovl	0x01e3ee	13	29	callback			0x0f			unknown				
-ovl	0x01e40b	13	29	callback			0x10			unknown				
+ovl	0x01db90	13	29	handler	155	0x09c				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x01dca9	13	386	handler	157	0x09e				unknown	complex			
+ovl	0x01de8a	13	71	handler	171	0x0ac				unknown	complex			
+ovl	0x01ded1	13	51	handler	176	0x0b1				unknown	direct-memory			
+ovl	0x01df04	13	51	handler	180	0x0b5				unknown	direct-memory			
+ovl	0x01df37	13	51	handler	177	0x0b2				unknown	direct-memory			
+ovl	0x01df6a	13	51	handler	178	0x0b3				unknown	direct-memory			
+ovl	0x01df9d	13	51	handler	179	0x0b4				unknown	direct-memory			
+ovl	0x01dfd0	13	51	handler	172	0x0ad				unknown	direct-memory			
+ovl	0x01e003	13	51	handler	173	0x0ae				unknown	direct-memory			
+ovl	0x01e036	13	51	handler	175	0x0b0				unknown	direct-memory			
+ovl	0x01e069	13	51	handler	174	0x0af				unknown	direct-memory			
+ovl	0x01e09c	13	49	handler	194	0x0c3				unknown	direct-memory			
+ovl	0x01e181	13	88	handler	192	0x0c1				unknown	direct-memory			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x01e1d9	13	81	handler	193	0x0c2				unknown	complex			
+ovl	0x01e22a	13	85	handler	188	0x0bd				unknown	complex			
+ovl	0x01e27f	13	51	handler	158	0x09f				unknown	direct-memory			
+ovl	0x01e2b2	13	51	handler	159	0x0a0				unknown	direct-memory			
+ovl	0x01e2e5	13	51	handler	187	0x0bc				unknown	direct-memory			
+ovl	0x01e318	13	29	callback			0x0a			unknown	formulaic			
+ovl	0x01e335	13	90	callback			0x0c			unknown	direct-memory			
+ovl	0x01e38f	13	95	callback			0x0b			unknown	direct-memory			
+ovl	0x01e3ee	13	29	callback			0x0f			unknown	formulaic			
+ovl	0x01e40b	13	29	callback			0x10			unknown	formulaic			
 ovl	0x01e428	13	197	unclassified						unknown				
 ovl	0x01e4ed	13	40	unclassified						unknown				
 ovl	0x01e515	13	39	unclassified						unknown				
@@ -930,103 +930,103 @@ ovl	0x01e920	14	178	unclassified						unknown
 ovl	0x01e9d2	14	147	unclassified						unknown				
 ovl	0x01ea65	14	366	unclassified						unknown				
 ovl	0x01ebd3	14	1157	unclassified						unknown				
-ovl	0x01f1d9	14	368	handler	197	0x0c6				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x01f349	14	109	handler	198	0x0c7				unknown				
-ovl	0x01f3b6	14	120	handler	202	0x0cb				unknown				
-ovl	0x01f42e	14	120	handler	200	0x0c9				unknown				
-ovl	0x01f4a6	14	120	handler	199	0x0c8				unknown				
-ovl	0x01f51e	14	97	handler	201	0x0ca				unknown				
-ovl	0x01f57f	14	51	handler	195	0x0c4				unknown				
-ovl	0x01f5b2	14	115	handler	204	0x0cd				unknown				
-ovl	0x01f625	14	88	handler	205	0x0ce				unknown				
-ovl	0x01f67d	14	163	handler	206	0x0cf				unknown				
-ovl	0x01f720	14	528	handler	207	0x0d0				unknown				
-ovl	0x01f930	14	95	handler	191	0x0c0				unknown				
-ovl	0x01ff20	15	37	handler	147	0x094				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x020618	15	39	handler	148	0x095				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x020a14	15	29	handler	141	0x08e				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x01f1d9	14	368	handler	197	0x0c6				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x01f349	14	109	handler	198	0x0c7				unknown	complex			
+ovl	0x01f3b6	14	120	handler	202	0x0cb				unknown	complex			
+ovl	0x01f42e	14	120	handler	200	0x0c9				unknown	complex			
+ovl	0x01f4a6	14	120	handler	199	0x0c8				unknown	complex			
+ovl	0x01f51e	14	97	handler	201	0x0ca				unknown	complex			
+ovl	0x01f57f	14	51	handler	195	0x0c4				unknown	direct-memory			
+ovl	0x01f5b2	14	115	handler	204	0x0cd				unknown	complex			
+ovl	0x01f625	14	88	handler	205	0x0ce				unknown	complex			
+ovl	0x01f67d	14	163	handler	206	0x0cf				unknown	complex			
+ovl	0x01f720	14	528	handler	207	0x0d0				unknown	complex			
+ovl	0x01f930	14	95	handler	191	0x0c0				unknown	direct-memory			
+ovl	0x01ff20	15	37	handler	147	0x094				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x020618	15	39	handler	148	0x095				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x020a14	15	29	handler	141	0x08e				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
 ovl	0x020b92	15	177	unclassified						unknown				
-ovl	0x020c43	15	209	handler	142	0x08f				unknown				
-ovl	0x020d14	15	31	handler	143	0x090				unknown				
-ovl	0x020dcd	15	115	handler	144	0x091				unknown				
-ovl	0x020e40	15	28	handler	145	0x092				unknown				
-ovl	0x020ee4	15	115	handler	146	0x093				unknown				
-ovl	0x020f57	15	143	handler	140	0x08d				unknown				
-ovl	0x020fe6	15	33	handler	149	0x096				unknown				
+ovl	0x020c43	15	209	handler	142	0x08f				unknown	direct-memory			
+ovl	0x020d14	15	31	handler	143	0x090				unknown	complex			
+ovl	0x020dcd	15	115	handler	144	0x091				unknown	direct-memory			
+ovl	0x020e40	15	28	handler	145	0x092				unknown	complex			
+ovl	0x020ee4	15	115	handler	146	0x093				unknown	direct-memory			
+ovl	0x020f57	15	143	handler	140	0x08d				unknown	complex			
+ovl	0x020fe6	15	33	handler	149	0x096				unknown	complex			
 ovl	0x0210a1	15	333	unclassified						unknown				
-ovl	0x0211ee	15	131	handler	168	0x0a9				unknown				
-ovl	0x021271	15	114	handler	190	0x0bf				unknown				
-ovl	0x0212e3	15	110	handler	196	0x0c5				unknown				
-ovl	0x021351	15	130	handler	181	0x0b6				unknown				
-ovl	0x0213d3	15	70	handler	182	0x0b7				unknown				
-ovl	0x021419	15	81	handler	183	0x0b8				unknown				
-ovl	0x02146a	15	77	handler	185	0x0ba				unknown				
-ovl	0x0214b7	15	195	handler	186	0x0bb				unknown				
-ovl	0x02157a	15	333	handler	189	0x0be				unknown				
+ovl	0x0211ee	15	131	handler	168	0x0a9				unknown	direct-memory			
+ovl	0x021271	15	114	handler	190	0x0bf				unknown	direct-memory			
+ovl	0x0212e3	15	110	handler	196	0x0c5				unknown	complex			
+ovl	0x021351	15	130	handler	181	0x0b6				unknown	complex			
+ovl	0x0213d3	15	70	handler	182	0x0b7				unknown	direct-memory			
+ovl	0x021419	15	81	handler	183	0x0b8				unknown	direct-memory			
+ovl	0x02146a	15	77	handler	185	0x0ba				unknown	complex			
+ovl	0x0214b7	15	195	handler	186	0x0bb				unknown	complex			
+ovl	0x02157a	15	333	handler	189	0x0be				unknown	complex			
 ovl	0x0216c7	15	179	unclassified						unknown				
-ovl	0x02177a	15	261	handler	170	0x0ab				unknown				
+ovl	0x02177a	15	261	handler	170	0x0ab				unknown	complex			
 ovl	0x02187f	15	151	unclassified						unknown				
-ovl	0x021916	15	1634	handler	169	0x0aa				unknown				
-ovl	0x021f78	15	582	handler	184	0x0b9				unknown				
-ovl	0x02233c	15	27	callback			0x0e			unknown				
-ovl	0x022357	15	42	callback			0x0d			unknown				
-ovl	0x022bf0	16	570	handler	160	0x0a1				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x022e2a	16	3648	handler	161	0x0a2				unknown				
+ovl	0x021916	15	1634	handler	169	0x0aa				unknown	complex			
+ovl	0x021f78	15	582	handler	184	0x0b9				unknown	complex			
+ovl	0x02233c	15	27	callback			0x0e			unknown	direct-memory			
+ovl	0x022357	15	42	callback			0x0d			unknown	formulaic			
+ovl	0x022bf0	16	570	handler	160	0x0a1				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x022e2a	16	3648	handler	161	0x0a2				unknown	complex			
 ovl	0x023c6a	16	103	unclassified						unknown				
-ovl	0x023cd1	16	1920	handler	162	0x0a3				unknown				
-ovl	0x024451	16	1087	handler	163	0x0a4				unknown				
+ovl	0x023cd1	16	1920	handler	162	0x0a3				unknown	complex			
+ovl	0x024451	16	1087	handler	163	0x0a4				unknown	complex			
 ovl	0x024890	16	134	unclassified						unknown				
-ovl	0x024916	16	2237	handler	164	0x0a5				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x024916	16	2237	handler	164	0x0a5				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
 ovl	0x0251d3	16	104	unclassified						unknown				
-ovl	0x02523b	16	784	handler	165	0x0a6				unknown				
-ovl	0x02554b	16	1556	handler	166	0x0a7				unknown				
-ovl	0x025b5f	16	165	handler	167	0x0a8				unknown				
-ovl	0x02641f	17	32	handler	150	0x097				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x02685b	17	32	handler	151	0x098				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x026b1f	17	29	handler	152	0x099				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x026d42	17	29	handler	153	0x09a				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x026eed	17	29	handler	154	0x09b				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x02523b	16	784	handler	165	0x0a6				unknown	complex			
+ovl	0x02554b	16	1556	handler	166	0x0a7				unknown	complex			
+ovl	0x025b5f	16	165	handler	167	0x0a8				unknown	complex			
+ovl	0x02641f	17	32	handler	150	0x097				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x02685b	17	32	handler	151	0x098				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x026b1f	17	29	handler	152	0x099				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x026d42	17	29	handler	153	0x09a				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x026eed	17	29	handler	154	0x09b				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
 ovl	0x027054	17	39	unclassified						unknown				
-ovl	0x02712c	17	5801	handler	156	0x09d				unknown				
-ovl	0x0287d5	17	177	handler	209	0x0d2				unknown				
-ovl	0x028886	17	29	callback			0x11			unknown				
-ovl	0x0288a3	17	75	callback			0x12			unknown				
+ovl	0x02712c	17	5801	handler	156	0x09d				unknown	complex			
+ovl	0x0287d5	17	177	handler	209	0x0d2				unknown	complex			
+ovl	0x028886	17	29	callback			0x11			unknown	formulaic			
+ovl	0x0288a3	17	75	callback			0x12			unknown	direct-memory			
 ovl	0x029702	18	97	unclassified						unknown				
 ovl	0x029763	18	60	unclassified						unknown				
 ovl	0x02979f	18	65	unclassified						unknown				
 ovl	0x0297e0	18	66	unclassified						unknown				
-ovl	0x029d00	19	523	handler	414	0x1ba				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x029f0b	19	173	handler	415	0x1bb				unknown				
-ovl	0x029fb8	19	31	handler	416	0x1bc				unknown				
+ovl	0x029d00	19	523	handler	414	0x1ba				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x029f0b	19	173	handler	415	0x1bb				unknown	complex			
+ovl	0x029fb8	19	31	handler	416	0x1bc				unknown	complex			
 ovl	0x02a0bf	19	45	unclassified						unknown				
-ovl	0x02a0ec	19	301	handler	417	0x1bd				unknown				
-ovl	0x02a273	19	31	handler	421	0x1c1				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x02a583	19	114	handler	436	0x1d0				unknown				
-ovl	0x02a5f5	19	81	handler	437	0x1d1				unknown				
-ovl	0x02a646	19	257	handler	443	0x1d7				unknown				
-ovl	0x02a747	19	178	handler	442	0x1d6				unknown				
-ovl	0x02a7f9	19	307	handler	441	0x1d5				unknown				
-ovl	0x02a92c	19	1389	handler	445	0x1d9				unknown				
-ovl	0x02ae99	19	236	handler	467	0x1ef				unknown				
+ovl	0x02a0ec	19	301	handler	417	0x1bd				unknown	direct-memory			
+ovl	0x02a273	19	31	handler	421	0x1c1				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x02a583	19	114	handler	436	0x1d0				unknown	complex			
+ovl	0x02a5f5	19	81	handler	437	0x1d1				unknown	complex			
+ovl	0x02a646	19	257	handler	443	0x1d7				unknown	complex			
+ovl	0x02a747	19	178	handler	442	0x1d6				unknown	complex			
+ovl	0x02a7f9	19	307	handler	441	0x1d5				unknown	complex			
+ovl	0x02a92c	19	1389	handler	445	0x1d9				unknown	complex			
+ovl	0x02ae99	19	236	handler	467	0x1ef				unknown	complex			
 ovl	0x02af85	19	35	unclassified						unknown				
-ovl	0x02afa8	19	213	handler	468	0x1f0				unknown				
-ovl	0x02b07d	19	259	handler	476	0x1f8				unknown				
-ovl	0x02b180	19	448	handler	484	0x200				unknown				
+ovl	0x02afa8	19	213	handler	468	0x1f0				unknown	complex			
+ovl	0x02b07d	19	259	handler	476	0x1f8				unknown	complex			
+ovl	0x02b180	19	448	handler	484	0x200				unknown	complex			
 ovl	0x02b340	19	53	unclassified						unknown				
-ovl	0x02b375	19	355	handler	486	0x202				unknown				
-ovl	0x02b4d8	19	890	handler	489	0x205				unknown				
+ovl	0x02b375	19	355	handler	486	0x202				unknown	complex			
+ovl	0x02b4d8	19	890	handler	489	0x205				unknown	complex			
 ovl	0x02b852	19	53	unclassified						unknown				
-ovl	0x02b887	19	66	handler	450	0x1de				unknown				
-ovl	0x02b8c9	19	236	handler	521	0x225				unknown				
-ovl	0x02bb52	19	56	callback			0x1d			unknown				
-ovl	0x02bb8a	19	29	callback			0x1c			unknown				
-ovl	0x02bba7	19	56	callback			0x18			unknown				
-ovl	0x02bbdf	19	29	callback			0x1a			unknown				
-ovl	0x02bbfc	19	30	callback			0x21			unknown				
-ovl	0x02bc1a	19	29	callback			0x1e			unknown				
-ovl	0x02bc37	19	29	callback			0x1b			unknown				
-ovl	0x02bc54	19	29	callback			0x20			unknown				
-ovl	0x02bc71	19	131	callback			0x1f			unknown				
+ovl	0x02b887	19	66	handler	450	0x1de				unknown	complex			
+ovl	0x02b8c9	19	236	handler	521	0x225				unknown	complex			
+ovl	0x02bb52	19	56	callback			0x1d			unknown	direct-memory			
+ovl	0x02bb8a	19	29	callback			0x1c			unknown	formulaic			
+ovl	0x02bba7	19	56	callback			0x18			unknown	direct-memory			
+ovl	0x02bbdf	19	29	callback			0x1a			unknown	formulaic			
+ovl	0x02bbfc	19	30	callback			0x21			unknown	formulaic			
+ovl	0x02bc1a	19	29	callback			0x1e			unknown	formulaic			
+ovl	0x02bc37	19	29	callback			0x1b			unknown	formulaic			
+ovl	0x02bc54	19	29	callback			0x20			unknown	formulaic			
+ovl	0x02bc71	19	131	callback			0x1f			unknown	complex			
 ovl	0x02bcf4	19	58	unclassified						unknown				
 ovl	0x02bd2e	19	41	unclassified						unknown				
 ovl	0x02bd57	19	22	unclassified						unknown				
@@ -1044,372 +1044,372 @@ ovl	0x02bf12	19	44	unclassified						unknown
 ovl	0x02bf3e	19	22	unclassified						unknown				
 ovl	0x02bf54	19	39	unclassified						unknown				
 ovl	0x02bf7b	19	22	unclassified						unknown				
-ovl	0x02c6db	20	31	handler	429	0x1c9				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x02caf2	20	36	handler	430	0x1ca				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x02d1f5	20	102	handler	434	0x1ce				unknown				
-ovl	0x02d25b	20	110	handler	433	0x1cd				unknown				
-ovl	0x02d2e9	20	338	handler	456	0x1e4				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x02d43b	20	184	handler	438	0x1d2				unknown				
-ovl	0x02d4f3	20	214	handler	523	0x227				unknown				
-ovl	0x02d5c9	20	200	handler	455	0x1e3				unknown				
-ovl	0x02d691	20	1027	handler	454	0x1e2				unknown				
-ovl	0x02da94	20	174	handler	458	0x1e6				unknown				
-ovl	0x02db42	20	129	handler	519	0x223				unknown				
-ovl	0x02dbc3	20	339	handler	520	0x224				unknown				
-ovl	0x02dd16	20	81	handler	459	0x1e7				unknown				
-ovl	0x02dd67	20	81	handler	460	0x1e8				unknown				
-ovl	0x02ddb8	20	593	handler	487	0x203				unknown				
-ovl	0x02e009	20	313	callback			0x26			unknown				
+ovl	0x02c6db	20	31	handler	429	0x1c9				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x02caf2	20	36	handler	430	0x1ca				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x02d1f5	20	102	handler	434	0x1ce				unknown	complex			
+ovl	0x02d25b	20	110	handler	433	0x1cd				unknown	complex			
+ovl	0x02d2e9	20	338	handler	456	0x1e4				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x02d43b	20	184	handler	438	0x1d2				unknown	complex			
+ovl	0x02d4f3	20	214	handler	523	0x227				unknown	complex			
+ovl	0x02d5c9	20	200	handler	455	0x1e3				unknown	complex			
+ovl	0x02d691	20	1027	handler	454	0x1e2				unknown	complex			
+ovl	0x02da94	20	174	handler	458	0x1e6				unknown	complex			
+ovl	0x02db42	20	129	handler	519	0x223				unknown	complex			
+ovl	0x02dbc3	20	339	handler	520	0x224				unknown	complex			
+ovl	0x02dd16	20	81	handler	459	0x1e7				unknown	complex			
+ovl	0x02dd67	20	81	handler	460	0x1e8				unknown	complex			
+ovl	0x02ddb8	20	593	handler	487	0x203				unknown	complex			
+ovl	0x02e009	20	313	callback			0x26			unknown	formulaic			
 ovl	0x02e80b	20	530	unclassified						unknown				
 ovl	0x02f1f0	21	44	unclassified						unknown				
-ovl	0x02f21c	21	3931	handler	432	0x1cc				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x02f21c	21	3931	handler	432	0x1cc				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
 ovl	0x030331	21	1392	unclassified						unknown				
 ovl	0x0308a2	21	28	unclassified						unknown				
-ovl	0x030da0	22	36	handler	418	0x1be				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x031046	22	31	handler	420	0x1c0				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x0312f7	22	41	handler	422	0x1c2				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x0314ff	22	72	handler	425	0x1c5				unknown				
-ovl	0x031547	22	120	handler	431	0x1cb				unknown				
-ovl	0x0315bf	22	171	handler	446	0x1da				unknown				
-ovl	0x03166a	22	173	handler	447	0x1db				unknown				
-ovl	0x031717	22	446	handler	449	0x1dd				unknown				
+ovl	0x030da0	22	36	handler	418	0x1be				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x031046	22	31	handler	420	0x1c0				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x0312f7	22	41	handler	422	0x1c2				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x0314ff	22	72	handler	425	0x1c5				unknown	direct-memory			
+ovl	0x031547	22	120	handler	431	0x1cb				unknown	direct-memory			
+ovl	0x0315bf	22	171	handler	446	0x1da				unknown	complex			
+ovl	0x03166a	22	173	handler	447	0x1db				unknown	direct-memory			
+ovl	0x031717	22	446	handler	449	0x1dd				unknown	complex			
 ovl	0x0318d5	22	208	unclassified						unknown				
-ovl	0x0319a5	22	478	handler	461	0x1e9				unknown				
-ovl	0x031b83	22	141	handler	462	0x1ea				unknown				
-ovl	0x031c10	22	177	handler	463	0x1eb				unknown				
+ovl	0x0319a5	22	478	handler	461	0x1e9				unknown	complex			
+ovl	0x031b83	22	141	handler	462	0x1ea				unknown	complex			
+ovl	0x031c10	22	177	handler	463	0x1eb				unknown	complex			
 ovl	0x031cc1	22	46	unclassified						unknown				
-ovl	0x031cef	22	351	handler	466	0x1ee				unknown				
+ovl	0x031cef	22	351	handler	466	0x1ee				unknown	complex			
 ovl	0x031e4e	22	53	unclassified						unknown				
-ovl	0x031e83	22	377	handler	524	0x228				unknown				
-ovl	0x031ffc	22	147	handler	527	0x22b				unknown				
-ovl	0x03208f	22	51	handler	528	0x22c				unknown				
-ovl	0x0320c2	22	311	handler	526	0x22a				unknown				
-ovl	0x0321f9	22	534	callback			0x19			unknown				
-ovl	0x032890	23	32	handler	423	0x1c3				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x032b2c	23	34	handler	424	0x1c4				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x031e83	22	377	handler	524	0x228				unknown	complex			
+ovl	0x031ffc	22	147	handler	527	0x22b				unknown	complex			
+ovl	0x03208f	22	51	handler	528	0x22c				unknown	direct-memory			
+ovl	0x0320c2	22	311	handler	526	0x22a				unknown	complex			
+ovl	0x0321f9	22	534	callback			0x19			unknown	complex			
+ovl	0x032890	23	32	handler	423	0x1c3				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x032b2c	23	34	handler	424	0x1c4				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
 ovl	0x032dd4	23	67	unclassified						unknown				
-ovl	0x032e3e	23	247	handler	448	0x1dc				unknown				
-ovl	0x032f35	23	159	handler	485	0x201				unknown				
-ovl	0x032fd4	23	356	handler	522	0x226				unknown				
-ovl	0x033138	23	386	handler	469	0x1f1				unknown				
-ovl	0x0332ba	23	339	handler	473	0x1f5				unknown				
-ovl	0x03340d	23	241	handler	472	0x1f4				unknown				
-ovl	0x0334fe	23	141	handler	471	0x1f3				unknown				
-ovl	0x03358b	23	97	handler	470	0x1f2				unknown				
-ovl	0x0335ec	23	510	handler	474	0x1f6				unknown				
-ovl	0x0337ea	23	803	handler	475	0x1f7				unknown				
-ovl	0x034340	24	362	handler	444	0x1d8				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x032e3e	23	247	handler	448	0x1dc				unknown	complex			
+ovl	0x032f35	23	159	handler	485	0x201				unknown	complex			
+ovl	0x032fd4	23	356	handler	522	0x226				unknown	complex			
+ovl	0x033138	23	386	handler	469	0x1f1				unknown	complex			
+ovl	0x0332ba	23	339	handler	473	0x1f5				unknown	complex			
+ovl	0x03340d	23	241	handler	472	0x1f4				unknown	complex			
+ovl	0x0334fe	23	141	handler	471	0x1f3				unknown	complex			
+ovl	0x03358b	23	97	handler	470	0x1f2				unknown	complex			
+ovl	0x0335ec	23	510	handler	474	0x1f6				unknown	complex			
+ovl	0x0337ea	23	803	handler	475	0x1f7				unknown	complex			
+ovl	0x034340	24	362	handler	444	0x1d8				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
 ovl	0x0344aa	24	35	unclassified						unknown				
-ovl	0x0344cd	24	1217	handler	453	0x1e1				unknown				
+ovl	0x0344cd	24	1217	handler	453	0x1e1				unknown	complex			
 ovl	0x03498e	24	35	unclassified						unknown				
-ovl	0x0349b1	24	244	handler	477	0x1f9				unknown				
+ovl	0x0349b1	24	244	handler	477	0x1f9				unknown	complex			
 ovl	0x034aa5	24	35	unclassified						unknown				
-ovl	0x034ac8	24	1162	handler	478	0x1fa				unknown				
+ovl	0x034ac8	24	1162	handler	478	0x1fa				unknown	complex			
 ovl	0x034f52	24	99	unclassified						unknown				
-ovl	0x034fb5	24	839	handler	481	0x1fd				unknown				
+ovl	0x034fb5	24	839	handler	481	0x1fd				unknown	complex			
 ovl	0x0352fc	24	35	unclassified						unknown				
-ovl	0x03531f	24	196	handler	482	0x1fe				unknown				
+ovl	0x03531f	24	196	handler	482	0x1fe				unknown	complex			
 ovl	0x0353e3	24	90	unclassified						unknown				
-ovl	0x03543d	24	214	handler	483	0x1ff				unknown				
+ovl	0x03543d	24	214	handler	483	0x1ff				unknown	complex			
 ovl	0x035513	24	90	unclassified						unknown				
-ovl	0x03556d	24	246	handler	457	0x1e5				unknown				
+ovl	0x03556d	24	246	handler	457	0x1e5				unknown	complex			
 ovl	0x035663	24	35	unclassified						unknown				
-ovl	0x035686	24	42	handler	464	0x1ec				unknown				
+ovl	0x035686	24	42	handler	464	0x1ec				unknown	direct-memory			
 ovl	0x0356b0	24	35	unclassified						unknown				
-ovl	0x0356d3	24	292	handler	465	0x1ed				unknown				
+ovl	0x0356d3	24	292	handler	465	0x1ed				unknown	complex			
 ovl	0x0357f7	24	90	unclassified						unknown				
-ovl	0x035851	24	542	handler	452	0x1e0				unknown				
+ovl	0x035851	24	542	handler	452	0x1e0				unknown	complex			
 ovl	0x035a6f	24	90	unclassified						unknown				
-ovl	0x035ac9	24	556	handler	451	0x1df				unknown				
+ovl	0x035ac9	24	556	handler	451	0x1df				unknown	complex			
 ovl	0x035cf5	24	35	unclassified						unknown				
-ovl	0x035d18	24	282	handler	435	0x1cf				unknown				
+ovl	0x035d18	24	282	handler	435	0x1cf				unknown	complex			
 ovl	0x035e32	24	35	unclassified						unknown				
-ovl	0x035e55	24	462	handler	529	0x22d				unknown				
+ovl	0x035e55	24	462	handler	529	0x22d				unknown	complex			
 ovl	0x036023	24	35	unclassified						unknown				
-ovl	0x036046	24	453	handler	530	0x22e				unknown				
+ovl	0x036046	24	453	handler	530	0x22e				unknown	complex			
 ovl	0x03620b	24	35	unclassified						unknown				
 ovl	0x03622e	24	308	unclassified						unknown				
 ovl	0x036508	24	146	unclassified						unknown				
 ovl	0x03666d	24	150	unclassified						unknown				
-ovl	0x036990	25	36	handler	426	0x1c6				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x036b64	25	29	handler	427	0x1c7				unknown				
-ovl	0x036c4b	25	244	handler	525	0x229				unknown				
-ovl	0x036d3f	25	41	handler	428	0x1c8				unknown				
-ovl	0x036d68	25	218	handler	440	0x1d4				unknown				
+ovl	0x036990	25	36	handler	426	0x1c6				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x036b64	25	29	handler	427	0x1c7				unknown	complex			
+ovl	0x036c4b	25	244	handler	525	0x229				unknown	complex			
+ovl	0x036d3f	25	41	handler	428	0x1c8				unknown	formulaic			
+ovl	0x036d68	25	218	handler	440	0x1d4				unknown	complex			
 ovl	0x036e42	25	62	unclassified						unknown				
-ovl	0x036e80	25	992	handler	479	0x1fb				unknown				
-ovl	0x037260	25	514	handler	488	0x204				unknown				
+ovl	0x036e80	25	992	handler	479	0x1fb				unknown	complex			
+ovl	0x037260	25	514	handler	488	0x204				unknown	complex			
 ovl	0x037462	25	53	unclassified						unknown				
-ovl	0x037497	25	429	handler	480	0x1fc				unknown				
-ovl	0x037644	25	54	callback			0x22			unknown				
-ovl	0x03767a	25	56	callback			0x24			unknown				
-ovl	0x0376b2	25	29	callback			0x23			unknown				
-ovl	0x0376cf	25	29	callback			0x25			unknown				
+ovl	0x037497	25	429	handler	480	0x1fc				unknown	complex			
+ovl	0x037644	25	54	callback			0x22			unknown	formulaic			
+ovl	0x03767a	25	56	callback			0x24			unknown	direct-memory			
+ovl	0x0376b2	25	29	callback			0x23			unknown	formulaic			
+ovl	0x0376cf	25	29	callback			0x25			unknown	formulaic			
 ovl	0x0376ec	25	395	unclassified						unknown				
 ovl	0x037877	25	102	unclassified						unknown				
-ovl	0x038160	26	207	handler	419	0x1bf				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x03822f	26	51	handler	439	0x1d3				unknown				
-ovl	0x038262	26	239	handler	490	0x206				unknown				
-ovl	0x038351	26	173	handler	491	0x207				unknown				
-ovl	0x0383fe	26	351	handler	499	0x20f				unknown				
-ovl	0x03855d	26	194	handler	501	0x211				unknown				
-ovl	0x03861f	26	788	handler	500	0x210				unknown				
-ovl	0x038933	26	356	handler	502	0x212				unknown				
-ovl	0x038a97	26	986	handler	503	0x213				unknown				
-ovl	0x038e71	26	339	handler	504	0x214				unknown				
-ovl	0x038fc4	26	388	handler	505	0x215				unknown				
-ovl	0x039148	26	203	handler	506	0x216				unknown				
-ovl	0x039213	26	152	handler	507	0x217				unknown				
-ovl	0x0392ab	26	152	handler	508	0x218				unknown				
-ovl	0x039343	26	128	handler	509	0x219				unknown				
-ovl	0x0393c3	26	806	handler	510	0x21a				unknown				
-ovl	0x0396e9	26	907	handler	511	0x21b				unknown				
-ovl	0x039a74	26	455	handler	512	0x21c				unknown				
-ovl	0x039c3b	26	51	handler	513	0x21d				unknown				
-ovl	0x039c6e	26	74	handler	518	0x222				unknown				
-ovl	0x039cb8	26	313	handler	515	0x21f				unknown				
-ovl	0x039df1	26	772	handler	516	0x220				unknown				
-ovl	0x03a0f5	26	772	handler	517	0x221				unknown				
-ovl	0x03a3f9	26	74	handler	514	0x21e				unknown				
-ovl	0x03a443	26	124	handler	492	0x208				unknown				
-ovl	0x03a4bf	26	114	handler	493	0x209				unknown				
-ovl	0x03a531	26	126	handler	494	0x20a				unknown				
-ovl	0x03a5af	26	131	handler	495	0x20b				unknown				
-ovl	0x03a632	26	114	handler	496	0x20c				unknown				
-ovl	0x03a6a4	26	114	handler	497	0x20d				unknown				
-ovl	0x03a716	26	114	handler	498	0x20e				unknown				
-ovl	0x03adb0	27	28	handler	531	0x230				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x03ae9d	27	28	handler	532	0x231				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x03af45	27	43	handler	533	0x232				unknown				
-ovl	0x03af70	27	799	handler	540	0x239				unknown				
-ovl	0x03b28f	27	493	handler	541	0x23a				unknown				
-ovl	0x03b47c	27	127	handler	542	0x23b				unknown				
-ovl	0x03b4fb	27	90	handler	559	0x24c				unknown				
-ovl	0x03b555	27	121	handler	544	0x23d				unknown				
-ovl	0x03b5ce	27	63	handler	545	0x23e				unknown				
+ovl	0x038160	26	207	handler	419	0x1bf				unknown	direct-memory			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x03822f	26	51	handler	439	0x1d3				unknown	direct-memory			
+ovl	0x038262	26	239	handler	490	0x206				unknown	complex			
+ovl	0x038351	26	173	handler	491	0x207				unknown	direct-memory			
+ovl	0x0383fe	26	351	handler	499	0x20f				unknown	complex			
+ovl	0x03855d	26	194	handler	501	0x211				unknown	complex			
+ovl	0x03861f	26	788	handler	500	0x210				unknown	complex			
+ovl	0x038933	26	356	handler	502	0x212				unknown	complex			
+ovl	0x038a97	26	986	handler	503	0x213				unknown	complex			
+ovl	0x038e71	26	339	handler	504	0x214				unknown	complex			
+ovl	0x038fc4	26	388	handler	505	0x215				unknown	complex			
+ovl	0x039148	26	203	handler	506	0x216				unknown	complex			
+ovl	0x039213	26	152	handler	507	0x217				unknown	direct-memory			
+ovl	0x0392ab	26	152	handler	508	0x218				unknown	direct-memory			
+ovl	0x039343	26	128	handler	509	0x219				unknown	direct-memory			
+ovl	0x0393c3	26	806	handler	510	0x21a				unknown	complex			
+ovl	0x0396e9	26	907	handler	511	0x21b				unknown	complex			
+ovl	0x039a74	26	455	handler	512	0x21c				unknown	complex			
+ovl	0x039c3b	26	51	handler	513	0x21d				unknown	direct-memory			
+ovl	0x039c6e	26	74	handler	518	0x222				unknown	direct-memory			
+ovl	0x039cb8	26	313	handler	515	0x21f				unknown	complex			
+ovl	0x039df1	26	772	handler	516	0x220				unknown	complex			
+ovl	0x03a0f5	26	772	handler	517	0x221				unknown	complex			
+ovl	0x03a3f9	26	74	handler	514	0x21e				unknown	direct-memory			
+ovl	0x03a443	26	124	handler	492	0x208				unknown	complex			
+ovl	0x03a4bf	26	114	handler	493	0x209				unknown	complex			
+ovl	0x03a531	26	126	handler	494	0x20a				unknown	complex			
+ovl	0x03a5af	26	131	handler	495	0x20b				unknown	complex			
+ovl	0x03a632	26	114	handler	496	0x20c				unknown	complex			
+ovl	0x03a6a4	26	114	handler	497	0x20d				unknown	complex			
+ovl	0x03a716	26	114	handler	498	0x20e				unknown	complex			
+ovl	0x03adb0	27	28	handler	531	0x230				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x03ae9d	27	28	handler	532	0x231				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x03af45	27	43	handler	533	0x232				unknown	formulaic			
+ovl	0x03af70	27	799	handler	540	0x239				unknown	complex			
+ovl	0x03b28f	27	493	handler	541	0x23a				unknown	complex			
+ovl	0x03b47c	27	127	handler	542	0x23b				unknown	complex			
+ovl	0x03b4fb	27	90	handler	559	0x24c				unknown	complex			
+ovl	0x03b555	27	121	handler	544	0x23d				unknown	complex			
+ovl	0x03b5ce	27	63	handler	545	0x23e				unknown	complex			
 ovl	0x03b60d	27	358	unclassified						unknown				
 ovl	0x03b773	27	200	unclassified						unknown				
-ovl	0x03b83b	27	457	handler	536	0x235				unknown				
-ovl	0x03ba04	27	158	handler	537	0x236				unknown				
-ovl	0x03baa2	27	208	handler	548	0x241				unknown				
-ovl	0x03bb72	27	376	handler	549	0x242				unknown				
-ovl	0x03bcea	27	394	handler	550	0x243				unknown				
-ovl	0x03be74	27	394	handler	547	0x240				unknown				
-ovl	0x03bffe	27	394	handler	551	0x244				unknown				
+ovl	0x03b83b	27	457	handler	536	0x235				unknown	complex			
+ovl	0x03ba04	27	158	handler	537	0x236				unknown	complex			
+ovl	0x03baa2	27	208	handler	548	0x241				unknown	complex			
+ovl	0x03bb72	27	376	handler	549	0x242				unknown	complex			
+ovl	0x03bcea	27	394	handler	550	0x243				unknown	complex			
+ovl	0x03be74	27	394	handler	547	0x240				unknown	complex			
+ovl	0x03bffe	27	394	handler	551	0x244				unknown	complex			
 ovl	0x03c188	27	48	unclassified						unknown				
-ovl	0x03c1b8	27	1062	handler	553	0x246				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x03c5de	27	689	handler	554	0x247				unknown				
-ovl	0x03c88f	27	1043	handler	555	0x248				unknown				
-ovl	0x03cca2	27	688	handler	556	0x249				unknown				
+ovl	0x03c1b8	27	1062	handler	553	0x246				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x03c5de	27	689	handler	554	0x247				unknown	complex			
+ovl	0x03c88f	27	1043	handler	555	0x248				unknown	complex			
+ovl	0x03cca2	27	688	handler	556	0x249				unknown	complex			
 ovl	0x03cf52	27	93	unclassified						unknown				
 ovl	0x03cfaf	27	92	unclassified						unknown				
 ovl	0x03d00b	27	92	unclassified						unknown				
 ovl	0x03d067	27	57	unclassified						unknown				
-ovl	0x03d5dc	28	31	handler	534	0x233				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x03d76e	28	37	handler	535	0x234				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x03db37	28	1112	handler	539	0x238				unknown				
-ovl	0x03df8f	28	323	handler	552	0x245				unknown				
-ovl	0x03e0d2	28	297	handler	538	0x237				unknown				
-ovl	0x03e1fb	28	81	handler	543	0x23c				unknown				
-ovl	0x03e24c	28	207	handler	546	0x23f				unknown				
-ovl	0x03e31b	28	126	handler	560	0x24d				unknown				
-ovl	0x03e399	28	147	handler	561	0x24e				unknown				
-ovl	0x03e42c	28	113	handler	558	0x24b				unknown				
-ovl	0x03e49d	28	405	handler	562	0x24f				unknown				
+ovl	0x03d5dc	28	31	handler	534	0x233				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x03d76e	28	37	handler	535	0x234				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x03db37	28	1112	handler	539	0x238				unknown	complex			
+ovl	0x03df8f	28	323	handler	552	0x245				unknown	complex			
+ovl	0x03e0d2	28	297	handler	538	0x237				unknown	complex			
+ovl	0x03e1fb	28	81	handler	543	0x23c				unknown	complex			
+ovl	0x03e24c	28	207	handler	546	0x23f				unknown	complex			
+ovl	0x03e31b	28	126	handler	560	0x24d				unknown	complex			
+ovl	0x03e399	28	147	handler	561	0x24e				unknown	complex			
+ovl	0x03e42c	28	113	handler	558	0x24b				unknown	complex			
+ovl	0x03e49d	28	405	handler	562	0x24f				unknown	complex			
 ovl	0x03e632	28	119	unclassified						unknown				
-ovl	0x03e6a9	28	803	handler	563	0x250				unknown				
-ovl	0x03e9cc	28	169	handler	557	0x24a				unknown				
-ovl	0x03ea75	28	51	handler	565	0x252				unknown				
-ovl	0x03eaa8	28	74	handler	564	0x251				unknown				
-ovl	0x03eaf2	28	599	callback			0x27			unknown				
+ovl	0x03e6a9	28	803	handler	563	0x250				unknown	complex			
+ovl	0x03e9cc	28	169	handler	557	0x24a				unknown	complex			
+ovl	0x03ea75	28	51	handler	565	0x252				unknown	direct-memory			
+ovl	0x03eaa8	28	74	handler	564	0x251				unknown	direct-memory			
+ovl	0x03eaf2	28	599	callback			0x27			unknown	complex			
 ovl	0x03ed49	28	63	unclassified						unknown				
 ovl	0x03ed88	28	22	unclassified						unknown				
-ovl	0x03f000	29	608	handler	78	0x04e				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x03f2f7	29	1558	handler	81	0x051				unknown				
-ovl	0x03fc0a	30	32	handler	74	0x04a				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x040055	30	137	callback			0x07			unknown				
-ovl	0x0400de	30	482	handler	117	0x076				unknown				
-ovl	0x0402c0	30	135	handler	118	0x077				unknown				
-ovl	0x040347	30	120	handler	120	0x079				unknown				
-ovl	0x0403bf	30	172	handler	110	0x06f				unknown				
-ovl	0x04046b	30	351	handler	121	0x07a				unknown				
-ovl	0x0405ca	30	408	handler	97	0x061				unknown				
-ovl	0x040762	30	82	handler	95	0x05f				unknown				
-ovl	0x0407b4	30	59	handler	76	0x04c				unknown				
+ovl	0x03f000	29	608	handler	78	0x04e				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x03f2f7	29	1558	handler	81	0x051				unknown	complex			
+ovl	0x03fc0a	30	32	handler	74	0x04a				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x040055	30	137	callback			0x07			unknown	complex			
+ovl	0x0400de	30	482	handler	117	0x076				unknown	complex			
+ovl	0x0402c0	30	135	handler	118	0x077				unknown	complex			
+ovl	0x040347	30	120	handler	120	0x079				unknown	complex			
+ovl	0x0403bf	30	172	handler	110	0x06f				unknown	complex			
+ovl	0x04046b	30	351	handler	121	0x07a				unknown	complex			
+ovl	0x0405ca	30	408	handler	97	0x061				unknown	complex			
+ovl	0x040762	30	82	handler	95	0x05f				unknown	direct-memory			
+ovl	0x0407b4	30	59	handler	76	0x04c				unknown	direct-memory			
 ovl	0x0407ef	30	58	unclassified						unknown				
 ovl	0x040829	30	25	unclassified						unknown				
 ovl	0x040842	30	33	unclassified						unknown				
 ovl	0x040869	30	25	unclassified						unknown				
-ovl	0x0408c6	30	405	handler	87	0x057				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x040a5b	30	513	handler	126	0x07f				unknown				
-ovl	0x040c5c	30	406	handler	125	0x07e				unknown				
-ovl	0x0411cf	31	39	handler	75	0x04b				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x04144c	31	162	callback			0x08			unknown				
-ovl	0x0414ee	31	46	callback			0x09			unknown				
-ovl	0x04151c	31	382	handler	82	0x052				unknown				
-ovl	0x04174f	31	680	handler	83	0x053				unknown				
-ovl	0x041abf	31	522	handler	84	0x054				unknown				
-ovl	0x041d81	31	297	handler	85	0x055				unknown				
-ovl	0x041eaa	31	56	handler	122	0x07b				unknown				
-ovl	0x041ee2	31	245	handler	130	0x083				unknown				
-ovl	0x041fd7	31	835	handler	133	0x086				unknown				
-ovl	0x04231a	31	97	handler	127	0x080				unknown				
-ovl	0x04237b	31	87	handler	124	0x07d				unknown				
-ovl	0x0423d2	31	223	handler	111	0x070				unknown				
-ovl	0x0424b1	31	407	handler	104	0x069				unknown				
-ovl	0x042648	31	173	handler	105	0x06a				unknown				
-ovl	0x0426f5	31	71	handler	106	0x06b				unknown				
-ovl	0x04273c	31	120	handler	136	0x089				unknown				
+ovl	0x0408c6	30	405	handler	87	0x057				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x040a5b	30	513	handler	126	0x07f				unknown	complex			
+ovl	0x040c5c	30	406	handler	125	0x07e				unknown	complex			
+ovl	0x0411cf	31	39	handler	75	0x04b				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x04144c	31	162	callback			0x08			unknown	complex			
+ovl	0x0414ee	31	46	callback			0x09			unknown	complex			
+ovl	0x04151c	31	382	handler	82	0x052				unknown	complex			
+ovl	0x04174f	31	680	handler	83	0x053				unknown	complex			
+ovl	0x041abf	31	522	handler	84	0x054				unknown	complex			
+ovl	0x041d81	31	297	handler	85	0x055				unknown	complex			
+ovl	0x041eaa	31	56	handler	122	0x07b				unknown	direct-memory			
+ovl	0x041ee2	31	245	handler	130	0x083				unknown	complex			
+ovl	0x041fd7	31	835	handler	133	0x086				unknown	complex			
+ovl	0x04231a	31	97	handler	127	0x080				unknown	complex			
+ovl	0x04237b	31	87	handler	124	0x07d				unknown	complex			
+ovl	0x0423d2	31	223	handler	111	0x070				unknown	complex			
+ovl	0x0424b1	31	407	handler	104	0x069				unknown	complex			
+ovl	0x042648	31	173	handler	105	0x06a				unknown	complex			
+ovl	0x0426f5	31	71	handler	106	0x06b				unknown	complex			
+ovl	0x04273c	31	120	handler	136	0x089				unknown	direct-memory			
 ovl	0x0427b4	31	35	unclassified						unknown				
 ovl	0x0427d7	31	32	unclassified						unknown				
-ovl	0x0427f7	31	5	handler	135	0x088				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x0427f7	31	5	handler	135	0x088				unknown	formulaic			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
 ovl	0x0427fc	31	591	unclassified						unknown				
 ovl	0x042a4b	31	110	unclassified						unknown				
-ovl	0x042f80	32	39	handler	71	0x047				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x0431d6	32	32	handler	72	0x048				unknown				
-ovl	0x043415	32	390	callback			0x04			unknown				
-ovl	0x04359b	32	978	handler	77	0x04d				unknown				
-ovl	0x04396d	32	684	handler	134	0x087				unknown				
-ovl	0x043c19	32	419	handler	132	0x085				unknown				
-ovl	0x043dbc	32	51	handler	108	0x06d				unknown				
-ovl	0x043def	32	322	handler	112	0x071				unknown				
-ovl	0x043f31	32	1859	handler	114	0x073				unknown				
-ovl	0x044674	32	154	handler	115	0x074				unknown				
-ovl	0x04470e	32	463	handler	116	0x075				unknown				
-ovl	0x044917	32	153	handler	119	0x078				unknown				
-ovl	0x0449b0	32	129	handler	94	0x05e				unknown				
-ovl	0x044a31	32	61	handler	93	0x05d				unknown				
-ovl	0x044a6e	32	56	handler	103	0x067				unknown				
-ovl	0x044aa6	32	91	handler	107	0x06c				unknown				
+ovl	0x042f80	32	39	handler	71	0x047				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x0431d6	32	32	handler	72	0x048				unknown	complex			
+ovl	0x043415	32	390	callback			0x04			unknown	complex			
+ovl	0x04359b	32	978	handler	77	0x04d				unknown	complex			
+ovl	0x04396d	32	684	handler	134	0x087				unknown	complex			
+ovl	0x043c19	32	419	handler	132	0x085				unknown	complex			
+ovl	0x043dbc	32	51	handler	108	0x06d				unknown	direct-memory			
+ovl	0x043def	32	322	handler	112	0x071				unknown	complex			
+ovl	0x043f31	32	1859	handler	114	0x073				unknown	complex			
+ovl	0x044674	32	154	handler	115	0x074				unknown	complex			
+ovl	0x04470e	32	463	handler	116	0x075				unknown	complex			
+ovl	0x044917	32	153	handler	119	0x078				unknown	complex			
+ovl	0x0449b0	32	129	handler	94	0x05e				unknown	complex			
+ovl	0x044a31	32	61	handler	93	0x05d				unknown	complex			
+ovl	0x044a6e	32	56	handler	103	0x067				unknown	direct-memory			
+ovl	0x044aa6	32	91	handler	107	0x06c				unknown	complex			
 ovl	0x044b01	32	34	unclassified						unknown				
 ovl	0x044b23	32	36	unclassified						unknown				
 ovl	0x044b47	32	284	unclassified						unknown				
 ovl	0x044d2e	32	40	unclassified						unknown				
-ovl	0x045284	33	37	handler	70	0x046				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x04576f	33	29	handler	73	0x049				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x045988	33	50	callback			0x06			unknown				
-ovl	0x0459ba	33	345	handler	79	0x04f				unknown				
-ovl	0x045b13	33	684	handler	80	0x050				unknown				
-ovl	0x045ed7	33	426	handler	86	0x056				unknown				
-ovl	0x046081	33	171	handler	88	0x058				unknown				
-ovl	0x04612c	33	166	handler	89	0x059				unknown				
-ovl	0x0461d2	33	228	handler	90	0x05a				unknown				
-ovl	0x0462b6	33	217	handler	91	0x05b				unknown				
-ovl	0x04638f	33	56	handler	123	0x07c				unknown				
-ovl	0x0463c7	33	82	handler	128	0x081				unknown				
-ovl	0x046419	33	113	handler	129	0x082				unknown				
-ovl	0x04648a	33	723	handler	131	0x084				unknown				
-ovl	0x04675d	33	113	handler	113	0x072				unknown				
-ovl	0x0467ce	33	243	handler	96	0x060				unknown				
-ovl	0x0468c1	33	51	handler	92	0x05c				unknown				
-ovl	0x0468f4	33	93	handler	109	0x06e				unknown				
-ovl	0x046951	33	278	handler	98	0x062				unknown				
-ovl	0x046a67	33	293	handler	99	0x063				unknown				
-ovl	0x046b8c	33	98	handler	100	0x064				unknown				
-ovl	0x046bee	33	113	handler	101	0x065				unknown				
-ovl	0x046c5f	33	93	handler	102	0x066				unknown				
-ovl	0x046cbc	33	128	handler	138	0x08b				unknown				
-ovl	0x047f36	34	42	handler	33	0x021				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x04836e	34	32	handler	34	0x022				unknown				
-ovl	0x0486de	34	39	handler	35	0x023				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x048937	34	507	callback			0x03			unknown				
-ovl	0x048b32	34	936	handler	37	0x025				unknown				
-ovl	0x048eda	34	134	handler	41	0x029				unknown				
-ovl	0x048f60	34	752	handler	48	0x030				unknown				
-ovl	0x049250	34	141	handler	50	0x032				unknown				
-ovl	0x0492dd	34	141	handler	51	0x033				unknown				
-ovl	0x04936a	34	168	handler	40	0x028				unknown				
-ovl	0x049412	34	1309	handler	47	0x02f				unknown				
-ovl	0x04992f	34	280	handler	52	0x034				unknown				
-ovl	0x049a47	34	280	handler	53	0x035				unknown				
-ovl	0x049b5f	34	280	handler	54	0x036				unknown				
-ovl	0x049c77	34	280	handler	55	0x037				unknown				
-ovl	0x049d8f	34	183	handler	68	0x044				unknown				
-ovl	0x049e46	34	211	handler	65	0x041				unknown				
-ovl	0x049f19	34	110	handler	67	0x043				unknown				
-ovl	0x049f87	34	123	handler	58	0x03a				unknown				
-ovl	0x04a002	34	81	handler	57	0x039				unknown				
-ovl	0x04a053	34	100	handler	59	0x03b				unknown				
-ovl	0x04a0b7	34	254	handler	60	0x03c				unknown				
-ovl	0x04a1b5	34	56	handler	56	0x038				unknown				
-ovl	0x04a1ed	34	283	handler	61	0x03d				unknown				
-ovl	0x04a308	34	81	handler	139	0x08c				unknown				
+ovl	0x045284	33	37	handler	70	0x046				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x04576f	33	29	handler	73	0x049				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x045988	33	50	callback			0x06			unknown	complex			
+ovl	0x0459ba	33	345	handler	79	0x04f				unknown	complex			
+ovl	0x045b13	33	684	handler	80	0x050				unknown	complex			
+ovl	0x045ed7	33	426	handler	86	0x056				unknown	complex			
+ovl	0x046081	33	171	handler	88	0x058				unknown	complex			
+ovl	0x04612c	33	166	handler	89	0x059				unknown	complex			
+ovl	0x0461d2	33	228	handler	90	0x05a				unknown	complex			
+ovl	0x0462b6	33	217	handler	91	0x05b				unknown	complex			
+ovl	0x04638f	33	56	handler	123	0x07c				unknown	direct-memory			
+ovl	0x0463c7	33	82	handler	128	0x081				unknown	direct-memory			
+ovl	0x046419	33	113	handler	129	0x082				unknown	complex			
+ovl	0x04648a	33	723	handler	131	0x084				unknown	complex			
+ovl	0x04675d	33	113	handler	113	0x072				unknown	direct-memory			
+ovl	0x0467ce	33	243	handler	96	0x060				unknown	complex			
+ovl	0x0468c1	33	51	handler	92	0x05c				unknown	direct-memory			
+ovl	0x0468f4	33	93	handler	109	0x06e				unknown	complex			
+ovl	0x046951	33	278	handler	98	0x062				unknown	complex			
+ovl	0x046a67	33	293	handler	99	0x063				unknown	complex			
+ovl	0x046b8c	33	98	handler	100	0x064				unknown	direct-memory			
+ovl	0x046bee	33	113	handler	101	0x065				unknown	complex			
+ovl	0x046c5f	33	93	handler	102	0x066				unknown	complex			
+ovl	0x046cbc	33	128	handler	138	0x08b				unknown	complex			
+ovl	0x047f36	34	42	handler	33	0x021				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x04836e	34	32	handler	34	0x022				unknown	complex			
+ovl	0x0486de	34	39	handler	35	0x023				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x048937	34	507	callback			0x03			unknown	complex			
+ovl	0x048b32	34	936	handler	37	0x025				unknown	complex			
+ovl	0x048eda	34	134	handler	41	0x029				unknown	complex			
+ovl	0x048f60	34	752	handler	48	0x030				unknown	complex			
+ovl	0x049250	34	141	handler	50	0x032				unknown	complex			
+ovl	0x0492dd	34	141	handler	51	0x033				unknown	complex			
+ovl	0x04936a	34	168	handler	40	0x028				unknown	complex			
+ovl	0x049412	34	1309	handler	47	0x02f				unknown	complex			
+ovl	0x04992f	34	280	handler	52	0x034				unknown	complex			
+ovl	0x049a47	34	280	handler	53	0x035				unknown	complex			
+ovl	0x049b5f	34	280	handler	54	0x036				unknown	complex			
+ovl	0x049c77	34	280	handler	55	0x037				unknown	complex			
+ovl	0x049d8f	34	183	handler	68	0x044				unknown	complex			
+ovl	0x049e46	34	211	handler	65	0x041				unknown	complex			
+ovl	0x049f19	34	110	handler	67	0x043				unknown	direct-memory			
+ovl	0x049f87	34	123	handler	58	0x03a				unknown	complex			
+ovl	0x04a002	34	81	handler	57	0x039				unknown	direct-memory			
+ovl	0x04a053	34	100	handler	59	0x03b				unknown	complex			
+ovl	0x04a0b7	34	254	handler	60	0x03c				unknown	complex			
+ovl	0x04a1b5	34	56	handler	56	0x038				unknown	direct-memory			
+ovl	0x04a1ed	34	283	handler	61	0x03d				unknown	complex			
+ovl	0x04a308	34	81	handler	139	0x08c				unknown	complex			
 ovl	0x04a669	34	991	unclassified						unknown				
 ovl	0x04adaf	34	48	unclassified						unknown				
 ovl	0x04addf	34	240	unclassified						unknown				
 ovl	0x04aecf	34	1007	unclassified						unknown				
-ovl	0x04bdde	35	46	handler	36	0x024				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x04bdde	35	46	handler	36	0x024				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
 ovl	0x04c1cb	35	143	unclassified						unknown				
 ovl	0x04c25a	35	84	unclassified						unknown				
-ovl	0x04c2ae	35	1826	handler	38	0x026				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x04c9d0	35	108	handler	45	0x02d				unknown				
-ovl	0x04ca3c	35	857	handler	43	0x02b				unknown				
+ovl	0x04c2ae	35	1826	handler	38	0x026				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x04c9d0	35	108	handler	45	0x02d				unknown	complex			
+ovl	0x04ca3c	35	857	handler	43	0x02b				unknown	complex			
 ovl	0x04cd95	35	1367	unclassified						unknown				
 ovl	0x04d2ec	35	676	unclassified						unknown				
 ovl	0x04d590	35	338	unclassified						unknown				
-ovl	0x04d6e2	35	658	handler	42	0x02a				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x04d974	35	1030	handler	44	0x02c				unknown				
-ovl	0x04dd7a	35	1299	handler	46	0x02e				unknown				
-ovl	0x04e28d	35	169	handler	49	0x031				unknown				
-ovl	0x04e336	35	138	handler	69	0x045				unknown				
-ovl	0x04e3c0	35	51	handler	66	0x042				unknown				
-ovl	0x04e3f3	35	163	handler	39	0x027				unknown				
-ovl	0x04e496	35	98	handler	64	0x040				unknown				
-ovl	0x04e4f8	35	51	handler	62	0x03e				unknown				
-ovl	0x04e52b	35	51	handler	63	0x03f				unknown				
+ovl	0x04d6e2	35	658	handler	42	0x02a				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x04d974	35	1030	handler	44	0x02c				unknown	complex			
+ovl	0x04dd7a	35	1299	handler	46	0x02e				unknown	complex			
+ovl	0x04e28d	35	169	handler	49	0x031				unknown	complex			
+ovl	0x04e336	35	138	handler	69	0x045				unknown	complex			
+ovl	0x04e3c0	35	51	handler	66	0x042				unknown	direct-memory			
+ovl	0x04e3f3	35	163	handler	39	0x027				unknown	complex			
+ovl	0x04e496	35	98	handler	64	0x040				unknown	complex			
+ovl	0x04e4f8	35	51	handler	62	0x03e				unknown	direct-memory			
+ovl	0x04e52b	35	51	handler	63	0x03f				unknown	direct-memory			
 ovl	0x04eb14	35	35	unclassified						unknown				
 ovl	0x04eb37	35	36	unclassified						unknown				
 ovl	0x04eb5b	35	481	unclassified						unknown				
 ovl	0x04f1c0	36	367	unclassified						unknown				
 ovl	0x04f32f	36	529	unclassified						unknown				
-ovl	0x04f56b	36	32	handler	18	0x012				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x04f891	36	277	handler	19	0x013				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x04f9a6	36	52	callback			0x02			unknown				
-ovl	0x04f9da	36	683	handler	20	0x014				unknown				
-ovl	0x04fc85	36	440	handler	21	0x015				unknown				
-ovl	0x04fe3d	36	1161	handler	29	0x01d				unknown				
-ovl	0x0502c6	36	56	handler	30	0x01e				unknown				
-ovl	0x0502fe	36	51	handler	31	0x01f				unknown				
-ovl	0x050331	36	507	handler	25	0x019				unknown				
-ovl	0x05052c	36	127	handler	26	0x01a				unknown				
-ovl	0x0505ab	36	51	handler	137	0x08a				unknown				
-ovl	0x0505de	36	83	handler	27	0x01b				unknown				
-ovl	0x050631	36	81	handler	28	0x01c				unknown				
-ovl	0x050682	36	91	handler	23	0x017				unknown				
-ovl	0x0506dd	36	91	handler	24	0x018				unknown				
-ovl	0x050738	36	188	handler	32	0x020				unknown				
+ovl	0x04f56b	36	32	handler	18	0x012				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x04f891	36	277	handler	19	0x013				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x04f9a6	36	52	callback			0x02			unknown	direct-memory			
+ovl	0x04f9da	36	683	handler	20	0x014				unknown	complex			
+ovl	0x04fc85	36	440	handler	21	0x015				unknown	complex			
+ovl	0x04fe3d	36	1161	handler	29	0x01d				unknown	complex			
+ovl	0x0502c6	36	56	handler	30	0x01e				unknown	direct-memory			
+ovl	0x0502fe	36	51	handler	31	0x01f				unknown	direct-memory			
+ovl	0x050331	36	507	handler	25	0x019				unknown	complex			
+ovl	0x05052c	36	127	handler	26	0x01a				unknown	complex			
+ovl	0x0505ab	36	51	handler	137	0x08a				unknown	direct-memory			
+ovl	0x0505de	36	83	handler	27	0x01b				unknown	complex			
+ovl	0x050631	36	81	handler	28	0x01c				unknown	complex			
+ovl	0x050682	36	91	handler	23	0x017				unknown	complex			
+ovl	0x0506dd	36	91	handler	24	0x018				unknown	complex			
+ovl	0x050738	36	188	handler	32	0x020				unknown	complex			
 ovl	0x0507f4	36	172	unclassified						unknown				
 ovl	0x050b00	37		service						unknown				
 ovl	0x050bec	37	224	unclassified						unknown				
-ovl	0x0514b5	38	32	handler	233	0x0ee			gw_your_quarters_handler	named				
-ovl	0x051857	38	122	handler	236	0x0f1				unknown				
-ovl	0x0518d1	38	159	handler	319	0x14a				unknown				
-ovl	0x051970	38	66	handler	320	0x14b				unknown				
-ovl	0x0519b2	38	198	handler	282	0x123				unknown				
-ovl	0x051a78	38	265	handler	283	0x124				unknown				
-ovl	0x051b81	38	313	handler	284	0x125				unknown				
-ovl	0x051cba	38	717	handler	296	0x131				unknown				
+ovl	0x0514b5	38	32	handler	233	0x0ee			gw_your_quarters_handler	named	complex			
+ovl	0x051857	38	122	handler	236	0x0f1				unknown	direct-memory			
+ovl	0x0518d1	38	159	handler	319	0x14a				unknown	complex			
+ovl	0x051970	38	66	handler	320	0x14b				unknown	direct-memory			
+ovl	0x0519b2	38	198	handler	282	0x123				unknown	complex			
+ovl	0x051a78	38	265	handler	283	0x124				unknown	complex			
+ovl	0x051b81	38	313	handler	284	0x125				unknown	complex			
+ovl	0x051cba	38	717	handler	296	0x131				unknown	complex			
 ovl	0x051f87	38	166	unclassified						unknown				
-ovl	0x05202d	38	79	handler	212	0x0d5,0x132,0x133				unknown				
-ovl	0x05207c	38	106	handler	297	0x134				unknown				
-ovl	0x0520e6	38	281	handler	323	0x14e				unknown				
-ovl	0x0521ff	38	493	handler	324	0x14f				unknown				
-ovl	0x0523ec	38	128	handler	325	0x150				unknown				
-ovl	0x05246c	38	205	handler	341	0x16f				unknown				
-ovl	0x052539	38	112	handler	377	0x194				unknown				
-ovl	0x0525a9	38	459	handler	339	0x16d				unknown				
-ovl	0x052774	38	123	handler	342	0x170				unknown				
-ovl	0x0527ef	38	133	handler	347	0x175				unknown				
-ovl	0x052874	38	51	handler	376	0x193				unknown				
-ovl	0x0528a7	38	51	handler	378	0x195				unknown				
-ovl	0x0528da	38	69	handler	399	0x1ab				unknown				
-ovl	0x05291f	38	93	handler	335	0x169				unknown				
-ovl	0x0529be	38	559	handler	332	0x165				unknown				
-ovl	0x052bed	38	88	handler	334	0x168				unknown				
-ovl	0x052c45	38	152	handler	330	0x163				unknown				
-ovl	0x052cdd	38	51	handler	333	0x167				unknown				
-ovl	0x052d10	38	187	handler	328	0x161				unknown				
-ovl	0x052dcb	38	590	handler	329	0x162				unknown				
+ovl	0x05202d	38	79	handler	212	0x0d5,0x132,0x133				unknown	complex			
+ovl	0x05207c	38	106	handler	297	0x134				unknown	complex			
+ovl	0x0520e6	38	281	handler	323	0x14e				unknown	complex			
+ovl	0x0521ff	38	493	handler	324	0x14f				unknown	complex			
+ovl	0x0523ec	38	128	handler	325	0x150				unknown	complex			
+ovl	0x05246c	38	205	handler	341	0x16f				unknown	complex			
+ovl	0x052539	38	112	handler	377	0x194				unknown	complex			
+ovl	0x0525a9	38	459	handler	339	0x16d				unknown	complex			
+ovl	0x052774	38	123	handler	342	0x170				unknown	complex			
+ovl	0x0527ef	38	133	handler	347	0x175				unknown	complex			
+ovl	0x052874	38	51	handler	376	0x193				unknown	direct-memory			
+ovl	0x0528a7	38	51	handler	378	0x195				unknown	direct-memory			
+ovl	0x0528da	38	69	handler	399	0x1ab				unknown	direct-memory			
+ovl	0x05291f	38	93	handler	335	0x169				unknown	complex			
+ovl	0x0529be	38	559	handler	332	0x165				unknown	complex			
+ovl	0x052bed	38	88	handler	334	0x168				unknown	complex			
+ovl	0x052c45	38	152	handler	330	0x163				unknown	complex			
+ovl	0x052cdd	38	51	handler	333	0x167				unknown	direct-memory			
+ovl	0x052d10	38	187	handler	328	0x161				unknown	complex			
+ovl	0x052dcb	38	590	handler	329	0x162				unknown	complex			
 ovl	0x053019	38	48	unclassified						unknown				
 ovl	0x053049	38	48	unclassified						unknown				
 ovl	0x053079	38	21	unclassified						unknown				
@@ -1427,263 +1427,263 @@ ovl	0x0532f7	38	40	unclassified						unknown
 ovl	0x05331f	38	84	unclassified						unknown				
 ovl	0x053373	38	656	unclassified						unknown				
 ovl	0x053603	38	211	unclassified						unknown				
-ovl	0x05421c	39	32	handler	242	0x0f7				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x054518	39	32	handler	243	0x0f8				unknown				
-ovl	0x054804	39	32	handler	244	0x0f9				unknown				
-ovl	0x054989	39	31	handler	248	0x0fd				unknown				
-ovl	0x054add	39	31	handler	249	0x0fe				unknown				
-ovl	0x054bab	39	278	handler	253	0x102				unknown				
-ovl	0x054cc1	39	271	handler	254	0x103				unknown				
-ovl	0x054dd0	39	326	handler	259	0x108				unknown				
-ovl	0x054f16	39	393	handler	260	0x109				unknown				
-ovl	0x05509f	39	181	handler	267	0x110				unknown				
-ovl	0x055154	39	169	handler	268	0x111				unknown				
-ovl	0x0551fd	39	78	handler	270	0x113				unknown				
-ovl	0x05524b	39	407	handler	321	0x14c				unknown				
-ovl	0x0553e2	39	188	handler	322	0x14d				unknown				
-ovl	0x05549e	39	159	handler	271	0x114				unknown				
-ovl	0x05553d	39	170	handler	312	0x143				unknown				
-ovl	0x0555e7	39	170	handler	313	0x144				unknown				
-ovl	0x055691	39	278	handler	315	0x146				unknown				
-ovl	0x0557a7	39	278	handler	316	0x147				unknown				
-ovl	0x0558bd	39	73	handler	327	0x152				unknown				
-ovl	0x055906	39	104	handler	348	0x176,0x177				unknown				
-ovl	0x05596e	39	104	handler	380	0x197,0x198				unknown				
-ovl	0x0559d6	39	68	handler	349	0x178				unknown				
-ovl	0x055a1a	39	68	handler	351	0x17a				unknown				
-ovl	0x055a5e	39	73	handler	352	0x17b				unknown				
-ovl	0x055aa7	39	73	handler	379	0x196				unknown				
-ovl	0x055af0	39	175	handler	350	0x179				unknown				
-ovl	0x055b9f	39	111	handler	353	0x17c				unknown				
-ovl	0x055c0e	39	68	handler	394	0x1a6				unknown				
-ovl	0x055c52	39	68	handler	397	0x1a9				unknown				
-ovl	0x055c96	39	84	handler	398	0x1aa				unknown				
-ovl	0x055cea	39	87	handler	402	0x1ae				unknown				
-ovl	0x055d41	39	87	handler	403	0x1af				unknown				
-ovl	0x055d98	39	69	handler	404	0x1b0				unknown				
-ovl	0x055ddd	39	86	callback			0x15			unknown				
-ovl	0x055e33	39	136	callback			0x16			unknown				
+ovl	0x05421c	39	32	handler	242	0x0f7				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x054518	39	32	handler	243	0x0f8				unknown	complex			
+ovl	0x054804	39	32	handler	244	0x0f9				unknown	complex			
+ovl	0x054989	39	31	handler	248	0x0fd				unknown	complex			
+ovl	0x054add	39	31	handler	249	0x0fe				unknown	complex			
+ovl	0x054bab	39	278	handler	253	0x102				unknown	complex			
+ovl	0x054cc1	39	271	handler	254	0x103				unknown	complex			
+ovl	0x054dd0	39	326	handler	259	0x108				unknown	complex			
+ovl	0x054f16	39	393	handler	260	0x109				unknown	complex			
+ovl	0x05509f	39	181	handler	267	0x110				unknown	complex			
+ovl	0x055154	39	169	handler	268	0x111				unknown	complex			
+ovl	0x0551fd	39	78	handler	270	0x113				unknown	complex			
+ovl	0x05524b	39	407	handler	321	0x14c				unknown	complex			
+ovl	0x0553e2	39	188	handler	322	0x14d				unknown	complex			
+ovl	0x05549e	39	159	handler	271	0x114				unknown	complex			
+ovl	0x05553d	39	170	handler	312	0x143				unknown	complex			
+ovl	0x0555e7	39	170	handler	313	0x144				unknown	complex			
+ovl	0x055691	39	278	handler	315	0x146				unknown	complex			
+ovl	0x0557a7	39	278	handler	316	0x147				unknown	complex			
+ovl	0x0558bd	39	73	handler	327	0x152				unknown	complex			
+ovl	0x055906	39	104	handler	348	0x176,0x177				unknown	complex			
+ovl	0x05596e	39	104	handler	380	0x197,0x198				unknown	complex			
+ovl	0x0559d6	39	68	handler	349	0x178				unknown	complex			
+ovl	0x055a1a	39	68	handler	351	0x17a				unknown	complex			
+ovl	0x055a5e	39	73	handler	352	0x17b				unknown	complex			
+ovl	0x055aa7	39	73	handler	379	0x196				unknown	complex			
+ovl	0x055af0	39	175	handler	350	0x179				unknown	complex			
+ovl	0x055b9f	39	111	handler	353	0x17c				unknown	complex			
+ovl	0x055c0e	39	68	handler	394	0x1a6				unknown	complex			
+ovl	0x055c52	39	68	handler	397	0x1a9				unknown	complex			
+ovl	0x055c96	39	84	handler	398	0x1aa				unknown	complex			
+ovl	0x055cea	39	87	handler	402	0x1ae				unknown	complex			
+ovl	0x055d41	39	87	handler	403	0x1af				unknown	complex			
+ovl	0x055d98	39	69	handler	404	0x1b0				unknown	direct-memory			
+ovl	0x055ddd	39	86	callback			0x15			unknown	formulaic			
+ovl	0x055e33	39	136	callback			0x16			unknown	complex			
 ovl	0x055ebb	39	330	unclassified						unknown				
 ovl	0x056005	39	48	unclassified						unknown				
-ovl	0x056930	40	32	handler	231	0x0ec				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x056ba2	40	37	handler	232	0x0ed				unknown				
-ovl	0x056f9f	40	820	handler	250	0x0ff				unknown				
-ovl	0x0572d3	40	378	handler	255	0x104				unknown				
-ovl	0x05744d	40	321	handler	256	0x105				unknown				
-ovl	0x05758e	40	252	handler	303	0x13a				unknown				
-ovl	0x05768a	40	170	handler	311	0x142				unknown				
-ovl	0x057734	40	308	handler	314	0x145				unknown				
-ovl	0x057868	40	220	handler	280	0x121				unknown				
-ovl	0x057944	40	310	handler	308	0x13f				unknown				
-ovl	0x057a7a	40	200	handler	281	0x122				unknown				
-ovl	0x057b42	40	88	handler	368	0x18b				unknown				
-ovl	0x057b9a	40	102	handler	370	0x18d				unknown				
-ovl	0x057c00	40	168	handler	371	0x18e				unknown				
-ovl	0x057ca8	40	63	handler	372	0x18f				unknown				
-ovl	0x057ce7	40	123	handler	374	0x191				unknown				
-ovl	0x057d62	40	93	handler	373	0x190				unknown				
-ovl	0x057dbf	40	68	handler	369	0x18c				unknown				
-ovl	0x057e03	40	107	handler	375	0x192				unknown				
+ovl	0x056930	40	32	handler	231	0x0ec				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x056ba2	40	37	handler	232	0x0ed				unknown	complex			
+ovl	0x056f9f	40	820	handler	250	0x0ff				unknown	complex			
+ovl	0x0572d3	40	378	handler	255	0x104				unknown	complex			
+ovl	0x05744d	40	321	handler	256	0x105				unknown	complex			
+ovl	0x05758e	40	252	handler	303	0x13a				unknown	complex			
+ovl	0x05768a	40	170	handler	311	0x142				unknown	complex			
+ovl	0x057734	40	308	handler	314	0x145				unknown	complex			
+ovl	0x057868	40	220	handler	280	0x121				unknown	complex			
+ovl	0x057944	40	310	handler	308	0x13f				unknown	complex			
+ovl	0x057a7a	40	200	handler	281	0x122				unknown	complex			
+ovl	0x057b42	40	88	handler	368	0x18b				unknown	complex			
+ovl	0x057b9a	40	102	handler	370	0x18d				unknown	complex			
+ovl	0x057c00	40	168	handler	371	0x18e				unknown	complex			
+ovl	0x057ca8	40	63	handler	372	0x18f				unknown	complex			
+ovl	0x057ce7	40	123	handler	374	0x191				unknown	complex			
+ovl	0x057d62	40	93	handler	373	0x190				unknown	direct-memory			
+ovl	0x057dbf	40	68	handler	369	0x18c				unknown	complex			
+ovl	0x057e03	40	107	handler	375	0x192				unknown	complex			
 ovl	0x057e6e	40	87	unclassified						unknown				
-ovl	0x057ec5	40	87	handler	400	0x1ac				unknown				
-ovl	0x057f1c	40	51	handler	331	0x164				unknown				
+ovl	0x057ec5	40	87	handler	400	0x1ac				unknown	complex			
+ovl	0x057f1c	40	51	handler	331	0x164				unknown	direct-memory			
 ovl	0x057f4f	40	48	unclassified						unknown				
 ovl	0x058400	41	704	unclassified						unknown				
 ovl	0x0586c0	41	31	unclassified						unknown				
 ovl	0x0586df	41	63	unclassified						unknown				
 ovl	0x05871e	41	309	unclassified						unknown				
 ovl	0x058853	41	1331	unclassified						unknown				
-ovl	0x058d86	41	346	handler	295	0x130				unknown				
+ovl	0x058d86	41	346	handler	295	0x130				unknown	complex			
 ovl	0x0595e0	42	29	unclassified						unknown				
-ovl	0x059a08	42	31	handler	226	0x0e7				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x059ba8	42	729	handler	227	0x0e8				unknown				
-ovl	0x059e81	42	32	handler	228	0x0e9				unknown				
-ovl	0x059fef	42	309	handler	229	0x0ea				unknown				
-ovl	0x05a124	42	299	handler	230	0x0eb				unknown				
-ovl	0x05a24f	42	32	handler	235	0x0f0				unknown				
-ovl	0x05a424	42	304	handler	237	0x0f2				unknown				
-ovl	0x05a554	42	32	handler	245	0x0fa				unknown				
-ovl	0x05a717	42	32	handler	246	0x0fb				unknown				
-ovl	0x05a885	42	32	handler	247	0x0fc				unknown				
-ovl	0x05aa19	42	536	handler	258	0x107				unknown				
-ovl	0x05ac31	42	284	handler	287	0x128				unknown				
-ovl	0x05ad4d	42	113	handler	269	0x112				unknown				
-ovl	0x05adbe	42	466	handler	310	0x141				unknown				
-ovl	0x05af90	42	79	handler	309	0x140				unknown				
-ovl	0x05afdf	42	450	handler	326	0x151				unknown				
-ovl	0x05b1a1	42	199	handler	337	0x16b				unknown				
-ovl	0x05b268	42	106	handler	338	0x16c				unknown				
-ovl	0x05b2d2	42	105	handler	345	0x173				unknown				
-ovl	0x05b33b	42	93	handler	346	0x174				unknown				
-ovl	0x05b398	42	112	handler	395	0x1a7				unknown				
-ovl	0x05b408	42	71	callback			0x13			unknown				
+ovl	0x059a08	42	31	handler	226	0x0e7				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x059ba8	42	729	handler	227	0x0e8				unknown	complex			
+ovl	0x059e81	42	32	handler	228	0x0e9				unknown	complex			
+ovl	0x059fef	42	309	handler	229	0x0ea				unknown	complex			
+ovl	0x05a124	42	299	handler	230	0x0eb				unknown	complex			
+ovl	0x05a24f	42	32	handler	235	0x0f0				unknown	complex			
+ovl	0x05a424	42	304	handler	237	0x0f2				unknown	complex			
+ovl	0x05a554	42	32	handler	245	0x0fa				unknown	complex			
+ovl	0x05a717	42	32	handler	246	0x0fb				unknown	complex			
+ovl	0x05a885	42	32	handler	247	0x0fc				unknown	complex			
+ovl	0x05aa19	42	536	handler	258	0x107				unknown	complex			
+ovl	0x05ac31	42	284	handler	287	0x128				unknown	complex			
+ovl	0x05ad4d	42	113	handler	269	0x112				unknown	complex			
+ovl	0x05adbe	42	466	handler	310	0x141				unknown	complex			
+ovl	0x05af90	42	79	handler	309	0x140				unknown	direct-memory			
+ovl	0x05afdf	42	450	handler	326	0x151				unknown	complex			
+ovl	0x05b1a1	42	199	handler	337	0x16b				unknown	complex			
+ovl	0x05b268	42	106	handler	338	0x16c				unknown	complex			
+ovl	0x05b2d2	42	105	handler	345	0x173				unknown	complex			
+ovl	0x05b33b	42	93	handler	346	0x174				unknown	complex			
+ovl	0x05b398	42	112	handler	395	0x1a7				unknown	complex			
+ovl	0x05b408	42	71	callback			0x13			unknown	direct-memory			
 ovl	0x05b8b8	42	733	unclassified						unknown				
-ovl	0x05c14a	43	746	handler	238	0x0f3				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x05c434	43	312	handler	288	0x129				unknown				
-ovl	0x05c56c	43	83	handler	289	0x12a				unknown				
+ovl	0x05c14a	43	746	handler	238	0x0f3				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x05c434	43	312	handler	288	0x129				unknown	complex			
+ovl	0x05c56c	43	83	handler	289	0x12a				unknown	complex			
 ovl	0x05c5bf	43	213	unclassified						unknown				
-ovl	0x05c694	43	371	handler	286	0x127				unknown				
-ovl	0x05c807	43	221	handler	293	0x12e				unknown				
-ovl	0x05c8e4	43	83	handler	294	0x12f				unknown				
-ovl	0x05c937	43	667	handler	290	0x12b				unknown				
-ovl	0x05cbd2	43	642	handler	291	0x12c				unknown				
+ovl	0x05c694	43	371	handler	286	0x127				unknown	complex			
+ovl	0x05c807	43	221	handler	293	0x12e				unknown	complex			
+ovl	0x05c8e4	43	83	handler	294	0x12f				unknown	complex			
+ovl	0x05c937	43	667	handler	290	0x12b				unknown	complex			
+ovl	0x05cbd2	43	642	handler	291	0x12c				unknown	complex			
 ovl	0x05ce54	43	65	unclassified						unknown				
-ovl	0x05ce95	43	122	handler	292	0x12d				unknown				
-ovl	0x05cf0f	43	88	handler	367	0x18a				unknown				
+ovl	0x05ce95	43	122	handler	292	0x12d				unknown	complex			
+ovl	0x05cf0f	43	88	handler	367	0x18a				unknown	complex			
 ovl	0x05cf67	43	66	unclassified						unknown				
 ovl	0x05cfa9	43	443	unclassified						unknown				
-ovl	0x05d4e0	44	37	handler	234	0x0ef				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x05da09	44	439	handler	252	0x101				unknown				
-ovl	0x05dbc0	44	222	handler	272	0x115				unknown				
-ovl	0x05dc9e	44	150	handler	273	0x116				unknown				
-ovl	0x05dd34	44	83	handler	275	0x118				unknown				
-ovl	0x05dd87	44	503	handler	274	0x117				unknown				
-ovl	0x05df7e	44	349	handler	276	0x119				unknown				
-ovl	0x05e0db	44	98	handler	277	0x11a				unknown				
-ovl	0x05e13d	44	312	handler	278	0x11b				unknown				
-ovl	0x05e275	44	203	handler	279	0x11c,0x11d,0x11e,0x11f				unknown				
-ovl	0x05e340	44	68	handler	396	0x1a8				unknown				
-ovl	0x05e384	44	83	handler	365	0x188				unknown				
-ovl	0x05e3d7	44	115	handler	360	0x183				unknown				
-ovl	0x05e44a	44	219	handler	361	0x184				unknown				
-ovl	0x05e525	44	101	handler	362	0x185				unknown				
-ovl	0x05e58a	44	111	handler	366	0x189				unknown				
-ovl	0x05e5f9	44	105	handler	363	0x186				unknown				
-ovl	0x05e662	44	149	handler	364	0x187				unknown				
+ovl	0x05d4e0	44	37	handler	234	0x0ef				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x05da09	44	439	handler	252	0x101				unknown	complex			
+ovl	0x05dbc0	44	222	handler	272	0x115				unknown	complex			
+ovl	0x05dc9e	44	150	handler	273	0x116				unknown	complex			
+ovl	0x05dd34	44	83	handler	275	0x118				unknown	complex			
+ovl	0x05dd87	44	503	handler	274	0x117				unknown	complex			
+ovl	0x05df7e	44	349	handler	276	0x119				unknown	complex			
+ovl	0x05e0db	44	98	handler	277	0x11a				unknown	complex			
+ovl	0x05e13d	44	312	handler	278	0x11b				unknown	complex			
+ovl	0x05e275	44	203	handler	279	0x11c,0x11d,0x11e,0x11f				unknown	complex			
+ovl	0x05e340	44	68	handler	396	0x1a8				unknown	complex			
+ovl	0x05e384	44	83	handler	365	0x188				unknown	complex			
+ovl	0x05e3d7	44	115	handler	360	0x183				unknown	complex			
+ovl	0x05e44a	44	219	handler	361	0x184				unknown	complex			
+ovl	0x05e525	44	101	handler	362	0x185				unknown	complex			
+ovl	0x05e58a	44	111	handler	366	0x189				unknown	complex			
+ovl	0x05e5f9	44	105	handler	363	0x186				unknown	complex			
+ovl	0x05e662	44	149	handler	364	0x187				unknown	complex			
 ovl	0x05e9c6	44	674	unclassified						unknown				
 ovl	0x05f030	45	31	unclassified						unknown				
 ovl	0x05f04f	45	63	unclassified						unknown				
 ovl	0x05f08e	45	430	unclassified						unknown				
 ovl	0x05f23c	45	953	unclassified						unknown				
 ovl	0x05f5f5	45	2373	unclassified						unknown				
-ovl	0x060740	46	37	handler	239	0x0f4				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x060f5c	46	271	handler	263	0x10c				unknown				
-ovl	0x06106b	46	181	handler	264	0x10d				unknown				
-ovl	0x061120	46	314	handler	285	0x126				unknown				
+ovl	0x060740	46	37	handler	239	0x0f4				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x060f5c	46	271	handler	263	0x10c				unknown	complex			
+ovl	0x06106b	46	181	handler	264	0x10d				unknown	complex			
+ovl	0x061120	46	314	handler	285	0x126				unknown	complex			
 ovl	0x06125a	46	128	unclassified						unknown				
-ovl	0x0612da	46	481	handler	299	0x136				unknown				
+ovl	0x0612da	46	481	handler	299	0x136				unknown	complex			
 ovl	0x0614bb	46	123	unclassified						unknown				
-ovl	0x061536	46	446	handler	300	0x137				unknown				
-ovl	0x0616f4	46	152	handler	304	0x13b				unknown				
-ovl	0x06178c	46	256	handler	305	0x13c				unknown				
+ovl	0x061536	46	446	handler	300	0x137				unknown	complex			
+ovl	0x0616f4	46	152	handler	304	0x13b				unknown	complex			
+ovl	0x06178c	46	256	handler	305	0x13c				unknown	complex			
 ovl	0x06188c	46	44	unclassified						unknown				
-ovl	0x0618b8	46	1515	handler	306	0x13d				unknown				
+ovl	0x0618b8	46	1515	handler	306	0x13d				unknown	complex			
 ovl	0x061ea3	46	103	unclassified						unknown				
-ovl	0x061f0a	46	199	handler	307	0x13e				unknown				
-ovl	0x061fd1	46	69	handler	401	0x1ad				unknown				
-ovl	0x062016	46	76	handler	343	0x171				unknown				
-ovl	0x062062	46	123	handler	344	0x172				unknown				
-ovl	0x0620dd	46	83	handler	359	0x182				unknown				
-ovl	0x062130	46	83	handler	356	0x17f				unknown				
-ovl	0x062183	46	103	handler	391	0x1a3				unknown				
-ovl	0x0621ea	46	93	handler	355	0x17e				unknown				
-ovl	0x062247	46	83	handler	354	0x17d				unknown				
-ovl	0x06229a	46	156	handler	358	0x181				unknown				
-ovl	0x062336	46	198	handler	357	0x180				unknown				
+ovl	0x061f0a	46	199	handler	307	0x13e				unknown	complex			
+ovl	0x061fd1	46	69	handler	401	0x1ad				unknown	direct-memory			
+ovl	0x062016	46	76	handler	343	0x171				unknown	direct-memory			
+ovl	0x062062	46	123	handler	344	0x172				unknown	complex			
+ovl	0x0620dd	46	83	handler	359	0x182				unknown	complex			
+ovl	0x062130	46	83	handler	356	0x17f				unknown	complex			
+ovl	0x062183	46	103	handler	391	0x1a3				unknown	complex			
+ovl	0x0621ea	46	93	handler	355	0x17e				unknown	direct-memory			
+ovl	0x062247	46	83	handler	354	0x17d				unknown	complex			
+ovl	0x06229a	46	156	handler	358	0x181				unknown	complex			
+ovl	0x062336	46	198	handler	357	0x180				unknown	complex			
 ovl	0x0623fc	46	20	unclassified						unknown				
-ovl	0x062b80	47	928	handler	251	0x100				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x062f20	47	860	handler	261	0x10a				unknown				
-ovl	0x06327c	47	931	handler	262	0x10b				unknown				
-ovl	0x06361f	47	151	handler	301	0x138				unknown				
-ovl	0x0636b6	47	64	handler	302	0x139				unknown				
-ovl	0x0636f6	47	215	handler	298	0x135				unknown				
-ovl	0x0637cd	47	68	handler	392	0x1a4				unknown				
-ovl	0x063811	47	71	handler	393	0x1a5				unknown				
+ovl	0x062b80	47	928	handler	251	0x100				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x062f20	47	860	handler	261	0x10a				unknown	complex			
+ovl	0x06327c	47	931	handler	262	0x10b				unknown	complex			
+ovl	0x06361f	47	151	handler	301	0x138				unknown	complex			
+ovl	0x0636b6	47	64	handler	302	0x139				unknown	direct-memory			
+ovl	0x0636f6	47	215	handler	298	0x135				unknown	complex			
+ovl	0x0637cd	47	68	handler	392	0x1a4				unknown	complex			
+ovl	0x063811	47	71	handler	393	0x1a5				unknown	complex			
 ovl	0x064be0	48	785	unclassified						unknown				
 ovl	0x064ef1	48	31	unclassified						unknown				
 ovl	0x064f10	48	31	unclassified						unknown				
 ovl	0x064f2f	48	63	unclassified						unknown				
 ovl	0x064f6e	48	309	unclassified						unknown				
 ovl	0x0650a3	48	1254	unclassified						unknown				
-ovl	0x065589	48	31	handler	240	0x0f5				unknown				
-ovl	0x0656f9	48	31	handler	241	0x0f6				unknown				
-ovl	0x065884	48	161	handler	265	0x10e				unknown				
-ovl	0x065925	48	161	handler	266	0x10f				unknown				
-ovl	0x0659c6	48	353	handler	257	0x106				unknown				
-ovl	0x065b27	48	110	handler	318	0x149				unknown				
-ovl	0x065b95	48	290	handler	317	0x148				unknown				
-ovl	0x065cb7	48	83	handler	336	0x16a				unknown				
-ovl	0x065d0a	48	388	handler	340	0x16e				unknown				
-ovl	0x065e8e	48	344	handler	381	0x199				unknown				
-ovl	0x065fe6	48	295	handler	382	0x19a				unknown				
-ovl	0x06610d	48	259	handler	383	0x19b				unknown				
-ovl	0x066210	48	83	handler	386	0x19e				unknown				
-ovl	0x066263	48	93	handler	385	0x19d				unknown				
-ovl	0x0662c0	48	121	handler	387	0x19f				unknown				
-ovl	0x066339	48	170	handler	388	0x1a0				unknown				
-ovl	0x0663e3	48	112	handler	390	0x1a2				unknown				
-ovl	0x066453	48	265	handler	384	0x19c				unknown				
-ovl	0x06655c	48	157	handler	389	0x1a1				unknown				
-ovl	0x0665f9	48	86	callback			0x14			unknown				
-ovl	0x066f54	49	29	handler	636	0x29b				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x067288	49	29	handler	635	0x29a				unknown				
-ovl	0x0673de	49	666	handler	644	0x2a3				unknown				
-ovl	0x06773e	49	158	handler	639	0x29e				unknown				
-ovl	0x0677dc	49	285	handler	637	0x29c				unknown				
-ovl	0x0678f9	49	151	handler	638	0x29d				unknown				
-ovl	0x067990	49	67	handler	640	0x29f				unknown				
-ovl	0x0679d3	49	231	handler	641	0x2a0				unknown				
-ovl	0x067aba	49	319	handler	642	0x2a1				unknown				
-ovl	0x067bf9	49	100	handler	643	0x2a2				unknown				
-ovl	0x067c5d	49	153	handler	693	0x2d8				unknown				
-ovl	0x067cf6	49	179	handler	650	0x2a9				unknown				
-ovl	0x067da9	49	124	handler	645	0x2a4				unknown				
-ovl	0x067e25	49	186	handler	647	0x2a6				unknown				
-ovl	0x067edf	49	472	handler	651	0x2aa				unknown				
-ovl	0x0680b7	49	61	handler	652	0x2ab				unknown				
-ovl	0x0680f4	49	61	handler	646	0x2a5				unknown				
-ovl	0x068131	49	588	handler	648	0x2a7				unknown				
-ovl	0x06837d	49	389	handler	653	0x2ac				unknown				
-ovl	0x068502	49	441	handler	654	0x2ad				unknown				
-ovl	0x0686bb	49	393	handler	649	0x2a8				unknown				
-ovl	0x068844	49	94	handler	696	0x2db				unknown				
+ovl	0x065589	48	31	handler	240	0x0f5				unknown	complex			
+ovl	0x0656f9	48	31	handler	241	0x0f6				unknown	complex			
+ovl	0x065884	48	161	handler	265	0x10e				unknown	complex			
+ovl	0x065925	48	161	handler	266	0x10f				unknown	complex			
+ovl	0x0659c6	48	353	handler	257	0x106				unknown	complex			
+ovl	0x065b27	48	110	handler	318	0x149				unknown	complex			
+ovl	0x065b95	48	290	handler	317	0x148				unknown	complex			
+ovl	0x065cb7	48	83	handler	336	0x16a				unknown	complex			
+ovl	0x065d0a	48	388	handler	340	0x16e				unknown	complex			
+ovl	0x065e8e	48	344	handler	381	0x199				unknown	complex			
+ovl	0x065fe6	48	295	handler	382	0x19a				unknown	complex			
+ovl	0x06610d	48	259	handler	383	0x19b				unknown	complex			
+ovl	0x066210	48	83	handler	386	0x19e				unknown	complex			
+ovl	0x066263	48	93	handler	385	0x19d				unknown	complex			
+ovl	0x0662c0	48	121	handler	387	0x19f				unknown	complex			
+ovl	0x066339	48	170	handler	388	0x1a0				unknown	complex			
+ovl	0x0663e3	48	112	handler	390	0x1a2				unknown	complex			
+ovl	0x066453	48	265	handler	384	0x19c				unknown	complex			
+ovl	0x06655c	48	157	handler	389	0x1a1				unknown	complex			
+ovl	0x0665f9	48	86	callback			0x14			unknown	formulaic			
+ovl	0x066f54	49	29	handler	636	0x29b				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x067288	49	29	handler	635	0x29a				unknown	complex			
+ovl	0x0673de	49	666	handler	644	0x2a3				unknown	complex			
+ovl	0x06773e	49	158	handler	639	0x29e				unknown	complex			
+ovl	0x0677dc	49	285	handler	637	0x29c				unknown	complex			
+ovl	0x0678f9	49	151	handler	638	0x29d				unknown	complex			
+ovl	0x067990	49	67	handler	640	0x29f				unknown	complex			
+ovl	0x0679d3	49	231	handler	641	0x2a0				unknown	complex			
+ovl	0x067aba	49	319	handler	642	0x2a1				unknown	complex			
+ovl	0x067bf9	49	100	handler	643	0x2a2				unknown	direct-memory			
+ovl	0x067c5d	49	153	handler	693	0x2d8				unknown	complex			
+ovl	0x067cf6	49	179	handler	650	0x2a9				unknown	complex			
+ovl	0x067da9	49	124	handler	645	0x2a4				unknown	complex			
+ovl	0x067e25	49	186	handler	647	0x2a6				unknown	complex			
+ovl	0x067edf	49	472	handler	651	0x2aa				unknown	complex			
+ovl	0x0680b7	49	61	handler	652	0x2ab				unknown	complex			
+ovl	0x0680f4	49	61	handler	646	0x2a5				unknown	complex			
+ovl	0x068131	49	588	handler	648	0x2a7				unknown	complex			
+ovl	0x06837d	49	389	handler	653	0x2ac				unknown	complex			
+ovl	0x068502	49	441	handler	654	0x2ad				unknown	complex			
+ovl	0x0686bb	49	393	handler	649	0x2a8				unknown	complex			
+ovl	0x068844	49	94	handler	696	0x2db				unknown	complex			
 ovl	0x068d10	49	92	unclassified						unknown				
 ovl	0x068d6c	49	25	unclassified						unknown				
 ovl	0x068d85	49	26	unclassified						unknown				
-ovl	0x069170	50	32	handler	655	0x2ae,0x2af				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x0693fc	50	401	callback			0x2b			unknown				
-ovl	0x06958d	50	188	callback			0x05			unknown				
-ovl	0x069649	50	910	handler	667	0x2bb				unknown				
-ovl	0x0699d7	50	150	handler	656	0x2b0				unknown				
-ovl	0x069a6d	50	455	handler	657	0x2b1				unknown				
-ovl	0x069c34	50	157	handler	658	0x2b2				unknown				
-ovl	0x069cd1	50	146	handler	659	0x2b3				unknown				
-ovl	0x069d63	50	1200	handler	660	0x2b4				unknown				
-ovl	0x06a213	50	216	handler	662	0x2b6				unknown				
-ovl	0x06a2eb	50	269	handler	661	0x2b5				unknown				
-ovl	0x06a3f8	50	61	handler	664	0x2b8				unknown				
-ovl	0x06a435	50	61	handler	665	0x2b9				unknown				
-ovl	0x06a472	50	61	handler	666	0x2ba				unknown				
-ovl	0x06a4af	50	121	handler	663	0x2b7				unknown				
+ovl	0x069170	50	32	handler	655	0x2ae,0x2af				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x0693fc	50	401	callback			0x2b			unknown	complex			
+ovl	0x06958d	50	188	callback			0x05			unknown	complex			
+ovl	0x069649	50	910	handler	667	0x2bb				unknown	complex			
+ovl	0x0699d7	50	150	handler	656	0x2b0				unknown	complex			
+ovl	0x069a6d	50	455	handler	657	0x2b1				unknown	complex			
+ovl	0x069c34	50	157	handler	658	0x2b2				unknown	direct-memory			
+ovl	0x069cd1	50	146	handler	659	0x2b3				unknown	direct-memory			
+ovl	0x069d63	50	1200	handler	660	0x2b4				unknown	complex			
+ovl	0x06a213	50	216	handler	662	0x2b6				unknown	complex			
+ovl	0x06a2eb	50	269	handler	661	0x2b5				unknown	complex			
+ovl	0x06a3f8	50	61	handler	664	0x2b8				unknown	complex			
+ovl	0x06a435	50	61	handler	665	0x2b9				unknown	complex			
+ovl	0x06a472	50	61	handler	666	0x2ba				unknown	complex			
+ovl	0x06a4af	50	121	handler	663	0x2b7				unknown	complex			
 ovl	0x06a528	50	212	unclassified						unknown				
-ovl	0x06ad95	51	37	handler	682	0x2cb,0x2cc,0x2ce				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x06b20f	51	42	handler	683	0x2cd				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x06b521	51	822	handler	668	0x2bc,0x2bd				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x06b888	51	952	handler	685	0x2d0				unknown				
-ovl	0x06bc40	51	354	handler	681	0x2ca				unknown				
-ovl	0x06bda2	51	269	handler	684	0x2cf				unknown				
-ovl	0x06beaf	51	446	handler	669	0x2be				unknown				
-ovl	0x06c06d	51	83	handler	671	0x2c0				unknown				
-ovl	0x06c0c0	51	496	handler	670	0x2bf				unknown				
-ovl	0x06c2b0	51	572	handler	692	0x2d7				unknown				
-ovl	0x06c4ec	51	157	handler	689	0x2d4				unknown				
-ovl	0x06c589	51	51	handler	691	0x2d6				unknown				
-ovl	0x06c5bc	51	81	handler	688	0x2d3				unknown				
-ovl	0x06c60d	51	94	handler	690	0x2d5				unknown				
-ovl	0x06c66b	51	173	handler	687	0x2d2				unknown				
-ovl	0x06c718	51	407	handler	686	0x2d1				unknown				
-ovl	0x06c8af	51	99	handler	673	0x2c2				unknown				
-ovl	0x06c912	51	68	handler	680	0x2c9				unknown				
-ovl	0x06c956	51	111	handler	672	0x2c1				unknown				
-ovl	0x06c9c5	51	109	handler	674	0x2c3				unknown				
-ovl	0x06ca32	51	122	handler	675	0x2c4				unknown				
-ovl	0x06caac	51	104	handler	676	0x2c5				unknown				
-ovl	0x06cb14	51	61	handler	677	0x2c6				unknown				
-ovl	0x06cb51	51	61	handler	678	0x2c7				unknown				
-ovl	0x06cb8e	51	124	handler	679	0x2c8				unknown				
+ovl	0x06ad95	51	37	handler	682	0x2cb,0x2cc,0x2ce				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x06b20f	51	42	handler	683	0x2cd				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x06b521	51	822	handler	668	0x2bc,0x2bd				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x06b888	51	952	handler	685	0x2d0				unknown	complex			
+ovl	0x06bc40	51	354	handler	681	0x2ca				unknown	complex			
+ovl	0x06bda2	51	269	handler	684	0x2cf				unknown	complex			
+ovl	0x06beaf	51	446	handler	669	0x2be				unknown	complex			
+ovl	0x06c06d	51	83	handler	671	0x2c0				unknown	complex			
+ovl	0x06c0c0	51	496	handler	670	0x2bf				unknown	complex			
+ovl	0x06c2b0	51	572	handler	692	0x2d7				unknown	complex			
+ovl	0x06c4ec	51	157	handler	689	0x2d4				unknown	complex			
+ovl	0x06c589	51	51	handler	691	0x2d6				unknown	direct-memory			
+ovl	0x06c5bc	51	81	handler	688	0x2d3				unknown	direct-memory			
+ovl	0x06c60d	51	94	handler	690	0x2d5				unknown	complex			
+ovl	0x06c66b	51	173	handler	687	0x2d2				unknown	complex			
+ovl	0x06c718	51	407	handler	686	0x2d1				unknown	complex			
+ovl	0x06c8af	51	99	handler	673	0x2c2				unknown	complex			
+ovl	0x06c912	51	68	handler	680	0x2c9				unknown	complex			
+ovl	0x06c956	51	111	handler	672	0x2c1				unknown	complex			
+ovl	0x06c9c5	51	109	handler	674	0x2c3				unknown	complex			
+ovl	0x06ca32	51	122	handler	675	0x2c4				unknown	complex			
+ovl	0x06caac	51	104	handler	676	0x2c5				unknown	complex			
+ovl	0x06cb14	51	61	handler	677	0x2c6				unknown	complex			
+ovl	0x06cb51	51	61	handler	678	0x2c7				unknown	complex			
+ovl	0x06cb8e	51	124	handler	679	0x2c8				unknown	complex			
 ovl	0x06ce85	51	457	unclassified						unknown				
-ovl	0x06d04e	51	82	handler	694	0x2d9				unknown				
-ovl	0x06d0a0	51	87	handler	695	0x2da				unknown				
+ovl	0x06d04e	51	82	handler	694	0x2d9				unknown	direct-memory			
+ovl	0x06d0a0	51	87	handler	695	0x2da				unknown	direct-memory			
 ovl	0x06d0f7	51	47	unclassified						unknown				
 ovl	0x06d126	51	45	unclassified						unknown				
 ovl	0x06d564	51	484	unclassified						unknown				
@@ -1691,100 +1691,100 @@ ovl	0x06de00	52	827	unclassified						unknown
 ovl	0x06e13b	52	577	unclassified						unknown				
 ovl	0x06e37c	52	432	unclassified						unknown				
 ovl	0x06e52c	52	941	unclassified						unknown				
-ovl	0x06ee00	53	32	handler	594	0x26f				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x06ef9c	53	114	handler	595	0x270				unknown				
-ovl	0x06f00e	53	31	handler	596	0x271				unknown				
-ovl	0x06f14f	53	510	handler	597	0x272				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x06f408	53	32	handler	598	0x273				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x06f53c	53	314	handler	609	0x27e				unknown				
-ovl	0x06f676	53	284	handler	610	0x27f				unknown				
-ovl	0x06f792	53	473	handler	611	0x280				unknown				
-ovl	0x06f96b	53	264	handler	612	0x281				unknown				
+ovl	0x06ee00	53	32	handler	594	0x26f				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x06ef9c	53	114	handler	595	0x270				unknown	direct-memory			
+ovl	0x06f00e	53	31	handler	596	0x271				unknown	complex			
+ovl	0x06f14f	53	510	handler	597	0x272				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x06f408	53	32	handler	598	0x273				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x06f53c	53	314	handler	609	0x27e				unknown	complex			
+ovl	0x06f676	53	284	handler	610	0x27f				unknown	complex			
+ovl	0x06f792	53	473	handler	611	0x280				unknown	complex			
+ovl	0x06f96b	53	264	handler	612	0x281				unknown	complex			
 ovl	0x06fa73	53	414	unclassified						unknown				
-ovl	0x06fc11	53	15	handler	616	0x285				unknown				
-ovl	0x06fc20	53	15	handler	617	0x286				unknown				
-ovl	0x06fc2f	53	15	handler	618	0x287				unknown				
-ovl	0x06fc3e	53	578	handler	619	0x288				unknown				
+ovl	0x06fc11	53	15	handler	616	0x285				unknown	formulaic			
+ovl	0x06fc20	53	15	handler	617	0x286				unknown	formulaic			
+ovl	0x06fc2f	53	15	handler	618	0x287				unknown	formulaic			
+ovl	0x06fc3e	53	578	handler	619	0x288				unknown	complex			
 ovl	0x06fe80	53	1295	unclassified						unknown				
-ovl	0x07038f	53	15	handler	620	0x289				unknown				
-ovl	0x07039e	53	15	handler	621	0x28a				unknown				
-ovl	0x0703ad	53	15	handler	622	0x28b				unknown				
-ovl	0x0703bc	53	365	handler	605	0x27a				unknown				
+ovl	0x07038f	53	15	handler	620	0x289				unknown	formulaic			
+ovl	0x07039e	53	15	handler	621	0x28a				unknown	formulaic			
+ovl	0x0703ad	53	15	handler	622	0x28b				unknown	formulaic			
+ovl	0x0703bc	53	365	handler	605	0x27a				unknown	complex			
 ovl	0x070529	53	92	unclassified						unknown				
 ovl	0x070b7a	53	31	unclassified						unknown				
 ovl	0x070b99	53	63	unclassified						unknown				
 ovl	0x070bd8	53	736	unclassified						unknown				
-ovl	0x0712c0	54	28	handler	592	0x26d				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x071374	54	29	handler	593	0x26e				unknown				
-ovl	0x071481	54	32	handler	599	0x274				unknown				
-ovl	0x0715a1	54	29	handler	600	0x275				unknown				
-ovl	0x071755	54	32	handler	601	0x276				unknown				
-ovl	0x0718f5	54	29	handler	602	0x277				unknown				
-ovl	0x071a31	54	318	handler	603	0x278				unknown				
-ovl	0x071b6f	54	213	handler	604	0x279				unknown				
-ovl	0x071c44	54	152	handler	615	0x284				unknown				
-ovl	0x071cdc	54	51	handler	614	0x283				unknown				
-ovl	0x071d0f	54	177	handler	607	0x27c				unknown				
-ovl	0x071dc0	54	333	handler	608	0x27d				unknown				
-ovl	0x071f0d	54	615	handler	606	0x27b				unknown				
-ovl	0x072174	54	1156	handler	613	0x282				unknown				
-ovl	0x0725f8	54	124	handler	623	0x28c				unknown				
-ovl	0x072674	54	174	handler	624	0x28d				unknown				
-ovl	0x072722	54	112	handler	625	0x28e				unknown				
-ovl	0x072792	54	146	handler	626	0x28f				unknown				
+ovl	0x0712c0	54	28	handler	592	0x26d				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x071374	54	29	handler	593	0x26e				unknown	complex			
+ovl	0x071481	54	32	handler	599	0x274				unknown	complex			
+ovl	0x0715a1	54	29	handler	600	0x275				unknown	complex			
+ovl	0x071755	54	32	handler	601	0x276				unknown	complex			
+ovl	0x0718f5	54	29	handler	602	0x277				unknown	complex			
+ovl	0x071a31	54	318	handler	603	0x278				unknown	complex			
+ovl	0x071b6f	54	213	handler	604	0x279				unknown	complex			
+ovl	0x071c44	54	152	handler	615	0x284				unknown	complex			
+ovl	0x071cdc	54	51	handler	614	0x283				unknown	direct-memory			
+ovl	0x071d0f	54	177	handler	607	0x27c				unknown	complex			
+ovl	0x071dc0	54	333	handler	608	0x27d				unknown	complex			
+ovl	0x071f0d	54	615	handler	606	0x27b				unknown	complex			
+ovl	0x072174	54	1156	handler	613	0x282				unknown	complex			
+ovl	0x0725f8	54	124	handler	623	0x28c				unknown	complex			
+ovl	0x072674	54	174	handler	624	0x28d				unknown	complex			
+ovl	0x072722	54	112	handler	625	0x28e				unknown	complex			
+ovl	0x072792	54	146	handler	626	0x28f				unknown	complex			
 ovl	0x072824	54	278	unclassified						unknown				
-ovl	0x073170	55	184	handler	566	0x253				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x073301	55	32	handler	567	0x254				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x073595	55	31	handler	568	0x255				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x0736e1	55	31	handler	569	0x256				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x073847	55	31	handler	570	0x257				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x073a17	55	32	handler	571	0x258				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x073caa	55	136	callback			0x28			unknown				
-ovl	0x073d32	55	70	callback			0x29			unknown				
-ovl	0x073d78	55	203	handler	572	0x259				unknown				
-ovl	0x073e43	55	198	handler	573	0x25a				unknown				
+ovl	0x073170	55	184	handler	566	0x253				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x073301	55	32	handler	567	0x254				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x073595	55	31	handler	568	0x255				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x0736e1	55	31	handler	569	0x256				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x073847	55	31	handler	570	0x257				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x073a17	55	32	handler	571	0x258				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x073caa	55	136	callback			0x28			unknown	formulaic			
+ovl	0x073d32	55	70	callback			0x29			unknown	formulaic			
+ovl	0x073d78	55	203	handler	572	0x259				unknown	complex			
+ovl	0x073e43	55	198	handler	573	0x25a				unknown	complex			
 ovl	0x073f09	55	53	unclassified						unknown				
-ovl	0x073f3e	55	559	handler	574	0x25b				unknown				
-ovl	0x07416d	55	257	handler	575	0x25c				unknown				
-ovl	0x07426e	55	51	handler	576	0x25d				unknown				
+ovl	0x073f3e	55	559	handler	574	0x25b				unknown	complex			
+ovl	0x07416d	55	257	handler	575	0x25c				unknown	complex			
+ovl	0x07426e	55	51	handler	576	0x25d				unknown	direct-memory			
 ovl	0x0742a1	55	22	unclassified						unknown				
-ovl	0x0742b7	55	219	handler	577	0x25e				unknown				
+ovl	0x0742b7	55	219	handler	577	0x25e				unknown	complex			
 ovl	0x074392	55	53	unclassified						unknown				
-ovl	0x0743c7	55	217	handler	578	0x25f				unknown				
-ovl	0x0744a0	55	989	handler	579	0x260				unknown				
-ovl	0x07487d	55	223	handler	580	0x261				unknown				
-ovl	0x07495c	55	263	handler	581	0x262				unknown				
-ovl	0x074a63	55	162	handler	582	0x263				unknown				
-ovl	0x074b05	55	577	handler	583	0x264				unknown				
-ovl	0x074d46	55	131	handler	584	0x265				unknown				
-ovl	0x074dc9	55	382	handler	585	0x266				unknown				
-ovl	0x074f47	55	109	handler	586	0x267				unknown				
-ovl	0x074fb4	55	63	handler	588	0x269				unknown				
-ovl	0x074ff3	55	68	handler	587	0x268				unknown				
-ovl	0x075037	55	89	handler	589	0x26a				unknown				
-ovl	0x075090	55	51	handler	590	0x26b				unknown				
-ovl	0x0750c3	55	116	handler	591	0x26c				unknown				
+ovl	0x0743c7	55	217	handler	578	0x25f				unknown	complex			
+ovl	0x0744a0	55	989	handler	579	0x260				unknown	complex			
+ovl	0x07487d	55	223	handler	580	0x261				unknown	complex			
+ovl	0x07495c	55	263	handler	581	0x262				unknown	complex			
+ovl	0x074a63	55	162	handler	582	0x263				unknown	complex			
+ovl	0x074b05	55	577	handler	583	0x264				unknown	complex			
+ovl	0x074d46	55	131	handler	584	0x265				unknown	complex			
+ovl	0x074dc9	55	382	handler	585	0x266				unknown	complex			
+ovl	0x074f47	55	109	handler	586	0x267				unknown	complex			
+ovl	0x074fb4	55	63	handler	588	0x269				unknown	complex			
+ovl	0x074ff3	55	68	handler	587	0x268				unknown	complex			
+ovl	0x075037	55	89	handler	589	0x26a				unknown	complex			
+ovl	0x075090	55	51	handler	590	0x26b				unknown	direct-memory			
+ovl	0x0750c3	55	116	handler	591	0x26c				unknown	complex			
 ovl	0x075137	55	48	unclassified						unknown				
 ovl	0x0751e1	55	38	unclassified						unknown				
 ovl	0x075207	55	38	unclassified						unknown				
-ovl	0x075bb0	56	1076	handler	210	0x0d3				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x075bb0	56	1076	handler	210	0x0d3				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
 ovl	0x075fe4	56	514	unclassified						unknown				
-ovl	0x0762a3	56	800	handler	223	0x0e0,0x2de				unknown				
-ovl	0x0765c3	56	5	handler	216	0x0d9				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x0765c8	56	872	handler	211	0x0d4				unknown				
-ovl	0x076930	56	448	handler	214	0x0d7				unknown				
-ovl	0x076af0	56	600	handler	213	0x0d6				unknown				
-ovl	0x076d48	56	574	handler	215	0x0d8				unknown				
-ovl	0x076f86	56	48	handler	220	0x0dd				unknown				
+ovl	0x0762a3	56	800	handler	223	0x0e0,0x2de				unknown	complex			
+ovl	0x0765c3	56	5	handler	216	0x0d9				unknown	formulaic			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x0765c8	56	872	handler	211	0x0d4				unknown	complex			
+ovl	0x076930	56	448	handler	214	0x0d7				unknown	complex			
+ovl	0x076af0	56	600	handler	213	0x0d6				unknown	complex			
+ovl	0x076d48	56	574	handler	215	0x0d8				unknown	complex			
+ovl	0x076f86	56	48	handler	220	0x0dd				unknown	direct-memory			
 ovl	0x076fb6	56	58	unclassified						unknown				
-ovl	0x076ff0	56	118	handler	221	0x0de				unknown				
-ovl	0x077197	56	434	handler	222	0x0df				unknown				
-ovl	0x077349	56	808	handler	225	0x0e3,0x0e4				unknown				
-ovl	0x077671	56	146	handler	217	0x0da				unknown				
-ovl	0x077703	56	261	handler	218	0x0db				unknown				
-ovl	0x077808	56	113	handler	224	0x0e2				unknown				
-ovl	0x077879	56	807	handler	219	0x0dc				unknown				
-ovl	0x077ba0	56	602	handler	203	0x0cc				unknown				
+ovl	0x076ff0	56	118	handler	221	0x0de				unknown	complex			
+ovl	0x077197	56	434	handler	222	0x0df				unknown	complex			
+ovl	0x077349	56	808	handler	225	0x0e3,0x0e4				unknown	complex			
+ovl	0x077671	56	146	handler	217	0x0da				unknown	complex			
+ovl	0x077703	56	261	handler	218	0x0db				unknown	complex			
+ovl	0x077808	56	113	handler	224	0x0e2				unknown	complex			
+ovl	0x077879	56	807	handler	219	0x0dc				unknown	complex			
+ovl	0x077ba0	56	602	handler	203	0x0cc				unknown	complex			
 ovl	0x077dfa	56	87	unclassified						unknown				
 ovl	0x077e51	56	22	unclassified						unknown				
 ovl	0x077e67	56	39	unclassified						unknown				
@@ -1793,22 +1793,22 @@ ovl	0x077f44	56	81	unclassified						unknown
 ovl	0x077f95	56	22	unclassified						unknown				
 ovl	0x077fab	56	39	unclassified						unknown				
 ovl	0x077fd2	56	39	unclassified						unknown				
-ovl	0x07858c	57	168	handler	1	0x001				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x078634	57	28	handler	2	0x002				unknown				
-ovl	0x0786e6	57	29	handler	6	0x006				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x0787e7	57	245	handler	7	0x007				unknown				
-ovl	0x0788dc	57	312	handler	8	0x008				unknown				
-ovl	0x078a6b	57	32	handler	5	0x005				unknown				Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
-ovl	0x078be2	57	31	handler	4	0x004				unknown				
-ovl	0x078cfc	57	29	handler	3	0x003				unknown				
-ovl	0x078e41	57	29	handler	9	0x009				unknown				
-ovl	0x078f8b	57	176	handler	10	0x00a				unknown				
-ovl	0x07903b	57	175	handler	13	0x00d				unknown				
-ovl	0x0790ea	57	168	handler	12	0x00c				unknown				
-ovl	0x079192	57	262	handler	11	0x00b				unknown				
-ovl	0x079298	57	309	handler	14	0x00e				unknown				
-ovl	0x0793cd	57	141	handler	15	0x00f				unknown				
-ovl	0x07945a	57	139	handler	16	0x010				unknown				
-ovl	0x0794e5	57	137	handler	17	0x011				unknown				
-ovl	0x07956e	57	81	callback			0x01			unknown				
+ovl	0x07858c	57	168	handler	1	0x001				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x078634	57	28	handler	2	0x002				unknown	complex			
+ovl	0x0786e6	57	29	handler	6	0x006				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x0787e7	57	245	handler	7	0x007				unknown	complex			
+ovl	0x0788dc	57	312	handler	8	0x008				unknown	complex			
+ovl	0x078a6b	57	32	handler	5	0x005				unknown	complex			Ghidra explicit entry: native handler-table target; provisional independent function boundary (ABI unverified)
+ovl	0x078be2	57	31	handler	4	0x004				unknown	complex			
+ovl	0x078cfc	57	29	handler	3	0x003				unknown	complex			
+ovl	0x078e41	57	29	handler	9	0x009				unknown	complex			
+ovl	0x078f8b	57	176	handler	10	0x00a				unknown	complex			
+ovl	0x07903b	57	175	handler	13	0x00d				unknown	complex			
+ovl	0x0790ea	57	168	handler	12	0x00c				unknown	complex			
+ovl	0x079192	57	262	handler	11	0x00b				unknown	complex			
+ovl	0x079298	57	309	handler	14	0x00e				unknown	complex			
+ovl	0x0793cd	57	141	handler	15	0x00f				unknown	complex			
+ovl	0x07945a	57	139	handler	16	0x010				unknown	complex			
+ovl	0x0794e5	57	137	handler	17	0x011				unknown	complex			
+ovl	0x07956e	57	81	callback			0x01			unknown	complex			
 ovl	0x0795bf	57	21	unclassified						unknown				
