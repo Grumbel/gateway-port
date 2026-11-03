@@ -322,7 +322,7 @@ Far-call trampoline destinations are resolved from validated original
 `CALL`/RTLink stub patterns, not the unstable Ghidra segment address. The
 generated JSON and all original bytes remain in `build/`.
 
-### 3.5 [~] Engine-service catalogue (`docs/engine-services.md`)
+### 3.5 [x] Engine-service catalogue (`docs/engine-services.md`)
 
 For every routine that handlers, actions or callbacks call, whether
 resident or reached through a trampoline:
@@ -552,6 +552,7 @@ passes with `--replace-verified`.
 | 2026-11-03 | 3.5 (ongoing) | Documented the two remaining ≥20-handler service leads, `exe:0x3f85` event-queue membership and `exe:0x5bd1` conditional object text; named the latter from native source disassembly without falsely marking either `analyzed`. The reviewed extended office, imported-save DATAMAN and VR replays (80 scripted actions total) did not capture these entries; targeted scenario coverage is needed before §3.5 can close. |
 | 2026-11-03 | 3.5 (ongoing) | Reached `gw_timed_event_exists` (`exe:0x3f85`) in the authentic armory/class walkthrough: 18 native entries with event IDs 0x37/0x38/0x22, caller `add sp,2` and AX Boolean branch, and byte-level confirmation of the four-byte queue lookup. Marked `analyzed`; only 23-handler conditional object text (`exe:0x5bd1`) remains without live coverage. |
 | 2026-11-03 | 3.5 (ongoing) | The authentic 49-action bar/casino stage produced the expected `FULLCASINO` saved game, extending the reviewed campaign to 159 actions, but still did not invoke `exe:0x5bd1`. Static original section-4 caller code at `ovl:0x051aea` confirms its `(object,mode)` two-word far-call ABI and caller stack cleanup, not its runtime effects. Added repeatable native service-entry forwarding to the campaign runner with a mocked saved-game-handoff test. Further injected replays are paused in this environment: private Xvfb cannot start because Unix socket creation is denied (`EPERM`); §3.5 stays open with the service only `named`. |
+| 2026-11-03 | 3.5 | Completed the eighteen ≥20-handler service catalogue. A private-Xvfb native three-command replay reached `exe:0x5bd1` twice for `(object=0x124,slot=0)`; its section-4 child-count (`ovl:0xbf3d`) and list-emission (`ovl:0xb910`) callees returned AX=1 on all six traced calls. Qualified RTLink return snapshots confirmed zero count-helper writes and one initial object property-7 write by the list formatter, with no changes on repeated examinations. Resolved both trampolines using third EXE base `0xa73a`; renamed the service `gw_present_child_list` and marked it analyzed, not ported or §3.7-verified. Next: §3.6 deterministic golden replays. |
 
 ## 10. Risks and how to react
 

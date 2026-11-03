@@ -180,7 +180,7 @@ exe	0x0059f5		13	unclassified						unknown
 exe	0x005a04		66	unclassified						unknown				
 exe	0x005a46		143	unclassified						unknown				
 exe	0x005b64		109	unclassified						unknown				
-exe	0x005bd1		95	service					gw_conditional_object_message	named	formulaic			Native EXE 0x5bd1-0x5c2f; far object/mode inputs; conditional RTLink predicate then object phrase plus two RTL messages; no original native invocation captured; Ghidra 0x5bfa was mid-instruction
+exe	0x005bd1		95	service					gw_present_child_list	analyzed	formulaic			Native EXE 0x5bd1-0x5c2f; far (object,child_slot) caller-cleaned words; section-4 OVL 0xbf3d counts children lacking property 8, 0xb910 prints them with formatter property-7 marking; native 2 live entries, 6 qualified inner RTLink returns, 1 verified object byte-4 write; Ghidra 0x5bfa was mid-instruction
 exe	0x005c30		40	service					gw_present_story_text	analyzed	formulaic			Native EXE 0x5c30-0x5c57; far string pointer args; invokes RTL output flush and text-panel draw/reset services; two native office entries at 0x14a37; 0x5c42 Ghidra function was mid-instruction
 exe	0x005c58		261	unclassified						unknown				
 exe	0x005d5d		131	service					gw_room_transfer	named				label from KNOWN_RESIDENT in tools/prepare_ghidra.py

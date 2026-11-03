@@ -43,7 +43,7 @@ by at least 20 **distinct native object-handler functions**:
 | `exe:0x00259c` | 31 | 8 | `gw_relation_contains_in_slot`, analyzed |
 | `exe:0x0060cf` | 30 | 8 | `gw_room_exit_dispatch`, analyzed |
 | `exe:0x003f85` | 29 | 3 | `gw_timed_event_exists`, analyzed |
-| `exe:0x005bd1` | 23 | 0 | `gw_conditional_object_message`, named; native coverage missing |
+| `exe:0x005bd1` | 23 | 0 | `gw_present_child_list`, analyzed |
 
 The `rtl:` identities are file offsets into the original `GATE.RTL`, not
 runtime addresses. The current `decomp/functions.tsv` permits only `exe` and
@@ -466,10 +466,10 @@ GUI behaviors and caller-visible ordering are verified.
 Ghidra 12 cuts the body into pseudo-functions at `0x5c30` (14 bytes) and
 `0x5c42` (22 bytes); the latter starts **within a far-CALL instruction**.
 Original `retf` at `0x5c57` and the next prologue at `0x5c58` establish
-the real 40-byte boundary. The adjacent conditional formatter at
+the real 40-byte boundary. The adjacent child-list presenter at
 `exe:0x5bd1`–`0x5c2f` similarly has a ghost boundary at `0x5bfa`, inside
-the `cmp` immediate. The seeder merges both originals, but `0x5bd1`
-remains **unclassified** pending native-call evidence.
+the `cmp` immediate. The seeder merges both originals; the child-list
+presenter now has independent native-call evidence below.
 
 ## Resident object-relation predicate: `exe:0x00254a` (157 handlers)
 
@@ -585,39 +585,66 @@ epilogue. These counts are *execution occurrences in this one scripted path*,
 not the distinct-caller totals in the table. The full three-way HLE replay
 remains the independent bounded check documented in `object-state.md`.
 
-All twelve original `exe` entries and two `ovl` services are **analyzed**, not
+All thirteen original `exe` entries and two `ovl` services are **analyzed**, not
 ported or fully verified under the future §3.7 per-routine differential
 harness. All three analyzed external RTL functions live only in this catalogue,
-not the `exe`/`ovl` tracker. The remaining high-fan-out routines include
-one resident service; it still requires native semantic evidence.
+not the `exe`/`ovl` tracker. This completes the §3.5 catalogue for the
+eighteen services with at least twenty distinct object-handler callers.
 
-## Remaining high-fan-out lead (not analyzed)
+## Resident conditional child-list presentation: `exe:0x005bd1` (23 handlers)
 
-**`exe:0x005bd1`, 23 handlers.** `gw_conditional_object_message` is a
-95-byte far function (`0x5bd1`–`0x5c2f`), with a two-word `(object,mode)`
-input at `[BP+6/+8]`. Original disassembly calls a conditional overlay
-predicate via RTLink `1c24:3dbf` and returns early if AX is zero.
-On success it formats the object through `1c24:13b7` with formatting
-mode 2, selects one of two selector values depending on `mode == 1`,
-emits a formatted phrase through the linked RTL text formatter, invokes
-another section service at `1c24:3db5` with the same inputs, then emits
-a shared closing format. The far `retf` implies the usual expected
-four-byte caller cleanup. Original section code at `ovl:0x051aea`–`0x051af9`
-confirms it statically: the caller pushes `mode=0` and object `0x0124`,
-calls the linked far entry at `ovl:0x051af1`, then executes `add sp,4`.
-That branch is guarded by an earlier object-flag `0x0c` query inside
-an event-6 / subevent-`0x3a` handler; the actual event trigger and
-flag state have not been exercised in a native replay. The exact message
-meaning and effects of those two RTLink services remain
-unproven. The function body does not directly mutate object state but
-its callees may. Ghidra's internal `0x5bfa` function is a false split.
-No live entry was observed in the reviewed `objects`, extended office,
-DATAMAN, VR, armory/class or bar/casino replays (159 sequential campaign
-actions, through the authentic `FULLCASINO` save); therefore its tracker state
-remains **named** rather than claiming
-analyzed or verified semantics.
+`gw_present_child_list` is a 95-byte far function
+(`0x5bd1`–`0x5c2f`) with caller-cleaned word arguments
+`[BP+6]=object` and `[BP+8]=child_slot`. It conditionally prints the objects
+in that child's linked-list slot **whose property 8 is not set**. The
+`child_slot` argument is passed unchanged to both overlay helpers; it is
+also used to choose one of two formatting selectors (`0x49` normally,
+`0x4f` for slot 1). Ghidra's apparent function at `0x5bfa` begins inside
+an instruction and is not an independent entry.
 
-The next evidence step is a native replay that actually executes each
-entry, recording argument words and the returned AX/guest-memory changes.
-The original-offset identities, not the temporary RAM addresses from
-the previous replays, must be used when marking their tracker states.
+The original caller at `ovl:0x051aea`–`0x051af9` passes object `0x0124`
+and slot 0, then executes `add sp,4` after its linked far call. It is
+reachable through object `0x0124`'s event-6 handler when the current command
+code is `0x3a` and object property `0x0c` passes its guard. An independent
+three-command native replay (an OPEN action followed by two examinations)
+reached this service at temporary linear PC `0x149d8` twice, at guest
+21,507 and 24,506 ms. Both calls had arguments `(0x0124,0)` and both
+entered the successful branch: the first linked call returned AX=1.
+
+The two inner RTLink trampoline identities are now resolved by original
+EXE records and the live section-qualified call census:
+
+| Linked call | Original trampoline | Original callee | Role |
+| --- | --- | --- | --- |
+| `1c24:3dbf` | `exe:0x00e4f9` | `ovl:0x00bf3d` (section 4) | Count eligible children |
+| `1c24:3db5` | `exe:0x00e4ef` | `ovl:0x00b910` (section 4) | Format and emit eligible child list |
+
+The count helper `ovl:0xbf3d` first calls the native indexed child-head
+accessor `0157:0825(object,slot)`, follows the `0157:09e4` sibling chain,
+and increments a 16-bit count for each child for which the native
+`0157:03a6` property-8 test returns zero. It returns that count in AX.
+If zero, the resident presenter exits without printing the child list.
+On success it formats the containing object with mode 2 through the linked
+object-phrase service, emits a selector-dependent phrase through the RTL
+formatter, and calls `ovl:0xb910` with the original `(object,slot)` words.
+That routine traverses the same chain, skips property-8 objects, emits
+eligible child phrases with formatting flags `0x83` and list separators,
+and returns the number of displayed children in AX. Finally the resident
+presenter prints a shared suffix. Its final AX is not a documented count:
+in this replay the epilogue observed AX=5 after the final RTL output call.
+
+The native RTLink event trace observed each of the inner helpers **three
+times**, all with object `0x0124` and slot 0, with AX=1 at every return.
+Every call paired with a return and had verified object-state snapshots.
+The count helper made **no object-record changes**. The listing helper
+changed object `0x0123` state byte 4 from `0x00` to `0x40` during the
+initial OPEN action, and neither later examination changed records.
+This is the existing `gw_format_object_phrase` property-7 mark-on-presentation
+effect described above; it is *not* safe to replace the listing helper with
+a pure output loop. The resident routine itself contains no direct
+object-record writes, but its child formatter is stateful. Stream output,
+separator and first-presentation ordering must be preserved in the port.
+
+The native evidence establishes this exercised branch and its ABI; other
+child slots, zero-count inputs, malformed sibling chains and exact text
+formatting still need the §3.7 differential and §3.6 golden-replay tests.
