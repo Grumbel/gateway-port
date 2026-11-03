@@ -96,7 +96,42 @@ The following fields are identified within the fixed block starting at
 | `+0x02` | 2 | Previous room ID | Consistent with observed transitions; provisional |
 | `+0x04` | 2 | Monotonic turn/progress count, interpreted big-endian | Inferred from consecutive saves and matching timer decreases |
 | `+0x06` | 2 | Second time/progress field, encoding not decoded | Unknown |
-| `+0x08` onward | 1,063 | Other engine/story state | Not yet mapped |
+| `+0x282` | 7 | ASCII value `NN-NNNN`, plausibly Terri's dynamically assigned phone/PV number | Strong inference from run divergence and story timing; writer untraced |
+| Other bytes from `+0x08` onward | | Other engine/story state | Not yet mapped |
+
+In two independently verified full campaigns with a deterministic DOS date
+and time, all 734 object records and all scheduled-event records agreed
+through the Terri, morning and mission-one saves. Exactly six bytes of their
+global blocks differed, starting with the Terri save: the seven-character
+ASCII value at `+0x282` contained **different telephone-number-shaped
+values** (`NN-NNNN`; the hyphen byte at `+0x284` agreed). The first differing
+save was produced by the stage in which Terri hands over a number on a
+napkin. This strongly suggests the number is generated or selected during
+that encounter, but the original writer and source of nondeterminism have
+not yet been traced. It must **not** be added to the golden RAM exclusions:
+it is plausible later player input and persistent story state.
+
+To locate the field's byte copies in already-recorded conventional RAM and
+find the earliest matching checkpoint in both runs, without another native
+replay, run:
+
+```sh
+python3 tools/locate_save_ascii.py \
+  build/golden/full-fixed-clock/run-a.json \
+  build/golden/full-fixed-clock/run-b.json \
+  --left-campaign build/golden/full-fixed-clock/run-a \
+  --right-campaign build/golden/full-fixed-clock/run-b \
+  --stage terri \
+  --global-offset 0x282 \
+  --length 7
+```
+
+The tool verifies each original save and each snapshot against the recorded
+golden hashes, then reports both string occurrences and addresses where the
+two differing strings occupy the *same* guest linear offset. These addresses
+are **candidates** for a `run_walkthrough.py --trace-byte-write` watchpoint,
+not proof that a particular RAM copy is the owning global field. A new native
+replay and instruction write trace are needed to identify the writer.
 
 For example, the office save's first words are room `0x00ec`, previous room
 `0x00f1`, and the byte pair `01 13` at `+4`, tentatively interpreted as turn

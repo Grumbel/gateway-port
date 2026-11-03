@@ -2,6 +2,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 
 """Game-data-independent structural checks for original Gateway save files."""
+import contextlib
+import hashlib
+import io
+import json
 import pathlib
 import struct
 import sys
@@ -15,6 +19,8 @@ from inspect_gateway_save import (DESCRIPTION_BYTES, EVENT_BYTES, EVENTS_OFFSET,
                                   OBJECT_RECORD_SIZES, compare_saved_state,
                                   parse_gateway_save)
 from inspect_object_state import HANDLER_FIELDS, LOCATION_FIELDS
+from locate_save_ascii import occurrences, saved_ascii_field, trace_field
+from run_golden import digest_snapshot
 
 
 def fake_gateway_save(description='EXAMPLE', room=0x0a, previous=0x09,
@@ -46,6 +52,78 @@ def fake_gateway_save(description='EXAMPLE', room=0x0a, previous=0x09,
 
 
 class GatewaySaveTests(unittest.TestCase):
+    def test_locate_differing_ascii_without_guessing_memory_copy(self):
+        first = fake_gateway_save()
+        second = fake_gateway_save()
+        base = DESCRIPTION_BYTES + OBJECT_BYTES + 0x282
+        first[base:base + 7] = b'10-4321'
+        second[base:base + 7] = b'22-9876'
+        saved_a, saved_b = [parse_gateway_save(data) for data in (first, second)]
+        self.assertEqual(saved_ascii_field(saved_a, 0x282, 7), b'10-4321')
+        self.assertEqual(saved_ascii_field(saved_b, 0x282, 7), b'22-9876')
+        for invalid in (-1, 1070):
+            with self.assertRaisesRegex(ValueError, 'exceeds'):
+                saved_ascii_field(saved_a, invalid, 7)
+        with self.assertRaisesRegex(ValueError, 'printable'):
+            saved_ascii_field(saved_a, 0x282 - 1, 7)
+        memory = bytearray(1024 * 1024)
+        memory[0x12345:0x1234c] = b'10-4321'
+        memory[0x9fffc:0xa0003] = b'10-4321'
+        self.assertEqual(occurrences(memory, b'10-4321'), [0x12345])
+        with self.assertRaisesRegex(ValueError, 'expected'):
+            occurrences(memory[:-1], b'10-4321')
+
+    def test_trace_ascii_field_checks_original_saves_and_golden_snapshots(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            manifests = []
+            for name, number in (('a', b'10-4321'), ('b', b'22-9876')):
+                stage_root = root / name / 'terri'
+                (stage_root / 'state').mkdir(parents=True)
+                data = fake_gateway_save()
+                data[DESCRIPTION_BYTES + OBJECT_BYTES + 0x282:
+                     DESCRIPTION_BYTES + OBJECT_BYTES + 0x289] = number
+                (stage_root / 'state/GATE007.SAV').write_bytes(data)
+                (stage_root / 'stage-meta.json').write_text(json.dumps({
+                    'name': 'terri', 'script_sha256': 'script',
+                    'save_description': 'EXAMPLE',
+                    'save_sha256': hashlib.sha256(data).hexdigest(),
+                }))
+                checkpoints = []
+                for label in ('before', 'final'):
+                    prefix = stage_root / ('native' if label == 'final' else
+                                           'checkpoint-before')
+                    memory = bytearray(1024 * 1024)
+                    if label == 'final':
+                        memory[0x12345:0x1234c] = number
+                    prefix.with_suffix('.bin').write_bytes(memory)
+                    prefix.with_suffix('.regs').write_text('SS=8000\nSP=fffe\nDS=1000\n')
+                    point = dict(label=label, time_ms=50 if label == 'final' else 10,
+                                 action_index=1, command_index=1)
+                    checkpoints.append(digest_snapshot(prefix, point))
+                manifests.append(dict(campaign_sha256='campaign', stages=[dict(
+                    name='terri', script_sha256='script', checkpoints=checkpoints,
+                    save_sha256=hashlib.sha256(data).hexdigest())]))
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                trace_field(manifests[0], manifests[1], root / 'a', root / 'b',
+                            'terri', 0x282, 7)
+            self.assertIn('run-a=\'10-4321\' run-b=\'22-9876\'', output.getvalue())
+            self.assertIn('before (command 1, 10ms):', output.getvalue())
+            self.assertIn('same-address[0]: -', output.getvalue())
+            self.assertIn('same-address[1]: 0x12345', output.getvalue())
+            corrupted_manifest = [manifests[0], dict(manifests[1], stages=[
+                dict(manifests[1]['stages'][0], save_sha256='0' * 64)])]
+            with contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaisesRegex(ValueError, 'differs from golden manifest'):
+                    trace_field(corrupted_manifest[0], corrupted_manifest[1],
+                                root / 'a', root / 'b', 'terri', 0x282, 7)
+            (root / 'b/terri/native.bin').write_bytes(b'broken')
+            with contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaisesRegex(ValueError, 'expected'):
+                    trace_field(manifests[0], manifests[1], root / 'a', root / 'b',
+                                'terri', 0x282, 7)
+
     def test_save_comparison_isolates_objects_globals_and_timer_drift(self):
         events = ((0x25, 230), (0x2a, 290))
         previous = parse_gateway_save(fake_gateway_save(turns=0x0163, events=events))
