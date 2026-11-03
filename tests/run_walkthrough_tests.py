@@ -19,7 +19,7 @@ sys.path.insert(0, str(TOOLS))
 from run_walkthrough import (check_locations, compile_steps, convert_text, extract_scribd_html,
                              import_native_save, native_save_description, parse_script,
                              run as execute_walkthrough)
-from run_walkthrough_campaign import (find_save, load_campaign, verified_save)
+from run_walkthrough_campaign import (find_save, load_campaign, run_campaign, verified_save)
 from story_scenarios import schedule
 
 
@@ -345,6 +345,35 @@ LABEL dropped_book
                                  str(campaign), '--plan-only'], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('bar_nubar: 49 actions', result.stdout)
+
+    def test_campaign_forwards_extra_native_trace_entries(self):
+        campaign = pathlib.Path(__file__).parent / 'fixtures/gateway-campaign.json'
+        first = load_campaign(campaign)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            probe = root / 'gateway-probe'
+            probe.write_bytes(b'fixture')
+            data = root / 'data'
+            data.mkdir()
+            (data / 'GATE.EXE').write_bytes(b'fixture')
+            output = root / 'campaign'
+            state_dir = output / first.name / 'state'
+            state_dir.mkdir(parents=True)
+            (state_dir / 'GATE001.SAV').write_bytes(
+                first.description.encode('ascii').ljust(33, b' ') + b'fixture')
+            args = SimpleNamespace(probe=probe, data=data, output=output,
+                                   from_stage=None, through_stage=None,
+                                   plan_only=False, timeout=30, verify_overlays=False,
+                                   extra_trace_entry=['149d8', '12f44'])
+            with mock.patch('run_walkthrough_campaign.subprocess.run') as invoke:
+                run_campaign([first], args)
+            command = invoke.call_args.args[0]
+            self.assertEqual([(command[i], command[i + 1])
+                              for i in range(len(command) - 1)
+                              if command[i] == '--extra-trace-entry'],
+                             [('--extra-trace-entry', '149d8'),
+                              ('--extra-trace-entry', '12f44')])
+            self.assertTrue((output / first.name / 'stage-meta.json').is_file())
 
     def test_campaign_rejects_unreviewed_restore_and_modified_previous_save(self):
         with tempfile.TemporaryDirectory() as directory:

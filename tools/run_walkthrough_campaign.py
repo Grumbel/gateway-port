@@ -127,6 +127,8 @@ def run_campaign(stages, args):
             cmd += ['--import-save', str(previous)]
         if args.verify_overlays:
             cmd.append('--verify-overlays')
+        for entry in args.extra_trace_entry or []:
+            cmd += ['--extra-trace-entry', entry]
         print(f'Running native campaign stage: {stage.name}', flush=True)
         subprocess.run(cmd, check=True)
         saved = find_save(output / 'state', stage.description)
@@ -151,6 +153,8 @@ def main():
     parser.add_argument('--through-stage', metavar='NAME')
     parser.add_argument('--timeout', type=int, default=1800)
     parser.add_argument('--verify-overlays', action='store_true')
+    parser.add_argument('--extra-trace-entry', action='append', metavar='LINEARHEX',
+                        help='capture additional native service entry stacks (repeatable)')
     parser.add_argument('--plan-only', action='store_true')
     args = parser.parse_args()
     try:
