@@ -36,7 +36,7 @@ by at least 20 **distinct native object-handler functions**:
 | `exe:0x003e9c` | 74 | 13 | `gw_schedule_timed_event`, analyzed |
 | `rtl:0x00e284` | 70 | 0 | External RTL, uncatalogued |
 | `exe:0x002603` | 68 | 11 | `gw_relation_reachable`, analyzed |
-| `rtl:0x0169db` | 61 | 7 | External RTL, uncatalogued |
+| `rtl:0x0169db` | 61 | 7 | External RTL character-output wrapper, analyzed |
 | `exe:0x006557` | 57 | 1 | Unclassified |
 | `exe:0x005c30` | 53 | 1 | Unclassified |
 | `exe:0x002951` | 51 | 3 | `gw_clear_object_flag`, analyzed |
@@ -84,6 +84,33 @@ strong evidence for a text-output service, but does not establish every
 possible formatting behavior. Since the tracker currently represents only
 original `exe`/`ovl` files, this external RTL analysis lives here, rather
 than inventing an EXE identity for it.
+
+## External character-output wrapper: `rtl:0x0169db` (61 handlers)
+
+This is a 25-byte **far character-output wrapper** in `GATE.RTL` immediately
+before the formatter above. At original `0x169db`–`0x169f3`, it accepts one
+16-bit stack argument at `[BP+6]`, then explicitly **zeros the upper byte
+at `[BP+7]` in the caller's argument slot**. It passes three words to a
+near same-segment writer at `GATE.RTL:0x1619b`: the output-stream word at
+`[DS:0x0002]`, the offset of the character argument on the stack, and `SS`
+as its segment. The writer therefore receives a far pointer to the
+zero-extended character. This wrapper removes the writer's six argument
+bytes with `add sp,6` and returns with `retf`; its own callers clean the
+single two-byte character argument. For example, original EXE
+`0x5cc4`–`0x5ccd` pushes `0x000a`, calls linked `17cd:1042`, then executes
+`add sp,2`. There is no established meaningful
+return-register contract. Its effects are stream/device output and the
+deliberate write to the **caller stack**, not object-state mutation. The
+writer's internals and error handling are still not independently analyzed.
+
+The native `objects` replay at `build/service-evidence-score-text/native.trace`
+captured **18 entries** at temporary runtime linear `0x28d12`
+(`CS=27cd`) during text rendering. Example argument words at `SS:SP+4`
+are `0x000a`, `0x0009`, and `0x002e`, while return addresses point into
+active original display/text functions. The adjacent RTL formatter was
+independently located at linear `0x28d2b` in the same launch, exactly
+25 bytes later. This validates the code identity, single-word ABI and
+output usage; it is not a per-routine replacement differential test.
 
 ## Section-4 object phrase formatter: `ovl:0x00b1e0` (186 handlers)
 
@@ -356,6 +383,7 @@ remains the independent bounded check documented in `object-state.md`.
 
 All eight original `exe` entries and two `ovl` services are **analyzed**, not
 ported or fully verified under the future §3.7 per-routine differential
-harness. The remaining high-fan-out routines include two external RTL
-targets and several resident services; all still require native semantic
-evidence.
+harness. Both analyzed external RTL wrappers live only in this catalogue,
+not the `exe`/`ovl` tracker. The remaining high-fan-out routines include
+one external RTL target and five resident services; all still require native
+semantic evidence.
