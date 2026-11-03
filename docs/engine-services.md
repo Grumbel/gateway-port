@@ -34,11 +34,11 @@ by at least 20 **distinct native object-handler functions**:
 | `ovl:0x00c830` (section 4) | 147 | 17 | `gw_relocate_child`, analyzed |
 | `exe:0x00291e` | 87 | 3 | `gw_set_object_flag`, analyzed |
 | `exe:0x003e9c` | 74 | 13 | `gw_schedule_timed_event`, analyzed |
-| `rtl:0x00e284` | 70 | 0 | External RTL, uncatalogued |
+| `rtl:0x00e284` | 70 | 0 | External RTL bounded string append, analyzed |
 | `exe:0x002603` | 68 | 11 | `gw_relation_reachable`, analyzed |
 | `rtl:0x0169db` | 61 | 7 | External RTL character-output wrapper, analyzed |
 | `exe:0x006557` | 57 | 1 | `gw_add_score`, analyzed |
-| `exe:0x005c30` | 53 | 1 | Unclassified |
+| `exe:0x005c30` | 53 | 1 | `gw_present_story_text`, analyzed |
 | `exe:0x002951` | 51 | 3 | `gw_clear_object_flag`, analyzed |
 | `exe:0x00259c` | 31 | 8 | `gw_relation_contains_in_slot`, analyzed |
 | `exe:0x0060cf` | 30 | 8 | `gw_room_exit_dispatch`, analyzed |
@@ -111,6 +111,55 @@ active original display/text functions. The adjacent RTL formatter was
 independently located at linear `0x28d2b` in the same launch, exactly
 25 bytes later. This validates the code identity, single-word ABI and
 output usage; it is not a per-routine replacement differential test.
+
+## External bounded string append: `rtl:0x00e284` (70 handlers)
+
+This original `GATE.RTL` far function spans `0xe284`–`0xe2d8` (85
+bytes) and returns `AX=0/1`. Its input is a far, NUL-terminated source
+string pointer at `[BP+6]` offset / `[BP+8]` segment, with **four argument
+bytes removed by callers**. It first checks a shared destination far
+pointer for null. Two calls to the *same* external length helper measure
+the destination and source; it adds their 16-bit lengths and compares the
+sum, **strictly less than**, the shared capacity. If there is room, it
+passes the destination and source far pointers to a four-word external
+string-combining helper and returns `AX=1`. Otherwise it returns `AX=0`
+without calling that helper. The sum is 16-bit and uses an unsigned
+comparison, so overflow is a possible original edge case; do not silently
+substitute a different capacity check in a native port. In the normal
+success path the destination string changes, while the function itself
+performs no object-record writes and no direct allocation. The precise
+underlying helper implementations are still unclassified; their use as
+string length/append operations follows from their argument shapes,
+double-length guard and the actual input replay, not matching CRT symbols.
+
+The on-disk RTL image has **zero relocation placeholders** at the pointer
+and helper references, so literal `DS:0` / `DS:2` interpretations are
+incorrect. The source-pinned live memory at
+`build/handler-coverage-long/native.bin` reveals the relocated shared
+destination pointer at `[DS:0x0f8a]` (far offset/segment), the bound at
+`[DS:0x9dfe]`, and the repeated far length helper at linked `1805:2bb4`;
+the append helper is at linked `1805:2b38`. The capacity word in that
+snapshot is **`0x0100` (256 bytes)**. These are relocated *runtime* DS
+addresses, not fixed file identities or global locations guaranteed for
+other Legend versions.
+
+In the original extended office walkthrough at
+`build/service-evidence-office-extended/native.trace`, runtime linear
+entry `0x21890` (`2183:0060`) was reached **289 times** while individual
+BIOS keypresses were being accepted. For example the 14,000–14,300 ms
+entries have source far pointer `5b46:dc22` at `SS:SP+4/+6`, and the
+input character in BX changes from `0x6c` to `0x6f` to `0x6f` to
+`0x6b` along with the scripted keystrokes. This establishes a real
+input-buffer append use; the 70 static handler callers may use it in
+other string-building contexts too. There is no per-routine differential
+test for capacity-boundary and overflow cases yet.
+
+At temporary return `4319:14d5`, the source-pinned native RAM has
+`add sp,4` following the linked far call, independently confirming the
+caller removes both source-pointer words. The new
+`run_walkthrough.py run --extra-trace-entry LINEARHEX` option forwards
+additional hooks to the original probe without changing the reviewed
+keystroke sequence or distributing the recorded RAM.
 
 ## Section-4 object phrase formatter: `ovl:0x00b1e0` (186 handlers)
 
@@ -357,6 +406,43 @@ the caller frame included the corresponding native object context.
 The original conditional output branch and 16-bit wrap were verified from
 disassembly, not exercised across all flag states in this bounded trace.
 
+## Resident story-text presentation: `exe:0x005c30` (53 handlers)
+
+`gw_present_story_text` is a 40-byte far **presentation coordinator** at
+original EXE `0x5c30`–`0x5c57`. It receives a far string pointer at
+`[BP+6]` offset / `[BP+8]` segment. The native caller removes the four
+argument bytes; after a linked call, one observed source return at
+`49d8:08e2` begins `add sp,4` (native linear `0x4a662`, source-pinned
+RAM). The function itself contains no explicit writes to story globals,
+object records, or heap allocation, and no known caller consumes a
+meaningful AX result. Its **effects are delegated to the display subsystem**:
+
+1. It first calls linked runtime `17cd:045e` with no arguments; the
+   relocated body checks and prepares the active output stream state.
+2. It passes the input far pointer to linked RTL `0dbd:003e`, a larger
+   GUI/text rendering routine with screen-state checks.
+3. It passes a zero word to RTL `0dbd:029a`, then calls `0dbd:0330`
+   without arguments. These latter functions manage GUI/output state,
+   but their exact flushing, pagination and window effects have not been
+   separately characterized.
+
+The native extended office walkthrough captured **two calls** to
+temporary linear `0x14a37` (`148e:0157`) at 27,573 and 57,433 virtual
+ms. Their input far strings were `5b46:6a3a` and `5b46:6f51`, with
+return addresses into independently loaded overlay sections. This
+supports a reusable story-text presentation role; it does **not** prove
+that every call displays a modal dialog or synchronously waits for input.
+Do not substitute a simplified print-only service until the downstream
+GUI behaviors and caller-visible ordering are verified.
+
+Ghidra 12 cuts the body into pseudo-functions at `0x5c30` (14 bytes) and
+`0x5c42` (22 bytes); the latter starts **within a far-CALL instruction**.
+Original `retf` at `0x5c57` and the next prologue at `0x5c58` establish
+the real 40-byte boundary. The adjacent conditional formatter at
+`exe:0x5bd1`–`0x5c2f` similarly has a ghost boundary at `0x5bfa`, inside
+the `cmp` immediate. The seeder merges both originals, but `0x5bd1`
+remains **unclassified** pending native-call evidence.
+
 ## Resident object-relation predicate: `exe:0x00254a` (157 handlers)
 
 `gw_native_relation_contains` is a far Boolean predicate over one object's
@@ -471,9 +557,8 @@ epilogue. These counts are *execution occurrences in this one scripted path*,
 not the distinct-caller totals in the table. The full three-way HLE replay
 remains the independent bounded check documented in `object-state.md`.
 
-All ten original `exe` entries and two `ovl` services are **analyzed**, not
+All eleven original `exe` entries and two `ovl` services are **analyzed**, not
 ported or fully verified under the future §3.7 per-routine differential
-harness. Both analyzed external RTL wrappers live only in this catalogue,
+harness. All three analyzed external RTL functions live only in this catalogue,
 not the `exe`/`ovl` tracker. The remaining high-fan-out routines include
-one external RTL target and three resident services; all still require native
-semantic evidence.
+two resident services; both still require native semantic evidence.

@@ -411,6 +411,8 @@ def run(args, replay):
     if args.trace_navigation:
         for entry in ('447e0', '14ed6', '15077', '14742', '14759', '1475e', '1507c'):
             command += ['--trace-entry', entry]
+    for entry in args.extra_trace_entry or []:
+        command += ['--trace-entry', entry]
     for address in args.trace_byte_write or []:
         command += ['--trace-byte-write', address]
     if args.trace_object_writes:
@@ -457,6 +459,8 @@ def main():
                         help='require a newly written DOS saved game with this description')
     replay.add_argument('--verify-overlays', action='store_true')
     replay.add_argument('--trace-navigation', action='store_true')
+    replay.add_argument('--extra-trace-entry', action='append', metavar='LINEARHEX',
+                        help='capture additional native service entry stacks (repeatable)')
     replay.add_argument('--trace-byte-write', action='append', metavar='LINEARHEX',
                         help='observe guest byte mutations (up to 16, within 64 bytes)')
     replay.add_argument('--trace-object-writes', metavar='OBJECTHEX',

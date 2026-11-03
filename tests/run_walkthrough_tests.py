@@ -9,6 +9,7 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -16,7 +17,8 @@ TOOLS = pathlib.Path(__file__).resolve().parents[1] / 'tools'
 sys.path.insert(0, str(TOOLS))
 
 from run_walkthrough import (check_locations, compile_steps, convert_text, extract_scribd_html,
-                             import_native_save, native_save_description, parse_script)
+                             import_native_save, native_save_description, parse_script,
+                             run as execute_walkthrough)
 from run_walkthrough_campaign import (find_save, load_campaign, verified_save)
 from story_scenarios import schedule
 
@@ -402,6 +404,42 @@ LABEL dropped_book
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn('Plan: 1 actions', result.stdout)
+
+    def test_extra_native_entry_option_is_accepted_in_walkthrough_cli(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / 'opening.walk'
+            path.write_text('COMMAND open drawer\n', encoding='utf-8')
+            result = subprocess.run([sys.executable, str(TOOLS / 'run_walkthrough.py'),
+                                     'run', str(path), '--plan-only',
+                                     '--extra-trace-entry', '1535e',
+                                     '--extra-trace-entry', '12f44'],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('Plan: 1 actions', result.stdout)
+
+    def test_extra_native_entry_options_reach_original_probe(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / 'GATE.EXE').write_bytes(b'test fixture')
+            (root / 'probe').write_bytes(b'test fixture')
+            args = SimpleNamespace(probe=root / 'probe', data=root,
+                                   output=root / 'output', import_save=None,
+                                   verify_existing=False,
+                                   verify_overlays=False, trace_navigation=False,
+                                   trace_byte_write=None, trace_object_writes=None,
+                                   trace_target=None, extra_trace_entry=['149d8', '12f44'],
+                                   capture_labels=False, check_labels=False,
+                                   timeout=1)
+            replay = compile_steps(parse_script('COMMAND look'))
+            with mock.patch('run_walkthrough.subprocess.run') as invoke, \
+                 mock.patch('run_walkthrough.verify_recorded'):
+                execute_walkthrough(args, replay)
+            command = invoke.call_args.args[0]
+            self.assertEqual([(command[i], command[i + 1])
+                              for i in range(len(command) - 1)
+                              if command[i] == '--trace-entry'],
+                             [('--trace-entry', '147a6'), ('--trace-entry', '28d2b'),
+                              ('--trace-entry', '149d8'), ('--trace-entry', '12f44')])
 
     def test_verify_existing_refuses_stale_input_without_rerunning_original_game(self):
         with tempfile.TemporaryDirectory() as directory:

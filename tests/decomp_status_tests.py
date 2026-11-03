@@ -111,6 +111,20 @@ class TrackerTests(unittest.TestCase):
                          [('0x0060cf', '691'), ('0x006382', '72')])
         self.assertEqual(tracker.seed(self.path, functions_path=self.functions), (0, 0))
 
+    def test_text_wrappers_exclude_ghidra_mid_instruction_phantoms(self):
+        header = 'file\toffset\tsection\tghidra_address\tbody_bytes\tname\tsource\n'
+        fragments = ((0x5bd1, 38), (0x5bfa, 51), (0x5c30, 14),
+                     (0x5c42, 22), (0x5c58, 261))
+        self.functions.write_text(header + '\n'.join(
+            f'exe\t0x{offset:06x}\t\t105e:{offset:04x}\t{size}\tFUN_A\tDEFAULT'
+            for offset, size in fragments) + '\n')
+        self.assertEqual(tracker.seed(self.path, functions_path=self.functions), (3, 3))
+        rows = tracker.read_tracker(self.path)
+        self.assertEqual([(row['offset'], row['size']) for row in rows],
+                         [('0x005bd1', '95'), ('0x005c30', '40'),
+                          ('0x005c58', '261')])
+        self.assertEqual(tracker.seed(self.path, functions_path=self.functions), (0, 0))
+
     def test_mark_explicit_handler_boundary_and_reject_tail(self):
         self.seeded()
         report = self.root / 'decompile.json'
