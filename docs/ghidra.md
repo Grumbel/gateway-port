@@ -70,6 +70,7 @@ Expected output (generated, ignored by Git, contains original game code):
 | `build/ghidra/ghidra-decompile-report.json` | One status, original address and Ghidra-containing function per target |
 | `build/ghidra/ghidra-callgraph.json` | Static call references and unresolved-call sites in the selected containing functions (not an executed RTLink call graph) |
 | `build/ghidra/pseudocode.txt` | Decompiler output for confirmed native function-entry candidates, or explicit errors |
+| `build/ghidra/ghidra-functions.tsv` | Every Ghidra function by original file offset (`exe`, or `ovl` plus RTLink section), body size and name; resident entries are byte-checked against `GATEMAIN.EXE`. Input for `tools/decomp_status.py seed` |
 
 Preparation can be run independently of Ghidra, useful on machines where the
 Java application is unavailable:

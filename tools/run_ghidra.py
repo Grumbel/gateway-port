@@ -27,6 +27,8 @@ def headless_command(launcher, output, project_name, plan_path):
             '-preScript', 'ImportGatewayRtlink.py', str(plan_path),
             '-postScript', 'DecompileGateway.py', str(plan_path),
             str((output / 'pseudocode.txt').resolve()),
+            '-postScript', 'ExportGatewayFunctions.py', str(plan_path),
+            str((output / 'ghidra-functions.tsv').resolve()),
             '-scriptlog', str((output / 'ghidra-script.log').resolve()),
             '-log', str((output / 'ghidra.log').resolve())]
 
@@ -161,6 +163,9 @@ def run(exe, ovl, output, overlay_tool, objects_json=None,
         decompiled['completed'], decompiled['requested']))
     print('Ghidra pseudocode: %s' % reports[2])
     print('Ghidra static callgraph: %s' % reports[3])
+    functions = output / 'ghidra-functions.tsv'
+    if functions.is_file():
+        print('Ghidra function inventory: %s' % functions)
     return plan_path
 
 
