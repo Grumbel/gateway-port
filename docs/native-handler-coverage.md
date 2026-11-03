@@ -104,8 +104,13 @@ Observed object handlers (from section-qualified native pointers):
 
 The largest unclassified RTLink target is **section 0, original OVL
 `0x0d7e`, with 12,977 calls**. It accounts for most trampoline traffic in
-this scenario, and is a useful next Ghidra/decompiler target; its function
-and significance are *not yet identified*. High call frequency is not a
+this scenario. A later 2026-11-03 bar campaign isolated its **single caller**
+at `27cd:06b0`, mapped to original `GATE.RTL:0x16049` just after a call
+at `0x16044`: the RTL loop repeats while its return `AX` is nonzero. The
+enclosing RTL routine subsequently checks several keyboard input codes.
+That establishes a repeated check, **not yet the overlay helper's full
+meaning, return contract or all side effects**. See [golden replays](golden-replays.md).
+High call frequency is not a
 measure of game-logic complexity. Zero observed calls to an unvisited room's
 callback says nothing about that callback's behavior, reachability or code
 coverage in other scenarios.

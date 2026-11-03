@@ -14,7 +14,7 @@ PROBE = sys.argv.pop(1)
 
 
 class ProbeTests(unittest.TestCase):
-    def run_guest(self, code, files=None, dump=False, game_args=None, press=None, break_at=None, state=False, state_files=None, exe_name="TEST.EXE", research_entries=None, scheduled_keys=None, probe_adlib=False, scheduled_pokes=None, milliseconds=None, trace_byte_write=None, trace_rtlink_calls=False, rtlink_event_targets=None, key_script_lines=None, dump_at=None, mouse_clicks=None):
+    def run_guest(self, code, files=None, dump=False, game_args=None, press=None, break_at=None, state=False, state_files=None, exe_name="TEST.EXE", research_entries=None, scheduled_keys=None, probe_adlib=False, scheduled_pokes=None, milliseconds=None, trace_byte_write=None, trace_rtlink_calls=False, rtlink_event_targets=None, rtlink_event_after_ms=None, key_script_lines=None, dump_at=None, mouse_clicks=None):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             assets = root / 'assets'
@@ -46,6 +46,8 @@ class ProbeTests(unittest.TestCase):
                 command += ['--trace-rtlink-events', str(root / 'rtlink.events')]
                 for target in rtlink_event_targets:
                     command += ['--trace-rtlink-target', target]
+            if rtlink_event_after_ms is not None:
+                command += ['--trace-rtlink-after-ms', str(rtlink_event_after_ms)]
             for key in scheduled_keys or []:
                 command += ['--key-at', key]
             if key_script_lines is not None:
@@ -223,6 +225,20 @@ class ProbeTests(unittest.TestCase):
         unused = self.run_guest(code, rtlink_event_targets=['4:1000:0'])
         self.assertEqual(unused.returncode, 0, unused.stderr)
         self.assertIn('rtlink-events selected=0 returned=0 unfinished=0', unused.rtlink_events)
+        delayed = self.run_guest(code, trace_rtlink_calls=True,
+                                 rtlink_event_targets=[f'5:1000:{target:x}'],
+                                 rtlink_event_after_ms=1)
+        self.assertEqual(delayed.returncode, 0, delayed.stderr)
+        self.assertIn('rtlink-events selected=0 returned=0 unfinished=0',
+                      delayed.rtlink_events)
+        self.assertIn('rtlink-census manager_hits=1 validated=1 unrecognized=0',
+                      delayed.rtlink_calls)
+        for bad_delay in ('-1', 'bogus', '3600000'):
+            with self.subTest(bad_delay=bad_delay):
+                self.assertNotEqual(self.run_guest(
+                    code, rtlink_event_targets=[f'5:1000:{target:x}'],
+                    rtlink_event_after_ms=bad_delay).returncode, 0)
+        self.assertNotEqual(self.run_guest(code, rtlink_event_after_ms=1).returncode, 0)
         for bad in ([], ['58:1000:0'], ['5:10000:0'], ['5:1000:fffff'],
                     ['5:1000:0', '5:1000:0'], ['5:1000:0:1']):
             with self.subTest(bad=bad):

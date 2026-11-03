@@ -154,6 +154,7 @@ struct State {
     std::uint64_t rtlink_sequence_calls = 0;
     std::ofstream rtlink_events;
     std::set<std::tuple<std::uint16_t, std::uint16_t, std::uint16_t>> rtlink_event_targets;
+    unsigned rtlink_event_after_ms = 0;
     struct RtlinkFrame {
         std::uint64_t id, return_pc;
         std::uint16_t ss, return_sp;
@@ -1132,6 +1133,7 @@ void trace_rtlink_call(uc_engine *uc, std::uint64_t, std::uint32_t,
         }
         if (!state.rtlink_events.is_open() ||
             !state.rtlink_event_targets.contains({section, target_cs, target_ip}) ||
+            state.elapsed_ms < state.rtlink_event_after_ms ||
             state.rtlink_event_calls >= State::rtlink_event_limit)
             return;
         // The manager was called from the ten-byte far trampoline. Below
@@ -1891,6 +1893,8 @@ int main(int argc, char **argv) {
     std::filesystem::path key_script_path;
     bool key_at_used = false;
     std::set<std::tuple<std::uint16_t, std::uint16_t, std::uint16_t>> rtlink_event_targets;
+    unsigned rtlink_event_after_ms = 0;
+    bool rtlink_event_after_ms_used = false;
     std::string game_args, research_path, object_flags_mode;
     bool object_state_services = false;
     bool verify_overlays = false, hle_overlays = false, trace_video = false;
@@ -1926,7 +1930,8 @@ int main(int argc, char **argv) {
                      "[--key-script FILE --milliseconds N] "
                      "[--dump-at MS:PREFIX ...] "
                      "[--mouse-click-at MS:X:Y ...] "
-                     "[--trace-rtlink-events FILE --trace-rtlink-target SECTION:CS:IP ...] "
+                     "[--trace-rtlink-events FILE --trace-rtlink-target SECTION:CS:IP ... "
+                     "--trace-rtlink-after-ms N] "
                      "[--trace-research FILE --trace-entry HEX ...] [--key-at MS:BIOSHEX ...] "
                      "[--research-poke16-at MS:LINEARHEX:OLDHEX:NEWHEX ...] "
                      "[--deterministic-clock] "
@@ -2135,6 +2140,18 @@ int main(int argc, char **argv) {
             rtlink_sequence_path = argv[++i];
         else if (option == "--trace-rtlink-events" && i + 1 < argc)
             rtlink_events_path = argv[++i];
+        else if (option == "--trace-rtlink-after-ms" && i + 1 < argc) {
+            rtlink_event_after_ms_used = true;
+            const std::string_view value = argv[++i];
+            const auto parsed = std::from_chars(value.data(), value.data() + value.size(),
+                                                rtlink_event_after_ms);
+            if (value.empty() || parsed.ec != std::errc{} ||
+                parsed.ptr != value.data() + value.size() ||
+                rtlink_event_after_ms > 3599899) {
+                usage();
+                return 2;
+            }
+        }
         else if (option == "--trace-rtlink-target" && i + 1 < argc) {
             const std::string_view value = argv[++i];
             std::array<unsigned, 3> parts{};
@@ -2300,6 +2317,10 @@ int main(int argc, char **argv) {
                      "and vice versa\n";
         return 2;
     }
+    if (rtlink_event_after_ms_used && rtlink_events_path.empty()) {
+        std::cerr << "--trace-rtlink-after-ms requires --trace-rtlink-events\n";
+        return 2;
+    }
     if (!trace_byte_writes.empty() &&
         *trace_byte_writes.rbegin() - *trace_byte_writes.begin() > 0x40) {
         std::cerr << "--trace-byte-write addresses must lie within 64 bytes "
@@ -2325,6 +2346,7 @@ int main(int argc, char **argv) {
         state.probe_adlib = probe_adlib;
         state.watched_bytes.insert(trace_byte_writes.begin(), trace_byte_writes.end());
         state.rtlink_event_targets = rtlink_event_targets;
+        state.rtlink_event_after_ms = rtlink_event_after_ms;
         if (!rtlink_sequence_path.empty()) {
             state.rtlink_sequence.open(rtlink_sequence_path);
             if (!state.rtlink_sequence)

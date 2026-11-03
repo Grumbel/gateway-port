@@ -190,6 +190,74 @@ sequence diagnostic will simply say the trace is available on one side only.
 An aligned comparison **does not** establish full campaign equivalence: only
 the intersecting stage/label checkpoints are checked.
 
+### Bar retry-loop divergence: original-code evidence
+
+The previously recorded full campaign diverges from the four-run seeded bar
+campaign even though **the source `GATE004.SAV` bytes, all 734 object records
+at the mismatched checkpoints, and the final `GATE005.SAV` bytes agree**.
+Comparing shared checkpoints against the seeded reference finds the first
+different CPU/stack state at command 10 for full run `a`, and command 20 for
+full run `b`. The changed RAM is concentrated near the in-flight stack and
+other runtime regions; its semantic ownership is not yet fully classified.
+
+The original RTLink census files isolate the execution-count difference:
+
+| Bar replay | Total validated calls | Section 0, `4319:06ee` | All other calls |
+| --- | ---: | ---: | ---: |
+| Full run `a` | 40,272 | 38,219 | 2,053 |
+| Full run `b` | 40,259 | 38,206 | 2,053 |
+| Seeded runs `a`–`d` | 40,265 each | 38,212 each | 2,053 each |
+
+All other 75 section-qualified target *counts* agree across these runs;
+some first/last-call millisecond timestamps differ by one. In the seeded
+per-invocation trace, **all 38,212** section-0 calls have the same caller
+return address `27cd:06b0`. This is the external runtime (`GATE.RTL`), not
+the resident main executable. Its file mapping is independently anchored by
+the previously verified `27cd:1042` -> `GATE.RTL:0x169db` character-output
+wrapper and `27cd:105b` -> `GATE.RTL:0x169f4` formatter; both give the same
+intra-segment file offset delta `0x15999`. Thus the return at `27cd:06b0`
+maps to original `GATE.RTL:0x16049`.
+
+Original RTL disassembly at file offset `0x16044` shows a far call whose
+return is followed by `or ax,ax; jne 0x16044`. The trace identifies that
+call's relocated target as **section 0, `4319:06ee`**, corresponding to
+`GATEMAIN.OVL:0x0d7e`. The enclosing far routine starts at RTL offset
+`0x15f15` and subsequently fetches an input word and checks values `0x20`,
+`0x0d`, `0x141`, and `0x142`. This is a **repeated Boolean-result check** in an
+interactive RTL routine, rather than evidence of additional distinct story
+handlers. Its precise wait/input condition and all side effects remain
+unverified. The extra iterations are consistent with slightly different
+execution phases at time-scheduled snapshots; they do **not** prove that
+the remaining RAM is harmless, or that full-campaign replay is deterministic.
+
+The next native experiment should sample the section-0 target's entry and
+return registers/stack in one isolated seeded bar run (the existing
+`run_walkthrough.py --trace-target` path records up to 256 events). The
+`--trace-rtlink-after-ms` probe option skips detailed entry/return logging
+before the chosen guest time while **retaining complete census counts**. A
+first capture near the command-10 difference is:
+
+```sh
+gateway-build
+xvfb-run -a python3 tools/run_walkthrough.py run \
+  tests/fixtures/gateway-bar-nubar-restore-save.walk \
+  --probe /tmp/gateway-port-build/gateway-probe --data ../gateway-dos \
+  --import-save build/golden/full-fixed-clock/run-a/armory_class/state/GATE004.SAV \
+  --expect-save FULLCASINO --check-labels \
+  --output build/golden/bar-loop-returns-54s \
+  --trace-target 0:4319:6ee \
+  --probe-arg=--deterministic-clock \
+  --probe-arg=--trace-rtlink-after-ms --probe-arg=53500
+python3 tools/inspect_rtlink_events.py \
+  build/golden/bar-loop-returns-54s/native.rtlink-events
+```
+
+The 256-call cap still applies **after** the selected time. Check whether
+the captured return values explain the loop iterations, and whether the
+first subsequent non-polling target and saved-game effects stay equal.
+Do **not** ignore this target, widen the volatile memory mask, or bless a
+full-campaign golden baseline on the current evidence.
+
 Compare subsequent native builds or a replacement-enabled probe against the
 same baseline:
 

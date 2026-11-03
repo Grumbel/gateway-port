@@ -33,6 +33,11 @@ still counts every validated trampoline; a sampled count must never be
 mistaken for total call frequency. All section numbers are decimal, and
 segment/offset values are hexadecimal. Numeric event inputs and `AX` returns
 are raw values, not automatically action outcomes.
+For extremely frequent targets, `gateway-probe --trace-rtlink-after-ms N`
+defers the first detailed event until guest millisecond `N`, keeping the
+256-call limit and unchanged full aggregate census. It requires the usual
+`--trace-rtlink-events` file and selected target(s). Walkthrough runners
+forward it with `--probe-arg=--trace-rtlink-after-ms --probe-arg=N`.
 
 ## Repeat with the original DOS files
 

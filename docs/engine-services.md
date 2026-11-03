@@ -52,6 +52,32 @@ Call counts are *static caller coverage*, not execution frequencies. The
 generated per-callee evidence, including native match lengths and segment
 support, remains in ignored `build/ghidra-shapes/native-service-fanout.json`.
 
+## RTL interactive retry loop: `rtl:0x015f15` (provisional)
+
+The original `GATE.RTL` contains a far routine with a `push bp; mov bp,sp`
+prologue at `0x15f15` and `retf` at `0x1611b`. Its call at `0x16044` is
+followed by `or ax,ax; jne 0x16044`, a tight loop until the callee returns
+zero. It subsequently makes another far call, stores that result as an input
+word, and distinguishes `0x20` (space), `0x0d` (Enter), and `0x141`/`0x142`.
+Other parts of the routine use display/scroll position words. Calling it
+an interactive input/display routine is an **inference**, not a validated API.
+
+The original RTL offsets were mapped to runtime segment `27cd` using the
+**same offset delta `0x15999`** independently found at the byte-verified
+character-output wrapper (`27cd:1042` -> `rtl:0x169db`) and formatter
+(`27cd:105b` -> `rtl:0x169f4`). The far-call return at `27cd:06b0` therefore
+corresponds to RTL offset `0x16049`, immediately following the call at
+`0x16044`. A seeded native bar replay reported that address as the caller
+of **all 38,212** invocations of RTLink section 0, target `4319:06ee`,
+resolved to `GATEMAIN.OVL:0x0d7e`. No observed call from a second caller
+was reported. Three full/seeded bar recordings differ by at most 13 extra
+invocations, all at that target; all other per-target counts and the final
+original game save agree. See [golden replays](golden-replays.md).
+
+This verifies the **loop structure and dynamic caller**, but not the
+section-0 callee's state dependencies or the time at which its zero return
+breaks the loop. No native/HLE replacement is claimed.
+
 ## External text formatter: `rtl:0x0169f4` (600 object handlers)
 
 This is a large, **printf-like output formatter in `GATE.RTL`**, not an object
