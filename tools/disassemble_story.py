@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 """Annotate a bounded 16-bit Gateway overlay disassembly with story text IDs.
 
 The on-disk image mixes code, tables and relocation operands. This is a

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 """Inspect authentic 1992 Gateway GATE###.SAV files without DOS execution.
 
 The 734 fixed object kinds and type-specific record sizes were independently

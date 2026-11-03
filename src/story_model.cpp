@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+// SPDX-License-Identifier: LicenseRef-Gateway-Derived
+
 #include "story_model.hpp"
 #include <algorithm>
 #include <array>

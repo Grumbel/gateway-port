@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 """Follow native Gateway object-relation links in exported object-state JSON.
 
 This is the cycle-safe counterpart of resident GATEMAIN.EXE 0157:00c5, not

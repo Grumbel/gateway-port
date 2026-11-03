@@ -1,0 +1,10 @@
+Additional permission under GNU GPL version 3 section 7
+
+If you modify this Program, or any covered work, by linking or combining it
+with the Gateway-derived source code in this project (the files identified by
+"SPDX-License-Identifier: LicenseRef-Gateway-Derived"), or a modified version
+of that code, containing parts covered by the terms of the
+LicenseRef-Gateway-Derived notice, the licensors of this Program grant you
+additional permission to convey the resulting work. Corresponding Source for a
+non-source form of such a combination shall include the source code for the
+parts of the Gateway-derived code used as well as that of the covered work.

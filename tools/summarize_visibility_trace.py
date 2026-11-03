@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 """Group native Gateway parser child-slot probes by scripted command window.
 
 This reports the result of the original 0385:0a9a predicate and the separate

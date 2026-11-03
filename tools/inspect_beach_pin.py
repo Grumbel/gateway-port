@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 """Inspect the Beach-success and membership-pin chain in a *native* snapshot.
 
 The offsets here are GATEMAIN.EXE DS pointer offsets observed in the original

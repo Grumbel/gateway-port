@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 """Verify both *unmodified* original Tanning Room UP callback paths.
 
 Room 0x29a's UP exit uses kind-4 callback 0x2b at OVL:0x693fc. Event 0x0f

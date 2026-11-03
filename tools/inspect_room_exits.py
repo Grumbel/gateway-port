@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 """Read Gateway's native type-1 room exit records from a guest memory dump.
 
 Original GATEMAIN.EXE file 0x60cf–0x6381 (runtime 148e:05f6) reads room

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+// SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
+
 // Bounded comparison of Gateway's first-room native action matrix with the
 // independent StoryModel. This is a research oracle, not a replacement parser.
 #include "story_model.hpp"

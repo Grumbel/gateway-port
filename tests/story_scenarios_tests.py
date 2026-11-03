@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
+
 """Input-schedule regression tests; no original Gateway data is required."""
 import sys
 import unittest

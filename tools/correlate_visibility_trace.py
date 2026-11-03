@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 """Align Gateway's native child-slot decisions with nearby object-state calls.
 
 The first-room OPEN/CLOSE/T(AKE) experiment has separate probes for the

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 """Read Gateway's native 195-entry action table from a live memory dump.
 
 Gateway's resident dispatch code reads a selector byte at 0x27 + 6*action

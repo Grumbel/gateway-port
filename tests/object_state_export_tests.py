@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
+
 """Synthetic snapshots exercise object records and both handler-table banks."""
 import pathlib
 import struct

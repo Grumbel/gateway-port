@@ -707,3 +707,24 @@ python3 tools/trace_game_logic.py --scenario objects --services state --hle-over
 
 It matches native execution while replacing all 187 section fills in that replay;
 see [host loading limits](docs/rtlink.md#opt-in-host-loading-step).
+
+## License
+
+The project has three licensing layers, tracked per file with REUSE
+(`REUSE.toml` and SPDX headers; `nix flake check` runs `reuse lint`):
+
+| Part | License |
+| --- | --- |
+| Runtime, tools, tests and documentation | GPL-3.0-or-later **with a linking exception** ([GPL text](LICENSES/GPL-3.0-or-later.txt), [exception](LICENSES/GPL-3.0-linking-exception.txt)) |
+| Reconstructed game logic (`src/story_model.*`, `tests/story_model_tests.cpp`) | [Gateway-Derived Source Notice](LICENSES/LicenseRef-Gateway-Derived.txt): **not GPL**; derived from the original program, whose rights stay with its holders; no license to the original is granted |
+| `third_party/nuked-opl3` | LGPL-2.1-or-later (Nuke.YKT) |
+| `third_party/font8x8` | Public domain (Daniel Hepper) |
+| Original game executables, data, art, text, sound and music | Not part of this repository; they keep their own rights and must come from your own copy of Gateway |
+
+Code that reimplements game logic from tables, constants or control flow read
+out of the original program (rather than file formats or hardware behavior)
+carries the `LicenseRef-Gateway-Derived` license identifier. The GPL section 7
+exception allows the GPL code to be linked or combined with those files and
+the result to be conveyed, provided their source accompanies it. It grants
+nothing for the original game. Never commit original assets, executable
+bytes or Ghidra pseudocode.

@@ -1,0 +1,8 @@
+Public Domain
+
+The author of this work has placed it in the public domain and waived all
+copyright and related rights in it. It may be used, copied, modified and
+distributed for any purpose, without restriction and without warranty.
+
+Used for third_party/font8x8 ("License: Public Domain", Daniel Hepper, based
+on public-domain fonts by Marcel Sondaar and IBM).

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
+
 #@category Gateway
 # Ghidra Jython 2.7 post-analysis script.
 # Arguments: absolute ghidra-plan.json, absolute pseudocode output path.

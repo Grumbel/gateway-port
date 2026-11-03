@@ -1,0 +1,36 @@
+Gateway-Derived Source Notice
+
+This notice applies to files identified by
+"SPDX-License-Identifier: LicenseRef-Gateway-Derived".
+
+1. Origin. These files contain source code, names, tables and data layouts
+   reconstructed by reverse engineering the DOS program Frederik Pohl's
+   Gateway by Legend Entertainment ("the Original Work"). The program logic
+   expressed in these files is derived from the Original Work and remains
+   subject to the rights of the Original Work's copyright holders and their
+   successors in interest.
+
+2. No license to the Original Work. This notice does not grant any license
+   to the Original Work, and nobody contributing to this project claims
+   ownership of it. If you are a rights holder of the Original Work and
+   object to the distribution of these files, contact the project
+   maintainer.
+
+3. Contributors' own material. To the extent the contributors to these files
+   hold copyright in their own contributions (for example identifiers,
+   comments, documentation, organization, tests and original glue code),
+   they permit anyone to use, copy, modify and distribute those
+   contributions, provided this notice is retained. This permission does not
+   extend to any part of the Original Work.
+
+4. No game data. These files must not contain original game executables,
+   data files, graphics, sound, music, story text or other assets. Using
+   them requires a lawfully obtained copy of Gateway.
+
+5. Combination with GPL code. The GPL-3.0-or-later code of this project
+   carries an additional permission (LICENSES/GPL-3.0-linking-exception.txt)
+   that allows it to be combined and conveyed together with these files.
+
+6. No warranty. These files are provided "as is", without warranty of any
+   kind, express or implied. In no event shall the contributors be liable
+   for any claim, damages or other liability arising from their use.

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 """Compile a reviewed Gateway walkthrough into BIOS keys and replay the original DOS game.
 
 The plain-text walkthrough DSL deliberately separates parser commands from raw

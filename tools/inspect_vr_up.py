@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 """Cross-check callback 0x2b's Terminal and Beach UP paths in original replays.
 
 Both traces must come from normal typed commands with the original DOS files,

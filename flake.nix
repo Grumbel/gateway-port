@@ -27,7 +27,25 @@
       apps = eachSystem (system: {
         default = { type = "app"; program = "${self.packages.${system}.default}/bin/gateway"; };
       });
-      checks = eachSystem (system: { build = self.packages.${system}.default; });
+      checks = eachSystem (system:
+        let pkgs = import nixpkgs { inherit system; }; in {
+          build = self.packages.${system}.default;
+          reuse = pkgs.runCommand "gateway-port-reuse" {
+            nativeBuildInputs = [ pkgs.reuse ];
+            src = pkgs.lib.cleanSourceWith {
+              src = self;
+              filter = path: type:
+                let name = builtins.baseNameOf path;
+                in pkgs.lib.cleanSourceFilter path type &&
+                  !(type == "directory" &&
+                    (pkgs.lib.hasPrefix "build" name || name == ".direnv"));
+            };
+          } ''
+            cd "$src"
+            reuse lint
+            touch "$out"
+          '';
+        });
       devShells = eachSystem (system:
         let
           pkgs = import nixpkgs { inherit system; };

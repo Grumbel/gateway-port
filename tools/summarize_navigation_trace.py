@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 """Correlate scripted Gateway room moves with native player-location writes.
 
 The player record is native object 0x0d3 (type 7, location at +0x0c).

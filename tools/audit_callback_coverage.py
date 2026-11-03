@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 """Audit native room callback *events* against a section-qualified RTLink census.
 
 An invocation of callback ID 0x14 with event 1 is not a room exit. Use the

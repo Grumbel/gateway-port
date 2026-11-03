@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 """Verify resident 048e:0284's far-call frame and ordered room transaction.
 
 This is a read-only check of *unmodified* Unicorn execution. Original

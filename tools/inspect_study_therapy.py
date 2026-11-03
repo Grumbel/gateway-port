@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 """Verify unmodified native Study therapy: 19 stages and the desk DOWN gate.
 
 Requires the two documented original-keyboard puzzle replays, player-location

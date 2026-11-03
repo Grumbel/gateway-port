@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
+version = 1
+
+[[annotations]]
+path = [".clang-format", ".gitignore", "AGENTS.md", "CMakeLists.txt", "README.md", "TODO.md", "flake.nix", "flake.lock", "docs/**", "tests/fixtures/**"]
+SPDX-FileCopyrightText = "2026 Ingo Ruhnke <grumbel@gmail.com>"
+SPDX-License-Identifier = "GPL-3.0-or-later WITH GPL-3.0-linking-exception"
+
+[[annotations]]
+path = ["third_party/nuked-opl3/**"]
+SPDX-FileCopyrightText = "2013-2020 Nuke.YKT"
+SPDX-License-Identifier = "LGPL-2.1-or-later"
+
+[[annotations]]
+path = ["third_party/font8x8/**"]
+SPDX-FileCopyrightText = "Daniel Hepper <daniel@hepper.net>"
+SPDX-License-Identifier = "LicenseRef-Public-Domain"

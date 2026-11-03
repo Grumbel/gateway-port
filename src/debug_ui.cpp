@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+// SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
+
 #include "debug_ui.hpp"
 #include "../third_party/font8x8/font8x8_basic.h"
 #include <algorithm>

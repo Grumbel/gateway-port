@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 """Expand indexed Gateway child-head words into native sibling chains.
 
 Input is JSON exported by inspect_object_state.py from a native probe dump.

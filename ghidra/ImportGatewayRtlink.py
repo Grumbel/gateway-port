@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
+
 #@category Gateway
 # Ghidra Jython 2.7 pre-analysis script. Argument: absolute ghidra-plan.json.
 # Run on the *original* GATEMAIN.EXE imported with the MZ/DOS loader.

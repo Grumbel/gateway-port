@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
+
 """Deterministic keyboard scripts for the bounded Gateway first-room replay.
 
 The seven configurable slots are spaced three seconds apart. They are useful

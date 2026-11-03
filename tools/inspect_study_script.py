@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 """Decode the 19 Study exercises and terminal SLEEP stage from native RAM.
 
 Original GATEMAIN.OVL:0x6cf24/0x6cf7c/0x6cffa indexes two far-pointer

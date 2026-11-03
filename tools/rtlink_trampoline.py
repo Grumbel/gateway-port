@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
+
 """Validate live Gateway RTLink trampolines and map them to original OVL files.
 
 The ten-byte stub begins with a near CALL to manager 2c24:058d, then a
