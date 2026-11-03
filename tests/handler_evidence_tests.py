@@ -7,7 +7,7 @@ from pathlib import Path
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-from inspect_rtlink_events import parse_events
+from inspect_rtlink_events import parse_events, summarize_events
 from inventory_native_handlers import parse_calls
 from build_handler_evidence import build_index
 
@@ -44,6 +44,21 @@ class RtlinkEventParserTests(unittest.TestCase):
             'rtlink-events selected=1 returned=0 unfinished=1 limit=256'])
         self.assertFalse(events[0]['returned'])
         self.assertEqual(summary['unfinished'], 1)
+
+    def test_summary_counts_return_values_without_implying_full_census(self):
+        no_change = RETURN.replace('object_bytes_changed=1', 'object_bytes_changed=0')
+        events, _ = parse_events([ENTER, no_change,
+                                 'rtlink-events selected=1 returned=1 unfinished=0 limit=256'])
+        more, _ = parse_events([ENTER, CHANGE, RETURN, FOOTER])
+        unfinished, _ = parse_events([ENTER,
+            'rtlink-events selected=1 returned=0 unfinished=1 limit=256'])
+        groups = summarize_events(events + more + unfinished)
+        self.assertEqual(len(groups), 1)
+        group = groups[(48, 0x4990, 0x1a19)]
+        self.assertEqual(group['calls'], 3)
+        self.assertEqual(group['returns'], {0: 2, None: 1})
+        self.assertEqual(group['changes'], 1)
+        self.assertEqual((group['first_ms'], group['last_ms']), (100, 100))
 
     def test_rejects_orphan_duplicate_and_lost_changes(self):
         for lines in ([RETURN, FOOTER], [ENTER, RETURN, RETURN, FOOTER],

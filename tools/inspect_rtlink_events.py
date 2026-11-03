@@ -145,10 +145,27 @@ def parse_events(lines):
     return list(entries.values()), summary
 
 
+def summarize_events(entries):
+    """Group sampled returns without mistaking the sample for a full census."""
+    groups = {}
+    for event in entries:
+        key = (event['section'], *event['target'])
+        if key not in groups:
+            groups[key] = dict(calls=0, returns=Counter(), changes=0,
+                               first_ms=event['start_ms'], last_ms=event['start_ms'])
+        group = groups[key]
+        group['calls'] += 1
+        group['returns'][event['ax_out'] if event['returned'] else None] += 1
+        group['changes'] += len(event['changes'])
+        group['first_ms'] = min(group['first_ms'], event['start_ms'])
+        group['last_ms'] = max(group['last_ms'], event['start_ms'])
+    return groups
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('trace', type=Path)
-    parser.add_argument('--format', choices=('text', 'json'), default='text')
+    parser.add_argument('--format', choices=('text', 'summary', 'json'), default='text')
     args = parser.parse_args()
     try:
         entries, summary = parse_events(args.trace.read_text().splitlines())
@@ -159,11 +176,22 @@ def main():
     else:
         print('Sampled %d native RTLink calls, %d matched returns, %d unfinished' % (
             summary['selected'], summary['returned'], summary['unfinished']))
-        for event in entries:
-            print('section=%d target=%04x:%04x AX=%04x -> %s; changed bytes=%d' % (
-                event['section'], *event['target'], event['ax_in'],
-                ('%04x' % event['ax_out']) if event['returned'] else 'unfinished',
-                len(event['changes'])))
+        if args.format == 'summary':
+            for (section, cs, ip), group in sorted(summarize_events(entries).items()):
+                values = ', '.join(
+                    ('unfinished' if ax is None else 'AX=%04x' % ax) + ':%d' % count
+                    for ax, count in sorted(group['returns'].items(),
+                                            key=lambda item: (item[0] is None, item[0] or 0)))
+                print('section=%d target=%04x:%04x calls=%d returns=%s '
+                      'object_bytes_changed=%d first_ms=%d last_ms=%d' % (
+                          section, cs, ip, group['calls'], values, group['changes'],
+                          group['first_ms'], group['last_ms']))
+        else:
+            for event in entries:
+                print('section=%d target=%04x:%04x AX=%04x -> %s; changed bytes=%d' % (
+                    event['section'], *event['target'], event['ax_in'],
+                    ('%04x' % event['ax_out']) if event['returned'] else 'unfinished',
+                    len(event['changes'])))
 
 
 if __name__ == '__main__':

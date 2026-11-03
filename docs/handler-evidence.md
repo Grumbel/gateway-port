@@ -38,6 +38,12 @@ defers the first detailed event until guest millisecond `N`, keeping the
 256-call limit and unchanged full aggregate census. It requires the usual
 `--trace-rtlink-events` file and selected target(s). Walkthrough runners
 forward it with `--probe-arg=--trace-rtlink-after-ms --probe-arg=N`.
+Use `tools/inspect_rtlink_events.py TRACE --format summary` to group the
+sample by section-qualified target and returned `AX` value, with counts,
+changed object-record bytes and guest-time range. The default text format
+still lists each call separately, and `--format json` preserves all details.
+The summary is **only for the selected, capped sample**, never for every
+RTLink invocation in the replay.
 
 ## Repeat with the original DOS files
 

@@ -249,12 +249,20 @@ xvfb-run -a python3 tools/run_walkthrough.py run \
   --probe-arg=--deterministic-clock \
   --probe-arg=--trace-rtlink-after-ms --probe-arg=53500
 python3 tools/inspect_rtlink_events.py \
-  build/golden/bar-loop-returns-54s/native.rtlink-events
+  build/golden/bar-loop-returns-54s/native.rtlink-events --format summary
 ```
 
-The 256-call cap still applies **after** the selected time. Check whether
-the captured return values explain the loop iterations, and whether the
-first subsequent non-polling target and saved-game effects stay equal.
+The host successfully ran this test: **256 of 256 selected calls returned
+AX=1, with zero reported object-record byte deltas**, and the final original
+save was verified. Original disassembly of section-0 `OVL:0x0d7e` confirms
+it returns 1 when two underlying helper results are both zero. This is
+stronger evidence for a no-event retry loop, but does not identify all
+non-object side effects. The `--format summary` view groups sampled AX
+returns, changes and guest-time spans rather than printing all 256 rows.
+The 256-call cap still applies **after** the selected time; use another
+`--trace-rtlink-after-ms` value close to the terminal call time (144,000 ms
+in the census) to capture a possible zero result. A partial sampling window
+must not be mistaken for the entire call census.
 Do **not** ignore this target, widen the volatile memory mask, or bless a
 full-campaign golden baseline on the current evidence.
 

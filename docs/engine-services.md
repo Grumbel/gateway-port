@@ -74,9 +74,27 @@ was reported. Three full/seeded bar recordings differ by at most 13 extra
 invocations, all at that target; all other per-target counts and the final
 original game save agree. See [golden replays](golden-replays.md).
 
-This verifies the **loop structure and dynamic caller**, but not the
-section-0 callee's state dependencies or the time at which its zero return
-breaks the loop. No native/HLE replacement is claimed.
+The follow-up original-code disassembly of `GATEMAIN.OVL:0x0d7e` verifies
+the **return-value computation**. It calls a shared helper at linked
+`13bd:06da` with four zero words, stores its result, and conditionally
+performs additional calls/state updates when that result is nonzero. It
+also calls linked `1367:000a`, ORs that result with the saved helper value,
+and executes `cmp cx,1; sbb ax,ax; neg ax` after moving the OR to `CX`.
+Consequently, it returns **AX=1 precisely when both underlying results are
+zero**, and AX=0 when at least one is nonzero. This is consistent with the
+RTL retry loop continuing while there is no work/input available and
+breaking on a pending event. The two helpers' exact contracts, condition
+for the transition and non-object side effects are still unverified.
+
+In the next seeded bar test, detailed tracing began at **53,500 guest ms**.
+All **256 sampled entries and returns** matched; every call returned `AX=1`
+(one `0000 -> 0001`, then 255 `0001 -> 0001`) and the summary reported
+**zero object-record byte deltas**. The summarized output does not establish
+whether native object-table snapshots were available for every event.
+This is direct runtime evidence
+that the RTL loop is spinning in the no-event state during that sampled
+interval, not evidence that the target can never mutate other guest memory.
+There is no native/HLE replacement yet.
 
 ## External text formatter: `rtl:0x0169f4` (600 object handlers)
 
