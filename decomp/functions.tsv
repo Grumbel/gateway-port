@@ -48,7 +48,7 @@ exe	0x0022d8		232	unclassified						unknown
 exe	0x0023c2		81	unclassified						unknown				
 exe	0x002413		34	unclassified						unknown				
 exe	0x002465		26	unclassified						unknown				
-exe	0x00254a		82	service					gw_native_relation_contains	named				label from KNOWN_RESIDENT in tools/prepare_ghidra.py
+exe	0x00254a		82	service					gw_native_relation_contains	analyzed	direct-memory			Native EXE 0x254a-0x259b; far 2-word args object and relation target; descriptor slot loop calls read-only accessor 0x2aff; AX Boolean; catalogue and native replay evidence
 exe	0x00259c		103	unclassified						unknown				
 exe	0x002603		46	unclassified						unknown				
 exe	0x002631		63	unclassified						unknown				
@@ -56,9 +56,9 @@ exe	0x002670		213	unclassified						unknown
 exe	0x002725		154	unclassified						unknown				
 exe	0x0027db		85	unclassified						unknown				
 exe	0x00284b		153	unclassified						unknown				
-exe	0x0028e4		58	service					gw_test_object_flag	named				label from KNOWN_RESIDENT in tools/prepare_ghidra.py
-exe	0x00291e		51	service					gw_set_object_flag	named				label from KNOWN_RESIDENT in tools/prepare_ghidra.py
-exe	0x002951		53	service					gw_clear_object_flag	named				label from KNOWN_RESIDENT in tools/prepare_ghidra.py
+exe	0x0028e4		58	service					gw_test_object_flag	analyzed	direct-memory			Native EXE 0x28e4-0x291d; far 2-word object/property args; AX Boolean; read-only selected state bit; native object-state verification and C++ object-flags test
+exe	0x00291e		51	service					gw_set_object_flag	analyzed	direct-memory			Native EXE 0x291e-0x2950; far 2-word object/property args; writes selected bit by OR; native object-state write verification and C++ object-flags test
+exe	0x002951		53	service					gw_clear_object_flag	analyzed	direct-memory			Native EXE 0x2951-0x2985; far 2-word object/property args; clears selected bit by AND; native object-state write verification and C++ object-flags test
 exe	0x002986		89	unclassified						unknown				
 exe	0x002a05		84	unclassified						unknown				
 exe	0x002a84		122	unclassified						unknown				
