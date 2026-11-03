@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 
 #@category Gateway
-# Ghidra Jython 2.7 post-analysis script.
+# Ghidra post-analysis script (PyGhidra on Ghidra 12; Jython 2.7 on older
+# releases).
 # Arguments: absolute ghidra-plan.json, absolute pseudocode output path.
 # Confirmed native entries are attempted as functions. Internal dispatcher
 # branches and user-selected *candidate* offsets inside a larger analyzed

@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 
 #@category Gateway
-# Ghidra Jython 2.7 pre-analysis script. Argument: absolute ghidra-plan.json.
+# Ghidra pre-analysis script (PyGhidra on Ghidra 12; Jython 2.7 on older
+# releases). Argument: absolute ghidra-plan.json.
 # Run on the *original* GATEMAIN.EXE imported with the MZ/DOS loader.
 # Each section gets its own overlay address space even when DOS banks overlap.
 
@@ -15,7 +16,16 @@ from ghidra.program.model.data import (CategoryPath, DataTypeConflictHandler,
                                       UnsignedShortDataType)
 from ghidra.program.model.listing import CodeUnit
 from ghidra.program.model.symbol import RefType, SourceType
-from jarray import array as byte_array
+try:
+    from jarray import array as _jython_array
+
+    def byte_array(values):
+        return _jython_array(values, 'b')
+except ImportError:  # PyGhidra/JPype
+    import jpype
+
+    def byte_array(values):
+        return jpype.JArray(jpype.JByte)(values)
 
 
 def require(test, message):
@@ -67,7 +77,7 @@ def annotate(address, label):
 
 def find_original_signature(blocks, signature):
     raw = byte_array([byte-256 if byte >= 128 else byte for byte in
-                      bytearray.fromhex(signature)], 'b')
+                      bytearray.fromhex(signature)])
     found = []
     memory = currentProgram.getMemory()
     for block in blocks:

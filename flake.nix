@@ -126,9 +126,16 @@ except Exception:
               esac
             '';
           };
+          # Ghidra 12 runs .py scripts only through PyGhidra (Jython was
+          # removed), so the shell provides a Python with pyghidra and the
+          # installation directory that tools/run_ghidra.py launches. Use the
+          # source-built ghidra package: ghidra-bin's prebuilt decompiler
+          # process crashes on NixOS.
           ghidra = pkgs.mkShell {
             inputsFrom = [ self.devShells.${system}.default ];
-            packages = [ pkgs.ghidra-bin ];
+            packages = [ pkgs.ghidra pkgs.openjdk21
+                         (pkgs.python3.withPackages (ps: [ ps.pyghidra ])) ];
+            GHIDRA_INSTALL_DIR = "${pkgs.ghidra}/lib/ghidra";
           };
         });
     };

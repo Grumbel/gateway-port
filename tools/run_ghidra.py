@@ -4,18 +4,24 @@
 """Prepare Gateway RTLink sections and analyze them in a fresh Ghidra project."""
 
 import argparse
+import importlib.util
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 
 from prepare_ghidra import prepare
 
 
-def headless_command(executable, output, project_name, plan_path):
+def headless_command(launcher, output, project_name, plan_path):
+    """Build the analyzeHeadless command; launcher is a path or a command prefix."""
     scripts = Path(__file__).resolve().parents[1] / 'ghidra'
     project_directory = (output / 'project').resolve()
-    return [str(executable), str(project_directory), project_name,
+    if isinstance(launcher, (str, Path)):
+        launcher = [str(launcher)]
+    return list(launcher) + [str(project_directory), project_name,
             '-import', str(executable_path(plan_path)),
             '-scriptPath', str(scripts),
             '-preScript', 'ImportGatewayRtlink.py', str(plan_path),
@@ -45,19 +51,38 @@ def find_headless(explicit=None):
     # headless launcher only under the package's lib/ghidra/support directory.
     ghidra = shutil.which('ghidra')
     if ghidra:
-        prefix = Path(ghidra).resolve().parent.parent
-        for support in (prefix / 'lib/ghidra/support/analyzeHeadless',
-                        prefix / 'share/ghidra/support/analyzeHeadless',
-                        prefix / 'lib/ghidra/Ghidra/RuntimeScripts/support/analyzeHeadless'):
+        # The wrapper may be bin/ghidra or a symlink into lib/ghidra/ghidraRun.
+        wrapper = Path(ghidra)
+        candidates = [wrapper.resolve().parent / 'support/analyzeHeadless']
+        for prefix in (wrapper.parent.parent, wrapper.resolve().parent.parent):
+            candidates += [prefix / 'lib/ghidra/support/analyzeHeadless',
+                           prefix / 'share/ghidra/support/analyzeHeadless',
+                           prefix / 'lib/ghidra/Ghidra/RuntimeScripts/support/analyzeHeadless']
+        for support in candidates:
             if support.is_file():
                 return support
     raise ValueError('analyzeHeadless not found; enter nix develop .#ghidra '
                      'or pass --headless /path/to/support/analyzeHeadless')
 
 
+def pyghidra_launcher(install_dir=None):
+    """Return a PyGhidra headless command prefix, or None if unavailable.
+
+    Ghidra 12 removed Jython; its analyzeHeadless runs the .py scripts only
+    when the JVM was started by PyGhidra. """
+    install_dir = install_dir or os.environ.get('GHIDRA_INSTALL_DIR')
+    if not install_dir or importlib.util.find_spec('pyghidra') is None:
+        return None
+    install_dir = Path(install_dir)
+    if not (install_dir / 'Ghidra').is_dir():
+        raise ValueError('not a Ghidra installation directory: %s' % install_dir)
+    return [sys.executable, '-m', 'pyghidra.ghidra_launch', '--install-dir',
+            str(install_dir), 'ghidra.app.util.headless.AnalyzeHeadless']
+
+
 def run(exe, ovl, output, overlay_tool, objects_json=None,
         headless=None, project_name='Gateway', prepare_only=False, callbacks_json=None,
-        decompile_objects=(), decompile_offsets=()):
+        decompile_objects=(), decompile_offsets=(), ghidra_install_dir=None):
     if not project_name or not project_name.replace('_', '').isalnum():
         raise ValueError('project name must contain only letters, digits and underscores')
     output = output.resolve()
@@ -80,13 +105,17 @@ def run(exe, ovl, output, overlay_tool, objects_json=None,
     print('Plan: %s' % plan_path, flush=True)
     if prepare_only:
         return plan_path
-    binary = find_headless(headless)
+    launcher = None if headless else pyghidra_launcher(ghidra_install_dir)
+    if launcher is None:
+        launcher = find_headless(headless)
     project_dir.mkdir(parents=True, exist_ok=True)
-    command = headless_command(binary, output, project_name, plan_path)
+    command = headless_command(launcher, output, project_name, plan_path)
     subprocess.run(command, check=True)
     if not all(item.is_file() for item in reports):
         raise ValueError('Ghidra did not produce all import/decompile reports and pseudocode; '
-                         'inspect %s and %s' % (
+                         'inspect %s and %s (Ghidra 12 or newer needs PyGhidra: '
+                         'use nix develop .#ghidra or set GHIDRA_INSTALL_DIR with '
+                         'pyghidra installed)' % (
                              output / 'ghidra-script.log', output / 'ghidra.log'))
     imported = json.loads(reports[0].read_text())
     decompiled = json.loads(reports[1].read_text())
@@ -151,7 +180,11 @@ def main():
                              '(repeatable)')
     parser.add_argument('--callbacks-json', type=Path,
                         help='optional native inspect_room_callbacks.py export (decompile candidates)')
-    parser.add_argument('--headless', type=Path, help='path to Ghidra analyzeHeadless')
+    parser.add_argument('--headless', type=Path,
+                        help='path to Ghidra analyzeHeadless (Jython, Ghidra 11 or older)')
+    parser.add_argument('--ghidra-install-dir', type=Path,
+                        help='Ghidra installation launched through PyGhidra '
+                             '(default: $GHIDRA_INSTALL_DIR)')
     parser.add_argument('--project-name', default='Gateway',
                         help='new project name; existing projects are never overwritten')
     parser.add_argument('--prepare-only', action='store_true',
@@ -160,7 +193,8 @@ def main():
     try:
         run(args.exe, args.ovl, args.output, args.overlay_tool, args.objects_json,
             args.headless, args.project_name, args.prepare_only, args.callbacks_json,
-            args.decompile_object or (), args.decompile_offset or ())
+            args.decompile_object or (), args.decompile_offset or (),
+            args.ghidra_install_dir)
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
         parser.exit(1, 'run_ghidra: %s\n' % error)
 

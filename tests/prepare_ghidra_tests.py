@@ -5,6 +5,7 @@
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import struct
 import sys
@@ -15,13 +16,19 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from prepare_ghidra import (KNOWN_OVERLAY, KNOWN_RESIDENT, add_callback_labels,
                             name_for_object, plan_sections)
-from run_ghidra import find_headless, headless_command, run
+from run_ghidra import find_headless, headless_command, pyghidra_launcher, run
 
 
 class GhidraPlanTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
+        # Keep the runner on the mocked analyzeHeadless path even inside
+        # nix develop .#ghidra, which exports GHIDRA_INSTALL_DIR.
+        environment = patch.dict('run_ghidra.os.environ')
+        environment.start()
+        self.addCleanup(environment.stop)
+        os.environ.pop('GHIDRA_INSTALL_DIR', None)
         self.root = Path(self.temporary.name)
         self.raw = bytearray(range(16))
         struct.pack_into('<H', self.raw, 4, 0x1234)
@@ -407,6 +414,51 @@ class GhidraPlanTests(unittest.TestCase):
         with patch('run_ghidra.shutil.which',
                    side_effect=lambda name: str(wrapper) if name == 'ghidra' else None):
             self.assertEqual(find_headless(), launcher)
+
+    def test_nix_ghidra_bin_symlinked_wrapper(self):
+        # ghidra-bin 12 links bin/ghidra to lib/ghidra/ghidraRun.
+        prefix = self.root / 'nix-store-package'
+        run_script = prefix / 'lib/ghidra/ghidraRun'
+        launcher = prefix / 'lib/ghidra/support/analyzeHeadless'
+        launcher.parent.mkdir(parents=True)
+        launcher.write_text('headless executable fixture')
+        run_script.write_text('ghidra fixture')
+        wrapper = prefix / 'bin/ghidra'
+        wrapper.parent.mkdir(parents=True)
+        wrapper.symlink_to(run_script)
+        with patch('run_ghidra.shutil.which',
+                   side_effect=lambda name: str(wrapper) if name == 'ghidra' else None):
+            self.assertEqual(find_headless(), launcher)
+
+
+    def test_pyghidra_launcher_requires_install_dir(self):
+        self.assertIsNone(pyghidra_launcher())
+
+    def test_pyghidra_launcher_command(self):
+        install = self.root / 'ghidra'
+        (install / 'Ghidra').mkdir(parents=True)
+        with patch('run_ghidra.importlib.util.find_spec', return_value=object()):
+            launcher = pyghidra_launcher(install)
+        self.assertEqual(launcher[1:], ['-m', 'pyghidra.ghidra_launch', '--install-dir',
+                                        str(install),
+                                        'ghidra.app.util.headless.AnalyzeHeadless'])
+        plan_path = self.root / 'ghidra-plan.json'
+        plan_path.write_text(json.dumps(dict(exe_file='/input/GATEMAIN.EXE')))
+        command = headless_command(launcher, self.root, 'Gateway', plan_path)
+        self.assertEqual(command[:len(launcher)], launcher)
+        self.assertEqual(command[len(launcher) + 1:len(launcher) + 4],
+                         ['Gateway', '-import', '/input/GATEMAIN.EXE'])
+
+    def test_pyghidra_launcher_without_module(self):
+        install = self.root / 'ghidra'
+        (install / 'Ghidra').mkdir(parents=True)
+        with patch('run_ghidra.importlib.util.find_spec', return_value=None):
+            self.assertIsNone(pyghidra_launcher(install))
+
+    def test_pyghidra_launcher_rejects_non_installation(self):
+        with patch('run_ghidra.importlib.util.find_spec', return_value=object()):
+            with self.assertRaisesRegex(ValueError, 'not a Ghidra installation'):
+                pyghidra_launcher(self.root)
 
 
 if __name__ == '__main__':

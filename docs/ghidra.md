@@ -29,13 +29,35 @@ python3 tools/run_ghidra.py \
   --output build/ghidra
 ```
 
-If Ghidra is already installed elsewhere, `nix develop` plus
-`--headless /path/to/ghidra/support/analyzeHeadless` works too. The runner
-checks for `analyzeHeadless` on `PATH` by default. It uses a new project; it
-**does not** overwrite an existing Ghidra project. Choose another
-`--project-name` for another import, or open the existing one in Ghidra.
-For Nix's `ghidra-bin` package, the runner also searches the installed
-`lib/ghidra/support/analyzeHeadless` relative to the `ghidra` wrapper.
+The shell provides the source-built `ghidra` package, a Python with
+`pyghidra`, OpenJDK 21 and `GHIDRA_INSTALL_DIR`. Ghidra 12 removed Jython,
+so its `analyzeHeadless` runs the `.py` scripts in `ghidra/` only when the
+JVM was started by PyGhidra; the runner therefore launches
+`python3 -m pyghidra.ghidra_launch --install-dir "$GHIDRA_INSTALL_DIR"
+ghidra.app.util.headless.AnalyzeHeadless ...` whenever `GHIDRA_INSTALL_DIR`
+(or `--ghidra-install-dir`) is set and `pyghidra` is importable. Nix's
+`ghidra-bin` is not used: its prebuilt decompiler process crashes on NixOS.
+
+The runner uses a new project; it **does not** overwrite an existing Ghidra
+project. Choose another `--project-name` for another import, or open the
+existing one in Ghidra.
+
+### Without Nix
+
+1. Install a C++ toolchain, CMake, SDL3 and Unicorn, then build the overlay
+   parser: `cmake -S . -B build && cmake --build build --target gateway-overlay`.
+2. Install Ghidra 12.x from <https://github.com/NationalSecurityAgency/ghidra/releases>
+   and JDK 21.
+3. Install the PyGhidra wheel that ships with Ghidra:
+   `pip install --no-index -f "$GHIDRA_INSTALL_DIR/Ghidra/Features/PyGhidra/pypkg/dist" pyghidra`.
+4. Run the command above with `GHIDRA_INSTALL_DIR` exported and
+   `--overlay-tool build/gateway-overlay`.
+
+With Ghidra 11 or older (Jython), pass `--headless
+/path/to/ghidra/support/analyzeHeadless` instead; that bypasses PyGhidra.
+Verified on 2026-11-03 with nixpkgs Ghidra 12.1.4 and pyghidra 3.2.0: all
+58 sections and 13,947 fixups imported, 32/32 targets decompiled, in about
+1.5 minutes.
 
 Expected output (generated, ignored by Git, contains original game code):
 
@@ -198,7 +220,7 @@ The runner checks that both reports and the listing are present, that the
 import counts match the prepared plan, and that every planned target has a
 result. It refuses stale reports or a previously created project rather than
 misreporting an earlier success. The scripts use Ghidra's
-standard Jython/Java APIs, rather than an unsupported RTLink-aware MZ loader.
+standard Python/Java APIs, rather than an unsupported RTLink-aware MZ loader.
 
 - A section's `runtime_segment` models the verified **0x1000 load-segment**
   replay; it is not a universal DOS address. Section identities are stable,
