@@ -18,7 +18,7 @@ from run_golden import (CONVENTIONAL_END, MEMORY_SIZE, capture_campaign, check_p
                         explain_difference, first_divergence, normalized_memory,
                         planned_checkpoints, read_manifest, report_checkpoint_drift,
                         run_campaign, save_manifest, seed_previous_stage,
-                        selected_stages, snapshot_prefix)
+                        selected_stages, snapshot_prefix, with_stage_save_hashes)
 from run_walkthrough import compile_steps, parse_script
 from run_walkthrough_campaign import load_campaign
 
@@ -223,6 +223,38 @@ class GoldenReplayTests(unittest.TestCase):
                                                      'checkpoints': [changed, second]}]})
             self.assertIn('1/2 checkpoints differ', output.getvalue())
             self.assertIn('command=10 ms=30000 (stack/mask, RAM)', output.getvalue())
+
+    def test_mismatched_stage_handoff_fails_even_when_ram_matches(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = self.fake_campaign(root)
+            stage = load_campaign(manifest)[0]
+            for run in ('a', 'b'):
+                directory_path = root / run
+                for checkpoint in planned_checkpoints(stage, 10):
+                    self.add_snapshot(directory_path, 'first', checkpoint)
+                save = directory_path / 'first/state/GATE001.SAV'
+                save.parent.mkdir(parents=True)
+                save.write_bytes(b'FIRST'.ljust(33, b' ') + run.encode())
+                (directory_path / 'first/stage-meta.json').write_text(json.dumps(dict(
+                    name='first', script_sha256=stage.script_sha256,
+                    save_description='FIRST',
+                    save_sha256=hashlib.sha256(save.read_bytes()).hexdigest())),
+                    encoding='ascii')
+            a, b = (capture_campaign(manifest, root / run, 10) for run in ('a', 'b'))
+            self.assertEqual(a['stages'][0]['checkpoints'], b['stages'][0]['checkpoints'])
+            self.assertEqual(first_divergence(a, b)[:2], ('first', 'save'))
+            with self.assertRaisesRegex(ValueError,
+                                         'stage=first checkpoint=save: native saved-game'):
+                check_pair(a, b)
+            # Older captures lacked save hashes. Source metadata can supply
+            # them without replaying the original game.
+            for record in (a, b):
+                del record['stages'][0]['save_sha256']
+            self.assertIsNone(first_divergence(a, b))
+            self.assertIn('save_sha256', with_stage_save_hashes(a, root / 'a')['stages'][0])
+            with self.assertRaisesRegex(ValueError, 'checkpoint=save'):
+                check_pair(a, b, root / 'a', root / 'b')
 
     def test_seeded_late_stage_replay_checks_original_save_and_isolates_state(self):
         with tempfile.TemporaryDirectory() as directory:

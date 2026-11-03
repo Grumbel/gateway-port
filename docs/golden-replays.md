@@ -32,6 +32,13 @@ The optional `--write-baseline` is only honored if both runs agree. It is
 safe to cancel or rerun with a *new* `--output`; existing run directories
 are intentionally not overwritten.
 
+The hash manifest also records the SHA-256 of each stage's **verified native
+saved game**. A mismatch fails at that stage's `save` boundary, even if all
+of its RAM checkpoints agree. This catches divergent save/restore handoffs
+before they affect the next stage. When comparing older manifests without
+save hashes, supply `--left-campaign` and `--right-campaign` to recover
+the original recorded save hashes from local stage metadata without replay.
+
 Golden replay mode enables `gateway-probe --deterministic-clock` automatically.
 The virtual DOS date/time starts at **1992-01-01 12:00:00 UTC** and advances
 only by guest emulation time, even when host runs start minutes apart or use
@@ -99,6 +106,23 @@ This isolates the bar's commands and increases checkpoint frequency from
 every tenth to every fifth command. It cannot serve as a full-campaign
 baseline: only `bar_nubar` is hashed. A missing, modified or stale seed save
 is rejected; the original save remains under ignored `build/` paths.
+
+The first seeded `bar_nubar` retry **matched at all 16 checkpoints** in two
+independent runs, with 40,265 RTLink calls in each. The preceding full
+campaign instead recorded 40,272 and 40,259 calls in the two bar runs. This
+narrows the issue, but one matched pair does not prove determinism across
+starts. The original full campaign used independently produced `armory_class`
+saves, whereas the seeded retry copied one saved game into both runs. Compare
+those original source saves before attributing the difference to CPU timing:
+
+```sh
+sha256sum build/golden/full-fixed-clock/run-{a,b}/armory_class/state/GATE004.SAV
+```
+
+If they differ, rerun the bar once with each source save (`--seed-from
+.../run-a` and `.../run-b`) to determine which changes the outcome. If they
+match, that rules out different saved-game bytes as the cause and calls for
+further investigation of the native runtime.
 
 Compare subsequent native builds or a replacement-enabled probe against the
 same baseline:

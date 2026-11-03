@@ -125,8 +125,15 @@ def capture_campaign(manifest, campaign_dir, every, through_stage=None, from_sta
         for checkpoint in planned_checkpoints(stage, every):
             prefix = snapshot_prefix(campaign_dir, stage.name, checkpoint['label'])
             checkpoints.append(digest_snapshot(prefix, checkpoint))
-        stages.append(dict(name=stage.name, script_sha256=stage.script_sha256,
-                           checkpoints=checkpoints))
+        result = dict(name=stage.name, script_sha256=stage.script_sha256,
+                      checkpoints=checkpoints)
+        if metadata_path(campaign_dir, stage).exists():
+            # A complete native campaign has a verified original save for
+            # each stage. Synthetic snapshot fixtures may omit save metadata.
+            verified_save(campaign_dir, stage)
+            metadata = json.loads(metadata_path(campaign_dir, stage).read_text(encoding='utf-8'))
+            result['save_sha256'] = metadata['save_sha256']
+        stages.append(result)
     return dict(schema_version=1, campaign_sha256=hashlib.sha256(manifest.read_bytes()).hexdigest(),
                 every=every, memory_end=CONVENTIONAL_END, stages=stages)
 
@@ -176,6 +183,11 @@ def first_divergence(left, right):
                 return (name, label, f'RAM SHA-256 differs after command '
                         f'{x["command_index"]} (action {x["action_index"]}, '
                         f'guest {x["time_ms"]} ms)')
+        if a.get('save_sha256') != b.get('save_sha256'):
+            return (name, 'save', 'native saved-game SHA-256 differs at stage end')
+        digest = a.get('save_sha256')
+        if digest is not None and (not isinstance(digest, str) or not SHA256.fullmatch(digest)):
+            return (name, 'save', 'missing or malformed native saved-game SHA-256')
     return None
 
 
@@ -227,6 +239,25 @@ def describe_stage_save(left_dir, right_dir, stage):
         return ('stage-end saves identical' if x == y else 'stage-end saves differ')
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
         return ''
+
+
+def with_stage_save_hashes(record, campaign_dir):
+    """Enrich old hash-only manifests from their existing local run metadata."""
+    if not campaign_dir:
+        return record
+    stages = []
+    for stage in record['stages']:
+        result = dict(stage)
+        if 'save_sha256' not in result:
+            path = campaign_dir / stage['name'] / 'stage-meta.json'
+            if path.exists():
+                metadata = json.loads(path.read_text(encoding='utf-8'))
+                digest = metadata.get('save_sha256')
+                if not isinstance(digest, str) or not SHA256.fullmatch(digest):
+                    raise ValueError(f'malformed native saved-game digest: {path}')
+                result['save_sha256'] = digest
+        stages.append(result)
+    return {**record, 'stages': stages}
 
 
 def explain_difference(a, b, left_dir, right_dir, stage, label):
@@ -283,6 +314,8 @@ def explain_difference(a, b, left_dir, right_dir, stage, label):
 
 
 def check_pair(left, right, left_dir=None, right_dir=None):
+    left = with_stage_save_hashes(left, left_dir)
+    right = with_stage_save_hashes(right, right_dir)
     divergence = first_divergence(left, right)
     if divergence is not None:
         stage, label, reason = divergence
@@ -309,12 +342,14 @@ def report_checkpoint_drift(left, right, left_dir=None, right_dir=None):
                 types.append('RAM')
             if types:
                 mismatches.append((x, types))
-        if mismatches:
+        stage_save = (describe_stage_save(left_dir, right_dir, a['name'])
+                      if left_dir and right_dir else '')
+        save_mismatch = (a.get('save_sha256') != b.get('save_sha256') or
+                         stage_save == 'stage-end saves differ')
+        if mismatches or save_mismatch:
             print(f'{a["name"]}: {len(mismatches)}/{len(ac)} checkpoints differ')
-            if left_dir and right_dir:
-                stage_save = describe_stage_save(left_dir, right_dir, a['name'])
-                if stage_save:
-                    print(f'  {stage_save}')
+            if stage_save:
+                print(f'  {stage_save}')
             for x, types in mismatches:
                 print(f'  {x["label"]}: command={x["command_index"]} '
                       f'ms={x["time_ms"]} ({", ".join(types)})')

@@ -387,6 +387,13 @@ SHA-256. A late-stage seed option now permits two private replays of
 `bar_nubar` directly from a verified `armory_class` save, avoiding repeated
 startup of the earlier stages while investigating command timing. No volatile
 RAM exclusion has yet been justified by these observations.
+The first seed-based `bar_nubar` rerun matched 16/16 checkpoints and 40,265
+RTLink calls in both runs. This establishes reproducibility for that pair,
+not yet for independently generated prior saves: the earlier full campaign
+recorded 40,272 versus 40,259 RTLink calls. The golden runner now retains
+and compares native save SHA-256 values at every stage boundary, including
+legacy replay metadata, to rule out differing handoff saves before adjusting
+the emulation clock or transient-memory masks.
 
 ### 3.7 [ ] Per-routine differential tester
 
