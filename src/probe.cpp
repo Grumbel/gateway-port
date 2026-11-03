@@ -1879,6 +1879,7 @@ int main(int argc, char **argv) {
     bool object_state_services = false;
     bool verify_overlays = false, hle_overlays = false, trace_video = false;
     bool trace_timing = false;
+    bool deterministic_clock = false;
     bool probe_adlib = false;
     std::uint16_t trace_object_writes = 0;
     std::set<std::uint32_t> trace_byte_writes;
@@ -1911,6 +1912,7 @@ int main(int argc, char **argv) {
                      "[--trace-rtlink-events FILE --trace-rtlink-target SECTION:CS:IP ...] "
                      "[--trace-research FILE --trace-entry HEX ...] [--key-at MS:BIOSHEX ...] "
                      "[--research-poke16-at MS:LINEARHEX:OLDHEX:NEWHEX ...] "
+                     "[--deterministic-clock] "
                      "[--object-flags verify|hle | --object-state verify|hle] [--verify-overlays] "
                      "[--hle-overlays] [--trace-video] [--trace-timing] [--adlib-driver] "
                      "[--trace-object-writes OBJECT-HEX] [--trace-byte-write LINEARHEX ...] "
@@ -2106,6 +2108,8 @@ int main(int argc, char **argv) {
             ++scheduled_clicks;
         } else if (option == "--headless")
             interactive = false;
+        else if (option == "--deterministic-clock")
+            deterministic_clock = true;
         else if (option == "--trace-blocks" && i + 1 < argc)
             block_trace_path = argv[++i];
         else if (option == "--trace-rtlink-calls" && i + 1 < argc)
@@ -2296,6 +2300,8 @@ int main(int argc, char **argv) {
         std::vector<std::uint8_t> bytes{std::istreambuf_iterator<char>(file), {}};
         auto image = gateway::load_mz(bytes);
         State state;
+        if (deterministic_clock)
+            state.clock = gateway::DosClock::deterministic();
         state.trace_video = trace_video;
         state.probe_adlib = probe_adlib;
         state.watched_bytes.insert(trace_byte_writes.begin(), trace_byte_writes.end());
@@ -2386,7 +2392,8 @@ int main(int argc, char **argv) {
             else
                 throw std::runtime_error("set --state-dir when HOME/XDG_STATE_HOME is unavailable");
         }
-        state.drive = std::make_unique<gateway::DosDrive>(state.data_dir, state_directory);
+        state.drive = std::make_unique<gateway::DosDrive>(state.data_dir, state_directory,
+                                                         deterministic_clock);
         if (writable_state)
             std::cerr << "DOS state directory: " << state.drive->state_directory() << '\n';
         if (interactive) {

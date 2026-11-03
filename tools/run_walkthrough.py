@@ -418,6 +418,8 @@ def run(args, replay):
                '--trace-entry', '147a6', '--trace-entry', '28d2b',
                '--trace-rtlink-calls', str(prefix.with_suffix('.rtlink-calls')),
                '--dump-prefix', str(prefix)]
+    if getattr(args, 'golden_every', None):
+        command.append('--deterministic-clock')
     if args.verify_overlays:
         command.append('--verify-overlays')
     if args.trace_navigation:

@@ -26,6 +26,30 @@ int main() {
                 "invalid time accepted");
         require(clock.local().tm_mday == 1 && clock.hundredths() == 1,
                 "failed setter changed clock");
+        // Golden replays must not depend on the host date, time of day,
+        // timezone or daylight-saving transition rules.
+        auto deterministic = gateway::DosClock::deterministic();
+        auto fixed = deterministic.local();
+        require(fixed.tm_year + 1900 == 1992 && fixed.tm_mon == 0 && fixed.tm_mday == 1 &&
+                    fixed.tm_hour == 12 && fixed.tm_min == 0 && fixed.tm_sec == 0 &&
+                    deterministic.hundredths() == 0,
+                "deterministic DOS epoch is not fixed UTC noon");
+        deterministic.advance(1230000);
+        require(deterministic.local().tm_sec == 1 && deterministic.hundredths() == 23,
+                "deterministic DOS clock did not advance in guest time");
+        require(deterministic.set_date(2024, 2, 29) &&
+                    deterministic.local().tm_mday == 29 &&
+                    deterministic.local().tm_hour == 12 &&
+                    deterministic.hundredths() == 23,
+                "deterministic DOS date setter lost the UTC time of day");
+        require(deterministic.set_time(23, 59, 59, 99),
+                "deterministic DOS time setter rejected a valid time");
+        deterministic.advance(20000);
+        fixed = deterministic.local();
+        require(fixed.tm_year + 1900 == 2024 && fixed.tm_mon == 2 &&
+                    fixed.tm_mday == 1 && fixed.tm_hour == 0 && fixed.tm_sec == 0 &&
+                    deterministic.hundredths() == 1,
+                "deterministic DOS leap-day rollover failed");
         std::cout << "Virtual clock checks passed\n";
     } catch (const std::exception &e) {
         std::cerr << e.what() << '\n';

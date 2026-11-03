@@ -474,6 +474,25 @@ LABEL dropped_book
                               ('--trace-entry', '149d8'), ('--trace-entry', '12f44')])
             self.assertIn('--backend-opt=1', command)
 
+    def test_golden_mode_uses_reproducible_dos_clock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            (root / 'GATE.EXE').write_bytes(b'fixture')
+            probe = root / 'gateway-probe'
+            probe.write_bytes(b'fixture')
+            args = SimpleNamespace(probe=probe, data=root, output=root / 'golden',
+                                   import_save=None, verify_existing=False,
+                                   verify_overlays=False, trace_navigation=False,
+                                   trace_byte_write=None, trace_object_writes=None,
+                                   trace_target=None, extra_trace_entry=[],
+                                   capture_labels=False, check_labels=False,
+                                   golden_every=1, timeout=1)
+            replay = compile_steps(parse_script('COMMAND look'), golden_every=1)
+            with mock.patch('run_walkthrough.subprocess.run') as invoke, \
+                 mock.patch('run_walkthrough.verify_recorded'):
+                execute_walkthrough(args, replay)
+            self.assertIn('--deterministic-clock', invoke.call_args.args[0])
+
     def test_verify_existing_refuses_stale_input_without_rerunning_original_game(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)

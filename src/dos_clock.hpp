@@ -8,8 +8,12 @@ namespace gateway {
 class DosClock {
   public:
     explicit DosClock(
-        std::chrono::system_clock::time_point initial = std::chrono::system_clock::now())
-        : now_(initial) {}
+        std::chrono::system_clock::time_point initial = std::chrono::system_clock::now(),
+        bool utc = false)
+        : now_(initial), utc_(utc) {}
+    // Only for reproducible research replays. Ordinary games use the real
+    // host-local calendar, matching their historical DOS environment.
+    static DosClock deterministic();
     void advance(std::uint64_t microseconds) { now_ += std::chrono::microseconds(microseconds); }
     std::tm local() const;
     unsigned hundredths() const;
@@ -18,5 +22,6 @@ class DosClock {
 
   private:
     std::chrono::system_clock::time_point now_;
+    bool utc_ = false;
 };
 } // namespace gateway

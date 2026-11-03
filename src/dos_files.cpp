@@ -98,8 +98,10 @@ std::uint32_t DosFile::seek(std::int32_t offset, unsigned origin) {
         throw DosIoError(25, "DOS seek failed");
     return position;
 }
-DosDrive::DosDrive(std::filesystem::path assets, std::filesystem::path state)
-    : assets_(std::filesystem::canonical(assets)) {
+DosDrive::DosDrive(std::filesystem::path assets, std::filesystem::path state,
+                   bool deterministic_state_timestamps)
+    : assets_(std::filesystem::canonical(assets)),
+      deterministic_state_timestamps_(deterministic_state_timestamps) {
     if (!std::filesystem::is_directory(assets_))
         throw std::runtime_error("invalid game-data directory");
     if (!state.empty()) {
@@ -280,14 +282,20 @@ std::vector<DosDirectoryEntry> DosDrive::list(std::string_view input,
             io_error();
         if (!S_ISREG(info.st_mode))
             continue;
-        const auto *local = std::localtime(&info.st_mtime);
+        const bool in_state = path.parent_path() == state_;
+        const auto *local = deterministic_state_timestamps_ && in_state
+                                ? nullptr : std::localtime(&info.st_mtime);
         std::uint16_t date = 0x21, time = 0; // 1980-01-01 fallback.
-        if (local) {
+        if (deterministic_state_timestamps_ && in_state) {
+            // Host-written save files get host filesystem mtimes. Expose the
+            // same fixed DOS date/time in both independent golden runs.
+            date = ((1992 - 1980) << 9) | (1 << 5) | 1;
+            time = 12 << 11;
+        } else if (local) {
             const auto year = std::clamp(local->tm_year + 1900, 1980, 2107);
             date = ((year - 1980) << 9) | ((local->tm_mon + 1) << 5) | local->tm_mday;
             time = (local->tm_hour << 11) | (local->tm_min << 5) | (local->tm_sec / 2);
         }
-        const bool in_state = path.parent_path() == state_;
         const std::uint8_t attr =
             in_state && info.st_nlink == 1 && (info.st_mode & 0222) ? 0x20 : 0x21;
         result.push_back(

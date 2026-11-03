@@ -118,6 +118,15 @@ int main() {
                     saves[0].attributes == 0x20 && saves[1].attributes == 0x21 &&
                     saves[2].name == "GATE003.SAV",
                 "merged wildcard search incorrect");
+        gateway::DosDrive fixed_drive(assets, state, true);
+        const auto fixed_saves = fixed_drive.list("gate*.sav", 0);
+        const auto fixed_date = std::uint16_t(((1992 - 1980) << 9) | (1 << 5) | 1);
+        const auto fixed_time = std::uint16_t(12 << 11);
+        require(fixed_saves.size() == 3 && fixed_saves[0].date == fixed_date &&
+                    fixed_saves[0].time == fixed_time &&
+                    fixed_saves[2].date == fixed_date &&
+                    fixed_saves[2].time == fixed_time,
+                "deterministic DOS save listings leaked host file timestamps");
         require(drive.list("GATE00?.SAV", 0).size() == 3 && drive.list("MISSING*.SAV", 0).empty(),
                 "DOS wildcard/no-match behavior incorrect");
         const auto all = drive.list("*.*", 0);

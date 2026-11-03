@@ -39,7 +39,8 @@ struct DosDirectoryEntry {
 // Flat, case-insensitive DOS drive: immutable assets plus an optional writable layer.
 class DosDrive {
   public:
-    DosDrive(std::filesystem::path assets, std::filesystem::path state = {});
+    DosDrive(std::filesystem::path assets, std::filesystem::path state = {},
+             bool deterministic_state_timestamps = false);
     DosFile open(std::string_view name, unsigned access) const;
     DosFile create(std::string_view name, unsigned attributes) const;
     unsigned attributes(std::string_view name) const;
@@ -49,6 +50,7 @@ class DosDrive {
 
   private:
     std::filesystem::path assets_, state_;
+    bool deterministic_state_timestamps_ = false;
     static std::string key(std::string_view name);
     std::filesystem::path find(const std::filesystem::path &root, const std::string &name) const;
     void prepare_state() const;
