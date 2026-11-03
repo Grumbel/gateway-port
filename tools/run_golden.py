@@ -12,11 +12,12 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 
 from run_walkthrough import compile_steps, parse_script
-from run_walkthrough_campaign import load_campaign
+from run_walkthrough_campaign import load_campaign, metadata_path, verified_save
 
 
 MEMORY_SIZE = 1024 * 1024
@@ -101,17 +102,25 @@ def snapshot_prefix(root, stage_name, label):
     return root / stage_name / ('native' if label == 'final' else 'checkpoint-' + label)
 
 
-def capture_campaign(manifest, campaign_dir, every, through_stage=None):
+def selected_stages(manifest, from_stage=None, through_stage=None):
+    stages = load_campaign(manifest)
+    names = [stage.name for stage in stages]
+    if from_stage and from_stage not in names:
+        raise ValueError(f'unknown --from-stage: {from_stage}')
+    if through_stage and through_stage not in names:
+        raise ValueError(f'unknown --through-stage: {through_stage}')
+    first = names.index(from_stage) if from_stage else 0
+    last = names.index(through_stage) + 1 if through_stage else len(stages)
+    if first >= last:
+        raise ValueError('--from-stage must not follow --through-stage')
+    return stages[first:last]
+
+
+def capture_campaign(manifest, campaign_dir, every, through_stage=None, from_stage=None):
     if not 1 <= every <= 10000:
         raise ValueError('--every must be between 1 and 10000')
     stages = []
-    campaign_stages = load_campaign(manifest)
-    if through_stage:
-        names = [stage.name for stage in campaign_stages]
-        if through_stage not in names:
-            raise ValueError(f'unknown --through-stage: {through_stage}')
-        campaign_stages = campaign_stages[:names.index(through_stage) + 1]
-    for stage in campaign_stages:
+    for stage in selected_stages(manifest, from_stage, through_stage):
         checkpoints = []
         for checkpoint in planned_checkpoints(stage, every):
             prefix = snapshot_prefix(campaign_dir, stage.name, checkpoint['label'])
@@ -283,7 +292,7 @@ def check_pair(left, right, left_dir=None, right_dir=None):
     print(f'Golden replay matched: {len(left["stages"])} stages, {count} RAM checkpoints')
 
 
-def report_checkpoint_drift(left, right):
+def report_checkpoint_drift(left, right, left_dir=None, right_dir=None):
     """Show whether a mismatch is brief or persists through later checkpoints."""
     for a, b in zip(left.get('stages', ()), right.get('stages', ())):
         if a.get('name') != b.get('name'):
@@ -302,13 +311,42 @@ def report_checkpoint_drift(left, right):
                 mismatches.append((x, types))
         if mismatches:
             print(f'{a["name"]}: {len(mismatches)}/{len(ac)} checkpoints differ')
+            if left_dir and right_dir:
+                stage_save = describe_stage_save(left_dir, right_dir, a['name'])
+                if stage_save:
+                    print(f'  {stage_save}')
             for x, types in mismatches:
                 print(f'  {x["label"]}: command={x["command_index"]} '
                       f'ms={x["time_ms"]} ({", ".join(types)})')
 
 
+def seed_previous_stage(manifest, from_stage, source, target):
+    """Copy one verified native save to a private run, never reuse mutable state.
+
+    This allows repeated investigation of a late stage without replaying
+    earlier stages. The previous save is checked against its original SHA-256
+    and stage/script identity before being used as a seed.
+    """
+    stages = load_campaign(manifest)
+    names = [stage.name for stage in stages]
+    if from_stage not in names or names.index(from_stage) == 0:
+        raise ValueError('--seed-from requires a noninitial --from-stage')
+    previous = stages[names.index(from_stage) - 1]
+    saved = verified_save(source, previous)
+    metadata = metadata_path(source, previous)
+    output = target / previous.name
+    if output.exists():
+        raise ValueError(f'seed destination already exists: {output}')
+    state = output / 'state'
+    state.mkdir(parents=True)
+    shutil.copyfile(saved, state / saved.name)
+    shutil.copyfile(metadata, metadata_path(target, previous))
+    verified_save(target, previous)  # Assert copy integrity before launching DOS.
+    print(f'Seeded independent run from verified {previous.name} native save', flush=True)
+
+
 def run_campaign(manifest, probe, data, output, every, timeout, verify_overlays,
-                 probe_args, through_stage=None):
+                 probe_args, through_stage=None, from_stage=None):
     command = [sys.executable, str(Path(__file__).with_name('run_walkthrough_campaign.py')),
                str(manifest), '--probe', str(probe), '--data', str(data),
                '--output', str(output), '--golden-every', str(every),
@@ -317,6 +355,8 @@ def run_campaign(manifest, probe, data, output, every, timeout, verify_overlays,
         command.append('--verify-overlays')
     if through_stage:
         command += ['--through-stage', through_stage]
+    if from_stage:
+        command += ['--from-stage', from_stage]
     for argument in probe_args:
         command.append('--probe-arg=' + argument)
     subprocess.run(command, check=True)
@@ -330,6 +370,7 @@ def main():
     capture.add_argument('--campaign', type=Path, required=True)
     capture.add_argument('--every', type=int, default=10)
     capture.add_argument('--through-stage', metavar='NAME')
+    capture.add_argument('--from-stage', metavar='NAME')
     capture.add_argument('--output', type=Path, required=True, help='write hashes (no guest bytes)')
     compare = commands.add_parser('compare', help='compare saved golden hash manifests')
     compare.add_argument('left', type=Path)
@@ -346,6 +387,10 @@ def main():
     run.add_argument('--every', type=int, default=10)
     run.add_argument('--through-stage', metavar='NAME',
                      help='run only through this stage while diagnosing early mismatches')
+    run.add_argument('--from-stage', metavar='NAME',
+                     help='start at this stage using a verified earlier native save')
+    run.add_argument('--seed-from', type=Path, metavar='CAMPAIGN',
+                     help='prior native campaign containing the preceding stage save')
     run.add_argument('--timeout', type=int, default=1800)
     run.add_argument('--verify-overlays', action='store_true')
     run.add_argument('--probe-arg', action='append', default=[], metavar='ARG',
@@ -357,17 +402,30 @@ def main():
     try:
         if args.mode == 'capture':
             save_manifest(args.output, capture_campaign(args.manifest, args.campaign,
-                                                        args.every, args.through_stage))
+                                                        args.every, args.through_stage,
+                                                        args.from_stage))
             print(f'Golden hashes saved: {args.output}')
         elif args.mode == 'compare':
             left, right = read_manifest(args.left), read_manifest(args.right)
             if args.all_checkpoints:
-                report_checkpoint_drift(left, right)
+                report_checkpoint_drift(left, right, args.left_campaign,
+                                        args.right_campaign)
             check_pair(left, right,
                        args.left_campaign, args.right_campaign)
         else:
             if args.timeout <= 0:
                 raise ValueError('--timeout must be positive')
+            selected = selected_stages(args.manifest, args.from_stage, args.through_stage)
+            begins_at_first = selected[0].name == load_campaign(args.manifest)[0].name
+            if begins_at_first and args.seed_from:
+                raise ValueError('--seed-from requires --from-stage after the first stage')
+            if not begins_at_first and not args.seed_from:
+                raise ValueError('--from-stage requires --seed-from with a verified campaign')
+            if args.seed_from:
+                previous_stages = load_campaign(args.manifest)
+                previous = previous_stages[[x.name for x in previous_stages].index(
+                    args.from_stage) - 1]
+                verified_save(args.seed_from, previous)
             if args.output.joinpath('run-a').resolve() == args.output.joinpath('run-b').resolve():
                 raise ValueError('run directories must be distinct')
             baseline = read_manifest(args.baseline) if args.baseline else None
@@ -381,10 +439,13 @@ def main():
             for suffix in ('a', 'b'):
                 root = args.output / f'run-{suffix}'
                 print(f'Starting independent native campaign {suffix}', flush=True)
+                if args.seed_from:
+                    seed_previous_stage(args.manifest, args.from_stage, args.seed_from, root)
                 run_campaign(args.manifest, args.probe, args.data, root, args.every,
                              args.timeout, args.verify_overlays, args.probe_arg,
-                             args.through_stage)
-                hashed = capture_campaign(args.manifest, root, args.every, args.through_stage)
+                             args.through_stage, args.from_stage)
+                hashed = capture_campaign(args.manifest, root, args.every,
+                                          args.through_stage, args.from_stage)
                 save_manifest(args.output / f'run-{suffix}.json', hashed)
                 if baseline is not None:
                     check_pair(baseline, hashed)

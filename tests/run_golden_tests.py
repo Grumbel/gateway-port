@@ -4,6 +4,7 @@
 """Synthetic golden RAM comparison tests; no original game data needed."""
 
 import copy
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -16,7 +17,8 @@ from run_golden import (CONVENTIONAL_END, MEMORY_SIZE, capture_campaign, check_p
                         describe_cpu_difference, describe_stage_save, excluded_ranges,
                         explain_difference, first_divergence, normalized_memory,
                         planned_checkpoints, read_manifest, report_checkpoint_drift,
-                        run_campaign, save_manifest, snapshot_prefix)
+                        run_campaign, save_manifest, seed_previous_stage,
+                        selected_stages, snapshot_prefix)
 from run_walkthrough import compile_steps, parse_script
 from run_walkthrough_campaign import load_campaign
 
@@ -31,6 +33,19 @@ class GoldenReplayTests(unittest.TestCase):
         manifest = root / 'campaign.json'
         manifest.write_text(json.dumps(dict(schema_version=1, stages=[
             dict(name='first', script='first.walk', save='FIRST')])), encoding='ascii')
+        return manifest
+
+    @staticmethod
+    def fake_two_stage_campaign(root):
+        (root / 'first.walk').write_text('COMMAND save\nTYPE FIRST\nKEY enter\n',
+                                         encoding='ascii')
+        (root / 'second.walk').write_text(
+            'COMMAND restore\nTYPE FIRST\nKEY enter\n'
+            'COMMAND look\nCOMMAND save\nTYPE SECOND\nKEY enter\n', encoding='ascii')
+        manifest = root / 'campaign.json'
+        manifest.write_text(json.dumps(dict(schema_version=1, stages=[
+            dict(name='first', script='first.walk', save='FIRST'),
+            dict(name='second', script='second.walk', save='SECOND')])), encoding='ascii')
         return manifest
 
     @staticmethod
@@ -208,6 +223,43 @@ class GoldenReplayTests(unittest.TestCase):
                                                      'checkpoints': [changed, second]}]})
             self.assertIn('1/2 checkpoints differ', output.getvalue())
             self.assertIn('command=10 ms=30000 (stack/mask, RAM)', output.getvalue())
+
+    def test_seeded_late_stage_replay_checks_original_save_and_isolates_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = self.fake_two_stage_campaign(root)
+            source = root / 'source'
+            save = source / 'first/state/GATE001.SAV'
+            save.parent.mkdir(parents=True)
+            save.write_bytes(b'FIRST'.ljust(33, b' ') + b'original-save')
+            digest = hashlib.sha256(save.read_bytes()).hexdigest()
+            stages = load_campaign(manifest)
+            (source / 'first/stage-meta.json').write_text(json.dumps(dict(
+                name='first', script_sha256=stages[0].script_sha256,
+                save_description='FIRST', save_sha256=digest)), encoding='ascii')
+            selected = selected_stages(manifest, 'second', 'second')
+            self.assertEqual([stage.name for stage in selected], ['second'])
+            with self.assertRaisesRegex(ValueError, '--from-stage must not follow'):
+                selected_stages(manifest, 'second', 'first')
+            with self.assertRaisesRegex(ValueError, 'unknown --from-stage'):
+                selected_stages(manifest, 'absent')
+            for copy_name in ('a', 'b'):
+                target = root / copy_name
+                seed_previous_stage(manifest, 'second', source, target)
+                self.assertEqual((target / 'first/state/GATE001.SAV').read_bytes(),
+                                 save.read_bytes())
+                with mock.patch('run_golden.subprocess.run') as invoke:
+                    run_campaign(manifest, root / 'probe', root / 'game', target, 10,
+                                 100, False, [], 'second', 'second')
+                command = invoke.call_args.args[0]
+                self.assertEqual(command[command.index('--from-stage') + 1], 'second')
+                for checkpoint in planned_checkpoints(stages[1], 10):
+                    self.add_snapshot(target, 'second', checkpoint)
+                captured = capture_campaign(manifest, target, 10, 'second', 'second')
+                self.assertEqual([item['name'] for item in captured['stages']], ['second'])
+            save.write_bytes(save.read_bytes() + b'corruption')
+            with self.assertRaisesRegex(ValueError, 'modified'):
+                seed_previous_stage(manifest, 'second', source, root / 'c')
 
 
 if __name__ == '__main__':

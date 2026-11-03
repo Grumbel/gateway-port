@@ -52,9 +52,12 @@ The first subsequent **full** fixed-clock campaign matched through
 `wait` following `drink`), after 10 commands; the two runs also made 13
 different RTLink calls in that stage. The `office`-only fixed-clock campaign
 matched all nine checkpoints. The cause of the later mismatch is not yet
-established. A timed RAM snapshot may capture a different native callback or
-interrupt stack depth at the same guest millisecond; it is not proof that
-the underlying saved game or object records diverged.
+established. The subsequent offline comparison confirmed **different CPU
+CS:IP and SS:SP**, but **identical raw state for all 734 objects and identical
+stage-end original saves**. This is evidence of different in-flight callbacks
+or interrupt stack depths at the timed checkpoints, not (so far) divergent
+persisted story state. Do not mask the changed RAM pages without proving they
+are volatile; the strict full-RAM golden comparison must remain meaningful.
 
 When the first mismatch is in an early stage, rerun *only* the affected prefix
 while diagnosing it; this avoids replaying the full campaign each time:
@@ -73,6 +76,29 @@ checkpoints, but does **not** establish a full-campaign baseline. Choose a
 fresh output path after any failed attempt; prior RAM dumps are kept for
 diagnosis. First-mismatch output includes the number of changed unmasked
 bytes and the five most affected 4-KiB pages (addresses and counts only).
+
+To investigate a **late** stage quickly, reuse the preceding stage's verified
+original save as the starting point for *each independent* run. The runner
+checks the source save hash and stage/script identity, then copies the save
+into two separate writable state trees; it does not replay earlier stages or
+reuse mutable state between runs. For example, after the full replay above:
+
+```sh
+xvfb-run -a python3 tools/run_golden.py run \
+  tests/fixtures/gateway-campaign.json \
+  --probe /tmp/gateway-port-build/gateway-probe \
+  --data ../gateway-dos \
+  --from-stage bar_nubar \
+  --through-stage bar_nubar \
+  --seed-from build/golden/full-fixed-clock/run-a \
+  --output build/golden/bar-from-verified-save \
+  --every 5
+```
+
+This isolates the bar's commands and increases checkpoint frequency from
+every tenth to every fifth command. It cannot serve as a full-campaign
+baseline: only `bar_nubar` is hashed. A missing, modified or stale seed save
+is rejected; the original save remains under ignored `build/` paths.
 
 Compare subsequent native builds or a replacement-enabled probe against the
 same baseline:
@@ -104,7 +130,9 @@ For an already-recorded *failed* full campaign, use `--all-checkpoints` to
 see whether the mismatch continues or disappears later. The first mismatch
 also reports CPU register differences (`CS:IP`, stack, data segments and
 flags), changes among the 734 native object records, and whether each stage's
-original saved-game bytes have identical SHA-256 hashes:
+original saved-game bytes have identical SHA-256 hashes. The all-checkpoints
+listing additionally displays stage-end save agreement for each divergent
+stage:
 
 ```sh
 python3 tools/run_golden.py compare \

@@ -381,6 +381,12 @@ different in-flight callbacks/interrupt frames. Golden comparison now offers
 CPU register, verified object-record and stage-end original-save diagnostics,
 plus an all-checkpoints drift listing, to distinguish transient differences
 from persistent game-state divergence without committing original bytes.
+The host's detailed replay comparison verified different `CS:IP` and `SS:SP`
+but identical object records (734/734) and original bar-stage saved-game
+SHA-256. A late-stage seed option now permits two private replays of
+`bar_nubar` directly from a verified `armory_class` save, avoiding repeated
+startup of the earlier stages while investigating command timing. No volatile
+RAM exclusion has yet been justified by these observations.
 
 ### 3.7 [ ] Per-routine differential tester
 
