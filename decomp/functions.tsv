@@ -6,7 +6,7 @@ exe	0x0001c4		792	unclassified						unknown
 exe	0x00054c		80	unclassified						unknown				
 exe	0x00059e		8	unclassified						unknown				
 exe	0x00065f		480	unclassified						unknown				
-exe	0x000671		8	unclassified					entry	named				
+exe	0x000671		8	rtlink					rtlink_dos_entry	library				DOS MZ entry CS:IP maps to EXE 0x000671; near call then CS-indirect far jump into RTLink bootstrap; not C startup
 exe	0x000679		614	unclassified						unknown				
 exe	0x0008df		13	unclassified						unknown				
 exe	0x0008ec		21	unclassified						unknown				
@@ -289,10 +289,10 @@ exe	0x009f4c		36	unclassified						unknown
 exe	0x009f70		108	unclassified						unknown				
 exe	0x00a1d0		2	unclassified						unknown				
 exe	0x00a1d2		106	unclassified						unknown				
-exe	0x00a23c		605	unclassified						unknown				
+exe	0x00a23c		605	rtlink					rtlink_overlay_loader	library				RTLink manager byte loader; native disassembly and replayed section loads corroborate data reads and fixups (docs/rtlink.md); relocation loop includes exe:0x00a451
 exe	0x00a499		276	unclassified						unknown				
 exe	0x00a5ad		131	unclassified						unknown				
-exe	0x00a630		16	unclassified						unknown				
+exe	0x00a630		16	rtlink					rtlink_section_lookup	library				RTLink section-directory index helper: multiplies section ID by 18 and adds manager offset 0x0c1f (docs/rtlink.md)
 exe	0x00a640		39	unclassified						unknown				
 exe	0x00a667		17	unclassified						unknown				
 exe	0x00a678		55	unclassified						unknown				

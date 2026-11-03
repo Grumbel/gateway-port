@@ -239,7 +239,7 @@ Steps:
    are services, outside this step.
 4. **[ ] Classify `unclassified` rows** as they are touched; do not mass-label.
 
-### 3.3 [ ] Compiler and runtime-library identification
+### 3.3 [x] Compiler and runtime-library identification
 
 1. Compare the resident startup and helper routines with Microsoft C 5.x/6.x
    and Borland/Turbo C 2.x/3.x runtimes: prologues, far-call helpers, long
@@ -251,6 +251,32 @@ Steps:
 
 Exit: the compiler family is recorded in this document, with evidence, and
 `next` no longer proposes runtime-library routines.
+
+**Finding (2026-11-03): Microsoft C-compatible, 5.x-generation runtime;
+precise compiler version remains unproven.** The original `GATE.RTL` contains
+an explicitly Microsoft-branded C run-time library copyright marker at file
+offset `0x01aa4e` (dated 1988), with Microsoft `R6005`–`R6007` process-spawn
+error diagnostics at `0x01a996` onward. These same error codes and meanings
+are documented in the original *Microsoft C 5.0 User's Guide*, error-message
+appendix ([manual](https://www.bitsavers.org/pdf/microsoft/msdos_c/Microsoft_C_5.0_1987/410840001-500-R04-0887A_Microsoft_C_5.0_Users_Guide_1987.pdf)).
+The compiled game functions use 16-bit far calls/returns, BP stack frames and
+caller stack cleanup (`ovl:0x00d66b`, `exe:0x00254a`), consistent with the
+Microsoft C large-memory-model ABI. The runtime marker establishes the linked
+**CRT**, not a unique compiler-version fingerprint for every game object;
+Microsoft C 5.1 is plausible, and 6.x cannot yet be excluded. RTLink itself
+is a third-party overlay linker and is not diagnostic of a compiler.
+
+Three individually verified resident RTLink routines are now excluded from
+`next` by `kind=rtlink, state=library`: the MZ/RTLink startup entry at
+`exe:0x000671`, the overlay byte loader at `exe:0x00a23c`, and the section
+directory lookup at `exe:0x00a630`. Their disassembly and the loader's live
+replay evidence are described in [rtlink.md](rtlink.md) and
+[executable.md](executable.md). `exe:0x00065f` is a misleading Ghidra function
+starting inside a startup marker; it must not be classified as native C code.
+Microsoft CRT implementations reside in `GATE.RTL`, outside this tracker's
+`exe`/`ovl` identity domain; none is claimed as a matched individual function
+without a library signature. Additional anonymous helpers remain unclassified
+until §3.4 supplies call and memory facts.
 
 ### 3.4 [ ] Measure handler shapes (decides how much to automate)
 
@@ -492,6 +518,7 @@ passes with `--replace-verified`.
 | 2026-11-03 | 3.2.1 | `--actions-json`: 191 validated RTLink entries; Ghidra 267/267 targets, 1,709 functions; tracker 1,803 rows after reseed (25 new unclassified), no action missing a size, 89 still without functions (75 handlers, 14 services); repeat seed 0 added, 0 updated |
 | 2026-11-03 | 3.2.2 | Four resident actions byte-verified at EXE offsets `0x006669`, `0x00670e`, `0x006681`, `0x006722`; Ghidra 271/271 targets, 1,712 functions; tracker now 1,807 routines including all 195 actions with sizes; repeat seed 0 added, 0 updated |
 | 2026-11-03 | 3.2.3 | Explicitly seeded 75 previously unsized native object handlers spanning 39 OVL sections: Ghidra decompiled 346/346 targets with 75 independent entries, 1,792 exported functions; all 696 handlers now have sizes. Tracker now 1,813 rows, 14 unsized services; boundary evidence marked provisional in notes; repeat seed 0 added, 0 updated. |
+| 2026-11-03 | 3.3 | Identified Microsoft C 5.x-era CRT in `GATE.RTL` from 1988 vendor marker and R6005–R6007 codes; compiler family likely Microsoft C large model (exact version unresolved). Classified three confirmed RTLink routines at `exe:0x000671`, `exe:0x00a23c`, `exe:0x00a630` as library; CRT remains external to tracked files. |
 
 ## 10. Risks and how to react
 
