@@ -39,6 +39,16 @@ Read `docs/data-files.md`, `docs/spellcasting.md`, and `docs/scummvm-legend.md` 
 
 Pull requests should describe behavior, evidence, validation, and remaining limitations; include screenshots for visible changes.
 
+## Decompilation work
+
+- Follow `docs/decompilation-plan.md`: read its "Ground rules" and
+  "Operating loop" sections at the start of every session, and update its
+  status markers and progress log in the commits that complete steps.
+- Track routines in `decomp/functions.tsv` with `tools/decomp_status.py`;
+  `check` must pass before every commit.
+- C++ that reconstructs game logic goes in `src/story/`, as
+  `LicenseRef-Gateway-Derived`.
+
 ## Commits
 
 - Commit verified work in small, focused increments; do not accumulate hours

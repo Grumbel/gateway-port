@@ -708,6 +708,15 @@ python3 tools/trace_game_logic.py --scenario objects --services state --hle-over
 It matches native execution while replacing all 187 section fills in that replay;
 see [host loading limits](docs/rtlink.md#opt-in-host-loading-step).
 
+## Decompilation
+
+Gateway's game logic is compiled native code, not bytecode: 696
+object/event handlers, 195 verb handlers and 44 room callbacks call shared
+engine routines. [The decompilation plan](docs/decompilation-plan.md)
+reconstructs that layer in C++, services first and then handlers, inside the
+running original. Each routine is checked against the native code, and
+progress is tracked in [`decomp/functions.tsv`](decomp/README.md).
+
 ## License
 
 The project has three licensing layers, tracked per file with REUSE
