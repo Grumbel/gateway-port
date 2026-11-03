@@ -127,6 +127,10 @@ def run_campaign(stages, args):
             cmd += ['--import-save', str(previous)]
         if args.verify_overlays:
             cmd.append('--verify-overlays')
+        if getattr(args, 'golden_every', None) is not None:
+            cmd += ['--golden-every', str(args.golden_every)]
+        for argument in getattr(args, 'probe_arg', []):
+            cmd.append('--probe-arg=' + argument)
         for entry in args.extra_trace_entry or []:
             cmd += ['--extra-trace-entry', entry]
         print(f'Running native campaign stage: {stage.name}', flush=True)
@@ -153,6 +157,10 @@ def main():
     parser.add_argument('--through-stage', metavar='NAME')
     parser.add_argument('--timeout', type=int, default=1800)
     parser.add_argument('--verify-overlays', action='store_true')
+    parser.add_argument('--golden-every', type=int, metavar='N',
+                        help='record extra RAM checkpoints after each N parser commands')
+    parser.add_argument('--probe-arg', action='append', default=[], metavar='ARG',
+                        help='forward an argument to the native probe (repeatable)')
     parser.add_argument('--extra-trace-entry', action='append', metavar='LINEARHEX',
                         help='capture additional native service entry stacks (repeatable)')
     parser.add_argument('--plan-only', action='store_true')

@@ -169,6 +169,8 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/trace_game_logic_tests.py)
     add_test(NAME walkthrough-replay-plan COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_walkthrough_tests.py)
+    add_test(NAME golden-replay-plan COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_golden_tests.py)
     add_test(NAME gateway-save-inspect COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/inspect_gateway_save_tests.py)
     add_test(NAME story-action-batch COMMAND ${Python3_EXECUTABLE}

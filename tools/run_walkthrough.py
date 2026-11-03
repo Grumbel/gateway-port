@@ -192,9 +192,12 @@ class Checkpoint:
     label: str
     time_ms: int
     assertions: tuple
+    action_index: int = 0
+    command_index: int = 0
 
 
-def compile_steps(steps, max_actions=None, through=None, spacing_ms=3000, idle_ms=1500):
+def compile_steps(steps, max_actions=None, through=None, spacing_ms=3000, idle_ms=1500,
+                  golden_every=None):
     """A deterministic replay prefix. Assertions describe its *final* state.
 
     The --through prefix isolates one LABEL; --check-labels captures and
@@ -206,6 +209,8 @@ def compile_steps(steps, max_actions=None, through=None, spacing_ms=3000, idle_m
         raise ValueError('max-actions must be positive')
     if max_actions is not None and through is not None:
         raise ValueError('--max-actions and --through cannot be combined')
+    if golden_every is not None and not 1 <= golden_every <= 10000:
+        raise ValueError('--golden-every must be between 1 and 10000')
     if through is not None and not any(s.operation == 'LABEL' and s.argument == through for s in steps):
         raise ValueError(f'unknown label {through!r}')
     keys = schedule('look') + [(time, 0x3920) for time in (15000, 16000, 17000)]
@@ -216,6 +221,7 @@ def compile_steps(steps, max_actions=None, through=None, spacing_ms=3000, idle_m
     actions = []
     assertions = []
     checkpoints = []
+    command_count = 0
     last_action_finished = 17000
     for step in steps:
         if max_actions is not None and len(actions) >= max_actions:
@@ -224,7 +230,8 @@ def compile_steps(steps, max_actions=None, through=None, spacing_ms=3000, idle_m
         if op == 'LABEL':
             # Capture one guest millisecond before the next planned action;
             # scheduled input at that action's start cannot affect the dump.
-            checkpoints.append(Checkpoint(arg, cursor - 1, tuple(assertions)))
+            checkpoints.append(Checkpoint(arg, cursor - 1, tuple(assertions),
+                                          len(actions), command_count))
             if through == arg:
                 break
             continue
@@ -262,8 +269,13 @@ def compile_steps(steps, max_actions=None, through=None, spacing_ms=3000, idle_m
                          if arg.lower().startswith('0x') else 0)))
             end = start
         actions.append(step)
+        if op == 'COMMAND':
+            command_count += 1
         last_action_finished = end
         cursor = max(cursor, start + spacing_ms, end + 1)
+        if golden_every and op == 'COMMAND' and command_count % golden_every == 0:
+            checkpoints.append(Checkpoint(f'golden-command-{command_count:06d}',
+                                          cursor - 1, (), len(actions), command_count))
     if not actions:
         raise ValueError('script prefix has no executable actions')
     # Only the last assertions apply to the final snapshot. Earlier checks
@@ -367,7 +379,7 @@ def verify_recorded(args, replay, previous_saves=None):
                 check_locations(args.output / ('checkpoint-' + checkpoint.label),
                                 checkpoint.assertions, args.state_ds)
                 checked += len(checkpoint.assertions)
-    if args.capture_labels or args.check_labels:
+    if args.capture_labels or args.check_labels or getattr(args, 'golden_every', None):
         for checkpoint in replay.checkpoints:
             for suffix in ('.bin', '.regs', '.ppm'):
                 path = (args.output / ('checkpoint-' + checkpoint.label)).with_suffix(suffix)
@@ -380,7 +392,7 @@ def verify_recorded(args, replay, previous_saves=None):
     print(f'RTLink: {census["validated_calls"]} validated calls, '
           f'{census["distinct_targets"]} distinct section-qualified targets')
     print(f'Asserted {len(replay.assertions)} final object locations; output in {args.output}')
-    if args.capture_labels or args.check_labels:
+    if args.capture_labels or args.check_labels or getattr(args, 'golden_every', None):
         print(f'Captured {len(replay.checkpoints)} native snapshots; '
               f'checked {checked} intermediate object locations')
 
@@ -424,7 +436,8 @@ def run(args, replay):
             command += ['--trace-rtlink-target', target]
     for ms, x, y in replay.mouse_clicks:
         command += ['--mouse-click-at', f'{ms}:{x}:{y}']
-    if args.capture_labels or args.check_labels:
+    command += getattr(args, 'probe_arg', [])
+    if args.capture_labels or args.check_labels or getattr(args, 'golden_every', None):
         if len(replay.checkpoints) > 32:
             raise ValueError('--capture-labels supports up to 32 selected LABELs per run')
         for checkpoint in replay.checkpoints:
@@ -470,6 +483,10 @@ def main():
                         help='save a native framebuffer, RAM, and CPU snapshot at each LABEL')
     replay.add_argument('--check-labels', action='store_true',
                         help='also validate ASSERT_LOCATION before each LABEL in one run')
+    replay.add_argument('--golden-every', type=int, metavar='N',
+                        help='capture extra RAM checkpoints after every N parser commands')
+    replay.add_argument('--probe-arg', action='append', default=[], metavar='ARG',
+                        help='forward one backend argument to gateway-probe (repeatable)')
     replay.add_argument('--timeout', type=int, default=1800, help='wall-clock timeout, seconds')
     replay.add_argument('--plan-only', action='store_true', help='validate and show planned replay without execution')
     replay.add_argument('--verify-existing', action='store_true',
@@ -487,7 +504,7 @@ def main():
             return
         steps = parse_script(args.script.read_text(encoding='utf-8'))
         planned = compile_steps(steps, args.max_actions, args.through,
-                                args.spacing_ms, args.idle_ms)
+                                args.spacing_ms, args.idle_ms, args.golden_every)
         print(f'Plan: {len(planned.actions)} actions, {len(planned.keys)} keys, '
               f'{planned.duration_ms} guest ms, {len(planned.assertions)} final assertions, '
               f'{len(planned.checkpoints)} labels')

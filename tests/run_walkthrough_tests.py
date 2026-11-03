@@ -364,7 +364,8 @@ LABEL dropped_book
             args = SimpleNamespace(probe=probe, data=data, output=output,
                                    from_stage=None, through_stage=None,
                                    plan_only=False, timeout=30, verify_overlays=False,
-                                   extra_trace_entry=['149d8', '12f44'])
+                                   extra_trace_entry=['149d8', '12f44'],
+                                   golden_every=10, probe_arg=['--example-backend-opt=1'])
             with mock.patch('run_walkthrough_campaign.subprocess.run') as invoke:
                 run_campaign([first], args)
             command = invoke.call_args.args[0]
@@ -373,6 +374,8 @@ LABEL dropped_book
                               if command[i] == '--extra-trace-entry'],
                              [('--extra-trace-entry', '149d8'),
                               ('--extra-trace-entry', '12f44')])
+            self.assertIn('--probe-arg=--example-backend-opt=1', command)
+            self.assertEqual(command[command.index('--golden-every') + 1], '10')
             self.assertTrue((output / first.name / 'stage-meta.json').is_file())
 
     def test_campaign_rejects_unreviewed_restore_and_modified_previous_save(self):
@@ -458,7 +461,7 @@ LABEL dropped_book
                                    trace_byte_write=None, trace_object_writes=None,
                                    trace_target=None, extra_trace_entry=['149d8', '12f44'],
                                    capture_labels=False, check_labels=False,
-                                   timeout=1)
+                                   timeout=1, probe_arg=['--backend-opt=1'])
             replay = compile_steps(parse_script('COMMAND look'))
             with mock.patch('run_walkthrough.subprocess.run') as invoke, \
                  mock.patch('run_walkthrough.verify_recorded'):
@@ -469,6 +472,7 @@ LABEL dropped_book
                               if command[i] == '--trace-entry'],
                              [('--trace-entry', '147a6'), ('--trace-entry', '28d2b'),
                               ('--trace-entry', '149d8'), ('--trace-entry', '12f44')])
+            self.assertIn('--backend-opt=1', command)
 
     def test_verify_existing_refuses_stale_input_without_rerunning_original_game(self):
         with tempfile.TemporaryDirectory() as directory:
