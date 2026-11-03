@@ -612,7 +612,7 @@ ovl	0x00a720	3	131	unclassified						unknown
 ovl	0x00a7a3	3	50	service						unknown				
 ovl	0x00a7d5	3	491	unclassified						unknown				
 ovl	0x00a9c0	3	486	service						unknown				
-ovl	0x00b1e0	4	1840	service						unknown				
+ovl	0x00b1e0	4	1840	service					gw_format_object_phrase	analyzed	complex			Native section-4 OVL 0xb1e0-0xb90f; far flags/object words; formats object phrase into 128-byte rotating buffer or emits text; returns DX:AX far result; sets property 7; native look trace
 ovl	0x00b910	4	184	service						unknown				
 ovl	0x00b9c8	4	347	unclassified						unknown				
 ovl	0x00bb23	4	1050	service						unknown				

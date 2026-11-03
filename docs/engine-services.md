@@ -27,7 +27,7 @@ by at least 20 **distinct native object-handler functions**:
 | Original code identity | Object handlers | Actions | Status / known name |
 | --- | ---: | ---: | --- |
 | `rtl:0x0169f4` | 600 | 170 | External RTL, analyzed formatter (below) |
-| `ovl:0x00b1e0` (section 4) | 186 | 108 | Service, unnamed |
+| `ovl:0x00b1e0` (section 4) | 186 | 108 | `gw_format_object_phrase`, analyzed |
 | `exe:0x00105e` | 185 | 67 | Unclassified |
 | `exe:0x00254a` | 157 | 15 | `gw_native_relation_contains`, analyzed |
 | `exe:0x0028e4` | 153 | 46 | `gw_test_object_flag`, analyzed |
@@ -84,6 +84,46 @@ strong evidence for a text-output service, but does not establish every
 possible formatting behavior. Since the tracker currently represents only
 original `exe`/`ovl` files, this external RTL analysis lives here, rather
 than inventing an EXE identity for it.
+
+## Section-4 object phrase formatter: `ovl:0x00b1e0` (186 handlers)
+
+`gw_format_object_phrase` is a complex overlay service that constructs a
+printable phrase for an object and optionally emits it directly. Its native
+function is `GATEMAIN.OVL:0xb1e0`–`0xb90f`, **RTLink section 4**. Its first
+far-call arguments are `[BP+6]` formatting flags and `[BP+8]` object ID,
+both words. The body rejects invalid object IDs against the global maximum
+via `[DS:8f86]`; the flags' low three bits select a formatting variant.
+Other mode bits are not yet individually characterized. As with the other
+observed C-style far routines, it exits through `retf`, and the callers
+remove four argument bytes. For example, the near caller at original
+`ovl:0xb9a7`–`0xb9b2` pushes the object and flags `0x0083`, uses
+`push cs; call near 0xb1e0`, then `add sp,4`.
+
+Both a string-returning path and a direct-output path are visible:
+
+- At `ovl:0xb8b9`–`0xb8f0`, the service places the constructed string in
+  a shared DS buffer starting at `0xaf9e`, advancing a global buffer cursor
+  `[DS:0x3e10]` and wrapping it when the next phrase would exceed 128 bytes.
+  It obtains a far pointer to this buffer in `DX:AX`; caller `ovl:0xbcdf`
+  pushes that far result into another formatting operation.
+- When formatting flags include `0x80`, `ovl:0xb883`–`0xb88e` passes a
+  stack-local string to the external RTL formatter
+  `GATE.RTL:0x169f4`, rather than returning that buffer to be used later.
+- At `ovl:0xb8f4`–`0xb903` the service calls resident
+  `gw_set_object_flag` with property **7**, recording that the object
+  has been shown or identified. This changes guest object state even if
+  the returned phrase itself is subsequently ignored.
+
+The live `look` replay with `--extra-trace-entry 43190 --extra-trace-entry
+438bb` reached the formatter at virtual 9,120 and 9,187 ms. The former
+captured entry stack `(flags=0x0091, object=0x00ee)`; the latter captured
+`(flags=0x0002, object=0x0125)`. At the latter call the epilogue returned
+`DX:AX=5b46:af9e`, a pointer into the DS buffer; in the companion `objects`
+state-verification replay, property 7 was also set after the first-room
+description. The addresses `43190` and `438bb` are replay-specific and can
+be occupied by *other* overlay sections, so only entries during a confirmed
+section-4 activation are evidence for this service. This establishes the
+major effects and ABI, not every bit of the formatting flags.
 
 ## Resident object-relation predicate: `exe:0x00254a` (157 handlers)
 
@@ -153,7 +193,7 @@ epilogue. These counts are *execution occurrences in this one scripted path*,
 not the distinct-caller totals in the table. The full three-way HLE replay
 remains the independent bounded check documented in `object-state.md`.
 
-All four original `exe` entries are **analyzed**, not ported or fully
-verified under the future §3.7 per-routine differential harness. The
-remaining high-fan-out routines, especially the 186-caller section-4 service
-and the 185-caller resident dispatcher, require more detailed classification.
+All four original `exe` entries and one `ovl` service are **analyzed**, not
+ported or fully verified under the future §3.7 per-routine differential
+harness. The remaining high-fan-out routines, particularly the 185-caller
+resident dispatcher, require more detailed classification.
