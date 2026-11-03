@@ -338,9 +338,12 @@ avoids misidentifying an extra frame in one run as retained-memory corruption.
 The strict golden comparison is unchanged: different `SS:SP`, excluded
 ranges or conventional RAM hashes still fail. Only IDs and difference counts
 are printed, never original game bytes or object contents. The object-record
-check requires a verified 734-object table at `DS` or `ES` in both snapshots;
-if either CPU snapshot is in another segment it reports that fact rather than
-guessing.
+check first attempts the native data table at `DS` or `ES`. During a timed
+interrupt or RTL call those registers may point elsewhere: the optional
+object-only comparison then searches the already-captured conventional RAM
+for the original `DS:8d54`-to-`:38dc` **734-object count indirection** and
+accepts a fallback only when a **single** candidate passes full native object
+record decoding. No address is silently assumed or memory region masked.
 
 For a complementary, **weaker** comparison of the already-recorded full
 campaign, `--objects-only` parses the original 734 object records at *every*
@@ -348,8 +351,8 @@ checkpoint and also requires the stage-end native save SHA-256 to agree. It
 checks stage/script/command/time identity, rehashes every checkpoint against
 its original manifest, verifies saved-game bytes, and refuses missing,
 malformed or ambiguous object tables or missing save hashes. Unlike the
-first-divergence strict diagnostic, this covers object records throughout the full campaign
-without re-running the game:
+first-divergence strict diagnostic, this covers object records throughout the
+full campaign without re-running the game:
 
 ```sh
 python3 tools/run_golden.py compare \
@@ -367,6 +370,14 @@ It **does not** compare globals outside the object records, CPU execution
 phase or guest heap, and can pass when strict RAM comparison fails. It is
 diagnostic evidence about persistent object state, *not* a replacement
 for the full-RAM equivalence criterion in §2.2 or a baseline acceptance.
+
+The first host run of this mode found exact object/save matches for
+`office` (9/9), `dataman` (6/6), `vr` (6/6), `armory_class` (7/7), and
+`bar_nubar` (12/12), **40 verified checkpoints in total**, then failed on
+an unavailable `DS`/`ES` table in a subsequent stage. The direct
+full-versus-seeded bar comparison separately matched **12/12 common object
+checkpoints and the original bar save**. The RAM-scanning fallback above was
+added after that run; a full host retry is still pending.
 
 The `--probe-arg=FLAG` option forwards a backend flag to each probe invocation
 for future opt-in C++ replacements (§3.8). This is **not** a replacement

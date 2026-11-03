@@ -7,6 +7,7 @@ import copy
 import hashlib
 import json
 from pathlib import Path
+import struct
 import sys
 import tempfile
 import unittest
@@ -344,6 +345,30 @@ class GoldenReplayTests(unittest.TestCase):
                 extract_native_objects(memory, registers)
         with mock.patch('inspect_object_state.inspect_objects', side_effect=[table(1), table(2)]):
             with self.assertRaisesRegex(ValueError, 'ambiguous native object tables'):
+                extract_native_objects(memory, registers)
+
+    def test_object_table_ram_recovery_when_interrupt_changed_ds_es(self):
+        memory = bytearray(MEMORY_SIZE)
+        registers = dict(DS=0x1000, ES=0x1100)
+        objects = [dict(object=index, type=2, raw_state='0000')
+                   for index in range(1, 735)]
+
+        def add_candidate(ds):
+            # The original count is read through [DS:8d54] -> [segment:38dc].
+            struct.pack_into('<H', memory, ds * 16 + 0x8d54, 0x3000)
+            struct.pack_into('<H', memory, 0x3000 * 16 + 0x38dc, 734)
+
+        def inspect(_memory, segment):
+            if segment in (0x2000, 0x2100):
+                return objects
+            raise ValueError('not the native object table')
+
+        add_candidate(0x2000)
+        with mock.patch('inspect_object_state.inspect_objects', side_effect=inspect):
+            self.assertEqual(extract_native_objects(memory, registers), objects)
+        add_candidate(0x2100)
+        with mock.patch('inspect_object_state.inspect_objects', side_effect=inspect):
+            with self.assertRaisesRegex(ValueError, 'ambiguous resident object tables'):
                 extract_native_objects(memory, registers)
 
     def test_seeded_late_stage_replay_checks_original_save_and_isolates_state(self):

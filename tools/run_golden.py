@@ -16,6 +16,7 @@ from pathlib import Path
 import re
 import shutil
 import string
+import struct
 import subprocess
 import sys
 
@@ -239,22 +240,56 @@ def describe_cpu_difference(left, right):
     return 'CPU a/b ' + ', '.join(differences) if differences else 'CPU registers match'
 
 
+def object_table_segment_candidates(memory):
+    """Find possible Gateway DS values using the original 734-count indirection.
+
+    The resident code reads count from [word ptr DS:8d54]:38dc. This is
+    necessary, not sufficient, evidence for a Gateway data segment; callers
+    must verify every record and reject multiple surviving candidates.
+    """
+    end = min(len(memory), CONVENTIONAL_END)
+    for segment in range((end - 0x8d56) // 16 + 1):
+        pointer_segment = struct.unpack_from('<H', memory, segment * 16 + 0x8d54)[0]
+        count_address = pointer_segment * 16 + 0x38dc
+        if count_address + 2 <= end and \
+                struct.unpack_from('<H', memory, count_address)[0] == 734:
+            yield segment
+
+
 def extract_native_objects(memory, registers):
-    """Require one unambiguous, complete native object table at DS or ES."""
+    """Require an unambiguous, complete native object table at DS/ES or in RAM.
+
+    DS/ES can temporarily refer to an interrupt or runtime segment at a
+    timed checkpoint. Only when both fail, seek the original DS-indirection
+    signature and insist on a unique, fully parsed 734-object table.
+    """
     from inspect_object_state import inspect_objects
+
+    def parsed(segment):
+        try:
+            found = inspect_objects(memory, segment)
+        except (ValueError, IndexError):
+            return None
+        return found if len(found) == 734 else None
 
     found_tables = []
     for name in ('DS', 'ES'):
         if name not in registers:
             continue
-        try:
-            found = inspect_objects(memory, registers[name])
-        except (ValueError, IndexError):
-            continue
-        if len(found) == 734:
+        found = parsed(registers[name])
+        if found is not None:
             found_tables.append((name, found))
     if not found_tables:
-        raise ValueError('object records unavailable (no verified 734-object table at DS/ES)')
+        for segment in object_table_segment_candidates(memory):
+            found = parsed(segment)
+            if found is not None:
+                found_tables.append((f'RAM:{segment:04x}', found))
+        if not found_tables:
+            raise ValueError('object records unavailable (no verified 734-object table '
+                             'at DS/ES or unique resident RAM address)')
+        if len(found_tables) != 1:
+            segments = ', '.join(name for name, _ in found_tables[:8])
+            raise ValueError(f'ambiguous resident object tables: {segments}')
     primary = found_tables[0][1]
     for name, other in found_tables[1:]:
         if object_state_changes(primary, other):
@@ -278,8 +313,11 @@ def verified_checkpoint_objects(root, stage, checkpoint):
     for key in ('sha256', 'stack', 'excluded'):
         if recorded[key] != checkpoint.get(key):
             raise ValueError(f'{prefix}: stale native snapshot ({key} differs from manifest)')
-    return extract_native_objects(prefix.with_suffix('.bin').read_bytes(),
-                                  read_registers(prefix.with_suffix('.regs')))
+    try:
+        return extract_native_objects(prefix.with_suffix('.bin').read_bytes(),
+                                      read_registers(prefix.with_suffix('.regs')))
+    except ValueError as exc:
+        raise ValueError(f'{prefix}: {exc}') from exc
 
 
 def verified_recorded_save(root, stage):
@@ -303,7 +341,7 @@ def describe_object_difference(left_memory, left_registers, right_memory, right_
         left = extract_native_objects(left_memory, left_registers)
         right = extract_native_objects(right_memory, right_registers)
     except ValueError:
-        return 'object records unavailable (no unambiguous verified table at DS/ES)'
+        return 'object records unavailable (no unambiguous verified native table)'
     changed = object_state_changes(left, right)
     if not changed:
         return 'object records identical (734/734)'
