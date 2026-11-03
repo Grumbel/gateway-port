@@ -602,13 +602,19 @@ mode 2, selects one of two selector values depending on `mode == 1`,
 emits a formatted phrase through the linked RTL text formatter, invokes
 another section service at `1c24:3db5` with the same inputs, then emits
 a shared closing format. The far `retf` implies the usual expected
-four-byte caller cleanup, but a specific native caller epilogue has not yet
-been captured. The exact message meaning and effects of those two RTLink services remain
+four-byte caller cleanup. Original section code at `ovl:0x051aea`–`0x051af9`
+confirms it statically: the caller pushes `mode=0` and object `0x0124`,
+calls the linked far entry at `ovl:0x051af1`, then executes `add sp,4`.
+That branch is guarded by an earlier object-flag `0x0c` query inside
+an event-6 / subevent-`0x3a` handler; the actual event trigger and
+flag state have not been exercised in a native replay. The exact message
+meaning and effects of those two RTLink services remain
 unproven. The function body does not directly mutate object state but
 its callees may. Ghidra's internal `0x5bfa` function is a false split.
 No live entry was observed in the reviewed `objects`, extended office,
-DATAMAN or VR
-replays; therefore its tracker state remains **named** rather than claiming
+DATAMAN, VR, armory/class or bar/casino replays (159 sequential campaign
+actions, through the authentic `FULLCASINO` save); therefore its tracker state
+remains **named** rather than claiming
 analyzed or verified semantics.
 
 The next evidence step is a native replay that actually executes each
