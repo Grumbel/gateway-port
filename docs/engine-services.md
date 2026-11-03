@@ -42,8 +42,8 @@ by at least 20 **distinct native object-handler functions**:
 | `exe:0x002951` | 51 | 3 | `gw_clear_object_flag`, analyzed |
 | `exe:0x00259c` | 31 | 8 | `gw_relation_contains_in_slot`, analyzed |
 | `exe:0x0060cf` | 30 | 8 | `gw_room_exit_dispatch`, analyzed |
-| `exe:0x003f85` | 29 | 3 | Unclassified |
-| `exe:0x005bd1` | 23 | 0 | Unclassified |
+| `exe:0x003f85` | 29 | 3 | `gw_timed_event_exists`, analyzed |
+| `exe:0x005bd1` | 23 | 0 | `gw_conditional_object_message`, named; native coverage missing |
 
 The `rtl:` identities are file offsets into the original `GATE.RTL`, not
 runtime addresses. The current `decomp/functions.tsv` permits only `exe` and
@@ -312,9 +312,37 @@ specific to this capture) was reached **five times** during startup at
 `(0x25,0x02d0)` and `(0x2a,0x030c)`. This independently matches the
 four-byte event records and countdown behavior recovered from original
 saves in [save-games.md](save-games.md#global-state-and-timers).
-The companion `gw_remove_timed_event` and `gw_timed_event_exists` routines
-have native disassembly-based boundaries but no captured calls in this
-replay; they remain **named**, not analyzed or verified.
+The companion `gw_remove_timed_event` has a corrected native boundary but
+no captured calls in this replay and remains **named**. The membership
+helper below was independently captured later in the armory stage.
+
+## Resident scheduled-event membership: `exe:0x003f85` (29 handlers)
+
+`gw_timed_event_exists`, original EXE `0x3f85`–`0x3fc1` (61 bytes), is a
+far **Boolean queue membership test**. Its one word at `[BP+6]` is an
+event ID (only the low byte is compared); the caller removes two argument
+bytes after `retf` and consumes `AX=0` (absent) or `AX=1` (present).
+In a confirmed native armory call, the return address `49d8:11c9`
+(temporary linear `0x4af49`) begins `add sp,2; or ax,ax; je ...`, which
+confirms both caller cleanup and the Boolean result test.
+
+The body initializes its local index to zero, walks exactly
+`[DS:0x35c2]` occupied records in the four-byte event array through
+`[DS:0x8d5a]`, and compares the candidate event byte at each record's
+offset `+0`. There are no direct queue writes or allocations. It also
+calls an external service at linked `0805:0c02` after setting `AX=2`,
+before scanning; **that helper's side effects remain unclassified**, so
+the whole routine must not yet be assumed globally pure.
+
+The reviewed original armory/class walkthrough at
+`build/service-evidence-armory/native.trace` entered the routine at
+temporary `12e3:0114` (linear `0x12f44`) **18 times**. First
+calls at 51,428 virtual ms passed event IDs `0x37` and `0x38`; later
+calls at 66,178–97,848 ms repeatedly queried `0x22`. These are the
+actual stack words at `SS:SP+4`, not static references. The previous
+timer insertion replay separately established the four-byte event
+layout. The helper is now `analyzed` but not **ported** or **verified**
+under the planned differential harness.
 
 ## Resident room-exit dispatcher: `exe:0x0060cf` (30 handlers)
 
@@ -557,8 +585,33 @@ epilogue. These counts are *execution occurrences in this one scripted path*,
 not the distinct-caller totals in the table. The full three-way HLE replay
 remains the independent bounded check documented in `object-state.md`.
 
-All eleven original `exe` entries and two `ovl` services are **analyzed**, not
+All twelve original `exe` entries and two `ovl` services are **analyzed**, not
 ported or fully verified under the future §3.7 per-routine differential
 harness. All three analyzed external RTL functions live only in this catalogue,
 not the `exe`/`ovl` tracker. The remaining high-fan-out routines include
-two resident services; both still require native semantic evidence.
+one resident service; it still requires native semantic evidence.
+
+## Remaining high-fan-out lead (not analyzed)
+
+**`exe:0x005bd1`, 23 handlers.** `gw_conditional_object_message` is a
+95-byte far function (`0x5bd1`–`0x5c2f`), with a two-word `(object,mode)`
+input at `[BP+6/+8]`. Original disassembly calls a conditional overlay
+predicate via RTLink `1c24:3dbf` and returns early if AX is zero.
+On success it formats the object through `1c24:13b7` with formatting
+mode 2, selects one of two selector values depending on `mode == 1`,
+emits a formatted phrase through the linked RTL text formatter, invokes
+another section service at `1c24:3db5` with the same inputs, then emits
+a shared closing format. The far `retf` implies the usual expected
+four-byte caller cleanup, but a specific native caller epilogue has not yet
+been captured. The exact message meaning and effects of those two RTLink services remain
+unproven. The function body does not directly mutate object state but
+its callees may. Ghidra's internal `0x5bfa` function is a false split.
+No live entry was observed in the reviewed `objects`, extended office,
+DATAMAN or VR
+replays; therefore its tracker state remains **named** rather than claiming
+analyzed or verified semantics.
+
+The next evidence step is a native replay that actually executes each
+entry, recording argument words and the returned AX/guest-memory changes.
+The original-offset identities, not the temporary RAM addresses from
+the previous replays, must be used when marking their tracker states.
