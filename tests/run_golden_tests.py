@@ -13,9 +13,10 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from run_golden import (CONVENTIONAL_END, MEMORY_SIZE, capture_campaign, check_pair,
-                        excluded_ranges, first_divergence, normalized_memory,
-                        planned_checkpoints, read_manifest, run_campaign, save_manifest,
-                        snapshot_prefix)
+                        describe_cpu_difference, describe_stage_save, excluded_ranges,
+                        explain_difference, first_divergence, normalized_memory,
+                        planned_checkpoints, read_manifest, report_checkpoint_drift,
+                        run_campaign, save_manifest, snapshot_prefix)
 from run_walkthrough import compile_steps, parse_script
 from run_walkthrough_campaign import load_campaign
 
@@ -154,6 +155,59 @@ class GoldenReplayTests(unittest.TestCase):
                              10, 100, False, [], through_stage='first')
             command = invoke.call_args.args[0]
             self.assertEqual(command[command.index('--through-stage') + 1], 'first')
+
+    def test_diagnostic_uses_union_of_differing_live_stacks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            prefix_a = snapshot_prefix(root / 'a', 'first', 'sample')
+            prefix_b = snapshot_prefix(root / 'b', 'first', 'sample')
+            for prefix, sp in ((prefix_a, 0xff00), (prefix_b, 0xfe00)):
+                prefix.parent.mkdir(parents=True)
+                memory = bytearray(MEMORY_SIZE)
+                memory[0x1fe50] = 9 if sp == 0xff00 else 8
+                memory[0x30000] = 1
+                prefix.with_suffix('.bin').write_bytes(memory)
+                prefix.with_suffix('.regs').write_text(
+                    f'SS=1000\nSP={sp:04x}\nCS=2200\nIP=1234\n', encoding='ascii')
+            description = explain_difference({}, {}, root / 'a', root / 'b',
+                                             'first', 'sample')
+            self.assertIn('SP=ff00/fe00', description)
+            self.assertIn('retained RAM identical after shared volatile exclusions',
+                          description)
+            self.assertNotIn('0x1fe50', description)
+            memory = bytearray(prefix_b.with_suffix('.bin').read_bytes())
+            memory[0x30000] = 2
+            prefix_b.with_suffix('.bin').write_bytes(memory)
+            description = explain_difference({}, {}, root / 'a', root / 'b',
+                                             'first', 'sample')
+            self.assertIn('0x30000; 1 changed byte in 1 page', description)
+
+    def test_drift_report_names_later_checkpoints_and_save_hashes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            a, b = root / 'a', root / 'b'
+            for stage, digest in ((a, 'a' * 64), (b, 'b' * 64)):
+                folder = stage / 'first'
+                folder.mkdir(parents=True)
+                (folder / 'stage-meta.json').write_text(
+                    json.dumps({'save_sha256': digest}), encoding='ascii')
+            self.assertEqual(describe_stage_save(a, b, 'first'), 'stage-end saves differ')
+            self.assertEqual(describe_cpu_difference({'CS': 10}, {'CS': 11}),
+                             'CPU a/b CS=000a/000b')
+            first = {'label': 'first', 'command_index': 10, 'time_ms': 30000,
+                     'stack': {'ss': 1, 'sp': 5}, 'sha256': 'a' * 64}
+            second = dict(first, label='second', command_index=11, time_ms=33000)
+            changed = dict(first, stack={'ss': 1, 'sp': 6}, sha256='b' * 64)
+            from io import StringIO
+            from contextlib import redirect_stdout
+            output = StringIO()
+            with redirect_stdout(output):
+                report_checkpoint_drift({'stages': [{'name': 'first',
+                                                     'checkpoints': [first, second]}]},
+                                        {'stages': [{'name': 'first',
+                                                     'checkpoints': [changed, second]}]})
+            self.assertIn('1/2 checkpoints differ', output.getvalue())
+            self.assertIn('command=10 ms=30000 (stack/mask, RAM)', output.getvalue())
 
 
 if __name__ == '__main__':

@@ -47,6 +47,15 @@ retimestamped: only their DOS `findfirst`/`findnext` date/time fields are
 normalized, because host creation time would otherwise leak across stages.
 Original game assets keep their own directory metadata.
 
+The first subsequent **full** fixed-clock campaign matched through
+`armory_class` but diverged at `bar_nubar/golden-command-000010` (the first
+`wait` following `drink`), after 10 commands; the two runs also made 13
+different RTLink calls in that stage. The `office`-only fixed-clock campaign
+matched all nine checkpoints. The cause of the later mismatch is not yet
+established. A timed RAM snapshot may capture a different native callback or
+interrupt stack depth at the same guest millisecond; it is not proof that
+the underlying saved game or object records diverged.
+
 When the first mismatch is in an early stage, rerun *only* the affected prefix
 while diagnosing it; this avoids replaying the full campaign each time:
 
@@ -90,6 +99,32 @@ python3 tools/run_golden.py compare \
   --left-campaign build/golden/first-verified-run/run-a \
   --right-campaign build/golden/first-verified-run/run-b
 ```
+
+For an already-recorded *failed* full campaign, use `--all-checkpoints` to
+see whether the mismatch continues or disappears later. The first mismatch
+also reports CPU register differences (`CS:IP`, stack, data segments and
+flags), changes among the 734 native object records, and whether each stage's
+original saved-game bytes have identical SHA-256 hashes:
+
+```sh
+python3 tools/run_golden.py compare \
+  build/golden/full-fixed-clock/run-a.json \
+  build/golden/full-fixed-clock/run-b.json \
+  --left-campaign build/golden/full-fixed-clock/run-a \
+  --right-campaign build/golden/full-fixed-clock/run-b \
+  --all-checkpoints
+```
+
+This reads the existing local snapshots and does **not** need to rebuild or
+replay the game. The diagnostic counts differing RAM bytes only outside the
+**union** of the two excluded live-stack ranges. When `SS:SP` differs, this
+avoids misidentifying an extra frame in one run as retained-memory corruption.
+The strict golden comparison is unchanged: different `SS:SP`, excluded
+ranges or conventional RAM hashes still fail. Only IDs and difference counts
+are printed, never original game bytes or object contents. The object-record
+check requires a verified 734-object table at `DS` or `ES` in both snapshots;
+if either CPU snapshot is in another segment it reports that fact rather than
+guessing.
 
 The `--probe-arg=FLAG` option forwards a backend flag to each probe invocation
 for future opt-in C++ replacements (§3.8). This is **not** a replacement

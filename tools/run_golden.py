@@ -170,8 +170,63 @@ def first_divergence(left, right):
     return None
 
 
+def describe_cpu_difference(left, right):
+    names = ('CS', 'IP', 'SS', 'SP', 'BP', 'DS', 'ES', 'FLAGS')
+    differences = [f'{name}={left[name]:04x}/{right[name]:04x}'
+                   for name in names if name in left and name in right
+                   and left[name] != right[name]]
+    return 'CPU a/b ' + ', '.join(differences) if differences else 'CPU registers match'
+
+
+def describe_object_difference(left_memory, left_registers, right_memory, right_registers):
+    """Check complete native object records, independent of volatile RTLink buffers."""
+    from inspect_object_state import inspect_objects
+
+    def objects(memory, registers):
+        for name in ('DS', 'ES'):
+            if name not in registers:
+                continue
+            try:
+                found = inspect_objects(memory, registers[name])
+            except (ValueError, IndexError):
+                continue
+            if len(found) == 734:
+                return found
+        return None
+
+    left = objects(left_memory, left_registers)
+    right = objects(right_memory, right_registers)
+    if left is None or right is None:
+        return 'object records unavailable (no verified table at DS/ES)'
+    changed = [a['object'] for a, b in zip(left, right)
+               if a['raw_state'] != b['raw_state']]
+    if not changed:
+        return 'object records identical (734/734)'
+    sample = ','.join(f'{number:x}' for number in changed[:12])
+    suffix = ',...' if len(changed) > 12 else ''
+    return f'object records changed {len(changed)}/734 (IDs {sample}{suffix})'
+
+
+def describe_stage_save(left_dir, right_dir, stage):
+    """Stage-end native save hashes distinguish transient from persistent drift."""
+    try:
+        a = json.loads((left_dir / stage / 'stage-meta.json').read_text(encoding='utf-8'))
+        b = json.loads((right_dir / stage / 'stage-meta.json').read_text(encoding='utf-8'))
+        x, y = a['save_sha256'], b['save_sha256']
+        if not SHA256.fullmatch(x) or not SHA256.fullmatch(y):
+            return ''
+        return ('stage-end saves identical' if x == y else 'stage-end saves differ')
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+        return ''
+
+
 def explain_difference(a, b, left_dir, right_dir, stage, label):
-    """Optional local diagnostic: print the first unmasked address, never bytes."""
+    """Optional local diagnostic: print differences, never guest-owned bytes.
+
+    Timed snapshots can catch *different* stack depths. Use the UNION of
+    the two stack exclusions when counting changed retained bytes, otherwise
+    an extra live stack word appears to be an unrelated RAM mutation.
+    """
     if not left_dir or not right_dir or label == '-':
         return ''
     try:
@@ -179,8 +234,16 @@ def explain_difference(a, b, left_dir, right_dir, stage, label):
         right_prefix = snapshot_prefix(right_dir, stage, label)
         lregs = read_registers(left_prefix.with_suffix('.regs'))
         rregs = read_registers(right_prefix.with_suffix('.regs'))
-        lmem, _ = normalized_memory(left_prefix.with_suffix('.bin'), lregs)
-        rmem, _ = normalized_memory(right_prefix.with_suffix('.bin'), rregs)
+        lraw = left_prefix.with_suffix('.bin').read_bytes()
+        rraw = right_prefix.with_suffix('.bin').read_bytes()
+        lmem, lranges = normalized_memory(left_prefix.with_suffix('.bin'), lregs)
+        rmem, rranges = normalized_memory(right_prefix.with_suffix('.bin'), rregs)
+        # This is for diagnosis only. The golden manifests still require the
+        # individual exclusion ranges and exact SS:SP values to match.
+        for region in lranges + rranges:
+            start, end = region['start'], region['end']
+            lmem[start:end] = bytes(end - start)
+            rmem[start:end] = bytes(end - start)
         counts = {}
         first = None
         for index, (lvalue, rvalue) in enumerate(zip(lmem, rmem)):
@@ -189,16 +252,23 @@ def explain_difference(a, b, left_dir, right_dir, stage, label):
                     first = index
                 page = index // 4096
                 counts[page] = counts.get(page, 0) + 1
+        details = [describe_cpu_difference(lregs, rregs)]
         if first is None:
-            return ''
-        hot_pages = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:5]
-        distribution = ', '.join(f'0x{page * 4096:05x}:{count}'
-                                 for page, count in hot_pages)
-        count = sum(counts.values())
-        return (f'; first unmasked byte at 0x{first:05x}; '
-                f'{count} changed {"byte" if count == 1 else "bytes"} in '
-                f'{len(counts)} {"page" if len(counts) == 1 else "pages"}; '
-                f'top 4-KiB pages (start:changed bytes) {distribution}')
+            details.append('retained RAM identical after shared volatile exclusions')
+        else:
+            hot_pages = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:5]
+            distribution = ', '.join(f'0x{page * 4096:05x}:{count}'
+                                     for page, count in hot_pages)
+            count = sum(counts.values())
+            details.append(f'first unmasked byte at 0x{first:05x}; '
+                           f'{count} changed {"byte" if count == 1 else "bytes"} in '
+                           f'{len(counts)} {"page" if len(counts) == 1 else "pages"}; '
+                           f'top 4-KiB pages (start:changed bytes) {distribution}')
+        details.append(describe_object_difference(lraw, lregs, rraw, rregs))
+        stage_save = describe_stage_save(left_dir, right_dir, stage)
+        if stage_save:
+            details.append(stage_save)
+        return '; ' + '; '.join(details)
     except (OSError, ValueError):
         return ''
 
@@ -211,6 +281,30 @@ def check_pair(left, right, left_dir=None, right_dir=None):
         raise ValueError(f'first divergence: stage={stage} checkpoint={label}: {reason}{detail}')
     count = sum(len(stage['checkpoints']) for stage in left['stages'])
     print(f'Golden replay matched: {len(left["stages"])} stages, {count} RAM checkpoints')
+
+
+def report_checkpoint_drift(left, right):
+    """Show whether a mismatch is brief or persists through later checkpoints."""
+    for a, b in zip(left.get('stages', ()), right.get('stages', ())):
+        if a.get('name') != b.get('name'):
+            break
+        ac, bc = a.get('checkpoints', ()), b.get('checkpoints', ())
+        mismatches = []
+        for x, y in zip(ac, bc):
+            if x.get('label') != y.get('label'):
+                break
+            types = []
+            if x.get('stack') != y.get('stack') or x.get('excluded') != y.get('excluded'):
+                types.append('stack/mask')
+            if x.get('sha256') != y.get('sha256'):
+                types.append('RAM')
+            if types:
+                mismatches.append((x, types))
+        if mismatches:
+            print(f'{a["name"]}: {len(mismatches)}/{len(ac)} checkpoints differ')
+            for x, types in mismatches:
+                print(f'  {x["label"]}: command={x["command_index"]} '
+                      f'ms={x["time_ms"]} ({", ".join(types)})')
 
 
 def run_campaign(manifest, probe, data, output, every, timeout, verify_overlays,
@@ -242,6 +336,8 @@ def main():
     compare.add_argument('right', type=Path)
     compare.add_argument('--left-campaign', type=Path)
     compare.add_argument('--right-campaign', type=Path)
+    compare.add_argument('--all-checkpoints', action='store_true',
+                         help='list all differing checkpoints, including later recovery')
     run = commands.add_parser('run', help='run two isolated campaigns and compare RAM checkpoints')
     run.add_argument('manifest', type=Path)
     run.add_argument('--probe', type=Path, default=Path('/tmp/gateway-port-build/gateway-probe'))
@@ -264,7 +360,10 @@ def main():
                                                         args.every, args.through_stage))
             print(f'Golden hashes saved: {args.output}')
         elif args.mode == 'compare':
-            check_pair(read_manifest(args.left), read_manifest(args.right),
+            left, right = read_manifest(args.left), read_manifest(args.right)
+            if args.all_checkpoints:
+                report_checkpoint_drift(left, right)
+            check_pair(left, right,
                        args.left_campaign, args.right_campaign)
         else:
             if args.timeout <= 0:

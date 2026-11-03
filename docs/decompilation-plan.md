@@ -372,8 +372,15 @@ identified host-wall-time initialization of the virtual DOS calendar as one
 source of nondeterminism, and newly written save-file metadata as another
 potential source. Golden runs now force fixed UTC noon on 1992-01-01 and
 normalize guest-visible saved-slot timestamps, while interactive runs retain
-their host-local behavior; native retesting is required before declaring the
-original mismatch resolved.
+their host-local behavior. The independent fixed-clock `office` replay now
+matches all nine checkpoints; the full nine-stage retry matches through
+`armory_class` and first differs at `bar_nubar/golden-command-000010`, after
+the first `wait` following `drink`. The replay also shows differing RTLink
+call totals in that stage. The cause is unproven: timed snapshots may land in
+different in-flight callbacks/interrupt frames. Golden comparison now offers
+CPU register, verified object-record and stage-end original-save diagnostics,
+plus an all-checkpoints drift listing, to distinguish transient differences
+from persistent game-state divergence without committing original bytes.
 
 ### 3.7 [ ] Per-routine differential tester
 
