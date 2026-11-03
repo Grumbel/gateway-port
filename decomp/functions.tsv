@@ -198,7 +198,7 @@ exe	0x00641c		66	unclassified						unknown
 exe	0x00645e		77	unclassified						unknown				
 exe	0x0064ab		8	unclassified						unknown				
 exe	0x0064b3		164	unclassified						unknown				
-exe	0x006557		88	unclassified						unknown				
+exe	0x006557		88	service					gw_add_score	analyzed	direct-memory			Native EXE 0x6557-0x65ae; far one-word award; adds 16-bit score DS:3946 without saturation; optional output via external formatter and one-time DS:3948 gate; 2 native office awards at 0x1535e
 exe	0x0065af		186	unclassified						unknown				
 exe	0x006669		24	action				0x5f		unknown	direct-memory			
 exe	0x006681		141	action				0x98		unknown	direct-memory			

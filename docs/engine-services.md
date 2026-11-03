@@ -37,7 +37,7 @@ by at least 20 **distinct native object-handler functions**:
 | `rtl:0x00e284` | 70 | 0 | External RTL, uncatalogued |
 | `exe:0x002603` | 68 | 11 | `gw_relation_reachable`, analyzed |
 | `rtl:0x0169db` | 61 | 7 | External RTL character-output wrapper, analyzed |
-| `exe:0x006557` | 57 | 1 | Unclassified |
+| `exe:0x006557` | 57 | 1 | `gw_add_score`, analyzed |
 | `exe:0x005c30` | 53 | 1 | Unclassified |
 | `exe:0x002951` | 51 | 3 | `gw_clear_object_flag`, analyzed |
 | `exe:0x00259c` | 31 | 8 | `gw_relation_contains_in_slot`, analyzed |
@@ -326,6 +326,37 @@ changes following this scanner. This evidence establishes actual invocation
 and the major ABI/control flow, not complete dynamic coverage of all five
 exit kinds or a replacement differential test.
 
+## Resident score accumulator: `exe:0x006557` (57 handlers)
+
+`gw_add_score`, original EXE `0x6557`–`0x65ae` (88 bytes), accepts a single
+score-award word at `[BP+6]`, uses a far `retf`, and has **caller cleanup of
+two bytes**. Independent resident near-call sites `0x6011`–`0x6016` and
+`0x660c`–`0x6611` each push AX, `push cs; call near 0x6557`, then
+`add sp,2`. Both callers immediately repurpose AX; there is no verified
+return-value contract. Zero awards return without touching score or output.
+For nonzero awards it performs a native **16-bit wrapping addition** into
+`[DS:0x3946]`: there is no overflow test or score clamping. This is a
+direct guest-global write, not object allocation or room relocation.
+
+After incrementing the score it checks byte `[word DS:8dd6]:438f`. If
+zero, it skips the optional announcement path. Otherwise it emits an
+amount-bearing line through the external RTL formatter at linked
+`17cd:105b`, optionally emits a one-time extra announcement when
+`[DS:0x3948]` is zero (then sets that byte to 1), and finally emits a
+second shared DS string via the same formatter. These print side effects
+are conditional; the score addition is not. Formatting and output status
+have not been captured independently at the inner writer boundary.
+
+A fresh native replay of the **first 12 actions of the office walkthrough**,
+reusing its deterministic `replay.keys`, captured two calls at temporary
+linear `0x1535e` (`148e:0a7e`) in
+`build/service-evidence-office/extra.trace`: at 21,328 virtual ms the
+far entry stack carried award `0x0002`, and at 21,421 ms it carried
+award `0x0003`. Both calls arose during the original take-items action;
+the caller frame included the corresponding native object context.
+The original conditional output branch and 16-bit wrap were verified from
+disassembly, not exercised across all flag states in this bounded trace.
+
 ## Resident object-relation predicate: `exe:0x00254a` (157 handlers)
 
 `gw_native_relation_contains` is a far Boolean predicate over one object's
@@ -440,9 +471,9 @@ epilogue. These counts are *execution occurrences in this one scripted path*,
 not the distinct-caller totals in the table. The full three-way HLE replay
 remains the independent bounded check documented in `object-state.md`.
 
-All nine original `exe` entries and two `ovl` services are **analyzed**, not
+All ten original `exe` entries and two `ovl` services are **analyzed**, not
 ported or fully verified under the future §3.7 per-routine differential
 harness. Both analyzed external RTL wrappers live only in this catalogue,
 not the `exe`/`ovl` tracker. The remaining high-fan-out routines include
-one external RTL target and four resident services; all still require native
+one external RTL target and three resident services; all still require native
 semantic evidence.
