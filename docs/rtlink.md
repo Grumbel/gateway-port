@@ -31,6 +31,16 @@ linker/startup origin remains to be explained. See the
 [live action trace](action-dispatch.md) and decode their targets from the
 *runtime trampoline bytes* rather than from a guessed EXE offset.
 
+A third original-file base, `0xa73a + linked_thunk_offset`, applies to
+the resident child-listing calls `1c24:3db5` and `1c24:3dbf`. Their original
+EXE trampoline records are at `0xe4ef` and `0xe4f9`, pointing into RTLink
+section 4 (`ovl:0xb910` and `ovl:0xbf3d`). The observed native code jumps
+through `2c24:3db5/3dbf`, with both section-qualified targets validated by
+the RTLink call census. For this base the near-CALL displacement must resolve
+to manager offset `0x058d`; `tools/rank_engine_services.py` checks that
+before accepting the mapping. This does not establish why the linker emits
+three bases, or that every manager thunk uses one of them.
+
 | Manager-relative offset | EXE file offset | Meaning |
 | --- | --- | --- |
 | `0x0c19` | `0xac39` | `u16` directory count, 59 including the empty sentinel |

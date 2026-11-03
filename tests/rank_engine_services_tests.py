@@ -82,6 +82,22 @@ class ServiceRankingTests(unittest.TestCase):
         self.assertEqual(found[('exe', 0x276)]['handler_callers'], 1)
         self.assertEqual(found[('ovl', 0x28)]['call_kinds'], ['near', 'rtlink'])
 
+    def test_late_rtlink_base_requires_manager_call(self):
+        # Synthetic equivalent of the later 1c24 trampolines: the near CALL
+        # must reach manager offset 0x058d before the section-qualified JMP.
+        self.ovl[0x50:0x55] = bytes([0x9a, 0x00, 0x04, 0x24, 0x1c])
+        self.exe[0xab3a:0xab44] = bytes([0xe8, 0x8a, 0x01, 0xea, 0x18, 0x00,
+                                         0x00, 0x33, 0x04, 0x00])
+        site = dict(file='ovl', offset=0x50, section=4)
+        resolved = rank.decode_call(site, self.exe, self.ovl, self.sections, 0x20)
+        self.assertEqual(resolved, dict(file='ovl', offset=0x38, section=4,
+                                        via='rtlink', stub=0xab3a))
+
+        # A superficially valid stub with the wrong manager call is rejected.
+        self.exe[0xab3b:0xab3d] = b'\x00\x00'
+        self.assertIsNone(rank.decode_call(site, self.exe, self.ovl,
+                                           self.sections, 0x20))
+
     def test_reject_changed_originals_and_invalid_sources(self):
         self.exe[0x100] = 0
         self.exe_path.write_bytes(self.exe)

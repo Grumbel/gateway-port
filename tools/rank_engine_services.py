@@ -71,10 +71,21 @@ def decode_call(site, exe, ovl, sections, header_size):
         target_offset = int.from_bytes(data[offset+1:offset+3], 'little')
         segment = int.from_bytes(data[offset+3:offset+5], 'little')
         if segment == 0x1c24:
-            # The two RTLink bases are confirmed for this Gateway fingerprint.
+            # The directory and early action thunks use different EXE bases.
             candidates = [candidate for base in (0xa0da, 0xa020)
                           if (candidate := decode_stub(exe, base + target_offset,
                                                         sections)) is not None]
+            # Later manager thunks use a third base (0xa73a). The original
+            # 1c24:3db5/3dbf entries map to section-4 child-list services.
+            # Require the near CALL to reach the manager at 1c24:058d;
+            # otherwise unrelated bytes can look like an RTLink stub.
+            stub_offset = 0xa73a + target_offset
+            code = exe[stub_offset:stub_offset + 10]
+            if len(code) == 10 and code[0] == 0xe8 and code[3] == 0xea:
+                displacement = int.from_bytes(code[1:3], 'little', signed=True)
+                if (target_offset + 3 + displacement) & 0xffff == 0x058d:
+                    if candidate := decode_stub(exe, stub_offset, sections):
+                        candidates.append(candidate)
             if len(candidates) == 1:
                 return candidates[0]
             if candidates:
