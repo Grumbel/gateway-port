@@ -96,6 +96,21 @@ class TrackerTests(unittest.TestCase):
         self.assertEqual((row['offset'], row['size']), ('0x002603', '109'))
         self.assertEqual(tracker.seed(self.path, functions_path=self.functions), (0, 0))
 
+    def test_room_exit_dispatcher_keeps_internal_switch_arms_as_one_function(self):
+        header = 'file\toffset\tsection\tghidra_address\tbody_bytes\tname\tsource\n'
+        fragments = ((0x60cf, 69), (0x6114, 3), (0x611d, 28),
+                     (0x6139, 29), (0x6156, 176), (0x6207, 98),
+                     (0x6269, 63), (0x62a8, 90), (0x6302, 20),
+                     (0x637d, 5), (0x6382, 72))
+        self.functions.write_text(header + '\n'.join(
+            f'exe\t0x{offset:06x}\t\t105e:{offset:04x}\t{size}\tFUN_A\tDEFAULT'
+            for offset, size in fragments) + '\n')
+        self.assertEqual(tracker.seed(self.path, functions_path=self.functions), (2, 2))
+        rows = tracker.read_tracker(self.path)
+        self.assertEqual([(row['offset'], row['size']) for row in rows],
+                         [('0x0060cf', '691'), ('0x006382', '72')])
+        self.assertEqual(tracker.seed(self.path, functions_path=self.functions), (0, 0))
+
     def test_mark_explicit_handler_boundary_and_reject_tail(self):
         self.seeded()
         report = self.root / 'decompile.json'

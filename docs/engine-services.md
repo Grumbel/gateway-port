@@ -41,7 +41,7 @@ by at least 20 **distinct native object-handler functions**:
 | `exe:0x005c30` | 53 | 1 | Unclassified |
 | `exe:0x002951` | 51 | 3 | `gw_clear_object_flag`, analyzed |
 | `exe:0x00259c` | 31 | 8 | `gw_relation_contains_in_slot`, analyzed |
-| `exe:0x0060cf` | 30 | 8 | `gw_room_exit_dispatch` |
+| `exe:0x0060cf` | 30 | 8 | `gw_room_exit_dispatch`, analyzed |
 | `exe:0x003f85` | 29 | 3 | Unclassified |
 | `exe:0x005bd1` | 23 | 0 | Unclassified |
 
@@ -267,6 +267,65 @@ The companion `gw_remove_timed_event` and `gw_timed_event_exists` routines
 have native disassembly-based boundaries but no captured calls in this
 replay; they remain **named**, not analyzed or verified.
 
+## Resident room-exit dispatcher: `exe:0x0060cf` (30 handlers)
+
+`gw_room_exit_dispatch` is one **691-byte far function** at original EXE
+`0x60cf`–`0x6381`. It accepts one direction-code word at `[BP+6]` (only
+the low byte is compared), and the caller cleans two argument bytes. The
+observed caller at original EXE `0x66f2`–`0x6704` loads the direction
+from the shared state byte `[word DS:8dce]:e665`, zero-extends and pushes
+it, calls the dispatcher using `push cs; call near`, then uses `add sp,2`.
+The native replay's saved far return `148e:0c28` corresponds to original
+`0x6701`. The routine returns `AX=1`
+on the handled-exit path at `0x6201` and `AX=0` when no indexed or matching
+exit is found (`0x6302`); **handled does not necessarily mean that the
+player moved**. This particular caller overwrites AX with 1 on return,
+so its own caller does not consume the dispatcher's Boolean directly;
+the function's other scratch registers and flags are not established as
+public results.
+
+It reads the current-room word at `[word DS:8dba]:35c6`, its indexed-exit
+count and one-based first-exit index through resident room-record getters,
+then loops over the original four-byte exit records at
+`[word DS:8dcc]:417e`. A record has `direction:u8`, `kind:u8` and
+`argument:u16`. The jump comparisons at `0x6352`–`0x637a` dispatch **five
+different kinds**:
+
+| Kind | Original case block | Established effect |
+| --- | --- | --- |
+| 1 | `0x611d` | Passes the record's room ID to resident room transfer `exe:0x5d5d` |
+| 2 | `0x6156` | Looks up a condition object/destination pair through `[DS:8dd2]`; checks object flags `0x0c` and `0x10`, may set `0x0c`, emit text or move |
+| 3 | `0x6139` | Reads a far text pointer from the `[DS:8dd0]` indexed table, then enters the shared message path; message encoding still requires analysis |
+| 4 | `0x6269` | Calls the room callback with event `0x0f`; a valid different room ID returned in AX feeds room transfer; zero or same-room can be handled without moving |
+| 5 | `0x6207` | Selects data through `[DS:8dd4]`, checks a referenced byte and may feed a far pointer into the shared message path; exact game-level condition unresolved |
+
+The dispatcher can change room state, object flags, child chains and
+game-visible output through its callees. It allocates no guest memory
+directly. See [gateway-map-reference.md](gateway-map-reference.md#recovered-native-room-exit-table-and-resident-scanner)
+for the independently decoded record tables and conditional routes, and
+[action-dispatch.md](action-dispatch.md) for the earlier native location
+transitions and kind-4 callback experiment. These delegated mutations and
+the five case paths make this a **complex** routine, not five separate
+services.
+
+Ghidra 12 exported only the first 69 bytes of the actual routine at
+`0x60cf` and invented nine functions at its internal branch labels
+`0x6114`, `0x611d`, `0x6139`, `0x6156`, `0x6207`, `0x6269`, `0x62a8`,
+`0x6302` and `0x637d`. The only real far return is at `0x6381`, followed
+by the next prologue at `0x6382`. The seeder suppresses these phantoms,
+including the previously named conditional/callback *case labels*, and
+retains one original-offset tracker identity.
+
+The fresh original office walkthrough
+(`build/service-evidence-office/native.trace`, 12 scripted actions) reached
+temporary runtime entry `148e:05f6` (linear `0x14ed6`) **three times** at
+45,158, 48,206 and 51,206 virtual ms, with direction arguments
+`0x0003`, `0x0001`, `0x0001` on their far entry stacks. Earlier native
+EAST/WEST replays independently verified child-relocation and actor-location
+changes following this scanner. This evidence establishes actual invocation
+and the major ABI/control flow, not complete dynamic coverage of all five
+exit kinds or a replacement differential test.
+
 ## Resident object-relation predicate: `exe:0x00254a` (157 handlers)
 
 `gw_native_relation_contains` is a far Boolean predicate over one object's
@@ -381,9 +440,9 @@ epilogue. These counts are *execution occurrences in this one scripted path*,
 not the distinct-caller totals in the table. The full three-way HLE replay
 remains the independent bounded check documented in `object-state.md`.
 
-All eight original `exe` entries and two `ovl` services are **analyzed**, not
+All nine original `exe` entries and two `ovl` services are **analyzed**, not
 ported or fully verified under the future §3.7 per-routine differential
 harness. Both analyzed external RTL wrappers live only in this catalogue,
 not the `exe`/`ovl` tracker. The remaining high-fan-out routines include
-one external RTL target and five resident services; all still require native
+one external RTL target and four resident services; all still require native
 semantic evidence.

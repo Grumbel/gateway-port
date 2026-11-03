@@ -59,8 +59,9 @@ MODULE = re.compile(r'^src/story/[a-z0-9_]+\.(cpp|hpp)$')
 KIND_ORDER = {'service': 0, 'action': 1, 'callback': 2, 'handler': 3, 'unclassified': 4}
 
 # Ghidra 12 splits the recursive relation traversal at an internal loop
-# target (0x2631), starts the 0x3e9c timer scheduler after PUSH BP, and
-# splits two adjacent timer-table helpers into spurious subfunctions.
+# target (0x2631), and the room-exit scanner into nine internal case labels.
+# It also starts the 0x3e9c timer scheduler after PUSH BP and splits two
+# adjacent timer-table helpers into spurious subfunctions.
 # Native 16-bit disassembly (RETF/next PUSH BP) and live routine entries
 # confirm these original EXE extents. Keep this normalization in the seed
 # path so regenerating the unchanged tracker adds/updates no rows.
@@ -74,6 +75,16 @@ NATIVE_BOUNDARY_FIXES = {
     0x3f85: (0x3f85, 61),
     0x3fa5: None,
     0x3fb5: None,
+    0x60cf: (0x60cf, 691),
+    0x6114: None,
+    0x611d: None,
+    0x6139: None,
+    0x6156: None,
+    0x6207: None,
+    0x6269: None,
+    0x62a8: None,
+    0x6302: None,
+    0x637d: None,
 }
 
 

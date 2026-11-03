@@ -189,16 +189,7 @@ exe	0x005d5d		131	service					gw_room_transfer	named				label from KNOWN_RESIDEN
 exe	0x005de2		339	unclassified						unknown				
 exe	0x005f36		405	unclassified						unknown				
 exe	0x0060cb		4	service					gw_room_transfer_return	named				label from KNOWN_RESIDENT in tools/prepare_ghidra.py
-exe	0x0060cf		69	service					gw_room_exit_dispatch	named				label from KNOWN_RESIDENT in tools/prepare_ghidra.py
-exe	0x006114		3	unclassified						unknown				
-exe	0x00611d		28	unclassified						unknown				
-exe	0x006139		29	unclassified						unknown				
-exe	0x006156		176	service					gw_conditional_exit_case	named				label from KNOWN_RESIDENT in tools/prepare_ghidra.py
-exe	0x006207		98	unclassified						unknown				
-exe	0x006269		63	service					gw_callback_exit_case	named				label from KNOWN_RESIDENT in tools/prepare_ghidra.py
-exe	0x0062a8		90	unclassified						unknown				
-exe	0x006302		20	unclassified						unknown				
-exe	0x00637d		5	unclassified						unknown				
+exe	0x0060cf		691	service					gw_room_exit_dispatch	analyzed	complex			Native EXE 0x60cf-0x6381; far one-word direction input; AX handled Boolean; dispatches five room-exit record kinds; child mover and callbacks may mutate game state; three office-walkthrough native entries; nine Ghidra switch-arm fragments are not native functions
 exe	0x006382		72	unclassified						unknown				
 exe	0x0063ca		35	unclassified						unknown				
 exe	0x0063ed		21	unclassified						unknown				
