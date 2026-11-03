@@ -45,6 +45,13 @@
             reuse lint
             touch "$out"
           '';
+          tracker = pkgs.runCommand "gateway-port-tracker" {
+            nativeBuildInputs = [ pkgs.python3 ];
+            src = self;
+          } ''
+            python3 "$src/tools/decomp_status.py" --tracker "$src/decomp/functions.tsv" check
+            touch "$out"
+          '';
         });
       devShells = eachSystem (system:
         let

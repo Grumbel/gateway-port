@@ -16,3 +16,9 @@ SPDX-License-Identifier = "LGPL-2.1-or-later"
 path = ["third_party/font8x8/**"]
 SPDX-FileCopyrightText = "Daniel Hepper <daniel@hepper.net>"
 SPDX-License-Identifier = "LicenseRef-Public-Domain"
+
+[[annotations]]
+path = ["decomp/**", "src/story/**"]
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 Ingo Ruhnke <grumbel@gmail.com>"
+SPDX-License-Identifier = "LicenseRef-Gateway-Derived"
