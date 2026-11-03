@@ -103,6 +103,50 @@ class GatewaySave:
         return result
 
 
+def compare_saved_state(left, right):
+    """Classify differences using the independently verified save layout.
+
+    Preserve file offsets and byte values for undecoded globals, while
+    keeping original object text and serialized records out of the report.
+    The +4 turn-counter interpretation remains provisional.
+    """
+    objects = [a.object_id for a, b in zip(left.objects, right.objects)
+               if a.kind != b.kind or a.raw != b.raw]
+    globals_changed = [(offset, x, y)
+                       for offset, (x, y) in enumerate(zip(left.global_state,
+                                                           right.global_state)) if x != y]
+    event_changes = []
+    for index in range(max(len(left.events), len(right.events))):
+        a = left.events[index] if index < len(left.events) else None
+        b = right.events[index] if index < len(right.events) else None
+        if a != b:
+            event_changes.append(dict(slot=index,
+                                      left=[a.event_id, a.remaining_turns] if a else None,
+                                      right=[b.event_id, b.remaining_turns] if b else None))
+    delta = right.turn_counter - left.turn_counter
+    same_event_ids = ([event.event_id for event in left.events] ==
+                      [event.event_id for event in right.events])
+    consistent_turn_shift = (bool(delta) and bool(left.events) and not objects and
+                             left.description == right.description and same_event_ids and
+                             all(a.remaining_turns - b.remaining_turns == delta
+                                 for a, b in zip(left.events, right.events)) and
+                             all(offset in (4, 5) for offset, _, _ in globals_changed))
+    return dict(file_bytes=[left.file_bytes, right.file_bytes],
+                description_equal=left.description == right.description,
+                object_records_changed=len(objects), object_ids=objects,
+                global_bytes_changed=len(globals_changed),
+                global_byte_changes=[dict(offset=offset,
+                                          file_offset=DESCRIPTION_BYTES + OBJECT_BYTES + offset,
+                                          left=f'{a:02x}', right=f'{b:02x}')
+                                     for offset, a, b in globals_changed],
+                current_room=[left.current_room, right.current_room],
+                previous_room=[left.previous_room, right.previous_room],
+                turn_counter=[left.turn_counter, right.turn_counter],
+                event_counts=[len(left.events), len(right.events)],
+                event_changes=event_changes,
+                turn_shift_consistent=consistent_turn_shift)
+
+
 def parse_gateway_save(data):
     if len(data) < EVENTS_OFFSET:
         raise ValueError(f'truncated Gateway save: {len(data)} < {EVENTS_OFFSET} bytes')
@@ -187,10 +231,16 @@ def main():
     parser.add_argument('--objects', action='store_true', help='include all 734 object descriptors')
     parser.add_argument('--compare-snapshot', type=pathlib.Path, metavar='PREFIX',
                         help='compare serialized records with a native .bin/.regs capture')
+    parser.add_argument('--compare', type=pathlib.Path, metavar='OTHER_SAVE',
+                        help='classify differences against a second original Gateway save')
     args = parser.parse_args()
     try:
         saved = parse_gateway_save(args.save.read_bytes())
         result = saved.summary(args.objects)
+        if args.compare:
+            other = parse_gateway_save(args.compare.read_bytes())
+            result = dict(left=result, right=other.summary(args.objects),
+                          difference=compare_saved_state(saved, other))
         if args.compare_snapshot:
             mismatch = compare_snapshot(saved, args.compare_snapshot)
             result['native_record_mismatches'] = mismatch

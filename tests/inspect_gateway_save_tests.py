@@ -5,13 +5,15 @@
 import pathlib
 import struct
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'tools'))
 
 from inspect_gateway_save import (DESCRIPTION_BYTES, EVENT_BYTES, EVENTS_OFFSET,
                                   GLOBAL_STATE_BYTES, OBJECT_BYTES, OBJECT_KINDS,
-                                  OBJECT_RECORD_SIZES, parse_gateway_save)
+                                  OBJECT_RECORD_SIZES, compare_saved_state,
+                                  parse_gateway_save)
 from inspect_object_state import HANDLER_FIELDS, LOCATION_FIELDS
 
 
@@ -44,6 +46,46 @@ def fake_gateway_save(description='EXAMPLE', room=0x0a, previous=0x09,
 
 
 class GatewaySaveTests(unittest.TestCase):
+    def test_save_comparison_isolates_objects_globals_and_timer_drift(self):
+        events = ((0x25, 230), (0x2a, 290))
+        previous = parse_gateway_save(fake_gateway_save(turns=0x0163, events=events))
+        next_turn = parse_gateway_save(fake_gateway_save(
+            turns=0x0164, events=((0x25, 229), (0x2a, 289))))
+        diff = compare_saved_state(previous, next_turn)
+        self.assertTrue(diff['turn_shift_consistent'])
+        self.assertEqual(diff['object_records_changed'], 0)
+        self.assertEqual([entry['offset'] for entry in diff['global_byte_changes']], [5])
+        self.assertEqual(len(diff['event_changes']), 2)
+        self.assertEqual(diff['turn_counter'], [0x163, 0x164])
+
+        changed = fake_gateway_save(turns=0x0164, events=((0x25, 229), (0x2a, 289)))
+        changed[DESCRIPTION_BYTES + OBJECT_BYTES + 0x30] = 1
+        changed[DESCRIPTION_BYTES + 12] ^= 1  # one ordinary object record byte
+        new_diff = compare_saved_state(previous, parse_gateway_save(changed))
+        self.assertFalse(new_diff['turn_shift_consistent'])
+        self.assertEqual(new_diff['object_records_changed'], 1)
+        self.assertEqual(new_diff['object_ids'], [1])
+        self.assertEqual([entry['offset'] for entry in new_diff['global_byte_changes']],
+                         [5, 0x30])
+
+    def test_golden_save_diff_formatter_reports_decoded_and_unknown_fields(self):
+        from run_golden import describe_save_payload_difference
+
+        with tempfile.TemporaryDirectory() as directory:
+            a, b = [pathlib.Path(directory) / name for name in ('a.sav', 'b.sav')]
+            a.write_bytes(fake_gateway_save(turns=0x0163, events=((0x25, 230),)))
+            changed = fake_gateway_save(turns=0x0164, events=((0x25, 229),))
+            changed[DESCRIPTION_BYTES + OBJECT_BYTES + 0x20] = 77
+            b.write_bytes(changed)
+            details = '\n'.join(describe_save_payload_difference(a, b))
+            self.assertIn('object records changed 0/734', details)
+            self.assertIn('global bytes changed 2/1071', details)
+            self.assertIn('+0x005', details)
+            self.assertIn('+0x020', details)
+            self.assertIn('provisional turn counter a/b=355/356', details)
+            self.assertIn('event records [id, remaining] a/b', details)
+            self.assertNotIn('consistent with a turn-count offset', details)
+
     def test_original_object_layout_has_exact_record_sizes(self):
         self.assertEqual(len(OBJECT_KINDS), 734)
         self.assertEqual({kind: OBJECT_KINDS.count(str(kind)) for kind in range(1, 9)},

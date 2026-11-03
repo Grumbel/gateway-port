@@ -371,13 +371,20 @@ phase or guest heap, and can pass when strict RAM comparison fails. It is
 diagnostic evidence about persistent object state, *not* a replacement
 for the full-RAM equivalence criterion in §2.2 or a baseline acceptance.
 
-The first host run of this mode found exact object/save matches for
-`office` (9/9), `dataman` (6/6), `vr` (6/6), `armory_class` (7/7), and
-`bar_nubar` (12/12), **40 verified checkpoints in total**, then failed on
-an unavailable `DS`/`ES` table in a subsequent stage. The direct
-full-versus-seeded bar comparison separately matched **12/12 common object
-checkpoints and the original bar save**. The RAM-scanning fallback above was
-added after that run; a full host retry is still pending.
+With RAM-table recovery enabled, the host matched **all 59 object-state
+checkpoints in both full campaigns**, spanning all nine stages. The native
+original save SHA-256 values agree through `fork` but differ at the end of
+`terri`, `morning` and `mission_one`. Those are **real differences in the
+serialized files** and cannot be dismissed just because object checkpoints
+match. The direct full-versus-seeded bar comparison also matched **12/12
+common object checkpoints and the original bar save**.
+
+The comparator now further classifies differing saves into the serialized
+20,650-byte native object block, 1,071-byte global-state block and four-byte
+timed-event records. It prints the changed object IDs, global byte offsets,
+decoded room/turn fields, timer record differences and whether the shift is
+consistent with the *provisional* turn counter. These extra details still
+need a host run; no persistent differences are masked or accepted.
 
 The `--probe-arg=FLAG` option forwards a backend flag to each probe invocation
 for future opt-in C++ replacements (§3.8). This is **not** a replacement

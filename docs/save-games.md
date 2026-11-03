@@ -17,6 +17,24 @@ python3 tools/inspect_gateway_save.py build/campaign/office/state/GATE001.SAV \
   --objects --compare-snapshot build/campaign/office/native
 ```
 
+To classify two original saves that have different SHA-256 values, without
+replaying DOS or copying game data into the repository:
+
+```sh
+python3 tools/inspect_gateway_save.py \
+  build/golden/full-fixed-clock/run-a/terri/state/GATE007.SAV \
+  --compare build/golden/full-fixed-clock/run-b/terri/state/GATE007.SAV
+```
+
+The `difference` output lists modified native object IDs, changed byte
+offsets inside the 1,071-byte global block (relative and absolute offsets),
+known room/turn fields, and scheduled-event record differences. A
+`turn_shift_consistent` result means the only changed global bytes belong to
+the *provisional* turn counter and all matching timer IDs have countdowns
+shifted by exactly that amount; it is not proof of equal story state.
+`run_golden.py compare --objects-only` also prints this breakdown
+automatically when a stage's original saves differ.
+
 The parser checks lengths, the description terminator, every native object
 handler index, room IDs, and the event-table count. `--objects` includes all
 734 object descriptors and their exact offsets; the optional snapshot check

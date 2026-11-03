@@ -347,6 +347,41 @@ class GoldenReplayTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'ambiguous native object tables'):
                 extract_native_objects(memory, registers)
 
+    def test_object_only_classifies_valid_but_different_native_saves(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        from inspect_gateway_save_tests import fake_gateway_save
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = self.fake_campaign(root)
+            stage = load_campaign(manifest)[0]
+            for run, turn in (('a', 0x0163), ('b', 0x0164)):
+                for checkpoint in planned_checkpoints(stage, every=10):
+                    self.add_snapshot(root / run, 'first', checkpoint)
+                save = root / run / 'first/state/GATE001.SAV'
+                save.parent.mkdir(parents=True)
+                event_count = 230 if run == 'a' else 229
+                save.write_bytes(fake_gateway_save(
+                    description='FIRST', turns=turn, events=((0x25, event_count),)))
+                (root / run / 'first/stage-meta.json').write_text(json.dumps(dict(
+                    name='first', script_sha256=stage.script_sha256,
+                    save_description='FIRST', original_save=save.name,
+                    save_sha256=hashlib.sha256(save.read_bytes()).hexdigest())),
+                    encoding='ascii')
+            a, b = (capture_campaign(manifest, root / run, 10) for run in ('a', 'b'))
+            objects = [dict(object=index, type=2, raw_state='00')
+                       for index in range(1, 735)]
+            output = StringIO()
+            with mock.patch('run_golden.extract_native_objects', return_value=objects), \
+                    redirect_stdout(output), self.assertRaisesRegex(
+                        ValueError, 'stage=first checkpoint=save: native saved-game'):
+                compare_object_checkpoints(a, b, root / 'a', root / 'b',
+                                           all_checkpoints=True)
+            self.assertIn('object records changed 0/734', output.getvalue())
+            self.assertIn('global offsets (a/b byte): +0x005', output.getvalue())
+            self.assertIn('consistent with a turn-count offset', output.getvalue())
+
     def test_object_table_ram_recovery_when_interrupt_changed_ds_es(self):
         memory = bytearray(MEMORY_SIZE)
         registers = dict(DS=0x1000, ES=0x1100)

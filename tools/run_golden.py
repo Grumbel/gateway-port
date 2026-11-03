@@ -330,9 +330,52 @@ def verified_recorded_save(root, stage):
         raise ValueError(f'{metadata}: missing native save description')
     item = SimpleNamespace(name=stage['name'], script_sha256=stage['script_sha256'],
                            description=meta['save_description'])
-    verified_save(root, item)
+    saved = verified_save(root, item)
     if meta['save_sha256'] != stage.get('save_sha256'):
         raise ValueError(f'{metadata}: native save hash differs from golden manifest')
+    return saved
+
+
+def describe_save_payload_difference(left_path, right_path):
+    """Explain native-save hash drift without conflating globals with objects."""
+    from inspect_gateway_save import compare_saved_state, parse_gateway_save
+
+    a = parse_gateway_save(left_path.read_bytes())
+    b = parse_gateway_save(right_path.read_bytes())
+    difference = compare_saved_state(a, b)
+    ids = difference['object_ids']
+    changes = difference['global_byte_changes']
+    events = difference['event_changes']
+    result = [f'file bytes {a.file_bytes}/{b.file_bytes}; '
+              f'object records changed {len(ids)}/734; '
+              f'global bytes changed {len(changes)}/1071; '
+              f'event records changed {len(events)}/'
+              f'{max(len(a.events), len(b.events))}']
+    if ids:
+        result.append('changed objects (hex IDs): ' + ', '.join(f'{i:x}' for i in ids[:12]) +
+                      (', ...' if len(ids) > 12 else ''))
+    if not difference['description_equal']:
+        result.append('native save descriptions differ')
+    if changes:
+        sample = ', '.join(f'+0x{item["offset"]:03x}:{item["left"]}/{item["right"]}'
+                           for item in changes[:20])
+        result.append('global offsets (a/b byte): ' + sample +
+                      (', ...' if len(changes) > 20 else ''))
+    if difference['current_room'][0] != difference['current_room'][1] or \
+            difference['previous_room'][0] != difference['previous_room'][1]:
+        result.append(f'room current a/b={a.current_room:03x}/{b.current_room:03x}, '
+                      f'previous={a.previous_room:03x}/{b.previous_room:03x}')
+    if a.turn_counter != b.turn_counter:
+        result.append(f'provisional turn counter a/b={a.turn_counter}/{b.turn_counter}')
+    if events:
+        records = ', '.join(f'[{record["slot"]}] {record["left"]}/{record["right"]}'
+                            for record in events[:12])
+        result.append('event records [id, remaining] a/b: ' + records +
+                      (', ...' if len(events) > 12 else ''))
+    if difference['turn_shift_consistent']:
+        result.append('consistent with a turn-count offset and matching event countdowns '
+                      '(not proof of semantic equivalence)')
+    return result
 
 
 def describe_object_difference(left_memory, left_registers, right_memory, right_registers):
@@ -398,8 +441,8 @@ def compare_object_checkpoints(left, right, left_dir, right_dir, all_checkpoints
         if any(not isinstance(digest, str) or not SHA256.fullmatch(digest)
                for digest in hashes):
             raise ValueError(f'{stage}: missing or malformed native saved-game SHA-256')
-        verified_recorded_save(left_dir, a)
-        verified_recorded_save(right_dir, b)
+        left_save = verified_recorded_save(left_dir, a)
+        right_save = verified_recorded_save(right_dir, b)
         if hashes[0] != hashes[1]:
             stage_diffs.append(('save', 'native saved-game SHA-256 differs'))
             if first is None:
@@ -410,6 +453,9 @@ def compare_object_checkpoints(left, right, left_dir, right_dir, all_checkpoints
             if all_checkpoints:
                 for label, reason in stage_diffs:
                     print(f'  {label}: {reason}')
+            if hashes[0] != hashes[1]:
+                for line in describe_save_payload_difference(left_save, right_save):
+                    print(f'  save detail: {line}')
         else:
             print(f'{stage}: {len(ac)}/{len(ac)} object checkpoints and native save match')
     if first:
