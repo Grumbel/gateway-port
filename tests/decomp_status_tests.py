@@ -86,6 +86,16 @@ class TrackerTests(unittest.TestCase):
                          {0x3e9c: '119', 0x3f13: '114', 0x3f85: '61'})
         self.assertEqual(tracker.seed(self.path, functions_path=self.functions), (0, 0))
 
+    def test_recursive_relation_body_keeps_internal_loop_as_one_function(self):
+        header = 'file\toffset\tsection\tghidra_address\tbody_bytes\tname\tsource\n'
+        self.functions.write_text(header + '\n'.join(
+            f'exe\t0x{offset:06x}\t\t105e:{offset:04x}\t{size}\tFUN_A\tDEFAULT'
+            for offset, size in ((0x2603, 46), (0x2631, 63))) + '\n')
+        self.assertEqual(tracker.seed(self.path, functions_path=self.functions), (1, 1))
+        row = tracker.read_tracker(self.path)[0]
+        self.assertEqual((row['offset'], row['size']), ('0x002603', '109'))
+        self.assertEqual(tracker.seed(self.path, functions_path=self.functions), (0, 0))
+
     def test_mark_explicit_handler_boundary_and_reject_tail(self):
         self.seeded()
         report = self.root / 'decompile.json'

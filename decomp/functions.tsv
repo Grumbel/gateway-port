@@ -49,9 +49,8 @@ exe	0x0023c2		81	unclassified						unknown
 exe	0x002413		34	unclassified						unknown				
 exe	0x002465		26	unclassified						unknown				
 exe	0x00254a		82	service					gw_native_relation_contains	analyzed	direct-memory			Native EXE 0x254a-0x259b; far 2-word args object and relation target; descriptor slot loop calls read-only accessor 0x2aff; AX Boolean; catalogue and native replay evidence
-exe	0x00259c		103	unclassified						unknown				
-exe	0x002603		46	unclassified						unknown				
-exe	0x002631		63	unclassified						unknown				
+exe	0x00259c		103	service					gw_relation_contains_in_slot	analyzed	direct-memory			Native EXE 0x259c-0x2602; far three-word args source, target, signed optional slot; AX Boolean; read-only linked relation slots and slot getter; native objects entry captured
+exe	0x002603		109	service					gw_relation_reachable	analyzed	complex			Native EXE 0x2603-0x266f; far two-word source, target; AX Boolean; recursive relation-graph walk with early zero exit and no cycle protection; native objects entry captured; Ghidra 0x2631 was an internal loop, not a function
 exe	0x002670		213	unclassified						unknown				
 exe	0x002725		154	unclassified						unknown				
 exe	0x0027db		85	unclassified						unknown				

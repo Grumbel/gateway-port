@@ -58,13 +58,16 @@ NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 MODULE = re.compile(r'^src/story/[a-z0-9_]+\.(cpp|hpp)$')
 KIND_ORDER = {'service': 0, 'action': 1, 'callback': 2, 'handler': 3, 'unclassified': 4}
 
-# The Ghidra 12 auto-analysis starts the 0x3e9c timer scheduler after PUSH BP,
-# and splits its two adjacent timer-table helpers into spurious subfunctions.
-# Native 16-bit disassembly (RETF/next PUSH BP) and live scheduler entries
+# Ghidra 12 splits the recursive relation traversal at an internal loop
+# target (0x2631), starts the 0x3e9c timer scheduler after PUSH BP, and
+# splits two adjacent timer-table helpers into spurious subfunctions.
+# Native 16-bit disassembly (RETF/next PUSH BP) and live routine entries
 # confirm these original EXE extents. Keep this normalization in the seed
 # path so regenerating the unchanged tracker adds/updates no rows.
 # The tool is Gateway-specific and only accepts the pinned executable family.
 NATIVE_BOUNDARY_FIXES = {
+    0x2603: (0x2603, 109),
+    0x2631: None,
     0x3e9d: (0x3e9c, 119),
     0x3f13: (0x3f13, 114),
     0x3f20: None,

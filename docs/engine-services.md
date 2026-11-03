@@ -35,12 +35,12 @@ by at least 20 **distinct native object-handler functions**:
 | `exe:0x00291e` | 87 | 3 | `gw_set_object_flag`, analyzed |
 | `exe:0x003e9c` | 74 | 13 | `gw_schedule_timed_event`, analyzed |
 | `rtl:0x00e284` | 70 | 0 | External RTL, uncatalogued |
-| `exe:0x002603` | 68 | 11 | Unclassified |
+| `exe:0x002603` | 68 | 11 | `gw_relation_reachable`, analyzed |
 | `rtl:0x0169db` | 61 | 7 | External RTL, uncatalogued |
 | `exe:0x006557` | 57 | 1 | Unclassified |
 | `exe:0x005c30` | 53 | 1 | Unclassified |
 | `exe:0x002951` | 51 | 3 | `gw_clear_object_flag`, analyzed |
-| `exe:0x00259c` | 31 | 8 | Unclassified |
+| `exe:0x00259c` | 31 | 8 | `gw_relation_contains_in_slot`, analyzed |
 | `exe:0x0060cf` | 30 | 8 | `gw_room_exit_dispatch` |
 | `exe:0x003f85` | 29 | 3 | Unclassified |
 | `exe:0x005bd1` | 23 | 0 | Unclassified |
@@ -262,6 +262,52 @@ with object/candidate words at `SS:SP+4`/`+6` (e.g. `0x00d3,0x0125` and
 `0x0126,0x0125`). The offset `1157c` is the default resident *runtime*
 location of original `exe:0x00254a`, not a stable tracker identity.
 
+## Resident relation-slot predicate: `exe:0x00259c` (31 handlers)
+
+`gw_relation_contains_in_slot` accepts three far-call argument words:
+`[BP+6]` source object, `[BP+8]` wanted relation target, and `[BP+0x0a]`
+required slot. Callers clean six argument bytes and use `AX` as a Boolean.
+If the signed required slot is nonnegative, the native body first calls
+`exe:0x2c91` to read the object's slot byte, returning `AX=0` if the slot
+differs. A negative required slot skips that check. It then reads the
+type-dependent relation count from the directory/descriptor tables through
+`[DS:8d50]` and `[DS:8d52]` and compares each immediate relation returned
+by `exe:0x2aff` against the wanted ID. It returns `AX=1` on the first
+match and zero otherwise; unlike the recursive helper below, it does not
+follow the relation transitively. The original function is `0x259c`–`0x2602`
+(103 bytes), has no observed game-state writes or allocations, and does
+not validate the source object's index before the first directory lookup.
+
+The native `objects` replay at `build/service-evidence-relations/native.trace`
+entered this service at temporary resident linear address `0x115ce` at
+25,332 virtual ms. Its far entry stack contained source `0x0123`, wanted
+object `0x00d3`, and required slot `1`. That is an actual original call,
+not just a static cross-reference; branch-level outcomes have not yet been
+recorded by a differential harness.
+
+## Resident recursive relation reachability: `exe:0x002603` (68 handlers)
+
+`gw_relation_reachable` accepts `[BP+6]` source and `[BP+8]` wanted object,
+both words; callers clean four bytes. It returns an `AX=0/1` predicate and
+does not intentionally mutate guest state. Its native `0x2603`–`0x266f`
+(109 bytes) body iterates the source object's type-dependent relation links
+using the accessor `exe:0x2aff`. If a link equals the wanted object it
+returns true; otherwise it recursively calls **itself** with that link as
+the source. A zero-valued link causes an **immediate false return**, even
+when later slots exist, and there is no cycle-detection guard. Both details
+must survive a native reimplementation. The graph's interpretation as
+pure spatial containment has not been established; its exact link layout
+is described in [action-dispatch.md](action-dispatch.md#resident-recursive-object-relations).
+
+Ghidra 12 splits this routine at the interior jump target `0x2631`, falsely
+exporting a second function of 63 bytes. The native prologue at `0x2603`,
+recursive near call at `0x2624`, `retf` at `0x266f` and next prologue at
+`0x2670` prove a single 109-byte body; the tracker seeder now normalizes
+the split. The native `objects` replay entered the routine at temporary
+resident linear `0x11635` at 28,393 virtual ms with arguments
+`(source=0x0260,wanted=0x00d3)`. This verifies a real invocation and the
+original stack layout, not every recursive branch or pathological cycle.
+
 ## Resident object-property services (153 / 87 / 51 handlers)
 
 The original functions at `exe:0x0028e4` (query), `0x00291e` (set) and
@@ -308,8 +354,8 @@ epilogue. These counts are *execution occurrences in this one scripted path*,
 not the distinct-caller totals in the table. The full three-way HLE replay
 remains the independent bounded check documented in `object-state.md`.
 
-All six original `exe` entries and two `ovl` services are **analyzed**, not
+All eight original `exe` entries and two `ovl` services are **analyzed**, not
 ported or fully verified under the future §3.7 per-routine differential
-harness. The remaining high-fan-out routines include three external RTL
-targets, the resident 68-caller service at EXE `0x2603`, and several
-smaller resident services; all still require native semantic evidence.
+harness. The remaining high-fan-out routines include two external RTL
+targets and several resident services; all still require native semantic
+evidence.
