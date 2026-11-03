@@ -112,17 +112,56 @@ independent runs, with 40,265 RTLink calls in each. The preceding full
 campaign instead recorded 40,272 and 40,259 calls in the two bar runs. This
 narrows the issue, but one matched pair does not prove determinism across
 starts. The original full campaign used independently produced `armory_class`
-saves, whereas the seeded retry copied one saved game into both runs. Compare
-those original source saves before attributing the difference to CPU timing:
+saves, whereas the seeded retry copied one saved game into both runs. The host
+compared the original source saves:
 
 ```sh
 sha256sum build/golden/full-fixed-clock/run-{a,b}/armory_class/state/GATE004.SAV
 ```
 
-If they differ, rerun the bar once with each source save (`--seed-from
-.../run-a` and `.../run-b`) to determine which changes the outcome. If they
-match, that rules out different saved-game bytes as the cause and calls for
-further investigation of the native runtime.
+**Both hashes matched** (`2644077990e90e998e62b1c0dda650581a592325ad39921acd0f505e89251c82`).
+Different prior saved-game bytes are therefore not the cause. The full and
+seeded bar stages also produced different RTLink counts while using the same
+source save, so the next step is to locate the first differing call during
+bar execution, not to mask changing memory.
+
+### Diagnose intermittent RTLink differences
+
+The native probe's optional `--trace-rtlink-sequence FILE` writes one line for
+**every validated trampoline invocation**, in execution order: ordinal, guest
+millisecond, RTLink section, target `CS:IP` and original caller `CS:IP`.
+These are code identities only; no game text or executable bytes are logged.
+The golden runner propagates `--trace-rtlink-sequence` through both campaign
+and walkthrough runners and writes one `native.rtlink-sequence` per stage.
+As tracing can slow emulation and produce large files, it is opt-in.
+
+For an intermittent failure, run more than two independent replays from the
+*same verified save* in one invocation:
+
+```sh
+gateway-build
+xvfb-run -a python3 tools/run_golden.py run \
+  tests/fixtures/gateway-campaign.json \
+  --probe /tmp/gateway-port-build/gateway-probe \
+  --data ../gateway-dos \
+  --from-stage bar_nubar --through-stage bar_nubar \
+  --seed-from build/golden/full-fixed-clock/run-a \
+  --output build/golden/bar-rtlink-diagnostic \
+  --every 5 --runs 4 --trace-rtlink-sequence
+```
+
+Up to eight independent runs (`--runs 2..8`, default two) are supported.
+Every run gets a new private save directory; the runner checks each subsequent
+run against `run-a` immediately, stopping at the first mismatch. The error
+now also reports the first *different RTLink target/caller*, the two guest
+millisecond timestamps and the preceding calls. If code-call order agrees,
+it instead shows the first timestamp drift. This tells us whether the RAM
+mismatch accompanies a new code path or a pure timing difference. The
+sequence traces remain in the ignored output directory for further analysis.
+
+If the first group of four happens to match, use a fresh output path and
+repeat; one passing group is evidence only for those runs. No new exclusion
+has been added to the strict RAM oracle.
 
 Compare subsequent native builds or a replacement-enabled probe against the
 same baseline:

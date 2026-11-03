@@ -8,11 +8,14 @@ Run native guest replays under a private Xvfb display on a machine with Unicorn.
 """
 
 import argparse
+from collections import deque
 import hashlib
+from itertools import zip_longest
 import json
 from pathlib import Path
 import re
 import shutil
+import string
 import subprocess
 import sys
 
@@ -25,6 +28,9 @@ CONVENTIONAL_END = 0xa0000
 # BIOS Data Area tick counter. This is host-paced state, not Gateway story state.
 VOLATILE_RANGES = ((0x046c, 0x0470, 'BIOS timer ticks'),)
 SHA256 = re.compile(r'[0-9a-f]{64}\Z')
+RTLINK_SEQUENCE = re.compile(
+    r'rtlink-seq id=([0-9]+) ms=([0-9]+) section=([0-9]+) '
+    r'target=([0-9a-f]+):([0-9a-f]+) caller=([0-9a-f]+):([0-9a-f]+)\Z')
 
 
 def read_registers(path):
@@ -241,6 +247,67 @@ def describe_stage_save(left_dir, right_dir, stage):
         return ''
 
 
+def rtlink_sequence_record(line, index):
+    match = RTLINK_SEQUENCE.fullmatch(line.rstrip('\n'))
+    if match is None or int(match[1]) != index:
+        raise ValueError(f'malformed RTLink call sequence at event {index}')
+    ms = int(match[2])
+    section = int(match[3])
+    target = (int(match[4], 16), int(match[5], 16))
+    caller = (int(match[6], 16), int(match[7], 16))
+    if section >= 58 or any(number > 0xffff for number in target + caller):
+        raise ValueError(f'invalid RTLink code identity at event {index}')
+    return ms, (section, *target, *caller)
+
+
+def format_rtlink_record(record):
+    if record is None:
+        return 'end-of-trace'
+    ms, (section, cs, ip, caller_cs, caller_ip) = record
+    return (f'ms={ms} section={section} target={cs:x}:{ip:x} '
+            f'caller={caller_cs:x}:{caller_ip:x}')
+
+
+def describe_rtlink_sequence(left_dir, right_dir, stage):
+    """Locate the first differing call identity (or timestamp), without guest bytes.
+
+    This is a diagnostic only: target/caller timelines may vary even when
+    the strict RAM and original-save oracles match. Do not normalize them away.
+    """
+    if not left_dir or not right_dir:
+        return ''
+    paths = [(root / stage / 'native.rtlink-sequence')
+             for root in (left_dir, right_dir)]
+    if not any(path.exists() for path in paths):
+        return ''
+    if not all(path.is_file() for path in paths):
+        raise ValueError(f'RTLink call sequence missing on one side for stage {stage}')
+    first_time_drift = None
+    previous = deque(maxlen=2)
+    count = 0
+    with paths[0].open(encoding='ascii') as a, paths[1].open(encoding='ascii') as b:
+        for count, (line_a, line_b) in enumerate(zip_longest(a, b), 1):
+            left = rtlink_sequence_record(line_a, count) if line_a is not None else None
+            right = rtlink_sequence_record(line_b, count) if line_b is not None else None
+            if left is None or right is None or left[1] != right[1]:
+                context = (f'; preceding calls {", ".join(map(str, previous))}'
+                           if previous else '')
+                time_context = (f'; first time drift at call {first_time_drift[0]} '
+                                f'ms={first_time_drift[1]}/{first_time_drift[2]}'
+                                if first_time_drift else '')
+                return (f'RTLink first code-call difference at #{count}: '
+                        f'a {format_rtlink_record(left)}; b {format_rtlink_record(right)}'
+                        f'{context}{time_context}')
+            if first_time_drift is None and left[0] != right[0]:
+                first_time_drift = (count, left[0], right[0])
+            previous.append(f'#{count} {format_rtlink_record(left)}')
+    if first_time_drift:
+        index, a_ms, b_ms = first_time_drift
+        return (f'RTLink code-call order identical ({count} calls); '
+                f'first guest-ms difference at #{index}: {a_ms}/{b_ms}')
+    return f'RTLink call sequences identical ({count} calls)'
+
+
 def with_stage_save_hashes(record, campaign_dir):
     """Enrich old hash-only manifests from their existing local run metadata."""
     if not campaign_dir:
@@ -308,6 +375,9 @@ def explain_difference(a, b, left_dir, right_dir, stage, label):
         stage_save = describe_stage_save(left_dir, right_dir, stage)
         if stage_save:
             details.append(stage_save)
+        rtlink_detail = describe_rtlink_sequence(left_dir, right_dir, stage)
+        if rtlink_detail:
+            details.append(rtlink_detail)
         return '; ' + '; '.join(details)
     except (OSError, ValueError):
         return ''
@@ -323,6 +393,11 @@ def check_pair(left, right, left_dir=None, right_dir=None):
         raise ValueError(f'first divergence: stage={stage} checkpoint={label}: {reason}{detail}')
     count = sum(len(stage['checkpoints']) for stage in left['stages'])
     print(f'Golden replay matched: {len(left["stages"])} stages, {count} RAM checkpoints')
+    if left_dir and right_dir:
+        for stage in left['stages']:
+            detail = describe_rtlink_sequence(left_dir, right_dir, stage['name'])
+            if detail:
+                print(f'  {stage["name"]}: {detail}')
 
 
 def report_checkpoint_drift(left, right, left_dir=None, right_dir=None):
@@ -381,13 +456,16 @@ def seed_previous_stage(manifest, from_stage, source, target):
 
 
 def run_campaign(manifest, probe, data, output, every, timeout, verify_overlays,
-                 probe_args, through_stage=None, from_stage=None):
+                 probe_args, through_stage=None, from_stage=None,
+                 trace_rtlink_sequence=False):
     command = [sys.executable, str(Path(__file__).with_name('run_walkthrough_campaign.py')),
                str(manifest), '--probe', str(probe), '--data', str(data),
                '--output', str(output), '--golden-every', str(every),
                '--timeout', str(timeout)]
     if verify_overlays:
         command.append('--verify-overlays')
+    if trace_rtlink_sequence:
+        command.append('--trace-rtlink-sequence')
     if through_stage:
         command += ['--through-stage', through_stage]
     if from_stage:
@@ -414,12 +492,14 @@ def main():
     compare.add_argument('--right-campaign', type=Path)
     compare.add_argument('--all-checkpoints', action='store_true',
                          help='list all differing checkpoints, including later recovery')
-    run = commands.add_parser('run', help='run two isolated campaigns and compare RAM checkpoints')
+    run = commands.add_parser('run', help='run independent campaigns and compare RAM checkpoints')
     run.add_argument('manifest', type=Path)
     run.add_argument('--probe', type=Path, default=Path('/tmp/gateway-port-build/gateway-probe'))
     run.add_argument('--data', type=Path, default=Path('../gateway-dos'))
     run.add_argument('--output', type=Path, default=Path('build/golden'))
     run.add_argument('--every', type=int, default=10)
+    run.add_argument('--runs', type=int, default=2, metavar='N',
+                     help='number of independent replays, 2–8 (default: 2)')
     run.add_argument('--through-stage', metavar='NAME',
                      help='run only through this stage while diagnosing early mismatches')
     run.add_argument('--from-stage', metavar='NAME',
@@ -428,6 +508,8 @@ def main():
                      help='prior native campaign containing the preceding stage save')
     run.add_argument('--timeout', type=int, default=1800)
     run.add_argument('--verify-overlays', action='store_true')
+    run.add_argument('--trace-rtlink-sequence', action='store_true',
+                     help='trace each RTLink code-call identity and report first discrepancy')
     run.add_argument('--probe-arg', action='append', default=[], metavar='ARG',
                      help='forward backend flag; requires support in the selected probe')
     run.add_argument('--baseline', type=Path, help='compare each run against known good hashes')
@@ -450,6 +532,8 @@ def main():
         else:
             if args.timeout <= 0:
                 raise ValueError('--timeout must be positive')
+            if not 2 <= args.runs <= 8:
+                raise ValueError('--runs must be between 2 and 8')
             selected = selected_stages(args.manifest, args.from_stage, args.through_stage)
             begins_at_first = selected[0].name == load_campaign(args.manifest)[0].name
             if begins_at_first and args.seed_from:
@@ -461,31 +545,33 @@ def main():
                 previous = previous_stages[[x.name for x in previous_stages].index(
                     args.from_stage) - 1]
                 verified_save(args.seed_from, previous)
-            if args.output.joinpath('run-a').resolve() == args.output.joinpath('run-b').resolve():
-                raise ValueError('run directories must be distinct')
             baseline = read_manifest(args.baseline) if args.baseline else None
             # Never reuse a stale game state directory; two independent runs
             # must start from scratch or their saved-game handoffs are invalid.
-            for suffix in ('a', 'b'):
+            for suffix in string.ascii_lowercase[:args.runs]:
                 root = args.output / f'run-{suffix}'
                 if root.exists():
                     raise ValueError(f'{root} already exists; choose a fresh --output')
             records = []
-            for suffix in ('a', 'b'):
+            for suffix in string.ascii_lowercase[:args.runs]:
                 root = args.output / f'run-{suffix}'
                 print(f'Starting independent native campaign {suffix}', flush=True)
                 if args.seed_from:
                     seed_previous_stage(args.manifest, args.from_stage, args.seed_from, root)
                 run_campaign(args.manifest, args.probe, args.data, root, args.every,
                              args.timeout, args.verify_overlays, args.probe_arg,
-                             args.through_stage, args.from_stage)
+                             args.through_stage, args.from_stage,
+                             args.trace_rtlink_sequence)
                 hashed = capture_campaign(args.manifest, root, args.every,
                                           args.through_stage, args.from_stage)
                 save_manifest(args.output / f'run-{suffix}.json', hashed)
                 if baseline is not None:
                     check_pair(baseline, hashed)
+                if records:
+                    check_pair(records[0], hashed,
+                               args.output / 'run-a', root)
                 records.append(hashed)
-            check_pair(*records, args.output / 'run-a', args.output / 'run-b')
+            print(f'Validated {len(records)} independent campaign runs', flush=True)
             if args.write_baseline:
                 save_manifest(args.write_baseline, records[0])
                 print(f'Validated baseline written to {args.write_baseline}')

@@ -150,6 +150,8 @@ struct State {
     std::map<std::tuple<std::uint16_t, std::uint16_t, std::uint16_t>, RtlinkCallCount>
         rtlink_calls;
     std::uint64_t rtlink_manager_hits = 0, rtlink_unrecognized_calls = 0;
+    std::ofstream rtlink_sequence;
+    std::uint64_t rtlink_sequence_calls = 0;
     std::ofstream rtlink_events;
     std::set<std::tuple<std::uint16_t, std::uint16_t, std::uint16_t>> rtlink_event_targets;
     struct RtlinkFrame {
@@ -1115,6 +1117,19 @@ void trace_rtlink_call(uc_engine *uc, std::uint64_t, std::uint32_t,
             count.first_ms = state.elapsed_ms;
         ++count.calls;
         count.last_ms = state.elapsed_ms;
+        if (state.rtlink_sequence.is_open()) {
+            // Record only code identities and timing, never guest data or
+            // executable bytes. The caller is the far return below the
+            // trampoline manager's near return address.
+            std::array<std::uint16_t, 2> caller{};
+            check(uc_mem_read(uc, std::uint64_t(ss) * 16 + std::uint16_t(sp + 2),
+                              caller.data(), sizeof(caller)));
+            state.rtlink_sequence << "rtlink-seq id=" << std::dec
+                                  << ++state.rtlink_sequence_calls << " ms=" << state.elapsed_ms
+                                  << " section=" << section << std::hex << " target="
+                                  << target_cs << ':' << target_ip << " caller=" << caller[1]
+                                  << ':' << caller[0] << std::dec << '\n';
+        }
         if (!state.rtlink_events.is_open() ||
             !state.rtlink_event_targets.contains({section, target_cs, target_ip}) ||
             state.rtlink_event_calls >= State::rtlink_event_limit)
@@ -1872,6 +1887,7 @@ int main(int argc, char **argv) {
     std::filesystem::path debug_directory;
     unsigned milliseconds = 0;
     std::string dump_prefix, block_trace_path, rtlink_calls_path, rtlink_events_path;
+    std::string rtlink_sequence_path;
     std::filesystem::path key_script_path;
     bool key_at_used = false;
     std::set<std::tuple<std::uint16_t, std::uint16_t, std::uint16_t>> rtlink_event_targets;
@@ -1906,6 +1922,7 @@ int main(int argc, char **argv) {
                      "[--milliseconds N] [--dump-prefix PATH] [--game-args TEXT] [--press KEY] "
                      "[--break-at HEX] [--state-dir DIR | --read-only] [--trace-blocks FILE] "
                      "[--trace-rtlink-calls FILE] "
+                     "[--trace-rtlink-sequence FILE] "
                      "[--key-script FILE --milliseconds N] "
                      "[--dump-at MS:PREFIX ...] "
                      "[--mouse-click-at MS:X:Y ...] "
@@ -2114,6 +2131,8 @@ int main(int argc, char **argv) {
             block_trace_path = argv[++i];
         else if (option == "--trace-rtlink-calls" && i + 1 < argc)
             rtlink_calls_path = argv[++i];
+        else if (option == "--trace-rtlink-sequence" && i + 1 < argc)
+            rtlink_sequence_path = argv[++i];
         else if (option == "--trace-rtlink-events" && i + 1 < argc)
             rtlink_events_path = argv[++i];
         else if (option == "--trace-rtlink-target" && i + 1 < argc) {
@@ -2306,6 +2325,11 @@ int main(int argc, char **argv) {
         state.probe_adlib = probe_adlib;
         state.watched_bytes.insert(trace_byte_writes.begin(), trace_byte_writes.end());
         state.rtlink_event_targets = rtlink_event_targets;
+        if (!rtlink_sequence_path.empty()) {
+            state.rtlink_sequence.open(rtlink_sequence_path);
+            if (!state.rtlink_sequence)
+                throw std::runtime_error("cannot open RTLink call sequence trace");
+        }
         if (!rtlink_events_path.empty()) {
             state.rtlink_events.open(rtlink_events_path);
             if (!state.rtlink_events)
@@ -2486,7 +2510,8 @@ int main(int argc, char **argv) {
             check(uc_hook_add(engine.uc, &block_hook, UC_HOOK_BLOCK,
                               reinterpret_cast<void *>(trace_block), &state, 1, 0));
         uc_hook rtlink_call_hook;
-        if (!rtlink_calls_path.empty() || !rtlink_events_path.empty())
+        if (!rtlink_calls_path.empty() || !rtlink_events_path.empty() ||
+            !rtlink_sequence_path.empty())
             check(uc_hook_add(engine.uc, &rtlink_call_hook, UC_HOOK_CODE,
                               reinterpret_cast<void *>(trace_rtlink_call), &state,
                               0x2c7cd, 0x2c7cd));
@@ -2832,6 +2857,11 @@ int main(int argc, char **argv) {
             trace.close();
             if (!trace)
                 throw std::runtime_error("cannot write RTLink call census");
+        }
+        if (state.rtlink_sequence.is_open()) {
+            state.rtlink_sequence.close();
+            if (!state.rtlink_sequence)
+                throw std::runtime_error("cannot write RTLink call sequence trace");
         }
         if (state.rtlink_events.is_open()) {
             state.rtlink_events << "rtlink-events selected=" << state.rtlink_event_calls

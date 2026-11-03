@@ -389,11 +389,17 @@ startup of the earlier stages while investigating command timing. No volatile
 RAM exclusion has yet been justified by these observations.
 The first seed-based `bar_nubar` rerun matched 16/16 checkpoints and 40,265
 RTLink calls in both runs. This establishes reproducibility for that pair,
-not yet for independently generated prior saves: the earlier full campaign
+not yet for all launches: the earlier full campaign
 recorded 40,272 versus 40,259 RTLink calls. The golden runner now retains
 and compares native save SHA-256 values at every stage boundary, including
-legacy replay metadata, to rule out differing handoff saves before adjusting
-the emulation clock or transient-memory masks.
+legacy replay metadata. The host verified the two preceding `armory_class`
+original saves were *byte-identical*, excluding differing save payloads as
+the cause. `gateway-probe` can now record an opt-in RTLink target/caller
+timeline for every validated call. The golden runner propagates this trace,
+reports the earliest code-call or guest-millisecond divergence and accepts
+2–8 independent seeded runs to expose intermittent behavior. The strict
+RAM comparison and its exclusions are unchanged. Next: run the bar timeline
+on the native host and investigate the first divergent entry.
 
 ### 3.7 [ ] Per-routine differential tester
 
@@ -592,6 +598,7 @@ passes with `--replace-verified`.
 | 2026-11-03 | 3.5 | Completed the eighteen ≥20-handler service catalogue. A private-Xvfb native three-command replay reached `exe:0x5bd1` twice for `(object=0x124,slot=0)`; its section-4 child-count (`ovl:0xbf3d`) and list-emission (`ovl:0xb910`) callees returned AX=1 on all six traced calls. Qualified RTLink return snapshots confirmed zero count-helper writes and one initial object property-7 write by the list formatter, with no changes on repeated examinations. Resolved both trampolines using third EXE base `0xa73a`; renamed the service `gw_present_child_list` and marked it analyzed, not ported or §3.7-verified. Next: §3.6 deterministic golden replays. |
 | 2026-11-03 | 3.6 (ongoing) | Added independently isolated native golden campaign runner with per-ten-command and stage-end checkpoints; SHA-256 of 640 KiB conventional RAM excludes only documented BIOS tick counter and live SS:SP stack tail, with exclusion bounds included in hash manifests. Synthetic tests confirm matching runs ignore transient stack/clock bytes, detect the first one-byte story mutation at its exact command, and reject stale scripts. Awaiting two native host runs and deliberately bad opt-in replacement before marking the phase complete. |
 | 2026-11-03 | 3.6 (ongoing) | Host ran both nine-stage campaigns successfully but memory hashes diverged at `office/initial_items` after command 2, first unmasked byte `0x55ae6`; some later RTLink call counts also differed. Audited the runtime and found that virtual DOS INT 21h date/time readings came from `system_clock::now()`, so independent launches were fed different clock seeds. Added an explicit deterministic UTC clock for golden replays (1992-01-01 noon), retaining host time for interactive play, and augmented first-divergence diagnostics with changed-page distribution. Host retest still pending. |
+| 2026-11-03 | 3.6 (ongoing) | Full fixed-clock campaign matches through `armory_class` but first RAM difference is `bar_nubar/golden-command-000010`; all 734 object records and the bar stage-end original saves match despite different transient CPU state. Independent bar-only seed replay matched 16/16 checkpoints and 40,265 RTLink calls in both runs, whereas the full run saw 40,272/40,259. Host SHA-256 proved its two preceding `GATE004.SAV` files byte-identical. Added optional per-call RTLink target/caller/guest-time sequence traces and 2–8 independently seeded golden runs to locate first intermittent execution divergence; native trace results still pending. |
 
 ## 10. Risks and how to react
 

@@ -14,10 +14,11 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from run_golden import (CONVENTIONAL_END, MEMORY_SIZE, capture_campaign, check_pair,
-                        describe_cpu_difference, describe_stage_save, excluded_ranges,
+                        describe_cpu_difference, describe_rtlink_sequence, describe_stage_save,
+                        excluded_ranges,
                         explain_difference, first_divergence, normalized_memory,
                         planned_checkpoints, read_manifest, report_checkpoint_drift,
-                        run_campaign, save_manifest, seed_previous_stage,
+                        main as golden_main, run_campaign, save_manifest, seed_previous_stage,
                         selected_stages, snapshot_prefix, with_stage_save_hashes)
 from run_walkthrough import compile_steps, parse_script
 from run_walkthrough_campaign import load_campaign
@@ -292,6 +293,60 @@ class GoldenReplayTests(unittest.TestCase):
             save.write_bytes(save.read_bytes() + b'corruption')
             with self.assertRaisesRegex(ValueError, 'modified'):
                 seed_previous_stage(manifest, 'second', source, root / 'c')
+
+    def test_rtlink_sequence_finds_first_call_and_timing_drift(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            a = root / 'run-a/first/native.rtlink-sequence'
+            b = root / 'run-b/first/native.rtlink-sequence'
+            for path in (a, b):
+                path.parent.mkdir(parents=True)
+            def record(index, ms, target, caller='4661:17b8'):
+                return (f'rtlink-seq id={index} ms={ms} section=4 '
+                        f'target=4319:{target} caller={caller}\n')
+            first = record(1, 1200, 'd5d')
+            second = record(2, 1300, '730')
+            third = record(3, 1500, '730')
+            a.write_text(first + second + third, encoding='ascii')
+            b.write_text(first + second + third, encoding='ascii')
+            self.assertIn('identical (3 calls)',
+                          describe_rtlink_sequence(root / 'run-a', root / 'run-b', 'first'))
+            b.write_text(first + record(2, 1301, '730') + third, encoding='ascii')
+            self.assertIn('first guest-ms difference at #2: 1300/1301',
+                          describe_rtlink_sequence(root / 'run-a', root / 'run-b', 'first'))
+            b.write_text(first + record(2, 1301, 'a13') + third, encoding='ascii')
+            detail = describe_rtlink_sequence(root / 'run-a', root / 'run-b', 'first')
+            self.assertIn('first code-call difference at #2', detail)
+            self.assertIn('target=4319:730', detail)
+            self.assertIn('target=4319:a13', detail)
+            self.assertIn('preceding calls #1', detail)
+            b.write_text(first, encoding='ascii')
+            self.assertIn('b end-of-trace',
+                          describe_rtlink_sequence(root / 'run-a', root / 'run-b', 'first'))
+            b.write_text('rtlink-seq id=7 ms=1200 section=4 target=4319:d5d '
+                         'caller=4661:17b8\n', encoding='ascii')
+            with self.assertRaisesRegex(ValueError, 'malformed RTLink call sequence'):
+                describe_rtlink_sequence(root / 'run-a', root / 'run-b', 'first')
+            b.unlink()
+            with self.assertRaisesRegex(ValueError, 'missing on one side'):
+                describe_rtlink_sequence(root / 'run-a', root / 'run-b', 'first')
+
+    def test_sequence_trace_flag_reaches_campaign(self):
+        with mock.patch('run_golden.subprocess.run') as invoke:
+            run_campaign(Path('campaign.json'), Path('probe'), Path('data'),
+                         Path('output'), 5, 100, False, [],
+                         trace_rtlink_sequence=True)
+        self.assertIn('--trace-rtlink-sequence', invoke.call_args.args[0])
+
+    def test_independent_run_count_is_bounded(self):
+        for count in ('1', '9', 'not-a-number'):
+            with self.subTest(count=count), \
+                 mock.patch.object(sys, 'argv', ['run_golden.py', 'run',
+                                                'campaign.json', '--runs', count]), \
+                 mock.patch('sys.stderr'):
+                with self.assertRaises(SystemExit) as caught:
+                    golden_main()
+                self.assertEqual(caught.exception.code, 2)
 
 
 if __name__ == '__main__':

@@ -436,6 +436,8 @@ def run(args, replay):
         command += ['--trace-rtlink-events', str(prefix.with_suffix('.rtlink-events'))]
         for target in args.trace_target:
             command += ['--trace-rtlink-target', target]
+    if getattr(args, 'trace_rtlink_sequence', False):
+        command += ['--trace-rtlink-sequence', str(prefix.with_suffix('.rtlink-sequence'))]
     for ms, x, y in replay.mouse_clicks:
         command += ['--mouse-click-at', f'{ms}:{x}:{y}']
     command += getattr(args, 'probe_arg', [])
@@ -481,6 +483,8 @@ def main():
     replay.add_argument('--trace-object-writes', metavar='OBJECTHEX',
                         help='verify state services and watch one native object record')
     replay.add_argument('--trace-target', action='append', metavar='SECTION:CS:IP')
+    replay.add_argument('--trace-rtlink-sequence', action='store_true',
+                        help='log every validated RTLink target/caller and guest millisecond')
     replay.add_argument('--capture-labels', action='store_true',
                         help='save a native framebuffer, RAM, and CPU snapshot at each LABEL')
     replay.add_argument('--check-labels', action='store_true',

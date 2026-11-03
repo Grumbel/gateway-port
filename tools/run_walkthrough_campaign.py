@@ -129,6 +129,8 @@ def run_campaign(stages, args):
             cmd.append('--verify-overlays')
         if getattr(args, 'golden_every', None) is not None:
             cmd += ['--golden-every', str(args.golden_every)]
+        if getattr(args, 'trace_rtlink_sequence', False):
+            cmd.append('--trace-rtlink-sequence')
         for argument in getattr(args, 'probe_arg', []):
             cmd.append('--probe-arg=' + argument)
         for entry in args.extra_trace_entry or []:
@@ -159,6 +161,8 @@ def main():
     parser.add_argument('--verify-overlays', action='store_true')
     parser.add_argument('--golden-every', type=int, metavar='N',
                         help='record extra RAM checkpoints after each N parser commands')
+    parser.add_argument('--trace-rtlink-sequence', action='store_true',
+                        help='record target/caller timeline of validated RTLink calls per stage')
     parser.add_argument('--probe-arg', action='append', default=[], metavar='ARG',
                         help='forward an argument to the native probe (repeatable)')
     parser.add_argument('--extra-trace-entry', action='append', metavar='LINEARHEX',
