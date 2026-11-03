@@ -86,15 +86,18 @@ RTL retry loop continuing while there is no work/input available and
 breaking on a pending event. The two helpers' exact contracts, condition
 for the transition and non-object side effects are still unverified.
 
-In the next seeded bar test, detailed tracing began at **53,500 guest ms**.
-All **256 sampled entries and returns** matched; every call returned `AX=1`
-(one `0000 -> 0001`, then 255 `0001 -> 0001`) and the summary reported
-**zero object-record byte deltas**. The summarized output does not establish
-whether native object-table snapshots were available for every event.
-This is direct runtime evidence
-that the RTL loop is spinning in the no-event state during that sampled
-interval, not evidence that the target can never mutate other guest memory.
-There is no native/HLE replacement yet.
+In a seeded bar test, detailed tracing began at **53,500 guest ms**. All
+**256 sampled entries and returns** matched; every call returned `AX=1`
+(one `0000 -> 0001`, then 255 `0001 -> 0001`). A follow-up capture starting
+at **143,995 guest ms** observed **59 entries and 59 matched returns**:
+58 returned `AX=1`, then **one returned `AX=0` at 144,000 guest ms**. The
+retry loop therefore terminates normally when this target changes its
+result; the observed extra iterations are not distinct story-handler calls.
+Both samples reported zero object-record byte deltas, but the summary does
+not establish whether native object-table snapshots were available for
+every event. Neither sample proves there were no non-object memory writes.
+The two underlying helpers' specific event conditions remain unidentified;
+there is no native/HLE replacement yet.
 
 ## External text formatter: `rtl:0x0169f4` (600 object handlers)
 

@@ -239,33 +239,145 @@ def describe_cpu_difference(left, right):
     return 'CPU a/b ' + ', '.join(differences) if differences else 'CPU registers match'
 
 
-def describe_object_difference(left_memory, left_registers, right_memory, right_registers):
-    """Check complete native object records, independent of volatile RTLink buffers."""
+def extract_native_objects(memory, registers):
+    """Require one unambiguous, complete native object table at DS or ES."""
     from inspect_object_state import inspect_objects
 
-    def objects(memory, registers):
-        for name in ('DS', 'ES'):
-            if name not in registers:
-                continue
-            try:
-                found = inspect_objects(memory, registers[name])
-            except (ValueError, IndexError):
-                continue
-            if len(found) == 734:
-                return found
-        return None
+    found_tables = []
+    for name in ('DS', 'ES'):
+        if name not in registers:
+            continue
+        try:
+            found = inspect_objects(memory, registers[name])
+        except (ValueError, IndexError):
+            continue
+        if len(found) == 734:
+            found_tables.append((name, found))
+    if not found_tables:
+        raise ValueError('object records unavailable (no verified 734-object table at DS/ES)')
+    primary = found_tables[0][1]
+    for name, other in found_tables[1:]:
+        if object_state_changes(primary, other):
+            raise ValueError(f'ambiguous native object tables (DS/ES disagree at {name})')
+    return primary
 
-    left = objects(left_memory, left_registers)
-    right = objects(right_memory, right_registers)
-    if left is None or right is None:
-        return 'object records unavailable (no verified table at DS/ES)'
-    changed = [a['object'] for a, b in zip(left, right)
-               if a['raw_state'] != b['raw_state']]
+
+def object_state_changes(left, right):
+    """Compare original record kinds and all record bytes, not host pointers."""
+    if len(left) != 734 or len(right) != 734:
+        raise ValueError('expected 734 native object records on both sides')
+    return [a['object'] for a, b in zip(left, right)
+            if a['object'] != b['object'] or a['type'] != b['type']
+            or a['raw_state'] != b['raw_state']]
+
+
+def verified_checkpoint_objects(root, stage, checkpoint):
+    """Reject snapshots modified after the original golden hash capture."""
+    prefix = snapshot_prefix(root, stage, checkpoint['label'])
+    recorded = digest_snapshot(prefix, checkpoint)
+    for key in ('sha256', 'stack', 'excluded'):
+        if recorded[key] != checkpoint.get(key):
+            raise ValueError(f'{prefix}: stale native snapshot ({key} differs from manifest)')
+    return extract_native_objects(prefix.with_suffix('.bin').read_bytes(),
+                                  read_registers(prefix.with_suffix('.regs')))
+
+
+def verified_recorded_save(root, stage):
+    """Validate original stage save bytes, not just the recorded metadata."""
+    from types import SimpleNamespace
+
+    metadata = root / stage['name'] / 'stage-meta.json'
+    meta = json.loads(metadata.read_text(encoding='utf-8'))
+    if not isinstance(meta, dict) or not isinstance(meta.get('save_description'), str):
+        raise ValueError(f'{metadata}: missing native save description')
+    item = SimpleNamespace(name=stage['name'], script_sha256=stage['script_sha256'],
+                           description=meta['save_description'])
+    verified_save(root, item)
+    if meta['save_sha256'] != stage.get('save_sha256'):
+        raise ValueError(f'{metadata}: native save hash differs from golden manifest')
+
+
+def describe_object_difference(left_memory, left_registers, right_memory, right_registers):
+    """Check complete native object records, independent of volatile RTLink buffers."""
+    try:
+        left = extract_native_objects(left_memory, left_registers)
+        right = extract_native_objects(right_memory, right_registers)
+    except ValueError:
+        return 'object records unavailable (no unambiguous verified table at DS/ES)'
+    changed = object_state_changes(left, right)
     if not changed:
         return 'object records identical (734/734)'
     sample = ','.join(f'{number:x}' for number in changed[:12])
     suffix = ',...' if len(changed) > 12 else ''
     return f'object records changed {len(changed)}/734 (IDs {sample}{suffix})'
+
+
+def compare_object_checkpoints(left, right, left_dir, right_dir, all_checkpoints=False):
+    """Diagnostic object-state oracle; deliberately independent of RAM hashes.
+
+    Every checkpoint must have readable guest RAM and exactly 734 validated
+    native records. This is weaker than the strict full-RAM oracle and must
+    never be used to approve a native/HLE replacement as fully equivalent.
+    """
+    if left_dir is None or right_dir is None:
+        raise ValueError('--objects-only requires --left-campaign and --right-campaign')
+    left = with_stage_save_hashes(left, left_dir)
+    right = with_stage_save_hashes(right, right_dir)
+    for key in ('schema_version', 'campaign_sha256', 'every', 'memory_end'):
+        if left.get(key) != right.get(key):
+            raise ValueError(f'cannot compare object state: {key} differs')
+    if len(left['stages']) != len(right['stages']):
+        raise ValueError('cannot compare object state: stage count differs')
+
+    first = None
+    count = 0
+    for a, b in zip(left['stages'], right['stages']):
+        stage = a['name']
+        if stage != b.get('name') or a.get('script_sha256') != b.get('script_sha256'):
+            raise ValueError(f'cannot compare object state: stage {stage} name/script differs')
+        ac, bc = a.get('checkpoints'), b.get('checkpoints')
+        if not isinstance(ac, list) or not isinstance(bc, list) or len(ac) != len(bc):
+            raise ValueError(f'cannot compare object state: {stage} checkpoint count differs')
+        stage_diffs = []
+        for x, y in zip(ac, bc):
+            label = x['label']
+            for key in ('label', 'time_ms', 'action_index', 'command_index'):
+                if x.get(key) != y.get(key):
+                    raise ValueError(f'cannot compare object state: {stage}/{label} {key} differs')
+            changes = object_state_changes(
+                verified_checkpoint_objects(left_dir, stage, x),
+                verified_checkpoint_objects(right_dir, stage, y))
+            count += 1
+            if changes:
+                sample = ','.join(f'{number:x}' for number in changes[:12])
+                suffix = ',...' if len(changes) > 12 else ''
+                reason = (f'{len(changes)}/734 object records differ (IDs {sample}{suffix})'
+                          f' at command {x["command_index"]}, ms={x["time_ms"]}')
+                stage_diffs.append((label, reason))
+                if first is None:
+                    first = f'stage={stage} checkpoint={label}: {reason}'
+        hashes = (a.get('save_sha256'), b.get('save_sha256'))
+        if any(not isinstance(digest, str) or not SHA256.fullmatch(digest)
+               for digest in hashes):
+            raise ValueError(f'{stage}: missing or malformed native saved-game SHA-256')
+        verified_recorded_save(left_dir, a)
+        verified_recorded_save(right_dir, b)
+        if hashes[0] != hashes[1]:
+            stage_diffs.append(('save', 'native saved-game SHA-256 differs'))
+            if first is None:
+                first = f'stage={stage} checkpoint=save: native saved-game SHA-256 differs'
+        if stage_diffs:
+            print(f'{stage}: {len(stage_diffs)} object/save differences '
+                  f'across {len(ac)} checkpoints')
+            if all_checkpoints:
+                for label, reason in stage_diffs:
+                    print(f'  {label}: {reason}')
+        else:
+            print(f'{stage}: {len(ac)}/{len(ac)} object checkpoints and native save match')
+    if first:
+        raise ValueError(f'first object-state divergence: {first}')
+    print(f'Object-state replay matched: {len(left["stages"])} stages, '
+          f'{count} checkpoints (734 raw object records each), native stage saves')
 
 
 def describe_stage_save(left_dir, right_dir, stage):
@@ -528,6 +640,9 @@ def main():
                          help='list all differing checkpoints, including later recovery')
     compare.add_argument('--common-checkpoints', action='store_true',
                          help='compare shared stage/label snapshots despite different --every')
+    compare.add_argument('--objects-only', action='store_true',
+                         help='compare all 734 native object records and stage saves at each '
+                         'checkpoint, ignoring CPU/RAM (diagnostic only)')
     run = commands.add_parser('run', help='run independent campaigns and compare RAM checkpoints')
     run.add_argument('manifest', type=Path)
     run.add_argument('--probe', type=Path, default=Path('/tmp/gateway-port-build/gateway-probe'))
@@ -564,11 +679,14 @@ def main():
                 left, right = align_common_checkpoints(left, right)
                 print(f'Comparing {sum(len(s["checkpoints"]) for s in left["stages"])} '
                       f'common checkpoints across {len(left["stages"])} shared stages')
-            if args.all_checkpoints:
-                report_checkpoint_drift(left, right, args.left_campaign,
-                                        args.right_campaign)
-            check_pair(left, right,
-                       args.left_campaign, args.right_campaign)
+            if args.objects_only:
+                compare_object_checkpoints(left, right, args.left_campaign,
+                                           args.right_campaign, args.all_checkpoints)
+            else:
+                if args.all_checkpoints:
+                    report_checkpoint_drift(left, right, args.left_campaign,
+                                            args.right_campaign)
+                check_pair(left, right, args.left_campaign, args.right_campaign)
         else:
             if args.timeout <= 0:
                 raise ValueError('--timeout must be positive')

@@ -259,10 +259,32 @@ it returns 1 when two underlying helper results are both zero. This is
 stronger evidence for a no-event retry loop, but does not identify all
 non-object side effects. The `--format summary` view groups sampled AX
 returns, changes and guest-time spans rather than printing all 256 rows.
-The 256-call cap still applies **after** the selected time; use another
-`--trace-rtlink-after-ms` value close to the terminal call time (144,000 ms
-in the census) to capture a possible zero result. A partial sampling window
-must not be mistaken for the entire call census.
+The subsequent host capture started at **143,995 ms** and observed **59
+matched entry/return pairs**: 58 returned `AX=1`, followed by **one `AX=0`
+at 144,000 ms**. No sampled call reported object-record changes; 59 calls
+are a small end-of-loop sample, not the entire 38,212-call target census.
+The RTL retry loop thus exits normally when the tested target reports an
+event. To reproduce this end-of-loop capture, use the complete commands:
+
+```sh
+xvfb-run -a python3 tools/run_walkthrough.py run \
+  tests/fixtures/gateway-bar-nubar-restore-save.walk \
+  --probe /tmp/gateway-port-build/gateway-probe \
+  --data ../gateway-dos \
+  --import-save build/golden/full-fixed-clock/run-a/armory_class/state/GATE004.SAV \
+  --expect-save FULLCASINO \
+  --check-labels \
+  --output build/golden/bar-loop-final \
+  --trace-target 0:4319:6ee \
+  --probe-arg=--deterministic-clock \
+  --probe-arg=--trace-rtlink-after-ms \
+  --probe-arg=143995
+python3 tools/inspect_rtlink_events.py \
+  build/golden/bar-loop-final/native.rtlink-events --format summary
+```
+
+The underlying event condition, all non-object side effects and the rest
+of full-campaign RAM-state drift are still unverified.
 Do **not** ignore this target, widen the volatile memory mask, or bless a
 full-campaign golden baseline on the current evidence.
 
@@ -319,6 +341,32 @@ are printed, never original game bytes or object contents. The object-record
 check requires a verified 734-object table at `DS` or `ES` in both snapshots;
 if either CPU snapshot is in another segment it reports that fact rather than
 guessing.
+
+For a complementary, **weaker** comparison of the already-recorded full
+campaign, `--objects-only` parses the original 734 object records at *every*
+checkpoint and also requires the stage-end native save SHA-256 to agree. It
+checks stage/script/command/time identity, rehashes every checkpoint against
+its original manifest, verifies saved-game bytes, and refuses missing,
+malformed or ambiguous object tables or missing save hashes. Unlike the
+first-divergence strict diagnostic, this covers object records throughout the full campaign
+without re-running the game:
+
+```sh
+python3 tools/run_golden.py compare \
+  build/golden/full-fixed-clock/run-a.json \
+  build/golden/full-fixed-clock/run-b.json \
+  --left-campaign build/golden/full-fixed-clock/run-a \
+  --right-campaign build/golden/full-fixed-clock/run-b \
+  --objects-only \
+  --all-checkpoints
+```
+
+The same mode accepts `--common-checkpoints` when comparing the full run
+against a separately seeded stage with a different `--every` interval.
+It **does not** compare globals outside the object records, CPU execution
+phase or guest heap, and can pass when strict RAM comparison fails. It is
+diagnostic evidence about persistent object state, *not* a replacement
+for the full-RAM equivalence criterion in §2.2 or a baseline acceptance.
 
 The `--probe-arg=FLAG` option forwards a backend flag to each probe invocation
 for future opt-in C++ replacements (§3.8). This is **not** a replacement

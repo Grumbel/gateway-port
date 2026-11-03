@@ -14,9 +14,9 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from run_golden import (CONVENTIONAL_END, MEMORY_SIZE, align_common_checkpoints,
-                        capture_campaign, check_pair,
+                        capture_campaign, check_pair, compare_object_checkpoints,
                         describe_cpu_difference, describe_rtlink_sequence, describe_stage_save,
-                        excluded_ranges,
+                        excluded_ranges, extract_native_objects,
                         explain_difference, first_divergence, normalized_memory,
                         planned_checkpoints, read_manifest, report_checkpoint_drift,
                         main as golden_main, run_campaign, save_manifest, seed_previous_stage,
@@ -257,6 +257,94 @@ class GoldenReplayTests(unittest.TestCase):
             self.assertIn('save_sha256', with_stage_save_hashes(a, root / 'a')['stages'][0])
             with self.assertRaisesRegex(ValueError, 'checkpoint=save'):
                 check_pair(a, b, root / 'a', root / 'b')
+
+    def test_object_only_comparison_keeps_strict_ram_oracle_and_reports_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = self.fake_campaign(root)
+            checkpoints = planned_checkpoints(load_campaign(manifest)[0], every=10)
+            for run in ('a', 'b'):
+                for checkpoint in checkpoints:
+                    self.add_snapshot(root / run, 'first', checkpoint)
+                stage = load_campaign(manifest)[0]
+                saved = root / run / 'first/state/GATE001.SAV'
+                saved.parent.mkdir(parents=True)
+                saved.write_bytes(b'FIRST'.ljust(33, b' ') + b'same-save')
+                (root / run / 'first/stage-meta.json').write_text(json.dumps(dict(
+                    name='first', script_sha256=stage.script_sha256,
+                    save_description='FIRST', original_save=saved.name,
+                    save_sha256=hashlib.sha256(saved.read_bytes()).hexdigest())),
+                    encoding='ascii')
+            a, b = (capture_campaign(manifest, root / run, 10) for run in ('a', 'b'))
+
+            # The object-only mode must tolerate unrelated RAM differences
+            # without changing the existing strict snapshot comparison.
+            prefix = snapshot_prefix(root / 'b', 'first', 'seen')
+            raw = bytearray(prefix.with_suffix('.bin').read_bytes())
+            raw[0x30000] += 1
+            prefix.with_suffix('.bin').write_bytes(raw)
+            b = capture_campaign(manifest, root / 'b', 10)
+            self.assertIsNotNone(first_divergence(a, b))
+
+            def objects(memory, _registers):
+                mutated = memory[0x30001]
+                return [dict(object=index, type=2,
+                             raw_state=('01' if index == 42 and mutated else '00'))
+                        for index in range(1, 735)]
+
+            from io import StringIO
+            from contextlib import redirect_stdout
+            out = StringIO()
+            with mock.patch('run_golden.extract_native_objects', side_effect=objects):
+                with redirect_stdout(out):
+                    compare_object_checkpoints(a, b, root / 'a', root / 'b')
+            self.assertIn('Object-state replay matched:', out.getvalue())
+            with self.assertRaisesRegex(ValueError, 'RAM SHA-256 differs'):
+                check_pair(a, b)
+
+            raw = bytearray(prefix.with_suffix('.bin').read_bytes())
+            raw[0x30001] = 1
+            prefix.with_suffix('.bin').write_bytes(raw)
+            b = capture_campaign(manifest, root / 'b', 10)
+            out = StringIO()
+            with mock.patch('run_golden.extract_native_objects', side_effect=objects), \
+                    redirect_stdout(out), self.assertRaisesRegex(
+                        ValueError, 'stage=first checkpoint=seen: 1/734 object records '
+                                    'differ \\(IDs 2a\\)'):
+                compare_object_checkpoints(a, b, root / 'a', root / 'b', all_checkpoints=True)
+            self.assertIn('seen: 1/734 object records differ', out.getvalue())
+
+            # Changing only the manifest is also rejected as a stale save.
+            b['stages'][0]['save_sha256'] = 'b' * 64
+            with mock.patch('run_golden.extract_native_objects', side_effect=objects), \
+                    self.assertRaisesRegex(ValueError, 'native save hash differs from golden'):
+                compare_object_checkpoints(a, b, root / 'a', root / 'b')
+            with self.assertRaisesRegex(ValueError, 'requires --left-campaign'):
+                compare_object_checkpoints(a, b, None, root / 'b')
+            b = capture_campaign(manifest, root / 'b', 10)
+            raw = bytearray(prefix.with_suffix('.bin').read_bytes())
+            raw[0x30002] = 99
+            prefix.with_suffix('.bin').write_bytes(raw)
+            with mock.patch('run_golden.extract_native_objects', side_effect=objects), \
+                    self.assertRaisesRegex(ValueError, 'stale native snapshot \\(sha256 differs'):
+                compare_object_checkpoints(a, b, root / 'a', root / 'b')
+            prefix.with_suffix('.bin').unlink()
+            with mock.patch('run_golden.extract_native_objects', side_effect=objects), \
+                    self.assertRaises(FileNotFoundError):
+                compare_object_checkpoints(a, b, root / 'a', root / 'b')
+
+    def test_object_only_fails_closed_without_unambiguous_native_table(self):
+        memory = bytes(MEMORY_SIZE)
+        registers = dict(DS=0x2000, ES=0x2100)
+        def table(value):
+            return [dict(object=index, type=2, raw_state=f'{value:02x}')
+                    for index in range(1, 735)]
+        with mock.patch('inspect_object_state.inspect_objects', side_effect=ValueError('bad')):
+            with self.assertRaisesRegex(ValueError, 'object records unavailable'):
+                extract_native_objects(memory, registers)
+        with mock.patch('inspect_object_state.inspect_objects', side_effect=[table(1), table(2)]):
+            with self.assertRaisesRegex(ValueError, 'ambiguous native object tables'):
+                extract_native_objects(memory, registers)
 
     def test_seeded_late_stage_replay_checks_original_save_and_isolates_state(self):
         with tempfile.TemporaryDirectory() as directory:
