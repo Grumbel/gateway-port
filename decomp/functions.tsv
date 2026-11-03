@@ -20,7 +20,7 @@ exe	0x000cc9		60	unclassified						unknown
 exe	0x000d06		216	unclassified						unknown				
 exe	0x000e10		139	unclassified						unknown				
 exe	0x001056		8	unclassified						unknown				
-exe	0x00105e		904	unclassified						unknown				
+exe	0x00105e		904	service					gw_dispatch_action_context	analyzed	complex			Native EXE 0x105e-0x13e5; far 3-word action/objects input; scopes parser context and tries object events 1-6 then selector and action dispatcher; AX result; native objects replay and EXE 0x2309 caller
 exe	0x0013e6		82	unclassified						unknown				
 exe	0x00149f		90	unclassified						unknown				
 exe	0x00154f		73	unclassified						unknown				

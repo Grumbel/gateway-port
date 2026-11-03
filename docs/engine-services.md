@@ -28,7 +28,7 @@ by at least 20 **distinct native object-handler functions**:
 | --- | ---: | ---: | --- |
 | `rtl:0x0169f4` | 600 | 170 | External RTL, analyzed formatter (below) |
 | `ovl:0x00b1e0` (section 4) | 186 | 108 | `gw_format_object_phrase`, analyzed |
-| `exe:0x00105e` | 185 | 67 | Unclassified |
+| `exe:0x00105e` | 185 | 67 | `gw_dispatch_action_context`, analyzed |
 | `exe:0x00254a` | 157 | 15 | `gw_native_relation_contains`, analyzed |
 | `exe:0x0028e4` | 153 | 46 | `gw_test_object_flag`, analyzed |
 | `ovl:0x00c830` (section 4) | 147 | 17 | `gw_relocate_child` |
@@ -125,6 +125,55 @@ be occupied by *other* overlay sections, so only entries during a confirmed
 section-4 activation are evidence for this service. This establishes the
 major effects and ABI, not every bit of the formatting flags.
 
+## Resident action-context coordinator: `exe:0x00105e` (185 handlers)
+
+`gw_dispatch_action_context` is a resident **action/event dispatch coordinator**,
+not the lower-level action table dispatcher itself. The original far routine
+spans `GATEMAIN.EXE:0x105e`–`0x13e5`. It receives three 16-bit stack words:
+`[BP+6]` action/event ID (only the low byte is saved for dispatch),
+`[BP+8]` first object ID and `[BP+0x0a]` second object ID. It returns AX
+from the selected stage, with caller cleanup of six argument bytes. The
+caller at `exe:0x2301`–`0x2315` pushes precisely these three arguments,
+executes `push cs; call near 0x105e`, uses `add sp,6`, and tests whether
+AX equals **2**.
+
+The native stages are:
+
+1. Increment nesting counter `[DS:0x359c]`, preserve the previous action
+   byte, object IDs and two 40-byte context blocks, and install this call's
+   values in the global parser context. The active objects' type bytes are
+   derived through the six-byte object directory.
+2. Call the section-4 per-object setup helper via validated RTLink stub
+   `1c24:12d1` (original OVL `0xc5e7`) for both object IDs. The nested
+   helper may update object-related global state; this is not a pure call.
+3. Call the resident object-handler dispatcher (original EXE `0x5a46`,
+   linked `0476:00f8`) for staged event codes 1–6 against context objects
+   and relevant locations, stopping when a stage returns nonzero.
+4. If none intercepts, call the action selector (original EXE `0x5956`,
+   linked `0476:0008`), then the final action-table dispatcher (original EXE
+   `0x5994`, linked `0476:0046`). Both are distinct from this routine.
+5. Restore the saved global context and copied blocks, decrement the depth,
+   return the selected result in AX via `retf`.
+
+One notable original edge path is at `exe:0x1066`–`0x10b9`: when a nested
+invocation repeats the same action and object IDs too many times, the code
+increments `[DS:0xadb2]`, sends a diagnostic through the RTL formatter,
+and returns `AX=2`. This early jump bypasses the ordinary context restore
+and nesting-counter decrement; do not silently normalize that behavior in
+a future C++ translation. Exact semantics of individual event codes and the
+reason for the duplicate-invocation threshold remain open.
+
+The `objects` native trace (`build/service-evidence-dispatch/native.trace`)
+captured eight ordinary calls to default-layout entry `1000:01a4` and eight
+common epilogue visits. The entry words include actions `0x005f`,
+`0x0071`, `0x0046`, `0x0053`, `0x0032`, and `0x001d`, with the matching
+first-object IDs at `SS:SP+6`. The epilogue hook at `1000:0523` observes
+the context-restore path immediately **before** `mov ax,[bp-0x5a]`;
+therefore it does not itself verify final return AX. This is the default
+resident launch mapping, not a reusable service identity. The known
+action-table/selector behavior is independently documented in
+[action-dispatch.md](action-dispatch.md).
+
 ## Resident object-relation predicate: `exe:0x00254a` (157 handlers)
 
 `gw_native_relation_contains` is a far Boolean predicate over one object's
@@ -193,7 +242,8 @@ epilogue. These counts are *execution occurrences in this one scripted path*,
 not the distinct-caller totals in the table. The full three-way HLE replay
 remains the independent bounded check documented in `object-state.md`.
 
-All four original `exe` entries and one `ovl` service are **analyzed**, not
+All five original `exe` entries and one `ovl` service are **analyzed**, not
 ported or fully verified under the future §3.7 per-routine differential
-harness. The remaining high-fan-out routines, particularly the 185-caller
-resident dispatcher, require more detailed classification.
+harness. The remaining high-fan-out routines, particularly the 147-caller
+child-relocation helper and the 74-caller scheduled-event queue service,
+require more detailed classification.
