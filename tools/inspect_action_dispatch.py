@@ -92,6 +92,7 @@ def main():
     parser.add_argument('--all', action='store_true', help='show all 195 native actions')
     parser.add_argument('--overlay-map', type=pathlib.Path,
                         help='gateway-overlay JSON manifest for original file offsets')
+    parser.add_argument('--format', choices=('text', 'json'), default='text')
     args = parser.parse_args()
     if args.action and args.all:
         parser.error('--action and --all are mutually exclusive')
@@ -102,6 +103,10 @@ def main():
                               int(registers['DS'], 16), ids)
     if args.overlay_map:
         records = map_action_entries(records, json.loads(args.overlay_map.read_text()))
+    if args.format == 'json':
+        print(json.dumps(dict(schema_version=1, action_count=len(records), actions=records),
+                         indent=2))
+        return
     print('action  table_pointer  selector trailer  reference / original code offset  observed_input')
     for record in records:
         action = record['action']
