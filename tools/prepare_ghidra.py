@@ -272,6 +272,7 @@ def add_action_labels(actions, manifest, label_at):
     seen_ids = set()
     seen_entries = set()
     mapped_count = 0
+    resident = []
     for item in actions['actions']:
         action = item.get('action')
         if not isinstance(action, int) or not 1 <= action <= 195 or action in seen_ids:
@@ -281,8 +282,12 @@ def add_action_labels(actions, manifest, label_at):
         native = item.get('native_code')
         if reference is None:
             if native is not None:
-                raise ValueError('action has mapped code but no validated RTLink reference')
-            # Resident actions are mapped separately from the original EXE.
+                if (action not in (0x5f, 0x6d, 0x98, 0xaf) or
+                        native.get('filename') != 'GATEMAIN.EXE' or
+                        not isinstance(native.get('file_offset'), int) or
+                        native['file_offset'] < 0):
+                    raise ValueError('action has mapped code but no validated RTLink reference')
+                resident.append((action, native['file_offset']))
             continue
         if native is None:
             raise ValueError('action RTLink reference lacks an original-code mapping')
@@ -298,7 +303,9 @@ def add_action_labels(actions, manifest, label_at):
                  'action ID 0x%02x; RTLink-mapped native entry; '
                  'function boundary provisional' % action, mapped['section'])
         mapped_count += 1
-    return mapped_count
+    if resident and {action for action, _ in resident} != {0x5f, 0x6d, 0x98, 0xaf}:
+        raise ValueError('resident action report must map all four actions')
+    return mapped_count, resident
 
 
 def prepare(exe, ovl, output, extractor, objects_json=None, allow_unknown=False,
@@ -323,6 +330,7 @@ def prepare(exe, ovl, output, extractor, objects_json=None, allow_unknown=False,
         objects = map_handler_entries(doc['objects'], manifest)
     sections, label_at = plan_sections(manifest, images, objects, decompile_objects,
                                        decompile_offsets)
+    resident_actions = []
     if callbacks_json:
         if allow_unknown:
             raise ValueError('native room callback labels require fingerprinted Gateway binaries')
@@ -330,7 +338,8 @@ def prepare(exe, ovl, output, extractor, objects_json=None, allow_unknown=False,
     if actions_json:
         if allow_unknown:
             raise ValueError('native action labels require fingerprinted Gateway binaries')
-        mapped = add_action_labels(json.loads(actions_json.read_text()), manifest, label_at)
+        mapped, resident_actions = add_action_labels(json.loads(actions_json.read_text()),
+                                                     manifest, label_at)
         if mapped != 191:
             raise ValueError('expected 191 overlay actions and 4 resident actions; got %d' %
                              mapped)
@@ -348,6 +357,14 @@ def prepare(exe, ovl, output, extractor, objects_json=None, allow_unknown=False,
                 raise ValueError('resident file signature outside EXE')
             resident.append(dict(file_offset=offset, name=name, role=role,
                                  explanation=explanation, signature=data[offset:offset+24].hex()))
+        for action, offset in resident_actions:
+            if offset + 24 > len(data):
+                raise ValueError('resident action signature outside original EXE')
+            resident.append(dict(file_offset=offset, name='gw_action_%02x' % action,
+                                 role='action-entry',
+                                 explanation='action ID 0x%02x; independently mapped '
+                                             'from resident RAM; provisional boundary' % action,
+                                 signature=data[offset:offset+24].hex()))
     plan = dict(schema_version=1, game='Gateway 1 (1992)',
                 fingerprinted_gateway=not allow_unknown,
                 exe_file=str(exe.resolve()), exe_sha256=hashes['exe'],

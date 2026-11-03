@@ -387,7 +387,7 @@ for label in plan['resident_labels']:
         continue
     address = matches[0]
     annotate(address, label)
-    if label['role'] == 'function':
+    if label['role'] in ('function', 'action-entry'):
         disassemble(address)
     resident_matches[label['name']] = str(address)
 

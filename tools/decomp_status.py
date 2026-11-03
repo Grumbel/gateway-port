@@ -146,7 +146,7 @@ def read_inventory(path):
 
 
 def read_actions(path):
-    """Map overlay action handlers and selector callbacks from inspect_action_dispatch.py."""
+    """Map original action handlers and selector callbacks from inspect_action_dispatch.py."""
     report = json.loads(path.read_text())
     if report.get('schema_version') != 1 or report.get('action_count') != len(report['actions']):
         raise TrackerError(f'{path}: not an inspect_action_dispatch.py --format json report')
@@ -156,10 +156,13 @@ def read_actions(path):
             code = item.get(code_key)
             if not code:
                 continue
-            if code['filename'] != 'GATEMAIN.OVL':
+            filename = code['filename']
+            if filename not in ('GATEMAIN.OVL', 'GATEMAIN.EXE'):
                 raise TrackerError(f'{path}: unexpected file {code["filename"]!r}')
-            key = ('ovl', code['file_offset'])
-            entry = entries.setdefault(key, dict(section=str(code['section']), kind=kind,
+            file = 'ovl' if filename == 'GATEMAIN.OVL' else 'exe'
+            key = (file, code['file_offset'])
+            section = str(code['section']) if file == 'ovl' else ''
+            entry = entries.setdefault(key, dict(section=section, kind=kind,
                                                  actions=[], selectors=[]))
             if entry['kind'] != kind:
                 entry['kind'] = 'action'

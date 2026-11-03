@@ -89,7 +89,7 @@ exe	0x00331d		82	unclassified						unknown
 exe	0x00336f		82	unclassified						unknown				
 exe	0x0033c1		82	unclassified						unknown				
 exe	0x003413		82	unclassified						unknown				
-exe	0x003465		453	unclassified						unknown				
+exe	0x003465		339	unclassified						unknown				
 exe	0x003540		86	unclassified						unknown				
 exe	0x003596		90	unclassified						unknown				
 exe	0x0035f0		87	unclassified						unknown				
@@ -190,7 +190,7 @@ exe	0x005c58		261	unclassified						unknown
 exe	0x005d5d		471	service					gw_room_transfer	named				label from KNOWN_RESIDENT in tools/prepare_ghidra.py
 exe	0x005f36		405	unclassified						unknown				
 exe	0x0060cb		4	service					gw_room_transfer_return	named				label from KNOWN_RESIDENT in tools/prepare_ghidra.py
-exe	0x0060cf		178	service					gw_room_exit_dispatch	named				label from KNOWN_RESIDENT in tools/prepare_ghidra.py
+exe	0x0060cf		69	service					gw_room_exit_dispatch	named				label from KNOWN_RESIDENT in tools/prepare_ghidra.py
 exe	0x006114		3	unclassified						unknown				
 exe	0x00611d		28	unclassified						unknown				
 exe	0x006139		29	unclassified						unknown				
@@ -210,7 +210,10 @@ exe	0x0064ab		8	unclassified						unknown
 exe	0x0064b3		164	unclassified						unknown				
 exe	0x006557		88	unclassified						unknown				
 exe	0x0065af		186	unclassified						unknown				
-exe	0x00670e		20	unclassified						unknown				
+exe	0x006669		24	action				0x5f		unknown				
+exe	0x006681		141	action				0x98		unknown				
+exe	0x00670e		20	action				0x6d		unknown				
+exe	0x006722		214	action				0xaf		unknown				
 exe	0x006783		23	unclassified						unknown				
 exe	0x00686d		55	unclassified						unknown				
 exe	0x0068a4		74	unclassified						unknown				
@@ -263,7 +266,7 @@ exe	0x0084c3		1819	unclassified						unknown
 exe	0x008be0		336	unclassified						unknown				
 exe	0x008d32		8	unclassified						unknown				
 exe	0x008d3a		17	unclassified						unknown				
-exe	0x008d4b		219	unclassified						unknown				
+exe	0x008d4b		211	unclassified						unknown				
 exe	0x008f25		144	unclassified						unknown				
 exe	0x008fb5		69	unclassified						unknown				
 exe	0x0090f6		56	unclassified						unknown				
@@ -367,6 +370,7 @@ exe	0x010015		19	unclassified						unknown
 exe	0x010029		1417	unclassified						unknown				
 exe	0x01003d		3	unclassified						unknown				
 exe	0x010051		1	unclassified						unknown				
+exe	0x01005b		8	unclassified						unknown				
 exe	0x010065		10	unclassified						unknown				
 exe	0x01006f		21	unclassified						unknown				
 exe	0x01074f		228	unclassified						unknown				

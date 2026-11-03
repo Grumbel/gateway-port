@@ -11,9 +11,11 @@ trampoline (near CALL to the manager gate, followed by a far JMP and section
 ID), not the embedded reference at offset +4.
 """
 import argparse
+import hashlib
 import json
 import pathlib
 import struct
+from prepare_ghidra import EXPECTED_HASHES
 from rtlink_trampoline import decode_trampoline, map_reference, sections_by_id
 
 
@@ -84,6 +86,54 @@ def map_action_entries(entries, manifest):
     return output
 
 
+def map_resident_actions(entries, memory, exe, relocation,
+                         expected_sha256=EXPECTED_HASHES['GATEMAIN.EXE']):
+    """Map four resident pointers with unique code signatures and relocation checks."""
+    if hashlib.sha256(exe).hexdigest() != expected_sha256 or exe[:2] != b'MZ':
+        raise ValueError('resident action mapping requires the fingerprinted main EXE')
+    if (len(entries) != ACTION_COUNT or
+            {item['action'] for item in entries} != set(range(1, ACTION_COUNT + 1))):
+        raise ValueError('resident mapping requires all 195 distinct actions')
+    residents = [item for item in entries if 'rtlink_reference' not in item]
+    if {item['action'] for item in residents} != {0x5f, 0x6d, 0x98, 0xaf}:
+        raise ValueError('unexpected resident action IDs in native table')
+    if len({item['handler_segment'] for item in residents}) != 1:
+        raise ValueError('resident actions do not share a code segment')
+    if not 0 <= relocation <= 0xffff:
+        raise ValueError('invalid RTLink relocation factor')
+
+    deltas = set()
+    result = []
+    for item in entries:
+        mapped = dict(item)
+        if item in residents:
+            address = item['handler_segment'] * 16 + item['handler_offset']
+            if not 0 <= address <= min(len(memory), 0xa0000) - 96:
+                raise ValueError('resident action pointer outside guest RAM')
+            prefix = memory[address:address + 8]
+            offset = exe.find(prefix)
+            if offset < 0 or exe.find(prefix, offset + 1) >= 0 or offset + 96 > len(exe):
+                raise ValueError('resident action signature is not unique in original EXE')
+            deltas.add(offset - item['handler_offset'])
+
+            # RTLink adjusts the segment of far CALL (9a) operands at load.
+            # A 96-byte neighborhood must otherwise match byte for byte.
+            for index in range(96):
+                if exe[offset + index] == memory[address + index]:
+                    continue
+                if index < 4 or exe[offset + index - 4] != 0x9a:
+                    raise ValueError('resident action bytes differ outside far-call relocation')
+                original = struct.unpack_from('<H', exe, offset + index - 1)[0]
+                live = struct.unpack_from('<H', memory, address + index - 1)[0]
+                if (live - original) & 0xffff != relocation:
+                    raise ValueError('resident action far-call relocation differs')
+            mapped['native_code'] = dict(filename='GATEMAIN.EXE', file_offset=offset)
+        result.append(mapped)
+    if len(deltas) != 1:
+        raise ValueError('resident code segment does not have a single EXE offset base')
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('snapshot', type=pathlib.Path, help='probe dump prefix, without .bin')
@@ -92,17 +142,28 @@ def main():
     parser.add_argument('--all', action='store_true', help='show all 195 native actions')
     parser.add_argument('--overlay-map', type=pathlib.Path,
                         help='gateway-overlay JSON manifest for original file offsets')
+    parser.add_argument('--resident-exe', type=pathlib.Path,
+                        help='verify four direct resident actions against GATEMAIN.EXE; '
+                             'requires --all --overlay-map')
     parser.add_argument('--format', choices=('text', 'json'), default='text')
     args = parser.parse_args()
     if args.action and args.all:
         parser.error('--action and --all are mutually exclusive')
+    if args.resident_exe and (not args.all or not args.overlay_map):
+        parser.error('--resident-exe requires --all --overlay-map')
     registers = dict(line.split('=', 1) for line in
                      args.snapshot.with_suffix('.regs').read_text().splitlines())
     ids = range(1, ACTION_COUNT + 1) if args.all else (args.action or KNOWN_ACTIONS.keys())
     records = inspect_actions(args.snapshot.with_suffix('.bin').read_bytes(),
                               int(registers['DS'], 16), ids)
     if args.overlay_map:
-        records = map_action_entries(records, json.loads(args.overlay_map.read_text()))
+        manifest = json.loads(args.overlay_map.read_text())
+        records = map_action_entries(records, manifest)
+        if args.resident_exe:
+            records = map_resident_actions(records,
+                                           args.snapshot.with_suffix('.bin').read_bytes(),
+                                           args.resident_exe.read_bytes(),
+                                           manifest['relocation'])
     if args.format == 'json':
         print(json.dumps(dict(schema_version=1, action_count=len(records), actions=records),
                          indent=2))

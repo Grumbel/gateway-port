@@ -62,6 +62,18 @@ class TrackerTests(unittest.TestCase):
         row = tracker.read_tracker(self.path)[0]
         self.assertEqual((row['size'], row['name'], row['state']), ('64', '', 'unknown'))
 
+    def test_resident_action_is_seeded_as_exe_action(self):
+        self.actions.write_text(json.dumps(dict(schema_version=1, action_count=1,
+                                                actions=[dict(action=0x5f, native_code=dict(
+                                                    filename='GATEMAIN.EXE', file_offset=0x6669))])))
+        self.functions.write_text('file\toffset\tsection\tghidra_address\tbody_bytes\tname\tsource\n'
+                                  'exe\t0x006669\t\t105e:6069\t20\tgw_action_5f\tUSER_DEFINED\n')
+        tracker.seed(self.path, functions_path=self.functions, actions_path=self.actions)
+        row = tracker.read_tracker(self.path)[0]
+        self.assertEqual((row['file'], row['offset'], row['section'], row['kind'],
+                          row['action'], row['size'], row['name']),
+                         ('exe', '0x006669', '', 'action', '0x5f', '20', ''))
+
     def test_seed_merges_sources(self):
         rows = self.seeded()
         self.assertEqual(len(rows), 7)

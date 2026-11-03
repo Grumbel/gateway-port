@@ -5,13 +5,14 @@
 import sys
 import unittest
 from pathlib import Path
+import hashlib
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from disassemble_story import annotate, event_targets, text_id
 from gateway_strings import GatewayStrings
 from gateway_vocab import GatewayVocabulary
 from summarize_story_trace import collect_actions, summarize
-from inspect_action_dispatch import inspect_actions, map_action_entries
+from inspect_action_dispatch import inspect_actions, map_action_entries, map_resident_actions
 import struct
 
 
@@ -108,6 +109,47 @@ class StoryDisassemblyTests(unittest.TestCase):
                                         handler_offset=0x0b90, selector=0, trailer=8)])
         with self.assertRaises(ValueError):
             inspect_actions(memory, 0x1000, [196])
+
+    def test_resident_action_mapping_checks_unique_prefixes_and_far_call_relocations(self):
+        exe = bytearray(0x900)
+        exe[:2] = b'MZ'
+        memory = bytearray(0x20000)
+        expected = {0x5f: 0x100, 0x6d: 0x200, 0x98: 0x300, 0xaf: 0x400}
+        entries = []
+        for action in range(1, 196):
+            if action in expected:
+                offset = expected[action]
+                block = bytearray([action & 0xff] * 96)
+                block[:8] = bytes((0x55, 0x8b, action, 0x2a, 0x03, 0x90, 0xcd, 0x13))
+                block[14:19] = b'\x9a\x34\x12\xcd\x17'
+                exe[offset:offset + 96] = block
+                address = 0x10000 + offset - 0x80
+                memory[address:address + 96] = block
+                memory[address + 18] = 0x27
+                entries.append(dict(action=action, handler_segment=0x1000,
+                                    handler_offset=offset - 0x80))
+            else:
+                entries.append(dict(action=action, rtlink_reference=dict(section=0)))
+        signature = hashlib.sha256(exe).hexdigest()
+        mapped = map_resident_actions(entries, memory, exe, 0x1000, signature)
+        self.assertEqual({item['action']: item['native_code']['file_offset'] for item in mapped
+                          if 'native_code' in item}, expected)
+        self.assertTrue(all(item['native_code']['filename'] == 'GATEMAIN.EXE' for item in mapped
+                            if 'native_code' in item))
+
+        with self.assertRaisesRegex(ValueError, 'fingerprinted main EXE'):
+            map_resident_actions(entries, memory, exe, 0x1000, 'wrong hash')
+        corrupted = bytearray(memory)
+        corrupted[0x10000 + 0x100 - 0x80 + 40] ^= 1
+        with self.assertRaisesRegex(ValueError, 'outside far-call relocation'):
+            map_resident_actions(entries, corrupted, exe, 0x1000, signature)
+        with self.assertRaisesRegex(ValueError, 'far-call relocation differs'):
+            map_resident_actions(entries, memory, exe, 0x2000, signature)
+        duplicated = bytearray(exe)
+        duplicated[0x500:0x508] = exe[0x100:0x108]
+        with self.assertRaisesRegex(ValueError, 'not unique'):
+            map_resident_actions(entries, memory, duplicated, 0x1000,
+                                 hashlib.sha256(duplicated).hexdigest())
 
     def test_action_trailer_is_not_a_word_with_next_selector(self):
         memory = bytearray(0x20000)

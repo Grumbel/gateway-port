@@ -212,11 +212,21 @@ Steps:
    Ghidra established functions for every tracked action, including the 177
    that previously lacked sizes. Exit: the reseeded tracker has no `action`
    row without a size.
-2. **[ ] Resident actions.** Actions `0x5f`, `0x6d`, `0x98` and `0xaf` point at
-   resident code (runtime `148e:xxxx`), and the inventory does not yet map
-   them. Derive the resident load segment from the snapshot, map them to
-   `exe` offsets, verify the bytes, and add them to the tracker with
-   `kind=action`.
+2. **[x] Resident actions.** Actions `0x5f`, `0x6d`, `0x98` and `0xaf` share
+   resident segment `148e` in the captured native layout. Each entry has a
+   unique 8-byte match in the fingerprinted EXE, and the four offsets share
+   the same offset base. The 96-byte neighborhoods match except for six far
+   `CALL` segment words relocated by `+0x1000`. Ghidra established all four
+   function boundaries, and the tracker records them as `kind=action`:
+
+   | Action | Original EXE offset | Ghidra size |
+   | --- | ---: | ---: |
+   | `0x5f` | `0x006669` | 24 |
+   | `0x6d` | `0x00670e` | 20 |
+   | `0x98` | `0x006681` | 141 |
+   | `0xaf` | `0x006722` | 214 |
+
+   Runtime segment `148e` is snapshot-specific, not a routine identity.
 3. **[ ] Handlers without a function.** For each of the 75 handler rows without
    a size, decide whether it is a Ghidra boundary failure (create the
    function), a shared tail inside another routine (note the containing
@@ -474,6 +484,7 @@ passes with `--replace-verified`.
 | 2026-11-03 | 3.1 | REUSE licensing, 216/216 files |
 | 2026-11-03 | 3.2 | Tracker seeded: 1,778 routines (696 handlers, 191 actions, 44 callbacks, 51 services, 796 unclassified), 266 without Ghidra functions, 20 named |
 | 2026-11-03 | 3.2.1 | `--actions-json`: 191 validated RTLink entries; Ghidra 267/267 targets, 1,709 functions; tracker 1,803 rows after reseed (25 new unclassified), no action missing a size, 89 still without functions (75 handlers, 14 services); repeat seed 0 added, 0 updated |
+| 2026-11-03 | 3.2.2 | Four resident actions byte-verified at EXE offsets `0x006669`, `0x00670e`, `0x006681`, `0x006722`; Ghidra 271/271 targets, 1,712 functions; tracker now 1,807 routines including all 195 actions with sizes; repeat seed 0 added, 0 updated |
 
 ## 10. Risks and how to react
 
@@ -519,7 +530,8 @@ $B/gateway-overlay ../gateway-dos/GATEMAIN.EXE ../gateway-dos/GATEMAIN.OVL --fix
 python3 tools/inspect_room_callbacks.py $H/native --overlay-map $H/rtlink-manifest.json \
   --format json > $H/callbacks.json
 python3 tools/inspect_action_dispatch.py $H/native --all \
-  --overlay-map $H/rtlink-manifest.json --format json > $H/actions.json
+  --overlay-map $H/rtlink-manifest.json --resident-exe ../gateway-dos/GATEMAIN.EXE \
+  --format json > $H/actions.json
 python3 tools/run_ghidra.py ../gateway-dos/GATEMAIN.EXE ../gateway-dos/GATEMAIN.OVL \
   --overlay-tool $B/gateway-overlay --objects-json $H/objects.json \
   --callbacks-json $H/callbacks.json --actions-json $H/actions.json \

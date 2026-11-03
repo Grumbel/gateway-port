@@ -134,10 +134,15 @@ To seed the **191 RTLink-mapped action entries** as Ghidra function candidates,
 pass `--actions-json` with the complete 195-entry JSON from
 `inspect_action_dispatch.py --all --overlay-map <manifest> --format json`.
 The preparer re-resolves each trampoline against the extracted manifest and
-requires 191 distinct overlay entries; the other four actions are resident
-and must be mapped to EXE offsets separately. These provisional boundaries
-are decompiled before the function-size export, but still require native
-validation. Regenerate the JSON from the same snapshot as the callbacks.
+requires 191 distinct overlay entries. Add
+`--resident-exe ../gateway-dos/GATEMAIN.EXE` to the action inspector to map
+the four resident entries too. This requires a complete native snapshot and
+verifies 8-byte unique signatures, a common resident segment/file-offset base,
+and a 96-byte neighborhood whose only differences are expected far-call
+segment relocations. The preparer then labels those EXE entries by their
+unique original file signatures. All action entries are decompiled before
+the function-size export, but their behavior still requires native validation.
+Regenerate the JSON from the same snapshot as the callbacks.
 
 For triaging the full handler table, `tools/inventory_native_handlers.py`
 maps the 696 section-qualified entries, finds byte-identical entry-prefix

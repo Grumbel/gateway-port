@@ -215,7 +215,7 @@ class GhidraPlanTests(unittest.TestCase):
         actions = dict(schema_version=1, action_count=195,
                        actions=[dict(action=index) for index in range(1, 196)])
         actions['actions'][0x71 - 1] = item
-        self.assertEqual(add_action_labels(actions, self.manifest, label_at), 1)
+        self.assertEqual(add_action_labels(actions, self.manifest, label_at), (1, []))
         self.assertEqual(sections[0]['labels'][0]['role'], 'action-entry')
         self.assertEqual(sections[0]['labels'][0]['name'], 'gw_action_71')
         self.assertIn('provisional', sections[0]['labels'][0]['explanation'])
@@ -248,6 +248,18 @@ class GhidraPlanTests(unittest.TestCase):
         modified = json.loads(json.dumps(actions))
         modified['actions'].pop()
         with self.assertRaisesRegex(ValueError, 'expected all 195'):
+            add_action_labels(modified, self.manifest, label_at)
+
+        modified = json.loads(json.dumps(actions))
+        for action, offset in ((0x5f, 0x6669), (0x6d, 0x670e),
+                               (0x98, 0x6681), (0xaf, 0x6722)):
+            modified['actions'][action-1]['native_code'] = dict(
+                filename='GATEMAIN.EXE', file_offset=offset)
+        self.assertEqual(add_action_labels(modified, self.manifest, label_at)[1],
+                         [(0x5f, 0x6669), (0x6d, 0x670e),
+                          (0x98, 0x6681), (0xaf, 0x6722)])
+        modified['actions'][0xaf-1]['native_code'] = None
+        with self.assertRaisesRegex(ValueError, 'must map all four'):
             add_action_labels(modified, self.manifest, label_at)
 
     def test_runner_passes_action_report_to_preparer(self):
