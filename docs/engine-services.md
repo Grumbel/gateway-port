@@ -31,9 +31,9 @@ by at least 20 **distinct native object-handler functions**:
 | `exe:0x00105e` | 185 | 67 | `gw_dispatch_action_context`, analyzed |
 | `exe:0x00254a` | 157 | 15 | `gw_native_relation_contains`, analyzed |
 | `exe:0x0028e4` | 153 | 46 | `gw_test_object_flag`, analyzed |
-| `ovl:0x00c830` (section 4) | 147 | 17 | `gw_relocate_child` |
+| `ovl:0x00c830` (section 4) | 147 | 17 | `gw_relocate_child`, analyzed |
 | `exe:0x00291e` | 87 | 3 | `gw_set_object_flag`, analyzed |
-| `exe:0x003e9c` | 74 | 13 | Not yet tracked |
+| `exe:0x003e9c` | 74 | 13 | `gw_schedule_timed_event`, analyzed |
 | `rtl:0x00e284` | 70 | 0 | External RTL, uncatalogued |
 | `exe:0x002603` | 68 | 11 | Unclassified |
 | `rtl:0x0169db` | 61 | 7 | External RTL, uncatalogued |
@@ -174,6 +174,72 @@ resident launch mapping, not a reusable service identity. The known
 action-table/selector behavior is independently documented in
 [action-dispatch.md](action-dispatch.md).
 
+## Section-4 child-list relocation: `ovl:0x00c830` (147 handlers)
+
+`gw_relocate_child` is a far, **state-mutating** routine at section-4
+`GATEMAIN.OVL:0xc830`–`0xc911`. Its three stack words are `[BP+6]` object,
+`[BP+8]` new parent/location and `[BP+0x0a]` child-slot index. The caller
+cleans six argument bytes: the room-transfer caller at original EXE
+`0x5f05`–`0x5f1b` pushes slot 0, destination room and actor, calls the
+validated RTLink stub `1c24:13d5`, then uses `add sp,6`; the section-4
+near caller at OVL `0xc936`–`0xc943` follows the same convention.
+The service exits with `retf` and has no demonstrated meaningful AX result.
+
+Its original body first reads the object's existing location, child slot,
+child-head pointer and next sibling. It unlinks the object from the old
+parent's head or sibling chain, writes the new location and slot, and if
+the destination is nonzero **prepends** it to the new parent's child-head
+chain, preserving the previous head in the moved object's `next_sibling`.
+These are writes to the original guest object records through resident
+type-sensitive accessors, not an allocation or a flat child array. An
+invalid or cyclic preexisting chain has not been exhaustively characterized.
+
+Source corroboration: OVL `0xc879`, `0xc8c2` and `0xc8f8` are respectively
+the original unlink-head, set-location and insert-head service call sites.
+The earlier `--trace-navigation` native replay observed four verified
+location transitions through `0xc8c2` and matched the entry triple
+`(object=0x00d3, parent=0x00f1/0x00ee, slot=0)`; see
+[action-dispatch.md](action-dispatch.md#the-shared-child-list-relocation-routine).
+The additional native `objects` trace in `build/service-evidence-timers`
+captured section-4 entries during startup movement, e.g. a call at 5,408
+virtual ms with `(object=0x016d, parent=0, slot=0)`.
+
+## Resident scheduled-event insertion: `exe:0x003e9c` (74 handlers)
+
+`gw_schedule_timed_event` adds or updates a **turn-countdown event** in the
+resident queue. The real far function begins with `push bp` at original EXE
+`0x3e9c` and ends at `0x3f12`. The Ghidra 12 auto-function begins **one
+byte late** at `0x3e9d`, then splits two adjacent queue helpers at internal
+instructions. `tools/decomp_status.py seed` now canonicalizes these verified
+boundaries: `0x3e9c` (119 bytes), `0x3f13` (114 bytes, remove/compact), and
+`0x3f85` (61 bytes, membership predicate). Their corresponding phantom
+Ghidra rows are not independent native routines. An unchanged tracker
+reseed consequently reports zero changes.
+
+The scheduler receives `[BP+6]` event ID (its **low byte** is used) and
+`[BP+8]` remaining turns (a 16-bit word). It calls another resident helper
+at linked `0805:0c02`, then scans `[DS:0x35c2]` occupied entries of a
+four-byte array via the segment pointer `[DS:0x8d5a]`. An existing event
+ID is updated in place; a new event takes the next slot. A full 16-entry
+queue emits a diagnostic through the RTL text formatter and skips the
+append. The normal path writes the event byte at entry `+0`, the delay
+word at `+2`, and increments `[DS:0x35c2]` for a new slot. It does not
+initialize the unused byte `+1`; the save format serializes that field as
+part of a `u16` event ID, so retaining the original memory bytes matters.
+Callers remove four argument bytes after `retf`. No caller-visible AX return
+semantics have been verified.
+
+In a fresh native `objects` replay, entry `12e3:002b` (linear `0x12e5b`,
+specific to this capture) was reached **five times** during startup at
+5,407 virtual ms. The entry stack carried
+`(event=0x21, turns=0x00b3)`, `(0x17,0x01e0)`, `(0x18,0x0258)`,
+`(0x25,0x02d0)` and `(0x2a,0x030c)`. This independently matches the
+four-byte event records and countdown behavior recovered from original
+saves in [save-games.md](save-games.md#global-state-and-timers).
+The companion `gw_remove_timed_event` and `gw_timed_event_exists` routines
+have native disassembly-based boundaries but no captured calls in this
+replay; they remain **named**, not analyzed or verified.
+
 ## Resident object-relation predicate: `exe:0x00254a` (157 handlers)
 
 `gw_native_relation_contains` is a far Boolean predicate over one object's
@@ -242,8 +308,8 @@ epilogue. These counts are *execution occurrences in this one scripted path*,
 not the distinct-caller totals in the table. The full three-way HLE replay
 remains the independent bounded check documented in `object-state.md`.
 
-All five original `exe` entries and one `ovl` service are **analyzed**, not
+All six original `exe` entries and two `ovl` services are **analyzed**, not
 ported or fully verified under the future §3.7 per-routine differential
-harness. The remaining high-fan-out routines, particularly the 147-caller
-child-relocation helper and the 74-caller scheduled-event queue service,
-require more detailed classification.
+harness. The remaining high-fan-out routines include three external RTL
+targets, the resident 68-caller service at EXE `0x2603`, and several
+smaller resident services; all still require native semantic evidence.

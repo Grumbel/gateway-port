@@ -74,6 +74,18 @@ class TrackerTests(unittest.TestCase):
         self.assertEqual(tracker.seed(self.path, self.functions), (0, 2))
         self.assertEqual(tracker.read_tracker(self.path)[0]['state'], 'unknown')
 
+    def test_timer_scheduler_native_boundaries_override_ghidra_splits(self):
+        header = 'file\toffset\tsection\tghidra_address\tbody_bytes\tname\tsource\n'
+        self.functions.write_text(header + '\n'.join(
+            f'exe\t0x{offset:06x}\t\t105e:{offset:04x}\t{size}\tFUN_A\tDEFAULT'
+            for offset, size in ((0x3e9d, 118), (0x3f13, 12), (0x3f20, 101),
+                                 (0x3f85, 29), (0x3fa5, 16), (0x3fb5, 13))) + '\n')
+        self.assertEqual(tracker.seed(self.path, functions_path=self.functions), (3, 3))
+        rows = {tracker.key_of(row): row for row in tracker.read_tracker(self.path)}
+        self.assertEqual({key[1]: row['size'] for key, row in rows.items()},
+                         {0x3e9c: '119', 0x3f13: '114', 0x3f85: '61'})
+        self.assertEqual(tracker.seed(self.path, functions_path=self.functions), (0, 0))
+
     def test_mark_explicit_handler_boundary_and_reject_tail(self):
         self.seeded()
         report = self.root / 'decompile.json'

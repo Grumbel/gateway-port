@@ -110,12 +110,9 @@ exe	0x003aac		24	unclassified						unknown
 exe	0x003ac4		105	unclassified						unknown				
 exe	0x003b2d		8	unclassified						unknown				
 exe	0x003b35		726	unclassified						unknown				
-exe	0x003e9d		118	unclassified						unknown				
-exe	0x003f13		12	unclassified						unknown				
-exe	0x003f20		101	unclassified						unknown				
-exe	0x003f85		29	unclassified						unknown				
-exe	0x003fa5		16	unclassified						unknown				
-exe	0x003fb5		13	unclassified						unknown				
+exe	0x003e9c		119	service					gw_schedule_timed_event	analyzed	direct-memory			Native EXE 0x3e9c-0x3f12; far event-ID and delay word inputs; upsert into up to 16 scheduled four-byte records via DS:8d5a and DS:35c2; five live entries and authenticated save timer layout
+exe	0x003f13		114	service					gw_remove_timed_event	named				Native 0x3f13-0x3f84 removes event and compacts four-byte records; original Ghidra splits at 0x3f20; live call not yet captured
+exe	0x003f85		61	service					gw_timed_event_exists	named				Native 0x3f85-0x3fc1 tests event ID in active queue; original Ghidra splits at 0x3fa5 and 0x3fb5; live call not yet captured
 exe	0x003fc2		66	unclassified						unknown				
 exe	0x004004		41	unclassified						unknown				
 exe	0x00402d		153	unclassified						unknown				
@@ -633,7 +630,7 @@ ovl	0x00c671	4		service						unknown
 ovl	0x00c72e	4	57	unclassified						unknown				
 ovl	0x00c767	4	59	unclassified						unknown				
 ovl	0x00c7a2	4	142	unclassified						unknown				
-ovl	0x00c830	4	226	service					gw_relocate_child	named				
+ovl	0x00c830	4	226	service					gw_relocate_child	analyzed	direct-memory			Native OVL section 4 0xc830-0xc911; far object/new-parent/new-slot word inputs; unlinks old sibling/head then updates location slot and prepends new head; trace_navigation room moves and native entry evidence
 ovl	0x00c912	4	66	unclassified						unknown				
 ovl	0x00c954	4	83	unclassified						unknown				
 ovl	0x00c9a7	4	63	unclassified						unknown				

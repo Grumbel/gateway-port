@@ -58,6 +58,21 @@ NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 MODULE = re.compile(r'^src/story/[a-z0-9_]+\.(cpp|hpp)$')
 KIND_ORDER = {'service': 0, 'action': 1, 'callback': 2, 'handler': 3, 'unclassified': 4}
 
+# The Ghidra 12 auto-analysis starts the 0x3e9c timer scheduler after PUSH BP,
+# and splits its two adjacent timer-table helpers into spurious subfunctions.
+# Native 16-bit disassembly (RETF/next PUSH BP) and live scheduler entries
+# confirm these original EXE extents. Keep this normalization in the seed
+# path so regenerating the unchanged tracker adds/updates no rows.
+# The tool is Gateway-specific and only accepts the pinned executable family.
+NATIVE_BOUNDARY_FIXES = {
+    0x3e9d: (0x3e9c, 119),
+    0x3f13: (0x3f13, 114),
+    0x3f20: None,
+    0x3f85: (0x3f85, 61),
+    0x3fa5: None,
+    0x3fb5: None,
+}
+
 
 class TrackerError(ValueError):
     pass
@@ -117,8 +132,16 @@ def read_functions(path):
             if row['file'] not in FILES:
                 raise TrackerError(f'{path}: unknown file {row["file"]!r}')
             name = '' if AUTO_NAME.match(row['name']) else row['name']
-            functions[(row['file'], parse_offset(row['offset']))] = (
-                row['section'], int(row['body_bytes']), name)
+            offset, size = parse_offset(row['offset']), int(row['body_bytes'])
+            if row['file'] == 'exe' and offset in NATIVE_BOUNDARY_FIXES:
+                fixed = NATIVE_BOUNDARY_FIXES[offset]
+                if fixed is None:
+                    continue
+                offset, size = fixed
+            key = row['file'], offset
+            if key in functions and functions[key] != (row['section'], size, name):
+                raise TrackerError(f'{path}: conflicting function evidence at {key}')
+            functions[key] = (row['section'], size, name)
         return functions
 
 
