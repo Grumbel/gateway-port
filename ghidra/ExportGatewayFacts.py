@@ -161,7 +161,7 @@ for function in currentProgram.getFunctionManager().getFunctions(True):
     identity = origin(entry)
     if identity is None or function.isExternal():
         continue
-    result = dict(identity=identity, instruction_count=0, calls=[],
+    result = dict(identity=identity, instruction_count=0, calls=[], call_sites=[],
                   far_trampolines=[], direct_memory=[], has_loop=False,
                   indexed_memory=False, computed_calls=0, computed_jumps=0,
                   unresolved_calls=0)
@@ -173,6 +173,10 @@ for function in currentProgram.getFunctionManager().getFunctions(True):
         instruction = instructions.next()
         result['instruction_count'] += 1
         flow = instruction.getFlowType()
+        if flow.isCall():
+            site = origin(instruction.getAddress())
+            if site is not None:
+                result['call_sites'].append(site)
         if flow.isJump():
             if flow.isComputed():
                 result['computed_jumps'] += 1

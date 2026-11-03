@@ -196,6 +196,7 @@ def run(exe, ovl, output, overlay_tool, objects_json=None,
                     isinstance(item.get('instruction_count'), int) and
                     item['instruction_count'] >= 0 and
                     isinstance(item.get('calls'), list) and
+                    isinstance(item.get('call_sites'), list) and
                     isinstance(item.get('far_trampolines'), list) and
                     isinstance(item.get('direct_memory'), list) and
                     isinstance(item.get('has_loop'), bool) for item in entries)):

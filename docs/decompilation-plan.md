@@ -322,7 +322,7 @@ Far-call trampoline destinations are resolved from validated original
 `CALL`/RTLink stub patterns, not the unstable Ghidra segment address. The
 generated JSON and all original bytes remain in `build/`.
 
-### 3.5 [ ] Engine-service catalogue (`docs/engine-services.md`)
+### 3.5 [~] Engine-service catalogue (`docs/engine-services.md`)
 
 For every routine that handlers, actions or callbacks call, whether
 resident or reached through a trampoline:
@@ -539,6 +539,7 @@ passes with `--replace-verified`.
 | 2026-11-03 | 3.2.3 | Explicitly seeded 75 previously unsized native object handlers spanning 39 OVL sections: Ghidra decompiled 346/346 targets with 75 independent entries, 1,792 exported functions; all 696 handlers now have sizes. Tracker now 1,813 rows, 14 unsized services; boundary evidence marked provisional in notes; repeat seed 0 added, 0 updated. |
 | 2026-11-03 | 3.3 | Identified Microsoft C 5.x-era CRT in `GATE.RTL` from 1988 vendor marker and R6005–R6007 codes; compiler family likely Microsoft C large model (exact version unresolved). Classified three confirmed RTLink routines at `exe:0x000671`, `exe:0x00a23c`, `exe:0x00a630` as library; CRT remains external to tracked files. |
 | 2026-11-03 | 3.4 | Exported 1,792 function fact records, 143,722 decoded instructions, 622 resolved RTLink stub destinations; classified all 891 handlers/actions: formulaic 44 (4.9%), direct-memory 195 (21.9%), complex 652 (73.2%); 44 callbacks also measured. Decision: hand-port, revisit after 100 routines. |
+| 2026-11-03 | 3.5 (ongoing) | Rebuilt the high-fan-out call census from 10,178 original CALL sites, with native snapshot-backed resident EXE/RTL identity recovery and verified RTLink stubs. Found 18 destinations called by at least 20 distinct object handlers (including three in external GATE.RTL); 857 Ghidra call sites remain unresolved. Catalogue triage in `docs/engine-services.md`; native ABI/effects verification remains to be done. |
 
 ## 10. Risks and how to react
 
@@ -600,6 +601,11 @@ python3 tools/decomp_status.py mark-handler-boundaries \
   --decompile build/ghidra/ghidra-decompile-report.json \
   --functions build/ghidra/ghidra-functions.tsv
 python3 tools/classify_shapes.py build/ghidra/ghidra-facts.json --write
+python3 tools/rank_engine_services.py --facts build/ghidra/ghidra-facts.json \
+  --plan build/ghidra/ghidra-plan.json \
+  --exe ../gateway-dos/GATEMAIN.EXE --ovl ../gateway-dos/GATEMAIN.OVL \
+  --rtl ../gateway-dos/GATE.RTL --native-snapshot $H/native.bin \
+  --output build/ghidra/native-service-fanout.json
 ```
 
 `run_ghidra.py` refuses an existing output directory; delete `build/ghidra`

@@ -323,7 +323,7 @@ class GhidraPlanTests(unittest.TestCase):
                 unique_containing_functions=1, static_call_references=0)))
             (self.root / 'ghidra-facts.json').write_text(json.dumps(dict(
                 schema_version=1, functions=[dict(identity=dict(file='ovl', offset=0x100),
-                                                  instruction_count=1, calls=[],
+                                                  instruction_count=1, calls=[], call_sites=[],
                                                   far_trampolines=[], direct_memory=[],
                                                   has_loop=False)])))
             (self.root / 'ghidra-functions.tsv').write_text(
