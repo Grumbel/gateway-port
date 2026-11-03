@@ -112,6 +112,14 @@ class GatewaySaveTests(unittest.TestCase):
             self.assertIn('before (command 1, 10ms):', output.getvalue())
             self.assertIn('same-address[0]: -', output.getvalue())
             self.assertIn('same-address[1]: 0x12345', output.getvalue())
+            old_manifest = [dict(manifests[0], stages=[
+                {key: value for key, value in manifests[0]['stages'][0].items()
+                 if key != 'save_sha256'}]), manifests[1]]
+            with contextlib.redirect_stdout(output := io.StringIO()):
+                trace_field(old_manifest[0], old_manifest[1],
+                            root / 'a', root / 'b', 'terri', 0x282, 7)
+            self.assertIn('authenticated against stage metadata only', output.getvalue())
+            self.assertIn('same-address[1]: 0x12345', output.getvalue())
             corrupted_manifest = [manifests[0], dict(manifests[1], stages=[
                 dict(manifests[1]['stages'][0], save_sha256='0' * 64)])]
             with contextlib.redirect_stdout(io.StringIO()):

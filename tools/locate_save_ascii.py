@@ -9,11 +9,14 @@ assume that a copy of the string in RAM is the authoritative story variable.
 
 import argparse
 import hashlib
+import json
 from pathlib import Path
+from types import SimpleNamespace
 
 from inspect_gateway_save import GLOBAL_STATE_BYTES, parse_gateway_save
 from run_golden import (CONVENTIONAL_END, MEMORY_SIZE, digest_snapshot,
-                        read_manifest, snapshot_prefix, verified_recorded_save)
+                        read_manifest, snapshot_prefix)
+from run_walkthrough_campaign import verified_save
 
 
 def saved_ascii_field(saved, offset, length):
@@ -74,9 +77,23 @@ def trace_field(left_manifest, right_manifest, left_root, right_root, stage,
         candidates.append(matches[0])
     a, b = candidates
     check_matching_checkpoints(a, b)
+
     def load_save(root, recorded):
-        data = verified_recorded_save(root, recorded).read_bytes()
-        if hashlib.sha256(data).hexdigest() != recorded.get('save_sha256'):
+        metadata = root / recorded['name'] / 'stage-meta.json'
+        meta = json.loads(metadata.read_text(encoding='utf-8'))
+        if not isinstance(meta, dict) or not isinstance(meta.get('save_description'), str):
+            raise ValueError(f'{metadata}: missing native save description')
+        item = SimpleNamespace(name=recorded['name'],
+                               script_sha256=recorded['script_sha256'],
+                               description=meta['save_description'])
+        # verified_save authenticates the file against stage-meta.json even
+        # when an older golden manifest lacks its optional save_sha256 key.
+        data = verified_save(root, item).read_bytes()
+        manifest_hash = recorded.get('save_sha256')
+        if manifest_hash is None:
+            print(f'  note: {root / recorded["name"]}: no saved-game hash in golden '
+                  'manifest; authenticated against stage metadata only')
+        elif hashlib.sha256(data).hexdigest() != manifest_hash:
             raise ValueError(f'{root}: original save differs from golden manifest')
         return parse_gateway_save(data)
 

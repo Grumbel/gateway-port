@@ -126,12 +126,17 @@ python3 tools/locate_save_ascii.py \
   --length 7
 ```
 
-The tool verifies each original save and each snapshot against the recorded
-golden hashes, then reports both string occurrences and addresses where the
-two differing strings occupy the *same* guest linear offset. These addresses
-are **candidates** for a `run_walkthrough.py --trace-byte-write` watchpoint,
-not proof that a particular RAM copy is the owning global field. A new native
-replay and instruction write trace are needed to identify the writer.
+The tool verifies each native RAM snapshot against its recorded golden hash.
+It verifies each original save against `stage-meta.json` and, when the golden
+manifest includes a `save_sha256` entry, against that hash too. Some older
+captured manifests omit the optional save hash; in this case the tool prints
+an explicit weaker-provenance notice but still checks the stage metadata and
+file contents. It then reports both string occurrences and addresses where
+the two differing strings occupy the *same* guest linear offset. These
+addresses are **candidates** for a `run_walkthrough.py --trace-byte-write`
+watchpoint, not proof that a particular RAM copy is the owning global field.
+A new native replay and instruction write trace are needed to identify the
+writer.
 
 For example, the office save's first words are room `0x00ec`, previous room
 `0x00f1`, and the byte pair `01 13` at `+4`, tentatively interpreted as turn
