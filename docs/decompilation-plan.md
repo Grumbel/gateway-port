@@ -48,8 +48,8 @@ later targets (§8.3), never mixed into Gateway's tables.
   | `service` | 51 |
   | `unclassified` | 796 |
 
-  - 266 rows have no Ghidra function yet: 75 handlers, 186 actions and 5
-    services.
+  - 266 rows have no Ghidra function yet: 75 handlers, 177 actions and 14
+    services (verified against the original tracker before §3.2.1).
   - Handler bodies range from 15 to 5,801 bytes (median 161).
   - 20 rows are named; none are ported.
 - Regression material: walkthrough replays (`tests/fixtures/*.walk`,
@@ -205,22 +205,23 @@ tracker is seeded from:
 The seed is idempotent and keeps manual columns. `nix flake check` validates
 the tracker. Column meanings are in [decomp/README.md](../decomp/README.md).
 
-Remaining:
+Steps:
 
-1. **Seed action entries into Ghidra.** Add an `--actions-json` input to
-   `tools/prepare_ghidra.py`, labelling each action's entry the way
-   `--callbacks-json` does, so the 186 action rows get functions and sizes.
-   Exit: the reseeded tracker has no `action` row without a size.
-2. **Resident actions.** Actions `0x5f`, `0x6d`, `0x98` and `0xaf` point at
+1. **[x] Seed action entries into Ghidra.** `--actions-json` validates all
+   195 action-table entries and labels the 191 RTLink-mapped action entries.
+   Ghidra established functions for every tracked action, including the 177
+   that previously lacked sizes. Exit: the reseeded tracker has no `action`
+   row without a size.
+2. **[ ] Resident actions.** Actions `0x5f`, `0x6d`, `0x98` and `0xaf` point at
    resident code (runtime `148e:xxxx`), and the inventory does not yet map
    them. Derive the resident load segment from the snapshot, map them to
    `exe` offsets, verify the bytes, and add them to the tracker with
    `kind=action`.
-3. **Handlers without a function.** For each of the 75 handler rows without
+3. **[ ] Handlers without a function.** For each of the 75 handler rows without
    a size, decide whether it is a Ghidra boundary failure (create the
    function), a shared tail inside another routine (note the containing
    offset), or data (`state=data`, with evidence).
-4. **Classify `unclassified` rows** as they are touched; do not mass-label.
+4. **[ ] Classify `unclassified` rows** as they are touched; do not mass-label.
 
 ### 3.3 [ ] Compiler and runtime-library identification
 
@@ -472,6 +473,7 @@ passes with `--replace-verified`.
 | 2026-11-03 | 3.0 | Ghidra 12.1.4 via PyGhidra; 58 sections, 13,947 fixups, 76/76 decompile targets with object and callback labels; 1,512 functions exported (502 resident, 1,010 overlay; 13 outside known blocks skipped) |
 | 2026-11-03 | 3.1 | REUSE licensing, 216/216 files |
 | 2026-11-03 | 3.2 | Tracker seeded: 1,778 routines (696 handlers, 191 actions, 44 callbacks, 51 services, 796 unclassified), 266 without Ghidra functions, 20 named |
+| 2026-11-03 | 3.2.1 | `--actions-json`: 191 validated RTLink entries; Ghidra 267/267 targets, 1,709 functions; tracker 1,803 rows after reseed (25 new unclassified), no action missing a size, 89 still without functions (75 handlers, 14 services); repeat seed 0 added, 0 updated |
 
 ## 10. Risks and how to react
 
@@ -510,6 +512,7 @@ cmake -S . -B build/rel -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build bui
 B=build/rel H=build/handler-coverage
 python3 tools/trace_game_logic.py --probe $B/gateway-probe --data ../gateway-dos \
   --output $H --scenario objects --native-only --verify-overlays --trace-rtlink-calls
+# Add --timeout 900 on slower machines if the default 180-second replay limit expires.
 python3 tools/inspect_object_state.py $H/native --names ../gateway-dos/OBJECT.DAT > $H/objects.json
 $B/gateway-overlay ../gateway-dos/GATEMAIN.EXE ../gateway-dos/GATEMAIN.OVL --fixups \
   > $H/rtlink-manifest.json
@@ -519,7 +522,8 @@ python3 tools/inspect_action_dispatch.py $H/native --all \
   --overlay-map $H/rtlink-manifest.json --format json > $H/actions.json
 python3 tools/run_ghidra.py ../gateway-dos/GATEMAIN.EXE ../gateway-dos/GATEMAIN.OVL \
   --overlay-tool $B/gateway-overlay --objects-json $H/objects.json \
-  --callbacks-json $H/callbacks.json --output build/ghidra
+  --callbacks-json $H/callbacks.json --actions-json $H/actions.json \
+  --output build/ghidra
 python3 tools/inventory_native_handlers.py $H/objects.json build/ghidra/ghidra-plan.json \
   --callbacks-json $H/callbacks.json --rtlink-calls $H/native.rtlink-calls \
   --format json > $H/inventory.json

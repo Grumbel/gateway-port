@@ -31,7 +31,7 @@ for section in plan['sections']:
         raise ValueError('overlay section %d was not imported' % section['id'])
     for label in section['labels']:
         if label['role'] in ('function', 'callback-entry', 'object-entry-candidate',
-                             'overlay-entry-candidate'):
+                             'overlay-entry-candidate', 'action-entry'):
             targets.append((label['name'], block.getStart().add(label['offset']),
                             'GATEMAIN.OVL:0x%x' % label['file_offset'], label['role']))
 for label in plan['resident_labels']:
@@ -172,7 +172,7 @@ for name, address, origin, role in targets:
     graph_item.update(graph)
     try:
         if role in ('function', 'callback-entry', 'object-entry-candidate',
-                    'overlay-entry-candidate'):
+                    'overlay-entry-candidate', 'action-entry'):
             # ImportGatewayRtlink creates a user label first. When analysis
             # chooses a different primary symbol for the function, Ghidra
             # rejects renaming it to that still-existing secondary label

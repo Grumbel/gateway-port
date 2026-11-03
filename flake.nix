@@ -42,7 +42,7 @@
             };
           } ''
             cd "$src"
-            reuse lint
+            reuse --no-multiprocessing lint
             touch "$out"
           '';
           tracker = pkgs.runCommand "gateway-port-tracker" {

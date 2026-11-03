@@ -263,8 +263,47 @@ def add_callback_labels(callbacks, manifest, label_at):
         raise ValueError('room callback exit use count mismatch')
 
 
+def add_action_labels(actions, manifest, label_at):
+    """Seed the native action-table entries, validating their RTLink mapping."""
+    if (actions.get('schema_version') != 1 or actions.get('action_count') != 195 or
+            not isinstance(actions.get('actions'), list) or len(actions['actions']) != 195):
+        raise ValueError('expected all 195 native action-table entries')
+    sections = sections_by_id(manifest)
+    seen_ids = set()
+    seen_entries = set()
+    mapped_count = 0
+    for item in actions['actions']:
+        action = item.get('action')
+        if not isinstance(action, int) or not 1 <= action <= 195 or action in seen_ids:
+            raise ValueError('duplicate or invalid native action ID')
+        seen_ids.add(action)
+        reference = item.get('rtlink_reference')
+        native = item.get('native_code')
+        if reference is None:
+            if native is not None:
+                raise ValueError('action has mapped code but no validated RTLink reference')
+            # Resident actions are mapped separately from the original EXE.
+            continue
+        if native is None:
+            raise ValueError('action RTLink reference lacks an original-code mapping')
+        mapped = map_reference(reference, sections)
+        if mapped != native or mapped['filename'] != 'GATEMAIN.OVL':
+            raise ValueError('action original-code mapping mismatches manifest')
+        entry = (mapped['section'], mapped['file_offset'])
+        if entry in seen_entries:
+            raise ValueError('multiple actions share a native entry; inspect before labelling')
+        seen_entries.add(entry)
+        label_at(mapped['file_offset'], 'gw_action_%02x' % action,
+                 'action-entry',
+                 'action ID 0x%02x; RTLink-mapped native entry; '
+                 'function boundary provisional' % action, mapped['section'])
+        mapped_count += 1
+    return mapped_count
+
+
 def prepare(exe, ovl, output, extractor, objects_json=None, allow_unknown=False,
-            callbacks_json=None, decompile_objects=(), decompile_offsets=()):
+            callbacks_json=None, decompile_objects=(), decompile_offsets=(),
+            actions_json=None):
     hashes = checked_files(exe, ovl, allow_unknown)
     output = output.resolve()
     images = output / 'sections'
@@ -288,6 +327,13 @@ def prepare(exe, ovl, output, extractor, objects_json=None, allow_unknown=False,
         if allow_unknown:
             raise ValueError('native room callback labels require fingerprinted Gateway binaries')
         add_callback_labels(json.loads(callbacks_json.read_text()), manifest, label_at)
+    if actions_json:
+        if allow_unknown:
+            raise ValueError('native action labels require fingerprinted Gateway binaries')
+        mapped = add_action_labels(json.loads(actions_json.read_text()), manifest, label_at)
+        if mapped != 191:
+            raise ValueError('expected 191 overlay actions and 4 resident actions; got %d' %
+                             mapped)
     if not allow_unknown:
         if len(sections) != 58 or sum(s['fixup_count'] for s in sections) != 13947:
             raise ValueError('Gateway section/fixup counts unexpectedly changed')
@@ -331,6 +377,9 @@ def main():
                              'entry; must lie in one file-backed RTLink section (repeatable)')
     parser.add_argument('--callbacks-json', type=Path,
                         help='optional native inspect_room_callbacks.py JSON with kind-4 entries')
+    parser.add_argument('--actions-json', type=Path,
+                        help='native inspect_action_dispatch.py --all --overlay-map JSON '
+                             'with 195 action entries')
     parser.add_argument('--allow-unknown-binaries', action='store_true',
                         help='for synthetic RTLink fixtures; omit Gateway-only labels')
     args = parser.parse_args()
@@ -338,7 +387,7 @@ def main():
         target, plan = prepare(args.exe, args.ovl, args.output, args.overlay_tool,
                                args.objects_json, args.allow_unknown_binaries,
                                args.callbacks_json, args.decompile_object or (),
-                               args.decompile_offset or ())
+                               args.decompile_offset or (), args.actions_json)
     except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
         parser.exit(1, 'prepare_ghidra: %s\n' % error)
     print('Prepared %d isolated RTLink sections, %d fixups; plan: %s' % (

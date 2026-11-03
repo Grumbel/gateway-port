@@ -55,6 +55,13 @@ class TrackerTests(unittest.TestCase):
         tracker.seed(self.path, self.functions, self.inventory, self.actions)
         return {tracker.key_of(row): row for row in tracker.read_tracker(self.path)}
 
+    def test_generated_action_label_does_not_count_as_manual_name(self):
+        self.functions.write_text('file\toffset\tsection\tghidra_address\tbody_bytes\tname\tsource\n'
+                                  'ovl\t0x00e942\t5\t4661:1572\t64\tgw_action_71\tUSER_DEFINED\n')
+        tracker.seed(self.path, functions_path=self.functions)
+        row = tracker.read_tracker(self.path)[0]
+        self.assertEqual((row['size'], row['name'], row['state']), ('64', '', 'unknown'))
+
     def test_seed_merges_sources(self):
         rows = self.seeded()
         self.assertEqual(len(rows), 7)

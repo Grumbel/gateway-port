@@ -14,8 +14,8 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-from prepare_ghidra import (KNOWN_OVERLAY, KNOWN_RESIDENT, add_callback_labels,
-                            name_for_object, plan_sections)
+from prepare_ghidra import (KNOWN_OVERLAY, KNOWN_RESIDENT, add_action_labels,
+                            add_callback_labels, name_for_object, plan_sections)
 from run_ghidra import find_headless, headless_command, pyghidra_launcher, run
 
 
@@ -204,6 +204,60 @@ class GhidraPlanTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'use count mismatch'):
             add_callback_labels(callbacks, self.manifest, label_at)
 
+    def test_actions_label_only_mapped_entries_and_validate_manifest(self):
+        sections, label_at = plan_sections(self.manifest, self.root)
+        self.section['filename'] = 'GATEMAIN.OVL'
+        item = dict(action=0x71,
+                    rtlink_reference=dict(section=0, target_segment=0x3000,
+                                          target_offset=4),
+                    native_code=dict(filename='GATEMAIN.OVL', section=0,
+                                     image_offset=4, file_offset=0x104))
+        actions = dict(schema_version=1, action_count=195,
+                       actions=[dict(action=index) for index in range(1, 196)])
+        actions['actions'][0x71 - 1] = item
+        self.assertEqual(add_action_labels(actions, self.manifest, label_at), 1)
+        self.assertEqual(sections[0]['labels'][0]['role'], 'action-entry')
+        self.assertEqual(sections[0]['labels'][0]['name'], 'gw_action_71')
+        self.assertIn('provisional', sections[0]['labels'][0]['explanation'])
+
+        modified = json.loads(json.dumps(actions))
+        modified['actions'][0x71 - 1]['native_code']['file_offset'] += 1
+        with self.assertRaisesRegex(ValueError, 'mismatches manifest'):
+            add_action_labels(modified, self.manifest, label_at)
+
+        modified = json.loads(json.dumps(actions))
+        modified['actions'][0x71 - 1]['native_code'] = None
+        with self.assertRaisesRegex(ValueError, 'lacks an original-code mapping'):
+            add_action_labels(modified, self.manifest, label_at)
+
+        modified = json.loads(json.dumps(actions))
+        modified['actions'][0x71 - 1]['rtlink_reference'] = None
+        with self.assertRaisesRegex(ValueError, 'no validated RTLink reference'):
+            add_action_labels(modified, self.manifest, label_at)
+
+        modified = json.loads(json.dumps(actions))
+        modified['actions'][0x71] = dict(item, action=0x72)
+        with self.assertRaisesRegex(ValueError, 'share a native entry'):
+            add_action_labels(modified, self.manifest, label_at)
+
+        modified = json.loads(json.dumps(actions))
+        modified['actions'][0x71] = dict(action=0x71)
+        with self.assertRaisesRegex(ValueError, 'duplicate or invalid'):
+            add_action_labels(modified, self.manifest, label_at)
+
+        modified = json.loads(json.dumps(actions))
+        modified['actions'].pop()
+        with self.assertRaisesRegex(ValueError, 'expected all 195'):
+            add_action_labels(modified, self.manifest, label_at)
+
+    def test_runner_passes_action_report_to_preparer(self):
+        action_report = self.root / 'actions.json'
+        plan_path = self.root / 'ghidra-plan.json'
+        with patch('run_ghidra.prepare', return_value=(plan_path, {'sections': []})) as prep:
+            self.assertEqual(run(Path('exe'), Path('ovl'), self.root, Path('tool'),
+                                 prepare_only=True, actions_json=action_report), plan_path)
+        self.assertEqual(prep.call_args.kwargs['actions_json'], action_report)
+
     def test_runner_uses_scripts_in_pre_analysis_order(self):
         plan_path = self.root / 'ghidra-plan.json'
         plan_path.write_text(json.dumps(dict(exe_file='/input/GATEMAIN.EXE')))
@@ -223,7 +277,7 @@ class GhidraPlanTests(unittest.TestCase):
         plan_path = self.root / 'ghidra-plan.json'
         plan_path.write_text(json.dumps(dict(exe_file='/input/GATEMAIN.EXE')))
         example = dict(fingerprinted_gateway=True, sections=[dict(fixup_count=17, labels=[
-            dict(name='test_routine', role='function')])], resident_labels=[])
+            dict(name='test_routine', role='action-entry')])], resident_labels=[])
         with patch('run_ghidra.prepare', return_value=(plan_path, example)), \
                 patch('run_ghidra.find_headless', return_value=Path('/bin/headless')), \
                 patch('run_ghidra.subprocess.run') as invoke:

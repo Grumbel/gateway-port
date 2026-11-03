@@ -49,7 +49,8 @@ STARTED_STATES = ('analyzed', 'ported')
 # Ghidra placeholders and generated per-object aliases carry no evidence of
 # their own (object aliases also embed game text); keep the name empty.
 AUTO_NAME = re.compile(r'^(FUN|thunk_FUN|LAB|SUB|caseD|switchD)_[0-9A-Za-z_]+$|'
-                       r'^gw_object_[0-9a-f]{3}(_.*)?$|^gw_room_callback_[0-9a-f]+$')
+                       r'^gw_object_[0-9a-f]{3}(_.*)?$|^gw_room_callback_[0-9a-f]+$|'
+                       r'^gw_action_[0-9a-f]{2}$')
 NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 MODULE = re.compile(r'^src/story/[a-z0-9_]+\.(cpp|hpp)$')
 KIND_ORDER = {'service': 0, 'action': 1, 'callback': 2, 'handler': 3, 'unclassified': 4}

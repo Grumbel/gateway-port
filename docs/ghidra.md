@@ -130,6 +130,15 @@ mapping and the first traced example are in
 [room-callbacks.md](room-callbacks.md). Use a fresh output directory for
 each run.
 
+To seed the **191 RTLink-mapped action entries** as Ghidra function candidates,
+pass `--actions-json` with the complete 195-entry JSON from
+`inspect_action_dispatch.py --all --overlay-map <manifest> --format json`.
+The preparer re-resolves each trampoline against the extracted manifest and
+requires 191 distinct overlay entries; the other four actions are resident
+and must be mapped to EXE offsets separately. These provisional boundaries
+are decompiled before the function-size export, but still require native
+validation. Regenerate the JSON from the same snapshot as the callbacks.
+
 For triaging the full handler table, `tools/inventory_native_handlers.py`
 maps the 696 section-qualified entries, finds byte-identical entry-prefix
 groups, and optionally correlates a complete native trampoline-call census

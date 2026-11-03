@@ -14,6 +14,14 @@ DRIVER = Path(__file__).resolve().parents[1] / 'tools' / 'trace_game_logic.py'
 
 
 class TraceGameLogicTests(unittest.TestCase):
+    def test_timeout_rejects_nonpositive_or_oversized_values(self):
+        for value in ('0', '-1', '3601'):
+            with self.subTest(value=value):
+                result = subprocess.run([sys.executable, str(DRIVER), '--timeout', value],
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn('--timeout must be between 1 and 3600', result.stderr)
+
     def test_rtlink_census_requires_native_and_updated_probe(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

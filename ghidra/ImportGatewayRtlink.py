@@ -369,7 +369,7 @@ for section in plan['sections']:
         address = start.add(label['offset'])
         annotate(address, label)
         if label['role'] in ('function', 'callback-entry', 'object-entry-candidate',
-                             'overlay-entry-candidate'):
+                             'overlay-entry-candidate', 'action-entry'):
             # Seeding disassembly BEFORE the headless auto-analysis ensures
             # these verified entries are explored, without pretending that
             # all object/event pointers identify distinct C functions.

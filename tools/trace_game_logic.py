@@ -22,6 +22,8 @@ parser.add_argument('--verify-overlays', action='store_true')
 parser.add_argument('--hle-overlays', action='store_true', help='host section loading in HLE mode')
 parser.add_argument('--native-only', action='store_true',
                     help='collect a quick native trace without the two comparison replays')
+parser.add_argument('--timeout', type=int, default=180, metavar='SECONDS',
+                    help='per-replay wall-time limit (default: 180; 1–3600)')
 parser.add_argument('--trace-state-writes', action='store_true',
                     help='verify native state services and mark actual byte changes in one replay')
 parser.add_argument('--trace-admission', action='store_true',
@@ -83,6 +85,8 @@ if args.command_sequence and not args.native_only:
     parser.error('--command-sequence currently requires --native-only')
 if args.extra_idle_ms < 0 or args.extra_idle_ms > 60000:
     parser.error('--extra-idle-ms must be between 0 and 60000')
+if not 1 <= args.timeout <= 3600:
+    parser.error('--timeout must be between 1 and 3600 seconds')
 if args.extra_idle_ms and (not args.native_only or args.scenario != 'puzzle'):
     parser.error('--extra-idle-ms requires a native-only puzzle replay')
 if args.research_poke16_at and (not args.native_only or
@@ -226,7 +230,7 @@ for mode in (['native'] if args.native_only else ['native', 'verify', 'hle']):
     if mode != 'native':
         command += ['--object-state' if args.services == 'state' else '--object-flags', mode]
     with prefix.with_suffix('.out').open('w') as out, prefix.with_suffix('.dos').open('w') as err:
-        subprocess.run(command, stdout=out, stderr=err, check=True, timeout=180)
+        subprocess.run(command, stdout=out, stderr=err, check=True, timeout=args.timeout)
     if mode == 'native' and args.trace_object_writes:
         if not any(line.startswith('object-watch ') for line in
                    prefix.with_suffix('.trace').read_text().splitlines()):

@@ -84,7 +84,8 @@ def pyghidra_launcher(install_dir=None):
 
 def run(exe, ovl, output, overlay_tool, objects_json=None,
         headless=None, project_name='Gateway', prepare_only=False, callbacks_json=None,
-        decompile_objects=(), decompile_offsets=(), ghidra_install_dir=None):
+        decompile_objects=(), decompile_offsets=(), ghidra_install_dir=None,
+        actions_json=None):
     if not project_name or not project_name.replace('_', '').isalnum():
         raise ValueError('project name must contain only letters, digits and underscores')
     output = output.resolve()
@@ -101,7 +102,8 @@ def run(exe, ovl, output, overlay_tool, objects_json=None,
     plan_path, plan = prepare(exe, ovl, output, overlay_tool, objects_json,
                               callbacks_json=callbacks_json,
                               decompile_objects=decompile_objects,
-                              decompile_offsets=decompile_offsets)
+                              decompile_offsets=decompile_offsets,
+                              actions_json=actions_json)
     print('Verified %d isolated RTLink sections, %d fixups.' % (
         len(plan['sections']), sum(s['fixup_count'] for s in plan['sections'])), flush=True)
     print('Plan: %s' % plan_path, flush=True)
@@ -139,7 +141,7 @@ def run(exe, ovl, output, overlay_tool, objects_json=None,
     expected = [label['name'] for section in plan['sections']
                 for label in section['labels'] if label['role'] in
                 ('function', 'callback-entry', 'object-entry-candidate',
-                 'overlay-entry-candidate')]
+                 'overlay-entry-candidate', 'action-entry')]
     expected.extend(label['name'] for label in plan['resident_labels']
                     if imported.get('resident_matches', {}).get(label['name']) is not None)
     observed = [item['name'] for item in decompiled.get('targets', [])]
@@ -185,6 +187,9 @@ def main():
                              '(repeatable)')
     parser.add_argument('--callbacks-json', type=Path,
                         help='optional native inspect_room_callbacks.py export (decompile candidates)')
+    parser.add_argument('--actions-json', type=Path,
+                        help='native inspect_action_dispatch.py --all --overlay-map JSON '
+                             '(decompile candidates)')
     parser.add_argument('--headless', type=Path,
                         help='path to Ghidra analyzeHeadless (Jython, Ghidra 11 or older)')
     parser.add_argument('--ghidra-install-dir', type=Path,
@@ -199,7 +204,7 @@ def main():
         run(args.exe, args.ovl, args.output, args.overlay_tool, args.objects_json,
             args.headless, args.project_name, args.prepare_only, args.callbacks_json,
             args.decompile_object or (), args.decompile_offset or (),
-            args.ghidra_install_dir)
+            args.ghidra_install_dir, args.actions_json)
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
         parser.exit(1, 'run_ghidra: %s\n' % error)
 
