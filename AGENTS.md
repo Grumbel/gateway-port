@@ -37,6 +37,52 @@ Read `docs/data-files.md`, `docs/spellcasting.md`, and `docs/scummvm-legend.md` 
 
 [Risca/dgate_resource_manager](https://github.com/Risca/dgate_resource_manager) explores Death Gate resources. Treat it as a research lead; verify format similarities against Gateway data before reuse.
 
-Commit frequently in small, focused increments; do not accumulate hours of work before committing. Use an imperative subject and a detailed body explaining the change, its purpose, validation, and remaining limitations. End every commit message with a `Co-authored-by: Name <email>` trailer identifying the collaborating agent. Use the established collaborator identity when available; never invent a human identity.
-
 Pull requests should describe behavior, evidence, validation, and remaining limitations; include screenshots for visible changes.
+
+## Commits
+
+- Commit verified work in small, focused increments; do not accumulate hours
+  of work before committing. Use an imperative subject and a detailed body
+  explaining the change, its purpose, validation, and remaining limitations.
+- Every new commit must include a `Co-authored-by:` trailer naming the AI
+  that actually made the changes in that session, with its vendor's
+  attribution address. Never copy attribution from earlier commits.
+- Use a specific model name when the session metadata or the user states
+  one; otherwise use a generic name. Do not guess a version and do not stop
+  to ask. Examples:
+  `Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>`,
+  `Co-authored-by: Claude <noreply@anthropic.com>`,
+  `Co-authored-by: Codex <codex@openai.com>`,
+  `Co-authored-by: ChatGPT (High) <codex@openai.com>`.
+- The commit author is always the repository owner
+  (`Ingo Ruhnke <grumbel@gmail.com>`), never the AI.
+- Never push, publish, or force-push; the owner does that.
+
+## Licensing
+
+- New files carry SPDX headers with
+  `SPDX-FileCopyrightText: <year> Ingo Ruhnke <grumbel@gmail.com>`; never
+  name an AI or its vendor as copyright holder. Files without comment syntax
+  are covered in `REUSE.toml`. `nix flake check` runs `reuse lint`.
+- Port, tool, test and documentation code is
+  `GPL-3.0-or-later WITH GPL-3.0-linking-exception`.
+- Code that reimplements game logic from tables, constants or control flow
+  read out of the original program (such as `src/story_model.*`) is
+  `LicenseRef-Gateway-Derived`. File-format parsers and hardware/DOS
+  emulation stay GPL.
+- Never commit original executables, game data, extracted assets, story
+  text, executable bytes, or Ghidra pseudocode.
+
+## Delivery
+
+- Agents with direct repository access (Codex, Claude Code) commit
+  directly on `master`.
+- Web chat sessions without repository access deliver a Git bundle based on
+  the current `master`, created with `git bundle create <name>.bundle
+  <base>..master`, and state the base commit.
+- Original game data may arrive as a `.zip`. Extract it outside the
+  repository (as the sibling directories listed above), verify the
+  executable SHA-256 values in `docs/executable.md`, and never commit the
+  archive or its contents.
+- Generated Ghidra output stays under `build/`; see `docs/ghidra.md` to
+  regenerate it with or without Nix.
