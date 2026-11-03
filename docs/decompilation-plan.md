@@ -398,8 +398,12 @@ the cause. `gateway-probe` can now record an opt-in RTLink target/caller
 timeline for every validated call. The golden runner propagates this trace,
 reports the earliest code-call or guest-millisecond divergence and accepts
 2–8 independent seeded runs to expose intermittent behavior. The strict
-RAM comparison and its exclusions are unchanged. Next: run the bar timeline
-on the native host and investigate the first divergent entry.
+RAM comparison and its exclusions are unchanged. The host ran four independent
+seeded bar replays: all 16 checkpoints and all 40,265 chronological RTLink
+entries matched in every pair. Added an opt-in common-checkpoint comparison
+for the original full-campaign (every 10 commands) and seeded bar (every 5)
+recordings. Next: compare their shared snapshots to see whether divergence
+is already present after loading the same save or appears only after waiting.
 
 ### 3.7 [ ] Per-routine differential tester
 
@@ -599,6 +603,7 @@ passes with `--replace-verified`.
 | 2026-11-03 | 3.6 (ongoing) | Added independently isolated native golden campaign runner with per-ten-command and stage-end checkpoints; SHA-256 of 640 KiB conventional RAM excludes only documented BIOS tick counter and live SS:SP stack tail, with exclusion bounds included in hash manifests. Synthetic tests confirm matching runs ignore transient stack/clock bytes, detect the first one-byte story mutation at its exact command, and reject stale scripts. Awaiting two native host runs and deliberately bad opt-in replacement before marking the phase complete. |
 | 2026-11-03 | 3.6 (ongoing) | Host ran both nine-stage campaigns successfully but memory hashes diverged at `office/initial_items` after command 2, first unmasked byte `0x55ae6`; some later RTLink call counts also differed. Audited the runtime and found that virtual DOS INT 21h date/time readings came from `system_clock::now()`, so independent launches were fed different clock seeds. Added an explicit deterministic UTC clock for golden replays (1992-01-01 noon), retaining host time for interactive play, and augmented first-divergence diagnostics with changed-page distribution. Host retest still pending. |
 | 2026-11-03 | 3.6 (ongoing) | Full fixed-clock campaign matches through `armory_class` but first RAM difference is `bar_nubar/golden-command-000010`; all 734 object records and the bar stage-end original saves match despite different transient CPU state. Independent bar-only seed replay matched 16/16 checkpoints and 40,265 RTLink calls in both runs, whereas the full run saw 40,272/40,259. Host SHA-256 proved its two preceding `GATE004.SAV` files byte-identical. Added optional per-call RTLink target/caller/guest-time sequence traces and 2–8 independently seeded golden runs to locate first intermittent execution divergence; native trace results still pending. |
+| 2026-11-03 | 3.6 (ongoing) | Host completed four independent bar runs seeded from one verified `GATE004.SAV`: all 16 RAM checkpoints and every one of 40,265 ordered RTLink code-call/timestamp records matched in all four. This rules out a repeatable difference in isolated bar execution, but not the earlier discrepancy between full and seeded campaigns. Added `compare --common-checkpoints` to compare existing full-run and isolated-run recordings across different checkpoint frequencies without replaying DOS; no guest data or masks added. |
 
 ## 10. Risks and how to react
 

@@ -197,6 +197,40 @@ def first_divergence(left, right):
     return None
 
 
+def align_common_checkpoints(left, right):
+    """Compare shared stage/label snapshots despite different capture intervals.
+
+    Each original snapshot must retain its stage script hash, action ordinal,
+    command ordinal and guest timestamp. Only the checkpoint *selection* may
+    differ. This is diagnostic, not a replacement for full-campaign equality.
+    """
+    for key in ('schema_version', 'campaign_sha256', 'memory_end'):
+        if left.get(key) != right.get(key):
+            raise ValueError(f'cannot align campaigns: {key} differs')
+    right_by_stage = {item['name']: item for item in right['stages']}
+    aligned_left = []
+    aligned_right = []
+    for a in left['stages']:
+        b = right_by_stage.get(a['name'])
+        if b is None:
+            continue
+        if a.get('script_sha256') != b.get('script_sha256'):
+            raise ValueError(f'cannot align stage {a["name"]}: script digest differs')
+        right_labels = {point['label']: point for point in b['checkpoints']}
+        common_a = [point for point in a['checkpoints'] if point['label'] in right_labels]
+        if not common_a:
+            continue
+        common_b = [right_labels[point['label']] for point in common_a]
+        aligned_left.append({**a, 'checkpoints': common_a})
+        aligned_right.append({**b, 'checkpoints': common_b})
+    if not aligned_left:
+        raise ValueError('campaigns have no common stage checkpoints')
+    # The interval controls *which* labels were captured, not the underlying
+    # guest state. Normalize it only after selecting identical labels.
+    return ({**left, 'stages': aligned_left},
+            {**right, 'every': left['every'], 'stages': aligned_right})
+
+
 def describe_cpu_difference(left, right):
     names = ('CS', 'IP', 'SS', 'SP', 'BP', 'DS', 'ES', 'FLAGS')
     differences = [f'{name}={left[name]:04x}/{right[name]:04x}'
@@ -281,7 +315,7 @@ def describe_rtlink_sequence(left_dir, right_dir, stage):
     if not any(path.exists() for path in paths):
         return ''
     if not all(path.is_file() for path in paths):
-        raise ValueError(f'RTLink call sequence missing on one side for stage {stage}')
+        return 'RTLink call sequence unavailable (recorded on only one side)'
     first_time_drift = None
     previous = deque(maxlen=2)
     count = 0
@@ -492,6 +526,8 @@ def main():
     compare.add_argument('--right-campaign', type=Path)
     compare.add_argument('--all-checkpoints', action='store_true',
                          help='list all differing checkpoints, including later recovery')
+    compare.add_argument('--common-checkpoints', action='store_true',
+                         help='compare shared stage/label snapshots despite different --every')
     run = commands.add_parser('run', help='run independent campaigns and compare RAM checkpoints')
     run.add_argument('manifest', type=Path)
     run.add_argument('--probe', type=Path, default=Path('/tmp/gateway-port-build/gateway-probe'))
@@ -524,6 +560,10 @@ def main():
             print(f'Golden hashes saved: {args.output}')
         elif args.mode == 'compare':
             left, right = read_manifest(args.left), read_manifest(args.right)
+            if args.common_checkpoints:
+                left, right = align_common_checkpoints(left, right)
+                print(f'Comparing {sum(len(s["checkpoints"]) for s in left["stages"])} '
+                      f'common checkpoints across {len(left["stages"])} shared stages')
             if args.all_checkpoints:
                 report_checkpoint_drift(left, right, args.left_campaign,
                                         args.right_campaign)

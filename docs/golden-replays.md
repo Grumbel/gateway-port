@@ -163,6 +163,33 @@ If the first group of four happens to match, use a fresh output path and
 repeat; one passing group is evidence only for those runs. No new exclusion
 has been added to the strict RAM oracle.
 
+The first four independently seeded bar replays **all matched**: 16/16 RAM
+checkpoints and the complete sequence of 40,265 RTLink targets, callers and
+guest millisecond timestamps. That makes the next inexpensive experiment a
+comparison of **old full-campaign bar checkpoints against the seeded bar**.
+Those recordings used different `--every` intervals (10 and 5) and have
+different stage selections, but share named labels and some command-number
+checkpoints. The optional `compare --common-checkpoints` compares only these
+shared snapshots, retaining stage script identity, action/command ordinals,
+guest timestamps, original-save checks and strict RAM/stack exclusions:
+
+```sh
+python3 tools/run_golden.py compare \
+  build/golden/full-fixed-clock/run-a.json \
+  build/golden/bar-rtlink-diagnostic/run-a.json \
+  --left-campaign build/golden/full-fixed-clock/run-a \
+  --right-campaign build/golden/bar-rtlink-diagnostic/run-a \
+  --common-checkpoints --all-checkpoints
+```
+
+Repeat with `run-b` on both sides if they disagree. The earliest divergent
+named checkpoint determines whether the two paths differ right after loading
+the same verified save, or only later while processing the bar's timed events.
+Old campaigns lacking the optional call sequence can still be compared; the
+sequence diagnostic will simply say the trace is available on one side only.
+An aligned comparison **does not** establish full campaign equivalence: only
+the intersecting stage/label checkpoints are checked.
+
 Compare subsequent native builds or a replacement-enabled probe against the
 same baseline:
 

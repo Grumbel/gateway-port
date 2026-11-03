@@ -13,7 +13,8 @@ import unittest
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-from run_golden import (CONVENTIONAL_END, MEMORY_SIZE, capture_campaign, check_pair,
+from run_golden import (CONVENTIONAL_END, MEMORY_SIZE, align_common_checkpoints,
+                        capture_campaign, check_pair,
                         describe_cpu_difference, describe_rtlink_sequence, describe_stage_save,
                         excluded_ranges,
                         explain_difference, first_divergence, normalized_memory,
@@ -328,8 +329,38 @@ class GoldenReplayTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'malformed RTLink call sequence'):
                 describe_rtlink_sequence(root / 'run-a', root / 'run-b', 'first')
             b.unlink()
-            with self.assertRaisesRegex(ValueError, 'missing on one side'):
-                describe_rtlink_sequence(root / 'run-a', root / 'run-b', 'first')
+            self.assertIn('recorded on only one side',
+                          describe_rtlink_sequence(root / 'run-a', root / 'run-b', 'first'))
+
+    def test_common_labels_align_different_intervals_and_partial_campaign(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = self.fake_two_stage_campaign(root)
+            stages = load_campaign(manifest)
+            for every, run in ((1, 'full'), (2, 'late')):
+                for stage in stages[(1 if run == 'late' else 0):]:
+                    for checkpoint in planned_checkpoints(stage, every):
+                        self.add_snapshot(root / run, stage.name, checkpoint)
+            a = capture_campaign(manifest, root / 'full', 1)
+            b = capture_campaign(manifest, root / 'late', 2, 'second', 'second')
+            common_a, common_b = align_common_checkpoints(a, b)
+            self.assertEqual([stage['name'] for stage in common_a['stages']], ['second'])
+            self.assertEqual(len(common_a['stages'][0]['checkpoints']), 2)
+            self.assertEqual(common_a['stages'][0]['checkpoints'],
+                             common_b['stages'][0]['checkpoints'])
+            check_pair(common_a, common_b)
+            different = copy.deepcopy(common_b)
+            different['stages'][0]['checkpoints'][0]['sha256'] = '1' * 64
+            self.assertEqual(first_divergence(common_a, different)[:2],
+                             ('second', common_a['stages'][0]['checkpoints'][0]['label']))
+            no_common = copy.deepcopy(b)
+            no_common['stages'][0]['name'] = 'other'
+            with self.assertRaisesRegex(ValueError, 'no common stage checkpoints'):
+                align_common_checkpoints(a, no_common)
+            stale = copy.deepcopy(b)
+            stale['stages'][0]['script_sha256'] = 'f' * 64
+            with self.assertRaisesRegex(ValueError, 'script digest differs'):
+                align_common_checkpoints(a, stale)
 
     def test_sequence_trace_flag_reaches_campaign(self):
         with mock.patch('run_golden.subprocess.run') as invoke:
