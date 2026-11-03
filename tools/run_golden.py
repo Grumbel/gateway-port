@@ -101,11 +101,17 @@ def snapshot_prefix(root, stage_name, label):
     return root / stage_name / ('native' if label == 'final' else 'checkpoint-' + label)
 
 
-def capture_campaign(manifest, campaign_dir, every):
+def capture_campaign(manifest, campaign_dir, every, through_stage=None):
     if not 1 <= every <= 10000:
         raise ValueError('--every must be between 1 and 10000')
     stages = []
-    for stage in load_campaign(manifest):
+    campaign_stages = load_campaign(manifest)
+    if through_stage:
+        names = [stage.name for stage in campaign_stages]
+        if through_stage not in names:
+            raise ValueError(f'unknown --through-stage: {through_stage}')
+        campaign_stages = campaign_stages[:names.index(through_stage) + 1]
+    for stage in campaign_stages:
         checkpoints = []
         for checkpoint in planned_checkpoints(stage, every):
             prefix = snapshot_prefix(campaign_dir, stage.name, checkpoint['label'])
@@ -175,8 +181,24 @@ def explain_difference(a, b, left_dir, right_dir, stage, label):
         rregs = read_registers(right_prefix.with_suffix('.regs'))
         lmem, _ = normalized_memory(left_prefix.with_suffix('.bin'), lregs)
         rmem, _ = normalized_memory(right_prefix.with_suffix('.bin'), rregs)
-        first = next((index for index, (l, r) in enumerate(zip(lmem, rmem)) if l != r), None)
-        return f'; first unmasked byte at 0x{first:05x}' if first is not None else ''
+        counts = {}
+        first = None
+        for index, (lvalue, rvalue) in enumerate(zip(lmem, rmem)):
+            if lvalue != rvalue:
+                if first is None:
+                    first = index
+                page = index // 4096
+                counts[page] = counts.get(page, 0) + 1
+        if first is None:
+            return ''
+        hot_pages = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:5]
+        distribution = ', '.join(f'0x{page * 4096:05x}:{count}'
+                                 for page, count in hot_pages)
+        count = sum(counts.values())
+        return (f'; first unmasked byte at 0x{first:05x}; '
+                f'{count} changed {"byte" if count == 1 else "bytes"} in '
+                f'{len(counts)} {"page" if len(counts) == 1 else "pages"}; '
+                f'top 4-KiB pages (start:changed bytes) {distribution}')
     except (OSError, ValueError):
         return ''
 
@@ -191,13 +213,16 @@ def check_pair(left, right, left_dir=None, right_dir=None):
     print(f'Golden replay matched: {len(left["stages"])} stages, {count} RAM checkpoints')
 
 
-def run_campaign(manifest, probe, data, output, every, timeout, verify_overlays, probe_args):
+def run_campaign(manifest, probe, data, output, every, timeout, verify_overlays,
+                 probe_args, through_stage=None):
     command = [sys.executable, str(Path(__file__).with_name('run_walkthrough_campaign.py')),
                str(manifest), '--probe', str(probe), '--data', str(data),
                '--output', str(output), '--golden-every', str(every),
                '--timeout', str(timeout)]
     if verify_overlays:
         command.append('--verify-overlays')
+    if through_stage:
+        command += ['--through-stage', through_stage]
     for argument in probe_args:
         command.append('--probe-arg=' + argument)
     subprocess.run(command, check=True)
@@ -210,6 +235,7 @@ def main():
     capture.add_argument('manifest', type=Path)
     capture.add_argument('--campaign', type=Path, required=True)
     capture.add_argument('--every', type=int, default=10)
+    capture.add_argument('--through-stage', metavar='NAME')
     capture.add_argument('--output', type=Path, required=True, help='write hashes (no guest bytes)')
     compare = commands.add_parser('compare', help='compare saved golden hash manifests')
     compare.add_argument('left', type=Path)
@@ -222,6 +248,8 @@ def main():
     run.add_argument('--data', type=Path, default=Path('../gateway-dos'))
     run.add_argument('--output', type=Path, default=Path('build/golden'))
     run.add_argument('--every', type=int, default=10)
+    run.add_argument('--through-stage', metavar='NAME',
+                     help='run only through this stage while diagnosing early mismatches')
     run.add_argument('--timeout', type=int, default=1800)
     run.add_argument('--verify-overlays', action='store_true')
     run.add_argument('--probe-arg', action='append', default=[], metavar='ARG',
@@ -233,7 +261,7 @@ def main():
     try:
         if args.mode == 'capture':
             save_manifest(args.output, capture_campaign(args.manifest, args.campaign,
-                                                        args.every))
+                                                        args.every, args.through_stage))
             print(f'Golden hashes saved: {args.output}')
         elif args.mode == 'compare':
             check_pair(read_manifest(args.left), read_manifest(args.right),
@@ -255,8 +283,9 @@ def main():
                 root = args.output / f'run-{suffix}'
                 print(f'Starting independent native campaign {suffix}', flush=True)
                 run_campaign(args.manifest, args.probe, args.data, root, args.every,
-                             args.timeout, args.verify_overlays, args.probe_arg)
-                hashed = capture_campaign(args.manifest, root, args.every)
+                             args.timeout, args.verify_overlays, args.probe_arg,
+                             args.through_stage)
+                hashed = capture_campaign(args.manifest, root, args.every, args.through_stage)
                 save_manifest(args.output / f'run-{suffix}.json', hashed)
                 if baseline is not None:
                     check_pair(baseline, hashed)

@@ -366,6 +366,15 @@ first affected command. The native two-run baseline and deliberate §3.8
 replacement-failure acceptance tests remain **pending on the host**; no
 determinism or replacement correctness is inferred from synthetic tests.
 
+The first two complete native campaigns **did not match**: the first difference
+was `office/initial_items` after command 2 at RAM `0x55ae6`. Source review
+identified host-wall-time initialization of the virtual DOS calendar as one
+source of nondeterminism, and newly written save-file metadata as another
+potential source. Golden runs now force fixed UTC noon on 1992-01-01 and
+normalize guest-visible saved-slot timestamps, while interactive runs retain
+their host-local behavior; native retesting is required before declaring the
+original mismatch resolved.
+
 ### 3.7 [ ] Per-routine differential tester
 
 Add a mode to `gateway-probe` that, during a replay, stops at the entry of
@@ -562,6 +571,7 @@ passes with `--replace-verified`.
 | 2026-11-03 | 3.5 (ongoing) | The authentic 49-action bar/casino stage produced the expected `FULLCASINO` saved game, extending the reviewed campaign to 159 actions, but still did not invoke `exe:0x5bd1`. Static original section-4 caller code at `ovl:0x051aea` confirms its `(object,mode)` two-word far-call ABI and caller stack cleanup, not its runtime effects. Added repeatable native service-entry forwarding to the campaign runner with a mocked saved-game-handoff test. Further injected replays are paused in this environment: private Xvfb cannot start because Unix socket creation is denied (`EPERM`); §3.5 stays open with the service only `named`. |
 | 2026-11-03 | 3.5 | Completed the eighteen ≥20-handler service catalogue. A private-Xvfb native three-command replay reached `exe:0x5bd1` twice for `(object=0x124,slot=0)`; its section-4 child-count (`ovl:0xbf3d`) and list-emission (`ovl:0xb910`) callees returned AX=1 on all six traced calls. Qualified RTLink return snapshots confirmed zero count-helper writes and one initial object property-7 write by the list formatter, with no changes on repeated examinations. Resolved both trampolines using third EXE base `0xa73a`; renamed the service `gw_present_child_list` and marked it analyzed, not ported or §3.7-verified. Next: §3.6 deterministic golden replays. |
 | 2026-11-03 | 3.6 (ongoing) | Added independently isolated native golden campaign runner with per-ten-command and stage-end checkpoints; SHA-256 of 640 KiB conventional RAM excludes only documented BIOS tick counter and live SS:SP stack tail, with exclusion bounds included in hash manifests. Synthetic tests confirm matching runs ignore transient stack/clock bytes, detect the first one-byte story mutation at its exact command, and reject stale scripts. Awaiting two native host runs and deliberately bad opt-in replacement before marking the phase complete. |
+| 2026-11-03 | 3.6 (ongoing) | Host ran both nine-stage campaigns successfully but memory hashes diverged at `office/initial_items` after command 2, first unmasked byte `0x55ae6`; some later RTLink call counts also differed. Audited the runtime and found that virtual DOS INT 21h date/time readings came from `system_clock::now()`, so independent launches were fed different clock seeds. Added an explicit deterministic UTC clock for golden replays (1992-01-01 noon), retaining host time for interactive play, and augmented first-divergence diagnostics with changed-page distribution. Host retest still pending. |
 
 ## 10. Risks and how to react
 

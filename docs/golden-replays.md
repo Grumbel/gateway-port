@@ -32,6 +32,39 @@ The optional `--write-baseline` is only honored if both runs agree. It is
 safe to cancel or rerun with a *new* `--output`; existing run directories
 are intentionally not overwritten.
 
+Golden replay mode enables `gateway-probe --deterministic-clock` automatically.
+The virtual DOS date/time starts at **1992-01-01 12:00:00 UTC** and advances
+only by guest emulation time, even when host runs start minutes apart or use
+different timezones. This is deliberate: an initial independent-host replay
+on 2026-11-03 diverged at office checkpoint `initial_items`, first byte
+`0x55ae6`, and the original probe initialized its DOS clock from wall time.
+The clock is a confirmed nondeterministic input, **not yet a proven sole
+cause** of the RAM difference. Normal interactive execution retains the
+host-local clock; a direct probe replay can opt in via `--deterministic-clock`.
+Save slots created in the writable DOS state layer also get deterministic
+**guest-visible directory timestamps** in this mode. The host files are not
+retimestamped: only their DOS `findfirst`/`findnext` date/time fields are
+normalized, because host creation time would otherwise leak across stages.
+Original game assets keep their own directory metadata.
+
+When the first mismatch is in an early stage, rerun *only* the affected prefix
+while diagnosing it; this avoids replaying the full campaign each time:
+
+```sh
+xvfb-run -a python3 tools/run_golden.py run \
+  tests/fixtures/gateway-campaign.json \
+  --probe /tmp/gateway-port-build/gateway-probe \
+  --data ../gateway-dos \
+  --output build/golden/office-fixed-clock \
+  --through-stage office
+```
+
+This still makes two independent native runs and compares all `office`
+checkpoints, but does **not** establish a full-campaign baseline. Choose a
+fresh output path after any failed attempt; prior RAM dumps are kept for
+diagnosis. First-mismatch output includes the number of changed unmasked
+bytes and the five most affected 4-KiB pages (addresses and counts only).
+
 Compare subsequent native builds or a replacement-enabled probe against the
 same baseline:
 

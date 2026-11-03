@@ -9,11 +9,13 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from run_golden import (CONVENTIONAL_END, MEMORY_SIZE, capture_campaign, check_pair,
                         excluded_ranges, first_divergence, normalized_memory,
-                        planned_checkpoints, read_manifest, save_manifest, snapshot_prefix)
+                        planned_checkpoints, read_manifest, run_campaign, save_manifest,
+                        snapshot_prefix)
 from run_walkthrough import compile_steps, parse_script
 from run_walkthrough_campaign import load_campaign
 
@@ -102,7 +104,8 @@ class GoldenReplayTests(unittest.TestCase):
             self.assertEqual(first_divergence(a, broken)[:2],
                              ('first', 'golden-command-000002'))
             with self.assertRaisesRegex(ValueError,
-                                         'checkpoint=golden-command-000002.*command 2.*0x30000'):
+                                         'checkpoint=golden-command-000002.*command 2.*'
+                                         '0x30000; 1 changed byte in 1 page'):
                 check_pair(a, broken, root / 'a', root / 'b')
             file = root / 'hashes.json'
             save_manifest(file, a)
@@ -134,6 +137,23 @@ class GoldenReplayTests(unittest.TestCase):
                 self.assertLessEqual(len(points) - 1, 32)
                 self.assertEqual(points[-1]['label'], 'final')
                 self.assertGreater(points[-1]['action_index'], 0)
+
+    def test_partial_campaign_is_explicit_and_forwards_stage_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = self.fake_campaign(root)
+            stage = load_campaign(manifest)[0]
+            for point in planned_checkpoints(stage, every=10):
+                self.add_snapshot(root / 'run', 'first', point)
+            recorded = capture_campaign(manifest, root / 'run', 10, through_stage='first')
+            self.assertEqual([s['name'] for s in recorded['stages']], ['first'])
+            with self.assertRaisesRegex(ValueError, 'unknown --through-stage'):
+                capture_campaign(manifest, root / 'run', 10, through_stage='missing')
+            with mock.patch('run_golden.subprocess.run') as invoke:
+                run_campaign(manifest, root / 'probe', root / 'game', root / 'output',
+                             10, 100, False, [], through_stage='first')
+            command = invoke.call_args.args[0]
+            self.assertEqual(command[command.index('--through-stage') + 1], 'first')
 
 
 if __name__ == '__main__':
