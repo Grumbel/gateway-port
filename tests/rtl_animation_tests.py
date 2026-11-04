@@ -5,14 +5,17 @@
 """Synthetic and optional original-image tests for RTL animation services."""
 
 from pathlib import Path
+import re
 import struct
+import subprocess
 import sys
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 from inspect_rtl_animation import (
-    ROOM_CALLS, inspect_animation_calls, inspect_animation_state,
+    DRAW_CALL_SITES, ROOM_CALLS, inspect_animation_calls,
+    inspect_animation_draw_calls, inspect_animation_state,
     relocated_displacement, summarize_deadline_trace)
 
 
@@ -89,6 +92,31 @@ class AnimationServiceTests(unittest.TestCase):
         self.assertEqual(report['deadline_step_counts'], {500: 2})
         self.assertEqual(report['guest_ms_step_counts'], {499: 1, 501: 1})
 
+    def test_frame_renderer_calls_are_resolved_from_live_relocations(self):
+        rtl = bytearray(0x14000)
+        ram = bytearray(1 << 20)
+        origin = 0x25fd8 - 0x1328d
+        signature = bytes.fromhex('0ee867f9')
+        rtl[0x1356c:0x13570] = signature
+        ram[origin + 0x1356c:origin + 0x13570] = signature
+        expected = ((0x23bd, 0x04d9), (0x2a1c, 0x000c),
+                    (0x23bd, 0x03c5))
+        for (_, source), (segment, offset) in zip(DRAW_CALL_SITES, expected):
+            struct.pack_into('<BHH', rtl, source, 0x9a, 0, 0)
+            struct.pack_into('<BHH', ram, origin + source, 0x9a,
+                             offset, segment)
+        rows = [{'linked_segment': 0x1485, 'linked_offset': 0x1788,
+                 'original_offset': 0x1328d}]
+        calls = inspect_animation_draw_calls(rtl, ram, rows)
+        self.assertEqual([item['name'] for item in calls],
+                         [item[0] for item in DRAW_CALL_SITES])
+        self.assertEqual([(item['runtime_target']['segment'],
+                           item['runtime_target']['offset']) for item in calls],
+                         list(expected))
+        ram[origin + DRAW_CALL_SITES[1][1]] = 0x90
+        with self.assertRaisesRegex(ValueError, 'frame draw CALL mismatch'):
+            inspect_animation_draw_calls(rtl, ram, rows)
+
     def test_optional_original_rtl_animation_services(self):
         dos = ROOT.parent / 'gateway-dos'
         snapshot = ROOT / 'build/rgn-scenes-v026/before.bin'
@@ -100,6 +128,11 @@ class AnimationServiceTests(unittest.TestCase):
         rows = inspect_animation_calls(ovl, exe, rtl, ram)
         self.assertEqual([row['original_offset'] for row in rows],
                          [0x1328d, 0x133df, 0x1342d, 0x136b1])
+        draw_calls = inspect_animation_draw_calls(rtl, ram, rows)
+        self.assertEqual([(row['runtime_target']['segment'],
+                           row['runtime_target']['offset']) for row in draw_calls],
+                         [(0x23bd, 0x04d9), (0x2a1c, 0x000c),
+                          (0x23bd, 0x03c5)])
 
         # Read-only checks of original machine-code invariants: five active
         # sequence slots, 20 frame records, 0x88-byte frame stride, and a
@@ -169,6 +202,58 @@ class AnimationServiceTests(unittest.TestCase):
         self.assertEqual(changes[1], changes[5])
         self.assertEqual(frames[0], frames[4])
         self.assertEqual(frames[2], frames[6])
+
+    def test_optional_original_drawer_and_book_animation_timeline(self):
+        """Separate the 500-ms sequence from drawer and object image updates."""
+        directory = ROOT / 'build/rtl-actions-v034'
+        scene_tool = ROOT / 'build/headless-local/gateway-scene'
+        pic = ROOT.parent / 'gateway-dos/GATE_102.PIC'
+        timestamps = (19500, 19750, 20000, 20250, 20500, 20750,
+                      21000, 21500, 21750, 22000, 22250, 22500,
+                      23000, 25000, 25500, 25750, 26000, 26250,
+                      26500, 26750, 27000, 30500, 31000, 31500,
+                      32000, 34500, 34750, 35000, 35250, 35500,
+                      35750, 36000)
+        if (not pic.exists() or not scene_tool.is_file() or
+                not all((directory / f't{ms}.ppm').is_file() and
+                        (directory / f't{ms}.bin').is_file()
+                        for ms in timestamps)):
+            self.skipTest('original drawer/book framebuffer series unavailable')
+        # Independent PIC inference from the native framebuffer: layer 16
+        # remains present while the drawer is open; layer 17 continues to
+        # blink before and after close; layer 18 remains present.
+        indicator_on = {19750, 20000, 20750, 21000, 21500, 22250,
+                        22500, 25500, 26250, 26500, 30500, 31500,
+                        34750, 35000, 35750, 36000}
+        for ms in timestamps:
+            frame = directory / f't{ms}.ppm'
+            result = subprocess.run([str(scene_tool), '--base', '15',
+                                     '--optional-layer', '16',
+                                     '--optional-layer', '17',
+                                     '--optional-layer', '18',
+                                     '--reference-ppm', str(frame),
+                                     '--screen-x', '261', str(pic)],
+                                    text=True, capture_output=True, check=True)
+            match = re.search(r': (\d+)/(\d+) differing scene pixels; '
+                              r'(\d+) equally good layer sets; selected entries:(.*)',
+                              result.stdout)
+            self.assertIsNotNone(match, f'{ms}: unexpected scene report')
+            self.assertEqual((int(match[1]), int(match[2]), int(match[3])),
+                             (0, 84896, 1), f'{ms}: image diverged')
+            layers = set(map(int, match[4].split()))
+            expected = {18}
+            if ms < 34500:
+                expected.add(16)
+            if ms in indicator_on:
+                expected.add(17)
+            self.assertEqual(layers, expected, f'{ms}: wrong layer set')
+
+            ram = (directory / f't{ms}.bin').read_bytes()
+            base = 0x5b46 * 16  # established from live RTL entry trace
+            self.assertEqual(struct.unpack_from('<H', ram, base + 0x1428)[0], 1)
+            self.assertEqual(struct.unpack_from('<h', ram, base + 0x6a20)[0], 0)
+            self.assertEqual(ram[base + 0x69fe], 1)
+            self.assertEqual(ram[base + 0xadf8], int(ms < 34500))
 
 
 if __name__ == '__main__':

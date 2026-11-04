@@ -742,6 +742,19 @@ has exactly one zero-difference match for each frame (17+18 when visible,
 the single-frame indicator's full blink cycle. Other room-action interactions
 and the native replacement remain unverified.
 
+2026-11-04 RTL action/animation interleaving (§3.6): completed another
+39,000-ms headless opening replay (7 actions, 76 BIOS keys, 32 additional
+frame/RAM pairs). The original PIC compositor matched each of the 32 scenes
+uniquely with zero pixel differences: drawer layer 16 changed on close,
+indicator layer 17 kept blinking, card layer 18 remained. The active RTL
+sequence count and handle stayed fixed while the room picture-cache byte
+changed from one to zero. Original disassembly shows the scheduler at
+`rtl:0x1356d` calling its local frame renderer at `rtl:0x12ed7`; live
+relocations establish its three far calls to video-state save, frame draw
+(`2a1c:000c`), and video-state restore. Added read-only linked-call mapping
+and synthetic/optional-original tests. Renderer mode-3 details, behavior on
+room exit, and a host-side animation port remain open.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |

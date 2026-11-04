@@ -361,3 +361,67 @@ verified host-side animation port.
 The native test now checks all four entire room views, and the original
 callback bytes, animation-call operands, handle and guest state are checked
 separately. No original asset or runtime snapshot is committed.
+
+### Animation persists across picture-condition updates
+
+A further complete native opening replay (seven actions, 76 BIOS keys,
+39,000 guest ms) captured **32 additional framebuffer and conventional-RAM
+pairs** over the drawer, book, and close commands. Every sample is reproduced
+by a **unique** combination of original PIC overlays 16, 17 and 18, with
+**zero differing pixels out of 84,896**. The scene-compositor inference and
+the live animation fields are independently checked by
+`tests/rtl_animation_tests.py` when the private samples exist.
+
+| Sample interval (guest ms) | Drawer overlay 16 | Indicator overlay 17 | Card overlay 18 | Original scene mismatches |
+| --- | --- | --- | --- | ---: |
+| 19,500–23,000 (13 captures) | Always on | Alternates on/off | Always on | 0 in all |
+| 25,000–32,000 (12 captures) | Always on | Alternates on/off | Always on | 0 in all |
+| 34,500–36,000 (7 captures) | Always off | Alternates on/off | Always on | 0 in all |
+
+At every sample, the linker-relocated RTL active-sequence count at
+`DS=5b46:1428` remains **one**, the Your Quarters animation handle at
+`DS:6a20` remains **zero**, and the picture eligibility byte at
+`DS:69fe` remains **one**. In contrast, the first cached picture-state byte
+at `DS:adf8` changes from **one** while the drawer is open to **zero**
+after closing it. The blink persists in both states. This establishes that
+the resident animation's active slot and the room's conditional picture cache
+are distinct in this playthrough; it does *not* establish their behavior when
+the player leaves the room or stops the animation explicitly. All DS offsets
+are tied to the captured launch layout.
+
+Reading the original RTL scheduler disassembly reveals a near call at
+`rtl:0x1356d` into the frame renderer at **`rtl:0x12ed7`**. The renderer
+checks frame-record byte zero, uses the mode byte at `+1`, passes the frame
+payload from `+8` and a position derived from `+2`/`+4`, then makes three
+linker-relocated far calls. `--draw-calls` in the RTL inspector validates
+the near-call instruction and reads the real far targets from retained
+native RAM (the original GATE.RTL far CALL operands are zero):
+
+| Original call site | Function in the renderer | Observed relocated target |
+| --- | --- | --- |
+| `rtl:0x12ee6` | Save video state | `23bd:04d9` |
+| `rtl:0x12f17` | Draw frame payload | `2a1c:000c` |
+| `rtl:0x12f1f` | Restore video state | `23bd:03c5` |
+
+The current 136-byte frame's first eight bytes decode as enabled=1,
+mode=3, x=28, y=1, duration=10, auxiliary duration=0. The renderer's
+exact mode-3 semantics and the far draw target's original file identity
+still need analysis. The observed on/off pixel differences are consistent
+with reversible XOR overlay composition, but the source-level dispatch
+alone does not prove its internal blending algorithm.
+
+For a repeatable private capture, run the native `gateway-opening.walk`
+replay with `--max-actions 7` and `--probe-arg=--dump-at` plus
+`--probe-arg=MS:PREFIX` for the 32 times listed in the optional test.
+Then resolve its renderer targets with:
+
+~~~sh
+python3 tools/inspect_rtl_animation.py \
+  --ovl ../gateway-dos/GATEMAIN.OVL \
+  --exe ../gateway-dos/GATE.EXE \
+  --rtl ../gateway-dos/GATE.RTL \
+  --ram build/rtl-actions-v034/t20500.bin --ds 5b46 --draw-calls
+~~~
+
+Neither the captured game frames nor the original frame-record bytes are
+redistributed.

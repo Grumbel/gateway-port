@@ -42,6 +42,15 @@ STATE_OPERANDS = {
     'frame_buffer': (0x132c4, (0x89, 0x87), 0x001e),
 }
 
+# The scheduler pushes a far frame-record pointer and calls the internal
+# renderer at RTL:0x12ed7. These three original far CALLs are linker slots:
+# they have a zero target in GATE.RTL but a real target in loaded guest RAM.
+DRAW_CALL_SITES = (
+    ('save_video_state', 0x12ee6),
+    ('draw_frame', 0x12f17),
+    ('restore_video_state', 0x12f1f),
+)
+
 
 def inspect_animation_calls(ovl, exe, rtl, ram, load_segment=0x1000):
     """Return linked-to-file matches, rejecting changed or unresolved calls."""
@@ -92,6 +101,39 @@ def relocated_displacement(original, live, source_offset, guest_offset,
     if struct.unpack_from('<H', original, source_offset + 2)[0] != original_displacement:
         raise ValueError(f'original RTL data operand changed at 0x{source_offset:x}')
     return struct.unpack_from('<H', live, guest_offset + 2)[0]
+
+
+def inspect_animation_draw_calls(rtl, ram, services, load_segment=0x1000):
+    """Recover the three linker-resolved calls made by the frame renderer.
+
+    Do not infer that a linked segment is the same as the runtime CS: the
+    linker may relocate the CALL's entire target. The result is valid only
+    for the supplied RAM capture, with original RTL offsets as identities.
+    """
+    origins = {(load_segment + row['linked_segment']) * 16 +
+               row['linked_offset'] - row['original_offset']
+               for row in services}
+    if len(origins) != 1:
+        raise ValueError('animation services have inconsistent live code origins')
+    origin = origins.pop()
+    # CS PUSH / near CALL at scheduler rtl:0x1356c reaches rtl:0x12ed7.
+    if (rtl[0x1356c:0x13570] != bytes.fromhex('0ee867f9') or
+            ram[origin + 0x1356c:origin + 0x13570] != bytes.fromhex('0ee867f9')):
+        raise ValueError('scheduler frame renderer call changed')
+    result = []
+    for name, source in DRAW_CALL_SITES:
+        target = origin + source
+        if (rtl[source:source + 5] != b'\x9a\x00\x00\x00\x00' or
+                target < 0 or target + 5 > len(ram) or ram[target] != 0x9a):
+            raise ValueError(f'RTL frame draw CALL mismatch at 0x{source:x}')
+        offset, segment = struct.unpack_from('<HH', ram, target + 1)
+        if not (offset or segment):
+            raise ValueError(f'RTL frame draw CALL not relocated at 0x{source:x}')
+        result.append(dict(name=name, original_file='rtl',
+                           original_offset=source, runtime_target=dict(
+                               segment=segment, offset=offset,
+                               linear=segment * 16 + offset)))
+    return result
 
 
 def inspect_animation_state(rtl, ram, services, ds, load_segment=0x1000):
@@ -205,6 +247,8 @@ def main():
                         help='DS segment observed at a live RTL entry (hex); also decode slot zero')
     parser.add_argument('--write-trace', type=Path,
                         help='probe research trace with deadline byte-write watches (requires --ds)')
+    parser.add_argument('--draw-calls', action='store_true',
+                        help='resolve the frame renderer far CALLs in this RAM snapshot')
     parser.add_argument('--json', action='store_true')
     args = parser.parse_args()
     if args.write_trace is not None and args.ds is None:
@@ -213,6 +257,8 @@ def main():
         rtl, ram = args.rtl.read_bytes(), args.ram.read_bytes()
         rows = inspect_animation_calls(args.ovl.read_bytes(), args.exe.read_bytes(),
                                        rtl, ram, args.load_segment)
+        drawing = (inspect_animation_draw_calls(rtl, ram, rows, args.load_segment)
+                   if args.draw_calls else None)
         state = (inspect_animation_state(rtl, ram, rows, args.ds, args.load_segment)
                  if args.ds is not None else None)
         cadence = None
@@ -224,6 +270,8 @@ def main():
         parser.error(str(exc))
     if args.json:
         output = {'services': rows}
+        if drawing is not None:
+            output['draw_calls'] = drawing
         if state is not None:
             output['state'] = state
         if cadence is not None:
@@ -238,6 +286,12 @@ def main():
                   f'{row["segment_support"]} supporting entries)')
             print(f'  {row["purpose"]}')
         print('These are original-source identities, not a verified host port.')
+        if drawing is not None:
+            print('Scheduler rtl:0x1356d calls frame renderer rtl:0x12ed7:')
+            for row in drawing:
+                target = row['runtime_target']
+                print(f'  {row["name"]:<20} rtl:0x{row["original_offset"]:05x} '
+                      f'=> live {target["segment"]:04x}:{target["offset"]:04x}')
         if state is not None:
             offsets = state['relocated_ds_offsets']
             print(f'RTL entry DS={state["ds"]:04x}; active sequences='
