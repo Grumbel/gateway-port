@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
 # SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
-"""Rank guest instructions that read DOS-loaded RGN buffers.
+"""Summarize Gateway DOS RGN transfers and historical consumer samples.
 
-Requires a freshly built gateway-probe with --trace-rgn-memory and
---trace-research. A consumer may be a file copy or decompressor, not the
-game's click picker. DOS buffers can be copied/reused; no consumer is proof
-that a mouse target was active or rendered.
+Requires a freshly built gateway-probe with --trace-rgn-dos and
+--trace-research. The safe, current trace records DOS transfers only. Older
+memory-read hooks proved unreliable under Unicorn 2.1.4 and mistook reused
+stack bytes for live RGN data. Neither format proves a mouse target active.
 """
 import argparse
 from pathlib import Path
@@ -46,6 +46,7 @@ def parse_trace(lines):
     summary = None
     consumers = {}
     samples = {}
+    dos_reads = []
     for line in lines:
         if line.startswith('rgn-summary '):
             if summary is not None:
@@ -54,6 +55,7 @@ def parse_trace(lines):
             try:
                 summary = {key: int(fields[key]) for key in
                            ('buffers', 'evictions', 'active', 'consumers', 'dropped')}
+                summary['mode'] = fields.get('mode', 'legacy')
             except (KeyError, ValueError) as error:
                 raise ValueError(f'invalid RGN summary: {line.strip()}') from error
         elif line.startswith('rgn-consumer '):
@@ -80,23 +82,69 @@ def parse_trace(lines):
                 samples.setdefault(key, []).append(sample)
             except (KeyError, ValueError) as error:
                 raise ValueError(f'invalid RGN guest read: {line.strip()}') from error
+        elif line.startswith('rgn-buffer '):
+            fields = parse_fields(line)
+            if 'cs' in fields and 'ip' in fields:
+                try:
+                    dos_reads.append((fields['file'], int(fields['cs'], 16),
+                                      int(fields['ip'], 16), int(fields['ms']),
+                                      int(fields['offset'], 16), int(fields['size'], 16),
+                                      int(fields['address'], 16), int(fields['ss'], 16),
+                                      int(fields['sp'], 16)))
+                except (KeyError, ValueError) as error:
+                    raise ValueError(f'invalid RGN DOS read: {line.strip()}') from error
     if summary is None:
-        raise ValueError('missing RGN census; run gateway-probe with --trace-rgn-memory')
+        raise ValueError('missing RGN census; run gateway-probe with --trace-rgn-dos')
     if len(consumers) != summary['consumers']:
         raise ValueError('RGN consumer count disagrees with summary')
     for key, values in samples.items():
         if key not in consumers or len(values) > consumers[key]['hits']:
             raise ValueError('RGN sample without corresponding consumer count')
-    return summary, consumers, samples
+    if summary['mode'] == 'dos-only' and len(dos_reads) != summary['buffers']:
+        raise ValueError('RGN DOS read count disagrees with summary')
+    return summary, consumers, samples, dos_reads
 
 
 def summarize(lines, focus=None, limit=40, minimum_hits=1, rgn_data=None):
-    summary, consumers, samples = parse_trace(lines)
+    summary, consumers, samples, dos_reads = parse_trace(lines)
+    if summary['mode'] == 'dos-only':
+        grouped = {}
+        for file, cs, ip, ms, offset, size, address, ss, sp in dos_reads:
+            if focus is None or file.upper() == focus.upper():
+                grouped.setdefault((file, cs, ip), []).append(
+                    (ms, offset, size, address, ss, sp))
+        rows = [(key, reads) for key, reads in grouped.items()
+                if len(reads) >= minimum_hits]
+        rows.sort(key=lambda item: (-len(item[1]), item[0]))
+        result = [f'RGN DOS reads: {summary["buffers"]}; no guest memory-read '
+                  'hooks installed (safe mode).',
+                  'file              CS:IP      reads    ms(first-last)']
+        for (file, cs, ip), reads in rows[:limit]:
+            result.append(f'{file[:16]:16}  {cs:04x}:{ip:04x}  {len(reads):>5}    '
+                          f'{reads[0][0]}-{reads[-1][0]}')
+            data = (rgn_data or {}).get(file)
+            for ms, offset, size, address, ss, sp in reads[:3]:
+                entry = (f'    DOS ms={ms} file+0x{offset:x} size={size} '
+                         f'guest=0x{address:x} SS:SP={ss:04x}:{sp:04x}')
+                if data is not None:
+                    description = describe_gateway_rgn_offset(data, offset)
+                    if description:
+                        entry += '  ' + description
+                result.append(entry)
+        if len(rows) > limit:
+            result.append(f'... {len(rows) - limit} more DOS call sites (use --limit).')
+        if not rows:
+            result.append('No matching RGN DOS calls.')
+        result.append('The destination is often a temporary stack buffer; '
+                      'no claim about later consumers or visible hitboxes is implied.')
+        return '\n'.join(result)
     rows = [(key, info) for key, info in consumers.items()
             if (focus is None or key[0].upper() == focus.upper()) and
             info['hits'] >= minimum_hits]
     rows.sort(key=lambda row: (-row[1]['hits'], row[0]))
-    result = [f"RGN buffers: {summary['buffers']} loaded, "
+    result = ['WARNING: legacy Unicorn memory hooks changed guest execution and '
+              'mistook reused stack data for RGN consumers.',
+              f"RGN buffers: {summary['buffers']} loaded, "
               f"{summary['active']} active, {summary['evictions']} replaced/evicted; "
               f"{len(consumers)} distinct guest consumer sites."]
     if summary['dropped']:

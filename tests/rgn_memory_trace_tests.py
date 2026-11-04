@@ -25,8 +25,9 @@ TRACE = [
 
 class RgnMemoryTests(unittest.TestCase):
     def test_counts_and_sorted_consumer_site_report(self):
-        summary, consumers, samples = parse_trace(TRACE)
+        summary, consumers, samples, reads = parse_trace(TRACE)
         self.assertEqual(summary['buffers'], 2)
+        self.assertEqual(reads, [])
         self.assertEqual(consumers['GATE_002.RGN', 0x1000, 0x1234]['hits'], 7)
         self.assertEqual(samples['GATE_002.RGN', 0x1000, 0x1234][0],
                          (120, 6, 0x13406, 2))
@@ -34,6 +35,29 @@ class RgnMemoryTests(unittest.TestCase):
         self.assertIn('1000:1234', report)
         self.assertLess(report.index('1000:1234'), report.index('1000:5678'))
         self.assertIn('none proves', report)
+        self.assertIn('reused stack data', report)
+
+    def test_safe_dos_only_trace_groups_call_sites(self):
+        trace = [
+            'rgn-buffer ms=8258 file=GATE_002.RGN offset=5a address=68faa size=6 '
+            'cs=2649 ip=1350 ss=5b46 sp=dc10',
+            'rgn-buffer ms=8259 file=GATE_002.RGN offset=264 address=68fb0 size=6 '
+            'cs=2649 ip=13ad ss=5b46 sp=dc10',
+            'rgn-buffer ms=8259 file=GATE_002.RGN offset=26a address=68fb0 size=6 '
+            'cs=2649 ip=13ad ss=5b46 sp=dc10',
+            'rgn-summary mode=dos-only buffers=3 evictions=0 active=0 consumers=0 dropped=0',
+        ]
+        summary, consumers, samples, reads = parse_trace(trace)
+        self.assertEqual(summary['mode'], 'dos-only')
+        self.assertEqual(len(reads), 3)
+        self.assertEqual(consumers, {})
+        self.assertEqual(samples, {})
+        report = summarize(trace)
+        self.assertLess(report.index('2649:13ad'), report.index('2649:1350'))
+        self.assertIn('temporary stack buffer', report)
+        with self.assertRaisesRegex(ValueError, 'DOS read count disagrees'):
+            parse_trace(trace[:-1] + ['rgn-summary mode=dos-only buffers=2 '
+                                      'evictions=0 active=0 consumers=0 dropped=0'])
 
     def test_filters_and_empty_window(self):
         self.assertNotIn('1000:5678', summarize(TRACE, minimum_hits=4))

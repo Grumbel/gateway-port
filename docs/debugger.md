@@ -107,48 +107,64 @@ hitbox overlay **does not** hide `blocked` objects on this evidence alone,
 because an unrestricted parser traversal could still enumerate them and
 the rendering rules are not yet recovered.
 
-### Find the original code that consumes RGN data
+### Trace original RGN DOS transfers without altering guest execution
 
-The probe can watch guest memory addresses populated by DOS `read` operations
-on `*.RGN` files. A bounded memory-read hook on each such buffer logs the
-first three reads per consuming CS:IP and totals all later reads at the same
-instruction. It is opt-in: normal gameplay has no extra RGN read hooks.
+`--trace-rgn-dos` records each original DOS read from a `*.RGN` file, including
+its file offset, destination guest address, size, caller CS:IP, and SS:SP.
+The deprecated spelling `--trace-rgn-memory` is accepted for compatibility,
+but now performs **only** this safe DOS-read observation. It never installs a
+guest memory-read hook.
 
 ```sh
-xvfb-run -a python3 tools/run_walkthrough.py run \
+python3 tools/run_walkthrough.py run \
   tests/fixtures/gateway-opening.walk \
   --probe /tmp/gateway-port-build/gateway-probe \
   --data ../gateway-dos \
   --output build/rgn-memory-opening \
-  --probe-arg=--trace-rgn-memory
+  --probe-arg=--trace-rgn-dos
 
 python3 tools/summarize_rgn_memory_trace.py \
   build/rgn-memory-opening/native.trace --rgn-dir ../gateway-dos
 ```
 
-The trace has `rgn-buffer` (DOS file offset and destination address),
-`rgn-guest-read` (consumer CS:IP, register snapshot and file offset), and
-`rgn-consumer` census records. With `--rgn-dir`, each sampled file offset is
-also identified as a Gateway 1 header field or a rectangle with its numeric
-object ID and room-local coordinates. This still does **not** establish that
-the object was selectable. Use `--trace-entry-window START_MS:END_MS`
-with `--trace-rgn-memory` to isolate a later click/command interval; the
-buffer hooks remain registered even when the read occurred before that window.
-The report's CS:IP values must be mapped to the correct loaded EXE/overlay
-section and verified against instruction bytes before naming a routine.
+The trace has `rgn-buffer` records for DOS transfers and a
+`rgn-summary mode=dos-only` census. With `--rgn-dir`, each sampled file offset
+is identified as a Gateway 1 header field or a rectangle with its numeric
+object ID and room-local coordinates. This does **not** establish that the
+object was drawn or selectable. For focused instruction traces, separately
+use `--trace-entry` or `--extra-trace-entry` in a walkthrough; those are
+ordinary Unicorn *code* hooks and do not touch the memory-hook subsystem.
+All CS:IP values are only valid for the current guest load layout.
 
 If a replay fails, `run_walkthrough.py` reports the last 20 probe stderr lines.
 The complete diagnostics remain in `build/rgn-memory-opening/native.dos` and
 stdout in `build/rgn-memory-opening/native.out`. The trace may be useful even
 after a failed run, but a partial census is not proof of completed gameplay.
 
-**Limits:** A consumer can be a copy or resource decoder rather than a mouse
-picker. This tracer follows the original DOS-read buffer, not arbitrary
-guest-side copies. DOS reads that overwrite a watched range revoke the old
-hook, but guest-side writes may still reuse the buffer unobserved. A zero
-consumer count therefore neither disproves RGN use nor proves that the
-picker ignores the region file. It is a lead for native disassembly and
-controlled mouse clicks, not the final visibility predicate.
+**Why memory-read tracing was withdrawn:** On Unicorn 2.1.4, dynamically
+installed `UC_HOOK_MEM_READ` hooks reproducibly made the opening walkthrough
+execute data as code and fail with an unsupported hardware port read from
+`0x0000`; a no-op callback still failed. Even a statically installed narrow
+no-op read hook caused invalid guest execution. With no RGN read hooks the
+same 39-second replay passes. Furthermore, the old trace's supposed later
+RGN consumers at `4319:1941/1942` actually disassemble to `POP BP; LRET`:
+they were reading *stack* values at addresses previously used for DOS RGN
+transfers, not the debit-card rectangle. The `2649:13ad` site likewise reads
+`[BP-6]`. Existing `rgn-guest-read` data from earlier probes is retained for
+audit only and must **not** be used as evidence for hitbox activation.
+
+The DOS-transfer trace is safe and directly observed. It tells us where the
+file records enter guest memory, not where the game later copies, renders, or
+tests them. Finding those later paths requires instruction disassembly and
+controlled event traces.
+
+In a completed 39,000-ms opening walkthrough under Unicorn 2.1.4, this
+safe trace recorded 279 `GATE_002.RGN` DOS reads at caller `219e:004c`,
+all of which returned normally. The same native replay also passed with
+the deprecated alias. An additional *code-only* trace at `2649:13ad/13b4`
+captured live six-byte rectangle records without altering the walkthrough.
+Those two instructions load a record's object ID and packed coordinate byte
+from BP-relative locals; they still do not establish a visibility condition.
 
 For the Gateway VGA family, `GATE_1xx.PIC` corresponds to the
 `GATE_0xx.RGN` room data. The debugger registers a pair when DOS opens a
