@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 
 #include "debug_scene.hpp"
+#include "debug_state.hpp"
 #include <algorithm>
 #include <cstdint>
 #include <filesystem>
@@ -79,6 +80,90 @@ int main(int argc, char **argv) try {
     require(tracker.view().boxes[0].name == "Engine object one" &&
                 tracker.view().boxes[0].object_id == 1,
             "scene labels follow native engine object IDs, not string-list positions");
+    // RGN lists potential targets. Guest containment excludes off-room and
+    // carried objects; a closed drawer excludes its nested book. Even a room
+    // match is a *candidate*, never proof that the native renderer drew it.
+    auto conditional_rgn = rgn;
+    word(conditional_rgn, 18, 0x123); // book in closed drawer
+    word(conditional_rgn, 24, 0x130); // object in another room
+    word(conditional_rgn, 30, 0x124); // drawer itself
+    gateway::DebugSceneTracker conditional;
+    require(conditional.add_picture("GATE_102.PIC", pic, conditional_rgn),
+            "register conditional room regions");
+    conditional.note_read("GATE_102.PIC", 38, 1);
+    require(conditional.view().boxes[0].presence == gateway::DebugHitboxPresence::unknown,
+            "uninspected RGN target must not be presented as visible");
+    gateway::DebugGameState live;
+    live.objects.resize(734);
+    for (std::size_t i = 0; i < live.objects.size(); ++i) {
+        live.objects[i].id = std::uint16_t(i + 1);
+        live.objects[i].type = 3;
+    }
+    live.objects[0xee - 1].type = 1;
+    live.objects[0xf1 - 1].type = 1;
+    auto &player = live.objects[0xd3 - 1];
+    player.type = 7;
+    player.location = 0xee;
+    auto &drawer = live.objects[0x124 - 1];
+    drawer.type = 2;
+    drawer.location = 0xee;
+    auto &book = live.objects[0x123 - 1];
+    book.type = 2;
+    book.location = 0x124;
+    book.disclosed = false;
+    auto &off_room = live.objects[0x130 - 1];
+    off_room.type = 2;
+    off_room.location = 0xf1;
+    live.drawer_open = false;
+    conditional.set_game_state(live);
+    require(conditional.view().boxes[0].presence == gateway::DebugHitboxPresence::absent,
+            "book inside closed drawer must be excluded from room candidates");
+    conditional.note_read("GATE_102.PIC", 45, 1);
+    require(conditional.view().boxes[0].presence == gateway::DebugHitboxPresence::room_candidate,
+            "closed drawer itself remains a room candidate");
+    conditional.note_read("GATE_102.PIC", 38, 1);
+    live.drawer_open = true;
+    conditional.set_game_state(live);
+    require(conditional.view().boxes[0].presence == gateway::DebugHitboxPresence::undisclosed,
+            "a still-undisclosed book is not yet a live room target");
+    book.disclosed = true;
+    conditional.set_game_state(live);
+    require(conditional.view().boxes[0].presence == gateway::DebugHitboxPresence::room_candidate,
+            "disclosed book in open drawer is a candidate, not confirmed drawn");
+    book.disclosed.reset();
+    conditional.set_game_state(live);
+    require(conditional.view().boxes[0].presence == gateway::DebugHitboxPresence::room_candidate,
+            "unsupported disclosure property must not be mistaken for false");
+    book.location = 0x123;
+    conditional.set_game_state(live);
+    require(conditional.view().boxes[0].presence == gateway::DebugHitboxPresence::unknown,
+            "cyclic location chains must terminate without inventing visibility");
+    book.location = 0xd3;
+    conditional.set_game_state(live);
+    require(conditional.view().boxes[0].presence == gateway::DebugHitboxPresence::absent,
+            "carried book cannot remain a room hotspot");
+    conditional.note_read("GATE_102.PIC", 41, 1); // XOR overlay does not change the scene
+    conditional.step(1); // Manually choose the second region frame.
+    require(conditional.view().boxes[0].presence == gateway::DebugHitboxPresence::absent,
+            "object in another room cannot be a current room target");
+    off_room.type = 6;
+    off_room.raw.resize(0x20);
+    off_room.raw[0x0c] = 0xee; // special passage's *second* room endpoint
+    conditional.set_game_state(live);
+    require(conditional.view().boxes[0].presence == gateway::DebugHitboxPresence::room_candidate,
+            "two-room passage must remain a candidate from its second endpoint");
+    conditional.auto_follow(true);
+    live.objects[0x2a1 - 1].type = 2;
+    live.objects[0x2a1 - 1].location = 0xee;
+    player.location = 0x2a1; // VR couch: player is nested inside the room.
+    conditional.set_game_state(live);
+    conditional.note_read("GATE_102.PIC", 45, 1);
+    require(conditional.view().boxes[0].presence == gateway::DebugHitboxPresence::room_candidate,
+            "current room must follow player through nested containers");
+    player.location = 0; // Unknown scene: reject no candidate on guessed grounds.
+    conditional.set_game_state(live);
+    require(conditional.view().boxes[0].presence == gateway::DebugHitboxPresence::unknown,
+            "missing player room must not create false absence claims");
     if (argc > 1) {
         const auto dir = std::filesystem::path(argv[1]);
         auto read = [&](const char *name) {

@@ -2,14 +2,98 @@
 // SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 
 #include "debug_scene.hpp"
+#include "debug_state.hpp"
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <stdexcept>
 
 namespace gateway {
+namespace {
+constexpr std::uint16_t player_id = 0x0d3;
+constexpr std::uint16_t drawer_id = 0x124;
+
+const DebugObjectState *object_at(const DebugGameState &state, std::uint16_t id) {
+    if (!id || id > state.objects.size() || state.objects[id - 1].id != id)
+        return nullptr;
+    return &state.objects[id - 1];
+}
+
+// Return only a confirmed type-1 enclosing room; a broken, cyclic or
+// unsupported location chain is not evidence of absence.
+std::uint16_t enclosing_room(const DebugGameState &state, std::uint16_t id) {
+    for (std::size_t depth = 0; depth <= state.objects.size(); ++depth) {
+        const auto *object = object_at(state, id);
+        if (!object)
+            return 0;
+        if (object->type == 1)
+            return id;
+        if (!object->location || !*object->location)
+            return 0;
+        id = *object->location;
+    }
+    return 0;
+}
+
+DebugHitboxPresence classify_presence(const DebugGameState &state, std::uint16_t id,
+                                      std::uint16_t current_room) {
+    const auto *object = object_at(state, id);
+    if (!object || !current_room)
+        return DebugHitboxPresence::unknown;
+    if (object->type == 1)
+        return id == current_room ? DebugHitboxPresence::room_candidate
+                                  : DebugHitboxPresence::absent;
+    const bool undisclosed = object->disclosed == false;
+    // Type-6 links can describe a passage between *two* rooms. Its direct
+    // location is only the first endpoint; do not hide the passage from the
+    // second endpoint merely because it is not the direct location.
+    if (object->type == 6) {
+        if (object->raw.size() < 0x0e)
+            return DebugHitboxPresence::unknown;
+        const auto second = std::uint16_t(object->raw[0x0c] | unsigned(object->raw[0x0d]) << 8);
+        if (second == current_room)
+            return undisclosed ? DebugHitboxPresence::undisclosed
+                               : DebugHitboxPresence::room_candidate;
+        if (!second && object->location && *object->location != current_room)
+            return DebugHitboxPresence::unknown;
+    }
+    for (std::size_t depth = 0; depth <= state.objects.size(); ++depth) {
+        if (!object->location)
+            return DebugHitboxPresence::unknown;
+        const auto parent_id = *object->location;
+        if (!parent_id || parent_id == player_id)
+            return DebugHitboxPresence::absent;
+        const auto *parent = object_at(state, parent_id);
+        if (!parent)
+            return DebugHitboxPresence::unknown;
+        if (parent->type == 1)
+            return parent_id != current_room ? DebugHitboxPresence::absent
+                   : undisclosed ? DebugHitboxPresence::undisclosed
+                                 : DebugHitboxPresence::room_candidate;
+        // Verified first-room property: the book can remain in the drawer's
+        // containment chain while the drawer is closed. This is only a
+        // conservative exclusion, not a generic rendering/visibility rule.
+        if (parent_id == drawer_id && state.drawer_open == false)
+            return DebugHitboxPresence::absent;
+        object = parent;
+    }
+    return DebugHitboxPresence::unknown;
+}
+} // namespace
+
 DebugSceneTracker::DebugSceneTracker(std::vector<std::string> names)
     : names_(std::move(names)) {}
+
+void DebugSceneTracker::set_game_state(const DebugGameState &state) {
+    presence_.clear();
+    if (state.objects.size() != 734 || !object_at(state, player_id))
+        return;
+    const auto room = enclosing_room(state, player_id);
+    presence_.resize(state.objects.size() + 1, DebugHitboxPresence::unknown);
+    if (room)
+        for (std::size_t i = 0; i < state.objects.size(); ++i)
+            presence_[i + 1] = classify_presence(state, std::uint16_t(i + 1), room);
+}
 
 std::string DebugSceneTracker::canonical_file(std::string file) {
     const auto slash = file.find_last_of("\\/:");
@@ -114,7 +198,9 @@ DebugSceneView DebugSceneTracker::view() const {
     for (const auto &region : found->second.regions[entry_].boxes) {
         const auto id = region.object_id;
         view.boxes.push_back({region.x0, region.y0, region.x1, region.y1, id,
-                              id && id < names_.size() ? names_[id] : "", region.polygon});
+                              id && id < names_.size() ? names_[id] : "", region.polygon,
+                              id && id < presence_.size() ? presence_[id]
+                                                           : DebugHitboxPresence::unknown});
     }
     return view;
 }

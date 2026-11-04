@@ -29,6 +29,7 @@ class SdlHost {
                  const DebugOverlayData &debug = {});
     bool debug_open() const { return debug_open_; }
     bool hitboxes_visible() const { return hitboxes_visible_; }
+    bool raw_hitboxes() const { return raw_hitboxes_; }
     bool widescreen_ui() const { return layout_ == UiLayoutMode::widescreen; }
     DebugMenuPosition debug_position() const { return debug_position_; }
 
@@ -42,7 +43,7 @@ class SdlHost {
     DisplayAspect aspect_;
     UiLayoutMode layout_;
     bool fullscreen_ = false;
-    bool debug_open_ = false, hitboxes_visible_ = false;
+    bool debug_open_ = false, hitboxes_visible_ = false, raw_hitboxes_ = false;
     bool pointer_over_panel_ = false;
     DebugMenuPosition debug_position_;
     bool debug_dragging_ = false;

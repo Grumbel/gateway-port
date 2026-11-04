@@ -37,6 +37,47 @@ anonymous ID-0 rectangles stay separate because their shared zero does not
 identify one object. The game framebuffer is never changed. The debug menu
 starts in the lower-right text pane and can be dragged by its title bar.
 
+### Conditional targets versus raw RGN candidates
+
+The RGN file describes **potential** click regions. It does not state whether
+an object has been drawn or whether the original game's current interaction
+logic will accept it. Drawing all of these boxes made future/unavailable
+objects appear to be present, especially in the experimental widescreen UI.
+
+Gateway 1 now samples the validated 734-object guest table and annotates
+each RGN region with one of four *host-side* classifications:
+
+| Classification | Meaning | Default F10 outline | Widescreen list |
+| --- | --- | --- | --- |
+| `room_candidate` | Direct/nested location chain reaches the player's enclosing type-1 room; supported property `0x07` is not known false | Show | List |
+| `absent` | Object is detached, carried by the player, in another room, or within the known closed drawer `0x124` | Hide | Hide |
+| `undisclosed` | Object is in the room but has supported native property `0x07` cleared | Hide | Hide |
+| `unknown` | Missing/unsupported type, object, flag, or enclosing-room data | Show as unverified | Hide |
+
+The player's object ID `0x0d3` can itself be nested inside another object
+(for example, the VR couch); the room lookup follows parent locations with
+cycle protection. Type-6 passage records can have two room endpoints, so
+the second location word is considered before rejecting a direct-location
+mismatch. Only the **known first-room drawer** has an additional
+closed-container check; the generic child-slot predicate is a parser rule,
+not an established renderer rule. Property `0x07` was observed being set
+during room descriptions and when revealing the book, but its exact meaning
+in all rooms remains unproven. Both `room_candidate` and `unknown` may still
+contain objects that are not drawn. These classifications are diagnostic
+filters, **not** a reconstructed native visibility or hotspot-picking routine.
+
+Press **R** in the F10 menu to display **all** raw RGN candidates, including
+filtered ones, for comparison. The original guest mouse input is unchanged.
+Dumped `.regions.tsv` files retain every region and append a `presence`
+column; `.debug.txt` identifies the classification as heuristic. For the
+other Legend titles, all regions stay `unknown`, because the Gateway 1 object
+state layout has not been verified there.
+
+The next verification should correlate these categories with native render
+events and click-selection results in several rooms. In particular, test
+objects already disclosed but subsequently hidden by story flags. Only such
+traces can turn provisional room candidates into confirmed active hitboxes.
+
 For the Gateway VGA family, `GATE_1xx.PIC` corresponds to the
 `GATE_0xx.RGN` room data. The debugger registers a pair when DOS opens a
 PIC and subsequently notices reads within a non-XOR room-sized frame. This

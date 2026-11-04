@@ -1809,9 +1809,18 @@ void dump_guest(uc_engine *uc, State &state, const std::string &prefix) {
 
     if (!state.debug_scene)
         return;
+    auto objects = state.debug_other_names ? std::optional<gateway::DebugGameState>{}
+                                           : gateway::inspect_gateway_state(
+                                                 memory, reg(uc, UC_X86_REG_DS));
+    if ((!objects || objects->objects.size() != 734) && !state.debug_other_names &&
+        state.debug_object_ds)
+        objects = gateway::inspect_gateway_state(memory, *state.debug_object_ds);
+    if (objects && objects->objects.size() == 734)
+        state.debug_scene->set_game_state(*objects);
     const auto scene = state.debug_scene->view();
     std::ofstream regions(prefix + ".regions.tsv");
-    regions << "picture\tregion_file\tentry\tengine_object_id\tname\tx0\ty0\tx1\ty1\tvertices\n";
+    regions << "picture\tregion_file\tentry\tengine_object_id\tname\tx0\ty0\tx1\ty1"
+               "\tvertices\tpresence\n";
     for (const auto &box : scene.boxes) {
         regions << scene.picture << '\t' << scene.region_file << '\t' << scene.entry << '\t'
                 << box.object_id << '\t' << box.name << '\t' << box.x0 << '\t' << box.y0
@@ -1821,7 +1830,14 @@ void dump_guest(uc_engine *uc, State &state, const std::string &prefix) {
                 regions << ';';
             regions << box.polygon[i].x << ',' << box.polygon[i].y;
         }
-        regions << '\n';
+        const char *presence = "unknown";
+        switch (box.presence) {
+        case gateway::DebugHitboxPresence::unknown: break;
+        case gateway::DebugHitboxPresence::room_candidate: presence = "room_candidate"; break;
+        case gateway::DebugHitboxPresence::undisclosed: presence = "undisclosed"; break;
+        case gateway::DebugHitboxPresence::absent: presence = "absent"; break;
+        }
+        regions << '\t' << presence << '\n';
     }
     regions.close();
     std::ofstream metadata(prefix + ".debug.txt");
@@ -1833,13 +1849,8 @@ void dump_guest(uc_engine *uc, State &state, const std::string &prefix) {
              << "scene_selection=" << (scene.auto_follow ? "DOS PIC read estimate" : "manual")
              << '\n' << "region_x=scene-local pixels (packed coordinates already doubled)\n"
              << "region_geometry=rectangles or ordered Gateway II polygon vertices\n"
-             << "region_object_id=native engine object ID, NOT OBJECT.DAT list index\n";
-    auto objects = state.debug_other_names ? std::optional<gateway::DebugGameState>{}
-                                           : gateway::inspect_gateway_state(
-                                                 memory, reg(uc, UC_X86_REG_DS));
-    if ((!objects || objects->objects.size() != 734) && !state.debug_other_names &&
-        state.debug_object_ds)
-        objects = gateway::inspect_gateway_state(memory, *state.debug_object_ds);
+             << "region_object_id=native engine object ID, NOT OBJECT.DAT list index\n"
+             << "region_presence=guest location/disclosure heuristic, NOT native render state\n";
     if (objects && objects->objects.size() == 734) {
         std::ofstream records(prefix + ".objects.tsv");
         records << gateway::debug_objects_tsv(*objects, state.debug_object_dat);
@@ -2825,8 +2836,6 @@ int main(int argc, char **argv) {
                 auto samples = state.opl.render(768);
                 state.pit.mix_speaker(samples);
                 if (host->debug_open() || host->hitboxes_visible() || host->widescreen_ui()) {
-                    if (state.debug_scene)
-                        debug_overlay.scene = state.debug_scene->view();
                     debug_overlay.guest_ms = state.elapsed_ms;
                     debug_overlay.dump_message = state.debug_status;
                     char registers[72];
@@ -2850,10 +2859,12 @@ int main(int argc, char **argv) {
                         }
                         if (objects && objects->objects.size() == 734) {
                             state.debug_object_ds = objects->ds;
-                            if (state.debug_scene)
+                            if (state.debug_scene) {
                                 state.debug_scene->set_object_names(
                                     gateway::debug_engine_object_names(*objects,
                                                                        state.debug_object_dat));
+                                state.debug_scene->set_game_state(*objects);
+                            }
                             std::ostringstream summary;
                             summary << "Objects: " << objects->objects.size();
                             if (objects->book_location)
@@ -2879,11 +2890,17 @@ int main(int argc, char **argv) {
                                 debug_overlay.object_summary = "Names: unresolved; press D to dump";
                             }
                         } else if (state.debug_object_dat.empty()) {
+                            if (state.debug_scene)
+                                state.debug_scene->set_game_state({});
                             debug_overlay.object_summary = "Names: no OBJECT.DAT resource";
                         } else {
+                            if (state.debug_scene)
+                                state.debug_scene->set_game_state({});
                             debug_overlay.object_summary = "Objects: not detected at DS";
                         }
                     }
+                    if (state.debug_scene)
+                        debug_overlay.scene = state.debug_scene->view();
                 }
                 host->present(state.vga, state.mouse, samples, debug_overlay);
                 std::this_thread::sleep_until(started + std::chrono::microseconds(elapsed_us));

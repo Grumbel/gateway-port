@@ -158,11 +158,11 @@ void draw_wide_panel(SDL_Renderer *renderer, const UiRect &panel, bool left,
         panel_text(renderer, x, std::max(226, panel.height - 52), max_width, "UI PREVIEW");
         panel_text(renderer, x, std::max(240, panel.height - 36), max_width, "F10 DEBUG");
     } else {
-        panel_text(renderer, x, 18, max_width, "SCENE OBJECTS");
-        panel_text(renderer, x, 38, max_width, "(ESTIMATED)");
+        panel_text(renderer, x, 18, max_width, "ROOM CANDIDATES");
+        panel_text(renderer, x, 38, max_width, "(NOT VERIFIED DRAWN)");
         std::set<std::string> names;
         for (const auto &box : debug.scene.boxes)
-            if (!box.name.empty())
+            if (box.presence == DebugHitboxPresence::room_candidate && !box.name.empty())
                 names.insert(box.name);
         int row = 0;
         for (const auto &name : names) {
@@ -171,7 +171,7 @@ void draw_wide_panel(SDL_Renderer *renderer, const UiRect &panel, bool left,
             panel_text(renderer, x, 68 + row++ * 20, max_width, name);
         }
         if (names.empty())
-            panel_text(renderer, x, 68, max_width, "NO SCENE DATA");
+            panel_text(renderer, x, 68, max_width, "NO LIVE ROOM MATCHES");
     }
 }
 } // namespace
@@ -212,6 +212,9 @@ void SdlHost::debug_activate(unsigned row, DebugActions *actions) {
             actions->dump_state = true;
         break;
     case 5:
+        raw_hitboxes_ = !raw_hitboxes_;
+        break;
+    case 6:
         debug_open_ = false;
         break;
     }
@@ -372,6 +375,9 @@ bool SdlHost::poll(std::deque<std::uint16_t> &keys, Mouse &mouse, const Vga &vga
             } else if (event.key.key == SDLK_H) {
                 if (!event.key.repeat)
                     debug_activate(0, actions);
+            } else if (event.key.key == SDLK_R) {
+                if (!event.key.repeat)
+                    debug_activate(5, actions);
             } else if (event.key.key == SDLK_A) {
                 if (!event.key.repeat)
                     debug_activate(1, actions);
@@ -420,7 +426,7 @@ void SdlHost::present(const Vga &vga, const Mouse &mouse,
     auto pixels = vga.pixels();
     if (debug_open_ || hitboxes_visible_)
         draw_debug_overlay(pixels, width_, height_, mouse, debug, debug_open_, hitboxes_visible_,
-                           debug_row_, debug_position_);
+                           debug_row_, debug_position_, raw_hitboxes_);
     if (!widescreen_ui() || !pointer_over_panel_)
         draw_mouse_cursor(pixels, width_, height_, mouse, vga.text_mode());
     checked(SDL_UpdateTexture(texture_, nullptr, pixels.data(), width_ * 4));

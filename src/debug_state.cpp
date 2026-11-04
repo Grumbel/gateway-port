@@ -50,6 +50,9 @@ std::optional<DebugGameState> inspect_gateway_state(std::span<const std::uint8_t
             0x10, 0x22, 0x0a, 0x12, 0x14, 0x16, 0x1e, 0x16};
         constexpr std::array<std::uint16_t, 8> location_at{
             0, 0x0e, 0, 0, 0, 0x0a, 0x0c, 0x0c};
+        const GuestByteReader read = [&](std::uint16_t seg, std::uint32_t off) {
+            return byte(m, seg, off);
+        };
         DebugGameState state;
         state.ds = ds;
         state.objects.reserve(count);
@@ -63,7 +66,7 @@ std::optional<DebugGameState> inspect_gateway_state(std::span<const std::uint8_t
             const auto length = byte(m, descriptors, type * 3 - 1);
             if (length < handler_at[type - 1] + 2 || length > 128)
                 return {};
-            DebugObjectState object{std::uint16_t(id), type, segment, offset, 0, 0, 0, {}, {}};
+            DebugObjectState object{std::uint16_t(id), type, segment, offset, 0, 0, 0, {}, {}, {}};
             object.raw.reserve(length);
             for (unsigned i = 0; i < length; ++i)
                 object.raw.push_back(byte(m, segment, std::uint16_t(offset + i)));
@@ -75,6 +78,15 @@ std::optional<DebugGameState> inspect_gateway_state(std::span<const std::uint8_t
             if (location_at[type - 1])
                 object.location = word(m, segment,
                                        std::uint16_t(offset + location_at[type - 1]));
+            try {
+                // The write-address query only checks whether this property
+                // is supported; it does not modify any guest memory.
+                if (object_flag_write(read, ds, std::uint16_t(id), 7, false))
+                    object.disclosed = object_flag(read, ds, std::uint16_t(id), 7);
+            } catch (const std::runtime_error &) {
+                // A nonstandard/missing flag table must not invalidate the
+                // otherwise independently validated object-directory scan.
+            }
             state.objects.push_back(std::move(object));
         }
         // These IDs were established by the first-room replay, not generalized
@@ -82,9 +94,6 @@ std::optional<DebugGameState> inspect_gateway_state(std::span<const std::uint8_t
         if (count >= 0x124) {
             if (const auto &book = state.objects[0x123 - 1]; book.location)
                 state.book_location = book.location;
-            const GuestByteReader read = [&](std::uint16_t seg, std::uint32_t off) {
-                return byte(m, seg, off);
-            };
             try {
                 state.drawer_open = object_flag(read, ds, 0x124, 0x0c);
             } catch (const std::runtime_error &) {

@@ -18,6 +18,7 @@ int main() try {
     require(bounds.x == 286 && bounds.y == 232, "menu defaults below Gateway scene");
     require(gateway::debug_menu_row_at(500, 272, 640, 480) == 0 &&
                 gateway::debug_menu_row_at(500, 372, 640, 480) == 5 &&
+                gateway::debug_menu_row_at(500, 392, 640, 480) == 6 &&
                 gateway::debug_menu_row_at(500, 48, 640, 480) < 0 &&
                 gateway::debug_menu_title_at(500, 245, 640, 480),
             "bottom-right debug menu hit testing");
@@ -56,6 +57,18 @@ int main() try {
             "anonymous adjacent rectangles must not merge into one object");
     require(pixels[10 * 640 + 0] == 0xff123456,
             "debug overlay moved picture data on the left side");
+    debug.scene.boxes[2].presence = gateway::DebugHitboxPresence::absent;
+    std::vector<std::uint32_t> filtered(640 * 480, 0xff123456);
+    gateway::draw_debug_overlay(filtered, 640, 480, mouse, debug, false, true, 0);
+    require(filtered[15 * 640 + 290] == 0xff123456,
+            "default outline excludes a guest-confirmed off-room target");
+    debug.scene.boxes[2].presence = gateway::DebugHitboxPresence::undisclosed;
+    gateway::draw_debug_overlay(filtered, 640, 480, mouse, debug, false, true, 0);
+    require(filtered[15 * 640 + 290] == 0xff123456,
+            "default outline excludes a not-yet-disclosed room candidate");
+    gateway::draw_debug_overlay(filtered, 640, 480, mouse, debug, false, true, 0, {}, true);
+    require(filtered[15 * 640 + 290] == gateway::debug_hotspot_color(222),
+            "raw debugger still exposes every candidate RGN target");
     gateway::draw_debug_overlay(pixels, 640, 480, mouse, debug, true, false, 4);
     require(pixels[232 * 640 + 286] == 0xff75aaff &&
                 pixels[100 * 640 + 500] == 0xff123456,

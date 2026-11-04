@@ -28,8 +28,8 @@ struct DebugMenuPosition {
 struct DebugMenuBounds {
     int x, y, width, height;
 };
-constexpr unsigned debug_menu_rows = 6;
-// Menu rows: hitboxes, auto-follow, previous RGN, next RGN, dump, close.
+constexpr unsigned debug_menu_rows = 7;
+// Menu rows: hitboxes, auto-follow, previous RGN, next RGN, dump, raw candidates, close.
 DebugMenuBounds debug_menu_bounds(int screen_width, int screen_height,
                                   DebugMenuPosition position = {});
 int debug_menu_row_at(int x, int y, int width, int height,
@@ -40,5 +40,5 @@ std::uint32_t debug_hotspot_color(std::uint16_t object_id);
 void draw_debug_overlay(std::span<std::uint32_t> pixels, int width, int height,
                         const Mouse &mouse, const DebugOverlayData &data,
                         bool menu_open, bool show_hitboxes, unsigned selected_row,
-                        DebugMenuPosition position = {});
+                        DebugMenuPosition position = {}, bool show_all_regions = false);
 } // namespace gateway

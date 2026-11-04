@@ -42,6 +42,20 @@ int main(int argc, char **argv) try {
     require(state->objects[0].handler == 233 && state->objects[0].location == 0x00ee &&
                 state->objects[0].raw.size() == 36,
             "Gateway handler, record size and location decoding");
+    constexpr unsigned property_seg = 0x1600;
+    constexpr unsigned property7 = 0x14 + 7 * 4;
+    store(memory, ds, 0x8d56, property_seg);
+    memory[property_seg * 16 + property7] = 0; // bit 0 of record byte +4
+    store(memory, property_seg, property7 + 2, 2); // property supported for type 2
+    memory[record_seg * 16 + 0x204] = 1;
+    require(gateway::inspect_gateway_state(memory, ds)->objects[0].disclosed == true,
+            "native property-7 disclosure bit must be read from the live flag table");
+    memory[record_seg * 16 + 0x204] = 0;
+    require(gateway::inspect_gateway_state(memory, ds)->objects[0].disclosed == false,
+            "cleared disclosure must be distinguishable from unsupported property");
+    store(memory, property_seg, property7 + 2, 0);
+    require(!gateway::inspect_gateway_state(memory, ds)->objects[0].disclosed,
+            "unsupported property 7 must remain unknown, never hidden");
     const std::vector<std::uint8_t> names{5, 0, 'B', 'o', 'o', 'k', 0};
     const auto dump = gateway::debug_objects_tsv(*state, names);
     require(dump.find("Book") != std::string::npos &&

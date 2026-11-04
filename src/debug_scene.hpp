@@ -13,11 +13,19 @@
 #include <vector>
 
 namespace gateway {
+struct DebugGameState;
+
+// RGN records describe potential mouse targets, not currently drawn objects.
+// The live object's containment chain can reject some targets, but cannot
+// prove that a candidate has been painted by the original renderer.
+enum class DebugHitboxPresence { unknown, room_candidate, undisclosed, absent };
+
 struct DebugHitbox {
     unsigned x0, y0, x1, y1;
     std::uint16_t object_id;
     std::string name;
     std::vector<RegionPoint> polygon{};
+    DebugHitboxPresence presence = DebugHitboxPresence::unknown;
 };
 struct DebugSceneView {
     std::string picture;
@@ -35,6 +43,9 @@ class DebugSceneTracker {
     // names[0] is unused; names[engine_object_id] comes from live guest records.
     explicit DebugSceneTracker(std::vector<std::string> names = {});
     void set_object_names(std::vector<std::string> names) { names_ = std::move(names); }
+    // Gateway 1 only. Other Legend games retain unknown presence until their
+    // own object-location semantics have been verified.
+    void set_game_state(const DebugGameState &state);
     static std::string canonical_file(std::string name);
     static std::string matching_rgn(const std::string &pic);
     bool add_picture(const std::string &file, std::span<const std::uint8_t> pic,
@@ -54,6 +65,7 @@ class DebugSceneTracker {
     };
     std::map<std::string, Picture> pictures_;
     std::vector<std::string> names_;
+    std::vector<DebugHitboxPresence> presence_;
     std::string active_;
     std::size_t entry_ = 0;
     bool auto_follow_ = true;

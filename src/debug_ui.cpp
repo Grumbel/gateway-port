@@ -100,7 +100,7 @@ std::uint32_t debug_hotspot_color(std::uint16_t object_id) {
 void draw_debug_overlay(std::span<std::uint32_t> image, int width, int height,
                         const Mouse &mouse, const DebugOverlayData &data,
                         bool menu_open, bool show_hitboxes, unsigned selected_row,
-                        DebugMenuPosition position) {
+                        DebugMenuPosition position, bool show_all_regions) {
     if (width < 1 || height < 1 || image.size() < std::size_t(width) * height)
         return;
     if (show_hitboxes) {
@@ -112,8 +112,14 @@ void draw_debug_overlay(std::span<std::uint32_t> image, int width, int height,
         const int area_height = std::min(height, 232);
         std::vector<std::uint32_t> owner(std::size_t(area_width) * area_height);
         constexpr std::uint32_t unnamed_base = 65536;
+        std::size_t shown = 0;
         for (std::size_t i = 0; i < data.scene.boxes.size(); ++i) {
             const auto &box = data.scene.boxes[i];
+            if (!show_all_regions &&
+                (box.presence == DebugHitboxPresence::absent ||
+                 box.presence == DebugHitboxPresence::undisclosed))
+                continue;
+            ++shown;
             const auto id = box.object_id ? std::uint32_t(box.object_id) : unnamed_base + i;
             if (box.polygon.size() >= 3) {
                 // Gateway II stores explicit vertices. Scanline filling keeps
@@ -185,8 +191,9 @@ void draw_debug_overlay(std::span<std::uint32_t> image, int width, int height,
         rect(image, width, height, 2, height - 23, std::min(width, 310), height - 2, panel,
              true);
         char info[128];
-        std::snprintf(info, sizeof info, "RGN %s #%zu (%zu regions)",
-                      data.scene.region_file.c_str(), data.scene.entry, data.scene.boxes.size());
+        std::snprintf(info, sizeof info, "RGN %s #%zu (%zu/%zu)",
+                      data.scene.region_file.c_str(), data.scene.entry, shown,
+                      data.scene.boxes.size());
         text(image, width, height, 8, height - 18, info, white, 37);
         if (hovered) {
             if (hovered >= unnamed_base) {
@@ -216,12 +223,13 @@ void draw_debug_overlay(std::span<std::uint32_t> image, int width, int height,
     rect(image, width, height, left, top, right, top + bounds.height, panel, true);
     rect(image, width, height, left, top, right, top + bounds.height, border, false);
     text(image, width, height, left + 13, top + 9, "GATEWAY DEBUG [drag]", accent);
-    const std::array<std::string, 6> entries{
+    const std::array<std::string, 7> entries{
         std::string("Hitboxes: ") + (show_hitboxes ? "ON" : "OFF"),
         std::string("Auto scene: ") + (data.scene.auto_follow ? "ON" : "OFF"),
         "Previous RGN frame",
         "Next RGN frame",
         "Dump guest + object state",
+        std::string("RGN: ") + (show_all_regions ? "ALL CANDIDATES" : "STATE FILTER"),
         "Close debug menu",
     };
     for (unsigned i = 0; i < entries.size(); ++i) {
@@ -235,11 +243,11 @@ void draw_debug_overlay(std::span<std::uint32_t> image, int width, int height,
     char scene[160];
     std::snprintf(scene, sizeof scene, "Scene: %s #%zu %s", data.scene.picture.c_str(),
                   data.scene.entry, data.scene.auto_follow ? "(guess)" : "(manual)");
-    text(image, width, height, left + 13, top + 171, scene, white, 39);
-    text(image, width, height, left + 13, top + 185, data.registers, muted, 39);
-    text(image, width, height, left + 13, top + 199, data.object_summary, muted, 39);
-    text(image, width, height, left + 13, top + 213, data.dump_message, accent, 39);
+    text(image, width, height, left + 13, top + 174, scene, white, 39);
+    text(image, width, height, left + 13, top + 188, data.registers, muted, 39);
+    text(image, width, height, left + 13, top + 202, data.object_summary, muted, 39);
+    text(image, width, height, left + 13, top + 216, data.dump_message, accent, 39);
     text(image, width, height, left + 13, top + 233,
-         "Up/Dn Left/Right H A D Esc", muted, 39);
+         "Up/Dn Left/Right H A R D Esc", muted, 39);
 }
 } // namespace gateway

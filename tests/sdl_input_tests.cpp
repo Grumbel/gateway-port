@@ -96,11 +96,13 @@ int main() {
         require(host.debug_open(), "F10 repeat closed menu");
         actions = {};
         send_key(SDLK_H);
+        send_key(SDLK_R);
         send_key(SDLK_D);
         send_key(SDLK_RIGHT);
         send_key(SDLK_A);
         host.poll(keys, mouse, vga, &actions);
-        require(host.hitboxes_visible() && actions.dump_state && actions.scene_step == 1 &&
+        require(host.hitboxes_visible() && host.raw_hitboxes() && actions.dump_state &&
+                    actions.scene_step == 1 &&
                     actions.toggle_auto_follow,
                 "debug actions did not reach host request queue");
         require(keys.empty(), "modal debugger leaked control keys to DOS");

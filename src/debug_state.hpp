@@ -14,6 +14,9 @@ struct DebugObjectState {
     std::uint16_t id, type, segment, offset, handler, name_token, secondary_name_token;
     std::optional<std::uint16_t> location;
     std::vector<std::uint8_t> raw;
+    // Native property 7 is set when first-room objects are disclosed. This
+    // is *not* yet verified as a universal rendered/on-screen flag.
+    std::optional<bool> disclosed;
 };
 struct DebugGameState {
     std::uint16_t ds = 0;

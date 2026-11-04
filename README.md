@@ -129,16 +129,19 @@ gateway-run ../gateway-dos/GATE.EXE --ui-layout widescreen
 
 It preserves the complete original 4:3 game framebuffer in the middle, without
 cropping or stretching it, and uses any sufficient left/right window margins
-for native action labels and a provisional scene-object list. Mouse coordinates,
+for native action labels and a provisional room-candidate list. Mouse coordinates,
 cursor drawing, debugger clicks and window resizing are mapped through the same
 computed scene rectangle. Narrow windows automatically hide the side panels.
 The original view remains the default (`--ui-layout original`). No OpenGL API
 is used: the shell uses SDL3's built-in 2D renderer.
 
 This is an early **noninteractive UI preview**, not a replacement for the
-in-game action menu. The action names are placeholders, while scene-object
-names come from the debugger's best-effort RGN/PIC correlation and can be stale
-or incomplete. The temporary 8x8 SDL debug font will be replaced with a
+in-game action menu. The action names are placeholders. The right panel uses
+live Gateway object locations, a provisional disclosure flag and known drawer
+state to narrow static RGN candidates; it **does not** know which objects the
+original renderer actually drew. Candidates with no confirmed current-room
+relationship are omitted, so the list can be incomplete. The temporary 8x8
+SDL debug font will be replaced with a
 scalable font renderer. Native save/load screens with room thumbnails,
 command completion, maps, and extracted/upscaled room-image composition are
 planned but not implemented by this option. The original DOS save/restore and
@@ -185,6 +188,7 @@ when the menu closes. Use Up/Down and Enter to select a menu item, or:
 | --- | --- |
 | **F10**, **Esc** | Open/close the menu (Esc only when the menu is open) |
 | **H** | Toggle merged, colored and translucent hotspots; hover for the object ID/name |
+| **R** | Toggle between filtered hotspots and every raw RGN candidate (debug menu open) |
 | **A** | Toggle automatic scene selection from recent PIC reads |
 | **Left/Right** (or PageUp/PageDown) | Examine previous/next RGN frame manually |
 | **D** | Dump guest registers, memory, framebuffer, regions and object state |
@@ -193,7 +197,9 @@ The menu starts in the lower-right text pane, beneath the scene picture. Drag
 its title bar to move it. Merged hotspot outlines and translucent fills stay
 on screen after closing the menu until toggled off. The current file and RGN
 entry, guest CS:IP/DS, and recognized Gateway object count are shown in the
-panel. Hitboxes come from the original `GATE_*.RGN`, `S101_R*.RGN`,
+panel. Hotspots default to a conservative host-side filter for Gateway 1;
+**R** exposes every raw candidate for comparison. This is not the game's
+original conditional-hitbox selector. Hitboxes come from the original `GATE_*.RGN`, `S101_R*.RGN`,
 `S201_R*.RGN`, `S301_*.RGN`, or `HOME_*.RGN` resources. Spellcasting uses
 packed rectangles; Gateway II uses polygon vertices (and two-point boxes),
 shown with the same merged outlines and translucent fills. All coordinates
@@ -213,7 +219,8 @@ Dumping writes numbered `gateway-<guest-ms>-<sequence>` files under the DOS
 state directory's `debug/` folder (or under `build/debug/` in read-only mode).
 Override the destination with `--debug-dir DIR`. Every dump includes `.regs`
 (CPU registers), `.bin` (1 MiB guest memory), `.ppm` (undecorated framebuffer),
-`.regions.tsv` (visible hitboxes, including polygon vertices) and `.debug.txt`
+`.regions.tsv` (all static region candidates, polygon vertices and provisional
+guest-state presence classification) and `.debug.txt`
 (selection provenance). A
 `.objects.tsv` is also saved when the *Gateway 1* 734-object live table can be
 validated at DS; it includes object IDs, types, handler indices, name tokens,
