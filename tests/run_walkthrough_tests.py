@@ -479,6 +479,28 @@ LABEL dropped_book
             self.assertEqual(command[command.index('--trace-rtlink-sequence') + 1],
                              str(root / 'output/native.rtlink-sequence'))
 
+    def test_failed_probe_exposes_redirected_stderr_tail(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / 'GATE.EXE').write_bytes(b'fixture')
+            (root / 'probe').write_bytes(b'fixture')
+            args = SimpleNamespace(probe=root / 'probe', data=root,
+                                   output=root / 'output', import_save=None,
+                                   verify_existing=False, verify_overlays=False,
+                                   trace_navigation=False, trace_byte_write=None,
+                                   trace_object_writes=None, trace_target=None,
+                                   extra_trace_entry=[], capture_labels=False,
+                                   check_labels=False, timeout=1, probe_arg=[])
+
+            def fail(command, **kwargs):
+                kwargs['stderr'].write('native failure detail\n')
+                raise subprocess.CalledProcessError(1, command)
+
+            with mock.patch('run_walkthrough.subprocess.run', side_effect=fail):
+                with self.assertRaisesRegex(RuntimeError, 'native failure detail') as error:
+                    execute_walkthrough(args, compile_steps(parse_script('COMMAND look')))
+            self.assertIn('native.dos', str(error.exception))
+
     def test_golden_mode_uses_reproducible_dos_clock(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)

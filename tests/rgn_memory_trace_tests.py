@@ -7,7 +7,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'tools'))
-from summarize_rgn_memory_trace import parse_trace, summarize
+from summarize_rgn_memory_trace import describe_gateway_rgn_offset, parse_trace, summarize
 
 
 TRACE = [
@@ -41,6 +41,20 @@ class RgnMemoryTests(unittest.TestCase):
         self.assertIn('... 1 more consumer', summarize(TRACE, limit=1))
         self.assertIn('ranking is incomplete', summarize(TRACE[:-1] +
                       ['rgn-summary buffers=2 evictions=1 active=1 consumers=2 dropped=4']))
+
+    def test_optional_original_data_annotations_are_static_only(self):
+        # One six-byte entry points to a zero-ID rectangle which inherits its
+        # header default.  The report deliberately does not infer visibility.
+        data = bytes.fromhex('06 00 26 01 01 00 00 00 1b 93 2a 9d')
+        self.assertEqual(describe_gateway_rgn_offset(data, 0), 'header[0] word+0')
+        self.assertEqual(describe_gateway_rgn_offset(data, 8),
+                         'rect[0] object=header-default room-xy=(54,147)-(84,157)')
+        self.assertIsNone(describe_gateway_rgn_offset(data, 100))
+        annotated = summarize(TRACE, rgn_data={'GATE_002.RGN': data})
+        self.assertIn('header[0] word+0', summarize(
+            [line.replace('offset=6', 'offset=0') for line in TRACE],
+            rgn_data={'GATE_002.RGN': data}))
+        self.assertIn('none proves', annotated)
 
     def test_reject_incomplete_or_corrupt_census(self):
         with self.assertRaisesRegex(ValueError, 'missing RGN census'):

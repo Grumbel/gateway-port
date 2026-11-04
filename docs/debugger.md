@@ -123,16 +123,24 @@ xvfb-run -a python3 tools/run_walkthrough.py run \
   --probe-arg=--trace-rgn-memory
 
 python3 tools/summarize_rgn_memory_trace.py \
-  build/rgn-memory-opening/native.trace
+  build/rgn-memory-opening/native.trace --rgn-dir ../gateway-dos
 ```
 
 The trace has `rgn-buffer` (DOS file offset and destination address),
 `rgn-guest-read` (consumer CS:IP, register snapshot and file offset), and
-`rgn-consumer` census records. Use `--trace-entry-window START_MS:END_MS`
+`rgn-consumer` census records. With `--rgn-dir`, each sampled file offset is
+also identified as a Gateway 1 header field or a rectangle with its numeric
+object ID and room-local coordinates. This still does **not** establish that
+the object was selectable. Use `--trace-entry-window START_MS:END_MS`
 with `--trace-rgn-memory` to isolate a later click/command interval; the
 buffer hooks remain registered even when the read occurred before that window.
 The report's CS:IP values must be mapped to the correct loaded EXE/overlay
 section and verified against instruction bytes before naming a routine.
+
+If a replay fails, `run_walkthrough.py` reports the last 20 probe stderr lines.
+The complete diagnostics remain in `build/rgn-memory-opening/native.dos` and
+stdout in `build/rgn-memory-opening/native.out`. The trace may be useful even
+after a failed run, but a partial census is not proof of completed gameplay.
 
 **Limits:** A consumer can be a copy or resource decoder rather than a mouse
 picker. This tracer follows the original DOS-read buffer, not arbitrary

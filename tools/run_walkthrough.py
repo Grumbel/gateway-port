@@ -448,7 +448,18 @@ def run(args, replay):
             command += ['--dump-at',
                         f'{checkpoint.time_ms}:{args.output / ("checkpoint-" + checkpoint.label)}']
     with prefix.with_suffix('.out').open('w') as out, prefix.with_suffix('.dos').open('w') as err:
-        subprocess.run(command, stdout=out, stderr=err, timeout=args.timeout, check=True)
+        try:
+            subprocess.run(command, stdout=out, stderr=err, timeout=args.timeout, check=True)
+        except subprocess.CalledProcessError as error:
+            # The probe's stderr is redirected into native.dos. Expose its
+            # tail here so a failed research hook does not look like an
+            # unexplained generic subprocess error.
+            err.flush()
+            log_path = prefix.with_suffix('.dos')
+            tail = log_path.read_text(encoding='utf-8', errors='replace').splitlines()[-20:]
+            detail = '\n'.join(tail) if tail else '(no probe diagnostics)'
+            raise RuntimeError(f'Gateway probe exited with status {error.returncode}; '
+                               f'last lines of {log_path}:\n{detail}') from error
     verify_recorded(args, replay, previous_saves)
 
 
