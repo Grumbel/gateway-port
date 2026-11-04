@@ -836,6 +836,20 @@ replay is still unverified on this host because its bundled Unicorn library
 requires a newer glibc. The hooks are observational, and do not establish
 whether a later UI handler consumes any selected click.
 
+2026-11-05 native picker without RGN match (§3.6): removed the debugger's
+dependency on successfully correlating the current PIC/RGN frame before
+displaying *any* native mouse picker rows. A structurally valid table now
+exposes its original group/slot rectangles even when no picture has been
+tracked or the room geometry has changed. An unmatched table has no mapped
+object flags, so F10 labels its native regions `unmapped`, while the RGN
+display remains heuristic. Corrected an optional-word validation ordering
+issue in guest table parsing. Synthetic missing-picture, mismatched-geometry
+and invalid-table checks plus private first-room RAM checks pass. The live
+picker trace now compares any structurally decoded table even without an RGN
+association, while still never guessing object identities. Native mouse
+selection itself is unchanged; another host must run the live original-game
+oracle to verify previously uncorrelated screens.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |

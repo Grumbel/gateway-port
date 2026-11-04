@@ -52,8 +52,10 @@ struct DebugSceneView {
     // All picker rows, in original group/slot traversal order. The picker
     // keeps the *last* matching enabled row, including group fallback rows.
     std::vector<DebugPickerControl> native_picker_rows;
-    // Non-RGN rows: command/scroll controls and all five selectable fallbacks.
+    // Rows without a proven RGN association: normally command/scroll
+    // controls and all five fallbacks, or every row if scene matching failed.
     std::vector<DebugPickerControl> native_controls;
+    bool native_picker_decoded = false;
     bool native_picker_aligned = false;
     std::optional<DebugPickerControl> picker_at(int x, int y) const;
 };
@@ -68,8 +70,9 @@ class DebugSceneTracker {
     // Gateway 1 only. Other Legend games retain unknown presence until their
     // own object-location semantics have been verified.
     void set_game_state(const DebugGameState &state);
-    // Gateway 1 only. Correlate all rectangles against the original native
-    // picker table; an incomplete/mismatched table yields unknown values.
+    // Gateway 1 only. Decode verified-shape native rectangles independently
+    // from the current PIC/RGN scene. Only a complete room match can assign
+    // the skip flags to RGN object IDs.
     void set_native_picker_state(std::span<const std::uint8_t> memory, std::uint16_t ds);
     static std::string canonical_file(std::string name);
     static std::string matching_rgn(const std::string &pic);
@@ -95,6 +98,7 @@ class DebugSceneTracker {
     std::vector<bool> native_picker_disabled_;
     std::vector<DebugPickerControl> native_picker_rows_;
     std::vector<DebugPickerControl> native_controls_;
+    bool native_picker_decoded_ = false;
     std::string native_picker_picture_;
     std::size_t native_picker_entry_ = 0;
     std::string active_;

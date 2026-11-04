@@ -120,7 +120,7 @@ int main(int argc, char **argv) try {
     tracker.set_native_picker_state(picker_memory, 0x2000);
     require(tracker.view().boxes[0].native_picker_disabled == true,
             "matched rectangle with native 0x80 skip bit is disabled");
-    require(tracker.view().native_picker_aligned &&
+    require(tracker.view().native_picker_decoded && tracker.view().native_picker_aligned &&
                 tracker.view().native_picker_rows.size() == 5 &&
                 tracker.view().native_controls.size() == 4 &&
                 tracker.view().native_controls[1].slot == 0 &&
@@ -141,11 +141,29 @@ int main(int argc, char **argv) try {
     tracker.set_native_picker_state(picker_memory, 0x2000);
     require(!tracker.view().boxes[0].native_picker_disabled,
             "mismatched native geometry must not assign a picker mask");
-    require(!tracker.view().native_picker_aligned && tracker.view().native_controls.empty(),
-            "unverified room geometry must not expose arbitrary guest control bytes");
+    require(tracker.view().native_picker_decoded && !tracker.view().native_picker_aligned &&
+                tracker.view().native_controls.size() == 5 &&
+                tracker.view().native_picker_rows.size() == 5 &&
+                tracker.view().picker_at(35, 15)->slot == 1,
+            "unmatched RGN geometry must retain raw native click regions without object IDs");
     tracker.step(1);
-    require(!tracker.view().boxes[0].native_picker_disabled,
-            "the picker mask belongs only to the matched room entry");
+    require(!tracker.view().boxes[0].native_picker_disabled &&
+                !tracker.view().native_picker_aligned &&
+                tracker.view().native_controls.size() == 5,
+            "manual RGN inspection must not hide live unmapped native pickers");
+    gateway::DebugSceneTracker without_picture;
+    without_picture.set_native_picker_state(picker_memory, 0x2000);
+    require(without_picture.view().picture.empty() &&
+                without_picture.view().native_picker_decoded &&
+                !without_picture.view().native_picker_aligned &&
+                without_picture.view().native_controls.size() == 5,
+            "native mouse regions must survive temporarily missing PIC tracking");
+    picker_memory[picker_base + 0x1576] = 7;
+    without_picture.set_native_picker_state(picker_memory, 0x2000);
+    require(!without_picture.view().native_picker_decoded &&
+                without_picture.view().native_controls.empty(),
+            "invalid guest picker shape must clear raw native regions");
+    picker_memory[picker_base + 0x1576] = 2;
     tracker.auto_follow(true);
     tracker.note_read("GATE_102.PIC", 38, 1);
     // RGN lists potential targets. Guest containment excludes off-room and

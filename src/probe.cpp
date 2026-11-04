@@ -1070,7 +1070,10 @@ void trace_picker(uc_engine *uc, std::uint64_t address, std::uint32_t,
                 read_table(ds, 0xa6d0, 0x400);
                 state.debug_scene->set_native_picker_state(state.picker_memory, ds);
                 const auto scene = state.debug_scene->view();
-                frame.model_ready = scene.native_picker_aligned;
+                // A complete native table is sufficient to predict picker
+                // group/slot outputs. RGN alignment is only required before
+                // attributing those rows to game object identities.
+                frame.model_ready = scene.native_picker_decoded;
                 if (frame.model_ready)
                     frame.expected = scene.picker_at(frame.x, frame.y);
             }

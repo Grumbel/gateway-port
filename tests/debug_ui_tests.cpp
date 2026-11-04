@@ -117,6 +117,7 @@ int main() try {
     require(controls[10 * 640 + 60] == 0xff777e89,
             "raw mode should expose a disabled native control");
     gateway::DebugOverlayData fallback;
+    fallback.scene.native_picker_decoded = true;
     fallback.scene.native_picker_aligned = true;
     fallback.scene.native_controls.push_back({-4, -8, 260, 136, 0, 0, 0, 1, 1});
     fallback.scene.native_controls.push_back({30, 10, 40, 20, 0, 1, 18, 5, 0});
@@ -134,6 +135,13 @@ int main() try {
                 backdrop[30 * 640 + 20] != 0xff123456 &&
                 backdrop[70 * 640 + 20] != 0xff123456,
             "signed, selectable group fallback should appear in F10 overlay");
+    fallback.scene.native_picker_aligned = false;
+    std::vector<std::uint32_t> unmapped(640 * 480, 0xff123456);
+    gateway::draw_debug_overlay(unmapped, 640, 480, fallback_mouse, fallback,
+                                false, true, 0);
+    require(fallback.scene.picker_at(35, 15)->slot == 1 &&
+                unmapped[10 * 640 + 30] == gateway::debug_hotspot_color(0x812),
+            "unmapped native control geometry should remain visible");
     gateway::draw_debug_overlay(pixels, 640, 480, mouse, debug, true, false, 4);
     require(pixels[232 * 640 + 286] == 0xff75aaff &&
                 pixels[100 * 640 + 500] == 0xff123456,

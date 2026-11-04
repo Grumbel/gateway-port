@@ -197,9 +197,9 @@ void draw_debug_overlay(std::span<std::uint32_t> image, int width, int height,
         }
 
         // The native routine scans every row, including slot zero of each
-        // group. These fallback rectangles cover the otherwise blank command
-        // and text areas and are themselves selectable. They may begin at
-        // negative signed coordinates and extend beyond the VGA viewport.
+        // group. An unmatched PIC/RGN view still exposes every decoded native
+        // row as an anonymous picker rectangle: hiding them would hide real
+        // mouse targets whenever the scene tracker lags the original game.
         const auto picked = data.scene.picker_at(mouse.x, mouse.y);
         const DebugPickerControl *hovered_control = nullptr;
         std::size_t active_controls = 0;
@@ -245,7 +245,8 @@ void draw_debug_overlay(std::span<std::uint32_t> image, int width, int height,
             if (hovered_control) {
                 std::snprintf(info, sizeof info,
                               "Native %s g%u slot%u kind%u index%u",
-                              hovered_control->slot == 0 ? "fallback" : "control",
+                              !data.scene.native_picker_aligned ? "unmapped" :
+                                  hovered_control->slot == 0 ? "fallback" : "control",
                               unsigned(hovered_control->group), unsigned(hovered_control->slot),
                               unsigned(hovered_control->kind), unsigned(hovered_control->index));
             } else if (hovered >= unnamed_base) {

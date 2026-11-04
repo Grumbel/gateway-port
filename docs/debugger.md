@@ -85,8 +85,13 @@ identify the winning picker group and slot, not merely the first overlapping
 rectangle.
 The native room X origin is 261, one pixel to the right of the previous
 approximate RGN overlay origin. The **R** raw view shows skipped controls as
-dim outlines. If the native room group cannot be matched, the debugger
-leaves its old heuristic-only fallback in place.
+dim outlines. If the native table can be decoded but the current room group
+cannot be matched to the tracked PIC/RGN frame, F10 now still draws **all**
+live picker rectangles as anonymous native regions. A hovered row is labeled
+`Native unmapped` with its original group/slot, because no object identity is
+proven. The RGN overlay remains heuristic, and none of its disabled flags is
+inferred from an unmatched native table. This covers temporarily absent or
+out-of-sync PIC tracking without hiding non-RGN click areas.
 
 Gateway 1 now samples the validated 734-object guest table and annotates
 each RGN region with one of four *host-side* classifications:
@@ -118,9 +123,8 @@ column and a `native_picker` column (`disabled`, `not_disabled`, `unknown`);
 `.picker.tsv` records native UI control and fallback rectangles, group/slot,
 kind, signed coordinates, and skip flags. `.debug.txt` identifies the
 classification as heuristic.
-For the other
-Legend titles, all regions stay `unknown`, because the Gateway 1 object
-state and native picker layouts have not been verified there.
+For the other Legend titles, all regions stay `unknown`, because the Gateway 1
+object state and native picker layouts have not been verified there.
 
 The next verification should correlate these categories with native render
 events and click-selection results in several rooms. In particular, test
@@ -141,9 +145,10 @@ build/native-picker-oracle-tests ../gateway-dos build/rgn-scenes-v026
 For **live** comparisons, `gateway-probe --trace-picker FILE` observes the
 original picker routine at its entry and return addresses without replacing
 its results. It records the actual click coordinates, all three returned
-output parameters, and the F10 scene model's independent prediction. The TSV
-also distinguishes calls before the tracked PIC/RGN picture has been aligned
-(`unmodeled`) from verified matches and disagreements. These hooks currently
+output parameters, and the F10 scene model's independent prediction. A fully
+decoded native picker table can be compared even if its RGN association is
+unknown; `unmodeled` means the native table could not be decoded at all.
+These hooks currently
 assume the known Gateway 1 executable mapping, and are not enabled by default.
 
 For example, add a timed mouse click during the first-room walkthrough (the
@@ -162,8 +167,8 @@ python3 tools/check_picker_trace.py build/picker-live/picker.tsv --allow-unmodel
 
 `check_picker_trace.py` requires at least one modeled call and rejects any
 disagreement, trace error, or unfinished picker invocation. Use
-`--allow-unmodeled` when the launch traverses an untracked scene before the
-first room; omit it for a strictly modeled capture. A *picker selection*
+`--allow-unmodeled` when the launch traverses a state before a valid picker
+table has been decoded; omit it for a strictly modeled capture. A *picker selection*
 means a particular group/slot won the native bounding-box scan; it does not
 by itself prove that the game's later click dispatch consumed the event.
 
