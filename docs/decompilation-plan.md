@@ -690,6 +690,23 @@ optional original-PIC/framebuffer checks provide a native presentation
 baseline. This does not verify a story routine or wire the compositor into
 SDL3 yet; see [picture conditions](picture-conditions.md#first-native-picture-compositor-and-exact-frame-validation).
 
+2026-11-04 picture-layer inference follow-up (§3.6 still open): added a
+read-only RGB framebuffer comparator and bounded optional-layer enumeration
+to `gateway-scene`. Exactly one XOR-layer combination reproduces all 84,896
+room pixels in each of four native snapshots: before=17+18, open=16+18,
+taken=16+17+18, closed=17+18. The indicator's original callback
+`ovl:0x051480` tests `DS:69fe==1`, confirmed in all four RAM snapshots,
+while `DS:adf8[2]` remains zero even when its pixels are visible. Thus
+eligibility and cached picture state do not establish the visible blink
+phase. Found a distinct native picture handle path at
+`ovl:0x0514fa`–`0x05156a`: room event 23 creates a picture `0x0211`
+animation handle via far call `1485:1788`, saves `AX` in `DS:6a20`
+(observed value 0 in all four native snapshots), and calls `1485:18da`;
+the disabled branch invokes two cleanup calls and resets the handle to
+`0xffff`. Stable source identities of the graphics services and cadence
+remain unresolved;
+see [picture-layer evidence](picture-conditions.md#read-only-visible-layer-inference-and-indicator-callback).
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |

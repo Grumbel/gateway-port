@@ -104,6 +104,31 @@ class PictureConditionTests(unittest.TestCase):
             self.assertEqual(ds, 0x5b46)
             self.assertEqual(observed, flags)
 
+    def test_optional_original_indicator_callback_and_guest_state(self):
+        original = ROOT.parent / 'gateway-dos/GATEMAIN.OVL'
+        snapshots = ROOT / 'build/rgn-scenes-v026'
+        if not original.exists() or not (snapshots / 'before.bin').exists():
+            self.skipTest('original Gateway section and RAM checkpoints not installed')
+        ovl = original.read_bytes()
+        # ovl:0x51480 compares the byte DS:69fe against 1, normalizes to
+        # AX=0/1, and returns far. It does not access a frame counter.
+        self.assertEqual(ovl[0x51480:0x5148a],
+                         bytes.fromhex('803efe69011bc0f7d8cb'))
+        # The room has a second, separate animation path: create picture
+        # 0x0211 with four word arguments, save AX as an animation handle,
+        # and explicitly call a following graphics service.
+        self.assertEqual(ovl[0x5152c:0x51548], bytes.fromhex(
+            '2bc05050b8010050b81102509a8817851483c408a3206a9ada188514'))
+        self.assertEqual(ovl[0x51564:0x5156a],
+                         bytes.fromhex('c706206affff'))
+        for name in ('before', 'open', 'taken', 'closed'):
+            ram = (snapshots / (name + '.bin')).read_bytes()
+            ds = 0x5b46  # Checked against these specific retained .regs.
+            self.assertEqual(ram[ds * 16 + 0x69fe], 1)
+            self.assertEqual(ram[ds * 16 + 0xadf8 + 2], 0)
+            self.assertEqual(ram[ds * 16 + 0x6a20:ds * 16 + 0x6a22],
+                             b'\0\0')
+
     def test_optional_original_drawer_pixels_match_cache(self):
         snapshots = ROOT / 'build/rgn-scenes-v026'
         if not (snapshots / 'before.ppm').exists():

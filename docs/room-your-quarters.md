@@ -37,13 +37,13 @@ the table as instructions if the disassembly range runs across it.
 | 10 | `0x516e6` | Tests property 12 of object `0x162`; conditionally dispatches object `0x161` |
 | 11 | `0x515de` | Same entry as 8–9 |
 | 12 | `0x51709` | Returns 0 |
-| 13 | `0x5156d` | Changes `DS:69fe` and conditionally displays text 3/0 |
+| 13 | `0x5156d` | Updates the PV indicator's eligibility byte `DS:69fe` from room state and conditionally displays text 3/0 |
 | 14 | `0x51709` | Returns 0 |
 | 15 | `0x515ba` | Calls a shared service, displays text 3/1, then follows further state processing |
 | 16–21 | `0x51709` | Returns 0 |
 | 22 | `0x514ce` | Branches on an unidentified `ES:3a7a` value; calls a shared routine |
-| 23 | `0x514fa` | Similar state condition; calls shared routines and updates `DS:6a20` |
-| 24 | `0x5155a` | Conditional cleanup calls, resetting `DS:6a20` to `ffff` |
+| 23 | `0x514fa` | Refreshes region rules and starts a separate picture `0x0211` animation when eligible and no handle is active; stores returned handle in `DS:6a20` |
+| 24 | `0x5155a` | Calls two graphics cleanup services and resets the animation handle `DS:6a20` to `ffff` |
 
 **Event IDs are not yet semantic names.** Event 8 is *observed* as the room
 description request in the prior `look` replay; 9 and 11 share its entry but

@@ -173,4 +173,62 @@ This is stronger validation than a visual approximation: the output matches
 the original RGB framebuffer exactly across both complete room views.
 `scene-compositor-tests` exercises synthetic reversible XOR composition; when
 the private original PIC and PPM fixtures are supplied as arguments, it checks
-both native scenes byte-for-byte. None of these original assets are committed.
+the original native scenes byte-for-byte. None of these assets are committed.
+
+## Read-only visible-layer inference and indicator callback
+
+The diagnostic can now enumerate up to ten candidate overlays, comparing each
+composition to the RGB room viewport of a captured P6 framebuffer. It reports
+the number of differing pixels and the number of equally good combinations;
+an exact, **unique** pixel match identifies the visible layers in that frame.
+This is observation of rendered pixels, not reconstruction of the predicate
+engine, and the caller must supply the original room image and alignment.
+
+For the four private native checkpoints, run:
+
+~~~sh
+for name in before open taken closed; do
+  gateway-scene --base 15 --reference-ppm "build/rgn-scenes-v026/$name.ppm" \
+    --screen-x 261 --optional-layer 16 --optional-layer 17 \
+    --optional-layer 18 ../gateway-dos/GATE_102.PIC
+done
+~~~
+
+| Frame | Guest time | Unique visible optional layers | Differing pixels |
+| --- | ---: | --- | ---: |
+| `before` | 16,500 ms | 17 (indicator), 18 (card) | 0 / 84,896 |
+| `open` | 20,500 ms | 16 (drawer), 18 (card) | 0 / 84,896 |
+| `taken` | 26,500 ms | 16 (drawer), 17 (indicator), 18 (card) | 0 / 84,896 |
+| `closed` | 35,000 ms | 17 (indicator), 18 (card) | 0 / 84,896 |
+
+The original third picture record's callback at **`ovl:0x051480`** is just
+`return byte(DS:0x69fe) == 1` (compare, Boolean normalization, far return).
+The room's event-13 branch at `ovl:0x05156d` updates that byte based on
+`DS:69fc` and a nonzero guest state byte addressed through `DS:9470`.
+All four snapshots have `DS:69fe=1` but `DS:adf8[2]=0`, despite showing
+indicator 17 in three of those frames. This verifies that neither the
+callback nor the observed cache byte alone specifies **the currently painted
+indicator**. The four timestamps do not establish a blink period.
+
+The missing *independent picture path* is present in the original room
+handler, not in the 14-byte picture-condition table:
+
+| Original source | Observed operation |
+| --- | --- |
+| `ovl:0x0514fa` (room event 23) | Updates the three mouse-region rules; tests `DS:69fe` and whether signed `DS:6a20` is negative |
+| `ovl:0x05152c`–`0x05153d` | If eligible and no handle exists, passes four words `(picture=0x0211, 1, 0, 0)` to the far service at `1485:1788` |
+| `ovl:0x051540`–`0x051543` | Saves the service's `AX` return into `DS:6a20`, then calls another zero-argument graphics service at `1485:18da` |
+| `ovl:0x051550`–`0x05156a` | When not eligible and a nonnegative handle exists, invokes cleanup services at `1485:1928` and `1485:1bac`, then sets `DS:6a20=0xffff` |
+
+All four captured snapshots have a nonnegative handle (`DS:6a20=0`),
+and the pixels alternate while this handle stays unchanged. That is direct
+evidence for a persistent native picture/animation path **separate from the
+conditional-layer updater**. The exact behavior and stable file identities
+of the called graphics services, the animation tick cadence, and the
+interaction with table-based XOR redraws still require disassembly and
+additional runtime entry/return traces. `1485:*` addresses above are linked
+call operands, not yet resolved original-file routine identities.
+
+The native test now checks all four entire room views, and the original
+callback bytes, animation-call operands, handle and guest state are checked
+separately. No original asset or runtime snapshot is committed.
