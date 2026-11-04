@@ -62,7 +62,8 @@ to—but separate from—the conditional mouse-region table at `ovl:0x053daa`.
 The picture number `0x0210` resolves to **`GATE_102.PIC` entry 16**. The
 original PIC directory marks it as a positioned XOR overlay (`flags=0x4201`)
 at room coordinates **(90, 159)** with dimensions **48×65**. The native room
-viewport starts at screen x=260, so the layer occupies screen x=350–397 and
+pixels start at screen **x=261** (the preceding column is a UI divider), so
+the layer occupies screen x=351–398 and
 y=159–223. Entries 17 and 18 are similarly positioned overlays for the other
 two records.
 
@@ -132,3 +133,44 @@ and compositing semantics without making story logic dependent on UI layout.
 For AI-upscaled art, the original XOR layer must be resolved against its
 correct background or converted to an aligned replacement graphic; simply
 applying the low-resolution XOR bytes to an upscaled image would be wrong.
+
+## First native picture compositor and exact-frame validation
+
+`src/scene_compositor.cpp` is a pure C++20 **host-side pixel compositor** using
+the existing PIC decoder, with no SDL3 or OpenGL dependency. It accepts a
+background entry and an explicit ordered list of enabled XOR-layer entries,
+preserves the base palette, and validates each layer's position and dimensions.
+`gateway-scene` is a small CLI that exports the result to PNG. Neither
+component evaluates original story predicates; that boundary stays separate.
+
+Reproduce the *Your Quarters* pictures from the original asset file:
+
+~~~sh
+gateway-scene --base 15 --layer 18 --layer 17 \
+  -o build/quarters-closed.png ../gateway-dos/GATE_102.PIC
+gateway-scene --base 15 --layer 18 --layer 16 \
+  -o build/quarters-open.png ../gateway-dos/GATE_102.PIC
+~~~
+
+The base is `GATE_102.PIC` entry 15. Entry 18 is the debit-card graphic;
+entry 16 is the open drawer. Entry 17 affects just 50 pixels in an upper-left
+display/indicator area and is associated with a separate blinking visual
+state, not adequately explained by the retained `DS:adf8[2]` byte. In the
+original guest checkpoints, the bitmap and that cache byte do not always
+agree. **The cache is not yet a complete paint-list oracle**; reconstructing
+this indicator's update timing is a remaining task.
+
+With the room image aligned to native screen x=261, the first composition
+(entries 18+17) is **pixel-identical** to the original saved `before.ppm` room
+viewport, and the second (18+16) is **pixel-identical** to `open.ppm`:
+
+| Original guest frame | Compositor layers | Differing RGB pixels (379×224 room) |
+| --- | --- | ---: |
+| `before.ppm` | 18, 17 | **0 / 84,896** |
+| `open.ppm` | 18, 16 | **0 / 84,896** |
+
+This is stronger validation than a visual approximation: the output matches
+the original RGB framebuffer exactly across both complete room views.
+`scene-compositor-tests` exercises synthetic reversible XOR composition; when
+the private original PIC and PPM fixtures are supplied as arguments, it checks
+both native scenes byte-for-byte. None of these original assets are committed.

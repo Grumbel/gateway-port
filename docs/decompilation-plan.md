@@ -678,6 +678,18 @@ original framebuffers. Added read-only inspector, synthetic and optional
 original-fixture tests, and [picture-condition documentation](picture-conditions.md).
 General native predicate replacement and SDL3 scene rendering remain open.
 
+2026-11-04 native scene compositor: added a host-only C++20 PIC scene layer
+compositor (`src/scene_compositor.cpp`) and `gateway-scene` PNG diagnostic.
+Without native story predicate substitution, manually selected XOR entries
+18+17 (closed) and 18+16 (open) over base PIC entry 15 reproduce all 84,896
+room RGB pixels in each original guest screenshot, using screen x=261 as the
+verified room origin. The third layer's live `DS:adf8` cache byte does not
+by itself account for the indicator's 50-pixel blink: record that limitation
+before using the cache as an automatic renderer input. Synthetic C++ and
+optional original-PIC/framebuffer checks provide a native presentation
+baseline. This does not verify a story routine or wire the compositor into
+SDL3 yet; see [picture conditions](picture-conditions.md#first-native-picture-compositor-and-exact-frame-validation).
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |
