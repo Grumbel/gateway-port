@@ -74,6 +74,17 @@ struct State {
     bool debug_other_names = false;
     std::string debug_status;
     std::ofstream research_trace;
+    std::ofstream picker_trace;
+    struct PickerFrame {
+        int x = 0, y = 0;
+        std::array<std::uint16_t, 3> out_segments{}, out_offsets{};
+        std::optional<gateway::DebugPickerControl> expected;
+        bool model_ready = false;
+    };
+    std::optional<PickerFrame> picker_frame;
+    std::vector<std::uint8_t> picker_memory;
+    unsigned picker_calls = 0, picker_matched = 0, picker_mismatched = 0;
+    unsigned picker_unmodeled = 0, picker_errors = 0;
     unsigned elapsed_ms = 0;
     unsigned trace_entry_start_ms = 0;
     unsigned trace_entry_end_ms = 3600000;
@@ -1006,6 +1017,101 @@ void trace_entry(uc_engine *uc, std::uint64_t address, std::uint32_t, void *opaq
             throw std::runtime_error("cannot write research trace");
     } catch (const std::exception &e) {
         hardware_failure(uc, state, e.what());
+    }
+}
+
+// The source picker is GATE.RTL:0x14186..0x14244. These two physical
+// addresses are valid only for the pinned first-room Gateway launch layout.
+// Observe actual calls and their far-pointer results, without modifying the
+// original routine, input state, or its output buffers.
+void trace_picker(uc_engine *uc, std::uint64_t address, std::uint32_t,
+                  void *opaque) noexcept {
+    auto &state = *static_cast<State *>(opaque);
+    constexpr std::uint64_t picker_start = 0x269d1;
+    constexpr std::uint64_t picker_return = picker_start + (0x14244 - 0x14186);
+    try {
+        if (address == picker_start) {
+            if (state.picker_frame)
+                throw std::runtime_error("nested or unfinished native picker invocation");
+            const auto ss = reg(uc, UC_X86_REG_SS);
+            const auto sp = reg(uc, UC_X86_REG_SP);
+            auto stack_word = [&](unsigned offset) {
+                std::uint16_t value = 0;
+                check(uc_mem_read(uc, std::uint32_t(ss) * 16 +
+                                      std::uint16_t(sp + offset), &value, sizeof value));
+                return value;
+            };
+            State::PickerFrame frame;
+            frame.x = std::int16_t(stack_word(4));
+            frame.y = std::int16_t(stack_word(6));
+            for (unsigned i = 0; i < 3; ++i) {
+                frame.out_offsets[i] = stack_word(8 + i * 4);
+                frame.out_segments[i] = stack_word(10 + i * 4);
+            }
+            if (state.debug_scene) {
+                // The picker tables occupy <1 KiB, so avoid copying the
+                // entire 1-MiB emulated address space for each mouse event.
+                if (state.picker_memory.empty())
+                    state.picker_memory.resize(0x100000);
+                const auto ds = reg(uc, UC_X86_REG_DS);
+                auto read_table = [&](std::uint16_t segment, unsigned offset,
+                                      unsigned count) {
+                    const auto physical = std::uint32_t(segment) * 16 + offset;
+                    if (physical + count > state.picker_memory.size())
+                        throw std::runtime_error("native picker table outside RAM");
+                    check(uc_mem_read(uc, physical,
+                                      state.picker_memory.data() + physical, count));
+                };
+                read_table(ds, 0x8cc6, 2);
+                const auto ptr_at = std::uint32_t(ds) * 16 + 0x8cc6;
+                const auto segment = std::uint16_t(state.picker_memory[ptr_at] |
+                                                   unsigned(state.picker_memory[ptr_at + 1]) << 8);
+                read_table(segment, 0x1576, 2);
+                read_table(ds, 0xa6d0, 0x400);
+                state.debug_scene->set_native_picker_state(state.picker_memory, ds);
+                const auto scene = state.debug_scene->view();
+                frame.model_ready = scene.native_picker_aligned;
+                if (frame.model_ready)
+                    frame.expected = scene.picker_at(frame.x, frame.y);
+            }
+            state.picker_frame = frame;
+        } else if (address == picker_return && state.picker_frame) {
+            const auto frame = *state.picker_frame;
+            state.picker_frame.reset();
+            std::array<std::uint16_t, 3> actual{};
+            for (unsigned i = 0; i < 3; ++i)
+                check(uc_mem_read(uc, std::uint32_t(frame.out_segments[i]) * 16 +
+                                      frame.out_offsets[i], &actual[i], sizeof(actual[i])));
+            const auto ax = reg(uc, UC_X86_REG_AX);
+            const int model_result = !frame.model_ready ? -1 : frame.expected ? 1 : 0;
+            const unsigned model_group = frame.expected ? frame.expected->group : 0xffff;
+            const unsigned model_slot = frame.expected ? frame.expected->slot : 0xffff;
+            const unsigned model_kind = frame.expected ? frame.expected->kind : 0;
+            const bool equal = frame.model_ready && ax == model_result &&
+                               actual[0] == model_group && actual[1] == model_slot &&
+                               actual[2] == model_kind;
+            const auto verdict = !frame.model_ready ? "unmodeled" : equal ? "match" : "mismatch";
+            ++state.picker_calls;
+            if (!frame.model_ready)
+                ++state.picker_unmodeled;
+            else if (equal)
+                ++state.picker_matched;
+            else
+                ++state.picker_mismatched;
+            state.picker_trace << std::dec << state.elapsed_ms << '\t'
+                               << frame.x << '\t' << frame.y << '\t' << model_result << '\t'
+                               << model_group << '\t' << model_slot << '\t' << model_kind << '\t'
+                               << ax << '\t' << actual[0] << '\t' << actual[1] << '\t'
+                               << actual[2] << '\t' << verdict << '\n';
+        }
+    } catch (const std::exception &error) {
+        // This is an observational tool: a failed inference must never
+        // interrupt the original game. Report an incomplete diagnostic and
+        // let the checker reject it.
+        state.picker_frame.reset();
+        ++state.picker_errors;
+        state.picker_trace << "# picker-error ms=" << state.elapsed_ms
+                           << " detail=" << error.what() << '\n';
     }
 }
 
@@ -1965,6 +2071,7 @@ int main(int argc, char **argv) {
     unsigned milliseconds = 0;
     std::string dump_prefix, block_trace_path, rtlink_calls_path, rtlink_events_path;
     std::string rtlink_sequence_path;
+    std::string trace_picker_path;
     std::filesystem::path key_script_path;
     bool key_at_used = false;
     std::set<std::tuple<std::uint16_t, std::uint16_t, std::uint16_t>> rtlink_event_targets;
@@ -2009,6 +2116,7 @@ int main(int argc, char **argv) {
                      "[--break-at HEX] [--state-dir DIR | --read-only] [--trace-blocks FILE] "
                      "[--trace-rtlink-calls FILE] "
                      "[--trace-rtlink-sequence FILE] "
+                     "[--trace-picker FILE] "
                      "[--key-script FILE --milliseconds N] "
                      "[--dump-at MS:PREFIX ...] "
                      "[--mouse-click-at MS:X:Y ...] "
@@ -2090,7 +2198,14 @@ int main(int argc, char **argv) {
             }
         } else if (option == "--debug-scene")
             headless_debug_scene = true;
-        else if (option == "--trace-rgn-dos" || option == "--trace-rgn-memory")
+        else if (option == "--trace-picker" && i + 1 < argc) {
+            trace_picker_path = argv[++i];
+            headless_debug_scene = true;
+            if (trace_picker_path.empty()) {
+                usage();
+                return 2;
+            }
+        } else if (option == "--trace-rgn-dos" || option == "--trace-rgn-memory")
             trace_rgn_dos = true;
         else if (option == "--trace-research" && i + 1 < argc)
             research_path = argv[++i];
@@ -2495,6 +2610,14 @@ int main(int argc, char **argv) {
             if (!state.rtlink_events)
                 throw std::runtime_error("cannot open RTLink event trace");
         }
+        if (!trace_picker_path.empty()) {
+            state.picker_trace.open(trace_picker_path);
+            if (!state.picker_trace)
+                throw std::runtime_error("cannot open native picker trace");
+            state.picker_trace << "ms\tx\ty\tmodel_result\tmodel_group\tmodel_slot"
+                                  "\tmodel_kind\tnative_result\tnative_group\tnative_slot"
+                                  "\tnative_kind\tverdict\n";
+        }
         state.object_flags_mode = object_flags_mode;
         state.object_state_services = object_state_services;
         if (!research_path.empty()) {
@@ -2680,6 +2803,17 @@ int main(int argc, char **argv) {
             check(uc_hook_add(engine.uc, &entry_hooks[i], UC_HOOK_CODE,
                               reinterpret_cast<void *>(trace_entry), &state, entry_addresses[i],
                               entry_addresses[i]));
+        std::array<uc_hook, 2> picker_hooks{};
+        if (state.picker_trace.is_open()) {
+            constexpr std::uint64_t picker_start = 0x269d1;
+            constexpr std::uint64_t picker_return = picker_start + (0x14244 - 0x14186);
+            check(uc_hook_add(engine.uc, &picker_hooks[0], UC_HOOK_CODE,
+                              reinterpret_cast<void *>(trace_picker), &state,
+                              picker_start, picker_start));
+            check(uc_hook_add(engine.uc, &picker_hooks[1], UC_HOOK_CODE,
+                              reinterpret_cast<void *>(trace_picker), &state,
+                              picker_return, picker_return));
+        }
         std::array<uc_hook, 10> object_hooks{};
         if (!object_flags_mode.empty()) {
             const auto count = object_state_services ? object_services.size() : 1;
@@ -3051,6 +3185,17 @@ int main(int argc, char **argv) {
             state.rtlink_events.close();
             if (!state.rtlink_events)
                 throw std::runtime_error("cannot write RTLink event trace");
+        }
+        if (state.picker_trace.is_open()) {
+            state.picker_trace << "# picker-summary calls=" << state.picker_calls
+                               << " matched=" << state.picker_matched
+                               << " mismatched=" << state.picker_mismatched
+                               << " unmodeled=" << state.picker_unmodeled
+                               << " errors=" << state.picker_errors
+                               << " unfinished=" << (state.picker_frame ? 1 : 0) << '\n';
+            state.picker_trace.close();
+            if (!state.picker_trace)
+                throw std::runtime_error("cannot write native picker trace");
         }
         if (!scheduled_pokes.empty())
             throw std::runtime_error("research poke was never applied before probe stopped");

@@ -138,6 +138,35 @@ skipped by the ordinary public CTest run:
 build/native-picker-oracle-tests ../gateway-dos build/rgn-scenes-v026
 ```
 
+For **live** comparisons, `gateway-probe --trace-picker FILE` observes the
+original picker routine at its entry and return addresses without replacing
+its results. It records the actual click coordinates, all three returned
+output parameters, and the F10 scene model's independent prediction. The TSV
+also distinguishes calls before the tracked PIC/RGN picture has been aligned
+(`unmodeled`) from verified matches and disagreements. These hooks currently
+assume the known Gateway 1 executable mapping, and are not enabled by default.
+
+For example, add a timed mouse click during the first-room walkthrough (the
+coordinates are *screen* coordinates, unlike the RGN picture-local X values):
+
+```sh
+mkdir -p build/picker-live
+xvfb-run -a python3 tools/run_walkthrough.py run \
+  tests/fixtures/gateway-opening.walk \
+  --probe /tmp/gateway-port-build/gateway-probe \
+  --data ../gateway-dos --output build/picker-live \
+  --probe-arg=--mouse-click-at --probe-arg=24000:360:200 \
+  --probe-arg=--trace-picker --probe-arg=build/picker-live/picker.tsv
+python3 tools/check_picker_trace.py build/picker-live/picker.tsv --allow-unmodeled
+```
+
+`check_picker_trace.py` requires at least one modeled call and rejects any
+disagreement, trace error, or unfinished picker invocation. Use
+`--allow-unmodeled` when the launch traverses an untracked scene before the
+first room; omit it for a strictly modeled capture. A *picker selection*
+means a particular group/slot won the native bounding-box scan; it does not
+by itself prove that the game's later click dispatch consumed the event.
+
 The fixed `2649:0541` runtime entry is verified only for those four opening
 snapshots; this is not a universal segment address or a replacement picker.
 

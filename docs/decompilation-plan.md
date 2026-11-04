@@ -823,6 +823,19 @@ Unicorn differential harness that calls the actual picker against the same
 RAM and checks its group/slot/kind outputs for a grid and boundary samples;
 it requires the user's native Unicorn/Nix toolchain to execute.
 
+2026-11-04 live picker differential tracing (§3.6): added opt-in probe hooks
+at the known Gateway 1 picker entry and `retf` instruction. On real mouse
+invocations, the hooks capture the original x/y arguments and three far
+output pointers, independently predict group/slot/kind from the *current*
+native table and PIC/RGN scene model, then compare after the original routine
+has written its outputs. A TSV records matches, disagreements, and calls for
+which no aligned picture was available. `check_picker_trace.py` rejects
+incomplete captures or discrepancies, with synthetic regression coverage.
+Source compiles against the available Unicorn headers; live original-game
+replay is still unverified on this host because its bundled Unicorn library
+requires a newer glibc. The hooks are observational, and do not establish
+whether a later UI handler consumes any selected click.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |
