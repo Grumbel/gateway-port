@@ -526,3 +526,47 @@ the native rendering handoff and conservative runtime fallback, not a
 verified native replacement of any RTL routine. The interactive SDL path
 cannot be compiled/tested in a host-only environment without SDL3 and
 Unicorn; manual runtime verification is still required.
+
+### Resident deadline cadence and independently painted frames
+
+The recovered RTL sequence slot's 32-bit *next-frame deadline* is an
+observable phase clock, but **not** a complete rendering state: the one-frame
+sequence's frame index stays zero whether the indicator is on or off.
+`RtlXorDeadlinePhase` tracks changes in that deadline in 500-ms increments,
+after its visible phase has been anchored by an independent observation. Equal
+deadlines preserve the phase; a jump of N complete 500-ms periods toggles it
+iff N is odd. A backward clock, non-periodic jump or initial unanchored
+deadline returns no phase and requires explicit resynchronization. The
+tracker does not read or change guest RAM and is **not** a port of the
+original scheduler at `rtl:0x134a5`.
+
+The private 1-MiB RAM captures from the same original launch have
+`DS=5b46`; the verified relocated slot-zero deadline is at `DS:9ffa`.
+This address is *not portable to other runs*; it is used only in the
+optional original-capture test and should be resolved from linked RTL code
+before a live integration. Comparing that deadline to the uniquely inferred
+indicator layer in each original screenshot gives:
+
+| Original captures | Independent deadline predictions | Re-anchors after non-periodic jumps |
+| --- | ---: | ---: |
+| Eight idle frames (16,000–17,750 guest ms) | 7/7 | 0 |
+| 32 action frames (19,500–36,000 guest ms) | 28/28 | 3 |
+
+The three action-timeline gaps change the next-frame deadline by **900,
+2,010 and 2,620 ms**, rather than a multiple of 500. Their cause and any
+hidden intervening reset/draw events remain unresolved, so they are *not*
+accepted as valid predictions; the reference frame supplies a new anchor.
+All 35 confident frames have the correct indicator phase. This explains why
+a single globally periodic blink clock could not match the action replay.
+
+`HostScenePreview::paint_mask()` now provides a separate, explicitly driven
+native render: it paints the selected cached scene without consulting the
+original framebuffer and fails without modifying anything if the room is
+off-screen or the mask is invalid. The regression clears the original room
+rectangle, paints from the host-only PIC layers and checks every resulting
+pixel, including all 35 frames driven by the **predicted** deadline phase.
+Other layer bits (drawer/card) are still inferred from the original image in
+this experiment. A fully independent SDL renderer needs verified story
+predicate inputs for those layers, a trustworthy live RTL slot address, and
+safe re-anchoring at discontinuities. The interactive
+`--host-scene-preview` remains exact-match only.

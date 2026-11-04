@@ -116,4 +116,22 @@ std::optional<std::uint32_t> HostScenePreview::replace_if_exact(
     return matching->mask;
 }
 
+bool HostScenePreview::paint_mask(std::span<std::uint32_t> frame,
+                                 int screen_width, int screen_height,
+                                 std::uint32_t mask) const {
+    if (screen_width <= 0 || screen_height <= 0 ||
+        std::uint64_t(screen_width) * screen_height != frame.size())
+        throw std::runtime_error("invalid host scene framebuffer dimensions");
+    if (mask >= variants_.size() || std::int64_t(x_) + width_ > screen_width ||
+        std::int64_t(y_) + height_ > screen_height)
+        return false;
+
+    const auto &argb = variants_[mask].argb;
+    for (int y = 0; y < height_; ++y) {
+        const auto start = std::size_t(y_ + y) * screen_width + x_;
+        std::copy_n(argb.begin() + std::size_t(y) * width_, width_, frame.begin() + start);
+    }
+    return true;
+}
+
 } // namespace gateway

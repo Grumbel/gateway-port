@@ -789,6 +789,17 @@ differential test covers four room states, eight idle blinks and 32
 interleaved player actions. Host-only compilation and tests pass; the
 interactive SDL/Unicorn binary still requires a full toolchain check.
 
+2026-11-04 resident RTL deadline phase (§3.6): correlated slot-zero's
+linker-relocated 32-bit next-frame deadline with 40 private idle/action
+frame/RAM pairs. The new host-only `RtlXorDeadlinePhase` predicts 7/7
+idle transitions and 28/28 action transitions where the deadline advances
+by exact multiples of 500 ms. Three action gaps (900/2010/2620 ms) demand
+re-anchoring, not speculative parity. Added the independently driven native
+PIC-mask paint API; the regression clears and repaints the full room for
+all 44 original captures and confirms 35 confidently deadline-predicted
+frames. The live runtime continues to use only the original-image-matched
+fallback; this is not a verified RTL replacement or a new golden baseline.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |

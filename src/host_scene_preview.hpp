@@ -29,6 +29,13 @@ public:
     std::optional<std::uint32_t> replace_if_exact(std::span<std::uint32_t> frame,
                                                    int screen_width, int screen_height) const;
 
+    // Explicit native compositor output: does not inspect VGA pixels. Callers
+    // must independently verify the active room and optional-layer mask.
+    // Returns false (without modifying the frame) if the scene is off-screen
+    // or the mask is outside the decoded layer combinations.
+    bool paint_mask(std::span<std::uint32_t> frame, int screen_width, int screen_height,
+                    std::uint32_t mask) const;
+
 private:
     struct Variant {
         std::uint32_t mask = 0;
