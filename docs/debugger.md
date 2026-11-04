@@ -51,8 +51,8 @@ if set, that rectangle is skipped. The group counts are at `DS:a8d4`, the
 35-entry-per-group rectangle-index lists at `DS:a974`, and the indexed native
 x0/x1/y0/y1 arrays at `DS:a6d0`, `DS:a750`, `DS:a7d0`, and `DS:a850`.
 Result-kind bytes are at `DS:aa4e`. These are **runtime addresses for this
-launch layout**, not original EXE/overlay file offsets. The routine's
-original file offset remains to be identified.
+launch layout**, not original EXE/overlay file offsets. The picker routine
+itself was identified at `GATE.RTL:0x14186`.
 
 The debugger matches *all* room RGN rectangles against a single live native
 group, including each rectangle's coordinates (native screen X = RGN X +
@@ -77,17 +77,21 @@ picture background, text panel, and scrollbar backgrounds all respond to
 mouse clicks. The remaining rows are 30 room-picture RGN rectangles and
 **22 non-RGN UI controls**, of which 18 are currently enabled.
 
-F10 now outlines all 27 non-RGN/fallback rectangles too. The large fallback
-rectangles are tinted only when they actually win the native picker test,
-to avoid covering the picture with a translucent debug overlay. The 22
-specific control rectangles retain their colored tint. Control hover labels
-identify the winning picker group and slot, not merely the first overlapping
-rectangle.
+The normal F10 view now paints a **pixel-accurate selection map** when a live
+native table can be decoded. Each screen pixel is assigned exactly the final
+enabled group/slot selected by the original scan order. Neighboring regions
+are outlined by their *winning* boundary, rather than by overlapping raw
+rectangle edges; this reveals which regions are actually selectable at a
+particular point. The five large fallback regions receive outlines but stay
+transparent away from hover, while specific controls are tinted. Matched
+room slots retain their RGN object colors and names. The RGN-independent
+selection map does not imply that a later game handler accepts the click.
 The native room X origin is 261, one pixel to the right of the previous
-approximate RGN overlay origin. The **R** raw view shows skipped controls as
-dim outlines. If the native table can be decoded but the current room group
-cannot be matched to the tracked PIC/RGN frame, F10 now still draws **all**
-live picker rectangles as anonymous native regions. A hovered row is labeled
+approximate RGN overlay origin. The **R** raw view shows every RGN candidate
+and independent native rectangle, including skipped controls as dim outlines.
+If the native table can be decoded but the current room group cannot be
+matched to the tracked PIC/RGN frame, F10 still uses the selection map and
+labels native regions without an inferred object identity. A hovered row is labeled
 `Native unmapped` with its original group/slot, because no object identity is
 proven. The RGN overlay remains heuristic, and none of its disabled flags is
 inferred from an unmatched native table. This covers temporarily absent or
@@ -96,7 +100,7 @@ out-of-sync PIC tracking without hiding non-RGN click areas.
 Gateway 1 now samples the validated 734-object guest table and annotates
 each RGN region with one of four *host-side* classifications:
 
-| Classification | Meaning | Default F10 outline | Widescreen list |
+| Classification | Meaning | Heuristic fallback outline | Widescreen list |
 | --- | --- | --- | --- |
 | `room_candidate` | Direct/nested location chain reaches the player's enclosing type-1 room; supported property `0x07` is not known false | Show | List |
 | `absent` | Object is detached, carried by the player, in another room, or within the known closed drawer `0x124` | Hide | Hide |
@@ -120,9 +124,11 @@ UI controls, including skipped ones, for comparison. The original guest
 mouse input is unchanged.
 Dumped `.regions.tsv` files retain every region and append a `presence`
 column and a `native_picker` column (`disabled`, `not_disabled`, `unknown`);
-`.picker.tsv` records native UI control and fallback rectangles, group/slot,
-kind, signed coordinates, and skip flags. `.debug.txt` identifies the
-classification as heuristic.
+`.picker.tsv` now records **every** native picker row in scan order, including
+room RGN slots, fallback regions and non-RGN controls, with group/slot, kind,
+signed coordinates, skip flags and object IDs only for fully aligned RGN slots.
+`.debug.txt` records whether the picker was decoded and which group (if any)
+was matched. It identifies object-presence classification as heuristic.
 For the other Legend titles, all regions stay `unknown`, because the Gateway 1
 object state and native picker layouts have not been verified there.
 

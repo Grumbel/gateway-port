@@ -167,6 +167,7 @@ void DebugSceneTracker::set_native_picker_state(std::span<const std::uint8_t> me
     native_picker_disabled_.clear();
     native_picker_rows_.clear();
     native_controls_.clear();
+    native_room_group_.reset();
     native_picker_decoded_ = false;
     native_picker_picture_ = active_;
     native_picker_entry_ = entry_;
@@ -288,6 +289,8 @@ void DebugSceneTracker::set_native_picker_state(std::span<const std::uint8_t> me
                 native_controls_.push_back(control);
         }
     }
+    if (matching_group)
+        native_room_group_ = std::uint8_t(*matching_group);
     native_picker_decoded_ = true;
 }
 
@@ -387,6 +390,7 @@ DebugSceneView DebugSceneTracker::view() const {
     if (native_picker_decoded_) {
         view.native_picker_rows = native_picker_rows_;
         view.native_controls = native_controls_;
+        view.native_room_group = native_room_group_;
     }
     const auto found = pictures_.find(active_);
     if (found == pictures_.end())

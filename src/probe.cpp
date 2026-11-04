@@ -1988,8 +1988,8 @@ void dump_guest(uc_engine *uc, State &state, const std::string &prefix) {
     regions.close();
     std::ofstream controls(prefix + ".picker.tsv");
     controls << "picture\tentry\tgroup\tslot\tpicker_index\tkind\tflags"
-                "\tx0\ty0\tx1\ty1\tskipped\tfallback\n";
-    for (const auto &control : scene.native_controls)
+                "\tx0\ty0\tx1\ty1\tskipped\tfallback\trgn_object_id\n";
+    for (const auto &control : scene.native_picker_rows) {
         controls << scene.picture << '\t' << scene.entry << '\t'
                  << unsigned(control.group) << '\t' << unsigned(control.slot) << '\t'
                  << unsigned(control.index) << '\t'
@@ -1997,10 +1997,15 @@ void dump_guest(uc_engine *uc, State &state, const std::string &prefix) {
                  << control.x0 << '\t' << control.y0 << '\t'
                  << control.x1 << '\t' << control.y1 << '\t'
                  << ((control.flags & 0x80) ? "yes" : "no") << '\t'
-                 << (control.slot == 0 ? "yes" : "no") << '\n';
+                 << (control.slot == 0 ? "yes" : "no") << '\t';
+        if (scene.native_room_group && control.group == *scene.native_room_group &&
+            control.slot != 0 && control.slot <= scene.boxes.size())
+            controls << scene.boxes[control.slot - 1].object_id;
+        controls << '\n';
+    }
     controls.close();
     if (!controls)
-        throw std::runtime_error("cannot write native picker controls dump");
+        throw std::runtime_error("cannot write native picker rows dump");
     std::ofstream metadata(prefix + ".debug.txt");
     metadata << "guest_ms=" << std::dec << state.elapsed_ms << '\n'
              << "picture=" << scene.picture << '\n'
@@ -2016,8 +2021,16 @@ void dump_guest(uc_engine *uc, State &state, const std::string &prefix) {
                 " IF caller requests restricted traversal; NOT mouse/render state\n"
              << "native_picker=original Gateway 1 RGN picker 0x80 skip bit;"
                 " not_disabled is NOT proof of drawn/selectable\n"
-             << "picker_controls=non-RGN screen-space rectangles plus all five"
-                " selectable group fallbacks; signed bounds\n"
+             << "picker_rows=all live group/slot rectangles in original scan order;"
+                " signed bounds and optional aligned RGN object ID\n"
+             << "picker_decoded=" << (scene.native_picker_decoded ? "yes" : "no") << '\n'
+             << "picker_aligned=" << (scene.native_picker_aligned ? "yes" : "no") << '\n'
+             << "picker_room_group=";
+    if (scene.native_room_group)
+        metadata << unsigned(*scene.native_room_group);
+    else
+        metadata << "unknown";
+    metadata << '\n'
              << "picker_controls_count=" << scene.native_controls.size() << '\n';
     if (objects && objects->objects.size() == 734) {
         std::ofstream records(prefix + ".objects.tsv");

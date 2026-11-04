@@ -829,7 +829,7 @@ invocations, the hooks capture the original x/y arguments and three far
 output pointers, independently predict group/slot/kind from the *current*
 native table and PIC/RGN scene model, then compare after the original routine
 has written its outputs. A TSV records matches, disagreements, and calls for
-which no aligned picture was available. `check_picker_trace.py` rejects
+which the picker table could not be decoded. `check_picker_trace.py` rejects
 incomplete captures or discrepancies, with synthetic regression coverage.
 Source compiles against the available Unicorn headers; live original-game
 replay is still unverified on this host because its bundled Unicorn library
@@ -849,6 +849,18 @@ picker trace now compares any structurally decoded table even without an RGN
 association, while still never guessing object identities. Native mouse
 selection itself is unchanged; another host must run the live original-game
 oracle to verify previously uncorrelated screens.
+
+2026-11-05 winner-based native hitbox overlay (§3.6): the normal F10 view now
+rasterizes all enabled native mouse rectangles in source scan order, with each
+later row overwriting the previous pixel owner. This shows only the winning
+group/slot at each coordinate, respecting signed bounds, inclusive edges,
+disabled entries, fallback backgrounds and overlaps. Matched picture slots
+retain object colors/names, but other slots remain anonymous. The old raw RGN
+and native rectangle outlines are preserved behind the R debug toggle for
+comparison. Picker dumps now export all native rows and the optional room-group
+association so the overlay can be audited without inferring unknown object IDs.
+Synthetic overlap/disabled/priority raster tests and the private
+first-room RAM checks pass; a live Unicorn graphical run remains pending.
 
 ## 10. Risks and how to react
 

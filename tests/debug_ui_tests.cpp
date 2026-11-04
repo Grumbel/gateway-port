@@ -142,6 +142,31 @@ int main() try {
     require(fallback.scene.picker_at(35, 15)->slot == 1 &&
                 unmapped[10 * 640 + 30] == gateway::debug_hotspot_color(0x812),
             "unmapped native control geometry should remain visible");
+    // The normal F10 view paints the *winning* native picker row at each
+    // pixel, rather than outlining overlapping rectangles independently.
+    gateway::DebugOverlayData winners;
+    winners.scene.native_picker_decoded = true;
+    winners.scene.native_picker_aligned = true;
+    winners.scene.native_room_group = 0;
+    winners.scene.boxes.push_back({40, 40, 60, 60, 123, "test object"});
+    winners.scene.native_picker_rows = {
+        {0, 0, 100, 100, 0, 0, 0, 1, 0},
+        {40, 40, 60, 60, 0, 1, 1, 3, 0},
+        {50, 50, 70, 70, 1, 1, 2, 5, 0},
+        {20, 20, 30, 30, 2, 1, 3, 5, 0x80},
+    };
+    gateway::Mouse winner_mouse;
+    winner_mouse.x = 55;
+    winner_mouse.y = 55;
+    std::vector<std::uint32_t> selected(640 * 480, 0xff123456);
+    gateway::draw_debug_overlay(selected, 640, 480, winner_mouse, winners,
+                                false, true, 0);
+    require(selected[40 * 640 + 40] == gateway::debug_hotspot_color(123) &&
+                selected[55 * 640 + 50] == 0xffe6edfa &&
+                selected[25 * 640 + 25] == 0xff123456 &&
+                selected[55 * 640 + 71] == 0xff648ca0,
+            "native winner pixels must honor last-match priority, disabled rows,"
+            " and original RGN object color");
     gateway::draw_debug_overlay(pixels, 640, 480, mouse, debug, true, false, 4);
     require(pixels[232 * 640 + 286] == 0xff75aaff &&
                 pixels[100 * 640 + 500] == 0xff123456,

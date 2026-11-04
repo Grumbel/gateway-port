@@ -121,6 +121,7 @@ int main(int argc, char **argv) try {
     require(tracker.view().boxes[0].native_picker_disabled == true,
             "matched rectangle with native 0x80 skip bit is disabled");
     require(tracker.view().native_picker_decoded && tracker.view().native_picker_aligned &&
+                tracker.view().native_room_group == 0 &&
                 tracker.view().native_picker_rows.size() == 5 &&
                 tracker.view().native_controls.size() == 4 &&
                 tracker.view().native_controls[1].slot == 0 &&
@@ -142,6 +143,7 @@ int main(int argc, char **argv) try {
     require(!tracker.view().boxes[0].native_picker_disabled,
             "mismatched native geometry must not assign a picker mask");
     require(tracker.view().native_picker_decoded && !tracker.view().native_picker_aligned &&
+                !tracker.view().native_room_group &&
                 tracker.view().native_controls.size() == 5 &&
                 tracker.view().native_picker_rows.size() == 5 &&
                 tracker.view().picker_at(35, 15)->slot == 1,

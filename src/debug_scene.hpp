@@ -55,6 +55,9 @@ struct DebugSceneView {
     // Rows without a proven RGN association: normally command/scroll
     // controls and all five fallbacks, or every row if scene matching failed.
     std::vector<DebugPickerControl> native_controls;
+    // The group whose slots 1..N are aligned to boxes[0..N-1]. Never infer
+    // object IDs for another group, even if its rectangles overlap the room.
+    std::optional<std::uint8_t> native_room_group;
     bool native_picker_decoded = false;
     bool native_picker_aligned = false;
     std::optional<DebugPickerControl> picker_at(int x, int y) const;
@@ -98,6 +101,7 @@ class DebugSceneTracker {
     std::vector<bool> native_picker_disabled_;
     std::vector<DebugPickerControl> native_picker_rows_;
     std::vector<DebugPickerControl> native_controls_;
+    std::optional<std::uint8_t> native_room_group_;
     bool native_picker_decoded_ = false;
     std::string native_picker_picture_;
     std::size_t native_picker_entry_ = 0;

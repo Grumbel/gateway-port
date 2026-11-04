@@ -97,12 +97,101 @@ std::uint32_t debug_hotspot_color(std::uint16_t object_id) {
     return 0xff000000 | (c[0] << 16) | (c[1] << 8) | c[2];
 }
 
+namespace {
+std::uint32_t picker_color(const DebugSceneView &scene, const DebugPickerControl &row) {
+    if (row.slot == 0)
+        return 0xff648ca0u;
+    if (scene.native_room_group && row.group == *scene.native_room_group &&
+        row.slot <= scene.boxes.size() && scene.boxes[row.slot - 1].object_id)
+        return debug_hotspot_color(scene.boxes[row.slot - 1].object_id);
+    return debug_hotspot_color(std::uint16_t(0x800u + row.index));
+}
+
+// Rasterize the original picker's actual last-enabled-match rule. Outlining
+// every raw rectangle independently gives misleading overlaps; in contrast,
+// each pixel here belongs to exactly the group/slot the native selector would
+// return for that coordinate. This diagnostic path runs only with F10 active.
+void draw_native_picker_winners(std::span<std::uint32_t> image, int width, int height,
+                                const Mouse &mouse, const DebugSceneView &scene) {
+    const auto &rows = scene.native_picker_rows;
+    if (rows.empty() || rows.size() >= 65535)
+        return;
+    std::vector<std::uint16_t> winner(std::size_t(width) * height);
+    std::size_t enabled = 0;
+    for (std::size_t i = 0; i < rows.size(); ++i) {
+        const auto &row = rows[i];
+        if (row.flags & 0x80)
+            continue;
+        ++enabled;
+        const int x0 = std::clamp(int(std::int64_t(row.x0) * width / 640), 0, width);
+        const int x1 = std::clamp(int(std::int64_t(row.x1 + 1) * width / 640), 0, width);
+        const int y0 = std::clamp(row.y0, 0, height);
+        const int y1 = std::clamp(row.y1 + 1, 0, height);
+        if (x0 >= x1 || y0 >= y1)
+            continue;
+        for (int y = y0; y < y1; ++y) {
+            auto begin = winner.begin() + std::size_t(y) * width + x0;
+            std::fill(begin, begin + (x1 - x0), std::uint16_t(i + 1));
+        }
+    }
+    const auto picked = scene.picker_at(mouse.x, mouse.y);
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            const auto offset = std::size_t(y) * width + x;
+            const auto id = winner[offset];
+            if (!id)
+                continue;
+            const auto &row = rows[id - 1];
+            const bool hover = picked && row.group == picked->group && row.slot == picked->slot;
+            const bool outline = x == 0 || x + 1 == width || y == 0 || y + 1 == height ||
+                                 winner[offset - 1] != id || winner[offset + 1] != id ||
+                                 winner[offset - width] != id || winner[offset + width] != id;
+            auto &pixel_value = image[offset];
+            const auto color = picker_color(scene, row);
+            if (outline)
+                pixel_value = hover ? white : color;
+            else if (row.slot != 0 || hover)
+                pixel_value = tint(pixel_value, color, hover ? 100 : 55);
+        }
+    }
+    // Status panels remain overlays, so render them last and keep them away
+    // from the original left-hand scrollbar controls when possible.
+    const int status_x = width > 420 ? width - 318 : 2;
+    rect(image, width, height, status_x, height - 23, width - 2, height - 2, panel, true);
+    char info[128];
+    std::snprintf(info, sizeof info, "Native picker %zu/%zu %s", enabled, rows.size(),
+                  scene.native_picker_aligned ? "RGN aligned" : "RGN unmapped");
+    text(image, width, height, status_x + 6, height - 18, info, white, 37);
+    if (picked) {
+        if (scene.native_room_group && picked->group == *scene.native_room_group &&
+            picked->slot != 0 && picked->slot <= scene.boxes.size()) {
+            const auto &box = scene.boxes[picked->slot - 1];
+            std::snprintf(info, sizeof info, "Native g%u slot%u Object #%u: %.20s",
+                          unsigned(picked->group), unsigned(picked->slot), unsigned(box.object_id),
+                          box.name.c_str());
+        } else {
+            std::snprintf(info, sizeof info, "Native %s g%u slot%u kind%u index%u",
+                          scene.native_picker_aligned ? "control" : "unmapped",
+                          unsigned(picked->group), unsigned(picked->slot),
+                          unsigned(picked->kind), unsigned(picked->index));
+        }
+        rect(image, width, height, status_x, height - 44, width - 2, height - 24,
+             panel, true);
+        text(image, width, height, status_x + 6, height - 39, info, accent, 37);
+    }
+}
+} // namespace
+
 void draw_debug_overlay(std::span<std::uint32_t> image, int width, int height,
                         const Mouse &mouse, const DebugOverlayData &data,
                         bool menu_open, bool show_hitboxes, unsigned selected_row,
                         DebugMenuPosition position, bool show_all_regions) {
     if (width < 1 || height < 1 || image.size() < std::size_t(width) * height)
         return;
+    if (show_hitboxes && data.scene.native_picker_decoded && !show_all_regions) {
+        draw_native_picker_winners(image, width, height, mouse, data.scene);
+        show_hitboxes = false;
+    }
     if (show_hitboxes) {
         // The picture occupies columns 260..639 and rows 0..231 in Gateway.
         // When the original picker table has been fully matched, use its
