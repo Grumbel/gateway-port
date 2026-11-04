@@ -96,7 +96,7 @@ The following fields are identified within the fixed block starting at
 | `+0x02` | 2 | Previous room ID | Consistent with observed transitions; provisional |
 | `+0x04` | 2 | Monotonic turn/progress count, interpreted big-endian | Inferred from consecutive saves and matching timer decreases |
 | `+0x06` | 2 | Second time/progress field, encoding not decoded | Unknown |
-| `+0x282` | 7 | ASCII value `NN-NNNN`, plausibly Terri's dynamically assigned phone/PV number | Strong inference from run divergence and story timing; writer untraced |
+| `+0x282` | 7 | Terri's generated telephone number, ASCII `NN-NNNN` | Confirmed by guest write and RNG traces (2026-11-04 handoff) |
 | Other bytes from `+0x08` onward | | Other engine/story state | Not yet mapped |
 
 In two independently verified full campaigns with a deterministic DOS date
@@ -106,10 +106,58 @@ global blocks differed, starting with the Terri save: the seven-character
 ASCII value at `+0x282` contained **different telephone-number-shaped
 values** (`NN-NNNN`; the hyphen byte at `+0x284` agreed). The first differing
 save was produced by the stage in which Terri hands over a number on a
-napkin. This strongly suggests the number is generated or selected during
-that encounter, but the original writer and source of nondeterminism have
-not yet been traced. It must **not** be added to the golden RAM exclusions:
-it is plausible later player input and persistent story state.
+napkin. Subsequent guest write and CPU traces reported in the 2026-11-04
+handoff confirmed the generator and its shared RNG. The field is persistent
+story state and must not be added to golden RAM exclusions.
+
+### Telephone generator and shared animation RNG
+
+The traced RNG updates an unsigned 32-bit state modulo 2^32:
+
+```text
+state = state * 214013 + 2531011
+result = (state >> 16) & 0x7fff
+first = random()
+second = random()
+phone = sprintf("%02d-%04d", second % 99 + 1, first % 9999 + 1)
+```
+
+The native traces agreed with both the final state and formatted number.
+The investigated runtime stores the state in two words at `DS:358e` and
+`DS:3590`, with `DS=5b46`. Telephone formatting was traced from physical
+`0x4af89`; RNG calls at `0x1bb56`. These are **capture-specific runtime
+addresses**, not original EXE/OVL identities; mapping them to stable file
+offsets remains necessary before registering a native replacement.
+
+The animation scheduler shares this RNG, including callbacks whose random
+delay range is zero. Its deadline table was at `DS:9ffa`, four bytes per
+slot. Recovered minimum/random-range delays in milliseconds were:
+
+| Slot | Minimum | Random range |
+| --- | ---: | ---: |
+| 0 | 300 | 0 |
+| 1 | 150 | 0 |
+| 2 | 750 | 750 |
+| 3 | 200 | 200 |
+| 4 | 4000 | 10000 |
+
+The scheduler reads the guest clock repeatedly while processing slots.
+Historical traces first showed relevant ordering divergence near 46,591
+guest milliseconds: slot 1 preceded slot 3 in run A, and slot 3 preceded
+slot 1 in run B. This changes assignment of random values to callbacks and
+can shift the later telephone generation. It establishes propagation of
+the discrepancy, **not its original cause**. Slot 3's deadline was at
+physical `0x65466`; the clock-return trace point was `0x263b5` in that layout.
+
+The handoff reports thirteen independent 48-second current-build runs all
+producing the B deadline (43845), including three without extra entry
+tracing. Two independently restored complete Terri-stage runs then matched
+strictly at all five RAM checkpoints and produced identical 21,769-byte
+saves, SHA-256
+`bcf98701dabef5c15ad085944f6e1f55ee78b7e43329f5f919035fd3aefb2831`.
+Their artifacts are under `build/golden/terri-recheck-v019/` on the testing
+host. These are reported host results, not a new local validation. They do
+not prove the historical timing discrepancy is permanently fixed.
 
 To locate the field's byte copies in already-recorded conventional RAM and
 find the earliest matching checkpoint in both runs, without another native

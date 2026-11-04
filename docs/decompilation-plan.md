@@ -612,6 +612,17 @@ passes with `--replace-verified`.
 | 2026-11-03 | 3.6 (ongoing) | Host save-diff classification and 24-byte hex dumps isolated all six persistent-byte differences in Terri, morning and mission-one saves to an ASCII `NN-NNNN` field at save global `+0x282`: a plausible dynamically generated Terri phone number. All 734 serialized object records and scheduled events remain identical. Added read-only `locate_save_ascii.py` to compare verified native RAM checkpoints and locate same-address copies for an existing byte-write watchpoint; generation code and RNG source still require native tracing. No RAM mask changed. |
 | 2026-11-03 | 3.6 (ongoing) | A native locator attempt revealed a legacy golden-manifest format with no per-stage `save_sha256`: the diagnostic initially called the stricter new `verified_recorded_save` and failed before scanning RAM. It now verifies saves via their stage metadata and snapshots via their golden hashes, additionally checking a manifest save hash when present. Missing manifest hashes produce an explicit provenance notice; no game-state mask or original capture is changed. Host locator retry pending. |
 
+2026-11-04 continuation (§3.6 remains in progress): two complete local
+campaigns finished in `build/golden/full-recheck-v020/`. Strict comparison
+first failed at bar command 20 (CPU/stack and 85 retained bytes). The separate
+object/save diagnostic passed all nine stages, 59 checkpoints and every
+stage save. No baseline or new RAM exclusion was introduced. Preserved the
+handoff's traced telephone RNG and animation scheduler findings in
+[save-games.md](save-games.md), separating reported host evidence from this
+session's validation. Tracker check, all 63 CTests and `nix flake check`
+passed. Next: recover stable file identities for the RNG/formatting routines
+and capture their ABI before any replacement; strict determinism remains open.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |

@@ -438,3 +438,34 @@ do not establish native determinism.
    command/checkpoint, then restore the correct implementation.
 
 Until all three happen, §3.6 remains in progress rather than complete.
+
+## Full campaign recheck (2026-11-04, v020)
+
+Two independent complete nine-stage campaigns completed locally using the
+v019 probe and the unchanged strict comparison. Artifacts are under
+`build/golden/full-recheck-v020/`. Strict comparison **failed** first at
+`bar_nubar/golden-command-000020`: stack bounds differed; 85 retained bytes
+in six pages differed. Both runs had identical 734-object records and the
+same bar-stage save. No baseline was accepted.
+
+A separate diagnostic comparison passed all **59 object checkpoints across
+nine stages and every original stage save**, including Terri, morning and
+mission one. This reproduces transient execution divergence without the
+historical persistent telephone difference. It does not establish strict
+RAM determinism or justify additional exclusions.
+
+Reproduce both checks:
+
+```sh
+xvfb-run -a python3 tools/run_golden.py run \
+  tests/fixtures/gateway-campaign.json \
+  --probe /tmp/gateway-port-build/gateway-probe --data ../gateway-dos \
+  --output build/golden/full-recheck-v020 --runs 2
+python3 tools/run_golden.py compare \
+  build/golden/full-recheck-v020/run-a.json \
+  build/golden/full-recheck-v020/run-b.json \
+  --left-campaign build/golden/full-recheck-v020/run-a \
+  --right-campaign build/golden/full-recheck-v020/run-b --objects-only
+```
+
+Use a fresh output directory when rerunning the campaign.
