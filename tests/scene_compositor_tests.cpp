@@ -185,6 +185,34 @@ void synthetic_animation() {
     }
 }
 
+void synthetic_rtl_deadline_tracking() {
+    gateway::RtlXorDeadlinePhase tracker(500);
+    check(!tracker.observe(11980), "RTL deadline alone must not invent an XOR phase");
+    tracker.synchronize(11980, false);
+    check(tracker.observe(11980) == false, "repeated deadline changed phase");
+    check(tracker.observe(12480) == true, "one RTL deadline period did not toggle");
+    check(tracker.observe(12480) == true, "duplicate RTL observation toggled");
+    check(tracker.observe(13980) == false, "three missed periods changed parity incorrectly");
+    check(tracker.observe(15980) == false, "four missed periods changed parity");
+    check(!tracker.observe(16360), "restarted RTL deadline was treated as periodic");
+    check(!tracker.observe(16860), "a lost phase cannot be recovered by deadline alone");
+    tracker.synchronize(16860, true);
+    check(tracker.observe(17360) == false, "re-anchored RTL phase did not advance");
+    check(!tracker.observe(4000), "backward RTL deadline retained stale phase");
+    check(!tracker.observe(4500), "backward RTL deadline should require calibration");
+    tracker.synchronize(0xfffffff0u, false);
+    check(!tracker.observe(0x1e4u), "RTL deadline wraparound needs explicit re-anchoring");
+    tracker.synchronize(0x1e4u, true);
+    check(tracker.observe(0x3d8u) == false, "phase after wrap re-anchoring is wrong");
+    try {
+        gateway::RtlXorDeadlinePhase invalid(0);
+        throw std::runtime_error("zero RTL animation period was accepted");
+    } catch (const std::runtime_error &e) {
+        check(std::string(e.what()).find("period") != std::string::npos,
+              "unexpected zero RTL animation period error");
+    }
+}
+
 void check_native_idle_animation(const std::vector<std::uint8_t> &pic,
                                  const fs::path &directory) {
     const auto base = gateway::decode_pic_scene(pic, gateway::PicDialect::gateway,
@@ -248,6 +276,7 @@ void check_native_room(const std::vector<std::uint8_t> &pic, const fs::path &ppm
 int main(int argc, char **argv) try {
     synthetic_layers();
     synthetic_animation();
+    synthetic_rtl_deadline_tracking();
     if ((argc == 6 || argc == 7) && fs::exists(argv[1]) && fs::exists(argv[2]) &&
         fs::exists(argv[3]) && fs::exists(argv[4]) && fs::exists(argv[5])) {
         const auto pic = read_bytes(argv[1]);

@@ -69,4 +69,32 @@ void XorPicAnimation::synchronize(std::uint64_t next_toggle_ms, bool visible) {
     next_toggle_ms_ = next_toggle_ms;
 }
 
+RtlXorDeadlinePhase::RtlXorDeadlinePhase(std::uint32_t period_ms)
+    : period_ms_(period_ms) {
+    if (period_ms_ == 0)
+        throw std::runtime_error("RTL animation period must be positive");
+}
+
+std::optional<bool> RtlXorDeadlinePhase::observe(std::uint32_t next_deadline_ms) {
+    if (last_deadline_ms_) {
+        // A smaller deadline may be a restarted sequence, a clock change or
+        // 32-bit wraparound. Without separate evidence, none is safe to infer.
+        if (next_deadline_ms < *last_deadline_ms_ ||
+            (next_deadline_ms - *last_deadline_ms_) % period_ms_ != 0) {
+            visible_.reset();
+        } else if (visible_) {
+            const auto steps = (next_deadline_ms - *last_deadline_ms_) / period_ms_;
+            if (steps & 1)
+                visible_ = !*visible_;
+        }
+    }
+    last_deadline_ms_ = next_deadline_ms;
+    return visible_;
+}
+
+void RtlXorDeadlinePhase::synchronize(std::uint32_t next_deadline_ms, bool visible) {
+    last_deadline_ms_ = next_deadline_ms;
+    visible_ = visible;
+}
+
 } // namespace gateway

@@ -5,6 +5,7 @@
 
 #include "pic.hpp"
 #include <cstdint>
+#include <optional>
 
 namespace gateway {
 
@@ -42,6 +43,29 @@ private:
     std::uint64_t last_observed_ms_ = 0;
     std::uint32_t period_ms_ = 0;
     bool visible_ = false;
+};
+
+// Tracks the phase of a running XOR sequence using successive *resident RTL*
+// next-frame deadlines. The slot does not store the visible XOR phase: one
+// independently observed frame is required to anchor it. A non-periodic
+// deadline jump invalidates the prediction until synchronize() is called.
+// This does not emulate rtl:0x134a5 or advance any guest memory.
+class RtlXorDeadlinePhase {
+public:
+    explicit RtlXorDeadlinePhase(std::uint32_t period_ms);
+
+    // Return the predicted phase only while the deadline cadence is proven
+    // continuous. Handles multiple missed periods and equal deadlines.
+    std::optional<bool> observe(std::uint32_t next_deadline_ms);
+
+    // Anchor/re-anchor to an independently verified visible layer state.
+    void synchronize(std::uint32_t next_deadline_ms, bool visible);
+    std::optional<bool> visible() const noexcept { return visible_; }
+
+private:
+    std::uint32_t period_ms_;
+    std::optional<std::uint32_t> last_deadline_ms_;
+    std::optional<bool> visible_;
 };
 
 } // namespace gateway
