@@ -704,8 +704,23 @@ animation handle via far call `1485:1788`, saves `AX` in `DS:6a20`
 (observed value 0 in all four native snapshots), and calls `1485:18da`;
 the disabled branch invokes two cleanup calls and resets the handle to
 `0xffff`. Stable source identities of the graphics services and cadence
-remain unresolved;
+were initially unresolved;
 see [picture-layer evidence](picture-conditions.md#read-only-visible-layer-inference-and-indicator-callback).
+
+2026-11-04 RTL picture animation follow-up (§3.6): resolved the four
+linked room calls using original GATE.RTL and retained guest RAM to
+`rtl:0x1328d` (create), `0x133df` (initialize), `0x1342d` (clear), and
+`0x136b1` (global free/reset). All share the original-file displacement
+`+0x11b05` from linked entry offsets; each has 16 matching instruction
+bytes supported by the four entrypoints. Disassembly establishes a
+five-sequence limit, up to 20 frames of 0x88 bytes each, frame direction,
+frame index, 32-bit deadlines, and scheduler at `rtl:0x134a5` with
+mode-dependent looping/termination. Corrected the prior assumption that
+the last service removed one animation handle: it actually frees *all*
+resident animation data and resets its current `DS:[0x12]`. Added the
+read-only source-mapping inspector and synthetic plus optional-original
+tests. Animation timer units, RTL DS register provenance, draw/update
+interactions, and native implementation remain open.
 
 ## 10. Risks and how to react
 

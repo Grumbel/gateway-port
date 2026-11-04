@@ -218,16 +218,67 @@ handler, not in the 14-byte picture-condition table:
 | `ovl:0x0514fa` (room event 23) | Updates the three mouse-region rules; tests `DS:69fe` and whether signed `DS:6a20` is negative |
 | `ovl:0x05152c`–`0x05153d` | If eligible and no handle exists, passes four words `(picture=0x0211, 1, 0, 0)` to the far service at `1485:1788` |
 | `ovl:0x051540`–`0x051543` | Saves the service's `AX` return into `DS:6a20`, then calls another zero-argument graphics service at `1485:18da` |
-| `ovl:0x051550`–`0x05156a` | When not eligible and a nonnegative handle exists, invokes cleanup services at `1485:1928` and `1485:1bac`, then sets `DS:6a20=0xffff` |
+| `ovl:0x051550`–`0x05156a` | When not eligible and a nonnegative handle exists, invokes *global* clear and release services at `1485:1928` and `1485:1bac` (neither takes the handle), then sets `DS:6a20=0xffff` |
 
 All four captured snapshots have a nonnegative handle (`DS:6a20=0`),
 and the pixels alternate while this handle stays unchanged. That is direct
 evidence for a persistent native picture/animation path **separate from the
-conditional-layer updater**. The exact behavior and stable file identities
-of the called graphics services, the animation tick cadence, and the
-interaction with table-based XOR redraws still require disassembly and
-additional runtime entry/return traces. `1485:*` addresses above are linked
-call operands, not yet resolved original-file routine identities.
+conditional-layer updater**.
+
+### Original resident animation scheduler identified
+
+The room's far CALL opcodes at `ovl:0x051538`, `0x051543`, `0x05155a`,
+and `0x05155f` reference four entries in the same linked resident segment,
+`1485`. Their runtime addresses are loaded with a `0x1000` segment shift.
+The original executable/RTL bytes and the saved guest memory identify one
+consistent file origin: `RTL file offset = linked offset + 0x11b05`.
+All four matches have a fully intact 16-byte instruction window supported
+by the four entries, even though some other instruction words are relocated.
+
+| Room CALL | Original RTL entry | Observed 8086 behavior |
+| --- | --- | --- |
+| `1485:1788` | `rtl:0x1328d` | Creates the sequence, allocates frame records, returns a slot index in `AX`; returns `0xffff` on failure |
+| `1485:18da` | `rtl:0x133df` | Initializes active sequences' current frame indices and 32-bit next-due times |
+| `1485:1928` | `rtl:0x1342d` | Clears displayed sequence records and zeroes their accumulated timers |
+| `1485:1bac` | `rtl:0x136b1` | Releases all active animation allocations and sets the shared sequence count to **zero** |
+
+The creation routine accepts up to **five simultaneously active sequences**
+(`DS:[0x12]`), and up to **20 frames per sequence** (`[BP+8] <= 20`).
+It allocates `0x0aa0` bytes, exactly 20 frame records of **`0x88` bytes**.
+Other shared state includes movement/direction bytes at `DS:[0x32+i]`,
+frame indices at `DS:[0x40+i]`, and 32-bit deadlines at
+`DS:[0x46+4*i]`. These are **DS-relative offsets during RTL service
+execution**, not established addresses in the room's data segment: the
+room's `DS=0x5b46` from the retained snapshots is *not* evidence that
+these fields reside at `5b46:0012`, `5b46:0040`, etc. We need a live
+call-register trace to establish which segment the RTL services actually use.
+
+The scheduler is a separate near routine at **`rtl:0x134a5`**. It advances
+frame indices (with signed direction), handles end-of-sequence looping or
+termination based on a mode argument, and computes subsequent 32-bit
+deadlines using frame-data bytes at offsets `+6`/`+7` scaled by `0x32`.
+The wrapper at **`rtl:0x133b5`** calls the initialization routine, polls
+the scheduler, then invokes the clear routine. Neither the units of the
+time source nor the precise way the scheduler mixes with the XOR layer
+updater has yet been established; the four images do not prove a 50 ms
+or other specific blink period. In particular, global release in the room
+handler is not a hypothetical handle-specific API.
+
+The read-only mapping is reproducible from original files and a retained
+guest RAM dump (which is not redistributed):
+
+~~~sh
+python3 tools/inspect_rtl_animation.py \
+  --ovl ../gateway-dos/GATEMAIN.OVL \
+  --exe ../gateway-dos/GATE.EXE \
+  --rtl ../gateway-dos/GATE.RTL \
+  --ram build/rgn-scenes-v026/before.bin
+~~~
+
+The synthetic tests reject changed far-call operands and unmatched guest
+entries; when the original files are present they assert all four original
+offsets and selected machine-code invariants. This is a source-identity
+and control-flow milestone, not a verified host-side animation port.
 
 The native test now checks all four entire room views, and the original
 callback bytes, animation-call operands, handle and guest state are checked
