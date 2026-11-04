@@ -18,6 +18,7 @@
 #include "rtlink.hpp"
 #include "vga.hpp"
 #ifdef GATEWAY_SDL
+#include "host_scene_preview.hpp"
 #include "sdl_host.hpp"
 #endif
 #include <algorithm>
@@ -1963,6 +1964,7 @@ int main(int argc, char **argv) {
     std::set<std::uint32_t> trace_byte_writes;
     unsigned aspect_width = 4, aspect_height = 3;
     bool wide_ui = false;
+    bool host_scene_preview = false;
     std::vector<std::uint64_t> entry_addresses;
     unsigned trace_entry_start_ms = 0;
     unsigned trace_entry_end_ms = 3600000;
@@ -2003,6 +2005,7 @@ int main(int argc, char **argv) {
                      "[--hle-overlays] [--trace-video] [--trace-timing] [--adlib-driver] "
                      "[--trace-object-writes OBJECT-HEX] [--trace-byte-write LINEARHEX ...] "
                      "[--aspect-ratio native|W:H] [--ui-layout original|widescreen] "
+                     "[--host-scene-preview] "
                      "[--debug-dir DIR] [--debug-scene]\n";
     };
     if (argc < 2 || std::string(argv[1]) == "--help") {
@@ -2014,6 +2017,8 @@ int main(int argc, char **argv) {
         if (option == "--hle-overlays") {
             hle_overlays = true;
             verify_overlays = true;
+        } else if (option == "--host-scene-preview") {
+            host_scene_preview = true;
         } else if (option == "--trace-video")
             trace_video = true;
         else if (option == "--trace-timing")
@@ -2339,6 +2344,10 @@ int main(int argc, char **argv) {
     }
     if (key_at_used && !key_script_path.empty()) {
         std::cerr << "--key-script and --key-at cannot be combined\n";
+        return 2;
+    }
+    if (host_scene_preview && !interactive) {
+        std::cerr << "--host-scene-preview requires the interactive SDL runtime\n";
         return 2;
     }
     if (key_script_path.empty() && milliseconds > 180000) {
@@ -2695,6 +2704,14 @@ int main(int argc, char **argv) {
             host = std::make_unique<gateway::SdlHost>(
                 gateway::DisplayAspect{aspect_width, aspect_height},
                 wide_ui ? gateway::UiLayoutMode::widescreen : gateway::UiLayoutMode::original);
+        if (host_scene_preview && host) {
+            constexpr std::array<std::size_t, 3> layers{16, 17, 18};
+            auto pic = state.drive->read_all("GATE_102.PIC");
+            host->set_scene_preview(std::make_unique<gateway::HostScenePreview>(
+                pic, gateway::PicDialect::gateway, 15, layers, 261, 0));
+            std::cerr << "Host room preview enabled for GATE_102.PIC: "
+                         "exact matches only; original guest rendering remains active\n";
+        }
 #endif
         bool requested_stop = false;
         uc_err status = UC_ERR_OK;

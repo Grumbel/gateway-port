@@ -497,3 +497,32 @@ the original game sometimes shifts its effective deadlines. Integrating the
 host model into an opt-in SDL3 runtime path requires observing scheduler
 updates or implementing their equivalent and verifying those action captures.
 No such runtime equivalence is claimed here.
+
+### Exact-match SDL room presentation bridge
+
+`src/host_scene_preview.{hpp,cpp}` caches all eight XOR-layer combinations
+for `GATE_102.PIC` background 15 and optional entries 16, 17 and 18. It
+compares an original ARGB framebuffer against the cached host compositions,
+and redraws the room rectangle **only after exactly one complete pixel match**.
+Ambiguous matches and unmatched frames retain the original framebuffer, so
+the normal game remains the fallback. Neither this check nor the host draw
+modifies guest RAM, native VGA storage or original animation scheduling.
+The drawing is inserted before SDL debug overlays and mouse cursor rendering.
+
+Enable it explicitly with `gateway-run ../gateway-dos/GATE.EXE
+--host-scene-preview` (interactive SDL runtime only). The first-room
+resource choice and screen origin `(261,0)` are deliberately specific to the
+verified Gateway VGA captures; a generic game-wide native renderer is not
+implemented. The `host-scene-preview-tests` executable always runs synthetic
+matching and mismatch/fallback checks. Given the original PIC and the
+private `rgn-scenes-v026`, `rtl-blink-v033`, and `rtl-actions-v034`
+capture directories, it also matches **all 44 original screenshots**:
+4 static states, 8 idle animation states and 32 interleaved-action states.
+Every matched frame is byte-identical after native-room replacement.
+
+This bridge *follows* the original frame's visible XOR combination; it does
+not independently predict action-dependent animation timing. It establishes
+the native rendering handoff and conservative runtime fallback, not a
+verified native replacement of any RTL routine. The interactive SDL path
+cannot be compiled/tested in a host-only environment without SDL3 and
+Unicorn; manual runtime verification is still required.

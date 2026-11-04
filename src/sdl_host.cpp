@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 
 #include "sdl_host.hpp"
+#include "host_scene_preview.hpp"
 #include "mouse_cursor.hpp"
 #include "opl.hpp"
 #include "ui_layout.hpp"
@@ -9,6 +10,7 @@
 #include <algorithm>
 #include <set>
 #include <stdexcept>
+#include <utility>
 namespace gateway {
 namespace {
 void checked(bool ok) {
@@ -194,6 +196,9 @@ SdlHost::SdlHost(DisplayAspect aspect, UiLayoutMode layout)
     }
 }
 SdlHost::~SdlHost() { close(); }
+void SdlHost::set_scene_preview(std::unique_ptr<HostScenePreview> preview) {
+    scene_preview_ = std::move(preview);
+}
 void SdlHost::debug_activate(unsigned row, DebugActions *actions) {
     switch (row) {
     case 0:
@@ -425,6 +430,8 @@ void SdlHost::present(const Vga &vga, const Mouse &mouse,
                                                      SDL_LOGICAL_PRESENTATION_LETTERBOX));
     }
     auto pixels = vga.pixels();
+    if (scene_preview_)
+        scene_preview_->replace_if_exact(pixels, width_, height_);
     if (debug_open_ || hitboxes_visible_)
         draw_debug_overlay(pixels, width_, height_, mouse, debug, debug_open_, hitboxes_visible_,
                            debug_row_, debug_position_, raw_hitboxes_);

@@ -147,6 +147,26 @@ command completion, maps, and extracted/upscaled room-image composition are
 planned but not implemented by this option. The original DOS save/restore and
 input continue to work in the center framebuffer.
 
+### Opt-in native room compositor preview
+
+The SDL runtime can also exercise the host-side PIC compositor for the
+first-room picture, without changing guest execution:
+
+```sh
+gateway-run ../gateway-dos/GATE.EXE --host-scene-preview
+```
+
+This experimental switch pre-decodes the base and three XOR layers from
+`GATE_102.PIC`. Before presentation, it checks whether the original 640×480
+VGA picture area matches **exactly one** possible native composition. Only
+then does it replace the matching room pixels with the host-rendered result.
+Unrecognized scenes, nonmatching graphics, palette changes, and the rest of
+the UI fall through untouched. Original guest animation and drawing still
+run, so this is an opt-in **presentation bridge**, not acceleration or a
+replacement for the original scheduler. The eight idle-blink and 32
+action-interleaved original captures are covered by private differential
+tests; interactive SDL behavior still needs a user-side check.
+
 ### Ghidra: decompile the original Gateway logic
 
 The optional `nix develop .#ghidra` shell provides Ghidra without adding its

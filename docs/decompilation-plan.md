@@ -778,6 +778,17 @@ skipped frames, deadline validation and phase maintenance. The guest
 scheduler, action-dependent timing and SDL3 runtime dispatch are not
 replaced, and the routine is **not** marked verified.
 
+2026-11-04 exact-match SDL scene bridge (§3.6): an opt-in
+`--host-scene-preview` presentation path now builds all eight original
+first-room PIC layer combinations in C++, checks each entire VGA room area
+before replacing its display pixels, and falls back unchanged when no
+unique match exists. The guest still runs every VGA and animation routine;
+no scheduler substitution or replay equivalence is claimed. Synthetic
+tests validate mismatch handling and all masks, and a private 44-frame
+differential test covers four room states, eight idle blinks and 32
+interleaved player actions. Host-only compilation and tests pass; the
+interactive SDL/Unicorn binary still requires a full toolchain check.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |

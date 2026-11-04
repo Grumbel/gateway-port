@@ -7,12 +7,14 @@
 #include "vga.hpp"
 #include <cstdint>
 #include <deque>
+#include <memory>
 #include <span>
 struct SDL_Window;
 struct SDL_Renderer;
 struct SDL_Texture;
 struct SDL_AudioStream;
 namespace gateway {
+class HostScenePreview;
 struct DisplayAspect {
     unsigned width = 4, height = 3; // Zero width selects native square pixels.
 };
@@ -27,6 +29,8 @@ class SdlHost {
               DebugActions *actions = nullptr);
     void present(const Vga &vga, const Mouse &mouse, std::span<const std::int16_t> samples,
                  const DebugOverlayData &debug = {});
+    // Opt-in exact-match presentation. The guest VGA remains unmodified.
+    void set_scene_preview(std::unique_ptr<HostScenePreview> preview);
     bool debug_open() const { return debug_open_; }
     bool hitboxes_visible() const { return hitboxes_visible_; }
     bool raw_hitboxes() const { return raw_hitboxes_; }
@@ -38,6 +42,7 @@ class SdlHost {
     SDL_Renderer *renderer_ = nullptr;
     SDL_Texture *texture_ = nullptr;
     SDL_AudioStream *audio_ = nullptr;
+    std::unique_ptr<HostScenePreview> scene_preview_;
     int width_ = 0, height_ = 0;
     int presentation_height_ = 0;
     DisplayAspect aspect_;
