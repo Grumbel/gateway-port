@@ -397,18 +397,42 @@ linker-relocated far calls. `--draw-calls` in the RTL inspector validates
 the near-call instruction and reads the real far targets from retained
 native RAM (the original GATE.RTL far CALL operands are zero):
 
-| Original call site | Function in the renderer | Observed relocated target |
-| --- | --- | --- |
-| `rtl:0x12ee6` | Save video state | `23bd:04d9` |
-| `rtl:0x12f17` | Draw frame payload | `2a1c:000c` |
-| `rtl:0x12f1f` | Restore video state | `23bd:03c5` |
+| Original call site | Function in the renderer | Original callee | Observed relocated target |
+| --- | --- | --- | --- |
+| `rtl:0x12ee6` | Save video state | `rtl:0x11078` | `23bd:04d9` |
+| `rtl:0x12f17` | Draw frame payload | `rtl:0x184e8` | `2a1c:000c` |
+| `rtl:0x12f1f` | Restore video state | `rtl:0x10f64` | `23bd:03c5` |
+
+The original callees were resolved independently by matching their *live
+instruction bytes* against the original EXE and RTL images: all three
+matched 16 bytes, and the two video-state callees each had two entrypoints
+supporting their common resident segment base. This identifies source
+offsets without assuming that linker-patched far-call operands are present
+in the original file.
 
 The current 136-byte frame's first eight bytes decode as enabled=1,
-mode=3, x=28, y=1, duration=10, auxiliary duration=0. The renderer's
-exact mode-3 semantics and the far draw target's original file identity
-still need analysis. The observed on/off pixel differences are consistent
-with reversible XOR overlay composition, but the source-level dispatch
-alone does not prove its internal blending algorithm.
+mode=3, x=28, y=1, duration=10, auxiliary duration=0. **Mode 3 is XOR.**
+The original draw routine `rtl:0x184e8` dispatches through a video-backend
+table at `rtl:0x185eb`, with at least two independently verified paths:
+
+- The packed-pixel branch at `rtl:0x18722` checks for mode 3 and XORs the
+  destination words at `rtl:0x18736` and `rtl:0x18745`.
+- The VGA branch at `rtl:0x187da` writes the mode shifted left by three
+  to VGA Graphics Controller register 3 (ports `0x3ce`/`0x3cf`), at
+  `rtl:0x1885b`–`0x18868`. With mode 3 this writes **`0x18`**: bits 3–4
+  of register 3 select function `11`, the XOR operation, as documented in
+  [IBM's VGA/XGA Technical Reference (May 1992, pp. 2-82)](https://bitsavers.trailing-edge.com/pdf/ibm/pc/cards/IBM_VGA_XGA_Technical_Reference_Manual_May92.pdf).
+
+An independent 13,000-guest-ms native replay watched the *actual* live
+entries for both backend branches. The original-mode-3 VGA path
+(`rtl:0x187da`, runtime physical `0x2a4be`) was entered **17 times**;
+the packed path (`rtl:0x18722`, runtime physical `0x2a406`) was not
+entered. The entries at 10,200, 10,701, 11,201, 11,700, 12,200 and
+12,701 guest ms show recurring calls during the first-room animation.
+Together with the exact scene XOR differences, this confirms the **native
+VGA XOR rendering path**, not merely an inferred reversible host overlay.
+Original-file offsets remain stable; all runtime physical addresses here
+are specific to the recorded launch layout.
 
 For a repeatable private capture, run the native `gateway-opening.walk`
 replay with `--max-actions 7` and `--probe-arg=--dump-at` plus
@@ -420,8 +444,17 @@ python3 tools/inspect_rtl_animation.py \
   --ovl ../gateway-dos/GATEMAIN.OVL \
   --exe ../gateway-dos/GATE.EXE \
   --rtl ../gateway-dos/GATE.RTL \
-  --ram build/rtl-actions-v034/t20500.bin --ds 5b46 --draw-calls
+  --ram build/rtl-actions-v034/t20500.bin --ds 5b46 \
+  --draw-trace build/mode3-v035/native.trace
 ~~~
+
+The bounded branch trace was collected through the headless probe with
+`--trace-entry 2a1cc --trace-entry 2a406 --trace-entry 2a4be`; these
+runtime addresses must be recomputed for any different load layout.
+Synthetic and optional-original tests reject changed original mode-3
+instructions, resolve far-call source identities, and verify the observed
+VGA-only branch distribution. A host-side animation replacement and its
+equivalence test remain future steps.
 
 Neither the captured game frames nor the original frame-record bytes are
 redistributed.

@@ -16,7 +16,9 @@ sys.path.insert(0, str(ROOT / 'tools'))
 from inspect_rtl_animation import (
     DRAW_CALL_SITES, ROOM_CALLS, inspect_animation_calls,
     inspect_animation_draw_calls, inspect_animation_state,
-    relocated_displacement, summarize_deadline_trace)
+    mode3_rasterizer_addresses, relocated_displacement,
+    resolve_animation_draw_origins, summarize_deadline_trace,
+    summarize_mode3_trace)
 
 
 class AnimationServiceTests(unittest.TestCase):
@@ -117,6 +119,48 @@ class AnimationServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'frame draw CALL mismatch'):
             inspect_animation_draw_calls(rtl, ram, rows)
 
+    def test_resolve_frame_draw_origins_and_mode3_backend_trace(self):
+        rtl = bytearray(0x19000)
+        ram = bytearray(1 << 20)
+        calls = []
+        for index, (name, call_site) in enumerate(DRAW_CALL_SITES):
+            segment, offset, original = (
+                (0x23bd, 0x04d9, 0x11078),
+                (0x2a1c, 0x000c, 0x184e8),
+                (0x23bd, 0x03c5, 0x10f64))[index]
+            signature = bytes((i * 17 + index * 51 + 3) % 256
+                              for i in range(16))
+            rtl[original:original + len(signature)] = signature
+            address = segment * 16 + offset
+            ram[address:address + len(signature)] = signature
+            calls.append({'name': name, 'original_file': 'rtl',
+                          'original_offset': call_site,
+                          'runtime_target': dict(segment=segment, offset=offset,
+                                                 linear=address)})
+        resolved = resolve_animation_draw_origins(b'MZ', rtl, ram, calls)
+        self.assertEqual([row['callee_source']['offset'] for row in resolved],
+                         [0x11078, 0x184e8, 0x10f64])
+        self.assertTrue(all(row['callee_source']['matched_bytes'] == 16
+                            for row in resolved))
+
+        rtl[0x18722:0x18725] = bytes.fromhex('3d0300')
+        rtl[0x18736:0x18739] = bytes.fromhex('263105')
+        rtl[0x18745:0x18748] = bytes.fromhex('263105')
+        rtl[0x1885b:0x18869] = bytes.fromhex('b103d3e3b003bace03ee428ac3ee')
+        branches = mode3_rasterizer_addresses(rtl, resolved)
+        self.assertEqual(branches, {'packed': 0x2a406, 'vga': 0x2a4be})
+        trace = summarize_mode3_trace((
+            'entry ms=100 pc=2a1cc cs=2a1c\n',
+            'entry ms=200 pc=2a4be cs=2a1c\n',
+            'entry ms=700 pc=2a4be cs=2a1c\n',
+            'entry ms=900 pc=2a406 cs=2a1c\n'), branches)
+        self.assertEqual(trace['vga'], {'hits': 2, 'first_ms': 200,
+                                        'last_ms': 700})
+        self.assertEqual(trace['packed']['hits'], 1)
+        rtl[0x18736] = 0x90
+        with self.assertRaisesRegex(ValueError, 'mode-3 XOR paths changed'):
+            mode3_rasterizer_addresses(rtl, resolved)
+
     def test_optional_original_rtl_animation_services(self):
         dos = ROOT.parent / 'gateway-dos'
         snapshot = ROOT / 'build/rgn-scenes-v026/before.bin'
@@ -133,6 +177,19 @@ class AnimationServiceTests(unittest.TestCase):
                            row['runtime_target']['offset']) for row in draw_calls],
                          [(0x23bd, 0x04d9), (0x2a1c, 0x000c),
                           (0x23bd, 0x03c5)])
+        resolved = resolve_animation_draw_origins(exe, rtl, ram, draw_calls)
+        self.assertEqual([row['callee_source']['offset'] for row in resolved],
+                         [0x11078, 0x184e8, 0x10f64])
+        self.assertTrue(all(row['callee_source']['matched_bytes'] == 16
+                            for row in resolved))
+        branches = mode3_rasterizer_addresses(rtl, resolved)
+        self.assertEqual(branches, {'packed': 0x2a406, 'vga': 0x2a4be})
+        trace = ROOT / 'build/mode3-v035/native.trace'
+        if trace.exists():
+            with trace.open() as stream:
+                observed = summarize_mode3_trace(stream, branches)
+            self.assertEqual(observed['packed']['hits'], 0)
+            self.assertGreaterEqual(observed['vga']['hits'], 15)
 
         # Read-only checks of original machine-code invariants: five active
         # sequence slots, 20 frame records, 0x88-byte frame stride, and a

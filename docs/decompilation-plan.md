@@ -755,6 +755,19 @@ relocations establish its three far calls to video-state save, frame draw
 and synthetic/optional-original tests. Renderer mode-3 details, behavior on
 room exit, and a host-side animation port remain open.
 
+2026-11-04 RTL mode-3 rasterizer source identity (§3.6): resolved all three
+frame-renderer far calls back to `rtl:0x11078` (state save),
+`rtl:0x184e8` (frame draw), and `rtl:0x10f64` (state restore), using the
+linked runtime targets and unique 16-byte original source matches. The
+original frame draw's two backends both implement mode 3 as XOR: the packed
+branch uses CPU XOR, while the VGA branch programs the VGA Graphics
+Controller's XOR function through register 3 (`0x18`). An independent
+13,000-ms native branch trace reached `rtl:0x187da` (VGA) 17 times and
+`rtl:0x18722` (packed) zero times, including the first room's 500-ms
+animation entries. Read-only inspector and regression tests now validate
+the mapping, opcode evidence and branch counts. Host-side replacement
+remains unimplemented and no per-routine differential verification claimed.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |

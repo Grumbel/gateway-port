@@ -51,6 +51,15 @@ DRAW_CALL_SITES = (
     ('restore_video_state', 0x12f1f),
 )
 
+# Two mode-3 paths exist in the original RTL drawing routine. The VGA path
+# writes mode << 3 to VGA Graphics Controller register 3 (mode 3 => XOR).
+# The packed-pixel path has explicit XOR instructions instead. A native
+# entry trace is required to determine which branch a particular run takes.
+DRAW_MODE3 = {
+    'packed': 0x18722,
+    'vga': 0x187da,
+}
+
 
 def inspect_animation_calls(ovl, exe, rtl, ram, load_segment=0x1000):
     """Return linked-to-file matches, rejecting changed or unresolved calls."""
@@ -134,6 +143,71 @@ def inspect_animation_draw_calls(rtl, ram, services, load_segment=0x1000):
                                segment=segment, offset=offset,
                                linear=segment * 16 + offset)))
     return result
+
+
+def resolve_animation_draw_origins(exe, rtl, ram, calls, load_segment=0x1000):
+    """Match relocated renderer-call targets to original EXE/RTL bytes."""
+    targets = set()
+    for row in calls:
+        target = row['runtime_target']
+        if target['segment'] < load_segment:
+            raise ValueError('draw target segment precedes RTL load segment')
+        targets.add((target['segment'] - load_segment, target['offset']))
+    matches = resolve_linked_origins(targets, ram, exe, rtl, load_segment)
+    result = []
+    for row in calls:
+        target = row['runtime_target']
+        match = matches.get((target['segment'] - load_segment, target['offset']))
+        if match is None or match['file'] != 'rtl':
+            raise ValueError(f'{row["name"]}: cannot resolve original RTL identity')
+        result.append({**row, 'callee_source': dict(
+            file=match['file'], offset=match['offset'],
+            matched_bytes=match['matched_bytes'],
+            segment_support=match['segment_support'])})
+    if not any(row['name'] == 'draw_frame' and
+               row['callee_source']['offset'] == 0x184e8 for row in result):
+        raise ValueError('unexpected original RTL frame draw target')
+    return result
+
+
+def mode3_rasterizer_addresses(rtl, calls):
+    """Return runtime branch addresses only after validating original XOR code."""
+    if (rtl[0x18722:0x18725] != bytes.fromhex('3d0300') or
+            rtl[0x18736:0x18739] != bytes.fromhex('263105') or
+            rtl[0x18745:0x18748] != bytes.fromhex('263105') or
+            rtl[0x1885b:0x18869] != bytes.fromhex('b103d3e3b003bace03ee428ac3ee')):
+        raise ValueError('original packed/VGA mode-3 XOR paths changed')
+    for row in calls:
+        if row['name'] == 'draw_frame' and row['callee_source']['offset'] == 0x184e8:
+            address = row['runtime_target']['linear']
+            return {name: address + offset - 0x184e8
+                    for name, offset in DRAW_MODE3.items()}
+    raise ValueError('original RTL frame draw target missing')
+
+
+ENTRY_RE = re.compile(r'\bentry ms=(\d+) pc=([0-9a-f]+)\b')
+
+
+def summarize_mode3_trace(lines, branches):
+    """Count observed entry PCs for the two original rasterizer branches."""
+    from collections import Counter
+    reverse = {address: name for name, address in branches.items()}
+    counters = Counter()
+    times = {}
+    for line in lines:
+        match = ENTRY_RE.search(line)
+        if match is None:
+            continue
+        name = reverse.get(int(match[2], 16))
+        if name is None:
+            continue
+        counters[name] += 1
+        ms = int(match[1])
+        times.setdefault(name, []).append(ms)
+    return {name: dict(hits=counters[name],
+                       first_ms=min(times[name]) if name in times else None,
+                       last_ms=max(times[name]) if name in times else None)
+            for name in branches}
 
 
 def inspect_animation_state(rtl, ram, services, ds, load_segment=0x1000):
@@ -249,6 +323,8 @@ def main():
                         help='probe research trace with deadline byte-write watches (requires --ds)')
     parser.add_argument('--draw-calls', action='store_true',
                         help='resolve the frame renderer far CALLs in this RAM snapshot')
+    parser.add_argument('--draw-trace', type=Path,
+                        help='trace with rasterizer entry watches (implies --draw-calls)')
     parser.add_argument('--json', action='store_true')
     args = parser.parse_args()
     if args.write_trace is not None and args.ds is None:
@@ -257,8 +333,16 @@ def main():
         rtl, ram = args.rtl.read_bytes(), args.ram.read_bytes()
         rows = inspect_animation_calls(args.ovl.read_bytes(), args.exe.read_bytes(),
                                        rtl, ram, args.load_segment)
-        drawing = (inspect_animation_draw_calls(rtl, ram, rows, args.load_segment)
-                   if args.draw_calls else None)
+        drawing = (resolve_animation_draw_origins(
+            args.exe.read_bytes(), rtl, ram,
+            inspect_animation_draw_calls(rtl, ram, rows, args.load_segment),
+            args.load_segment)
+                   if args.draw_calls or args.draw_trace else None)
+        branches = mode3_rasterizer_addresses(rtl, drawing) if drawing is not None else None
+        raster_trace = None
+        if args.draw_trace is not None:
+            with args.draw_trace.open() as stream:
+                raster_trace = summarize_mode3_trace(stream, branches)
         state = (inspect_animation_state(rtl, ram, rows, args.ds, args.load_segment)
                  if args.ds is not None else None)
         cadence = None
@@ -272,6 +356,9 @@ def main():
         output = {'services': rows}
         if drawing is not None:
             output['draw_calls'] = drawing
+            output['mode3_branches'] = branches
+        if raster_trace is not None:
+            output['raster_trace'] = raster_trace
         if state is not None:
             output['state'] = state
         if cadence is not None:
@@ -291,7 +378,13 @@ def main():
             for row in drawing:
                 target = row['runtime_target']
                 print(f'  {row["name"]:<20} rtl:0x{row["original_offset"]:05x} '
-                      f'=> live {target["segment"]:04x}:{target["offset"]:04x}')
+                      f'=> rtl:0x{row["callee_source"]["offset"]:05x} '
+                      f'(live {target["segment"]:04x}:{target["offset"]:04x})')
+            print('Mode-3 rasterizer entry PCs: ' + ', '.join(
+                f'{name}={address:05x}' for name, address in branches.items()))
+        if raster_trace is not None:
+            print('Observed rasterizer entries: ' + ', '.join(
+                f'{name}={info["hits"]}' for name, info in raster_trace.items()))
         if state is not None:
             offsets = state['relocated_ds_offsets']
             print(f'RTL entry DS={state["ds"]:04x}; active sequences='
