@@ -117,6 +117,19 @@ std::optional<bool> restricted_parser_path(const DebugGameState &state,
 }
 } // namespace
 
+std::optional<DebugPickerControl> DebugSceneView::picker_at(int x, int y) const {
+    if (!native_picker_aligned)
+        return {};
+    std::optional<DebugPickerControl> selected;
+    // GATE.RTL:0x141b2..0x14223: scan every row in every group; later
+    // matches overwrite all three output parameters. Row zero is tested.
+    for (const auto &row : native_picker_rows)
+        if (!(row.flags & 0x80) && x >= row.x0 && x <= row.x1 &&
+            y >= row.y0 && y <= row.y1)
+            selected = row;
+    return selected;
+}
+
 DebugSceneTracker::DebugSceneTracker(std::vector<std::string> names)
     : names_(std::move(names)) {}
 
@@ -152,6 +165,7 @@ void DebugSceneTracker::set_game_state(const DebugGameState &state) {
 void DebugSceneTracker::set_native_picker_state(std::span<const std::uint8_t> memory,
                                                 std::uint16_t ds) {
     native_picker_disabled_.clear();
+    native_picker_rows_.clear();
     native_controls_.clear();
     native_picker_picture_ = active_;
     native_picker_entry_ = entry_;
@@ -213,10 +227,11 @@ void DebugSceneTracker::set_native_picker_state(std::span<const std::uint8_t> me
             const auto y1 = word_at(ds, 0xa850 + *index * 2);
             const auto flags = byte_at(ds, 0xa920 + *index);
             const auto kind = byte_at(ds, 0xaa4e + *index);
+            const auto left = std::int16_t(*x0), right = std::int16_t(*x1);
+            const auto top = std::int16_t(*y0), bottom = std::int16_t(*y1);
             if (!x0 || !x1 || !y0 || !y1 || !flags || !kind ||
-                *kind < 1 || *kind > 6 ||
-                (i != 0 && *kind != 1 &&
-                 (*x0 > *x1 || *y0 > *y1 || *x1 >= 640 || *y1 >= 480)))
+                *kind < 1 || *kind > 6 || left > right || top > bottom ||
+                left < -16 || top < -16 || right > 1024 || bottom > 1024)
                 return;
             rows.push_back({*index, *kind, *flags, *x0, *x1, *y0, *y1});
         }
@@ -252,16 +267,17 @@ void DebugSceneTracker::set_native_picker_state(std::span<const std::uint8_t> me
     if (!matching_group)
         return;
     for (std::size_t group = 0; group < groups.size(); ++group) {
-        if (group == *matching_group)
-            continue;
-        // Group headers (kind 1) define clipping/bounds; they are not
-        // selectable rectangles. Retain only actual non-RGN picker entries.
-        for (std::size_t i = 1; i < groups[group].size(); ++i) {
+        for (std::size_t i = 0; i < groups[group].size(); ++i) {
             const auto &row = groups[group][i];
-            if (row.kind != 1)
-                native_controls_.push_back({row.x0, row.y0, row.x1, row.y1,
-                                            std::uint8_t(group), row.index,
-                                            row.kind, row.flags});
+            const DebugPickerControl control{std::int16_t(row.x0), std::int16_t(row.y0),
+                                             std::int16_t(row.x1), std::int16_t(row.y1),
+                                             std::uint8_t(group), std::uint8_t(i), row.index,
+                                             row.kind, row.flags};
+            native_picker_rows_.push_back(control);
+            // The room group's nonzero slots have their own RGN outlines.
+            // Slot zero is a real selectable catch-all in *every* group.
+            if (group != *matching_group || i == 0)
+                native_controls_.push_back(control);
         }
     }
 }
@@ -371,8 +387,10 @@ DebugSceneView DebugSceneTracker::view() const {
                                 native_picker_disabled_.size() ==
                                     found->second.regions[entry_].boxes.size();
     view.native_picker_aligned = picker_matches;
-    if (picker_matches)
+    if (picker_matches) {
+        view.native_picker_rows = native_picker_rows_;
         view.native_controls = native_controls_;
+    }
     std::size_t index = 0;
     for (const auto &region : found->second.regions[entry_].boxes) {
         const auto id = region.object_id;

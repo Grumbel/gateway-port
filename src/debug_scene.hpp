@@ -36,11 +36,11 @@ struct DebugHitbox {
     // it does not establish that an object was painted or selectable.
     std::optional<bool> native_picker_disabled;
 };
-// Live non-RGN screen rectangles exposed by the native mouse picker. These
-// include command and scrollbar controls, not necessarily story objects.
+// Native picker record. The original routine uses signed 16-bit comparisons;
+// group fallback rows intentionally start at negative X/Y coordinates.
 struct DebugPickerControl {
-    unsigned x0 = 0, y0 = 0, x1 = 0, y1 = 0; // Absolute inclusive VGA pixels.
-    std::uint8_t group = 0, index = 0, kind = 0, flags = 0;
+    int x0 = 0, y0 = 0, x1 = 0, y1 = 0; // Signed, inclusive VGA pixels.
+    std::uint8_t group = 0, slot = 0, index = 0, kind = 0, flags = 0;
 };
 struct DebugSceneView {
     std::string picture;
@@ -49,8 +49,13 @@ struct DebugSceneView {
     bool auto_follow = true;
     unsigned x_extent = 2; // Packed rectangles include two screen pixels per X unit.
     std::vector<DebugHitbox> boxes;
+    // All picker rows, in original group/slot traversal order. The picker
+    // keeps the *last* matching enabled row, including group fallback rows.
+    std::vector<DebugPickerControl> native_picker_rows;
+    // Non-RGN rows: command/scroll controls and all five selectable fallbacks.
     std::vector<DebugPickerControl> native_controls;
     bool native_picker_aligned = false;
+    std::optional<DebugPickerControl> picker_at(int x, int y) const;
 };
 
 // Best-effort correlation of DOS PIC reads with the independently stored RGN
@@ -88,6 +93,7 @@ class DebugSceneTracker {
     std::vector<DebugHitboxPresence> presence_;
     std::vector<std::optional<bool>> restricted_parser_paths_;
     std::vector<bool> native_picker_disabled_;
+    std::vector<DebugPickerControl> native_picker_rows_;
     std::vector<DebugPickerControl> native_controls_;
     std::string native_picker_picture_;
     std::size_t native_picker_entry_ = 0;

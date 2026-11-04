@@ -68,15 +68,25 @@ of visibility, a drawn object, or successful mouse selection.
 
 The mouse picker has **five rectangle groups**, not just the room-picture
 RGN group. In all four retained opening-room snapshots their row counts are
-15, 31, 1, 5, and 5. The first row of each group describes its bounds;
-the remaining rows include 30 room-picture rectangles and **22 non-RGN UI
-controls**, of which 18 are currently enabled. Those additional rectangles
-include command-panel targets and left/right scroll controls. F10 now
-outlines these controls too, using exact native screen coordinates. In
-particular the native room X origin is 261, one pixel to the right of the
-previous approximate RGN overlay origin. The **R** raw view shows skipped
-native controls as dim outlines. If the live native group cannot be matched,
-the debugger leaves its old heuristic-only fallback in place.
+15, 31, 1, 5, and 5. Their first rows are **selectable fallback rectangles**,
+not merely group bounds: the original routine tests *every* row in order,
+including row zero, then retains the **last matching enabled** row. All five
+fallback rectangles have large bounds, some with intentionally negative
+signed 16-bit starting coordinates. They explain why the command panel,
+picture background, text panel, and scrollbar backgrounds all respond to
+mouse clicks. The remaining rows are 30 room-picture RGN rectangles and
+**22 non-RGN UI controls**, of which 18 are currently enabled.
+
+F10 now outlines all 27 non-RGN/fallback rectangles too. The large fallback
+rectangles are tinted only when they actually win the native picker test,
+to avoid covering the picture with a translucent debug overlay. The 22
+specific control rectangles retain their colored tint. Control hover labels
+identify the winning picker group and slot, not merely the first overlapping
+rectangle.
+The native room X origin is 261, one pixel to the right of the previous
+approximate RGN overlay origin. The **R** raw view shows skipped controls as
+dim outlines. If the native room group cannot be matched, the debugger
+leaves its old heuristic-only fallback in place.
 
 Gateway 1 now samples the validated 734-object guest table and annotates
 each RGN region with one of four *host-side* classifications:
@@ -105,8 +115,9 @@ UI controls, including skipped ones, for comparison. The original guest
 mouse input is unchanged.
 Dumped `.regions.tsv` files retain every region and append a `presence`
 column and a `native_picker` column (`disabled`, `not_disabled`, `unknown`);
-`.picker.tsv` records native UI control rectangles, groups, kinds, coordinates,
-and skip flags. `.debug.txt` identifies the classification as heuristic.
+`.picker.tsv` records native UI control and fallback rectangles, group/slot,
+kind, signed coordinates, and skip flags. `.debug.txt` identifies the
+classification as heuristic.
 For the other
 Legend titles, all regions stay `unknown`, because the Gateway 1 object
 state and native picker layouts have not been verified there.
@@ -115,6 +126,20 @@ The next verification should correlate these categories with native render
 events and click-selection results in several rooms. In particular, test
 objects already disclosed but subsequently hidden by story flags. Only such
 traces can turn provisional room candidates into confirmed active hitboxes.
+
+An optional differential test, built when Unicorn is enabled, executes the
+**original** picker at `2649:0541` from four retained 1-MiB guest RAM
+checkpoints. It tests a grid plus the inclusive edges and immediate neighbors
+of each native rectangle, comparing returned group, slot and kind with the
+host-side model. It requires private game data and snapshots and is therefore
+skipped by the ordinary public CTest run:
+
+```sh
+build/native-picker-oracle-tests ../gateway-dos build/rgn-scenes-v026
+```
+
+The fixed `2649:0541` runtime entry is verified only for those four opening
+snapshots; this is not a universal segment address or a replacement picker.
 
 ### Headless scene checkpoints
 

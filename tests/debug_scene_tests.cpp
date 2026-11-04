@@ -94,7 +94,7 @@ int main(int argc, char **argv) try {
     picker_memory[picker_base + 0xa8d4] = 2;    // bounding box + one RGN box
     picker_memory[picker_base + 0xa974] = 0;
     picker_memory[picker_base + 0xa975] = 1;
-    picker_memory[picker_base + 0xaa4e] = 1; // non-selectable native group bound
+    picker_memory[picker_base + 0xaa4e] = 1; // selectable fallback for its group
     const auto box = tracker.view().boxes[0];
     word(picker_memory, picker_base + 0xa6d2, box.x0 + 261);
     word(picker_memory, picker_base + 0xa752, box.x1 + 261);
@@ -108,7 +108,7 @@ int main(int argc, char **argv) try {
     picker_memory[picker_base + 0xa974 + 35] = 2;
     picker_memory[picker_base + 0xa974 + 36] = 3;
     picker_memory[picker_base + 0xa974 + 37] = 4;
-    picker_memory[picker_base + 0xaa50] = 1; // non-selectable group bounding box
+    picker_memory[picker_base + 0xaa50] = 1; // selectable group fallback
     for (unsigned index : {3u, 4u}) {
         word(picker_memory, picker_base + 0xa6d0 + index * 2, index * 10);
         word(picker_memory, picker_base + 0xa750 + index * 2, index * 10 + 6);
@@ -121,11 +121,18 @@ int main(int argc, char **argv) try {
     require(tracker.view().boxes[0].native_picker_disabled == true,
             "matched rectangle with native 0x80 skip bit is disabled");
     require(tracker.view().native_picker_aligned &&
-                tracker.view().native_controls.size() == 2 &&
-                tracker.view().native_controls[0].x0 == 30 &&
-                tracker.view().native_controls[0].kind == 5 &&
-                tracker.view().native_controls[1].flags == 0x80,
-            "native picker must expose non-RGN screen controls and their skip bits");
+                tracker.view().native_picker_rows.size() == 5 &&
+                tracker.view().native_controls.size() == 4 &&
+                tracker.view().native_controls[1].slot == 0 &&
+                tracker.view().native_controls[2].x0 == 30 &&
+                tracker.view().native_controls[2].kind == 5 &&
+                tracker.view().native_controls[3].flags == 0x80,
+            "native picker must expose selectable fallback rows and control skip bits");
+    const auto clicked = tracker.view().picker_at(35, 15);
+    require(clicked && clicked->group == 1 && clicked->slot == 1 && clicked->index == 3,
+            "native picker should choose the last matching enabled row");
+    require(!tracker.view().picker_at(45, 15),
+            "native picker must not select a skipped rectangle");
     picker_memory[picker_base + 0xa921] = 0;
     tracker.set_native_picker_state(picker_memory, 0x2000);
     require(tracker.view().boxes[0].native_picker_disabled == false,
@@ -327,22 +334,44 @@ int main(int argc, char **argv) try {
                 }
                 require(disabled_count == 1,
                         "exactly one first-room rectangle is natively disabled");
-                // 14 command-side picker rows and four each in two scrollbar
-                // groups were not represented in the room RGN file at all.
+                // 14 command-side picker rows, four each in two scroll groups,
+                // and the five selectable fallback rows are absent from RGN.
                 require(checkpoint.native_picker_aligned &&
-                            checkpoint.native_controls.size() == 22,
-                        "expected all original non-RGN native picker controls");
+                            checkpoint.native_picker_rows.size() == 57 &&
+                            checkpoint.native_controls.size() == 27,
+                        "expected all original native picker controls and fallbacks");
                 unsigned skipped_controls = 0;
+                unsigned fallback_count = 0;
                 bool command_present = false, scroll_present = false;
                 for (const auto &control : checkpoint.native_controls) {
                     skipped_controls += (control.flags & 0x80) != 0;
+                    fallback_count += control.slot == 0;
                     command_present |= control.group == 0 && control.kind == 5 &&
                                        control.x0 == 51 && control.y0 == 3;
                     scroll_present |= control.group == 4 && control.kind == 4 &&
                                       control.x0 == 244 && control.y0 == 152;
                 }
-                require(skipped_controls == 4 && command_present && scroll_present,
-                        "native commands and scrollbar geometry/disabled bits changed");
+                require(skipped_controls == 4 && fallback_count == 5 &&
+                            command_present && scroll_present,
+                        "native fallback, command and scrollbar geometry/flags changed");
+                // Slot zero in each group is tested just like later slots,
+                // with signed bounds and last-match-wins precedence.
+                const auto selected = [&](int x, int y) {
+                    const auto hit = checkpoint.picker_at(x, y);
+                    require(hit.has_value(), "expected original native fallback pick");
+                    return *hit;
+                };
+                require(selected(0, 200).group == 3 && selected(0, 200).slot == 0 &&
+                            selected(125, 300).group == 4 &&
+                            selected(500, 300).group == 2 &&
+                            selected(500, 30).group == 1 &&
+                            selected(250, 120).group == 0,
+                        "native picker fallback panels do not cover all clickable areas");
+                const auto drawer_hit = selected(360, 200);
+                require(drawer_hit.group == 1 && drawer_hit.kind == 3 &&
+                            drawer_hit.index == (std::string(stage) == "before" ||
+                                                 std::string(stage) == "closed" ? 54 : 55),
+                        "overlapping drawer hitboxes should honor current skip-bit priority");
             }
         }
     }

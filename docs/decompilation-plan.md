@@ -810,6 +810,19 @@ the proven native skip bit over provisional object-location classification.
 Synthetic and optional-original snapshot tests cover groups and bounds;
 guest picking and game logic remain unchanged.
 
+2026-11-04 picker fallback and priority correction (§3.6): disassembly at
+`GATE.RTL:0x14186..0x14244` establishes that every group is scanned from
+slot zero and that each successful rectangle overwrites the previously
+selected group, slot, and result kind. All five group-first rectangles are
+selectable catch-alls, with signed 16-bit coordinate comparisons. The F10
+overlay now includes these five large background targets, labels the true
+last-match winner and exports their slot/flags in `.picker.tsv`. The host
+model is tested against the four private first-room guest-RAM captures;
+the guest's original mouse routine and inputs are unchanged. Added an opt-in
+Unicorn differential harness that calls the actual picker against the same
+RAM and checks its group/slot/kind outputs for a grid and boundary samples;
+it requires the user's native Unicorn/Nix toolchain to execute.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |

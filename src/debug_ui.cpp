@@ -196,10 +196,11 @@ void draw_debug_overlay(std::span<std::uint32_t> image, int width, int height,
             }
         }
 
-        // The original mouse picker also contains UI control groups. These
-        // are absolute screen rectangles (command buttons, scroll controls),
-        // not RGN objects, and extend both left and below the room picture.
-        // Group bounding rectangles are intentionally not listed here.
+        // The native routine scans every row, including slot zero of each
+        // group. These fallback rectangles cover the otherwise blank command
+        // and text areas and are themselves selectable. They may begin at
+        // negative signed coordinates and extend beyond the VGA viewport.
+        const auto picked = data.scene.picker_at(mouse.x, mouse.y);
         const DebugPickerControl *hovered_control = nullptr;
         std::size_t active_controls = 0;
         for (const auto &control : data.scene.native_controls) {
@@ -207,21 +208,25 @@ void draw_debug_overlay(std::span<std::uint32_t> image, int width, int height,
             if (skipped && !show_all_regions)
                 continue;
             ++active_controls;
+            const bool fallback = control.slot == 0;
             const int x0 = std::clamp(int(control.x0 * width / 640), 0, width);
             const int x1 = std::clamp(int((control.x1 + 1) * width / 640), 0, width);
             const int y0 = std::clamp(int(control.y0), 0, height);
             const int y1 = std::clamp(int(control.y1 + 1), 0, height);
-            const bool hover = mouse.x >= int(control.x0) &&
-                               mouse.x <= int(control.x1) &&
-                               mouse.y >= int(control.y0) &&
-                               mouse.y <= int(control.y1);
-            const auto color = skipped ? 0xff777e89u
-                                       : debug_hotspot_color(std::uint16_t(0x800u + control.index));
-            for (int y = y0; y < y1; ++y)
-                for (int x = x0; x < x1; ++x) {
-                    auto &pixel_value = image[std::size_t(y) * width + x];
-                    pixel_value = tint(pixel_value, color, hover ? 100 : 55);
-                }
+            const bool hover = picked
+                ? picked->group == control.group && picked->slot == control.slot
+                : mouse.x >= control.x0 && mouse.x <= control.x1 &&
+                  mouse.y >= control.y0 && mouse.y <= control.y1;
+            const auto color = skipped ? 0xff777e89u : fallback ? 0xff648ca0u
+                : debug_hotspot_color(std::uint16_t(0x800u + control.index));
+            // Keep the large fallback areas transparent unless actually
+            // selected; otherwise they would wash out the entire room image.
+            if (!fallback || hover)
+                for (int y = y0; y < y1; ++y)
+                    for (int x = x0; x < x1; ++x) {
+                        auto &pixel_value = image[std::size_t(y) * width + x];
+                        pixel_value = tint(pixel_value, color, hover ? 75 : 55);
+                    }
             rect(image, width, height, x0, y0, x1, y1, hover ? white : color, false);
             if (hover)
                 hovered_control = &control;
@@ -232,16 +237,17 @@ void draw_debug_overlay(std::span<std::uint32_t> image, int width, int height,
         rect(image, width, height, status_x, height - 23, width - 2, height - 2, panel,
              true);
         char info[128];
-        std::snprintf(info, sizeof info, "RGN %s #%zu (%zu/%zu), UI %zu",
+        std::snprintf(info, sizeof info, "RGN %s #%zu (%zu/%zu), native %zu",
                       data.scene.region_file.c_str(), data.scene.entry, shown,
                       data.scene.boxes.size(), active_controls);
         text(image, width, height, status_x + 6, height - 18, info, white, 37);
         if (hovered || hovered_control) {
             if (hovered_control) {
                 std::snprintf(info, sizeof info,
-                              "Native control #%u group %u kind %u flags %02X",
-                              unsigned(hovered_control->index), unsigned(hovered_control->group),
-                              unsigned(hovered_control->kind), unsigned(hovered_control->flags));
+                              "Native %s g%u slot%u kind%u index%u",
+                              hovered_control->slot == 0 ? "fallback" : "control",
+                              unsigned(hovered_control->group), unsigned(hovered_control->slot),
+                              unsigned(hovered_control->kind), unsigned(hovered_control->index));
             } else if (hovered >= unnamed_base) {
                 std::snprintf(info, sizeof info, "Unnamed region #%u",
                               unsigned(hovered - unnamed_base));

@@ -1878,15 +1878,17 @@ void dump_guest(uc_engine *uc, State &state, const std::string &prefix) {
     }
     regions.close();
     std::ofstream controls(prefix + ".picker.tsv");
-    controls << "picture	entry	group	picker_index	kind	flags	x0	y0	x1	y1"
-                "	skipped\n";
+    controls << "picture\tentry\tgroup\tslot\tpicker_index\tkind\tflags"
+                "\tx0\ty0\tx1\ty1\tskipped\tfallback\n";
     for (const auto &control : scene.native_controls)
         controls << scene.picture << '\t' << scene.entry << '\t'
-                 << unsigned(control.group) << '\t' << unsigned(control.index) << '\t'
+                 << unsigned(control.group) << '\t' << unsigned(control.slot) << '\t'
+                 << unsigned(control.index) << '\t'
                  << unsigned(control.kind) << '\t' << unsigned(control.flags) << '\t'
                  << control.x0 << '\t' << control.y0 << '\t'
                  << control.x1 << '\t' << control.y1 << '\t'
-                 << ((control.flags & 0x80) ? "yes" : "no") << '\n';
+                 << ((control.flags & 0x80) ? "yes" : "no") << '\t'
+                 << (control.slot == 0 ? "yes" : "no") << '\n';
     controls.close();
     if (!controls)
         throw std::runtime_error("cannot write native picker controls dump");
@@ -1905,8 +1907,8 @@ void dump_guest(uc_engine *uc, State &state, const std::string &prefix) {
                 " IF caller requests restricted traversal; NOT mouse/render state\n"
              << "native_picker=original Gateway 1 RGN picker 0x80 skip bit;"
                 " not_disabled is NOT proof of drawn/selectable\n"
-             << "picker_controls=non-RGN screen-space rectangles from matching native"
-                " picker groups, excluding group bounds\n"
+             << "picker_controls=non-RGN screen-space rectangles plus all five"
+                " selectable group fallbacks; signed bounds\n"
              << "picker_controls_count=" << scene.native_controls.size() << '\n';
     if (objects && objects->objects.size() == 734) {
         std::ofstream records(prefix + ".objects.tsv");

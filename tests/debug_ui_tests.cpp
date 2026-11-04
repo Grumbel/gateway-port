@@ -98,9 +98,9 @@ int main() try {
                 aligned[10 * 640 + 261] == 0xffe6edfa,
             "original native picker x=261 inclusive bounds are not aligned");
     gateway::DebugOverlayData ui_controls;
-    ui_controls.scene.native_controls.push_back({30, 10, 40, 20, 0, 18, 5, 0});
-    ui_controls.scene.native_controls.push_back({60, 10, 70, 20, 4, 10, 4, 0x80});
-    ui_controls.scene.native_controls.push_back({100, 463, 116, 479, 3, 7, 4, 1});
+    ui_controls.scene.native_controls.push_back({30, 10, 40, 20, 0, 1, 18, 5, 0});
+    ui_controls.scene.native_controls.push_back({60, 10, 70, 20, 4, 2, 10, 4, 0x80});
+    ui_controls.scene.native_controls.push_back({100, 463, 116, 479, 3, 4, 7, 4, 1});
     gateway::Mouse control_mouse;
     control_mouse.x = 35;
     control_mouse.y = 15;
@@ -116,6 +116,24 @@ int main() try {
                                 false, true, 0, {}, true);
     require(controls[10 * 640 + 60] == 0xff777e89,
             "raw mode should expose a disabled native control");
+    gateway::DebugOverlayData fallback;
+    fallback.scene.native_picker_aligned = true;
+    fallback.scene.native_controls.push_back({-4, -8, 260, 136, 0, 0, 0, 1, 1});
+    fallback.scene.native_controls.push_back({30, 10, 40, 20, 0, 1, 18, 5, 0});
+    fallback.scene.native_picker_rows = fallback.scene.native_controls;
+    require(fallback.scene.picker_at(2, 50)->slot == 0 &&
+                fallback.scene.picker_at(35, 15)->slot == 1,
+            "original picker fallbacks must be selectable and overridden by controls");
+    gateway::Mouse fallback_mouse;
+    fallback_mouse.x = 2;
+    fallback_mouse.y = 50;
+    std::vector<std::uint32_t> backdrop(640 * 480, 0xff123456);
+    gateway::draw_debug_overlay(backdrop, 640, 480, fallback_mouse, fallback,
+                                false, true, 0);
+    require(backdrop[50 * 640] == 0xffe6edfa &&
+                backdrop[30 * 640 + 20] != 0xff123456 &&
+                backdrop[70 * 640 + 20] != 0xff123456,
+            "signed, selectable group fallback should appear in F10 overlay");
     gateway::draw_debug_overlay(pixels, 640, 480, mouse, debug, true, false, 4);
     require(pixels[232 * 640 + 286] == 0xff75aaff &&
                 pixels[100 * 640 + 500] == 0xff123456,
