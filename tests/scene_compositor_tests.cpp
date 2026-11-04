@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 
 #include "scene_compositor.hpp"
+#include "scene_animation.hpp"
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
@@ -99,6 +100,115 @@ void synthetic_layers() {
     }
 }
 
+void synthetic_animation() {
+    gateway::PicImage background;
+    background.bits = 4;
+    background.width = 4;
+    background.height = 2;
+    background.pixels.assign(8, 2);
+    background.palette = gateway::default_ega_palette();
+    gateway::PicImage layer;
+    layer.bits = 4;
+    layer.overlay = true;
+    layer.x = 1;
+    layer.y = 0;
+    layer.width = 2;
+    layer.height = 1;
+    layer.pixels = {1, 3};
+
+    gateway::XorPicAnimation animation(background, layer, 500, 500);
+    check(!animation.visible() && animation.next_toggle_ms() == 500,
+          "animation did not start hidden");
+    check(!animation.advance_to(499), "animation changed before first deadline");
+    check(animation.advance_to(500) && animation.visible(),
+          "animation missed first XOR deadline");
+    check(animation.frame().pixels[1] == 3 && animation.frame().pixels[2] == 1,
+          "animation XOR produced wrong pixels");
+    check(!animation.advance_to(750), "animation changed between deadlines");
+    check(animation.advance_to(1000) && !animation.visible(),
+          "second XOR did not restore the original scene");
+    check(animation.frame().pixels == background.pixels,
+          "second XOR did not restore background pixels");
+    check(animation.advance_to(1500) && animation.visible(),
+          "third XOR did not activate the scene");
+    check(!animation.advance_to(2600) && animation.visible(),
+          "skipped even number of toggles must cancel");
+    check(animation.next_toggle_ms() == 3000,
+          "deadline did not advance across dropped frames");
+
+    auto changed_background = background;
+    changed_background.pixels.assign(8, 4);
+    animation.replace_background(changed_background);
+    check(animation.visible() && animation.next_toggle_ms() == 3000,
+          "new background reset the animation phase");
+    check(animation.frame().pixels[1] == (4 ^ 1) &&
+              animation.frame().pixels[2] == (4 ^ 3),
+          "animated layer was not reapplied to new background");
+    check(animation.advance_to(3000) && !animation.visible() &&
+              animation.frame().pixels == changed_background.pixels,
+          "background was not restored after animated scene change");
+    animation.synchronize(3250, true);
+    check(animation.visible() && animation.frame().pixels[1] == (4 ^ 1),
+          "animation phase synchronization did not apply XOR");
+    check(animation.advance_to(3250) && !animation.visible(),
+          "animation did not use externally supplied next deadline");
+
+    try {
+        animation.advance_to(2000);
+        throw std::runtime_error("backward clock was accepted");
+    } catch (const std::runtime_error &e) {
+        check(std::string(e.what()).find("backward") != std::string::npos,
+              "unexpected backward-clock error");
+    }
+    try {
+        gateway::XorPicAnimation invalid(background, layer, 100, 0);
+        throw std::runtime_error("zero period was accepted");
+    } catch (const std::runtime_error &e) {
+        check(std::string(e.what()).find("period") != std::string::npos,
+              "unexpected zero-period error");
+    }
+    auto bad_layer = layer;
+    bad_layer.overlay = false;
+    try {
+        gateway::XorPicAnimation invalid(background, bad_layer, 100, 500);
+        throw std::runtime_error("non-overlay animation layer was accepted");
+    } catch (const std::runtime_error &e) {
+        check(std::string(e.what()).find("XOR") != std::string::npos,
+              "unexpected invalid-animation-layer error");
+    }
+    try {
+        gateway::XorPicAnimation overflow(background, layer, 0, 1);
+        overflow.advance_to(UINT64_MAX);
+        throw std::runtime_error("animation deadline overflow was accepted");
+    } catch (const std::overflow_error &) {
+        // This timing combination has no representable future deadline.
+    }
+}
+
+void check_native_idle_animation(const std::vector<std::uint8_t> &pic,
+                                 const fs::path &directory) {
+    const auto base = gateway::decode_pic_scene(pic, gateway::PicDialect::gateway,
+                                                 15, std::vector<std::size_t>{18});
+    const auto entries = gateway::parse_pic_directory(pic);
+    gateway::XorPicAnimation animation(
+        base, gateway::decode_pic(pic, entries.at(17), gateway::PicDialect::gateway),
+        16500, 500);
+    const std::string header = "P6\n640 480\n255\n";
+    for (int ms = 16000; ms <= 17750; ms += 250) {
+        const auto native = read_bytes(directory / ("t" + std::to_string(ms) + ".ppm"));
+        check(native.size() == header.size() + 640 * 480 * 3 &&
+                  std::equal(header.begin(), header.end(), native.begin()),
+              "invalid original animation frame");
+        animation.advance_to(ms);
+        const auto match = gateway::compare_pic_scene_frame(
+            animation.frame(),
+            std::span<const std::uint8_t>(native).subspan(header.size()),
+            640, 480, 261, 0);
+        check(match.compared_pixels == 84896 && match.differing_pixels == 0,
+              "host animation differs from original first-room frame");
+    }
+}
+
 void check_native_room(const std::vector<std::uint8_t> &pic, const fs::path &ppm_path,
                        std::uint32_t expected_mask) {
     const auto native = read_bytes(ppm_path);
@@ -137,7 +247,8 @@ void check_native_room(const std::vector<std::uint8_t> &pic, const fs::path &ppm
 
 int main(int argc, char **argv) try {
     synthetic_layers();
-    if (argc == 6 && fs::exists(argv[1]) && fs::exists(argv[2]) &&
+    synthetic_animation();
+    if ((argc == 6 || argc == 7) && fs::exists(argv[1]) && fs::exists(argv[2]) &&
         fs::exists(argv[3]) && fs::exists(argv[4]) && fs::exists(argv[5])) {
         const auto pic = read_bytes(argv[1]);
         check_native_room(pic, argv[2], 0b110); // indicator + card
@@ -147,6 +258,10 @@ int main(int argc, char **argv) try {
         std::cout << "Original native scenes: all four frames match all 84,896 pixels\n";
     } else {
         std::cout << "Original private PIC/PPM fixtures unavailable; synthetic tests passed\n";
+    }
+    if (argc == 7 && fs::exists(argv[1]) && fs::is_directory(argv[6])) {
+        check_native_idle_animation(read_bytes(argv[1]), argv[6]);
+        std::cout << "Host XOR animation: all eight idle captures match all 84,896 pixels\n";
     }
     return 0;
 } catch (const std::exception &e) {

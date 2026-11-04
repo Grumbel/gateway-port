@@ -458,3 +458,42 @@ equivalence test remain future steps.
 
 Neither the captured game frames nor the original frame-record bytes are
 redistributed.
+
+### Opt-in host XOR animation prototype
+
+`src/scene_animation.{hpp,cpp}` implements a host-side animated PIC XOR layer.
+It accepts an already-composed room background, a decoded XOR overlay, the
+next **guest-millisecond** toggle deadline, a period and an initial visible
+state. It advances over dropped display frames without losing the XOR phase.
+An even number of elapsed toggles leaves the scene unchanged; an odd number
+applies the overlay once. Replacing the room background preserves the phase;
+`synchronize()` accepts an observed deadline and visible state after native
+story or UI activity changes scheduling.
+
+This is an **independent rendering prototype**, not a port of
+`rtl:0x134a5`, not a replacement-registry entry, and not enabled in the SDL3
+game runtime. The diagnostic `gateway-scene` CLI opts in explicitly:
+
+~~~sh
+gateway-scene --base 15 --layer 18 --animate-layer 17 \
+  --animate-next-toggle-ms 16500 --animate-period-ms 500 --at-ms 16500 \
+  --reference-ppm build/rtl-blink-v033/t16500.ppm \
+  --screen-x 261 ../gateway-dos/GATE_102.PIC
+~~~
+
+The `16500` deadline and initial hidden phase are observations for this
+**specific idle replay**, not universal animation start values. The CLI also
+accepts `--animation-visible` for an initially visible overlay, and `-o` to
+write an indexed PNG. Animation options must be supplied together; the
+optional-layer inference mode remains separate. The compiled
+`scene-compositor-tests` with the PIC, four original room snapshots and the
+private idle-capture directory verifies the still scene and all eight
+animated frames. All eight room pictures match **all 84,896 original pixels**.
+Synthetic checks cover missed frames, reversible XOR, room-background
+replacement, explicit resynchronization, invalid geometry and timestamps.
+
+The 32 action-interleaved captures do *not* follow one global 500-ms phase;
+the original game sometimes shifts its effective deadlines. Integrating the
+host model into an opt-in SDL3 runtime path requires observing scheduler
+updates or implementing their equivalent and verifying those action captures.
+No such runtime equivalence is claimed here.

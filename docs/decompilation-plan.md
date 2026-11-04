@@ -768,6 +768,16 @@ animation entries. Read-only inspector and regression tests now validate
 the mapping, opcode evidence and branch counts. Host-side replacement
 remains unimplemented and no per-routine differential verification claimed.
 
+2026-11-04 host-only animation prototype (§3.6): added `XorPicAnimation`,
+which composes a positioned XOR overlay at explicit guest-clock deadlines,
+skips multiple transitions by parity, preserves its visible phase across
+background changes and allows resynchronization. The opt-in `gateway-scene`
+animation CLI matches all eight original idle first-room screenshots, each
+with 0/84,896 differing scene pixels; synthetic tests cover reversible XOR,
+skipped frames, deadline validation and phase maintenance. The guest
+scheduler, action-dependent timing and SDL3 runtime dispatch are not
+replaced, and the routine is **not** marked verified.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |
