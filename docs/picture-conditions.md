@@ -243,26 +243,92 @@ by the four entries, even though some other instruction words are relocated.
 | `1485:1bac` | `rtl:0x136b1` | Releases all active animation allocations and sets the shared sequence count to **zero** |
 
 The creation routine accepts up to **five simultaneously active sequences**
-(`DS:[0x12]`), and up to **20 frames per sequence** (`[BP+8] <= 20`).
+(`DS:[0x12]` in the *original unrelocated instruction*), and up to **20
+frames per sequence** (`[BP+8] <= 20`).
 It allocates `0x0aa0` bytes, exactly 20 frame records of **`0x88` bytes**.
-Other shared state includes movement/direction bytes at `DS:[0x32+i]`,
-frame indices at `DS:[0x40+i]`, and 32-bit deadlines at
-`DS:[0x46+4*i]`. These are **DS-relative offsets during RTL service
-execution**, not established addresses in the room's data segment: the
-room's `DS=0x5b46` from the retained snapshots is *not* evidence that
-these fields reside at `5b46:0012`, `5b46:0040`, etc. We need a live
-call-register trace to establish which segment the RTL services actually use.
+Other original operands include movement/direction bytes at `DS:[0x32+i]`,
+frame indices at `DS:[0x40+i]`, and 32-bit deadlines at `DS:[0x46+4*i]`.
+The original RTL file is **not a relocated memory image**; these immediate
+offsets must not be used to read the native guest DS directly.
 
 The scheduler is a separate near routine at **`rtl:0x134a5`**. It advances
 frame indices (with signed direction), handles end-of-sequence looping or
 termination based on a mode argument, and computes subsequent 32-bit
 deadlines using frame-data bytes at offsets `+6`/`+7` scaled by `0x32`.
 The wrapper at **`rtl:0x133b5`** calls the initialization routine, polls
-the scheduler, then invokes the clear routine. Neither the units of the
-time source nor the precise way the scheduler mixes with the XOR layer
-updater has yet been established; the four images do not prove a 50 ms
-or other specific blink period. In particular, global release in the room
+the scheduler, then invokes the clear routine. Global release in the room
 handler is not a hypothetical handle-specific API.
+
+### Live data relocation and timing recovered
+
+A fresh complete 39,000-guest-ms headless replay verified all seven opening
+actions and 76 BIOS keys while recording the original RTL entries. The
+creation entry (`physical 0x25fd8`) was reached at **9,077 ms**, with
+`CS=2485`, `DS=5b46`, and stack words `(0x0211, 1, 0, 0)`.
+The initializer at `physical 0x2612a` was reached afterward at 9,101 ms;
+the scheduler was observed at `physical 0x261f0`. These addresses are
+specific to that launch layout, unlike the RTL file offsets above.
+
+The runtime code at these entries has **patched DS displacements**. Matching
+the instruction opcodes and reading the relocated operands in guest memory
+reveals two different relocation bases, not a single constant adjustment:
+
+| Field, first slot | Original RTL operand | Live `DS=5b46` operand |
+| --- | ---: | ---: |
+| Active sequence count | `0x0012` | `0x1428` |
+| Frame count | `0x0000` | `0x9fb4` |
+| Direction | `0x0032` | `0x9fe6` |
+| Frame index | `0x0040` | `0x9ff4` |
+| Next deadline (32-bit) | `0x0046` | `0x9ffa` |
+| Frame-buffer far pointer | `0x001e` | `0x9fd2` |
+
+All four retained RAM snapshots now decode consistently with the *live*
+operands:
+
+| Snapshot | Count | Frames | Direction | Index | Deadline |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `before` (16,500 ms) | 1 | 1 | 0 | 0 | `0x30c0` |
+| `open` (20,500 ms) | 1 | 1 | 0 | 0 | `0x3fe8` |
+| `taken` (26,500 ms) | 1 | 1 | 0 | 0 | `0x56fe` |
+| `closed` (35,000 ms) | 1 | 1 | 0 | 0 | `0x78aa` |
+
+The only frame buffer is at `81d2:0000` (linear `0x81d20`), an unchanged
+136-byte record in all four dumps. Its duration bytes at record offsets
+`+6`/`+7` are `(10, 0)`, giving the static scheduler's `10 * 0x32 = 500`
+time increment. With narrow byte-write watches on the relocated deadline
+at physical `0x6545a`–`0x6545d`, a replay recorded **59 scheduler deadline
+writes** from physical `0x2629f`. Of the 58 successive deadline increments,
+**52 were exactly 500**; the other six have different timing gaps, possibly
+from initialization or other clock behavior. Most 500-step events were
+observed around 499–501 guest ms apart.
+
+The blink itself is now independently verified with **eight additional
+original RGB framebuffer dumps**, sampled 250 guest ms apart before the
+first parser command. The standard replay still sends its bootstrap space
+keys at 16,000 and 17,000 ms; no room command is entered in this interval.
+Bounded XOR inference with `gateway-scene` found
+exactly one matching layer combination for every frame, with **zero of
+84,896 scene pixels differing**:
+
+| Guest ms | Optional layers | Indicator 17 |
+| ---: | --- | --- |
+| 16,000 | 18 | Off |
+| 16,250 | 18 | Off |
+| 16,500 | 17, 18 | On |
+| 16,750 | 17, 18 | On |
+| 17,000 | 18 | Off |
+| 17,250 | 18 | Off |
+| 17,500 | 17, 18 | On |
+| 17,750 | 17, 18 | On |
+
+The complete 640×480 RGB framebuffers confirm each pair is *bit-identical*
+and exactly the **same 50 pixels** change at all three on/off transitions;
+all other 307,150 pixels are unchanged. The images repeat after 1,000 ms
+(16,000 equals 17,000; 16,500 equals 17,500). Thus the indicator has a
+**500 ms XOR toggle and 1,000 ms full blink cycle in the idle first-room
+state**. This is much stronger than inferring a period from the original four
+sparsely timed screenshots. It still leaves open how other room actions
+interleave the animation and the conditional-layer updater.
 
 The read-only mapping is reproducible from original files and a retained
 guest RAM dump (which is not redistributed):
@@ -272,13 +338,25 @@ python3 tools/inspect_rtl_animation.py \
   --ovl ../gateway-dos/GATEMAIN.OVL \
   --exe ../gateway-dos/GATE.EXE \
   --rtl ../gateway-dos/GATE.RTL \
-  --ram build/rgn-scenes-v026/before.bin
+  --ram build/rgn-scenes-v026/before.bin \
+  --ds 5b46
 ~~~
 
-The synthetic tests reject changed far-call operands and unmatched guest
-entries; when the original files are present they assert all four original
-offsets and selected machine-code invariants. This is a source-identity
-and control-flow milestone, not a verified host-side animation port.
+With a retained probe research trace whose `--trace-byte-write` watches
+cover the six addresses above, add
+`--write-trace build/rtl-timing-v033/native.trace` to obtain the deadline
+interval histogram. For an independent framebuffer check, create an opening
+replay with eight `--dump-at` arguments at 16000, 16250, 16500, 16750,
+17000, 17250, 17500 and 17750 guest ms, before the first parser command at
+18,000 ms; run `gateway-scene --base 15 --optional-layer 16
+--optional-layer 17 --optional-layer 18 --reference-ppm FRAME.ppm
+--screen-x 261 ../gateway-dos/GATE_102.PIC` on each frame. The
+inspector checks original versus live opcode
+prefixes before using any patched displacements. Synthetic tests reject
+stale instruction matches and combine byte writes correctly; optional
+original tests assert all relocated offsets, four slot states, the
+500-step cadence and the eight-frame blink. This is a source-identity and timing milestone, not a
+verified host-side animation port.
 
 The native test now checks all four entire room views, and the original
 callback bytes, animation-call operands, handle and guest state are checked

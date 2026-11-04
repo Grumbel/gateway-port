@@ -722,6 +722,26 @@ read-only source-mapping inspector and synthetic plus optional-original
 tests. Animation timer units, RTL DS register provenance, draw/update
 interactions, and native implementation remain open.
 
+2026-11-04 live RTL animation timing (§3.6): a new successful headless
+opening replay (7 actions, 76 keys, 39,000 guest ms) traced the create
+service at physical `0x25fd8` (9,077 ms), initializer `0x2612a`, and
+scheduler `0x261f0`, establishing `DS=0x5b46` at runtime. The original RTL
+data operands are linker-relocated: original count `DS:0012` becomes
+`DS:1428`, but the frame slots, directions, indexes and deadlines have a
+*different* base (`DS:9fb4`, `9fe6`, `9ff4`, `9ffa`). All four retained
+room RAM checkpoints show one one-frame sequence, frame index zero, and
+advancing deadlines. Its immutable 0x88-byte frame record at `81d2:0000`
+has duration byte 10, scaled by 50 in RTL. The narrow live deadline watch
+logged 59 scheduler writes, 52 of 58 successive deadline increments exactly
+500, typically ~500 guest ms apart. Added read-only relocation/state decoder
+and write-trace summary with synthetic and optional-original tests. Eight
+additional idle original framebuffer captures at 250-ms intervals establish
+the *same 50 pixels* toggling every 500 guest ms; the bounded XOR compositor
+has exactly one zero-difference match for each frame (17+18 when visible,
+18 alone when absent). Frames repeat after 1,000 ms, independently verifying
+the single-frame indicator's full blink cycle. Other room-action interactions
+and the native replacement remain unverified.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |
