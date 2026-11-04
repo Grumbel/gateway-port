@@ -126,8 +126,10 @@ The native traces agreed with both the final state and formatted number.
 The investigated runtime stores the state in two words at `DS:358e` and
 `DS:3590`, with `DS=5b46`. Telephone formatting was traced from physical
 `0x4af89`; RNG calls at `0x1bb56`. These are **capture-specific runtime
-addresses**, not original EXE/OVL identities; mapping them to stable file
-offsets remains necessary before registering a native replacement.
+addresses**, not original EXE/OVL identities; the local follow-up mapped the RNG to `GATE.RTL:0x0091ea` and the
+telephone branch to `OVL:0x064209` (section 47). See the
+[ABI and snapshot evidence](../decomp/telephone-rng.md). The enclosing
+handler boundary remains unresolved.
 
 The animation scheduler shares this RNG, including callbacks whose random
 delay range is zero. Its deadline table was at `DS:9ffa`, four bytes per

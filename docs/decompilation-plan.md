@@ -623,6 +623,15 @@ session's validation. Tracker check, all 63 CTests and `nix flake check`
 passed. Next: recover stable file identities for the RNG/formatting routines
 and capture their ABI before any replacement; strict determinism remains open.
 
+2026-11-04 follow-up: mapped the RNG to external `GATE.RTL:0x0091ea`
+and telephone call sites to section 47 `ovl:0x064209`/`0x064216`.
+All 7,056 section bytes match a native snapshot after the recorded relocation
+fixups. Independently recomputed both RNG advances from bracketing snapshots;
+final state, formatted fields and native formatter arguments agree. Recorded
+ABI, evidence and unresolved enclosing handler boundary in
+[decomp/telephone-rng.md](../decomp/telephone-rng.md). No tracker function or
+replacement claimed at these internal instruction sites.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |
