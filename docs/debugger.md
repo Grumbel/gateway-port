@@ -44,6 +44,26 @@ an object has been drawn or whether the original game's current interaction
 logic will accept it. Drawing all of these boxes made future/unavailable
 objects appear to be present, especially in the experimental widescreen UI.
 
+The original Gateway 1 rectangle picker **also has a dynamic skip bit**:
+in the pinned opening replay the routine at runtime `2649:0541` tests
+`DS:[0xa920 + rectangle_index] & 0x80` before comparing the mouse position;
+if set, that rectangle is skipped. The group counts are at `DS:a8d4`, the
+35-entry-per-group rectangle-index lists at `DS:a974`, and the indexed native
+x0/x1/y0/y1 arrays at `DS:a6d0`, `DS:a750`, `DS:a7d0`, and `DS:a850`.
+Result-kind bytes are at `DS:aa4e`. These are **runtime addresses for this
+launch layout**, not original EXE/overlay file offsets. The routine's
+original file offset remains to be identified.
+
+The debugger matches *all* room RGN rectangles against a single live native
+group, including each rectangle's coordinates (native screen X = RGN X +
+261), count, ordering, and result-kind byte `3`. Only when the entire group
+matches does it annotate native `0x80` flags. A mismatch leaves every bit
+`unknown`, avoiding guessed cross-title or cross-layout interpretation.
+The default F10 rectangles and widescreen candidate list now exclude only
+**proven skipped rectangles**, in addition to the existing heuristic
+classifications. Clearing the `0x80` bit is **not** by itself proof of
+visibility, an actual drawn object, or successful mouse selection.
+
 Gateway 1 now samples the validated 734-object guest table and annotates
 each RGN region with one of four *host-side* classifications:
 
@@ -69,9 +89,10 @@ filters, **not** a reconstructed native visibility or hotspot-picking routine.
 Press **R** in the F10 menu to display **all** raw RGN candidates, including
 filtered ones, for comparison. The original guest mouse input is unchanged.
 Dumped `.regions.tsv` files retain every region and append a `presence`
-column; `.debug.txt` identifies the classification as heuristic. For the
-other Legend titles, all regions stay `unknown`, because the Gateway 1 object
-state layout has not been verified there.
+column and a `native_picker` column (`disabled`, `not_disabled`, `unknown`);
+`.debug.txt` identifies the classification as heuristic. For the other
+Legend titles, all regions stay `unknown`, because the Gateway 1 object
+state and native picker layouts have not been verified there.
 
 The next verification should correlate these categories with native render
 events and click-selection results in several rooms. In particular, test
@@ -105,7 +126,23 @@ the 30 RGN rectangles and the current *heuristic* classifications are identical
 at all four checkpoints. Code-only hooks at the rectangle decoder likewise
 see the same 30 IDs on each redraw. This is concrete evidence that simply
 loading RGN records does **not** apply the original conditional visibility
-logic. It is not evidence of which later routine applies that logic.
+logic. The live native picker table, however, is **conditional**:
+
+| Checkpoint | Native skip index | Disabled extracted rectangle | Drawer state |
+| --- | --- | --- | --- |
+| `before` | 55 | Object `0x124`, `(90,158)–(136,223)` | Closed |
+| `open` | 54 | Object `0x124`, `(90,162)–(110,223)` | Open |
+| `taken` | 54 | Object `0x124`, `(90,162)–(110,223)` | Open |
+| `closed` | 55 | Object `0x124`, `(90,158)–(136,223)` | Closed |
+
+All 30 extracted rectangles match the native table's bounds in each captured
+1 MiB RAM image. Exactly one is marked skipped at each checkpoint. Thus the
+two overlapping drawer rectangles **alternate**, rather than both being
+active. To validate the correlation against retained original RAM snapshots,
+run `GATEWAY_PICKER_RAM_DIR=build/rgn-scenes-v026
+build/headless-local/debug_scene_tests ../gateway-dos` (replace the local
+test-binary path as appropriate). This is an optional private-fixture test;
+ordinary synthetic tests do not require original data.
 
 Two short headless control replays scheduled a click at guest ms 18000,
 one inside the drawer's extracted rectangle and one on the nearby background.

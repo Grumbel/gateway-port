@@ -4,12 +4,15 @@
 #include "debug_scene.hpp"
 #include "debug_state.hpp"
 #include <algorithm>
+#include <array>
+#include <cstdlib>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
+#include <tuple>
 #include <vector>
 
 namespace {
@@ -80,6 +83,40 @@ int main(int argc, char **argv) try {
     require(tracker.view().boxes[0].name == "Engine object one" &&
                 tracker.view().boxes[0].object_id == 1,
             "scene labels follow native engine object IDs, not string-list positions");
+    require(!tracker.view().boxes[0].native_picker_disabled,
+            "without a guest rectangle match the picker mask must be unknown");
+    // Synthetic Gateway 1 guest picker: one picture group bounding box and
+    // one RGN rectangle, matching the native CS:IP 2649:0541 index lists.
+    std::vector<std::uint8_t> picker_memory(1024 * 1024);
+    constexpr std::size_t picker_base = 0x20000;
+    word(picker_memory, picker_base + 0x8cc6, 0x2000);
+    word(picker_memory, picker_base + 0x1576, 1); // group count
+    picker_memory[picker_base + 0xa8d4] = 2;    // bounding box + one RGN box
+    picker_memory[picker_base + 0xa974] = 0;
+    picker_memory[picker_base + 0xa975] = 1;
+    const auto box = tracker.view().boxes[0];
+    word(picker_memory, picker_base + 0xa6d2, box.x0 + 261);
+    word(picker_memory, picker_base + 0xa752, box.x1 + 261);
+    word(picker_memory, picker_base + 0xa7d2, box.y0);
+    word(picker_memory, picker_base + 0xa852, box.y1);
+    picker_memory[picker_base + 0xaa4f] = 3; // native picture-region selector
+    picker_memory[picker_base + 0xa921] = 0x80;
+    tracker.set_native_picker_state(picker_memory, 0x2000);
+    require(tracker.view().boxes[0].native_picker_disabled == true,
+            "matched rectangle with native 0x80 skip bit is disabled");
+    picker_memory[picker_base + 0xa921] = 0;
+    tracker.set_native_picker_state(picker_memory, 0x2000);
+    require(tracker.view().boxes[0].native_picker_disabled == false,
+            "clear native 0x80 skip bit does not disable this rectangle");
+    word(picker_memory, picker_base + 0xa6d2, box.x0 + 260);
+    tracker.set_native_picker_state(picker_memory, 0x2000);
+    require(!tracker.view().boxes[0].native_picker_disabled,
+            "mismatched native geometry must not assign a picker mask");
+    tracker.step(1);
+    require(!tracker.view().boxes[0].native_picker_disabled,
+            "the picker mask belongs only to the matched room entry");
+    tracker.auto_follow(true);
+    tracker.note_read("GATE_102.PIC", 38, 1);
     // RGN lists potential targets. Guest containment excludes off-room and
     // carried objects; a closed drawer excludes its nested book. Even a room
     // match is a *candidate*, never proof that the native renderer drew it.
@@ -227,6 +264,47 @@ int main(int argc, char **argv) try {
         require(room.entry == 15 && drawer != room.boxes.end() && drawer->name == "drawer" &&
                     drawer->x0 == 90 && drawer->y0 == 162,
                 "Gateway room 15 drawer is native object 292, not OBJECT.DAT name index 292");
+        if (const auto *dump_dir = std::getenv("GATEWAY_PICKER_RAM_DIR")) {
+            // Optional original-game RAM snapshots from the opening walkthrough.
+            // The two overlapping drawer rectangles exchange native skip bits
+            // when the drawer opens, while the RGN file itself stays unchanged.
+            for (const auto &[stage, disabled_x0, disabled_y0] :
+                 std::array<std::tuple<const char *, unsigned, unsigned>, 4>{
+                     {{"before", 90, 158}, {"open", 90, 162},
+                      {"taken", 90, 162}, {"closed", 90, 158}}}) {
+                const auto dump = std::filesystem::path(dump_dir);
+                std::ifstream guest_file(dump / (std::string(stage) + ".bin"),
+                                         std::ios::binary);
+                require(bool(guest_file), "cannot open original guest RAM checkpoint");
+                const std::vector<std::uint8_t> guest(
+                    std::istreambuf_iterator<char>(guest_file), {});
+                std::ifstream metadata(dump / (std::string(stage) + ".debug.txt"));
+                require(bool(metadata), "cannot open original guest RAM metadata");
+                std::string line;
+                unsigned guest_ds = 0;
+                while (std::getline(metadata, line))
+                    if (line.starts_with("object_ds="))
+                        guest_ds = std::stoul(line.substr(10), nullptr, 16);
+                require(guest_ds != 0 && guest_ds < 65536, "missing guest DS in metadata");
+                real.set_native_picker_state(guest, std::uint16_t(guest_ds));
+                const auto checkpoint = real.view();
+                require(checkpoint.boxes.size() == 30,
+                        "expected the original 30 first-room RGN rectangles");
+                unsigned disabled_count = 0;
+                for (const auto &box : checkpoint.boxes) {
+                    require(box.native_picker_disabled.has_value(),
+                            "all 30 room RGN records must match the native table");
+                    if (*box.native_picker_disabled) {
+                        ++disabled_count;
+                        require(box.object_id == 0x124 && box.x0 == disabled_x0 &&
+                                    box.y0 == disabled_y0,
+                                "native drawer rectangle skip bit did not follow door state");
+                    }
+                }
+                require(disabled_count == 1,
+                        "exactly one first-room rectangle is natively disabled");
+            }
+        }
     }
     if (argc > 2) {
         // Optional real game tree, e.g. the contents of games.zip. This also

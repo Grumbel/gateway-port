@@ -1846,11 +1846,13 @@ void dump_guest(uc_engine *uc, State &state, const std::string &prefix) {
         state.debug_scene->set_object_names(
             gateway::debug_engine_object_names(*objects, state.debug_object_dat));
         state.debug_scene->set_game_state(*objects);
-    }
+        state.debug_scene->set_native_picker_state(memory, objects->ds);
+    } else
+        state.debug_scene->set_native_picker_state({}, 0);
     const auto scene = state.debug_scene->view();
     std::ofstream regions(prefix + ".regions.tsv");
     regions << "picture\tregion_file\tentry\tengine_object_id\tname\tx0\ty0\tx1\ty1"
-               "\tvertices\tpresence\trestricted_parser_path\n";
+               "\tvertices\tpresence\trestricted_parser_path\tnative_picker\n";
     for (const auto &box : scene.boxes) {
         regions << scene.picture << '\t' << scene.region_file << '\t' << scene.entry << '\t'
                 << box.object_id << '\t' << box.name << '\t' << box.x0 << '\t' << box.y0
@@ -1869,7 +1871,9 @@ void dump_guest(uc_engine *uc, State &state, const std::string &prefix) {
         }
         regions << '\t' << presence << '\t'
                 << (!box.restricted_parser_path ? "unknown"
-                    : *box.restricted_parser_path ? "pass" : "blocked") << '\n';
+                    : *box.restricted_parser_path ? "pass" : "blocked") << '\t'
+                << (!box.native_picker_disabled ? "unknown"
+                    : *box.native_picker_disabled ? "disabled" : "not_disabled") << '\n';
     }
     regions.close();
     std::ofstream metadata(prefix + ".debug.txt");
@@ -1884,7 +1888,9 @@ void dump_guest(uc_engine *uc, State &state, const std::string &prefix) {
              << "region_object_id=native engine object ID, NOT OBJECT.DAT list index\n"
              << "region_presence=guest location/disclosure heuristic, NOT native render state\n"
              << "restricted_parser_path=all known ancestry slots pass original parser gate"
-                " IF caller requests restricted traversal; NOT mouse/render state\n";
+                " IF caller requests restricted traversal; NOT mouse/render state\n"
+             << "native_picker=original Gateway 1 RGN picker 0x80 skip bit;"
+                " not_disabled is NOT proof of drawn/selectable\n";
     if (objects && objects->objects.size() == 734) {
         std::ofstream records(prefix + ".objects.tsv");
         records << gateway::debug_objects_tsv(*objects, state.debug_object_dat);
@@ -2943,6 +2949,12 @@ int main(int argc, char **argv) {
                             if (state.debug_scene)
                                 state.debug_scene->set_game_state({});
                             debug_overlay.object_summary = "Objects: not detected at DS";
+                        }
+                        if (state.debug_scene) {
+                            if (objects && objects->objects.size() == 734)
+                                state.debug_scene->set_native_picker_state(memory, objects->ds);
+                            else
+                                state.debug_scene->set_native_picker_state({}, 0);
                         }
                     }
                     if (state.debug_scene)

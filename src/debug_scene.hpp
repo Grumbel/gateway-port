@@ -31,6 +31,10 @@ struct DebugHitbox {
     // its caller requests restricted traversal? Nullopt: no proven answer.
     // It is neither a render-state bit nor proof of mouse pickability.
     std::optional<bool> restricted_parser_path;
+    // Native rectangle-picker skip bit (0x80), matched against the live
+    // guest rectangle table. False means only that this *one* gate passes;
+    // it does not establish that an object was painted or selectable.
+    std::optional<bool> native_picker_disabled;
 };
 struct DebugSceneView {
     std::string picture;
@@ -51,6 +55,9 @@ class DebugSceneTracker {
     // Gateway 1 only. Other Legend games retain unknown presence until their
     // own object-location semantics have been verified.
     void set_game_state(const DebugGameState &state);
+    // Gateway 1 only. Correlate all rectangles against the original native
+    // picker table; an incomplete/mismatched table yields unknown values.
+    void set_native_picker_state(std::span<const std::uint8_t> memory, std::uint16_t ds);
     static std::string canonical_file(std::string name);
     static std::string matching_rgn(const std::string &pic);
     bool add_picture(const std::string &file, std::span<const std::uint8_t> pic,
@@ -72,6 +79,9 @@ class DebugSceneTracker {
     std::vector<std::string> names_;
     std::vector<DebugHitboxPresence> presence_;
     std::vector<std::optional<bool>> restricted_parser_paths_;
+    std::vector<bool> native_picker_disabled_;
+    std::string native_picker_picture_;
+    std::size_t native_picker_entry_ = 0;
     std::string active_;
     std::size_t entry_ = 0;
     bool auto_follow_ = true;

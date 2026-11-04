@@ -117,7 +117,8 @@ void draw_debug_overlay(std::span<std::uint32_t> image, int width, int height,
             const auto &box = data.scene.boxes[i];
             if (!show_all_regions &&
                 (box.presence == DebugHitboxPresence::absent ||
-                 box.presence == DebugHitboxPresence::undisclosed))
+                 box.presence == DebugHitboxPresence::undisclosed ||
+                 box.native_picker_disabled == true))
                 continue;
             ++shown;
             const auto id = box.object_id ? std::uint32_t(box.object_id) : unnamed_base + i;

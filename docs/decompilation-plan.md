@@ -632,6 +632,16 @@ ABI, evidence and unresolved enclosing handler boundary in
 [decomp/telephone-rng.md](../decomp/telephone-rng.md). No tracker function or
 replacement claimed at these internal instruction sites.
 
+2026-11-04 debugger follow-up (§3.6 remains in progress): disassembled the
+original Gateway 1 *runtime* rectangle-picker path at `2649:0541` in the
+opening RAM snapshot and identified its per-rectangle `0x80` skip bit.
+Correlated all 30 `GATE_002.RGN` first-room rectangles with the live picker
+table in four existing native checkpoints: drawer indices 54 and 55 alternate
+as it opens and closes. Added a conservative, full-table-matched debugger
+annotation with real-snapshot and synthetic tests; retained the raw RGN mode.
+See [debugger.md](debugger.md). This does not establish general picture
+visibility semantics or complete §3.6 deterministic golden verification.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |

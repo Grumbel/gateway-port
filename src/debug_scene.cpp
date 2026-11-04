@@ -149,6 +149,77 @@ void DebugSceneTracker::set_game_state(const DebugGameState &state) {
     }
 }
 
+void DebugSceneTracker::set_native_picker_state(std::span<const std::uint8_t> memory,
+                                                std::uint16_t ds) {
+    native_picker_disabled_.clear();
+    native_picker_picture_ = active_;
+    native_picker_entry_ = entry_;
+    const auto picture = pictures_.find(active_);
+    if (picture == pictures_.end() || !active_.starts_with("GATE_") ||
+        picture->second.format != RegionFormat::rectangles ||
+        entry_ >= picture->second.regions.size())
+        return;
+    const auto &boxes = picture->second.regions[entry_].boxes;
+    if (boxes.empty() || boxes.size() >= 35)
+        return;
+
+    // Native Gateway 1, CS:IP 2649:0541 in the pinned opening replay:
+    // groups are 35-entry index lists at DS:a974; the indexed rects have
+    // two-byte x/y bounds in DS:a6d0..a8cf and a skip bit in DS:a920.
+    // Match the *entire* original room group by geometry and result code 3
+    // before interpreting any flags. Other games/layouts remain unknown.
+    auto byte_at = [&](std::uint16_t seg, std::size_t offset) -> std::optional<std::uint8_t> {
+        const auto physical = std::size_t(seg) * 16 + offset;
+        if (physical >= memory.size())
+            return {};
+        return memory[physical];
+    };
+    auto word_at = [&](std::uint16_t seg, std::size_t offset) -> std::optional<std::uint16_t> {
+        const auto lo = byte_at(seg, offset), hi = byte_at(seg, offset + 1);
+        if (!lo || !hi)
+            return {};
+        return std::uint16_t(*lo | unsigned(*hi) << 8);
+    };
+    const auto index_seg = word_at(ds, 0x8cc6);
+    if (!index_seg)
+        return;
+    const auto group_count = word_at(*index_seg, 0x1576);
+    if (!group_count || *group_count > 6)
+        return;
+    for (unsigned group = 0; group < *group_count; ++group) {
+        const auto count = byte_at(ds, 0xa8d4 + group);
+        if (!count || *count != boxes.size() + 1)
+            continue;
+        std::vector<bool> disabled;
+        disabled.reserve(boxes.size());
+        for (std::size_t i = 0; i < boxes.size(); ++i) {
+            const auto index = byte_at(ds, 0xa974 + group * 35 + i + 1);
+            if (!index || *index >= 64)
+                break;
+            const auto x0 = word_at(ds, 0xa6d0 + *index * 2);
+            const auto x1 = word_at(ds, 0xa750 + *index * 2);
+            const auto y0 = word_at(ds, 0xa7d0 + *index * 2);
+            const auto y1 = word_at(ds, 0xa850 + *index * 2);
+            const auto flags = byte_at(ds, 0xa920 + *index);
+            const auto result = byte_at(ds, 0xaa4e + *index);
+            const auto &box = boxes[i];
+            if (!x0 || !x1 || !y0 || !y1 || !flags || !result || *result != 3 ||
+                *x0 != box.x0 + 261 || *x1 != box.x1 + 261 ||
+                *y0 != box.y0 || *y1 != box.y1)
+                break;
+            disabled.push_back((*flags & 0x80) != 0);
+        }
+        if (disabled.size() == boxes.size()) {
+            // A second matching group would be ambiguous. Do not guess.
+            if (!native_picker_disabled_.empty()) {
+                native_picker_disabled_.clear();
+                return;
+            }
+            native_picker_disabled_ = std::move(disabled);
+        }
+    }
+}
+
 std::string DebugSceneTracker::canonical_file(std::string file) {
     const auto slash = file.find_last_of("\\/:");
     if (slash != std::string::npos)
@@ -249,6 +320,11 @@ DebugSceneView DebugSceneTracker::view() const {
     view.x_extent = found->second.format == RegionFormat::polygons ? 1 : 2;
     view.entry = entry_;
     view.entry_count = found->second.regions.size();
+    const bool picker_matches = native_picker_picture_ == active_ &&
+                                native_picker_entry_ == entry_ &&
+                                native_picker_disabled_.size() ==
+                                    found->second.regions[entry_].boxes.size();
+    std::size_t index = 0;
     for (const auto &region : found->second.regions[entry_].boxes) {
         const auto id = region.object_id;
         view.boxes.push_back({region.x0, region.y0, region.x1, region.y1, id,
@@ -256,7 +332,10 @@ DebugSceneView DebugSceneTracker::view() const {
                               id && id < presence_.size() ? presence_[id]
                                                            : DebugHitboxPresence::unknown,
                               id && id < restricted_parser_paths_.size()
-                                  ? restricted_parser_paths_[id] : std::nullopt});
+                                  ? restricted_parser_paths_[id] : std::nullopt,
+                              picker_matches ? std::optional<bool>(native_picker_disabled_[index])
+                                             : std::nullopt});
+        ++index;
     }
     return view;
 }

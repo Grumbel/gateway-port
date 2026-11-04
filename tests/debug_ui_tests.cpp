@@ -69,6 +69,15 @@ int main() try {
     gateway::draw_debug_overlay(filtered, 640, 480, mouse, debug, false, true, 0, {}, true);
     require(filtered[15 * 640 + 290] == gateway::debug_hotspot_color(222),
             "raw debugger still exposes every candidate RGN target");
+    debug.scene.boxes[2].presence = gateway::DebugHitboxPresence::room_candidate;
+    debug.scene.boxes[2].native_picker_disabled = true;
+    std::vector<std::uint32_t> disabled(640 * 480, 0xff123456);
+    gateway::draw_debug_overlay(disabled, 640, 480, mouse, debug, false, true, 0);
+    require(disabled[15 * 640 + 290] == 0xff123456,
+            "native picker 0x80 skip flag hides a single inactive RGN rectangle");
+    gateway::draw_debug_overlay(disabled, 640, 480, mouse, debug, false, true, 0, {}, true);
+    require(disabled[15 * 640 + 290] == gateway::debug_hotspot_color(222),
+            "raw RGN mode can reveal even a native-disabled rectangle");
     gateway::draw_debug_overlay(pixels, 640, 480, mouse, debug, true, false, 4);
     require(pixels[232 * 640 + 286] == 0xff75aaff &&
                 pixels[100 * 640 + 500] == 0xff123456,

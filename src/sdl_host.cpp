@@ -162,7 +162,8 @@ void draw_wide_panel(SDL_Renderer *renderer, const UiRect &panel, bool left,
         panel_text(renderer, x, 38, max_width, "(NOT VERIFIED DRAWN)");
         std::set<std::string> names;
         for (const auto &box : debug.scene.boxes)
-            if (box.presence == DebugHitboxPresence::room_candidate && !box.name.empty())
+            if (box.presence == DebugHitboxPresence::room_candidate &&
+                box.native_picker_disabled != true && !box.name.empty())
                 names.insert(box.name);
         int row = 0;
         for (const auto &name : names) {
