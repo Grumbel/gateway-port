@@ -42,6 +42,8 @@ int main(int argc, char **argv) try {
     require(state->objects[0].handler == 233 && state->objects[0].location == 0x00ee &&
                 state->objects[0].raw.size() == 36,
             "Gateway handler, record size and location decoding");
+    require(!state->objects[0].parser_gate_flags,
+            "missing native property table must leave restricted parser state unknown");
     constexpr unsigned property_seg = 0x1600;
     constexpr unsigned property7 = 0x14 + 7 * 4;
     store(memory, ds, 0x8d56, property_seg);
@@ -56,6 +58,22 @@ int main(int argc, char **argv) try {
     store(memory, property_seg, property7 + 2, 0);
     require(!gateway::inspect_gateway_state(memory, ds)->objects[0].disclosed,
             "unsupported property 7 must remain unknown, never hidden");
+    // Native parser gate reads these four properties independently. A zero
+    // support mask is the engine's normal false answer, not an unknown read.
+    for (const auto &[property, bit] : std::vector<std::pair<unsigned, unsigned>>{
+             {0x0c, 1}, {0x13, 2}, {0x1f, 3}, {0x1c, 4}}) {
+        const unsigned entry = 0x14 + 4 * property;
+        memory[property_seg * 16 + entry] = bit;
+        store(memory, property_seg, entry + 2, 2);
+    }
+    memory[record_seg * 16 + 0x204] = 0x16; // 0x0c, 0x13 and 0x1c set.
+    require(gateway::inspect_gateway_state(memory, ds)->objects[0].parser_gate_flags ==
+                std::optional<std::uint8_t>(0x0b),
+            "restricted parser gate flags must reflect native live bit masks");
+    store(memory, property_seg, 0x14 + 4 * 0x13 + 2, 0);
+    require(gateway::inspect_gateway_state(memory, ds)->objects[0].parser_gate_flags ==
+                std::optional<std::uint8_t>(0x09),
+            "unsupported native property must be false, not stale from the record byte");
     const std::vector<std::uint8_t> names{5, 0, 'B', 'o', 'o', 'k', 0};
     const auto dump = gateway::debug_objects_tsv(*state, names);
     require(dump.find("Book") != std::string::npos &&

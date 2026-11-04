@@ -1820,7 +1820,7 @@ void dump_guest(uc_engine *uc, State &state, const std::string &prefix) {
     const auto scene = state.debug_scene->view();
     std::ofstream regions(prefix + ".regions.tsv");
     regions << "picture\tregion_file\tentry\tengine_object_id\tname\tx0\ty0\tx1\ty1"
-               "\tvertices\tpresence\n";
+               "\tvertices\tpresence\trestricted_parser_path\n";
     for (const auto &box : scene.boxes) {
         regions << scene.picture << '\t' << scene.region_file << '\t' << scene.entry << '\t'
                 << box.object_id << '\t' << box.name << '\t' << box.x0 << '\t' << box.y0
@@ -1837,7 +1837,9 @@ void dump_guest(uc_engine *uc, State &state, const std::string &prefix) {
         case gateway::DebugHitboxPresence::undisclosed: presence = "undisclosed"; break;
         case gateway::DebugHitboxPresence::absent: presence = "absent"; break;
         }
-        regions << '\t' << presence << '\n';
+        regions << '\t' << presence << '\t'
+                << (!box.restricted_parser_path ? "unknown"
+                    : *box.restricted_parser_path ? "pass" : "blocked") << '\n';
     }
     regions.close();
     std::ofstream metadata(prefix + ".debug.txt");
@@ -1850,7 +1852,9 @@ void dump_guest(uc_engine *uc, State &state, const std::string &prefix) {
              << '\n' << "region_x=scene-local pixels (packed coordinates already doubled)\n"
              << "region_geometry=rectangles or ordered Gateway II polygon vertices\n"
              << "region_object_id=native engine object ID, NOT OBJECT.DAT list index\n"
-             << "region_presence=guest location/disclosure heuristic, NOT native render state\n";
+             << "region_presence=guest location/disclosure heuristic, NOT native render state\n"
+             << "restricted_parser_path=all known ancestry slots pass original parser gate"
+                " IF caller requests restricted traversal; NOT mouse/render state\n";
     if (objects && objects->objects.size() == 734) {
         std::ofstream records(prefix + ".objects.tsv");
         records << gateway::debug_objects_tsv(*objects, state.debug_object_dat);

@@ -37,11 +37,11 @@ int main() try {
     gateway::DebugOverlayData debug;
     debug.scene.region_file = "GATE_002.RGN";
     debug.scene.entry = 15;
-    debug.scene.boxes.push_back({0, 10, 10, 20, 292, "drawer"});
-    debug.scene.boxes.push_back({12, 10, 20, 20, 292, "drawer"});
-    debug.scene.boxes.push_back({30, 10, 36, 20, 222, "wall"});
-    debug.scene.boxes.push_back({40, 10, 50, 20, 0, ""});
-    debug.scene.boxes.push_back({52, 10, 62, 20, 0, ""});
+    debug.scene.boxes.push_back({0, 10, 10, 20, 292, "drawer", {}, {}, {}});
+    debug.scene.boxes.push_back({12, 10, 20, 20, 292, "drawer", {}, {}, {}});
+    debug.scene.boxes.push_back({30, 10, 36, 20, 222, "wall", {}, {}, {}});
+    debug.scene.boxes.push_back({40, 10, 50, 20, 0, "", {}, {}, {}});
+    debug.scene.boxes.push_back({52, 10, 62, 20, 0, "", {}, {}, {}});
     gateway::draw_debug_overlay(pixels, 640, 480, mouse, debug, false, true, 0);
     require(pixels[10 * 640 + 260] == 0xffe6edfa,
             "hovered RGN object contour not drawn at scene x=260");
@@ -82,8 +82,8 @@ int main() try {
     polygon_debug.scene.x_extent = 1;
     polygon_debug.scene.boxes.push_back({0, 0, 20, 20, 42, "polygon",
                                          {{0, 0}, {20, 0}, {20, 10},
-                                          {10, 10}, {10, 20}, {0, 20}}});
-    polygon_debug.scene.boxes.push_back({30, 0, 35, 5, 43, "two-point box"});
+                                          {10, 10}, {10, 20}, {0, 20}}, {}, {}});
+    polygon_debug.scene.boxes.push_back({30, 0, 35, 5, 43, "two-point box", {}, {}, {}});
     std::vector<std::uint32_t> polygon_pixels(640 * 480, 0xff123456);
     gateway::draw_debug_overlay(polygon_pixels, 640, 480, mouse, polygon_debug, false, true, 0);
     require(polygon_pixels[15 * 640 + 265] != 0xff123456 &&

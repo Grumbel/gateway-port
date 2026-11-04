@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <span>
 #include <string>
 #include <utility>
@@ -26,6 +27,10 @@ struct DebugHitbox {
     std::string name;
     std::vector<RegionPoint> polygon{};
     DebugHitboxPresence presence = DebugHitboxPresence::unknown;
+    // Would every enclosing child slot pass the original parser gate *if*
+    // its caller requests restricted traversal? Nullopt: no proven answer.
+    // It is neither a render-state bit nor proof of mouse pickability.
+    std::optional<bool> restricted_parser_path;
 };
 struct DebugSceneView {
     std::string picture;
@@ -66,6 +71,7 @@ class DebugSceneTracker {
     std::map<std::string, Picture> pictures_;
     std::vector<std::string> names_;
     std::vector<DebugHitboxPresence> presence_;
+    std::vector<std::optional<bool>> restricted_parser_paths_;
     std::string active_;
     std::size_t entry_ = 0;
     bool auto_follow_ = true;

@@ -66,7 +66,8 @@ std::optional<DebugGameState> inspect_gateway_state(std::span<const std::uint8_t
             const auto length = byte(m, descriptors, type * 3 - 1);
             if (length < handler_at[type - 1] + 2 || length > 128)
                 return {};
-            DebugObjectState object{std::uint16_t(id), type, segment, offset, 0, 0, 0, {}, {}, {}};
+            DebugObjectState object{std::uint16_t(id), type, segment, offset, 0, 0, 0,
+                                    {}, {}, {}, {}};
             object.raw.reserve(length);
             for (unsigned i = 0; i < length; ++i)
                 object.raw.push_back(byte(m, segment, std::uint16_t(offset + i)));
@@ -86,6 +87,22 @@ std::optional<DebugGameState> inspect_gateway_state(std::span<const std::uint8_t
             } catch (const std::runtime_error &) {
                 // A nonstandard/missing flag table must not invalidate the
                 // otherwise independently validated object-directory scan.
+            }
+            try {
+                // A missing property-table pointer is not a live table with
+                // four cleared flags. In valid tables, unsupported properties
+                // do return false, just like the original query helper.
+                if (word(m, ds, 0x8d56)) {
+                    std::uint8_t bits = 0;
+                    constexpr std::array<std::uint16_t, 4> properties{0x0c, 0x13, 0x1f,
+                                                                      0x1c};
+                    for (unsigned bit = 0; bit < properties.size(); ++bit)
+                        if (object_flag(read, ds, std::uint16_t(id), properties[bit]))
+                            bits |= std::uint8_t(1u << bit);
+                    object.parser_gate_flags = bits;
+                }
+            } catch (const std::runtime_error &) {
+                // Keep an unknown gate when its source bytes could not be read.
             }
             state.objects.push_back(std::move(object));
         }

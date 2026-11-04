@@ -107,10 +107,13 @@ int main(int argc, char **argv) try {
     auto &drawer = live.objects[0x124 - 1];
     drawer.type = 2;
     drawer.location = 0xee;
+    drawer.parser_gate_flags = 0; // All four restricted-slot flags read as false.
     auto &book = live.objects[0x123 - 1];
     book.type = 2;
     book.location = 0x124;
     book.disclosed = false;
+    book.raw.resize(36);
+    book.raw[0x10] = 0; // Indexed child slot zero in the drawer.
     auto &off_room = live.objects[0x130 - 1];
     off_room.type = 2;
     off_room.location = 0xf1;
@@ -118,14 +121,33 @@ int main(int argc, char **argv) try {
     conditional.set_game_state(live);
     require(conditional.view().boxes[0].presence == gateway::DebugHitboxPresence::absent,
             "book inside closed drawer must be excluded from room candidates");
+    require(conditional.view().boxes[0].restricted_parser_path == false,
+            "closed drawer excludes slot zero from a restricted parser traversal");
     conditional.note_read("GATE_102.PIC", 45, 1);
     require(conditional.view().boxes[0].presence == gateway::DebugHitboxPresence::room_candidate,
             "closed drawer itself remains a room candidate");
     conditional.note_read("GATE_102.PIC", 38, 1);
     live.drawer_open = true;
+    drawer.parser_gate_flags = 0x03; // Native 0x0c and 0x13.
     conditional.set_game_state(live);
     require(conditional.view().boxes[0].presence == gateway::DebugHitboxPresence::undisclosed,
             "a still-undisclosed book is not yet a live room target");
+    require(conditional.view().boxes[0].restricted_parser_path == true,
+            "open drawer allows slot zero in a restricted parser traversal");
+    book.raw[0x10] = 1;
+    conditional.set_game_state(live);
+    require(conditional.view().boxes[0].restricted_parser_path == false,
+            "parser gate tests child slot one independently of slot zero");
+    drawer.parser_gate_flags = 0x0b; // Also native 0x1c.
+    conditional.set_game_state(live);
+    require(conditional.view().boxes[0].restricted_parser_path == true,
+            "parent's native 0x1c flag enables child slot one");
+    book.raw[0x10] = 0;
+    drawer.parser_gate_flags.reset();
+    conditional.set_game_state(live);
+    require(!conditional.view().boxes[0].restricted_parser_path,
+            "unreadable parent parser flags must not be treated as cleared");
+    drawer.parser_gate_flags = 0x03;
     book.disclosed = true;
     conditional.set_game_state(live);
     require(conditional.view().boxes[0].presence == gateway::DebugHitboxPresence::room_candidate,
@@ -138,6 +160,8 @@ int main(int argc, char **argv) try {
     conditional.set_game_state(live);
     require(conditional.view().boxes[0].presence == gateway::DebugHitboxPresence::unknown,
             "cyclic location chains must terminate without inventing visibility");
+    require(!conditional.view().boxes[0].restricted_parser_path,
+            "cyclic containment must not invent a restricted parser answer");
     book.location = 0xd3;
     conditional.set_game_state(live);
     require(conditional.view().boxes[0].presence == gateway::DebugHitboxPresence::absent,

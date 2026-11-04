@@ -78,6 +78,35 @@ events and click-selection results in several rooms. In particular, test
 objects already disclosed but subsequently hidden by story flags. Only such
 traces can turn provisional room candidates into confirmed active hitboxes.
 
+### Restricted parser-slot path (separate diagnostic)
+
+The original resident parser at `GATEMAIN.EXE:0x0f11` optionally invokes
+`GATEMAIN.EXE:0x53c4` for each child's indexed slot. That routine is
+**byte-verified and traced** (see [parser candidate iterator](action-dispatch.md#resident-parser-candidate-iterator)),
+but its caller does not always request the restriction. In particular,
+this is **not** the native RGN hit-test or picture-rendering predicate.
+
+Gateway 1 snapshots now also sample properties `0x0c`, `0x13`, `0x1f` and
+`0x1c`. For an object with a validated room ancestry and a known native
+child-slot byte, the debugger calls the existing reconstructed
+`StoryModel::can_enumerate_child_slot` on each ancestor. The result is:
+
+- `pass`: every known slot on the path to the room would pass the restricted
+  candidate iterator;
+- `blocked`: at least one known slot would be skipped if the restriction is
+  enabled;
+- `unknown`: missing flag/slot information, ambiguous ancestry, or a path
+  outside the currently inferred room.
+
+The result appears in an **additional** `restricted_parser_path` column of
+`.regions.tsv` and as `[gate:pass]` or `[gate:blocked]` in the F10 hover label.
+For example, the first-room book at native ID `0x123` changes from `blocked`
+to `pass` when its enclosing drawer `0x124` is opened, if the original slot-0
+conditions are met. This remains an independent indication: the default
+hitbox overlay **does not** hide `blocked` objects on this evidence alone,
+because an unrestricted parser traversal could still enumerate them and
+the rendering rules are not yet recovered.
+
 For the Gateway VGA family, `GATE_1xx.PIC` corresponds to the
 `GATE_0xx.RGN` room data. The debugger registers a pair when DOS opens a
 PIC and subsequently notices reads within a non-XOR room-sized frame. This

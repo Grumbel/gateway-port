@@ -17,6 +17,10 @@ struct DebugObjectState {
     // Native property 7 is set when first-room objects are disclosed. This
     // is *not* yet verified as a universal rendered/on-screen flag.
     std::optional<bool> disclosed;
+    // Four live property bits consumed by the verified restricted parser
+    // child-slot gate (0x0c, 0x13, 0x1f, 0x1c respectively). Nullopt means
+    // the memory read failed, not that these properties are all false.
+    std::optional<std::uint8_t> parser_gate_flags;
 };
 struct DebugGameState {
     std::uint16_t ds = 0;

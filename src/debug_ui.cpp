@@ -206,7 +206,12 @@ void draw_debug_overlay(std::span<std::uint32_t> image, int width, int height,
                 const auto name = found != data.scene.boxes.end() && !found->name.empty()
                                       ? found->name.c_str()
                                       : "(name not resolved)";
-                std::snprintf(info, sizeof info, "Object #%u: %s", id, name);
+                const char *gate = found == data.scene.boxes.end() ||
+                                           !found->restricted_parser_path
+                                       ? ""
+                                       : *found->restricted_parser_path ? " [gate:pass]"
+                                                                         : " [gate:blocked]";
+                std::snprintf(info, sizeof info, "Object #%u: %s%s", id, name, gate);
             }
             rect(image, width, height, 2, height - 44, std::min(width, 310), height - 24,
                  panel, true);

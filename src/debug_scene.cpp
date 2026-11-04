@@ -3,7 +3,9 @@
 
 #include "debug_scene.hpp"
 #include "debug_state.hpp"
+#include "story_model.hpp"
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstdio>
 #include <stdexcept>
@@ -79,6 +81,40 @@ DebugHitboxPresence classify_presence(const DebugGameState &state, std::uint16_t
     }
     return DebugHitboxPresence::unknown;
 }
+
+// This *does not* classify the renderer or the actual mouse target. The
+// resident parser's 0385:0a9a gate only runs when its caller requests a
+// restricted traversal. Walk the known parent chain and ask whether every
+// indexed child slot would pass that particular gate in the live state.
+std::optional<bool> restricted_parser_path(const DebugGameState &state,
+                                           const StoryModel &model, std::uint16_t id,
+                                           std::uint16_t current_room) {
+    if (!current_room || enclosing_room(state, id) != current_room)
+        return {};
+    for (std::size_t depth = 0; depth <= state.objects.size(); ++depth) {
+        const auto *child = object_at(state, id);
+        if (!child || !child->location || !*child->location)
+            return {};
+        const auto *parent = object_at(state, *child->location);
+        if (!parent || parent->type < 1 || parent->type > 8)
+            return {};
+        if (parent->type != 1 && parent->type != 7) {
+            // Only types 2, 7 and 8 have verified child-slot byte accessors.
+            const std::size_t slot_offset = child->type == 2 ? 0x10 : 0x0e;
+            if (child->type != 2 && child->type != 7 && child->type != 8)
+                return {};
+            if (child->raw.size() <= slot_offset || !parent->parser_gate_flags)
+                return {};
+            if (!model.can_enumerate_child_slot(parent->id, std::uint8_t(parent->type),
+                                                 child->raw[slot_offset]))
+                return false;
+        }
+        if (parent->type == 1)
+            return parent->id == current_room;
+        id = parent->id;
+    }
+    return {};
+}
 } // namespace
 
 DebugSceneTracker::DebugSceneTracker(std::vector<std::string> names)
@@ -86,13 +122,31 @@ DebugSceneTracker::DebugSceneTracker(std::vector<std::string> names)
 
 void DebugSceneTracker::set_game_state(const DebugGameState &state) {
     presence_.clear();
+    restricted_parser_paths_.clear();
     if (state.objects.size() != 734 || !object_at(state, player_id))
         return;
     const auto room = enclosing_room(state, player_id);
     presence_.resize(state.objects.size() + 1, DebugHitboxPresence::unknown);
-    if (room)
-        for (std::size_t i = 0; i < state.objects.size(); ++i)
+    restricted_parser_paths_.resize(state.objects.size() + 1);
+    if (room) {
+        StoryModel parser_model;
+        constexpr std::array<std::uint16_t, 4> properties{0x0c, 0x13, 0x1f, 0x1c};
+        for (std::size_t i = 0; i < state.objects.size(); ++i) {
+            const auto &object = state.objects[i];
+            const auto id = std::uint16_t(i + 1);
+            parser_model.define(id);
+            if (!object.parser_gate_flags)
+                continue;
+            for (unsigned bit = 0; bit < properties.size(); ++bit)
+                if (*object.parser_gate_flags & (1u << bit))
+                    parser_model.initial_flag(id, properties[bit]);
+        }
+        for (std::size_t i = 0; i < state.objects.size(); ++i) {
             presence_[i + 1] = classify_presence(state, std::uint16_t(i + 1), room);
+            restricted_parser_paths_[i + 1] =
+                restricted_parser_path(state, parser_model, std::uint16_t(i + 1), room);
+        }
+    }
 }
 
 std::string DebugSceneTracker::canonical_file(std::string file) {
@@ -200,7 +254,9 @@ DebugSceneView DebugSceneTracker::view() const {
         view.boxes.push_back({region.x0, region.y0, region.x1, region.y1, id,
                               id && id < names_.size() ? names_[id] : "", region.polygon,
                               id && id < presence_.size() ? presence_[id]
-                                                           : DebugHitboxPresence::unknown});
+                                                           : DebugHitboxPresence::unknown,
+                              id && id < restricted_parser_paths_.size()
+                                  ? restricted_parser_paths_[id] : std::nullopt});
     }
     return view;
 }
