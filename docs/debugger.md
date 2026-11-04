@@ -78,6 +78,44 @@ events and click-selection results in several rooms. In particular, test
 objects already disclosed but subsequently hidden by story flags. Only such
 traces can turn provisional room candidates into confirmed active hitboxes.
 
+### Headless scene checkpoints
+
+The probe's `--debug-scene` option enables its existing PIC/RGN scene tracker
+even in a **headless** walkthrough. Ordinary memory dumps then also include
+`*.regions.tsv`, `*.objects.tsv`, and `*.debug.txt`, with the live native object
+names, presence classifications, and restricted parser-path annotations.
+It does not alter the guest renderer or decide which hitboxes are clickable.
+
+```sh
+python3 tools/run_walkthrough.py run \
+  tests/fixtures/gateway-opening.walk \
+  --probe /tmp/gateway-port-build/gateway-probe \
+  --data ../gateway-dos --output build/rgn-scenes \
+  --probe-arg=--debug-scene \
+  --probe-arg=--dump-at --probe-arg=16500:build/rgn-scenes/before \
+  --probe-arg=--dump-at --probe-arg=20500:build/rgn-scenes/open \
+  --probe-arg=--dump-at --probe-arg=26500:build/rgn-scenes/taken \
+  --probe-arg=--dump-at --probe-arg=35000:build/rgn-scenes/closed
+```
+
+In the completed original opening replay, all four checkpoints follow
+`GATE_102.PIC` / `GATE_002.RGN` entry 15. The room image changes as the drawer
+opens and closes, and the book moves between drawer, player, and room, but
+the 30 RGN rectangles and the current *heuristic* classifications are identical
+at all four checkpoints. Code-only hooks at the rectangle decoder likewise
+see the same 30 IDs on each redraw. This is concrete evidence that simply
+loading RGN records does **not** apply the original conditional visibility
+logic. It is not evidence of which later routine applies that logic.
+
+Two short headless control replays scheduled a click at guest ms 18000,
+one inside the drawer's extracted rectangle and one on the nearby background.
+Both delivered the click to the emulated mouse state, but neither reached
+the suspected indexed-object routine at `2649:1407` (runtime linear
+`0x27897`); the guest's INT 33h position poll occurred before the clicks.
+Therefore those tests **do not** establish the native click-selection ABI.
+Find a guest execution path that actually consumes the click before using
+mouse tests as an oracle for active hitboxes.
+
 ### Restricted parser-slot path (separate diagnostic)
 
 The original resident parser at `GATEMAIN.EXE:0x0f11` optionally invokes

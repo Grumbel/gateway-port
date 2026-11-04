@@ -1842,8 +1842,11 @@ void dump_guest(uc_engine *uc, State &state, const std::string &prefix) {
     if ((!objects || objects->objects.size() != 734) && !state.debug_other_names &&
         state.debug_object_ds)
         objects = gateway::inspect_gateway_state(memory, *state.debug_object_ds);
-    if (objects && objects->objects.size() == 734)
+    if (objects && objects->objects.size() == 734) {
+        state.debug_scene->set_object_names(
+            gateway::debug_engine_object_names(*objects, state.debug_object_dat));
         state.debug_scene->set_game_state(*objects);
+    }
     const auto scene = state.debug_scene->view();
     std::ofstream regions(prefix + ".regions.tsv");
     regions << "picture\tregion_file\tentry\tengine_object_id\tname\tx0\ty0\tx1\ty1"
@@ -1949,6 +1952,7 @@ int main(int argc, char **argv) {
     bool deterministic_clock = false;
     bool probe_adlib = false;
     bool trace_rgn_dos = false;
+    bool headless_debug_scene = false;
     std::uint16_t trace_object_writes = 0;
     std::set<std::uint32_t> trace_byte_writes;
     unsigned aspect_width = 4, aspect_height = 3;
@@ -1993,7 +1997,7 @@ int main(int argc, char **argv) {
                      "[--hle-overlays] [--trace-video] [--trace-timing] [--adlib-driver] "
                      "[--trace-object-writes OBJECT-HEX] [--trace-byte-write LINEARHEX ...] "
                      "[--aspect-ratio native|W:H] [--ui-layout original|widescreen] "
-                     "[--debug-dir DIR]\n";
+                     "[--debug-dir DIR] [--debug-scene]\n";
     };
     if (argc < 2 || std::string(argv[1]) == "--help") {
         usage();
@@ -2055,7 +2059,9 @@ int main(int argc, char **argv) {
                 usage();
                 return 2;
             }
-        } else if (option == "--trace-rgn-dos" || option == "--trace-rgn-memory")
+        } else if (option == "--debug-scene")
+            headless_debug_scene = true;
+        else if (option == "--trace-rgn-dos" || option == "--trace-rgn-memory")
             trace_rgn_dos = true;
         else if (option == "--trace-research" && i + 1 < argc)
             research_path = argv[++i];
@@ -2541,7 +2547,7 @@ int main(int argc, char **argv) {
                                                          deterministic_clock);
         if (writable_state)
             std::cerr << "DOS state directory: " << state.drive->state_directory() << '\n';
-        if (interactive) {
+        if (interactive || headless_debug_scene) {
             state.debug_scene = std::make_unique<gateway::DebugSceneTracker>();
             const auto executable = gateway::DebugSceneTracker::canonical_file(argv[1]);
             state.debug_other_names = executable.starts_with("S201") ||
