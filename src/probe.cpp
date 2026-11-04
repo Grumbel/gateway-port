@@ -76,6 +76,24 @@ struct State {
     unsigned elapsed_ms = 0;
     unsigned trace_entry_start_ms = 0;
     unsigned trace_entry_end_ms = 3600000;
+    bool trace_rgn_memory = false;
+    struct RgnBufferWatch {
+        uc_hook hook{};
+        std::string file;
+        std::size_t source_offset = 0, begin = 0, end = 0;
+        unsigned loaded_ms = 0;
+    };
+    std::vector<RgnBufferWatch> rgn_buffers;
+    struct RgnConsumer {
+        std::uint64_t hits = 0;
+        unsigned first_ms = 0, last_ms = 0;
+        std::size_t file_offset = 0;
+    };
+    std::map<std::tuple<std::string, std::uint16_t, std::uint16_t>, RgnConsumer> rgn_consumers;
+    unsigned rgn_buffer_loads = 0, rgn_buffer_evictions = 0;
+    std::uint64_t rgn_dropped_accesses = 0;
+    static constexpr std::size_t rgn_watch_limit = 32;
+    static constexpr std::size_t rgn_consumer_limit = 4096;
     std::set<std::uint64_t> watched_bytes;
     bool overlays_active = false;
     std::optional<gateway::RtlinkDirectory> overlays;
@@ -304,6 +322,98 @@ void video_memory(uc_engine *uc, uc_mem_type type, std::uint64_t address, int si
     } catch (const std::exception &e) {
         hardware_failure(uc, state, e.what());
     }
+}
+
+// Instrument only the guest buffers most recently filled by DOS reads from
+// *.RGN. These are candidate *consumers*, not verified hit-test functions:
+// the engine may copy the bytes elsewhere and reuse the DOS read buffer.
+void trace_rgn_memory_read(uc_engine *uc, uc_mem_type type, std::uint64_t address,
+                           int size, std::int64_t, void *opaque) noexcept {
+    auto &state = *static_cast<State *>(opaque);
+    if (type != UC_MEM_READ || size <= 0 || !state.research_trace.is_open() ||
+        state.elapsed_ms < state.trace_entry_start_ms ||
+        state.elapsed_ms >= state.trace_entry_end_ms)
+        return;
+    try {
+        for (auto it = state.rgn_buffers.rbegin(); it != state.rgn_buffers.rend(); ++it) {
+            if (address >= it->end || address + std::uint64_t(size) <= it->begin)
+                continue;
+            const auto cs = reg(uc, UC_X86_REG_CS), ip = reg(uc, UC_X86_REG_IP);
+            const auto touched = std::max<std::uint64_t>(address, it->begin);
+            const auto offset = it->source_offset + std::size_t(touched - it->begin);
+            const auto key = std::tuple{it->file, cs, ip};
+            auto found = state.rgn_consumers.find(key);
+            if (found == state.rgn_consumers.end()) {
+                if (state.rgn_consumers.size() >= State::rgn_consumer_limit) {
+                    ++state.rgn_dropped_accesses;
+                    break;
+                }
+                found = state.rgn_consumers.emplace(key, State::RgnConsumer{}).first;
+            }
+            auto &consumer = found->second;
+            if (!consumer.hits) {
+                consumer.first_ms = state.elapsed_ms;
+                consumer.file_offset = offset;
+            }
+            consumer.last_ms = state.elapsed_ms;
+            ++consumer.hits;
+            // Keep a few register snapshots per instruction. Repeated tight
+            // buffer-copy loops otherwise create enormous trace files.
+            if (consumer.hits <= 3)
+                state.research_trace << "rgn-guest-read ms=" << std::dec << state.elapsed_ms
+                                     << std::hex << " file=" << it->file << " offset=" << offset
+                                     << " address=" << address << " size=" << size
+                                     << " cs=" << cs << " ip=" << ip
+                                     << " ax=" << reg(uc, UC_X86_REG_AX)
+                                     << " bx=" << reg(uc, UC_X86_REG_BX)
+                                     << " cx=" << reg(uc, UC_X86_REG_CX)
+                                     << " dx=" << reg(uc, UC_X86_REG_DX) << '\n';
+            break; // Overlapping hooks must not double-count one guest read.
+        }
+    } catch (const std::exception &e) {
+        hardware_failure(uc, state, e.what());
+    }
+}
+
+void note_rgn_dos_read(uc_engine *uc, State &state, std::string file,
+                       std::size_t source, std::size_t begin, std::size_t size) {
+    if (!state.trace_rgn_memory || !size)
+        return;
+    const auto end = begin + size;
+    // An ordinary DOS read into the same memory invalidates the old watch.
+    // Guest-side writes are not monitored, so post-copy observations remain
+    // leads for static analysis, never proof a buffer still contains RGN data.
+    for (auto it = state.rgn_buffers.begin(); it != state.rgn_buffers.end();) {
+        if (begin < it->end && end > it->begin) {
+            check(uc_hook_del(uc, it->hook));
+            ++state.rgn_buffer_evictions;
+            it = state.rgn_buffers.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    file = gateway::DebugSceneTracker::canonical_file(std::move(file));
+    if (!file.ends_with(".RGN") || end > 0xa0000)
+        return;
+    if (state.rgn_buffers.size() >= State::rgn_watch_limit) {
+        check(uc_hook_del(uc, state.rgn_buffers.front().hook));
+        state.rgn_buffers.erase(state.rgn_buffers.begin());
+        ++state.rgn_buffer_evictions;
+    }
+    State::RgnBufferWatch watch;
+    watch.file = std::move(file);
+    watch.source_offset = source;
+    watch.begin = begin;
+    watch.end = end;
+    watch.loaded_ms = state.elapsed_ms;
+    check(uc_hook_add(uc, &watch.hook, UC_HOOK_MEM_READ,
+                      reinterpret_cast<void *>(trace_rgn_memory_read), &state,
+                      begin, end - 1));
+    state.rgn_buffers.push_back(watch);
+    ++state.rgn_buffer_loads;
+    state.research_trace << "rgn-buffer ms=" << std::dec << state.elapsed_ms << std::hex
+                         << " file=" << watch.file << " offset=" << source
+                         << " address=" << begin << " size=" << size << '\n';
 }
 
 void text_mode_state(uc_engine *uc, State &state, bool clear) {
@@ -1669,6 +1779,9 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
                 check(uc_mem_write(uc, address, buffer.data(), count));
                 // RTLink also loads executable overlays through ordinary DOS reads.
                 check(uc_ctl_remove_cache(uc, address, address + count));
+                if (state.trace_rgn_memory)
+                    note_rgn_dos_read(uc, state, state.file_names.at(reg(uc, UC_X86_REG_BX)),
+                                      source, address, count);
             }
             set(uc, UC_X86_REG_AX, count);
             set(uc, UC_X86_REG_FLAGS, reg(uc, UC_X86_REG_FLAGS) & ~1);
@@ -1921,6 +2034,7 @@ int main(int argc, char **argv) {
     bool trace_timing = false;
     bool deterministic_clock = false;
     bool probe_adlib = false;
+    bool trace_rgn_memory = false;
     std::uint16_t trace_object_writes = 0;
     std::set<std::uint32_t> trace_byte_writes;
     unsigned aspect_width = 4, aspect_height = 3;
@@ -1957,7 +2071,8 @@ int main(int argc, char **argv) {
                      "[--trace-rtlink-events FILE --trace-rtlink-target SECTION:CS:IP ... "
                      "--trace-rtlink-after-ms N] "
                      "[--trace-research FILE --trace-entry HEX ... "
-                     "--trace-entry-window START_MS:END_MS] [--key-at MS:BIOSHEX ...] "
+                     "--trace-entry-window START_MS:END_MS] [--trace-rgn-memory] "
+                     "[--key-at MS:BIOSHEX ...] "
                      "[--research-poke16-at MS:LINEARHEX:OLDHEX:NEWHEX ...] "
                      "[--deterministic-clock] "
                      "[--object-flags verify|hle | --object-state verify|hle] [--verify-overlays] "
@@ -2026,7 +2141,9 @@ int main(int argc, char **argv) {
                 usage();
                 return 2;
             }
-        } else if (option == "--trace-research" && i + 1 < argc)
+        } else if (option == "--trace-rgn-memory")
+            trace_rgn_memory = true;
+        else if (option == "--trace-research" && i + 1 < argc)
             research_path = argv[++i];
         else if (option == "--trace-object-writes" && i + 1 < argc) {
             const std::string value = argv[++i];
@@ -2365,8 +2482,14 @@ int main(int argc, char **argv) {
         usage();
         return 2;
     }
-    if (trace_entry_window_used && (entry_addresses.empty() || research_path.empty())) {
-        std::cerr << "--trace-entry-window requires --trace-research and --trace-entry\n";
+    if (trace_entry_window_used &&
+        (research_path.empty() || (entry_addresses.empty() && !trace_rgn_memory))) {
+        std::cerr << "--trace-entry-window requires --trace-research and --trace-entry "
+                     "or --trace-rgn-memory\n";
+        return 2;
+    }
+    if (trace_rgn_memory && research_path.empty()) {
+        std::cerr << "--trace-rgn-memory requires --trace-research for an audit trail\n";
         return 2;
     }
     if (!trace_byte_writes.empty() && research_path.empty()) {
@@ -2407,6 +2530,7 @@ int main(int argc, char **argv) {
         state.probe_adlib = probe_adlib;
         state.trace_entry_start_ms = trace_entry_start_ms;
         state.trace_entry_end_ms = trace_entry_end_ms;
+        state.trace_rgn_memory = trace_rgn_memory;
         state.watched_bytes.insert(trace_byte_writes.begin(), trace_byte_writes.end());
         state.rtlink_event_targets = rtlink_event_targets;
         state.rtlink_event_after_ms = rtlink_event_after_ms;
@@ -2975,6 +3099,23 @@ int main(int argc, char **argv) {
         if (trace_object_writes && !state.object_write_watch)
             throw std::runtime_error("watched Gateway object was never initialized");
         if (state.research_trace.is_open()) {
+            if (state.trace_rgn_memory) {
+                state.research_trace << "rgn-summary buffers=" << std::dec
+                                     << state.rgn_buffer_loads << " evictions="
+                                     << state.rgn_buffer_evictions << " active="
+                                     << state.rgn_buffers.size() << " consumers="
+                                     << state.rgn_consumers.size() << " dropped="
+                                     << state.rgn_dropped_accesses << '\n';
+                for (const auto &[key, consumer] : state.rgn_consumers) {
+                    const auto &[file, cs, ip] = key;
+                    state.research_trace << "rgn-consumer file=" << file << std::hex
+                                         << " cs=" << cs << " ip=" << ip
+                                         << " first_offset=" << consumer.file_offset << std::dec
+                                         << " hits=" << consumer.hits
+                                         << " first_ms=" << consumer.first_ms
+                                         << " last_ms=" << consumer.last_ms << '\n';
+                }
+            }
             state.research_trace.close();
             if (!state.research_trace)
                 throw std::runtime_error("cannot write research trace");

@@ -107,6 +107,41 @@ hitbox overlay **does not** hide `blocked` objects on this evidence alone,
 because an unrestricted parser traversal could still enumerate them and
 the rendering rules are not yet recovered.
 
+### Find the original code that consumes RGN data
+
+The probe can watch guest memory addresses populated by DOS `read` operations
+on `*.RGN` files. A bounded memory-read hook on each such buffer logs the
+first three reads per consuming CS:IP and totals all later reads at the same
+instruction. It is opt-in: normal gameplay has no extra RGN read hooks.
+
+```sh
+xvfb-run -a python3 tools/run_walkthrough.py run \
+  tests/fixtures/gateway-opening.walk \
+  --probe /tmp/gateway-port-build/gateway-probe \
+  --data ../gateway-dos \
+  --output build/rgn-memory-opening \
+  --probe-arg=--trace-rgn-memory
+
+python3 tools/summarize_rgn_memory_trace.py \
+  build/rgn-memory-opening/native.trace
+```
+
+The trace has `rgn-buffer` (DOS file offset and destination address),
+`rgn-guest-read` (consumer CS:IP, register snapshot and file offset), and
+`rgn-consumer` census records. Use `--trace-entry-window START_MS:END_MS`
+with `--trace-rgn-memory` to isolate a later click/command interval; the
+buffer hooks remain registered even when the read occurred before that window.
+The report's CS:IP values must be mapped to the correct loaded EXE/overlay
+section and verified against instruction bytes before naming a routine.
+
+**Limits:** A consumer can be a copy or resource decoder rather than a mouse
+picker. This tracer follows the original DOS-read buffer, not arbitrary
+guest-side copies. DOS reads that overwrite a watched range revoke the old
+hook, but guest-side writes may still reuse the buffer unobserved. A zero
+consumer count therefore neither disproves RGN use nor proves that the
+picker ignores the region file. It is a lead for native disassembly and
+controlled mouse clicks, not the final visibility predicate.
+
 For the Gateway VGA family, `GATE_1xx.PIC` corresponds to the
 `GATE_0xx.RGN` room data. The debugger registers a pair when DOS opens a
 PIC and subsequently notices reads within a non-XOR room-sized frame. This
