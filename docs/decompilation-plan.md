@@ -665,6 +665,19 @@ account for all 75 direct calls: 49 distinct overlay tables/416 records and
 [the room-condition census](room-your-quarters.md#coverage-of-native-region-condition-callers).
 These are candidate interaction predicates, not established paint predicates.
 
+2026-11-04 picture-layer analysis (§3.6 still in progress): found the separate
+14-byte native picture predicate at `ovl:0x272c` and scene-layer state update
+at `ovl:0x2827`, invoked by RTLink `1c24:425b`. Recovered all 81 direct
+calls: 49 distinct overlay picture tables/223 records and 21 resident EXE
+records, 244 unique source records. All 21 resident records match the retained
+guest RAM after accounting for two relocated callback segments. Your Quarters
+layer 0 selects `GATE_102.PIC` frame 16 with drawer-open flag 0x0c; the native
+DS:adf8 cache alternates 0/1/1/0 and its 48×65 XOR area changes by 2,751
+pixels on each open/close transition, independently cross-checked against
+original framebuffers. Added read-only inspector, synthetic and optional
+original-fixture tests, and [picture-condition documentation](picture-conditions.md).
+General native predicate replacement and SDL3 scene rendering remain open.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |

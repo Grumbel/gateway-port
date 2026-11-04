@@ -209,6 +209,13 @@ potential region-condition records.** This does not prove those conditions
 execute in every playthrough, nor that the image renderer uses the same
 predicates. It supplies the original rule *inputs* for later behavioral work.
 
+The distinct **14-byte visual layer conditions** have now also been located:
+the room's adjacent table at `ovl:0x053d80` selects an XOR picture layer for
+an open drawer and two other conditional picture changes. The original cache
+and the before/open/taken/closed pixels confirm the drawer's visual update;
+see [conditional picture layers](picture-conditions.md) for the independent
+record layout, predicate, call-site census, and screenshot correlation.
+
 ## Drawer: second native handler, same world-state flag
 
 The separate drawer (`0x124`) handler begins at **`0x51a78`** (section 38,

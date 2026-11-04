@@ -164,6 +164,15 @@ a native conditional-hotspot model once the callbacks have executable
 equivalents; it does **not** justify hiding rendered assets solely from the
 rectangle table.
 
+The separate **scene painting** mechanism has now been recovered as well:
+`GATEMAIN.OVL:0x002827` updates a cached set of 14-byte conditional PIC
+layers, using `ovl:0x00272c` to check their predicates. Its first-room table
+drives the XOR drawer graphic independently of the hotbox table. See
+[conditional picture layers](picture-conditions.md) for the 81-call census,
+correlation with the original framebuffers, and the implications for a future
+native scene model. The debugger's raw RGN overlay remains a diagnostic view,
+not a proxy for this source picture-layer state.
+
 Two short headless control replays scheduled a click at guest ms 18000,
 one inside the drawer's extracted rectangle and one on the nearby background.
 Both delivered the click to the emulated mouse state, but neither reached
