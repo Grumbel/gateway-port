@@ -116,6 +116,8 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/visibility_trace_tests.py)
     add_test(NAME story-rgn-memory-trace COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/rgn_memory_trace_tests.py)
+    add_test(NAME story-region-conditions COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/region_condition_tests.py)
     add_test(NAME story-visibility-correlation COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/visibility_correlation_tests.py)
     add_test(NAME story-object-write-trace COMMAND ${Python3_EXECUTABLE}

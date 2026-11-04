@@ -144,6 +144,26 @@ build/headless-local/debug_scene_tests ../gateway-dos` (replace the local
 test-binary path as appropriate). This is an optional private-fixture test;
 ordinary synthetic tests do not require original data.
 
+The **original source of this alternation** is now identified as a
+three-record conditional region table at `ovl:0x053daa (section 38)`. Two
+far callbacks check the drawer's open property `0x0c` and disable opposite
+slots; the third record conditionally disables the debit card when it is no
+longer related to the desk. The shared evaluator is at
+`ovl:0x002680 (section 0)`, and the picker itself maps to
+`GATE.RTL:0x014186`. See
+[the Your Quarters conditional-region analysis](room-your-quarters.md#native-conditional-mouse-region-rules)
+for the byte layout, stable source offsets, proof, and the reusable
+`tools/inspect_region_conditions.py` inspector. This establishes a general
+conditional **picker** mechanism, not a general image-rendering predicate.
+The inspector can also census the entire original overlay with `--scan-calls`
+and a version-verified `--exe`: all 75 direct evaluator calls map to 49
+overlay condition tables (416 records) and 17 resident single-record tables.
+See [the complete call census](room-your-quarters.md#coverage-of-native-region-condition-callers)
+for the exact provenance and command line. The data is suitable for building
+a native conditional-hotspot model once the callbacks have executable
+equivalents; it does **not** justify hiding rendered assets solely from the
+rectangle table.
+
 Two short headless control replays scheduled a click at guest ms 18000,
 one inside the drawer's extracted rectangle and one on the nearby background.
 Both delivered the click to the emulated mouse state, but neither reached

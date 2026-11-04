@@ -113,6 +113,102 @@ The text arguments are **text pointers**, not confirmed object-name IDs. The
 two objects queried for property 9 appear to influence the plant/picture
 substitutions, but the precise meaning of their conditions remains unresolved.
 
+## Native conditional mouse-region rules
+
+The room also has **three ten-byte conditional rectangle records**, confirmed
+from original section-38 data at `ovl:0x053daa`–`0x053dc7`. Its event branch
+at `ovl:0x051507` passes the three records to the shared section-0 routine
+at **`ovl:0x002680 (section 0)`**. The native runtime call goes through
+RTLink trampoline `2c24:4251`; these runtime addresses are from the pinned
+opening replay, while all `ovl:` offsets are stable original file offsets.
+
+Each record contains five little-endian words: engine object ID, optional
+related object ID, picker slot number, callback IP, callback segment. The
+shared routine conditionally **sets the native picker's `0x80` disabled bit**:
+
+- When the related ID is nonzero, it first calls the original immediate
+  relation predicate `exe:0x00254a` with `(object, related)`. A missing
+  relation disables the matching rectangle.
+- If a far callback is present, a **nonzero** callback result disables the
+  matching rectangle. A zero result leaves it unchanged.
+- A nonzero slot selects precisely that slot in the active 35-entry picker
+  group; slot zero instead disables **every** slot with the matching object ID.
+
+The three verified records are:
+
+| Source | Object | Selector | Conditional disable |
+| --- | --- | --- | --- |
+| `ovl:0x053daa` | `0x124` drawer | Slot 29 (larger box) | Callback `ovl:0x05149b` tests that drawer property `0x0c` is **clear** |
+| `ovl:0x053db4` | `0x124` drawer | Slot 28 (smaller box) | Callback `ovl:0x05148a` tests that drawer property `0x0c` is **set** |
+| `ovl:0x053dbe` | `0x126` debit card | All slots for this object | Disable if its immediate relation to desk `0x125` is missing |
+
+The first two callbacks are genuine far-returning functions in section 38,
+linked at `39d8:001b` and `39d8:000a`. Both query
+`(object=0x124, property=0x0c)` through the resident flag predicate;
+the former inverts the Boolean and the latter returns it directly.
+These functions do **not** draw the drawer. They choose which of its two
+overlapping click rectangles the native picker is allowed to consider.
+
+Independent guest RAM checkpoints confirm that native slot 29/index 55 is
+disabled when closed and slot 28/index 54 when open. The debit-card
+slot 30/index 56 remains enabled in these checkpoints. The original
+rectangle picker checks the flag at stable `GATE.RTL:0x014186`
+(runtime `2649:0541`), and its single-slot clear/set helpers are at
+`GATE.RTL:0x014d93` and `0x014dc5`. There are also object-wide clear/set
+helpers at `GATE.RTL:0x014d0f` and `0x014d51`. These source identities
+were checked by matching unrelocated RTL instruction bytes to the opening
+RAM image at a constant file-to-runtime displacement.
+
+Reproduce the read-only table and live picker correlation, with `gateway-overlay`
+from the build directory:
+
+~~~sh
+gateway-overlay ../gateway-dos/GATEMAIN.EXE ../gateway-dos/GATEMAIN.OVL |
+  python3 tools/inspect_region_conditions.py ../gateway-dos/GATEMAIN.OVL \
+    --manifest - --section 38 --image-offset 0x292a --count 3 \
+    --snapshot-prefix build/rgn-scenes-v026/before
+~~~
+
+The snapshot option is optional; it requires previously recorded private RAM
+files. Running the inspector on other tables requires independently verified
+section-relative table offsets and record counts. **Picker suppression is not
+equivalent to proof that an object was or was not painted in the room image**;
+the asset compositing/render predicate remains a separate research target.
+
+### Coverage of native region-condition callers
+
+The room-specific table above is not an isolated feature. An original-file
+scan finds **75 direct calls** to the same `ovl:0x2680` evaluator:
+
+- **58 overlay-immediate calls** refer to 49 distinct overlay tables,
+  containing 416 ten-byte records in 28 sections. Of those records, 338
+  name callbacks and 217 require object relationships.
+- **17 resident-DS calls** each pass one record from `GATEMAIN.EXE`'s
+  initialized data segment: 17 additional records, 16 relation tests and
+  one callback (`1c24:4495`). None of the 17 is an overlay-backed table.
+
+The second compiler form pushes `DS` alongside a static data-segment offset.
+For the pinned executable SHA-256
+`1785bf60f196836c0542dafa4a00085f6b1f3837992f2cc14da12503bc02abcb`,
+the static source address is `GATEMAIN.EXE:0x1ba93 + DS_offset`.
+All 17 recovered records were checked against retained original RAM images;
+16 match verbatim, and the resident callback's segment is relocated from
+`1c24` to `2c24` at runtime. Other EXE versions are rejected by the inspector
+before this mapping can be applied.
+
+Run the complete original-source call census, optionally with `--details`:
+
+~~~sh
+gateway-overlay ../gateway-dos/GATEMAIN.EXE ../gateway-dos/GATEMAIN.OVL |
+  python3 tools/inspect_region_conditions.py ../gateway-dos/GATEMAIN.OVL \
+    --manifest - --scan-calls --exe ../gateway-dos/GATEMAIN.EXE
+~~~
+
+**All 75 direct calls are thus structurally explained, comprising 433 distinct
+potential region-condition records.** This does not prove those conditions
+execute in every playthrough, nor that the image renderer uses the same
+predicates. It supplies the original rule *inputs* for later behavioral work.
+
 ## Drawer: second native handler, same world-state flag
 
 The separate drawer (`0x124`) handler begins at **`0x51a78`** (section 38,

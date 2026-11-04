@@ -642,6 +642,29 @@ annotation with real-snapshot and synthetic tests; retained the raw RGN mode.
 See [debugger.md](debugger.md). This does not establish general picture
 visibility semantics or complete §3.6 deterministic golden verification.
 
+2026-11-04 further picker analysis (phase 3.6 remains in progress): recovered
+the stable source identity of the native picker (GATE.RTL:0x14186), four
+active-region toggling helpers (GATE.RTL:0x14d0f–0x14dc5),
+and the common conditional-region rule evaluator
+(ovl:0x2680, section 0). The three ten-byte rules at
+ovl:0x53daa (section 38) link drawer open-state callbacks with the two
+alternating rectangles and a debit-card/desk relation gate. Cross-checked
+all three records against four earlier native RAM checkpoints. Added an
+original-file, section-qualified read-only inspector with synthetic tests
+and documented [Your Quarters](room-your-quarters.md#native-conditional-mouse-region-rules).
+No story service marked verified and no graphics visibility claim made.
+
+2026-11-04 conditional-region census: found both compiler calling forms to
+the same section-0 evaluator, including 17 calls that pass one static resident
+DS record. On the pinned original EXE, initialized DS offsets map to
+`exe:0x1ba93 + DS_offset`; 16 records match native snapshots byte-for-byte,
+and one matches after the original loader's segment relocation. Extended the
+read-only source inspector and its synthetic/optional original-file tests to
+account for all 75 direct calls: 49 distinct overlay tables/416 records and
+17 resident records, 433 total. See
+[the room-condition census](room-your-quarters.md#coverage-of-native-region-condition-callers).
+These are candidate interaction predicates, not established paint predicates.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |
