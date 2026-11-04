@@ -74,6 +74,8 @@ struct State {
     std::string debug_status;
     std::ofstream research_trace;
     unsigned elapsed_ms = 0;
+    unsigned trace_entry_start_ms = 0;
+    unsigned trace_entry_end_ms = 3600000;
     std::set<std::uint64_t> watched_bytes;
     bool overlays_active = false;
     std::optional<gateway::RtlinkDirectory> overlays;
@@ -662,6 +664,9 @@ void byte_write_hook(uc_engine *uc, uc_mem_type, std::uint64_t address, int size
 // Opt-in entry snapshots: stack words retain far return addresses and arguments.
 void trace_entry(uc_engine *uc, std::uint64_t address, std::uint32_t, void *opaque) noexcept {
     auto &state = *static_cast<State *>(opaque);
+    if (state.elapsed_ms < state.trace_entry_start_ms ||
+        state.elapsed_ms >= state.trace_entry_end_ms)
+        return;
     try {
         auto &out = state.research_trace;
         out << "entry ms=" << std::dec << state.elapsed_ms << std::hex << " pc=" << address
@@ -1905,6 +1910,9 @@ int main(int argc, char **argv) {
     std::set<std::uint32_t> trace_byte_writes;
     unsigned aspect_width = 4, aspect_height = 3;
     std::vector<std::uint64_t> entry_addresses;
+    unsigned trace_entry_start_ms = 0;
+    unsigned trace_entry_end_ms = 3600000;
+    bool trace_entry_window_used = false;
     std::multimap<unsigned, std::uint16_t> scheduled_keys;
     std::multimap<unsigned, std::string> scheduled_dumps;
     std::set<std::string> scheduled_dump_prefixes;
@@ -1932,7 +1940,8 @@ int main(int argc, char **argv) {
                      "[--mouse-click-at MS:X:Y ...] "
                      "[--trace-rtlink-events FILE --trace-rtlink-target SECTION:CS:IP ... "
                      "--trace-rtlink-after-ms N] "
-                     "[--trace-research FILE --trace-entry HEX ...] [--key-at MS:BIOSHEX ...] "
+                     "[--trace-research FILE --trace-entry HEX ... "
+                     "--trace-entry-window START_MS:END_MS] [--key-at MS:BIOSHEX ...] "
                      "[--research-poke16-at MS:LINEARHEX:OLDHEX:NEWHEX ...] "
                      "[--deterministic-clock] "
                      "[--object-flags verify|hle | --object-state verify|hle] [--verify-overlays] "
@@ -2140,6 +2149,27 @@ int main(int argc, char **argv) {
             rtlink_sequence_path = argv[++i];
         else if (option == "--trace-rtlink-events" && i + 1 < argc)
             rtlink_events_path = argv[++i];
+        else if (option == "--trace-entry-window" && i + 1 < argc) {
+            trace_entry_window_used = true;
+            const std::string_view value = argv[++i];
+            const auto colon = value.find(':');
+            bool valid = colon != std::string_view::npos && colon > 0 &&
+                         colon + 1 < value.size();
+            if (valid) {
+                const auto first = std::from_chars(value.data(), value.data() + colon,
+                                                   trace_entry_start_ms);
+                const auto last = std::from_chars(value.data() + colon + 1,
+                                                  value.data() + value.size(), trace_entry_end_ms);
+                valid = first.ec == std::errc{} && first.ptr == value.data() + colon &&
+                        last.ec == std::errc{} && last.ptr == value.data() + value.size() &&
+                        trace_entry_start_ms < trace_entry_end_ms &&
+                        trace_entry_end_ms <= 3600000;
+            }
+            if (!valid) {
+                usage();
+                return 2;
+            }
+        }
         else if (option == "--trace-rtlink-after-ms" && i + 1 < argc) {
             rtlink_event_after_ms_used = true;
             const std::string_view value = argv[++i];
@@ -2308,6 +2338,10 @@ int main(int argc, char **argv) {
         usage();
         return 2;
     }
+    if (trace_entry_window_used && (entry_addresses.empty() || research_path.empty())) {
+        std::cerr << "--trace-entry-window requires --trace-research and --trace-entry\n";
+        return 2;
+    }
     if (!trace_byte_writes.empty() && research_path.empty()) {
         std::cerr << "--trace-byte-write requires --trace-research for an audit trail\n";
         return 2;
@@ -2344,6 +2378,8 @@ int main(int argc, char **argv) {
             state.clock = gateway::DosClock::deterministic();
         state.trace_video = trace_video;
         state.probe_adlib = probe_adlib;
+        state.trace_entry_start_ms = trace_entry_start_ms;
+        state.trace_entry_end_ms = trace_entry_end_ms;
         state.watched_bytes.insert(trace_byte_writes.begin(), trace_byte_writes.end());
         state.rtlink_event_targets = rtlink_event_targets;
         state.rtlink_event_after_ms = rtlink_event_after_ms;
