@@ -119,6 +119,31 @@ gateway-run ../201/S201.EXE --aspect-ratio 16:10
 The image is scaled by SDL; the guest framebuffer resolution and DOS mouse
 coordinates remain unchanged. This option does not change headless dump sizes.
 
+### Experimental widescreen UI shell
+
+The original-code runtime has an opt-in SDL3-renderer widescreen layout:
+
+```sh
+gateway-run ../gateway-dos/GATE.EXE --ui-layout widescreen
+```
+
+It preserves the complete original 4:3 game framebuffer in the middle, without
+cropping or stretching it, and uses any sufficient left/right window margins
+for native action labels and a provisional scene-object list. Mouse coordinates,
+cursor drawing, debugger clicks and window resizing are mapped through the same
+computed scene rectangle. Narrow windows automatically hide the side panels.
+The original view remains the default (`--ui-layout original`). No OpenGL API
+is used: the shell uses SDL3's built-in 2D renderer.
+
+This is an early **noninteractive UI preview**, not a replacement for the
+in-game action menu. The action names are placeholders, while scene-object
+names come from the debugger's best-effort RGN/PIC correlation and can be stale
+or incomplete. The temporary 8x8 SDL debug font will be replaced with a
+scalable font renderer. Native save/load screens with room thumbnails,
+command completion, maps, and extracted/upscaled room-image composition are
+planned but not implemented by this option. The original DOS save/restore and
+input continue to work in the center framebuffer.
+
 ### Ghidra: decompile the original Gateway logic
 
 The optional `nix develop .#ghidra` shell provides Ghidra without adding its

@@ -1909,6 +1909,7 @@ int main(int argc, char **argv) {
     std::uint16_t trace_object_writes = 0;
     std::set<std::uint32_t> trace_byte_writes;
     unsigned aspect_width = 4, aspect_height = 3;
+    bool wide_ui = false;
     std::vector<std::uint64_t> entry_addresses;
     unsigned trace_entry_start_ms = 0;
     unsigned trace_entry_end_ms = 3600000;
@@ -1947,7 +1948,8 @@ int main(int argc, char **argv) {
                      "[--object-flags verify|hle | --object-state verify|hle] [--verify-overlays] "
                      "[--hle-overlays] [--trace-video] [--trace-timing] [--adlib-driver] "
                      "[--trace-object-writes OBJECT-HEX] [--trace-byte-write LINEARHEX ...] "
-                     "[--aspect-ratio native|W:H] [--debug-dir DIR]\n";
+                     "[--aspect-ratio native|W:H] [--ui-layout original|widescreen] "
+                     "[--debug-dir DIR]\n";
     };
     if (argc < 2 || std::string(argv[1]) == "--help") {
         usage();
@@ -1964,7 +1966,17 @@ int main(int argc, char **argv) {
             trace_timing = true;
         else if (option == "--probe-adlib" || option == "--adlib-driver")
             probe_adlib = true;
-        else if (option == "--aspect-ratio" && i + 1 < argc) {
+        else if (option == "--ui-layout" && i + 1 < argc) {
+            const std::string value = argv[++i];
+            if (value == "widescreen")
+                wide_ui = true;
+            else if (value == "original")
+                wide_ui = false;
+            else {
+                usage();
+                return 2;
+            }
+        } else if (option == "--aspect-ratio" && i + 1 < argc) {
             const std::string value = argv[++i];
             if (value == "native") {
                 aspect_width = aspect_height = 0;
@@ -2618,7 +2630,8 @@ int main(int argc, char **argv) {
         unsigned last_debug_inspection = 0;
         if (interactive)
             host = std::make_unique<gateway::SdlHost>(
-                gateway::DisplayAspect{aspect_width, aspect_height});
+                gateway::DisplayAspect{aspect_width, aspect_height},
+                wide_ui ? gateway::UiLayoutMode::widescreen : gateway::UiLayoutMode::original);
 #endif
         bool requested_stop = false;
         uc_err status = UC_ERR_OK;
@@ -2811,7 +2824,7 @@ int main(int argc, char **argv) {
                 text_snapshot(engine.uc, state);
                 auto samples = state.opl.render(768);
                 state.pit.mix_speaker(samples);
-                if (host->debug_open() || host->hitboxes_visible()) {
+                if (host->debug_open() || host->hitboxes_visible() || host->widescreen_ui()) {
                     if (state.debug_scene)
                         debug_overlay.scene = state.debug_scene->view();
                     debug_overlay.guest_ms = state.elapsed_ms;
@@ -2821,9 +2834,8 @@ int main(int argc, char **argv) {
                                   reg(engine.uc, UC_X86_REG_CS), reg(engine.uc, UC_X86_REG_IP),
                                   reg(engine.uc, UC_X86_REG_DS), state.elapsed_ms);
                     debug_overlay.registers = registers;
-                    if ((host->debug_open() || host->hitboxes_visible()) &&
-                        (last_debug_inspection == 0 ||
-                         state.elapsed_ms - last_debug_inspection >= 250)) {
+                    if (last_debug_inspection == 0 ||
+                        state.elapsed_ms - last_debug_inspection >= 250) {
                         last_debug_inspection = state.elapsed_ms;
                         std::vector<std::uint8_t> memory(1024 * 1024);
                         check(uc_mem_read(engine.uc, 0, memory.data(), memory.size()));

@@ -16,9 +16,10 @@ namespace gateway {
 struct DisplayAspect {
     unsigned width = 4, height = 3; // Zero width selects native square pixels.
 };
+enum class UiLayoutMode { original, widescreen };
 class SdlHost {
   public:
-    explicit SdlHost(DisplayAspect aspect = {});
+    explicit SdlHost(DisplayAspect aspect = {}, UiLayoutMode layout = UiLayoutMode::original);
     ~SdlHost();
     SdlHost(const SdlHost &) = delete;
     SdlHost &operator=(const SdlHost &) = delete;
@@ -28,6 +29,7 @@ class SdlHost {
                  const DebugOverlayData &debug = {});
     bool debug_open() const { return debug_open_; }
     bool hitboxes_visible() const { return hitboxes_visible_; }
+    bool widescreen_ui() const { return layout_ == UiLayoutMode::widescreen; }
     DebugMenuPosition debug_position() const { return debug_position_; }
 
   private:
@@ -38,8 +40,10 @@ class SdlHost {
     int width_ = 0, height_ = 0;
     int presentation_height_ = 0;
     DisplayAspect aspect_;
+    UiLayoutMode layout_;
     bool fullscreen_ = false;
     bool debug_open_ = false, hitboxes_visible_ = false;
+    bool pointer_over_panel_ = false;
     DebugMenuPosition debug_position_;
     bool debug_dragging_ = false;
     int debug_drag_offset_x_ = 0, debug_drag_offset_y_ = 0;

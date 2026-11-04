@@ -4,8 +4,10 @@
 #include "sdl_host.hpp"
 #include "mouse_cursor.hpp"
 #include "opl.hpp"
+#include "ui_layout.hpp"
 #include <SDL3/SDL.h>
 #include <algorithm>
+#include <set>
 #include <stdexcept>
 namespace gateway {
 namespace {
@@ -121,11 +123,64 @@ std::uint16_t bios_key(const SDL_KeyboardEvent &event) {
     }
     return (scan << 8) | ascii;
 }
+SDL_FRect float_rect(UiRect value) {
+    return {float(value.x), float(value.y), float(value.width), float(value.height)};
+}
+void panel_text(SDL_Renderer *renderer, int x, int y, int max_width,
+                const std::string &value) {
+    if (max_width < 8)
+        return;
+    // SDL's built-in debug font is a temporary bootstrap. A proportional
+    // font renderer will replace this when native story text is available.
+    const int max_chars = max_width / 8;
+    SDL_RenderDebugText(renderer, float(x), float(y),
+                        value.substr(0, std::size_t(max_chars)).c_str());
+}
+void draw_wide_panel(SDL_Renderer *renderer, const UiRect &panel, bool left,
+                     const DebugOverlayData &debug) {
+    const auto rect = float_rect(panel);
+    checked(SDL_SetRenderDrawColor(renderer, 19, 27, 37, 255));
+    checked(SDL_RenderFillRect(renderer, &rect));
+    checked(SDL_SetRenderDrawColor(renderer, 107, 147, 163, 255));
+    checked(SDL_RenderLine(renderer, float(left ? panel.x + panel.width - 1 : panel.x),
+                           float(panel.y), float(left ? panel.x + panel.width - 1 : panel.x),
+                           float(panel.y + panel.height)));
+
+    const int x = panel.x + 12;
+    const int max_width = panel.width - 24;
+    checked(SDL_SetRenderDrawColor(renderer, 192, 211, 220, 255));
+    if (left) {
+        panel_text(renderer, x, 18, max_width, "GATEWAY");
+        panel_text(renderer, x, 46, max_width, "ACTIONS");
+        constexpr const char *actions[]{"LOOK", "TAKE", "OPEN", "CLOSE", "USE", "TALK", "GO"};
+        for (int row = 0; row < 7; ++row)
+            panel_text(renderer, x, 70 + row * 22, max_width, actions[row]);
+        panel_text(renderer, x, std::max(226, panel.height - 52), max_width, "UI PREVIEW");
+        panel_text(renderer, x, std::max(240, panel.height - 36), max_width, "F10 DEBUG");
+    } else {
+        panel_text(renderer, x, 18, max_width, "SCENE OBJECTS");
+        panel_text(renderer, x, 38, max_width, "(ESTIMATED)");
+        std::set<std::string> names;
+        for (const auto &box : debug.scene.boxes)
+            if (!box.name.empty())
+                names.insert(box.name);
+        int row = 0;
+        for (const auto &name : names) {
+            if (68 + row * 20 >= panel.height - 32)
+                break;
+            panel_text(renderer, x, 68 + row++ * 20, max_width, name);
+        }
+        if (names.empty())
+            panel_text(renderer, x, 68, max_width, "NO SCENE DATA");
+    }
+}
 } // namespace
-SdlHost::SdlHost(DisplayAspect aspect) : aspect_(aspect) {
+SdlHost::SdlHost(DisplayAspect aspect, UiLayoutMode layout)
+    : aspect_(aspect), layout_(layout) {
     try {
         checked(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO));
-        checked(SDL_CreateWindowAndRenderer("Gateway — original-code Linux runtime", 960, 720,
+        checked(SDL_CreateWindowAndRenderer("Gateway — original-code Linux runtime",
+                                            widescreen_ui() ? 1280 : 960, 720,
                                             SDL_WINDOW_RESIZABLE, &window_, &renderer_));
         const SDL_AudioSpec spec{SDL_AUDIO_S16, 2, Opl::sample_rate};
         audio_ =
@@ -179,16 +234,31 @@ void SdlHost::close() {
 bool SdlHost::poll(std::deque<std::uint16_t> &keys, Mouse &mouse, const Vga &vga,
                    DebugActions *actions) {
     const int presentation_height = presentation_height_ ? presentation_height_ : vga.height();
-    if (debug_open_ && !SDL_CursorVisible())
+    int output_width = 0, output_height = 0;
+    if (widescreen_ui())
+        checked(SDL_GetRenderOutputSize(renderer_, &output_width, &output_height));
+    const auto wide = compute_wide_ui_layout(output_width, output_height, vga.width(),
+                                              presentation_height);
+    auto scene_coordinates = [&](float &x, float &y) {
+        if (widescreen_ui() && wide.scene.width && wide.scene.height) {
+            x = (x - float(wide.scene.x)) * vga.width() / wide.scene.width;
+            y = (y - float(wide.scene.y)) * presentation_height / wide.scene.height;
+        }
+    };
+    if ((debug_open_ || (widescreen_ui() && pointer_over_panel_)) && !SDL_CursorVisible())
         checked(SDL_ShowCursor());
-    else if (!debug_open_ && SDL_CursorVisible())
+    else if (!debug_open_ && !pointer_over_panel_ && SDL_CursorVisible())
         checked(SDL_HideCursor());
     if (!debug_open_ && mouse.warp_pending && texture_) {
         float x, y;
         const int rows = vga.text_mode() ? 200 : vga.height();
-        checked(SDL_RenderCoordinatesToWindow(renderer_, float(mouse.x) * vga.width() / 640,
-                                              float(mouse.y) * presentation_height_ / rows,
-                                              &x, &y));
+        float scene_x = float(mouse.x) * vga.width() / 640;
+        float scene_y = float(mouse.y) * presentation_height_ / rows;
+        if (widescreen_ui() && wide.scene.width && wide.scene.height) {
+            scene_x = float(wide.scene.x) + scene_x * wide.scene.width / vga.width();
+            scene_y = float(wide.scene.y) + scene_y * wide.scene.height / presentation_height;
+        }
+        checked(SDL_RenderCoordinatesToWindow(renderer_, scene_x, scene_y, &x, &y));
         SDL_WarpMouseInWindow(window_, x, y);
         mouse.warp_pending = false;
     }
@@ -210,6 +280,12 @@ bool SdlHost::poll(std::deque<std::uint16_t> &keys, Mouse &mouse, const Vga &vga
                             event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
                             event.type == SDL_EVENT_MOUSE_BUTTON_UP)) {
             checked(SDL_ConvertEventToRenderCoordinates(renderer_, &event));
+            if (widescreen_ui()) {
+                if (event.type == SDL_EVENT_MOUSE_MOTION)
+                    scene_coordinates(event.motion.x, event.motion.y);
+                else
+                    scene_coordinates(event.button.x, event.button.y);
+            }
             if (event.type == SDL_EVENT_MOUSE_MOTION && debug_dragging_) {
                 const auto bounds = debug_menu_bounds(vga.width(), vga.height());
                 debug_position_.x = std::clamp(int(event.motion.x) - debug_drag_offset_x_, 0,
@@ -244,12 +320,16 @@ bool SdlHost::poll(std::deque<std::uint16_t> &keys, Mouse &mouse, const Vga &vga
             event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
             checked(SDL_ConvertEventToRenderCoordinates(renderer_, &event));
             const bool motion = event.type == SDL_EVENT_MOUSE_MOTION;
-            const float x = motion ? event.motion.x : event.button.x;
-            const float y = motion ? event.motion.y : event.button.y;
+            float x = motion ? event.motion.x : event.button.x;
+            float y = motion ? event.motion.y : event.button.y;
+            scene_coordinates(x, y);
             const int rows = vga.text_mode() ? 200 : vga.height();
-            mouse.move(int(x * 640 / vga.width()), int(y * rows / presentation_height));
             const bool outside = x < 0 || y < 0 || x >= vga.width() ||
                                  y >= presentation_height;
+            if (widescreen_ui() && motion)
+                pointer_over_panel_ = outside;
+            if (!outside || !widescreen_ui())
+                mouse.move(int(x * 640 / vga.width()), int(y * rows / presentation_height));
             if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && outside)
                 continue;
             if (!motion) {
@@ -330,18 +410,36 @@ void SdlHost::present(const Vga &vga, const Mouse &mouse,
                                      SDL_TEXTUREACCESS_STREAMING, width_, height_);
         checked(texture_ != nullptr);
         checked(SDL_SetTextureScaleMode(texture_, SDL_SCALEMODE_NEAREST));
-        checked(SDL_SetRenderLogicalPresentation(renderer_, width_, presentation_height_,
-                                                 SDL_LOGICAL_PRESENTATION_LETTERBOX));
+        if (widescreen_ui())
+            checked(SDL_SetRenderLogicalPresentation(renderer_, 0, 0,
+                                                     SDL_LOGICAL_PRESENTATION_DISABLED));
+        else
+            checked(SDL_SetRenderLogicalPresentation(renderer_, width_, presentation_height_,
+                                                     SDL_LOGICAL_PRESENTATION_LETTERBOX));
     }
     auto pixels = vga.pixels();
     if (debug_open_ || hitboxes_visible_)
         draw_debug_overlay(pixels, width_, height_, mouse, debug, debug_open_, hitboxes_visible_,
                            debug_row_, debug_position_);
-    draw_mouse_cursor(pixels, width_, height_, mouse, vga.text_mode());
+    if (!widescreen_ui() || !pointer_over_panel_)
+        draw_mouse_cursor(pixels, width_, height_, mouse, vga.text_mode());
     checked(SDL_UpdateTexture(texture_, nullptr, pixels.data(), width_ * 4));
     checked(SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255));
     checked(SDL_RenderClear(renderer_));
-    checked(SDL_RenderTexture(renderer_, texture_, nullptr, nullptr));
+    if (widescreen_ui()) {
+        int output_width = 0, output_height = 0;
+        checked(SDL_GetRenderOutputSize(renderer_, &output_width, &output_height));
+        const auto wide = compute_wide_ui_layout(output_width, output_height, width_,
+                                                  presentation_height_);
+        const auto destination = float_rect(wide.scene);
+        checked(SDL_RenderTexture(renderer_, texture_, nullptr, &destination));
+        if (wide.panels_visible) {
+            draw_wide_panel(renderer_, wide.left_panel, true, debug);
+            draw_wide_panel(renderer_, wide.right_panel, false, debug);
+        }
+    } else {
+        checked(SDL_RenderTexture(renderer_, texture_, nullptr, nullptr));
+    }
     checked(SDL_RenderPresent(renderer_));
     const auto queued = SDL_GetAudioStreamQueued(audio_);
     checked(queued >= 0);
