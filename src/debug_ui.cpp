@@ -105,9 +105,14 @@ void draw_debug_overlay(std::span<std::uint32_t> image, int width, int height,
         return;
     if (show_hitboxes) {
         // The picture occupies columns 260..639 and rows 0..231 in Gateway.
+        // When the original picker table has been fully matched, use its
+        // verified +261 inclusive bounds, not the approximate RGN origin.
         // Raster ownership merges touching/overlapping shapes belonging to
         // the same engine object, so shared interior edges are never drawn.
         const int left = 260 * width / 640;
+        const int native_left = data.scene.native_picker_aligned ? 261 : 260;
+        const int native_extent = data.scene.native_picker_aligned ? 1
+                                                                    : int(data.scene.x_extent);
         const int area_width = width - left;
         const int area_height = std::min(height, 232);
         std::vector<std::uint32_t> owner(std::size_t(area_width) * area_height);
@@ -116,9 +121,10 @@ void draw_debug_overlay(std::span<std::uint32_t> image, int width, int height,
         for (std::size_t i = 0; i < data.scene.boxes.size(); ++i) {
             const auto &box = data.scene.boxes[i];
             if (!show_all_regions &&
-                (box.presence == DebugHitboxPresence::absent ||
-                 box.presence == DebugHitboxPresence::undisclosed ||
-                 box.native_picker_disabled == true))
+                (box.native_picker_disabled == true ||
+                 (!box.native_picker_disabled &&
+                  (box.presence == DebugHitboxPresence::absent ||
+                   box.presence == DebugHitboxPresence::undisclosed))))
                 continue;
             ++shown;
             const auto id = box.object_id ? std::uint32_t(box.object_id) : unnamed_base + i;
@@ -140,7 +146,7 @@ void draw_debug_overlay(std::span<std::uint32_t> image, int width, int height,
                             continue;
                         const double ratio = (scan - a.y) / (double(b.y) - a.y);
                         const double x = a.x + ratio * (double(b.x) - a.x);
-                        crossings.push_back((260 + x) * width / 640.0 - left);
+                        crossings.push_back((native_left + x) * width / 640.0 - left);
                     }
                     std::sort(crossings.begin(), crossings.end());
                     for (std::size_t k = 1; k < crossings.size(); k += 2) {
@@ -154,10 +160,10 @@ void draw_debug_overlay(std::span<std::uint32_t> image, int width, int height,
                 }
                 continue;
             }
-            const int x0 = std::clamp(int((260 + box.x0) * width / 640), left, width);
+            const int x0 = std::clamp(int((native_left + box.x0) * width / 640), left, width);
             // Packed rectangles cover both pixels in their final X unit;
             // Gateway II's two-vertex boxes use one-pixel units.
-            const int x1 = std::clamp(int((260 + data.scene.x_extent + box.x1) * width / 640),
+            const int x1 = std::clamp(int((native_left + native_extent + box.x1) * width / 640),
                                       left, width);
             const int y0 = std::clamp(int(box.y0), 0, area_height);
             const int y1 = std::clamp(int(box.y1 + 1), 0, area_height);
@@ -189,15 +195,54 @@ void draw_debug_overlay(std::span<std::uint32_t> image, int width, int height,
                                       : tint(pixel_value, color, id == hovered ? 100 : 55);
             }
         }
-        rect(image, width, height, 2, height - 23, std::min(width, 310), height - 2, panel,
+
+        // The original mouse picker also contains UI control groups. These
+        // are absolute screen rectangles (command buttons, scroll controls),
+        // not RGN objects, and extend both left and below the room picture.
+        // Group bounding rectangles are intentionally not listed here.
+        const DebugPickerControl *hovered_control = nullptr;
+        std::size_t active_controls = 0;
+        for (const auto &control : data.scene.native_controls) {
+            const bool skipped = (control.flags & 0x80) != 0;
+            if (skipped && !show_all_regions)
+                continue;
+            ++active_controls;
+            const int x0 = std::clamp(int(control.x0 * width / 640), 0, width);
+            const int x1 = std::clamp(int((control.x1 + 1) * width / 640), 0, width);
+            const int y0 = std::clamp(int(control.y0), 0, height);
+            const int y1 = std::clamp(int(control.y1 + 1), 0, height);
+            const bool hover = mouse.x >= int(control.x0) &&
+                               mouse.x <= int(control.x1) &&
+                               mouse.y >= int(control.y0) &&
+                               mouse.y <= int(control.y1);
+            const auto color = skipped ? 0xff777e89u
+                                       : debug_hotspot_color(std::uint16_t(0x800u + control.index));
+            for (int y = y0; y < y1; ++y)
+                for (int x = x0; x < x1; ++x) {
+                    auto &pixel_value = image[std::size_t(y) * width + x];
+                    pixel_value = tint(pixel_value, color, hover ? 100 : 55);
+                }
+            rect(image, width, height, x0, y0, x1, y1, hover ? white : color, false);
+            if (hover)
+                hovered_control = &control;
+        }
+        // Do not obscure the native scrollbar controls at x=100..260,
+        // y=463..479 with the debugger's own status text.
+        const int status_x = width > 420 ? width - 318 : 2;
+        rect(image, width, height, status_x, height - 23, width - 2, height - 2, panel,
              true);
         char info[128];
-        std::snprintf(info, sizeof info, "RGN %s #%zu (%zu/%zu)",
+        std::snprintf(info, sizeof info, "RGN %s #%zu (%zu/%zu), UI %zu",
                       data.scene.region_file.c_str(), data.scene.entry, shown,
-                      data.scene.boxes.size());
-        text(image, width, height, 8, height - 18, info, white, 37);
-        if (hovered) {
-            if (hovered >= unnamed_base) {
+                      data.scene.boxes.size(), active_controls);
+        text(image, width, height, status_x + 6, height - 18, info, white, 37);
+        if (hovered || hovered_control) {
+            if (hovered_control) {
+                std::snprintf(info, sizeof info,
+                              "Native control #%u group %u kind %u flags %02X",
+                              unsigned(hovered_control->index), unsigned(hovered_control->group),
+                              unsigned(hovered_control->kind), unsigned(hovered_control->flags));
+            } else if (hovered >= unnamed_base) {
                 std::snprintf(info, sizeof info, "Unnamed region #%u",
                               unsigned(hovered - unnamed_base));
             } else {
@@ -214,11 +259,12 @@ void draw_debug_overlay(std::span<std::uint32_t> image, int width, int height,
                                                                          : " [gate:blocked]";
                 std::snprintf(info, sizeof info, "Object #%u: %s%s", id, name, gate);
             }
-            rect(image, width, height, 2, height - 44, std::min(width, 310), height - 24,
+            rect(image, width, height, status_x, height - 44, width - 2, height - 24,
                  panel, true);
-            text(image, width, height, 8, height - 39, info,
-                 debug_hotspot_color(std::uint16_t(hovered < unnamed_base ? hovered
-                                                                        : hovered - unnamed_base)),
+            text(image, width, height, status_x + 6, height - 39, info,
+                 hovered_control ? accent :
+                     debug_hotspot_color(std::uint16_t(hovered < unnamed_base ? hovered
+                                                                            : hovered - unnamed_base)),
                  37);
         }
     }

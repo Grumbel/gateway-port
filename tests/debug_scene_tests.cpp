@@ -90,10 +90,11 @@ int main(int argc, char **argv) try {
     std::vector<std::uint8_t> picker_memory(1024 * 1024);
     constexpr std::size_t picker_base = 0x20000;
     word(picker_memory, picker_base + 0x8cc6, 0x2000);
-    word(picker_memory, picker_base + 0x1576, 1); // group count
+    word(picker_memory, picker_base + 0x1576, 2); // room group + separate UI controls
     picker_memory[picker_base + 0xa8d4] = 2;    // bounding box + one RGN box
     picker_memory[picker_base + 0xa974] = 0;
     picker_memory[picker_base + 0xa975] = 1;
+    picker_memory[picker_base + 0xaa4e] = 1; // non-selectable native group bound
     const auto box = tracker.view().boxes[0];
     word(picker_memory, picker_base + 0xa6d2, box.x0 + 261);
     word(picker_memory, picker_base + 0xa752, box.x1 + 261);
@@ -101,9 +102,30 @@ int main(int argc, char **argv) try {
     word(picker_memory, picker_base + 0xa852, box.y1);
     picker_memory[picker_base + 0xaa4f] = 3; // native picture-region selector
     picker_memory[picker_base + 0xa921] = 0x80;
+    // The native picker also has controls absent from PIC/RGN data. A second
+    // group with a kind-1 bounding rectangle and two kind-5 controls.
+    picker_memory[picker_base + 0xa8d5] = 3;
+    picker_memory[picker_base + 0xa974 + 35] = 2;
+    picker_memory[picker_base + 0xa974 + 36] = 3;
+    picker_memory[picker_base + 0xa974 + 37] = 4;
+    picker_memory[picker_base + 0xaa50] = 1; // non-selectable group bounding box
+    for (unsigned index : {3u, 4u}) {
+        word(picker_memory, picker_base + 0xa6d0 + index * 2, index * 10);
+        word(picker_memory, picker_base + 0xa750 + index * 2, index * 10 + 6);
+        word(picker_memory, picker_base + 0xa7d0 + index * 2, 10);
+        word(picker_memory, picker_base + 0xa850 + index * 2, 20);
+        picker_memory[picker_base + 0xaa4e + index] = 5;
+    }
+    picker_memory[picker_base + 0xa924] = 0x80; // native-disabled control
     tracker.set_native_picker_state(picker_memory, 0x2000);
     require(tracker.view().boxes[0].native_picker_disabled == true,
             "matched rectangle with native 0x80 skip bit is disabled");
+    require(tracker.view().native_picker_aligned &&
+                tracker.view().native_controls.size() == 2 &&
+                tracker.view().native_controls[0].x0 == 30 &&
+                tracker.view().native_controls[0].kind == 5 &&
+                tracker.view().native_controls[1].flags == 0x80,
+            "native picker must expose non-RGN screen controls and their skip bits");
     picker_memory[picker_base + 0xa921] = 0;
     tracker.set_native_picker_state(picker_memory, 0x2000);
     require(tracker.view().boxes[0].native_picker_disabled == false,
@@ -112,6 +134,8 @@ int main(int argc, char **argv) try {
     tracker.set_native_picker_state(picker_memory, 0x2000);
     require(!tracker.view().boxes[0].native_picker_disabled,
             "mismatched native geometry must not assign a picker mask");
+    require(!tracker.view().native_picker_aligned && tracker.view().native_controls.empty(),
+            "unverified room geometry must not expose arbitrary guest control bytes");
     tracker.step(1);
     require(!tracker.view().boxes[0].native_picker_disabled,
             "the picker mask belongs only to the matched room entry");
@@ -303,6 +327,22 @@ int main(int argc, char **argv) try {
                 }
                 require(disabled_count == 1,
                         "exactly one first-room rectangle is natively disabled");
+                // 14 command-side picker rows and four each in two scrollbar
+                // groups were not represented in the room RGN file at all.
+                require(checkpoint.native_picker_aligned &&
+                            checkpoint.native_controls.size() == 22,
+                        "expected all original non-RGN native picker controls");
+                unsigned skipped_controls = 0;
+                bool command_present = false, scroll_present = false;
+                for (const auto &control : checkpoint.native_controls) {
+                    skipped_controls += (control.flags & 0x80) != 0;
+                    command_present |= control.group == 0 && control.kind == 5 &&
+                                       control.x0 == 51 && control.y0 == 3;
+                    scroll_present |= control.group == 4 && control.kind == 4 &&
+                                      control.x0 == 244 && control.y0 == 152;
+                }
+                require(skipped_controls == 4 && command_present && scroll_present,
+                        "native commands and scrollbar geometry/disabled bits changed");
             }
         }
     }

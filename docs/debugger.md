@@ -59,10 +59,24 @@ group, including each rectangle's coordinates (native screen X = RGN X +
 261), count, ordering, and result-kind byte `3`. Only when the entire group
 matches does it annotate native `0x80` flags. A mismatch leaves every bit
 `unknown`, avoiding guessed cross-title or cross-layout interpretation.
-The default F10 rectangles and widescreen candidate list now exclude only
-**proven skipped rectangles**, in addition to the existing heuristic
-classifications. Clearing the `0x80` bit is **not** by itself proof of
-visibility, an actual drawn object, or successful mouse selection.
+The native `0x80` bit takes precedence over heuristic object presence when a
+complete room-group match is available: skipped rectangles are hidden, and
+unskipped rectangles remain shown even when our provisional object-location
+classification says `absent` or `undisclosed`. Otherwise the heuristic
+classifications are used. Clearing the `0x80` bit is **not** by itself proof
+of visibility, a drawn object, or successful mouse selection.
+
+The mouse picker has **five rectangle groups**, not just the room-picture
+RGN group. In all four retained opening-room snapshots their row counts are
+15, 31, 1, 5, and 5. The first row of each group describes its bounds;
+the remaining rows include 30 room-picture rectangles and **22 non-RGN UI
+controls**, of which 18 are currently enabled. Those additional rectangles
+include command-panel targets and left/right scroll controls. F10 now
+outlines these controls too, using exact native screen coordinates. In
+particular the native room X origin is 261, one pixel to the right of the
+previous approximate RGN overlay origin. The **R** raw view shows skipped
+native controls as dim outlines. If the live native group cannot be matched,
+the debugger leaves its old heuristic-only fallback in place.
 
 Gateway 1 now samples the validated 734-object guest table and annotates
 each RGN region with one of four *host-side* classifications:
@@ -86,11 +100,14 @@ in all rooms remains unproven. Both `room_candidate` and `unknown` may still
 contain objects that are not drawn. These classifications are diagnostic
 filters, **not** a reconstructed native visibility or hotspot-picking routine.
 
-Press **R** in the F10 menu to display **all** raw RGN candidates, including
-filtered ones, for comparison. The original guest mouse input is unchanged.
+Press **R** in the F10 menu to display **all** raw RGN candidates and native
+UI controls, including skipped ones, for comparison. The original guest
+mouse input is unchanged.
 Dumped `.regions.tsv` files retain every region and append a `presence`
 column and a `native_picker` column (`disabled`, `not_disabled`, `unknown`);
-`.debug.txt` identifies the classification as heuristic. For the other
+`.picker.tsv` records native UI control rectangles, groups, kinds, coordinates,
+and skip flags. `.debug.txt` identifies the classification as heuristic.
+For the other
 Legend titles, all regions stay `unknown`, because the Gateway 1 object
 state and native picker layouts have not been verified there.
 
@@ -103,7 +120,7 @@ traces can turn provisional room candidates into confirmed active hitboxes.
 
 The probe's `--debug-scene` option enables its existing PIC/RGN scene tracker
 even in a **headless** walkthrough. Ordinary memory dumps then also include
-`*.regions.tsv`, `*.objects.tsv`, and `*.debug.txt`, with the live native object
+`*.regions.tsv`, `*.picker.tsv`, `*.objects.tsv`, and `*.debug.txt`, with the live native object
 names, presence classifications, and restricted parser-path annotations.
 It does not alter the guest renderer or decide which hitboxes are clickable.
 

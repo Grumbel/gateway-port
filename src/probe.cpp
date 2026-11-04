@@ -1877,6 +1877,19 @@ void dump_guest(uc_engine *uc, State &state, const std::string &prefix) {
                     : *box.native_picker_disabled ? "disabled" : "not_disabled") << '\n';
     }
     regions.close();
+    std::ofstream controls(prefix + ".picker.tsv");
+    controls << "picture	entry	group	picker_index	kind	flags	x0	y0	x1	y1"
+                "	skipped\n";
+    for (const auto &control : scene.native_controls)
+        controls << scene.picture << '\t' << scene.entry << '\t'
+                 << unsigned(control.group) << '\t' << unsigned(control.index) << '\t'
+                 << unsigned(control.kind) << '\t' << unsigned(control.flags) << '\t'
+                 << control.x0 << '\t' << control.y0 << '\t'
+                 << control.x1 << '\t' << control.y1 << '\t'
+                 << ((control.flags & 0x80) ? "yes" : "no") << '\n';
+    controls.close();
+    if (!controls)
+        throw std::runtime_error("cannot write native picker controls dump");
     std::ofstream metadata(prefix + ".debug.txt");
     metadata << "guest_ms=" << std::dec << state.elapsed_ms << '\n'
              << "picture=" << scene.picture << '\n'
@@ -1891,7 +1904,10 @@ void dump_guest(uc_engine *uc, State &state, const std::string &prefix) {
              << "restricted_parser_path=all known ancestry slots pass original parser gate"
                 " IF caller requests restricted traversal; NOT mouse/render state\n"
              << "native_picker=original Gateway 1 RGN picker 0x80 skip bit;"
-                " not_disabled is NOT proof of drawn/selectable\n";
+                " not_disabled is NOT proof of drawn/selectable\n"
+             << "picker_controls=non-RGN screen-space rectangles from matching native"
+                " picker groups, excluding group bounds\n"
+             << "picker_controls_count=" << scene.native_controls.size() << '\n';
     if (objects && objects->objects.size() == 734) {
         std::ofstream records(prefix + ".objects.tsv");
         records << gateway::debug_objects_tsv(*objects, state.debug_object_dat);
@@ -2810,7 +2826,7 @@ int main(int argc, char **argv) {
                         dump_guest(engine.uc, state, prefix);
                         state.debug_status = "Saved " + stem;
                         std::cerr << "Gateway debug dump: " << prefix << ".{regs,bin,ppm,"
-                                     "regions.tsv,debug.txt[,objects.tsv]}\n";
+                                     "regions.tsv,picker.tsv,debug.txt[,objects.tsv]}\n";
                     } catch (const std::exception &error) {
                         state.debug_status = error.what();
                         std::cerr << "Gateway debug dump failed: " << error.what() << '\n';

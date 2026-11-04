@@ -800,6 +800,16 @@ all 44 original captures and confirms 35 confidently deadline-predicted
 frames. The live runtime continues to use only the original-image-matched
 fallback; this is not a verified RTL replacement or a new golden baseline.
 
+2026-11-04 complete native picker overlay (§3.6): the original mouse picker
+maintains five groups, not just the 31-row room-picture group: counts in the
+four retained first-room RAM states are 15/31/1/5/5. In addition to 30 room
+RGN rectangles, 22 UI control rectangles (18 unskipped) cover command/menu
+and side scroll areas. The F10 overlay now exposes validated non-RGN picker
+controls, aligns picture rectangles to native X origin 261, and prioritizes
+the proven native skip bit over provisional object-location classification.
+Synthetic and optional-original snapshot tests cover groups and bounds;
+guest picking and game logic remain unchanged.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |

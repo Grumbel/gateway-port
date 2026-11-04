@@ -78,6 +78,44 @@ int main() try {
     gateway::draw_debug_overlay(disabled, 640, 480, mouse, debug, false, true, 0, {}, true);
     require(disabled[15 * 640 + 290] == gateway::debug_hotspot_color(222),
             "raw RGN mode can reveal even a native-disabled rectangle");
+    // A validated live native picker supersedes the host-only object
+    // location heuristic. Otherwise a real selectable object can disappear.
+    debug.scene.boxes[2].presence = gateway::DebugHitboxPresence::absent;
+    debug.scene.boxes[2].native_picker_disabled = false;
+    std::vector<std::uint32_t> live_picker(640 * 480, 0xff123456);
+    gateway::draw_debug_overlay(live_picker, 640, 480, mouse, debug, false, true, 0);
+    require(live_picker[15 * 640 + 290] == gateway::debug_hotspot_color(222),
+            "validated unskipped picker rectangle must remain visible");
+    // Original picker's bounds are one pixel to the right of the
+    // approximate RGN coordinate conversion.
+    debug.scene.native_picker_aligned = true;
+    gateway::Mouse shifted_mouse;
+    shifted_mouse.x = 261;
+    shifted_mouse.y = 15;
+    std::vector<std::uint32_t> aligned(640 * 480, 0xff123456);
+    gateway::draw_debug_overlay(aligned, 640, 480, shifted_mouse, debug, false, true, 0);
+    require(aligned[15 * 640 + 260] == 0xff123456 &&
+                aligned[10 * 640 + 261] == 0xffe6edfa,
+            "original native picker x=261 inclusive bounds are not aligned");
+    gateway::DebugOverlayData ui_controls;
+    ui_controls.scene.native_controls.push_back({30, 10, 40, 20, 0, 18, 5, 0});
+    ui_controls.scene.native_controls.push_back({60, 10, 70, 20, 4, 10, 4, 0x80});
+    ui_controls.scene.native_controls.push_back({100, 463, 116, 479, 3, 7, 4, 1});
+    gateway::Mouse control_mouse;
+    control_mouse.x = 35;
+    control_mouse.y = 15;
+    std::vector<std::uint32_t> controls(640 * 480, 0xff123456);
+    gateway::draw_debug_overlay(controls, 640, 480, control_mouse, ui_controls,
+                                false, true, 0);
+    require(controls[10 * 640 + 30] == 0xffe6edfa &&
+                controls[15 * 640 + 35] != 0xff123456 &&
+                controls[15 * 640 + 65] == 0xff123456 &&
+                controls[470 * 640 + 100] == gateway::debug_hotspot_color(0x807),
+            "active non-RGN UI controls should render but skipped controls should not");
+    gateway::draw_debug_overlay(controls, 640, 480, control_mouse, ui_controls,
+                                false, true, 0, {}, true);
+    require(controls[10 * 640 + 60] == 0xff777e89,
+            "raw mode should expose a disabled native control");
     gateway::draw_debug_overlay(pixels, 640, 480, mouse, debug, true, false, 4);
     require(pixels[232 * 640 + 286] == 0xff75aaff &&
                 pixels[100 * 640 + 500] == 0xff123456,

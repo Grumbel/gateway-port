@@ -152,6 +152,7 @@ void DebugSceneTracker::set_game_state(const DebugGameState &state) {
 void DebugSceneTracker::set_native_picker_state(std::span<const std::uint8_t> memory,
                                                 std::uint16_t ds) {
     native_picker_disabled_.clear();
+    native_controls_.clear();
     native_picker_picture_ = active_;
     native_picker_entry_ = entry_;
     const auto picture = pictures_.find(active_);
@@ -163,7 +164,7 @@ void DebugSceneTracker::set_native_picker_state(std::span<const std::uint8_t> me
     if (boxes.empty() || boxes.size() >= 35)
         return;
 
-    // Native Gateway 1, CS:IP 2649:0541 in the pinned opening replay:
+    // Native Gateway 1 picker, GATE.RTL:0x14186, observed at 2649:0541:
     // groups are 35-entry index lists at DS:a974; the indexed rects have
     // two-byte x/y bounds in DS:a6d0..a8cf and a skip bit in DS:a920.
     // Match the *entire* original room group by geometry and result code 3
@@ -184,38 +185,83 @@ void DebugSceneTracker::set_native_picker_state(std::span<const std::uint8_t> me
     if (!index_seg)
         return;
     const auto group_count = word_at(*index_seg, 0x1576);
-    if (!group_count || *group_count > 6)
+    if (!group_count || !*group_count || *group_count > 6)
         return;
+
+    struct NativeRect {
+        std::uint8_t index = 0, kind = 0, flags = 0;
+        std::uint16_t x0 = 0, x1 = 0, y0 = 0, y1 = 0;
+    };
+    std::vector<std::vector<NativeRect>> groups;
+    groups.reserve(*group_count);
+    // Decode the *entire* live picker table. It contains UI control groups in
+    // addition to the picture-region group; PIC/RGN files describe only the
+    // latter. Do not expose any control unless every indexed row is valid.
     for (unsigned group = 0; group < *group_count; ++group) {
         const auto count = byte_at(ds, 0xa8d4 + group);
-        if (!count || *count != boxes.size() + 1)
-            continue;
-        std::vector<bool> disabled;
-        disabled.reserve(boxes.size());
-        for (std::size_t i = 0; i < boxes.size(); ++i) {
-            const auto index = byte_at(ds, 0xa974 + group * 35 + i + 1);
+        if (!count || !*count || *count > 35)
+            return;
+        std::vector<NativeRect> rows;
+        rows.reserve(*count);
+        for (unsigned i = 0; i < *count; ++i) {
+            const auto index = byte_at(ds, 0xa974 + group * 35 + i);
             if (!index || *index >= 64)
-                break;
+                return;
             const auto x0 = word_at(ds, 0xa6d0 + *index * 2);
             const auto x1 = word_at(ds, 0xa750 + *index * 2);
             const auto y0 = word_at(ds, 0xa7d0 + *index * 2);
             const auto y1 = word_at(ds, 0xa850 + *index * 2);
             const auto flags = byte_at(ds, 0xa920 + *index);
-            const auto result = byte_at(ds, 0xaa4e + *index);
+            const auto kind = byte_at(ds, 0xaa4e + *index);
+            if (!x0 || !x1 || !y0 || !y1 || !flags || !kind ||
+                *kind < 1 || *kind > 6 ||
+                (i != 0 && *kind != 1 &&
+                 (*x0 > *x1 || *y0 > *y1 || *x1 >= 640 || *y1 >= 480)))
+                return;
+            rows.push_back({*index, *kind, *flags, *x0, *x1, *y0, *y1});
+        }
+        groups.push_back(std::move(rows));
+    }
+
+    std::optional<std::size_t> matching_group;
+    for (std::size_t group = 0; group < groups.size(); ++group) {
+        const auto &rows = groups[group];
+        if (rows.size() != boxes.size() + 1 || rows.front().kind != 1)
+            continue;
+        std::vector<bool> disabled;
+        disabled.reserve(boxes.size());
+        for (std::size_t i = 0; i < boxes.size(); ++i) {
+            const auto &row = rows[i + 1];
             const auto &box = boxes[i];
-            if (!x0 || !x1 || !y0 || !y1 || !flags || !result || *result != 3 ||
-                *x0 != box.x0 + 261 || *x1 != box.x1 + 261 ||
-                *y0 != box.y0 || *y1 != box.y1)
+            if (row.kind != 3 || row.x0 != box.x0 + 261 ||
+                row.x1 != box.x1 + 261 || row.y0 != box.y0 ||
+                row.y1 != box.y1)
                 break;
-            disabled.push_back((*flags & 0x80) != 0);
+            disabled.push_back((row.flags & 0x80) != 0);
         }
         if (disabled.size() == boxes.size()) {
             // A second matching group would be ambiguous. Do not guess.
-            if (!native_picker_disabled_.empty()) {
+            if (matching_group) {
                 native_picker_disabled_.clear();
                 return;
             }
+            matching_group = group;
             native_picker_disabled_ = std::move(disabled);
+        }
+    }
+    if (!matching_group)
+        return;
+    for (std::size_t group = 0; group < groups.size(); ++group) {
+        if (group == *matching_group)
+            continue;
+        // Group headers (kind 1) define clipping/bounds; they are not
+        // selectable rectangles. Retain only actual non-RGN picker entries.
+        for (std::size_t i = 1; i < groups[group].size(); ++i) {
+            const auto &row = groups[group][i];
+            if (row.kind != 1)
+                native_controls_.push_back({row.x0, row.y0, row.x1, row.y1,
+                                            std::uint8_t(group), row.index,
+                                            row.kind, row.flags});
         }
     }
 }
@@ -324,6 +370,9 @@ DebugSceneView DebugSceneTracker::view() const {
                                 native_picker_entry_ == entry_ &&
                                 native_picker_disabled_.size() ==
                                     found->second.regions[entry_].boxes.size();
+    view.native_picker_aligned = picker_matches;
+    if (picker_matches)
+        view.native_controls = native_controls_;
     std::size_t index = 0;
     for (const auto &region : found->second.regions[entry_].boxes) {
         const auto id = region.object_id;
