@@ -282,9 +282,9 @@ void DebugSceneTracker::set_native_picker_state(std::span<const std::uint8_t> me
                                              std::uint8_t(group), std::uint8_t(i), row.index,
                                              row.kind, row.flags};
             native_picker_rows_.push_back(control);
-            // The aligned room group's nonzero slots have RGN outlines.
-            // Otherwise render *all* live native rows as anonymous picker
-            // rectangles; they must not disappear when PIC tracking misses.
+            // In the raw R debugger view, the aligned room group's nonzero
+            // slots already have RGN outlines. Keep the other native rows
+            // (including GUI and fallback rectangles) for raw inspection.
             if (!matching_group || group != *matching_group || i == 0)
                 native_controls_.push_back(control);
         }

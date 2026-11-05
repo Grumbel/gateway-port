@@ -77,15 +77,16 @@ picture background, text panel, and scrollbar backgrounds all respond to
 mouse clicks. The remaining rows are 30 room-picture RGN rectangles and
 **22 non-RGN UI controls**, of which 18 are currently enabled.
 
-The normal F10 view now paints a **pixel-accurate selection map** when a live
-native table can be decoded. Each screen pixel is assigned exactly the final
-enabled group/slot selected by the original scan order. Neighboring regions
-are outlined by their *winning* boundary, rather than by overlapping raw
-rectangle edges; this reveals which regions are actually selectable at a
-particular point. The five large fallback regions receive outlines but stay
-transparent away from hover, while specific controls are tinted. Matched
-room slots retain their RGN object colors and names. The RGN-independent
-selection map does not imply that a later game handler accepts the click.
+The normal **H** hitbox view shows **scene objects only**. When a live native
+picker group has been fully matched to the room's RGN rectangles, it uses the
+actual room slots and their dynamic `0x80` skip bits. Within that group, the
+last enabled rectangle covering a pixel wins; *adjacent slots belonging to the
+same engine object are merged* into one colored contour. The overlay stays
+inside the room picture (X >= 261, Y < 232). GUI buttons, scrollbars and the
+five broad slot-zero fallback rectangles are never highlighted by H, even
+where a non-scene picker row overlaps the picture. These native-derived room
+outlines are still **predictions of potential scene selection**, not proof that
+a later game handler accepted the click.
 To inspect the **actual result of an original picker call** while running
 Gateway 1, start the SDL runtime with `--debug-native-picker`:
 
@@ -106,7 +107,7 @@ It observes the bounded `GATE.RTL:0x14186..0x14244` routine at the physical
 addresses recovered from the known Gateway 1 launch layout; do not enable it
 for other Legend titles or different load layouts. It does **not** prove that
 the later handler dispatched or accepted an action. Without the opt-in flag,
-the F10 winner-map remains a prediction only.
+the H room hitbox map remains a prediction only.
 The panel also identifies the **original returned row's source** using the
 table captured at picker entry: `room` (with object ID only after full RGN
 alignment), `fallback` (slot zero), `control` (other aligned groups), or
@@ -118,14 +119,13 @@ including fallbacks and rows later overridden by the winning row.
 
 The native room X origin is 261, one pixel to the right of the previous
 approximate RGN overlay origin. The **R** raw view shows every RGN candidate
-and independent native rectangle, including skipped controls as dim outlines.
-If the native table can be decoded but the current room group cannot be
-matched to the tracked PIC/RGN frame, F10 still uses the selection map and
-labels native regions without an inferred object identity. A hovered row is labeled
-`Native unmapped` with its original group/slot, because no object identity is
-proven. The RGN overlay remains heuristic, and none of its disabled flags is
-inferred from an unmatched native table. This covers temporarily absent or
-out-of-sync PIC tracking without hiding non-RGN click areas.
+and independent native GUI/fallback rectangle, including skipped controls as
+dim outlines. If the native table can be decoded but its room group cannot be
+matched to the tracked PIC/RGN frame, H falls back to the heuristic **scene
+RGN objects only**; it does not mislabel arbitrary native rows as room objects.
+Native groups, slot numbers, and actual picker outcomes remain available in the
+`Native pick` observation panel and raw `.picker.tsv` dump, including when PIC
+tracking temporarily falls out of sync.
 
 Gateway 1 now samples the validated 734-object guest table and annotates
 each RGN region with one of four *host-side* classifications:
