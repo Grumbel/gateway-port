@@ -635,9 +635,13 @@ can supply its known name and analysis state. The report ranks only qualified
 click experiments and lists changed-target frequency, net/absolute call
 differences, RAM changes, actual room selections, observed room object IDs
 and nearby *temporal* object-context references. Two overlay sections sharing
-a runtime address remain distinct original code identities. Missing or
-truncated native call censuses make ranking explicitly incomplete; malformed
-or out-of-bounds native targets are rejected. The first twelve occurrence
+a runtime address remain distinct original code identities. Missing native
+call censuses make ranking explicitly incomplete. When a saved report lists
+only the first 32 changed targets, the ranker re-reads both full
+`native.rtlink-calls` sidecars and verifies they reproduce the saved summary
+*exactly* before ranking the omitted targets. Truncation is incomplete only
+when raw sidecars are unavailable; a partial pair is rejected. Malformed or
+out-of-bounds native targets are rejected. The first twelve occurrence
 examples for each original target retain the experiment filename, isolated
 trial name, exact screen coordinates and signed call-count delta, so the
 investigation can return directly to a reproducible click. This is prioritization for

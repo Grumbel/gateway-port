@@ -26,11 +26,24 @@ def trial(*deltas, qualified=True, room=False, ram=0):
                'continuation': {'object_context': 'object-referenced'}}]
              if room else [{'call': 1, 'source': 'control', 'object': 0,
                             'continuation': {'object_context': 'unknown'}}])
+    ordered = sorted(deltas, key=lambda row: (-abs(row['delta']), row['target']))
     return {'comparison_qualified': qualified, 'post_diff': {'changed_bytes': ram},
             'picker_calls_at_injected_point': [1],
             'picker_trace': {'available': True, 'calls': calls},
-            'rtlink_diff': {'available': True, 'changed_targets': len(deltas),
-                            'first_targets': list(deltas), 'truncated': False}}
+            'rtlink_diff': {'available': True, 'changed_targets': len(ordered),
+                            'first_targets': list(ordered[:32]),
+                            'truncated': len(ordered) > 32}}
+
+
+def write_census(directory, counts):
+    directory.mkdir(exist_ok=True)
+    total = sum(counts.values())
+    lines = [f'rtlink-census manager_hits={total} validated={total} unrecognized=0']
+    for target, count in sorted(counts.items()):
+        sid, cs, ip = target.split(':')
+        lines.append(f'rtlink-call section={sid} target={cs}:{ip} '
+                     f'count={count} first_ms=1 last_ms=2')
+    (directory / 'native.rtlink-calls').write_text('\n'.join(lines) + '\n')
 
 
 def write_study(directory, trials):
@@ -79,6 +92,59 @@ with tempfile.TemporaryDirectory(prefix='gateway-picker-rank-test-') as temporar
     assert other['original'] == 'ovl:0x013d5d' and not other['tracker_exact_entry']
     assert other['trials_with_delta'] == 2 and other['net_call_delta'] == 4
     assert len(rank_studies([first])['targets']) == 2  # no Ghidra needed
+
+    # The saved report intentionally truncates at 32 deltas. Verify every
+    # omitted original section-qualified target is recovered from the actual
+    # raw sidecars, without changing the immutable comparison.json.
+    many = [delta(f'4:4319:{offset:04x}', 1, 2) for offset in range(0x100, 0x123)]
+    full = write_study(root / 'full', [trial(*many)])
+    write_census(full.parent / 'control-a',
+                 {item['target']: item['before'] for item in many})
+    write_census(full.parent / 'click-001',
+                 {item['target']: item['after'] for item in many})
+    # Match the remaining native summary header fields precisely.
+    full_report = json.loads(full.read_text())
+    full_report['trials'][0]['rtlink_diff'].update({
+        'manager_hits_delta': 35, 'validated_calls_delta': 35,
+        'unrecognized_hits_delta': 0})
+    full.write_text(json.dumps(full_report))
+    all_found = rank_studies([full])
+    assert len(all_found['targets']) == 35
+    assert all_found['ranking_is_complete']
+    assert all_found['qualified_truncated_censuses'] == 1
+    assert all_found['recovered_truncated_censuses'] == 1
+    assert all_found['unrecovered_truncated_censuses'] == 0
+    assert all_found['validated_raw_census_pairs'] == 1
+    assert '4:4319:0122' in {item['target'] for item in all_found['targets']}
+    # Raw census and frozen summary must agree even when the first 32 match.
+    saved = full.read_text()
+    write_census(full.parent / 'click-001',
+                 {item['target']: (3 if item['target'].endswith(':0122') else 2)
+                  for item in many})
+    try:
+        rank_studies([full])
+    except ValueError as error:
+        assert 'disagree with saved' in str(error)
+    else:
+        raise AssertionError('accepted modified native census sidecar')
+    write_census(full.parent / 'click-001',
+                 {item['target']: item['after'] for item in many})
+    (full.parent / 'click-001' / 'native.rtlink-calls').unlink()
+    try:
+        rank_studies([full])
+    except ValueError as error:
+        assert 'incomplete native' in str(error)
+    else:
+        raise AssertionError('accepted a partial original census pair')
+    write_census(full.parent / 'click-001',
+                 {item['target']: item['after'] for item in many})
+    assert full.read_text() == saved
+
+    truncated_only = write_study(root / 'truncated-only', [trial(*many)])
+    incomplete = rank_studies([truncated_only])
+    assert not incomplete['ranking_is_complete']
+    assert incomplete['unrecovered_truncated_censuses'] == 1
+    assert len(incomplete['targets']) == 32
 
     command = subprocess.run([sys.executable, str(TOOLS / 'rank_picker_trial_targets.py'),
                               str(first.parent), str(second), '--plan', str(plan),

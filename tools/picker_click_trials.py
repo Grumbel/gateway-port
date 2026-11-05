@@ -194,12 +194,12 @@ def rtlink_census(directory):
     return calls, totals
 
 
-def compare_rtlink_counts(baseline, trial):
-    """Full-run RTLink delta, never assumed to originate at the click time."""
+def rtlink_target_deltas(baseline, trial):
+    """Every section-qualified whole-run target difference, ordered by magnitude."""
     if baseline is None or trial is None:
-        return {'available': False, 'reason': 'native RTLink census unavailable'}
-    original, original_totals = baseline
-    changed, changed_totals = trial
+        return None
+    original, _ = baseline
+    changed, _ = trial
     deltas = []
     for key in sorted(set(original) | set(changed)):
         before = original.get(key, {}).get('calls', 0)
@@ -209,6 +209,16 @@ def compare_rtlink_counts(baseline, trial):
             deltas.append({'target': f'{sid}:{cs:04x}:{ip:04x}',
                            'before': before, 'after': after, 'delta': after - before})
     deltas.sort(key=lambda row: (-abs(row['delta']), row['target']))
+    return deltas
+
+
+def compare_rtlink_counts(baseline, trial):
+    """Full-run RTLink delta, never assumed to originate at the click time."""
+    deltas = rtlink_target_deltas(baseline, trial)
+    if deltas is None:
+        return {'available': False, 'reason': 'native RTLink census unavailable'}
+    _, original_totals = baseline
+    _, changed_totals = trial
     return {'available': True,
             'manager_hits_delta': changed_totals['manager_hits'] -
                                   original_totals['manager_hits'],

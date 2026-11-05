@@ -17,6 +17,8 @@ import re
 
 from decomp_status import read_tracker
 from inventory_native_handlers import map_entry
+from picker_click_trials import (compare_rtlink_counts, rtlink_census,
+                                 rtlink_target_deltas)
 
 
 TARGET = re.compile(r'(\d+):([0-9a-f]{1,4}):([0-9a-f]{1,4})\Z')
@@ -67,6 +69,28 @@ def study_trials(path):
     return str(path), record['trials']
 
 
+def complete_target_rows(report, trial, summary):
+    """Recover omitted target deltas from complete native census sidecars.
+
+    The saved summary is our immutable experiment report. If native sidecars
+    are present, demand that they reproduce *every* field in it exactly
+    before using any of their additional targets.
+    """
+    root = Path(report).parent
+    baseline_file = root / 'control-a' / 'native.rtlink-calls'
+    trial_file = root / trial['name'] / 'native.rtlink-calls'
+    if not baseline_file.is_file() and not trial_file.is_file():
+        return summary['first_targets'], False
+    if not baseline_file.is_file() or not trial_file.is_file():
+        raise ValueError(f'{report}: incomplete native RTLink census sidecars')
+    baseline = rtlink_census(baseline_file.parent)
+    observed = rtlink_census(trial_file.parent)
+    if compare_rtlink_counts(baseline, observed) != summary:
+        raise ValueError(f'{report}: original RTLink sidecars disagree with '
+                         f'saved trial {trial["name"]} summary')
+    return rtlink_target_deltas(baseline, observed), True
+
+
 def rank_studies(paths, sections=None, tracked=None):
     if not paths:
         raise ValueError('provide one or more completed controlled click studies')
@@ -77,19 +101,23 @@ def rank_studies(paths, sections=None, tracked=None):
                                    'with_object_context': 0, 'room_objects': set(),
                                    'studies': set(), 'examples': []})
     seen = set()
-    qualified = inconclusive = incomplete = missing = 0
+    qualified = inconclusive = incomplete = recovered = validated = missing = 0
     for argument in paths:
         name, trials = study_trials(argument)
         if name in seen:
             raise ValueError(f'duplicate controlled click report {name}')
         seen.add(name)
+        trial_names = set()
         for trial in trials:
             if not isinstance(trial, dict) or type(trial.get('comparison_qualified')) is not bool:
                 raise ValueError(f'{name}: missing controlled comparison qualification')
             if (not isinstance(trial.get('name'), str) or
+                not re.fullmatch(r'click-[0-9]{3}', trial['name']) or
+                trial['name'] in trial_names or
                 type(trial.get('x')) is not int or type(trial.get('y')) is not int or
                 not 0 <= trial['x'] < 640 or not 0 <= trial['y'] < 480):
                 raise ValueError(f'{name}: missing controlled click identity')
+            trial_names.add(trial['name'])
             if not trial['comparison_qualified']:
                 inconclusive += 1
                 continue
@@ -104,7 +132,10 @@ def rank_studies(paths, sections=None, tracked=None):
                     len(rows) != min(32, delta['changed_targets']) or \
                     bool(delta.get('truncated')) != (delta['changed_targets'] > 32):
                 raise ValueError(f'{name}: malformed RTLink target differences')
-            incomplete += int(bool(delta.get('truncated')))
+            rows, has_full_census = complete_target_rows(name, trial, delta)
+            validated += int(has_full_census)
+            recovered += int(bool(delta.get('truncated')) and has_full_census)
+            incomplete += int(bool(delta.get('truncated')) and not has_full_census)
             points = trial.get('picker_calls_at_injected_point', [])
             observations = trial.get('picker_trace', {}).get('calls', [])
             matching = [item for item in observations if item.get('call') in points]
@@ -158,7 +189,10 @@ def rank_studies(paths, sections=None, tracked=None):
     return {'studies': len(seen), 'qualified_trials': qualified,
             'inconclusive_trials': inconclusive,
             'qualified_missing_censuses': missing,
-            'qualified_truncated_censuses': incomplete,
+            'qualified_truncated_censuses': incomplete + recovered,
+            'validated_raw_census_pairs': validated,
+            'recovered_truncated_censuses': recovered,
+            'unrecovered_truncated_censuses': incomplete,
             'ranking_is_complete': incomplete == 0 and missing == 0,
             'targets': ranked}
 
@@ -187,7 +221,9 @@ def main():
         print(f'{results["studies"]} studies, {results["qualified_trials"]} qualified '
               f'trials, {results["inconclusive_trials"]} inconclusive; '
               f'{results["qualified_missing_censuses"]} missing censuses, '
-              f'{results["qualified_truncated_censuses"]} truncated delta lists')
+              f'{results["unrecovered_truncated_censuses"]} unrecovered truncated lists, '
+              f'{results["recovered_truncated_censuses"]} recovered lists, '
+              f'{results["validated_raw_census_pairs"]} validated raw census pairs')
         for item in results['targets'][:args.limit or None]:
             identity = item.get('original', item['target'])
             label = item.get('name') or '(untracked)'
