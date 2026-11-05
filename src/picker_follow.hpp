@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 
 #pragma once
+#include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <optional>
 
 namespace gateway {
@@ -111,6 +113,47 @@ class PickerDispatchWindow {
   private:
     bool active_ = false;
     unsigned call_ = 0, start_ms_ = 0, limit_ms_ = 0;
+};
+
+// Preserve only recent *guest-visible* DOS mouse reads. A native picker may
+// inspect cached mouse state instead of invoking INT 33h itself, so this
+// matches chronology and coordinates, not the provenance of its arguments.
+class PickerInputHistory {
+  public:
+    struct Read {
+        unsigned seq, ms, function;
+        int button;
+        unsigned buttons, count;
+        int x, y;
+        std::uint16_t resume_cs, resume_ip;
+    };
+    struct Match {
+        Read read;
+        unsigned age_ms;
+        bool coordinates_match;
+    };
+    static constexpr std::size_t capacity = 64;
+
+    void observe(Read read) {
+        if (reads_.size() == capacity)
+            reads_.pop_front();
+        reads_.push_back(read);
+    }
+    std::optional<Match> recent(unsigned ms, int x, int y, unsigned limit_ms) const {
+        // Never search further backward for a coincidentally matching position:
+        // the closest read is the only honest "last read" candidate.
+        for (auto it = reads_.rbegin(); it != reads_.rend(); ++it) {
+            if (it->ms > ms)
+                continue;
+            if (ms - it->ms > limit_ms)
+                return {};
+            return Match{*it, ms - it->ms, it->x == x && it->y == y};
+        }
+        return {};
+    }
+
+  private:
+    std::deque<Read> reads_;
 };
 
 } // namespace gateway

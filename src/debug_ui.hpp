@@ -41,6 +41,14 @@ struct DebugPickerObservation {
     // Last matching resident dispatch site within the bounded post-pick
     // window. Temporal observation, NOT proof this click caused the dispatch.
     std::optional<DispatchCandidate> downstream_candidate;
+    struct GuestMouseRead {
+        unsigned seq = 0, age_ms = 0, function = 0;
+        int button = -1;
+        unsigned buttons = 0, count = 0;
+        int x = 0, y = 0;
+        bool coordinates_match = false;
+    };
+    std::optional<GuestMouseRead> recent_input;
 };
 enum class DebugPickerVerdict { match, mismatch, unmodeled };
 DebugPickerVerdict debug_picker_verdict(const DebugPickerObservation &observation);
@@ -55,6 +63,7 @@ struct DebugOverlayData {
     unsigned guest_ms = 0;
     bool native_picker_monitoring = false;
     bool downstream_monitoring = false;
+    bool native_input_monitoring = false;
     std::optional<DebugPickerObservation> native_picker;
     std::string native_picker_error;
 };

@@ -85,6 +85,26 @@ int main() try {
     require(!dispatch.match(2999), "time reversal invalidates the association");
     dispatch.arm(27, 100, 0);
     require(!dispatch.match(100), "zero-size dispatch windows remain disabled");
+    gateway::PickerInputHistory input;
+    require(!input.recent(200, 20, 30, 500), "no guest mouse read is unlinked");
+    input.observe({1, 100, 3, -1, 0, 0, 20, 30, 0x1000, 0x550});
+    auto linked = input.recent(120, 20, 30, 50);
+    require(linked && linked->read.seq == 1 && linked->age_ms == 20 &&
+                linked->coordinates_match && linked->read.function == 3,
+            "native picker can reference the last real guest position poll");
+    input.observe({2, 125, 5, 0, 0, 1, 40, 50, 0x1000, 0x552});
+    linked = input.recent(130, 20, 30, 50);
+    require(linked && linked->read.seq == 2 && !linked->coordinates_match &&
+                linked->read.count == 1,
+            "never skip newer mismatching poll to claim an older coordinate match");
+    require(!input.recent(201, 40, 50, 50),
+            "expired guest read must not be attributed to a later picker");
+    require(!input.recent(99, 20, 30, 50), "future guest reads are not evidence");
+    for (unsigned i = 3; i <= 80; ++i)
+        input.observe({i, i + 200, 3, -1, 0, 0, int(i), int(i), 0x1000, 0x550});
+    require(input.recent(280, 80, 80, 50) &&
+                input.recent(280, 80, 80, 50)->read.seq == 80,
+            "bounded history must retain the newest guest read");
     std::cout << "Gateway bounded picker continuation checks passed\n";
 } catch (const std::exception &error) {
     std::cerr << error.what() << '\n';

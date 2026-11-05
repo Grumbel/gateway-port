@@ -80,8 +80,12 @@ struct State {
     std::ofstream picker_follow_trace;
     gateway::PickerFollowGate picker_follow_gate;
     gateway::PickerDispatchWindow picker_dispatch_window;
+    gateway::PickerInputHistory picker_input_history;
     unsigned picker_follow_steps = 96;
     unsigned picker_dispatch_ms = 2000;
+    unsigned picker_input_ms = 2000, picker_input_seq = 0;
+    unsigned picker_input_observed = 0, picker_input_missing = 0;
+    bool picker_input_monitoring = false;
     unsigned picker_follow_calls = 0, picker_follow_completed = 0;
     unsigned picker_follow_interrupted = 0, picker_follow_missed = 0;
     unsigned picker_follow_errors = 0;
@@ -1122,6 +1126,13 @@ void trace_picker(uc_engine *uc, std::uint64_t address, std::uint32_t,
             observation.model_ready = frame.model_ready;
             observation.predicted = frame.expected;
             gateway::debug_picker_resolve_source(observation, frame.entry_scene);
+            const auto input = state.picker_input_history.recent(state.elapsed_ms, frame.x,
+                                                                 frame.y, state.picker_input_ms);
+            if (input)
+                observation.recent_input = gateway::DebugPickerObservation::GuestMouseRead{
+                    input->read.seq, input->age_ms, input->read.function, input->read.button,
+                    input->read.buttons, input->read.count, input->read.x, input->read.y,
+                    input->coordinates_match};
             state.picker_observation = observation;
             state.picker_error.clear();
             const int model_result = !frame.model_ready ? -1 : frame.expected ? 1 : 0;
@@ -1154,6 +1165,26 @@ void trace_picker(uc_engine *uc, std::uint64_t address, std::uint32_t,
                                           << " source=" << gateway::debug_picker_source_name(observation.source)
                                           << " return=" << std::hex << frame.return_cs << ':'
                                           << frame.return_ip << std::dec << '\n';
+                if (input) {
+                    const auto &read = input->read;
+                    state.picker_follow_trace << "# input call=" << call_id
+                                              << " status=observed seq=" << read.seq
+                                              << " age=" << input->age_ms
+                                              << " func=" << read.function
+                                              << " button=" << read.button
+                                              << " buttons=" << read.buttons
+                                              << " count=" << read.count
+                                              << " x=" << read.x << " y=" << read.y
+                                              << " resume=" << std::hex << read.resume_cs
+                                              << ':' << read.resume_ip << std::dec
+                                              << " coords=" << (input->coordinates_match ? "match" : "differ")
+                                              << '\n';
+                    ++state.picker_input_observed;
+                } else {
+                    state.picker_follow_trace << "# input call=" << call_id
+                                              << " status=none\n";
+                    ++state.picker_input_missing;
+                }
             }
             if (state.picker_trace.is_open()) {
                 const char *verdict_name = verdict == gateway::DebugPickerVerdict::match
@@ -1570,6 +1601,7 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
                       << reg(uc, UC_X86_REG_IP) << '\n';
         if (number == 0x33) {
             auto &mouse = state.mouse;
+            const auto requested_button = reg(uc, UC_X86_REG_BX);
             if (ax == 0 || ax == 0x21) {
                 mouse = gateway::Mouse{};
                 mouse.max_y = state.vga.text_mode() ? 199 : state.vga.height() - 1;
@@ -1612,6 +1644,19 @@ void interrupt(uc_engine *uc, std::uint32_t number, void *opaque) noexcept {
                 mouse.motion_x = mouse.motion_y = 0;
             } else {
                 throw std::runtime_error("unsupported mouse service (see trace)");
+            }
+            if (state.picker_input_monitoring && (ax == 3 || ax == 5 || ax == 6)) {
+                // Record guest *reads* of host mouse state after returning
+                // results and (for 5/6) consuming the event counter. No
+                // guest registers/memory are changed by this observer.
+                state.picker_input_history.observe({
+                    ++state.picker_input_seq, state.elapsed_ms, ax,
+                    ax == 3 ? -1 : int(requested_button),
+                    ax == 3 ? unsigned(reg(uc, UC_X86_REG_BX)) :
+                              unsigned(reg(uc, UC_X86_REG_AX)),
+                    ax == 3 ? 0u : unsigned(reg(uc, UC_X86_REG_BX)),
+                    int(reg(uc, UC_X86_REG_CX)), int(reg(uc, UC_X86_REG_DX)),
+                    reg(uc, UC_X86_REG_CS), reg(uc, UC_X86_REG_IP)});
             }
         } else if (number == 0x21 && ((ax >> 8) == 7 || (ax >> 8) == 8 || (ax >> 8) == 1)) {
             if (state.pending_dos_scan) {
@@ -2332,6 +2377,8 @@ int main(int argc, char **argv) {
     bool picker_follow_steps_used = false;
     unsigned picker_dispatch_ms = 2000;
     bool picker_dispatch_ms_used = false;
+    unsigned picker_input_ms = 2000;
+    bool picker_input_ms_used = false;
     bool debug_native_picker = false;
     std::filesystem::path key_script_path;
     bool key_at_used = false;
@@ -2379,7 +2426,7 @@ int main(int argc, char **argv) {
                      "[--trace-rtlink-sequence FILE] "
                      "[--trace-picker FILE] [--debug-native-picker] "
                      "[--trace-picker-follow FILE --picker-follow-steps N "
-                     "--picker-dispatch-ms N] "
+                     "--picker-dispatch-ms N --picker-input-ms N] "
                      "[--key-script FILE --milliseconds N] "
                      "[--dump-at MS:PREFIX ...] "
                      "[--mouse-click-at MS:X:Y ...] "
@@ -2497,6 +2544,16 @@ int main(int argc, char **argv) {
             if (error != std::errc{} || end != value.data() + value.size() ||
                 picker_dispatch_ms < 1 || picker_dispatch_ms > 20000) {
                 std::cerr << "--picker-dispatch-ms requires an integer from 1 to 20000\n";
+                return 2;
+            }
+        } else if (option == "--picker-input-ms" && i + 1 < argc) {
+            picker_input_ms_used = true;
+            const auto value = std::string_view(argv[++i]);
+            const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(),
+                                                     picker_input_ms);
+            if (error != std::errc{} || end != value.data() + value.size() ||
+                picker_input_ms < 1 || picker_input_ms > 20000) {
+                std::cerr << "--picker-input-ms requires an integer from 1 to 20000\n";
                 return 2;
             }
         } else if (option == "--trace-rgn-dos" || option == "--trace-rgn-memory")
@@ -2886,6 +2943,11 @@ int main(int argc, char **argv) {
                      "--debug-native-picker\n";
         return 2;
     }
+    if (picker_input_ms_used && trace_picker_follow_path.empty() && !debug_native_picker) {
+        std::cerr << "--picker-input-ms requires --trace-picker-follow or "
+                     "--debug-native-picker\n";
+        return 2;
+    }
     try {
         std::ifstream file(argv[1], std::ios::binary);
         if (!file)
@@ -2894,6 +2956,8 @@ int main(int argc, char **argv) {
         auto image = gateway::load_mz(bytes);
         State state;
         state.debug_native_picker = debug_native_picker;
+        state.picker_input_monitoring = debug_native_picker || !trace_picker_follow_path.empty();
+        state.picker_input_ms = picker_input_ms;
         if (deterministic_clock)
             state.clock = gateway::DosClock::deterministic();
         state.trace_video = trace_video;
@@ -3395,6 +3459,7 @@ int main(int argc, char **argv) {
                                                               state.picker_follow_trace.is_open();
                     debug_overlay.downstream_monitoring = debug_native_picker ||
                                                           state.picker_follow_trace.is_open();
+                    debug_overlay.native_input_monitoring = state.picker_input_monitoring;
                     debug_overlay.native_picker = state.picker_observation;
                     debug_overlay.native_picker_error = state.picker_error;
                     debug_overlay.dump_message = state.debug_status;
@@ -3548,7 +3613,10 @@ int main(int argc, char **argv) {
                                       << " write_errors=" << state.picker_follow_write_errors
                                       << " dispatches=" << state.picker_dispatches
                                       << " dispatch_errors=" << state.picker_dispatch_errors
-                                      << " dispatch_ms=" << state.picker_dispatch_ms << '\n';
+                                      << " dispatch_ms=" << state.picker_dispatch_ms
+                                      << " inputs=" << state.picker_input_observed
+                                      << " input_missing=" << state.picker_input_missing
+                                      << " input_ms=" << state.picker_input_ms << '\n';
             state.picker_follow_trace.close();
             if (!state.picker_follow_trace)
                 throw std::runtime_error("cannot write native picker continuation trace");

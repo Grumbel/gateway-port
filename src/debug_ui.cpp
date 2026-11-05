@@ -142,11 +142,11 @@ void draw_native_picker_observation(std::span<std::uint32_t> image, int width, i
     // above the original bottom scrollbar controls. Never replace the
     // winner-map hover legend: that represents a different kind of evidence.
     const int right = std::min(width - 2, 283);
-    const int top = std::max(2, height - 105);
+    const int top = std::max(2, height - 119);
     if (right <= 4)
         return;
-    rect(image, width, height, 2, top, right, top + 67, panel, true);
-    rect(image, width, height, 2, top, right, top + 67, border, false);
+    rect(image, width, height, 2, top, right, top + 81, panel, true);
+    rect(image, width, height, 2, top, right, top + 81, border, false);
     char line[128];
     if (!data.native_picker_error.empty()) {
         text(image, width, height, 8, top + 6, "Native picker capture ERROR", failure, 33);
@@ -205,6 +205,17 @@ void draw_native_picker_observation(std::span<std::uint32_t> image, int width, i
         text(image, width, height, 8, top + 53, "Dispatch: no candidate observed", muted, 33);
     } else {
         text(image, width, height, 8, top + 53, "Dispatch: monitoring disabled", muted, 33);
+    }
+    if (pick.recent_input) {
+        const auto &read = *pick.recent_input;
+        std::snprintf(line, sizeof line, "Guest 33h/%u n%u @%d,%d +%ums %s",
+                      read.function, read.count, read.x, read.y, read.age_ms,
+                      read.coordinates_match ? "same" : "diff");
+        text(image, width, height, 8, top + 67, line, accent, 33);
+    } else if (data.native_input_monitoring) {
+        text(image, width, height, 8, top + 67, "Guest mouse: no recent 33h read", muted, 33);
+    } else {
+        text(image, width, height, 8, top + 67, "Guest mouse: monitoring disabled", muted, 33);
     }
     // Only mark *recent* actual invocations on the map. The current cursor
     // may have moved since the original picker ran; don't label it as native.

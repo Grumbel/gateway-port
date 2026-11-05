@@ -232,20 +232,21 @@ int main() try {
             "missing picker memory must not inherit provenance from the preceding call");
     winners.native_picker_monitoring = true;
     winners.downstream_monitoring = true;
+    winners.native_input_monitoring = true;
     winners.native_picker = observed;
     winners.guest_ms = 12500;
     std::vector<std::uint32_t> captured(640 * 480, 0xff123456);
     gateway::draw_debug_overlay(captured, 640, 480, winner_mouse, winners,
                                 false, true, 0);
     require(captured[55 * 640 + 55] == 0xff77efa8 &&
-                captured[376 * 640 + 2] == 0xff75aaff,
+                captured[362 * 640 + 2] == 0xff75aaff,
             "F10 should mark an actual recent guest pick and draw its evidence panel");
     // Even with H off, the F10 menu must show the original result, rather
     // than implying the highlighted mouse-over row is native evidence.
     std::vector<std::uint32_t> menu_result(640 * 480, 0xff123456);
     gateway::draw_debug_overlay(menu_result, 640, 480, winner_mouse, winners,
                                 true, false, 0);
-    require(menu_result[376 * 640 + 2] == 0xff75aaff,
+    require(menu_result[362 * 640 + 2] == 0xff75aaff,
             "native picker result must be visible in the F10 menu with H off");
     observed.downstream_candidate = gateway::DebugPickerObservation::DispatchCandidate{
         true, 0x71, 0, 0, 0x2c24, 0x1c59, 24};
@@ -254,11 +255,23 @@ int main() try {
     gateway::draw_debug_overlay(candidate, 640, 480, winner_mouse, winners,
                                 true, false, 0);
     bool candidate_visible = false;
-    for (int y = 428; y < 436; ++y)
+    for (int y = 414; y < 422; ++y)
         for (int x = 8; x < 283; ++x)
             candidate_visible |= candidate[y * 640 + x] != menu_result[y * 640 + x];
     require(candidate_visible, "F10 panel must expose downstream action candidates");
     observed.downstream_candidate.reset();
+    observed.recent_input = gateway::DebugPickerObservation::GuestMouseRead{
+        12, 3, 5, 0, 0, 1, 55, 55, true};
+    winners.native_picker = observed;
+    std::vector<std::uint32_t> mouse_read(640 * 480, 0xff123456);
+    gateway::draw_debug_overlay(mouse_read, 640, 480, winner_mouse, winners,
+                                true, false, 0);
+    bool mouse_read_visible = false;
+    for (int y = 428; y < 436; ++y)
+        for (int x = 8; x < 283; ++x)
+            mouse_read_visible |= mouse_read[y * 640 + x] != menu_result[y * 640 + x];
+    require(mouse_read_visible, "F10 must distinguish a real guest mouse read");
+    observed.recent_input.reset();
     observed.native_outputs = {1, 0, 1};
     require(gateway::debug_picker_verdict(observed) == gateway::DebugPickerVerdict::mismatch,
             "different original group/slot/kind must be labeled mismatch");
@@ -287,13 +300,13 @@ int main() try {
     gateway::draw_debug_overlay(old_result, 640, 480, winner_mouse, winners,
                                 false, true, 0);
     require(old_result[55 * 640 + 55] != 0xff77efa8 &&
-                old_result[376 * 640 + 2] == 0xff75aaff,
+                old_result[362 * 640 + 2] == 0xff75aaff,
             "last native result remains visible but stale position marker expires");
     winners.native_picker_error = "unreadable guest output";
     std::vector<std::uint32_t> capture_error(640 * 480, 0xff123456);
     gateway::draw_debug_overlay(capture_error, 640, 480, winner_mouse, winners,
                                 false, true, 0);
-    require(capture_error[376 * 640 + 2] == 0xff75aaff &&
+    require(capture_error[362 * 640 + 2] == 0xff75aaff &&
                 capture_error[55 * 640 + 55] != 0xff77efa8,
             "failed observation must show a capture error instead of a stale success");
     gateway::draw_debug_overlay(pixels, 640, 480, mouse, debug, true, false, 4);
