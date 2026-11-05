@@ -3,6 +3,7 @@
 
 #pragma once
 #include <cstdint>
+#include <optional>
 
 namespace gateway {
 
@@ -18,13 +19,23 @@ class PickerFollowGate {
         unsigned call = 0;
         unsigned step = 0;
     };
+    struct Instruction {
+        unsigned call, step;
+        std::uint64_t linear;
+    };
     static constexpr unsigned max_wait = 4096;
 
     bool active() const { return active_; }
     unsigned call() const { return call_; }
     unsigned recorded() const { return recorded_; }
     unsigned skipped() const { return skipped_; }
-    void clear() { active_ = false; }
+    // Valid between this instruction's CODE hook and the next CODE hook,
+    // including stores performed by the final instruction of the window.
+    std::optional<Instruction> current_instruction() const { return current_; }
+    void clear() {
+        active_ = false;
+        current_.reset();
+    }
     void arm(unsigned call, std::uint64_t return_linear,
              std::uint64_t retf_linear, unsigned limit) {
         active_ = limit != 0;
@@ -35,8 +46,10 @@ class PickerFollowGate {
         recorded_ = 0;
         skipped_ = 0;
         retf_skipped_ = false;
+        current_.reset();
     }
     Tick observe(std::uint64_t address) {
+        current_.reset();
         if (!active_)
             return {};
         if (recorded_ == 0 && address != return_linear_) {
@@ -52,6 +65,7 @@ class PickerFollowGate {
             return {Kind::missed_return, call_, 0};
         }
         const auto step = recorded_++;
+        current_ = Instruction{call_, step, address};
         if (recorded_ == limit_) {
             active_ = false;
             return {Kind::finished, call_, step};
@@ -62,6 +76,7 @@ class PickerFollowGate {
   private:
     bool active_ = false;
     bool retf_skipped_ = false;
+    std::optional<Instruction> current_;
     unsigned call_ = 0, limit_ = 0, recorded_ = 0, skipped_ = 0;
     std::uint64_t return_linear_ = 0, retf_linear_ = 0;
 };

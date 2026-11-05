@@ -83,6 +83,7 @@ struct State {
     unsigned picker_follow_calls = 0, picker_follow_completed = 0;
     unsigned picker_follow_interrupted = 0, picker_follow_missed = 0;
     unsigned picker_follow_errors = 0;
+    unsigned picker_follow_writes = 0, picker_follow_write_errors = 0;
     struct PickerFrame {
         int x = 0, y = 0;
         std::uint16_t return_ip = 0, return_cs = 0;
@@ -1229,6 +1230,37 @@ void trace_picker_follow(uc_engine *uc, std::uint64_t address, std::uint32_t siz
                                   << " ms=" << state.elapsed_ms << " detail=" << error.what() << '\n';
         state.picker_follow_gate.clear();
         ++state.picker_follow_errors;
+    }
+}
+
+// Unicorn's memory-write hook fires for guest CPU stores. It does not report
+// host-side uc_mem_write() calls, and a store alone does not prove that the
+// original UI consumed a click. Keep instruction attribution through the
+// *execution* of the final sampled instruction, after its CODE hook finishes.
+void trace_picker_follow_write(uc_engine *, uc_mem_type type, std::uint64_t address,
+                               int size, std::int64_t value, void *opaque) noexcept {
+    auto &state = *static_cast<State *>(opaque);
+    const auto instruction = state.picker_follow_gate.current_instruction();
+    if (!instruction || type != UC_MEM_WRITE)
+        return;
+    try {
+        if (size <= 0 || size > 8)
+            throw std::runtime_error("unsupported guest store width in continuation");
+        const auto mask = size == 8 ? ~std::uint64_t{0} :
+                         (std::uint64_t{1} << (8 * size)) - 1;
+        state.picker_follow_trace << "# write call=" << instruction->call
+                                  << " step=" << instruction->step
+                                  << " ms=" << state.elapsed_ms
+                                  << " linear=" << std::hex << address
+                                  << " size=" << std::dec << size
+                                  << " value=" << std::hex
+                                  << (std::uint64_t(value) & mask) << std::dec << '\n';
+        ++state.picker_follow_writes;
+    } catch (const std::exception &error) {
+        ++state.picker_follow_write_errors;
+        state.picker_follow_trace << "# write-error call=" << instruction->call
+                                  << " step=" << instruction->step
+                                  << " detail=" << error.what() << '\n';
     }
 }
 
@@ -2985,9 +3017,13 @@ int main(int argc, char **argv) {
                               picker_return, picker_return));
         }
         uc_hook picker_follow_hook{};
-        if (state.picker_follow_trace.is_open())
+        uc_hook picker_follow_write_hook{};
+        if (state.picker_follow_trace.is_open()) {
             check(uc_hook_add(engine.uc, &picker_follow_hook, UC_HOOK_CODE,
                               reinterpret_cast<void *>(trace_picker_follow), &state, 1, 0));
+            check(uc_hook_add(engine.uc, &picker_follow_write_hook, UC_HOOK_MEM_WRITE,
+                              reinterpret_cast<void *>(trace_picker_follow_write), &state, 1, 0));
+        }
         std::array<uc_hook, 10> object_hooks{};
         if (!object_flags_mode.empty()) {
             const auto count = object_state_services ? object_services.size() : 1;
@@ -3383,7 +3419,9 @@ int main(int argc, char **argv) {
                                       << " missed=" << state.picker_follow_missed
                                       << " errors=" << state.picker_follow_errors
                                       << " pending=" << (state.picker_follow_gate.active() ? 1 : 0)
-                                      << " steps=" << state.picker_follow_steps << '\n';
+                                      << " steps=" << state.picker_follow_steps
+                                      << " writes=" << state.picker_follow_writes
+                                      << " write_errors=" << state.picker_follow_write_errors << '\n';
             state.picker_follow_trace.close();
             if (!state.picker_follow_trace)
                 throw std::runtime_error("cannot write native picker continuation trace");

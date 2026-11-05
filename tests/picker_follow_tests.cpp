@@ -20,7 +20,7 @@ int main() try {
             "disabled tracing must not observe any instruction");
     gate.arm(17, 0x34123, 0x26a8f, 3);
     require(gate.active() && gate.observe(0x26a8f).kind == Kind::waiting &&
-                gate.skipped() == 0,
+                gate.skipped() == 0 && !gate.current_instruction(),
             "hook-order RETF callbacks must not consume a follow sample");
     require(gate.observe(0x26a8f).kind == Kind::waiting && gate.skipped() == 1,
             "repeated RETF callbacks must count toward the bounded wait");
@@ -29,13 +29,18 @@ int main() try {
     auto tick = gate.observe(0x34123);
     require(tick.kind == Kind::sample && tick.call == 17 && tick.step == 0,
             "actual caller return address starts the bounded window");
+    require(gate.current_instruction() && gate.current_instruction()->call == 17 &&
+                gate.current_instruction()->step == 0 &&
+                gate.current_instruction()->linear == 0x34123,
+            "a guest store can be attributed to the currently executed instruction");
     tick = gate.observe(0x34125);
     require(tick.kind == Kind::sample && tick.step == 1, "follow window is sequential");
     tick = gate.observe(0x23210);
     require(tick.kind == Kind::finished && tick.step == 2 && !gate.active() &&
-                gate.recorded() == 3,
+                gate.recorded() == 3 && gate.current_instruction() &&
+                gate.current_instruction()->step == 2,
             "window must stop exactly at its instruction budget, including branches");
-    require(gate.observe(0x99999).kind == Kind::inactive,
+    require(gate.observe(0x99999).kind == Kind::inactive && !gate.current_instruction(),
             "completed window must never leak instructions from another action");
 
     gate.arm(18, 0x12345, 0x26a8f, 1);
@@ -54,7 +59,12 @@ int main() try {
     require(tick.kind == Kind::finished && tick.call == 20 && tick.step == 0,
             "interrupted window must not mix evidence with a later picker call");
     gate.arm(21, 0x12345, 0x26a8f, 0);
-    require(!gate.active(), "zero-budget follow windows must remain disabled");
+    require(!gate.active() && !gate.current_instruction(),
+            "zero-budget follow windows must remain disabled");
+    gate.arm(22, 0x12345, 0x26a8f, 2);
+    gate.observe(0x12345);
+    gate.clear();
+    require(!gate.current_instruction(), "forced abort must clear store attribution");
     std::cout << "Gateway bounded picker continuation checks passed\n";
 } catch (const std::exception &error) {
     std::cerr << error.what() << '\n';
