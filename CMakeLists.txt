@@ -6,6 +6,64 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 include(CTest)
 option(GATEWAY_WITH_SDL "Build the SDL3 host diagnostic" ON)
 option(GATEWAY_WITH_UNICORN "Build the real-mode startup probe" ON)
+option(GATEWAY_INTRO_DECOMPILE_ONLY "Build only the reconstructed original GATE intro C library and tests" OFF)
+
+# This is reconstructed original C, not the separate SDL/C++ approximation
+# in src/intro_player.cpp. It deliberately keeps undefined original runtime
+# services as unresolved externals in the archive until they are recovered.
+add_library(gateway_intro_decompiled STATIC
+  decomp/launcher/gate_exe.c
+  decomp/launcher/gate_exe_helpers.c
+  decomp/launcher/gate_rtl.c
+  decomp/launcher/gate_rtl_video.c
+  decomp/launcher/gate_rtl_graphics.c
+  decomp/launcher/gate_rtl_linkage.c)
+target_include_directories(gateway_intro_decompiled PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/decomp/launcher>
+  $<INSTALL_INTERFACE:include/gateway/intro>)
+target_compile_features(gateway_intro_decompiled PUBLIC c_std_11)
+target_compile_options(gateway_intro_decompiled PRIVATE -Wall -Wextra -Wpedantic)
+install(TARGETS gateway_intro_decompiled ARCHIVE DESTINATION lib)
+install(FILES decomp/launcher/gate_exe.h decomp/launcher/gate_rtl.h
+              decomp/launcher/gate_rtl_video.h
+              decomp/launcher/gate_rtl_graphics.h
+        DESTINATION include/gateway/intro)
+
+if(BUILD_TESTING)
+  add_executable(launcher-decompile-tests
+    decomp/launcher/gate_exe.c decomp/launcher/gate_exe_helpers.c
+    tests/launcher_decompile_tests.c)
+  target_include_directories(launcher-decompile-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-decompile COMMAND launcher-decompile-tests)
+  add_executable(launcher-rtl-decompile-tests
+    decomp/launcher/gate_rtl.c decomp/launcher/gate_rtl_video.c
+    decomp/launcher/gate_exe_helpers.c tests/launcher_rtl_decompile_tests.c)
+  target_include_directories(launcher-rtl-decompile-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-rtl-decompile COMMAND launcher-rtl-decompile-tests
+    ${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos)
+  add_executable(launcher-rtl-video-decompile-tests
+    decomp/launcher/gate_rtl_video.c decomp/launcher/gate_exe_helpers.c
+    tests/launcher_rtl_video_decompile_tests.c)
+  target_include_directories(launcher-rtl-video-decompile-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-rtl-video-decompile COMMAND launcher-rtl-video-decompile-tests)
+  add_executable(launcher-rtl-graphics-decompile-tests
+    decomp/launcher/gate_rtl_graphics.c
+    tests/launcher_rtl_graphics_decompile_tests.c)
+  target_include_directories(launcher-rtl-graphics-decompile-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-rtl-graphics-decompile COMMAND launcher-rtl-graphics-decompile-tests)
+  find_package(Python3 COMPONENTS Interpreter QUIET)
+  if(Python3_Interpreter_FOUND)
+    add_test(NAME launcher-rtl-graphics-binary COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_rtl_graphics_binary_tests.py)
+  endif()
+endif()
+
+# An independent, dependency-light flake output for inspecting, compiling,
+# and testing the actual reconstructed C. No emulation or SDL linkage is used.
+if(GATEWAY_INTRO_DECOMPILE_ONLY)
+  return()
+endif()
+
 add_library(nuked_opl3 STATIC third_party/nuked-opl3/opl3.c)
 target_include_directories(nuked_opl3 PUBLIC third_party/nuked-opl3)
 add_library(gateway_core src/mz.cpp src/rtlink.cpp src/object_flags.cpp src/story_model.cpp src/dos_clock.cpp src/dos_files.cpp src/dos_fcb.cpp src/dos_memory.cpp src/vga.cpp src/opl.cpp src/adlib_driver.cpp src/pit.cpp src/pic.cpp src/scene_compositor.cpp src/scene_animation.cpp src/host_scene_preview.cpp src/crusher.cpp src/png.cpp src/regions.cpp src/debug_scene.cpp src/debug_state.cpp src/debug_ui.cpp src/picker_scene_trace.cpp src/picker_capture.cpp src/ui_layout.cpp src/story/intro_presentation.cpp)
@@ -49,22 +107,6 @@ if(BUILD_TESTING)
     decomp/engine/gatemain_flags.c tests/gatemain_flags_decompile_tests.c)
   target_include_directories(gatemain-flags-decompile-tests PRIVATE decomp/engine)
   add_test(NAME gatemain-flags-decompile COMMAND gatemain-flags-decompile-tests)
-  add_executable(launcher-decompile-tests
-    decomp/launcher/gate_exe.c decomp/launcher/gate_exe_helpers.c
-    tests/launcher_decompile_tests.c)
-  target_include_directories(launcher-decompile-tests PRIVATE decomp/launcher)
-  add_test(NAME launcher-decompile COMMAND launcher-decompile-tests)
-  add_executable(launcher-rtl-decompile-tests
-    decomp/launcher/gate_rtl.c decomp/launcher/gate_rtl_video.c
-    decomp/launcher/gate_exe_helpers.c tests/launcher_rtl_decompile_tests.c)
-  target_include_directories(launcher-rtl-decompile-tests PRIVATE decomp/launcher)
-  add_test(NAME launcher-rtl-decompile COMMAND launcher-rtl-decompile-tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos)
-  add_executable(launcher-rtl-video-decompile-tests
-    decomp/launcher/gate_rtl_video.c decomp/launcher/gate_exe_helpers.c
-    tests/launcher_rtl_video_decompile_tests.c)
-  target_include_directories(launcher-rtl-video-decompile-tests PRIVATE decomp/launcher)
-  add_test(NAME launcher-rtl-video-decompile COMMAND launcher-rtl-video-decompile-tests)
   add_executable(intro-presentation-tests tests/intro_presentation_tests.cpp)
   target_link_libraries(intro-presentation-tests PRIVATE gateway_core)
   add_test(NAME intro-presentation COMMAND intro-presentation-tests

@@ -126,20 +126,81 @@ call into the emulator is replaced yet**: the linked pointer-normalization
 and lower-level video/pixel services
 are explicit unresolved dependencies, not invented native graphics APIs.
 
+## Decompiled graphics palette transitions (GATE.RTL)
+
+Five further original functions are recovered in `gate_rtl_graphics.c`:
+
+| RTL file offset | Original linked far entry | C function | Operation |
+| --- | --- | --- | --- |
+| `0x12773–0x12821` | `0f10:0c6e` | `gate_rtl_12773()` | For graphics mode 3, upload 17 palettes containing 768 signed bytes scaled by `0,4,...,64`; for other nonzero modes except 1, scale 48 bytes; mode 1 uploads a null FAR pointer once. |
+| `0x12823–0x12891` | `0f10:0d1e` | `gate_rtl_12823()` | Clear a positive, mode-indexed signed number of bytes in the original video buffer, then upload a null palette pointer. |
+| `0x12893–0x12995` | `0f10:0d8e` | `gate_rtl_12893()` | Mode 1: three rounds of 16 destructive byte bit-transformations, null palette uploads, and 100ms delays. Other nonzero modes: 17 palettes with factors `64,60,...,0`, followed by `rtl:0x12823`. |
+| `0x13185–0x13190` | `0f10:1680` | `gate_rtl_13185()` | Clear the first byte of an unconditionally dereferenced far work-area pointer. |
+| `0x131cb–0x131f5` | `0f10:16c6` | `gate_rtl_131cb()` | If the pointer is non-null and its first byte is set, call the original resource-release service on the same-segment pointer plus 8, then clear that byte. |
+
+Both fades preserve the original low-16-bit IMUL result and signed
+truncate-toward-zero division. The buffer reset preserves the mode table's
+signed comparison and the original repeated read of its entry. All five
+palette upload call sites in these functions resolve in a captured guest
+image to original `GATE.RTL:0xf61b`, linked
+as `0cdc:04d2`. The mode-1 delay resolves to `123f:00b6`. The
+work-area cleanup service resolves to `145d:016c` and remains external.
+
+`gate_rtl_linkage.c` connects these five far-call names and five already
+recovered font far-call names directly to their source-shaped C functions;
+it is a source-level linker adapter, not a fake graphics renderer or an
+additional original C routine. Original RTL globals and the palette uploader
+remain explicit unresolved dependencies.
+
+The `launcher-rtl-graphics-decompile` test covers palette data and ordering,
+signed sample values, both mode branches, the 16-byte destructive transform,
+zero-length and negative-count paths, mode-index wrap, and the work area's
+null-guarded cleanup and 16-bit far offset wrap. The independent
+`launcher-rtl-graphics-binary` test checks original function boundaries and
+all 16 mapped intro graphics/video entries; if the private captured RAM is
+available, it also proves all 16 original RTL file identities and the
+relevant relocated 8086 `CALL FAR` targets. These are host/source-level
+checks, **not yet original-entry guest differential tests**.
+
+### Independent C build, including the Nix flake
+
+```sh
+nix build .#intro-decompile -L
+# Installs lib/libgateway_intro_decompiled.a and include/gateway/intro/*.h.
+
+# Equivalent without Nix/SDL/Unicorn:
+cmake -S . -B build/intro-c-only -DGATEWAY_INTRO_DECOMPILE_ONLY=ON
+cmake --build build/intro-c-only
+ctest --test-dir build/intro-c-only --output-on-failure
+```
+
+**This is not yet a playable source-C intro.** The archive contains C object
+code with unresolved original DOS/RTL services and segmented-memory globals.
+There is no source-C executable entry point or native host adapter yet.
+`nix run .#intro` still starts the independent C++ presentation prototype,
+not this decompilation. A successful CMake/Nix build only proves the archive
+and tests can compile; it does *not* demonstrate that the C intro plays.
+
+With graphics now mapped to immutable file identities, the immediate intro
+dependencies to recover next are original RTL `0xf61b` (palette uploader),
+`0x12b19` (image display), its processing calls `0x12c33`/`0x12ed7`,
+and the `145d:016c` resource-release service. Recover the remaining
+video/keyboard/timing services and use the original guest as an entry-state
+oracle *before* claiming a standalone intro or resuming game logic.
+
 ## Immediate next functions
 
-1. Decompile the far pointer normalization services called at
-   `rtl:0xecb0/0xed8a` and the pixel writer called at `rtl:0xef83`.
-   Also recover the text-mode cursor/print dependency calls at
-   `rtl:0xed74/0xeda5/0xedb7`.
-2. Recover the linked graphics and RTL calls (`0xf10:1680`, `0xf10:112e`,
-   `0xf10:13d2`, `0xf10:16c6`, `0xcdc:04d2`) by their actual code bodies,
-   then replace provisional service declarations in the C transcription.
-3. Recover the other linked RTL calls by their identities in `GATE.RTL`, then
-   replace the provisional far-call prototypes in the C transcription.
-4. Recompile against an appropriate 16-bit C compiler and compare individual
-   entry/return register and memory states under the Unicorn probe. The
-   native host port comes **after** these source-level routines are recovered.
+1. Decompile `rtl:0xf61b` and the remaining 11 mapped graphics/video
+   entry points, preserving their original ABI and data globals.
+2. Recover the linked font pixel service (`rtl:0xef83`), text-mode video
+   dependencies (`rtl:0xed74/0xeda5/0xedb7`), keyboard, mouse and timing
+   services on the intro's actual call graph.
+3. Replace the source-C shim's unresolved callback globals and services with
+   individually verified original source or narrow host hardware adapters.
+4. Validate the decompiled C with guest-entry memory/register/side-effect
+   differential tests, then demonstrate a real runnable intro backed by
+   `gateway_intro_decompiled`. Do not resume game-logic decompilation until
+   this milestone passes.
 
 Reference disassembly (read original files only; no binary bytes committed):
 

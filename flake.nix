@@ -7,21 +7,38 @@
       eachSystem = nixpkgs.lib.genAttrs systems;
     in {
       packages = eachSystem (system:
-        let pkgs = import nixpkgs { inherit system; }; in {
+        let
+          pkgs = import nixpkgs { inherit system; };
+          source = pkgs.lib.cleanSourceWith {
+            src = self;
+            filter = path: type:
+              let name = builtins.baseNameOf path;
+              in pkgs.lib.cleanSourceFilter path type &&
+                !(type == "directory" &&
+                  (pkgs.lib.hasPrefix "build" name || name == ".direnv"));
+          };
+        in {
           default = pkgs.stdenv.mkDerivation {
             pname = "gateway-port";
             version = "0.1.0";
-            src = pkgs.lib.cleanSourceWith {
-              src = self;
-              filter = path: type:
-                let name = builtins.baseNameOf path;
-                in pkgs.lib.cleanSourceFilter path type &&
-                  !(type == "directory" &&
-                    (pkgs.lib.hasPrefix "build" name || name == ".direnv"));
-            };
+            src = source;
             nativeBuildInputs = [ pkgs.cmake pkgs.python3 ];
             buildInputs = [ pkgs.sdl3 pkgs.unicorn ];
             doCheck = true;
+          };
+          # Independent C-only archive of original-code reconstruction.
+          # It is intentionally NOT a playable intro until all linked RTL
+          # services and the host adapter have been recovered and verified.
+          intro-decompile = pkgs.stdenv.mkDerivation {
+            pname = "gateway-intro-decompile";
+            version = "0.1.0";
+            src = source;
+            nativeBuildInputs = [ pkgs.cmake pkgs.python3 ];
+            cmakeFlags = [ "-DGATEWAY_INTRO_DECOMPILE_ONLY=ON" ];
+            doCheck = true;
+            checkPhase = ''
+              ctest --output-on-failure
+            '';
           };
         });
       apps = eachSystem (system: {
@@ -32,6 +49,7 @@
       checks = eachSystem (system:
         let pkgs = import nixpkgs { inherit system; }; in {
           build = self.packages.${system}.default;
+          intro-decompile = self.packages.${system}.intro-decompile;
           reuse = pkgs.runCommand "gateway-port-reuse" {
             nativeBuildInputs = [ pkgs.reuse ];
             src = pkgs.lib.cleanSourceWith {
