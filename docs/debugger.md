@@ -244,12 +244,31 @@ written low-order bytes in hexadecimal (unlike the decimal `size`). A store
 from the final sampled instruction is included. The default window is 96
 instructions; `--picker-follow-steps N` accepts 1–1024.
 
+Two narrowly hooked resident dispatch sites are also monitored for **up to
+2000 guest milliseconds after the original picker return** (override with
+`--picker-dispatch-ms N`, 1–20000). The `# dispatch` records include call ID,
+elapsed time, action/event and available arguments:
+
+- `context`: resident action-context coordinator entry
+  (`GATEMAIN.EXE:0x105e`, observed `1000:01a4`), with checked prologue and
+  native far-call stack action/event and two object IDs.
+- `action-table`: original indirect far action CALL
+  (`GATEMAIN.EXE:0x59ae`, observed `1476:0060`), with verified five-byte
+  opcode, action-directory index and live target CS:IP.
+
+These addresses are specific to the pinned Gateway 1 launch layout. Other
+mouse consumers may not visit either site. A new picker ends the prior
+association; an expired window cannot claim unrelated later actions. The
+summary includes `dispatches`, `dispatch_errors` and `dispatch_ms`, which the
+comparator checks. They are *time-correlated dispatcher candidates*, **not**
+proof that the click caused their execution or successfully handled anything.
+
 ```sh
 mkdir -p build/picker-follow
 gateway-run ../gateway-dos/GATE.EXE \
   --trace-picker build/picker-follow/picks.tsv \
   --trace-picker-follow build/picker-follow/continuation.tsv \
-  --picker-follow-steps 128
+  --picker-follow-steps 128 --picker-dispatch-ms 3000
 ```
 
 The trace is written when the runtime exits. Only the known Gateway 1 picker
@@ -287,6 +306,19 @@ linear address, size, value), not a guessed acceptance condition. It accepts
 older continuation captures without write information and explicitly reports
 their limited evidence. Register differences are displayed for inspection but
 do not by themselves establish a different code path.
+Dispatcher candidates are compared by kind, action/event, object arguments,
+and target address; timing-only differences are ignored. A report showing
+`No known resident dispatcher candidates` does **not** establish rejection:
+the click may use another UI path, take longer, or bypass those sites.
+Older traces remain usable with dispatch evidence labeled unavailable.
+
+The F10 native-picker panel also shows the last observed candidate as a fifth
+row, when monitoring with `--debug-native-picker` or `--trace-picker-follow`.
+It distinguishes "no candidate observed" from "monitoring disabled". For
+interactive F10-only debugging, `--debug-native-picker --picker-dispatch-ms 3000`
+activates just the two focused hooks without the expensive global
+instruction trace.
+
 This is the next step toward locating the downstream click consumer, **not**
 proof that it accepted an action. Do not label a click `accepted` without
 tracing the relevant caller branch and its actual side effects.

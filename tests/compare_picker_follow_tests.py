@@ -20,7 +20,7 @@ def row(call, step, ip, opcode, ax='1'):
     return '\t'.join(columns)
 
 
-def make(path, rows, writes=(), legacy=False):
+def make(path, rows, writes=(), legacy=False, dispatches=None):
     calls = max(int(row.split('\t', 1)[0]) for row in rows)
     per_call = {}
     for item in rows:
@@ -32,16 +32,27 @@ def make(path, rows, writes=(), legacy=False):
     endings += ''.join(f'# end call={call} status=missed-return steps=0\n'
                        for call in range(1, calls + 1) if call not in per_call)
     completed = sum(count == 3 for count in per_call.values())
-    path.write_text('\t'.join(MODULE.FIELDS) + '\n' + '\n'.join(rows) + '\n' +
+    picker_calls = (''.join(f'# call={call} ms=1200 x=100 y=100\n'
+                            for call in range(1, calls + 1)) if dispatches is not None else '')
+    path.write_text('\t'.join(MODULE.FIELDS) + '\n' + picker_calls +
+                    '\n'.join(rows) + '\n' +
                     ''.join(event + '\n' for event in writes) +
+                    ''.join(event + '\n' for event in (dispatches or ())) +
                     endings + f'# follow-summary calls={calls} completed={completed} '
                     f'interrupted={len(per_call) - completed} missed={missing} '
                     'errors=0 pending=0 steps=3' +
-                    ('' if legacy else f' writes={len(writes)} write_errors=0') + '\n')
+                    ('' if legacy else f' writes={len(writes)} write_errors=0') +
+                    ('' if dispatches is None else
+                     f' dispatches={len(dispatches)} dispatch_errors=0 dispatch_ms=2000') + '\n')
 
 
 def write(call, step, address, value, size=2):
     return f'# write call={call} step={step} ms=1200 linear={address:x} size={size} value={value:x}'
+
+
+def dispatch(kind, action, first=0, second=0, cs=0, ip=0, age=10, call=1):
+    return (f'# dispatch call={call} ms={1200 + age} age={age} kind={kind} '
+            f'action={action:x} first={first:x} second={second:x} target={cs:x}:{ip:x}')
 
 
 with tempfile.TemporaryDirectory() as dirname:
@@ -103,6 +114,68 @@ with tempfile.TemporaryDirectory() as dirname:
         assert 'failed memory-write' in str(error)
     else:
         raise AssertionError('failed memory-write observation should fail')
+    samples = [row(1, 0, '100', '85c0'), row(1, 1, '102', '7404'),
+               row(1, 2, '104', '8b00')]
+    make(left, samples, dispatches=[dispatch('context', 0x5f, 0xee, 0x124),
+                                    dispatch('action-table', 0x5f, cs=0x148e, ip=0xb90)])
+    make(right, samples, dispatches=[dispatch('context', 0x5f, 0xee, 0x124),
+                                     dispatch('action-table', 0x71, cs=0x2c24, ip=0x1c59)])
+    report = MODULE.compare(left, right)
+    assert 'No code-path divergence' in report
+    assert 'Temporally associated dispatch candidates: left=2, right=2' in report
+    assert 'First candidate-dispatch divergence at event 1' in report
+    assert 'left:  action-table action=0x5f' in report
+    assert 'right: action-table action=0x71' in report
+    assert 'not causal proof' in report
+    make(right, samples, dispatches=[dispatch('context', 0x5f, 0xee, 0x124, age=20),
+                                     dispatch('action-table', 0x5f, cs=0x148e, ip=0xb90,
+                                              age=50)])
+    assert 'No candidate-dispatch divergence' in MODULE.compare(left, right)
+    make(right, samples, dispatches=[dispatch('context', 0x5f, 0xee, 0x124)])
+    assert 'only left: action-table' in MODULE.compare(left, right)
+    make(right, samples, dispatches=[])
+    assert 'No known resident dispatcher candidates' not in MODULE.compare(left, right)
+    make(left, samples, dispatches=[])
+    assert 'No known resident dispatcher candidates' in MODULE.compare(left, right)
+    make(left, samples, dispatches=[dispatch('context', 0x5f, 0xee, 0x124),
+                                    dispatch('action-table', 0x5f, cs=0x148e, ip=0xb90)])
+    for malformed in (dispatch('context', 0x5f, 0xee, 0x124, age=2001),
+                      dispatch('context', 0x5f, 0xee, 0x124, call=2),
+                      dispatch('context', 0x5f, 0xee, 0x124, cs=1),
+                      dispatch('action-table', 0, cs=0x148e, ip=0xb90)):
+        make(right, samples, dispatches=[malformed])
+        try:
+            MODULE.read_trace(right)
+        except ValueError as error:
+            assert 'invalid native dispatch' in str(error)
+        else:
+            raise AssertionError('invalid dispatch association should fail')
+    make(right, samples, dispatches=[dispatch('context', 0x5f, 0xee, 0x124)])
+    right.write_text(right.read_text().replace('dispatches=1', 'dispatches=2'))
+    try:
+        MODULE.read_trace(right)
+    except ValueError as error:
+        assert 'dispatch count' in str(error)
+    else:
+        raise AssertionError('dispatch summary count mismatch should fail')
+    make(right, samples, dispatches=[dispatch('context', 0x5f, 0xee, 0x124)])
+    right.write_text(right.read_text().replace('# call=1 ms=1200 x=100 y=100\n', ''))
+    try:
+        MODULE.read_trace(right)
+    except ValueError as error:
+        assert 'call markers disagree' in str(error)
+    else:
+        raise AssertionError('missing native picker timestamp should fail')
+    make(right, samples, dispatches=[dispatch('context', 0x5f, 0xee, 0x124)])
+    right.write_text(right.read_text().replace('dispatch_errors=0', 'dispatch_errors=1'))
+    try:
+        MODULE.read_trace(right)
+    except ValueError as error:
+        assert 'failed or invalid dispatch' in str(error)
+    else:
+        raise AssertionError('dispatch error must reject trace')
+    make(right, samples)
+    assert 'older format' in MODULE.compare(left, right)
     make(left, [row(1, 0, '100', '85c0'), row(1, 1, '102', '7404'),
                 row(1, 2, '104', '8b00')])
     make(right, [row(2, 0, '200', '9090')])

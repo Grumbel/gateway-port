@@ -906,6 +906,19 @@ regressions pass. CPU stores may be stack/temporary writes; host HLE memory
 changes are not captured, and click dispatch/acceptance remains unproven.
 Original-game replay with two equivalent saved states is still pending.
 
+2026-11-05 bounded post-picker dispatcher candidates (§3.6): after a confirmed
+native picker return, retain a short guest-time association window (default
+2 seconds; configurable 1–20 seconds) and hook two resident dispatch sites:
+the action-context coordinator (`exe:0x00105e`) and validated indirect action
+table CALL (`exe:0x0059ae`). Record action/event ID, context object IDs and/or
+the indirect far target, including the original call's age. Both are labeled
+*temporal candidates*, not actual accepted mouse actions. A new picker ends the
+previous window; mismatched signatures are ignored rather than misattributed.
+The F10 native-result panel displays the last candidate; the offline comparator
+reports the first candidate-dispatch difference while ignoring timing-only
+variation. Synthetic association, parsing and raster tests pass; native mouse
+replay is still required to show whether either dispatcher consumes these picks.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |

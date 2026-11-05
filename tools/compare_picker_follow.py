@@ -25,7 +25,9 @@ def read_trace(path):
     summary = dict(field.split('=', 1) for field in summaries[0].split()[2:])
     required = {'calls', 'completed', 'interrupted', 'missed', 'errors', 'pending', 'steps'}
     write_fields = {'writes', 'write_errors'}
-    has_writes = set(summary) == required | write_fields
+    dispatch_fields = {'dispatches', 'dispatch_errors', 'dispatch_ms'}
+    has_dispatch = set(summary) == required | write_fields | dispatch_fields
+    has_writes = has_dispatch or set(summary) == required | write_fields
     if not has_writes and set(summary) != required:
         raise ValueError('unexpected continuation summary fields')
     summary = {key: int(value) for key, value in summary.items()}
@@ -36,6 +38,8 @@ def read_trace(path):
         raise ValueError('continuation summary does not account for every call')
     if has_writes and summary['write_errors']:
         raise ValueError('continuation contains failed memory-write observations')
+    if has_dispatch and (summary['dispatch_errors'] or not 1 <= summary['dispatch_ms'] <= 20000):
+        raise ValueError('continuation contains failed or invalid dispatch observations')
     endings = {}
     for line in lines:
         if not line.startswith('# end call='):
@@ -104,7 +108,59 @@ def read_trace(path):
         raise ValueError('continuation write count disagrees with summary')
     if any(line.startswith('# write-error ') for line in lines):
         raise ValueError('continuation contains failed memory-write observations')
-    return calls, endings, writes if has_writes else None
+    dispatches = {}
+    if has_dispatch:
+        picker_times = {}
+        for line in lines:
+            if not line.startswith('# call='):
+                continue
+            fields = dict(part.split('=', 1) for part in line.split()[1:])
+            try:
+                call, ms = int(fields['call']), int(fields['ms'])
+            except (ValueError, KeyError) as error:
+                raise ValueError('invalid native picker call marker') from error
+            if call in picker_times or call <= 0 or ms < 0:
+                raise ValueError('duplicate or invalid native picker call marker')
+            picker_times[call] = ms
+        if set(picker_times) != set(range(1, summary['calls'] + 1)):
+            raise ValueError('native picker call markers disagree with summary')
+        for line in lines:
+            if not line.startswith('# dispatch '):
+                continue
+            fields = line.split()[2:]
+            if len(fields) != 8 or any('=' not in field for field in fields):
+                raise ValueError('malformed native dispatch marker')
+            details = dict(field.split('=', 1) for field in fields)
+            if set(details) != {'call', 'ms', 'age', 'kind', 'action',
+                                'first', 'second', 'target'}:
+                raise ValueError('invalid native dispatch marker fields')
+            try:
+                call, ms, age = (int(details[key]) for key in ('call', 'ms', 'age'))
+                action, first, second = (int(details[key], 16) for key in
+                                         ('action', 'first', 'second'))
+                cs, ip = (int(piece, 16) for piece in details['target'].split(':'))
+            except ValueError as error:
+                raise ValueError('invalid native dispatch marker values') from error
+            if (call not in picker_times or ms < 0 or ms - picker_times[call] != age or
+                not 0 <= age <= summary['dispatch_ms'] or
+                details['kind'] not in ('context', 'action-table') or
+                not all(0 <= value <= 0xffff for value in (action, first, second, cs, ip)) or
+                (details['kind'] == 'context' and (cs or ip)) or
+                (details['kind'] == 'action-table' and
+                 (not 1 <= action <= 195 or first or second)) or
+                not all(re.fullmatch('[0-9a-f]+', details[key]) for key in
+                        ('action', 'first', 'second')) or
+                not re.fullmatch('[0-9a-f]+:[0-9a-f]+', details['target'])):
+                raise ValueError('invalid native dispatch association or contents')
+            dispatches.setdefault(call, []).append((details['kind'], action, first, second,
+                                                     cs, ip, age))
+        if sum(map(len, dispatches.values())) != summary['dispatches']:
+            raise ValueError('native dispatch count disagrees with summary')
+    elif any(line.startswith('# dispatch ') for line in lines):
+        raise ValueError('dispatch event without dispatch-enabled summary')
+    if any(line.startswith('# dispatch-error ') for line in lines):
+        raise ValueError('continuation contains failed dispatch observations')
+    return calls, endings, writes if has_writes else None, dispatches if has_dispatch else None
 
 
 def describe(row):
@@ -117,9 +173,15 @@ def describe_write(write):
     return f'step={step} address=0x{address:x} size={size} value=0x{value:x}'
 
 
+def describe_dispatch(event):
+    kind, action, first, second, cs, ip, age = event
+    return (f'{kind} action=0x{action:x} first=0x{first:x} second=0x{second:x} '
+            f'target={cs:x}:{ip:x} age={age}ms')
+
+
 def compare(first, second, left_call=None, right_call=None):
-    left_calls, left_endings, left_writes = read_trace(first)
-    right_calls, right_endings, right_writes = read_trace(second)
+    left_calls, left_endings, left_writes, left_dispatches = read_trace(first)
+    right_calls, right_endings, right_writes, right_dispatches = read_trace(second)
     if left_call is None:
         left_call = min(left_calls)
     if right_call is None:
@@ -173,6 +235,31 @@ def compare(first, second, left_call=None, right_call=None):
             output.append('No guest-store divergence inside the captured window.')
         else:
             output.append('No guest CPU stores observed inside either captured window.')
+    if left_dispatches is None or right_dispatches is None:
+        output.append('Dispatch candidate comparison unavailable: one or both traces use an older format.')
+    else:
+        a_events = left_dispatches.get(left_call, [])
+        b_events = right_dispatches.get(right_call, [])
+        output.append(f'Temporally associated dispatch candidates: left={len(a_events)}, '
+                      f'right={len(b_events)}')
+        common = 0
+        for a, b in zip(a_events, b_events):
+            if a[:6] != b[:6]:  # Guest timing alone is not a semantic difference.
+                break
+            common += 1
+        if common < min(len(a_events), len(b_events)):
+            output.append(f'First candidate-dispatch divergence at event {common}:')
+            output.append(f'  left:  {describe_dispatch(a_events[common])}')
+            output.append(f'  right: {describe_dispatch(b_events[common])}')
+        elif len(a_events) != len(b_events):
+            side, extra = ('left', a_events) if len(a_events) > len(b_events) else ('right', b_events)
+            output.append(f'First candidate-dispatch divergence at event {common}:')
+            output.append(f'  only {side}: {describe_dispatch(extra[common])}')
+        elif a_events:
+            output.append('No candidate-dispatch divergence inside the association windows.')
+        else:
+            output.append('No known resident dispatcher candidates observed after either picker.')
+        output.append('Dispatch associations are time-bounded observations, not causal proof.')
     output.append('No claim of click dispatch or action acceptance is implied.')
     return '\n'.join(output)
 
