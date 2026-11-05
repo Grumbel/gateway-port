@@ -45,6 +45,10 @@ if(GATEWAY_WITH_SDL)
   install(TARGETS gateway-intro RUNTIME DESTINATION bin)
 endif()
 if(BUILD_TESTING)
+  add_executable(gatemain-flags-decompile-tests
+    decomp/engine/gatemain_flags.c tests/gatemain_flags_decompile_tests.c)
+  target_include_directories(gatemain-flags-decompile-tests PRIVATE decomp/engine)
+  add_test(NAME gatemain-flags-decompile COMMAND gatemain-flags-decompile-tests)
   add_executable(launcher-decompile-tests
     decomp/launcher/gate_exe.c decomp/launcher/gate_exe_helpers.c
     tests/launcher_decompile_tests.c)
@@ -205,6 +209,8 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_decompile_binary_tests.py)
     add_test(NAME launcher-rtl-decompile-binary COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_rtl_decompile_binary_tests.py)
+    add_test(NAME gatemain-flags-decompile-binary COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/gatemain_flags_decompile_binary_tests.py)
     add_test(NAME story-visibility-correlation COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/visibility_correlation_tests.py)
     add_test(NAME story-object-write-trace COMMAND ${Python3_EXECUTABLE}

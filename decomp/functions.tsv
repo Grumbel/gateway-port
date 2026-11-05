@@ -53,11 +53,11 @@ exe	0x00259c		103	service					gw_relation_contains_in_slot	analyzed	direct-memor
 exe	0x002603		109	service					gw_relation_reachable	analyzed	complex			Native EXE 0x2603-0x266f; far two-word source, target; AX Boolean; recursive relation-graph walk with early zero exit and no cycle protection; native objects entry captured; Ghidra 0x2631 was an internal loop, not a function
 exe	0x002670		213	unclassified						unknown				
 exe	0x002725		154	unclassified						unknown				
-exe	0x0027db		85	unclassified						unknown				
-exe	0x00284b		153	unclassified						unknown				
-exe	0x0028e4		58	service					gw_test_object_flag	analyzed	direct-memory			Native EXE 0x28e4-0x291d; far 2-word object/property args; AX Boolean; read-only selected state bit; native object-state verification and C++ object-flags test
-exe	0x00291e		51	service					gw_set_object_flag	analyzed	direct-memory			Native EXE 0x291e-0x2950; far 2-word object/property args; writes selected bit by OR; native object-state write verification and C++ object-flags test
-exe	0x002951		53	service					gw_clear_object_flag	analyzed	direct-memory			Native EXE 0x2951-0x2985; far 2-word object/property args; clears selected bit by AND; native object-state write verification and C++ object-flags test
+exe	0x0027db		85	service					gw_object_state_pointer	analyzed	direct-memory			Original 16-bit C in decomp/engine/gatemain_flags.c; validates object and type 1-8 then returns FAR state pointer plus four; all eight jump-table entries converge; host test and pinned source-byte evidence; not differential verified
+exe	0x00284b		153	service					gw_resolve_object_flag	analyzed	direct-memory			Original 16-bit C in decomp/engine/gatemain_flags.c; checks object property applicability and writes low three bit-index bits only on success; byte offset wraps; host test and pinned source-byte evidence; not differential verified
+exe	0x0028e4		58	service					gw_test_object_flag	analyzed	direct-memory			Native EXE 0x28e4-0x291d; far 2-word object/property args; AX Boolean; read-only selected state bit; decomp/engine/gatemain_flags.c original C plus binary and host tests; prior native object-state verification and C++ object-flags test; no C guest-entry differential yet
+exe	0x00291e		51	service					gw_set_object_flag	analyzed	direct-memory			Native EXE 0x291e-0x2950; far 2-word object/property args; writes selected bit by OR; decomp/engine/gatemain_flags.c original C plus binary and host tests; native object-state write verification and C++ object-flags test; no C guest-entry differential yet
+exe	0x002951		53	service					gw_clear_object_flag	analyzed	direct-memory			Native EXE 0x2951-0x2985; far 2-word object/property args; clears selected bit by AND; decomp/engine/gatemain_flags.c original C plus binary and host tests; native object-state write verification and C++ object-flags test; no C guest-entry differential yet
 exe	0x002986		89	unclassified						unknown				
 exe	0x002a05		84	unclassified						unknown				
 exe	0x002a84		122	unclassified						unknown				
