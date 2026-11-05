@@ -7,6 +7,7 @@
 #include <array>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <stdexcept>
 #include <string_view>
 
@@ -170,18 +171,24 @@ IntroFrame blank(int width, int height, std::uint32_t color) {
     return {width, height, std::vector<std::uint32_t>(std::size_t(width) * height, color)};
 }
 
-void fade_vga_dac(IntroFrame &frame, unsigned eighths) {
-    // The original VGA DAC has six bits per channel. The launcher animates
-    // those values, then the probe expands them to eight bits. Performing the
-    // fade on the already-expanded RGB would lose the observable quantization.
-    for (auto &p : frame.argb) {
-        const auto channel = [eighths](unsigned value) {
-            const auto six = (value >> 2) * eighths / 8;
-            return six << 2 | six >> 4;
+PicImage faded_palette(PicImage picture, unsigned sixteenths,
+                       unsigned brighter_prefix = 0) {
+    // The original VGA DAC has six bits/channel and updates palette entries
+    // sequentially. A mid-update framebuffer can thus contain TWO brightness
+    // steps: the already-updated prefix and the rest of the old palette.
+    // Scale the indexed palette before converting to 8-bit framebuffer RGB.
+    for (std::size_t i = 0; i < picture.palette.size(); ++i) {
+        const unsigned level = sixteenths + (i < brighter_prefix ? 1u : 0u);
+        const auto channel = [level](unsigned value) {
+            const auto six = (value >> 2) * level / 16;
+            return static_cast<std::uint8_t>(six << 2 | six >> 4);
         };
-        p = 0xff000000u | (channel((p >> 16) & 255) << 16) |
-            (channel((p >> 8) & 255) << 8) | channel(p & 255);
+        auto &rgb = picture.palette[i];
+        rgb.r = channel(rgb.r);
+        rgb.g = channel(rgb.g);
+        rgb.b = channel(rgb.b);
     }
+    return picture;
 }
 
 } // namespace
@@ -277,9 +284,10 @@ IntroPresentation::CaptionLayout IntroPresentation::layout_caption(
             ++result.lines;
             hard_line_start = false;
         }
+        const auto word_index = result.words++;
         for (std::size_t i = 0; i < length; ++i) {
             const auto ch = static_cast<unsigned char>(paragraph[at + i]);
-            result.glyphs.push_back({ch, cursor_x, cursor_y});
+            result.glyphs.push_back({ch, cursor_x, cursor_y, word_index});
             cursor_x += caption_font_.advance(ch);
         }
         hard_line_start = false;
@@ -290,6 +298,10 @@ IntroPresentation::CaptionLayout IntroPresentation::layout_caption(
 
 std::size_t IntroPresentation::verified_pages() const noexcept {
     return observed_pages.size();
+}
+
+std::size_t IntroPresentation::page_word_count(std::size_t page) const {
+    return caption_layouts_.at(page).words;
 }
 
 IntroPageInfo IntroPresentation::page_info(std::size_t page) const {
@@ -351,7 +363,8 @@ PicImage IntroPresentation::load_picture(unsigned file, std::size_t index) const
     return picture;
 }
 
-void IntroPresentation::caption(IntroFrame &frame, std::size_t page) const {
+void IntroPresentation::caption(IntroFrame &frame, std::size_t page,
+                                std::size_t visible_words, std::size_t visible_pixels) const {
     const auto area = page_info(page);
     const int x = area.text_x, y = area.text_y;
     const int w = area.text_width, h = area.text_height;
@@ -371,6 +384,7 @@ void IntroPresentation::caption(IntroFrame &frame, std::size_t page) const {
 
     // The original caption font is proportional with explicit per-character
     // margins. Cached glyph positions also determined this box's height.
+    std::size_t ink_pixels = 0;
     const auto draw = [&](unsigned char ch, int px, int py) {
         if (ch < caption_font_.first || ch > caption_font_.last)
             return;
@@ -391,19 +405,37 @@ void IntroPresentation::caption(IntroFrame &frame, std::size_t page) const {
                     continue;
                 const int draw_x = px + offset_x + col, draw_y = py + row;
                 if (draw_x > x && draw_x < x + w - 1 &&
-                    draw_y > y && draw_y < y + h - 1)
-                    frame.argb[std::size_t(draw_y) * frame.width + draw_x] = black;
+                    draw_y > y && draw_y < y + h - 1) {
+                    if (ink_pixels < visible_pixels)
+                        frame.argb[std::size_t(draw_y) * frame.width + draw_x] = black;
+                    ++ink_pixels;
+                }
             }
     };
     for (const auto &glyph : caption_layouts_.at(page).glyphs)
-        draw(glyph.character, x + 4 + glyph.x, y + 3 + glyph.y);
+        if (glyph.word_index < visible_words)
+            draw(glyph.character, x + 4 + glyph.x, y + 3 + glyph.y);
 }
 
 IntroFrame IntroPresentation::page_frame(std::size_t page) const {
+    return page_frame_words(page, page_word_count(page));
+}
+
+IntroFrame IntroPresentation::page_frame_words(std::size_t page,
+                                                std::size_t visible_words) const {
     const auto info = page_info(page);
     auto frame = blank(320, 200, 0xff000000u);
     paint(frame, load_picture(info.pic_file, info.pic_entry));
-    caption(frame, page);
+    caption(frame, page, visible_words, std::numeric_limits<std::size_t>::max());
+    return frame;
+}
+
+IntroFrame IntroPresentation::page_frame_ink_pixels(std::size_t page,
+                                                   std::size_t visible_pixels) const {
+    const auto info = page_info(page);
+    auto frame = blank(320, 200, 0xff000000u);
+    paint(frame, load_picture(info.pic_file, info.pic_entry));
+    caption(frame, page, page_word_count(page), visible_pixels);
     return frame;
 }
 
@@ -520,16 +552,19 @@ IntroFrame IntroPresentation::frame_at(std::uint32_t ms) const {
         return sprite(302, 0, std::min<unsigned>(entry, 32));
     }
     if (ms >= 259000 && ms < 259300) {
-        auto frame = backdrop(302, 0);
-        fade_vga_dac(frame, 7);
+        auto frame = blank(320, 200, 0xff000000u);
+        paint(frame, faded_palette(load_picture(302, 0), 14));
         return frame;
     }
     if (ms >= 259300 && ms < 259700) {
-        auto frame = backdrop(302, 33);
-        // The source fades in a new scene by changing the six-bit VGA DAC.
-        // An exact transition curve has not yet been recovered.
-        const unsigned brightness = ms < 259500 ? 3 : ms < 259600 ? 4 : 6;
-        fade_vga_dac(frame, brightness);
+        auto frame = blank(320, 200, 0xff000000u);
+        // At 259,500ms the original DAC has already brightened all used
+        // entries below 33, but not entry 34. Entry 33 is absent from this
+        // picture, so the precise cursor is only bracketed to [33, 34].
+        // Other times here remain approximations of the hardware fade.
+        const unsigned brightness = ms < 259500 ? 6 : ms < 259600 ? 8 : 12;
+        paint(frame, faded_palette(load_picture(302, 33), brightness,
+                                   ms >= 259500 && ms < 259600 ? 34 : 0));
         return frame;
     }
     if (ms >= 259700 && ms < 263400)

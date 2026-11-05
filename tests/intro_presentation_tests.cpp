@@ -57,6 +57,21 @@ int main(int argc, char **argv) try {
     assert(intro.text(0).size() > 350);
     assert(intro.text(9).size() > 300);
     assert(intro.text(17).size() > 400);
+    assert(intro.page_word_count(17) == 72);
+    const auto blank_caption = intro.page_frame_words(17, 0);
+    const auto half_caption = intro.page_frame_words(17, 36);
+    const auto all_caption = intro.page_frame(17);
+    assert(blank_caption.argb != half_caption.argb);
+    assert(half_caption.argb != all_caption.argb);
+    assert(intro.page_frame_words(17, 72).argb == all_caption.argb);
+    assert(intro.page_frame_words(17, 100).argb == all_caption.argb);
+    assert(intro.page_frame_ink_pixels(17, 0).argb == blank_caption.argb);
+    assert(intro.page_frame_ink_pixels(17, 100000).argb == all_caption.argb);
+    // Independent DOS frame at 303,000ms: the original was interrupted
+    // partway through a glyph after writing exactly 2,627 ink pixels.
+    // FNV-1a covers the entire 320x200 RGB framebuffer, including the art.
+    assert(rgb_fingerprint(intro.page_frame_ink_pixels(17, 2627)) ==
+           0x0ea0725e85fbc0e3ull);
     assert(intro.page_display_duration_ms(0) == 19415);
     assert(intro.page_display_duration_ms(1) == 11765);
     assert(intro.page_display_duration_ms(17) == 20585);
@@ -133,7 +148,7 @@ int main(int argc, char **argv) try {
     // framebuffer captures. This detects changes even when the recovered
     // box geometry and line counts remain the same. Original pixels are not
     // embedded in source or Git.
-    constexpr std::array<std::pair<std::uint32_t, std::uint64_t>, 22> pixel_exact{{
+    constexpr std::array<std::pair<std::uint32_t, std::uint64_t>, 23> pixel_exact{{
         // The original palette ramp visits bars 1,6,4,7,2,5,3, with
         // non-primary-color samples at 11.5 and 12 seconds.
         {8500, 0x9ebf9a6ec921bb25ull},
@@ -156,6 +171,9 @@ int main(int argc, char **argv) try {
         {100000, 0x446a224a1b3db04full},
         {145000, 0xf8744e400db78d32ull},
         {186000, 0x3ddb1e10ba0020edull},
+        // Frozen during a DAC update: indices below 34 have moved to the
+        // next 1/16 brightness level; the rest still have the previous one.
+        {259500, 0x4261491df096bb46ull},
         {274000, 0x94c1e710d35a7a92ull},
         {305000, 0x8dd2e333a431bef7ull},
     }};

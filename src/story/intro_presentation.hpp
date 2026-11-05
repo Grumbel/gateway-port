@@ -38,6 +38,13 @@ public:
 
     IntroFrame frame_at(std::uint32_t elapsed_ms) const;
     IntroFrame page_frame(std::size_t page) const;
+    // Render the original caption box with only its first N complete words.
+    // Useful for comparing the DOS program's in-progress per-word draws.
+    IntroFrame page_frame_words(std::size_t page, std::size_t visible_words) const;
+    // The original font drawer writes each set glyph bit separately, in row
+    // order; permits instruction-level partial-raster comparisons as well.
+    IntroFrame page_frame_ink_pixels(std::size_t page, std::size_t visible_pixels) const;
+    std::size_t page_word_count(std::size_t page) const;
     std::size_t page_at(std::uint32_t elapsed_ms) const;
     std::size_t verified_pages() const noexcept;
     std::size_t text_count() const noexcept { return paragraphs_.size(); }
@@ -49,10 +56,12 @@ private:
     struct CaptionGlyph {
         unsigned char character;
         int x, y;
+        std::size_t word_index;
     };
     struct CaptionLayout {
         std::vector<CaptionGlyph> glyphs;
         int lines = 1;
+        std::size_t words = 0;
     };
     struct Font {
         int row_bytes = 0;
@@ -73,7 +82,8 @@ private:
     mutable std::map<std::pair<unsigned, std::size_t>, PicImage> picture_cache_;
     PicImage load_picture(unsigned file, std::size_t index) const;
     CaptionLayout layout_caption(std::size_t page, int line_width) const;
-    void caption(IntroFrame &frame, std::size_t page) const;
+    void caption(IntroFrame &frame, std::size_t page, std::size_t visible_words,
+                 std::size_t visible_pixels) const;
 };
 
 } // namespace gateway

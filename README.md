@@ -418,15 +418,22 @@ proportional font, without executing DOS instructions:
 ```sh
 nix run .#intro -- ../gateway-dos
 ./build/gateway-intro-dump ../gateway-dos --ms 22000 build/native-intro.ppm
+./build/gateway-intro-dump ../gateway-dos --ms 303000 build/intro-mid-glyph.ppm --ink-pixels 2627
 ```
 
 This is still a preview, not a full launcher replacement: music, the exact
 animation clock/input loop and game handoff are unfinished. In the captured
-intro sequence, 84 of 87 sampled frames from 19 to 322 seconds now match the
+intro sequence, 85 of 87 sampled frames from 19 to 322 seconds now match the
 original framebuffer byte-for-byte, including fully drawn text captions,
 later spacecraft frames and the title's palette-revealed credit. The seven
 intro-logo red bars also use the original compiled DAC order and a calibrated
 64-step ramp; 201 of 206 densely sampled 20ms frames match byte-for-byte.
+The mid-update 259,500ms image also matches exactly: the original VGA DAC
+has brightened the first palette indices while leaving the rest unchanged.
+The original RTL printer's per-word and per-pixel drawing order is now
+recovered: a diagnostic render of the first 2,627 ink writes exactly matches
+the partially drawn final caption at 303,000ms, although the normal preview
+still lacks the precise intra-frame timing.
 The launcher also contains a recoverable sequential program: all 18 compiled
 caption calls are mapped, with a shared `2000 + 45 * strlen(text)` millisecond
 timeout and an interruptible keyboard/mouse wait. Inspect the original call

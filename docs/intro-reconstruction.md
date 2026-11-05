@@ -25,7 +25,10 @@ The following original file offsets have bounded disassembly evidence:
 | `exe:0x0f18` | Add a 16-bit delay argument to the 32-bit clock returned by the RTL helper, then wait until the deadline or pending keyboard/mouse input. The keyboard is *not* consumed by this wait. | Disassembly |
 | `exe:0x103a` | Scan and measure words, wrap at right edge, calculate lower edge and shift overly tall boxes upward to fit the viewport. | Disassembly; drawing details not fully matched |
 | `exe:0x117e` | Show a framed caption, draw its words, then calculate and wait for the text's display time. | Disassembly + original output |
+| `exe:0x1288–0x1292` | Call the far RTL string printer once for each measured/wrapped word of a caption. | Disassembly + incomplete DOS caption capture |
 | `rtl:0x08298` | Far `strlen` implementation, returning the exact NUL-terminated text length. | Disassembly (`repnz scasb`) |
+| `rtl:0x0ed7e` | Print a NUL-terminated string one character at a time, calling the glyph rasterizer. | Disassembly of `GATE.RTL` |
+| `rtl:0x0edff` | Rasterize each glyph in row-major bitmap-bit order; make a far pixel-write call for every set bit at `rtl:0x0ef79–0x0ef88`. | Disassembly + differential framebuffer |
 
 At `exe:0x12e3`, the caption routine calls that RTL `strlen` helper; at
 `exe:0x12f1`, it multiplies the returned 16-bit length by 45, adds 2,000, and
@@ -153,16 +156,59 @@ rendering an additional font. The dialog's outer black/beveled border now
 matches the DOS frame. The glyph bearing and whitespace corrections eliminate
 the previous 2,124-pixel mismatch at 22,000ms. The 19,000ms black frame and
 45,000ms second-caption boundary are now matched too. Across **87 independent
-DOS captures** from 19 to 322 seconds, the native renderer matches **84
-byte-for-byte**. Three non-matching timestamps remain: 259,500ms (a transitional
-palette update affecting 5,089 pixels), 265,500ms (six extra spacecraft pixels),
-and 303,000ms (the original text has not finished drawing). At `exe:0x1288`
+DOS captures** from 19 to 322 seconds, the native renderer matches **85
+byte-for-byte**. Two non-matching timestamps remain: 265,500ms (six transient
+black pixels outside the chosen spacecraft sprite's rectangle), and
+303,000ms (the original text has not finished drawing). At `exe:0x1288`
 the original caption loop calls the RTL string drawer once **per word** after
 measuring and wrapping it; partial text is therefore an in-progress native
-render, not a distinct intro text record. Twenty-two separate, pixel-exact
+render, not a distinct intro text record. Twenty-three separate, pixel-exact
 frames, including intermediate logo DAC values, are protected by
 source-independent RGB fingerprints in the native tests. Original text and
 art are never embedded in the project; the DOS directory is needed at runtime.
+
+### Mid-update VGA palette
+
+At 259,500ms the previously mysterious 5,089-pixel color difference is
+explained by the original program updating the VGA DAC **sequentially**.
+Comparing palette indices from the original `GATE_302` #33 picture against
+the original DOS framebuffer shows all used indices up through 32 at **9/16**
+of the source six-bit DAC value, and all used indices from 34 onward still at
+**8/16**. No pixel uses index 33 in that picture, so we cannot distinguish
+whether the original DAC loop had reached it at this exact instant. The
+native renderer now adjusts colors by *palette index*, retaining the two
+brightness steps within one frame. Its 259,500ms PPM now matches all 64,000
+pixels, independently protected by an RGB fingerprint. Adjacent transition
+times remain approximated until the palette update's exact scheduling is
+recovered from the code.
+
+### Partially rendered text: original RTL pixel-write order
+
+The text is **not** drawn atomically. The original call at `exe:0x1288`
+hands one word to the RTL printer, which loops over characters and then over
+each glyph's bitmap rows and columns, issuing an individual pixel-write call
+for each set bit. A framebuffer captured in the middle of this operation can
+therefore contain an *incomplete glyph*, not merely fewer complete words.
+
+The native reconstruction now offers two independent diagnostic boundaries:
+`page_frame_words(page, count)` renders the first `count` complete words;
+`page_frame_ink_pixels(page, count)` renders the first `count` visible black
+pixel writes in the same original traversal order. Neither uses hard-coded
+intro text, images, or memory dumps. The latter matches the independently
+captured original **303,000ms framebuffer byte-for-byte** with **2,627** ink
+writes into the page-17 caption (72 words, 4,127 distinct final ink pixels).
+That frame is covered by a standalone original RGB fingerprint test.
+
+An additional **26 consecutive original captures** at 100ms intervals from
+301,500 through 304,000ms establish that the old scene is still visible at
+302,900ms, the last caption is partially rendered at 303,000ms, and its text
+is complete by 303,100ms. Thus the entire remaining draw completes within
+that last 100ms interval. However, those observations alone do not establish
+the precise instruction-count-to-guest-clock relationship or the exact
+starting instant. The ordinary `frame_at()` preview still paints full text
+on its approximate page boundary and therefore **does not yet reproduce**
+the 303,000ms transitional frame; no interpolation is claimed to be original
+control flow.
 
 ## All eighteen recovered narrative pages
 
@@ -214,6 +260,7 @@ cmake -S . -B build
 cmake --build build --target gateway-intro gateway-intro-dump
 ./build/gateway-intro ../gateway-dos
 ./build/gateway-intro-dump ../gateway-dos --ms 22000 build/native-intro.ppm
+./build/gateway-intro-dump ../gateway-dos --ms 303000 build/intro-mid-glyph.ppm --ink-pixels 2627
 ```
 
 The viewer plays the observed timeline; ordinary keys manually advance among
@@ -267,13 +314,17 @@ compiler fallback lives under `build/intro-analysis/` instead.
    palette-bar ramps now match 201/206 dense 20ms samples and the final
    title's palette-index-23 credit reveal is recovered. The PIC XOR
    delta-frame cadence at 13.2–14.39s remains interpolated.
-3. Trace the caption's intermediate *per-word* RTL string-drawer calls at
-   `exe:0x1288` to reproduce the in-progress text frame at 303,000ms.
-   Font rasterization, whitespace, line counts, all eighteen rectangles,
-   and completed caption pixels now match.
+3. Calibrate the *time* of caption pixel writes, now that their original
+   row-major order and the mid-glyph 303,000ms state match exactly. Narrow
+   the 302,900–303,100ms transition interval or recover instruction-count
+   timing from a resumable guest state, then connect the verified partial
+   raster to the sequential scheduler. Font rasterization, whitespace,
+   all eighteen rectangles, and completed caption pixels already match.
 4. Derive the actual `GATE_302`/`303` timer loops, fill gaps between the
-   sampled frames, and verify fade states around 259.5s. All 18 panel bounds
-   are known; their exact timing is only bracketed for the last eight.
+   sampled frames, and verify intermediate DAC palette-update states beyond
+   the now-exact 259.5s snapshot. Investigate the six black pixels at 265.5s
+   outside the frame-34 sprite bounds. All 18 panel bounds are known; their
+   exact timing is only bracketed for the last eight.
 5. Route `GATE_004.MUS` through the existing OPL host path and integrate the
    native intro with the original numeric `GATEMAIN.EXE` handoff.
 
