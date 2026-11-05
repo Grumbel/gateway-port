@@ -61,4 +61,23 @@ std::string write_picker_entry_capture(const std::filesystem::path &directory,
     return base;
 }
 
+void write_picker_result_capture(const std::filesystem::path &directory,
+                                 std::string_view basename, std::string_view result_trace) {
+    if (basename.size() != 9 || !basename.starts_with("call-") ||
+        !std::all_of(basename.begin() + 5, basename.end(), [](unsigned char ch) {
+            return ch >= '0' && ch <= '9';
+        }) || result_trace.empty())
+        throw std::invalid_argument("invalid picker return capture");
+    const auto output_path = directory / (std::string(basename) + ".result");
+    if (std::filesystem::exists(output_path))
+        throw std::runtime_error("picker return capture would overwrite an existing file");
+    std::ofstream output(output_path);
+    if (!output)
+        throw std::runtime_error("cannot create picker return capture");
+    output << result_trace;
+    output.close();
+    if (!output)
+        throw std::runtime_error("cannot write picker return capture");
+}
+
 } // namespace gateway

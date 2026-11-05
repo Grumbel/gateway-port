@@ -48,6 +48,16 @@ int main() {
             "missing picture frame");
     require(content.find("DS=0x3123\n") != std::string::npos,
             "missing register snapshot");
+    gateway::write_picker_result_capture(directory, "call-0001", "# call=1 ms=123\n");
+    const auto result = directory / "call-0001.result";
+    require(std::filesystem::file_size(result) == 16, "return record missing");
+    bool result_refused = false;
+    try {
+        gateway::write_picker_result_capture(directory, "call-0001", "overwritten");
+    } catch (const std::runtime_error &) {
+        result_refused = true;
+    }
+    require(result_refused, "return capture overwrote an existing record");
     bool refused = false;
     try {
         gateway::write_picker_entry_capture(directory, capture, memory);
@@ -67,5 +77,6 @@ int main() {
             "bad capture left metadata behind");
     std::filesystem::remove(ram);
     std::filesystem::remove(metadata);
+    std::filesystem::remove(result);
     std::filesystem::remove(directory);
 }

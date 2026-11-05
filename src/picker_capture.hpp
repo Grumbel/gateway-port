@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <span>
 #include <string>
+#include <string_view>
 
 namespace gateway {
 
@@ -30,5 +31,10 @@ struct PickerEntryCapture {
 std::string write_picker_entry_capture(const std::filesystem::path &directory,
                                        const PickerEntryCapture &capture,
                                        std::span<const std::uint8_t> guest_ram);
+
+// A separate read-only observation made when that invocation returns. Uses
+// the same safe basename as the entry capture and never overwrites it.
+void write_picker_result_capture(const std::filesystem::path &directory,
+                                 std::string_view basename, std::string_view result_trace);
 
 } // namespace gateway

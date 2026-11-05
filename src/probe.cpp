@@ -84,7 +84,7 @@ struct State {
     unsigned picker_capture_limit = 16;
     unsigned picker_capture_from_ms = 0;
     unsigned picker_capture_seen = 0, picker_capture_written = 0;
-    unsigned picker_capture_errors = 0;
+    unsigned picker_capture_completed = 0, picker_capture_errors = 0;
     gateway::PickerFollowGate picker_follow_gate;
     gateway::PickerDispatchWindow picker_dispatch_window;
     gateway::PickerInputHistory picker_input_history;
@@ -106,6 +106,7 @@ struct State {
         std::optional<gateway::DebugPickerControl> expected;
         gateway::DebugSceneView entry_scene;
         std::string capture_name;
+        unsigned capture_id = 0;
         bool model_ready = false;
     };
     std::optional<PickerFrame> picker_frame;
@@ -1114,6 +1115,7 @@ void trace_picker(uc_engine *uc, std::uint64_t address, std::uint32_t,
                         check(uc_mem_read(uc, 0, memory.data(), memory.size()));
                         frame.capture_name = gateway::write_picker_entry_capture(
                             state.picker_capture_dir, capture, memory);
+                        frame.capture_id = capture.call;
                         ++state.picker_capture_written;
                     } catch (const std::exception &error) {
                         ++state.picker_capture_errors;
@@ -1254,6 +1256,30 @@ void trace_picker(uc_engine *uc, std::uint64_t address, std::uint32_t,
                                    << (observation.native_row ? int(observation.native_row->flags) : -1)
                                    << '\t' << observation.native_object_id << '\t'
                                    << observation.enabled_overlaps << '\n';
+            }
+            if (frame.capture_id) {
+                try {
+                    std::ostringstream record;
+                    record << "# call=" << frame.capture_id << " ms=" << state.elapsed_ms
+                           << " x=" << frame.x << " y=" << frame.y
+                           << " native_ax=" << ax << " group=" << actual[0]
+                           << " slot=" << actual[1] << " kind=" << actual[2]
+                           << " source=" << gateway::debug_picker_source_name(observation.source)
+                           << " object=" << observation.native_object_id
+                           << " overlaps=" << observation.enabled_overlaps
+                           << " verdict=" << verdict_name
+                           << " return=" << std::hex << frame.return_cs << ':'
+                           << frame.return_ip << std::dec << '\n';
+                    gateway::write_picker_scene_trace(record, frame.capture_id,
+                                                     frame.entry_scene, ax, actual);
+                    gateway::write_picker_result_capture(state.picker_capture_dir,
+                                                        frame.capture_name, record.str());
+                    ++state.picker_capture_completed;
+                } catch (const std::exception &error) {
+                    ++state.picker_capture_errors;
+                    std::cerr << "Picker result capture failed at call "
+                              << frame.capture_id << ": " << error.what() << '\n';
+                }
             }
             if (state.picker_follow_trace.is_open() || state.debug_native_picker)
                 state.picker_dispatch_window.arm(state.picker_calls, state.elapsed_ms,
@@ -3737,6 +3763,7 @@ int main(int argc, char **argv) {
         if (!state.picker_capture_dir.empty()) {
             std::cerr << "Picker entry captures: observed=" << state.picker_capture_seen
                       << " written=" << state.picker_capture_written
+                      << " completed=" << state.picker_capture_completed
                       << " limit=" << state.picker_capture_limit
                       << " from_ms=" << state.picker_capture_from_ms
                       << " errors=" << state.picker_capture_errors << '\n';
@@ -3744,6 +3771,8 @@ int main(int argc, char **argv) {
                 throw std::runtime_error("one or more native picker entry captures failed");
             if (!state.picker_capture_written)
                 throw std::runtime_error("no native picker entries captured");
+            if (state.picker_capture_completed != state.picker_capture_written)
+                throw std::runtime_error("native picker entry capture did not complete at return");
         }
         if (!dump_prefix.empty()) {
             dump_guest(engine.uc, state, dump_prefix);

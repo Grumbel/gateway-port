@@ -473,8 +473,12 @@ build/native-picker-oracle-tests ../gateway-dos \
 
 Each `call-NNNN.bin` contains 1 MiB of original guest memory, while
 `call-NNNN.meta` records the entry registers, click coordinates, guest time,
-far return address, and PIC/frame when known. The continuation trace adds
-`# capture call=N base=call-NNNN` for completed invocations. The oracle
+far return address, and PIC/frame when known. Upon an actual return, a
+`call-NNNN.result` file records the original AX/group/slot/kind alongside
+the **entry-time** picker table, room-only object associations and skip flags.
+This avoids relying on a scheduled checkpoint or a later changed scene.
+The continuation trace also adds `# capture call=N base=call-NNNN` for
+completed invocations. The oracle
 checks the pinned original picker entry bytes and executes the **original**
 picker with Unicorn over a coordinate grid, rectangle boundaries and the
 captured click, comparing native returns with the independently decoded

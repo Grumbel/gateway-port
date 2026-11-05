@@ -987,8 +987,11 @@ The picker instrumentation now offers opt-in bounded entry-time RAM/register
 captures (`--picker-capture-dir`, up to 128 one-MiB snapshots) and an offline
 `native-picker-oracle-tests GATEWAY-DOS --captured DIR` mode. Captures retain
 native picker entry registers, original RAM, click coordinates, PIC frame and
-return address, with an optional guest-time start filter; the oracle uses
-those bytes to check a grid, row boundaries
+return address, with an optional guest-time start filter. Each successful
+return now retains original output registers and frozen full picker row
+provenance as a separate `.result`, so later batch reports can compare
+conditional branches without reading game state after a delay. The oracle
+uses the captured RAM to check a grid, row boundaries
 and the actual click against original picker execution. It does not treat GUI
 rows as scene objects, and never bundles game-owned memory. Capture-format
 tests and syntax checks pass; native Unicorn replay still requires the host.
