@@ -331,6 +331,28 @@ unavailable legacy evidence, an observed but unmatched read, and no read
 within the configured bound; timing and polling frequency are not treated
 as semantic differences between runs.
 
+To investigate a **single trace** without comparing two saved-state runs,
+use the per-click evidence report:
+
+```sh
+python3 tools/report_picker_follow.py build/picker-follow/continuation.tsv \
+  --source room --limit 0
+```
+
+It lists actual returned native room objects (rather than cursor predictions),
+model match/mismatch status, recent guest `INT 33h` reads, bounded instruction
+and store counts, and temporally nearby context/action-table dispatches.
+For room results with established object IDs, context calls are classified
+as `object-referenced` when one of their two original arguments equals the
+selected object, `other-context-objects` when neither does, or `no-context`
+when no monitored context call occurred. This is useful for locating which
+native branch to trace next, **not** an acceptance verdict: even an exact
+object reference may be unrelated to the click. `--source control` or
+`--source fallback` investigates the regular GUI paths; omit `--source` to
+list all groups. The report accepts earlier call markers without the new
+object/overlap/verdict annotations and explicitly marks their provenance
+unavailable. The default listing limit is 40 calls (`--limit 0` shows all).
+
 The F10 native-picker panel shows the last observed dispatcher candidate as
 its fifth row and the nearest preceding guest `INT 33h` read as a sixth,
 when monitoring with `--debug-native-picker` or `--trace-picker-follow`.

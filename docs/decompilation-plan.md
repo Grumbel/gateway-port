@@ -930,6 +930,18 @@ validates input markers and reports differing mouse-service results. These
 are observations of HLE service delivery, not proof the picker used that
 read; live original-game mouse replay is still required.
 
+2026-11-05 per-click native evidence report (§3.6): the original picker
+continuation marker now also records the verified native room object ID,
+enabled overlap count and host prediction verdict. Added
+`tools/report_picker_follow.py` to summarize each actual native return
+alongside recent guest mouse reads, bounded instructions/stores and
+time-correlated resident context/action-table candidates. For room selections,
+it distinguishes dispatch context arguments that reference the same object
+from those referencing unrelated objects, without claiming click acceptance.
+Legacy trace markers without the new provenance fields remain readable;
+synthetic source filtering, grouping, validation and CLI tests pass. The
+next step needs original-game clicks from contrasting saved states.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |

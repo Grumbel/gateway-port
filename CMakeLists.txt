@@ -123,6 +123,8 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/report_picker_trace_tests.py)
     add_test(NAME picker-follow-compare COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_picker_follow_tests.py)
+    add_test(NAME picker-follow-report COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/report_picker_follow_tests.py)
     add_test(NAME pic-extract COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/extract_pic_tests.py $<TARGET_FILE:gateway-extract>)
     add_test(NAME story-disassembly COMMAND ${Python3_EXECUTABLE}

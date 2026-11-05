@@ -1140,6 +1140,11 @@ void trace_picker(uc_engine *uc, std::uint64_t address, std::uint32_t,
             const unsigned model_slot = frame.expected ? frame.expected->slot : 0xffff;
             const unsigned model_kind = frame.expected ? frame.expected->kind : 0;
             const auto verdict = gateway::debug_picker_verdict(observation);
+            const char *verdict_name = verdict == gateway::DebugPickerVerdict::match
+                                           ? "match"
+                                       : verdict == gateway::DebugPickerVerdict::mismatch
+                                           ? "mismatch"
+                                           : "unmodeled";
             ++state.picker_calls;
             if (verdict == gateway::DebugPickerVerdict::unmodeled)
                 ++state.picker_unmodeled;
@@ -1163,6 +1168,9 @@ void trace_picker(uc_engine *uc, std::uint64_t address, std::uint32_t,
                                           << " native_ax=" << ax << " group=" << actual[0]
                                           << " slot=" << actual[1] << " kind=" << actual[2]
                                           << " source=" << gateway::debug_picker_source_name(observation.source)
+                                          << " object=" << observation.native_object_id
+                                          << " overlaps=" << observation.enabled_overlaps
+                                          << " verdict=" << verdict_name
                                           << " return=" << std::hex << frame.return_cs << ':'
                                           << frame.return_ip << std::dec << '\n';
                 if (input) {
@@ -1187,11 +1195,6 @@ void trace_picker(uc_engine *uc, std::uint64_t address, std::uint32_t,
                 }
             }
             if (state.picker_trace.is_open()) {
-                const char *verdict_name = verdict == gateway::DebugPickerVerdict::match
-                                               ? "match"
-                                           : verdict == gateway::DebugPickerVerdict::mismatch
-                                               ? "mismatch"
-                                               : "unmodeled";
                 state.picker_trace << std::dec << state.elapsed_ms << '\t'
                                    << frame.x << '\t' << frame.y << '\t' << model_result << '\t'
                                    << model_group << '\t' << model_slot << '\t' << model_kind << '\t'
