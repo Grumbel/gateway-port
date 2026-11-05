@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
 # SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 
-"""Offline scene-only hover comparisons against recorded native returns."""
+"""Offline full picker and independent room-candidate comparisons."""
 
 from pathlib import Path
 import subprocess
@@ -54,24 +54,26 @@ with tempfile.TemporaryDirectory() as tmp:
     )) + '\n'
     path.write_text(fixture, encoding='utf-8')
     result = report(path)
-    assert 'Original picker geometry: 4 calls, 2 H-marked, 1 unmarked, 1 unknown' in result
-    assert 'Native room selections absent from H: 1' in result
-    assert 'Native room object differs from H owner: 0' in result
-    assert 'GUI/fallback selections over H-marked scene: 1' in result
+    assert 'Original picker geometry: 4 calls, 4 H winners, 0 unmarked, 0 unavailable' in result
+    assert 'Native selections absent from H winner: 0' in result
+    assert 'Legacy scene-only candidates: 2 marked, 1 unmarked, 1 unknown' in result
+    assert 'Native room selections absent from scene-only candidate: 1' in result
+    assert 'Native room object differs from scene-only owner: 0' in result
+    assert 'GUI/fallback selections over scene-only room: 1' in result
     assert 'Native selection differs from frozen picker table: 0' in result
     assert 'call 2 2000ms (295,50): native=control' in result
-    assert 'H=object #123 (slot 1)' in result
+    assert 'H=control g1/s1, room-candidate=object #123 (slot 1)' in result
     assert 'call 3 3000ms (280,305): native=room' in result
-    assert 'H=none' in result
+    assert 'H=object #124 (slot 3), room-candidate=none' in result
     assert 'call 4 4000ms (360,15): native=fallback' in result
-    assert 'H=unavailable' in result
+    assert 'H=fallback g1/s0, room-candidate=unavailable' in result
     assert 'call 3' not in report(path, limit=2)
     assert '... 2 more' in report(path, limit=2)
     assert 'call 4' in report(path, limit=0)
     cmd = subprocess.run([sys.executable, str(TOOLS / 'report_picker_scene.py'),
                           str(path), '--limit', '1'], capture_output=True, text=True,
                          check=True)
-    assert 'GUI/fallback selections' in cmd.stdout
+    assert 'GUI/fallback selections over scene-only room' in cmd.stdout
     assert '... 3 more' in cmd.stdout
     # The auxiliary records must not break the established instruction TSV,
     # its continuation parser or the existing per-click evidence reporter.
@@ -97,7 +99,8 @@ with tempfile.TemporaryDirectory() as tmp:
     path.write_text(skipped_selected, encoding='utf-8')
     disagreement = report(path)
     assert 'Native selection differs from frozen picker table: 1' in disagreement
-    assert 'Native room selections absent from H: 2' in disagreement
+    assert 'Native selections absent from H winner: 1' in disagreement
+    assert 'Native room selections absent from scene-only candidate: 2' in disagreement
     changes = (
         ('rows=6', 'rows=5'),
         ('selected=1', 'selected=0'),

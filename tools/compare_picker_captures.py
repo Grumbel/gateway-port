@@ -189,11 +189,13 @@ def main():
         for item in report['comparisons']:
             print(f'  calls {item["before_call"]}->{item["after_call"]}: '
                   f'{item["picture"]} frame={item["entry"]} '
-                  f'H changed={item["h_changed_pixels"]}, '
+                  f'H changed={item["display_changed_pixels"]}, '
+                  f'room candidates changed={item["h_changed_pixels"]}, '
                   f'native changed={item["native_changed_pixels"]}')
             for point in item['samples']:
                 print(f'    ({point["x"]},{point["y"]}): '
-                      f'{point["h_before"]} -> {point["h_after"]}')
+                      f'H {point["display_before"]} -> {point["display_after"]}; '
+                      f'room {point["h_before"]} -> {point["h_after"]}')
         print('Positions are candidates for separate same-save clicks, not acceptance proof.')
 
 

@@ -57,6 +57,10 @@ with tempfile.TemporaryDirectory() as temp:
     assert result['h_retargeted_pixels'] == 0
     assert result['native_only_changed_pixels'] == 231
     assert result['native_changed_pixels'] == 805
+    assert result['display_changed_pixels'] == 805
+    assert result['display_gained_pixels'] == result['display_lost_pixels'] == 0
+    assert result['display_retargeted_pixels'] == 805
+    assert result['native_only_display_changed_pixels'] == 0
     assert len(result['flags_changed']) == 3
     assert len(result['samples']) >= 3
     assert all(261 <= item['x'] < 640 and 0 <= item['y'] < 232
@@ -66,8 +70,9 @@ with tempfile.TemporaryDirectory() as temp:
     assert any(item['h_before'] == 'none' and item['h_after'] == 'object #292'
                for item in result['samples'])
     text = format_report(result)
-    assert 'H-highlight pixels changed: 882 (gained 441, lost 441' in text
-    assert 'Native winner pixels changed: 805 (231 with H unchanged)' in text
+    assert 'H native-winner pixels changed: 805 (gained 0, lost 0' in text
+    assert 'Legacy room-candidate pixels changed: 882 (gained 441, lost 441' in text
+    assert 'Native winner pixels changed: 805 (0 with H unchanged; 231 with room candidates' in text
     assert 'same restored game state' in text
     assert len(analyze(trace, 1, 2, limit=1)['samples']) == 1
     assert len(analyze(trace, 1, 2, limit=0)['samples']) == result['sample_groups']
@@ -83,8 +88,10 @@ with tempfile.TemporaryDirectory() as temp:
                      encoding='utf-8')
     merged = analyze(trace, 1, 2)
     assert merged['h_changed_pixels'] == 0
+    assert merged['display_changed_pixels'] == 0
     assert merged['native_changed_pixels'] > 0
     assert merged['native_only_changed_pixels'] == merged['native_changed_pixels']
+    assert merged['native_only_display_changed_pixels'] == merged['native_changed_pixels']
     trace.write_text(snapshot(1, flags1=0, flags2=0, geometry_offset=21,
                               anonymous=True) +
                      snapshot(2, flags1=0, flags2=128, geometry_offset=21,
@@ -92,6 +99,7 @@ with tempfile.TemporaryDirectory() as temp:
     separate = analyze(trace, 1, 2)
     assert separate['h_retargeted_pixels'] == 441
     assert separate['h_gained_pixels'] == separate['h_lost_pixels'] == 0
+    assert separate['display_retargeted_pixels'] == 309
     for altered in (
         snapshot(1) + snapshot(2, frame=16, flags1=128, flags2=0),
         snapshot(1) + snapshot(2, aligned=False, flags1=128, flags2=0),

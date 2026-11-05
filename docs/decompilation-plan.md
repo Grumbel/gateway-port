@@ -1112,6 +1112,17 @@ Native visual and downstream click-acceptance checks remain pending.
 Workspace invocation is recorded in [workspace-setup.md](workspace-setup.md);
 §3.6 remains ongoing.
 
+The same day's offline picker audit was aligned with the new F10/H semantics.
+`report_picker_scene.py` now reports the full native-table winner at each
+recorded call while preserving a separately labeled legacy room-only audit.
+`compare_picker_scene.py` adds `display_*` measurements for merged H winners
+and keeps historical `h_*` JSON fields as *room-only candidate* measurements
+so existing capture consumers do not silently change interpretation.
+Conditional comparisons distinguish native row changes with unchanged object
+display, GUI masking and fallback retargeting. The Python report, comparison
+and batch-capture fixtures pass; actual native click consumption remains an
+open experiment under private Xvfb.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |

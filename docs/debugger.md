@@ -126,11 +126,12 @@ The native room X origin is 261, one pixel to the right of the previous
 approximate RGN overlay origin. The **R** raw view shows every RGN candidate
 and independent native GUI/fallback rectangle, including skipped controls as
 dim outlines. If the native table can be decoded but its room group cannot be
-matched to the tracked PIC/RGN frame, H falls back to the heuristic **scene
-RGN objects only**; it does not mislabel arbitrary native rows as room objects.
-Native groups, slot numbers, and actual picker outcomes remain available in the
-`Native pick` observation panel and raw `.picker.tsv` dump, including when PIC
-tracking temporarily falls out of sync.
+matched to the tracked PIC/RGN frame, H still displays the complete native
+winner map, but labels its non-fallback rows **unmapped**, without inventing
+room object IDs. The heuristic RGN-only view is used only when no complete
+native picker table is decoded. Actual picker outcomes remain available in
+the `Native pick` observation panel and raw `.picker.tsv` dump, including
+when PIC tracking temporarily falls out of sync.
 
 Gateway 1 now samples the validated 734-object guest table and annotates
 each RGN region with one of four *host-side* classifications:
@@ -394,7 +395,7 @@ list all groups. The report accepts earlier call markers without the new
 object/overlap/verdict annotations and explicitly marks their provenance
 unavailable. The default listing limit is 40 calls (`--limit 0` shows all).
 
-### Compare a native result with the scene-only H highlighting
+### Compare native results with H winners and room-only candidates
 
 New `--trace-picker-follow` recordings also preserve the entire native picker
 rectangle table **at each call's entry**, after the original game has updated
@@ -412,14 +413,14 @@ python3 tools/report_picker_scene.py build/picker-follow/continuation.tsv
 python3 tools/report_picker_scene.py build/picker-follow/continuation.tsv --limit 0
 ```
 
-The report recreates a room-only last-match ownership raster
-at each recorded click point (640×480 logical coordinates, scene X=261..639
-and Y=0..231), merging neighboring rows through the shared object ID. It
-counts native room selections **not marked by this scene-only raster**, room
-selections whose object differs from it, and GUI/fallback selections that
-override an underlying room region. This is a *legacy room-only diagnostic*;
-the interactive H view now paints the full native picker winner, including
-UI and fallback rows. Each report result is explicitly compared with
+The report recreates the complete H winner at each recorded click point
+(640×480 logical pixels), respecting *all* picker groups and dynamic skip
+bits. It distinguishes room objects, GUI controls, fallbacks and unmapped
+rows, and compares the modeled winner with the original native return.
+Separately, it retains a *legacy room-only candidate* diagnostic confined
+to scene X=261..639, Y=0..231. That diagnostic counts room selections absent
+from the picture-only raster and cases where a GUI/fallback selection masks
+an underlying room candidate. Each result is explicitly compared with
 the frozen native table, and older traces without those rows are reported
 as geometry-unavailable. This diagnoses scene mapping, clipping, overlap and
 conditional-flag discrepancies; it still cannot establish that the scene
@@ -439,12 +440,14 @@ python3 tools/compare_picker_scene.py build/picker-follow/continuation.tsv \
 
 The comparison requires an identical aligned room group and rectangle
 geometry; it refuses to attribute scene transitions or unmapped tables to
-conditional skip flags. It rasterizes the original last-enabled native
-winner **and** the merged-by-object H owner over the 379×232 scene viewport.
-Its output counts H gains, losses and object changes independently of native
-selection changes, and identifies cases where two native rows change winners
-but the scene highlight remains one object. Representative coordinates are
-actual changed pixels, including overlapping GUI-vs-room candidates. Test
+conditional skip flags. Over the 379×232 scene viewport it rasterizes the
+native selected row, the complete H winner (with same-object room slots
+merged), **and** the legacy independent room-only candidates. The JSON
+fields `display_*` now describe the actual H winner; historical `h_*`
+fields retain their room-only meaning for existing capture consumers. The
+report counts both types of change separately and identifies cases where
+native rows change but their displayed object remains the same. Sample
+coordinates are actual changed pixels, including GUI-vs-room overlaps. Test
 each coordinate in a **separate run from the same restored guest state**;
 clicking them sequentially would alter game state and invalidate the
 comparison. A flipped native skip bit remains only selection eligibility,

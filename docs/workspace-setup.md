@@ -87,6 +87,17 @@ g++ -std=c++20 -O0 -ffunction-sections -fdata-sections -Isrc \
 build/local-probe/debug-scene-tests ../gateway-dos
 ```
 
+The independent, filesystem-only picker audits can run directly with Python:
+
+```sh
+python3 tests/report_picker_scene_tests.py
+python3 tests/compare_picker_scene_tests.py
+python3 tests/compare_picker_captures_tests.py
+```
+
+They compare frozen synthetic native picker geometry, full H winner maps and
+the legacy room-only candidate measurements without injecting input.
+
 The available package manager could not install Xvfb or SDL3 here:
 `apt-get update` first failed to drop supplementary groups, and
 `APT::Sandbox::User=root` got HTTP 500/502 from the Ubuntu snapshot mirror.

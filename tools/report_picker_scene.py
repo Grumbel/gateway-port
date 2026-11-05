@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
 # SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
-"""Compare actual native picker returns with the frozen scene-only H overlay.
+"""Audit original picker returns against the complete H winner and room candidates.
 
 Reads # scene / # picker-row records from --trace-picker-follow. The row data
 is sampled at picker entry, while the return is observed from original code.
-The H owner is our diagnostic geometry, NOT proof of a rendered object or a
-game action; a GUI winner can overlap a perfectly valid room rectangle.
+The H winner follows all native rows; the legacy scene-only room candidates
+remain an independent diagnostic. Neither proves rendering or acceptance.
 """
 
 import argparse
@@ -117,6 +117,14 @@ def describe_owner(row):
     return f'object #{row["object"]} (slot {row["slot"]})'
 
 
+def describe_winner(row):
+    if row is None:
+        return 'none'
+    if row['role'] == 'room':
+        return describe_owner(row)
+    return f'{row["role"]} g{row["group"]}/s{row["slot"]}'
+
+
 def report(path, limit=40):
     if limit < 0:
         raise ValueError('--limit must be nonnegative')
@@ -132,47 +140,63 @@ def report(path, limit=40):
     for call, item in sorted(calls.items()):
         scene, rows = geometry[call]
         x, y = item['x'], item['y']
-        # Match H's aligned 640x480 scene clipping and last-room-row wins.
-        # This is independent of the original picker's last-ANY-group winner.
+        # Keep the legacy room-only candidate picture for diagnostics, but H
+        # now renders the last enabled row across *all* groups at this pixel.
         room_rows = [row for row in rows if row['role'] == 'room' and contains(row, x, y)
                      and 261 <= x < 640 and 0 <= y < 232]
-        highlighted = room_rows[-1] if room_rows else None
+        candidate = room_rows[-1] if room_rows else None
         native = next((row for row in rows if row['selected']), None)
         overall = next((row for row in reversed(rows) if contains(row, x, y)), None)
+        winner = overall if 0 <= x < 640 and 0 <= y < 480 else None
         source = item['source']
-        if highlighted:
+        if winner:
             counts['highlighted'] += 1
-        elif scene['aligned']:
-            counts['unmarked'] += 1
-        else:
+        elif not rows:
             counts['unavailable'] += 1
+        else:
+            counts['unmarked'] += 1
+        if native and native != winner:
+            counts['native_not_h'] += 1
+        if candidate:
+            counts['room_candidates'] += 1
+        elif scene['aligned']:
+            counts['room_unmarked_all'] += 1
+        else:
+            counts['room_unavailable'] += 1
         if source == 'room' and scene['aligned']:
-            if not highlighted:
+            if not candidate:
                 counts['room_unmarked'] += 1
-            elif item['object'] != highlighted['object']:
+            elif item['object'] != candidate['object']:
                 counts['room_different_object'] += 1
-        if source in ('control', 'fallback') and highlighted:
+        if source in ('control', 'fallback') and candidate:
             counts['gui_override'] += 1
         if not scene['rows']:
             counts['model_unavailable'] += 1
         elif native != overall:
             counts['native_model_difference'] += 1
         if limit == 0 or len(lines) < limit:
-            h = describe_owner(highlighted) if scene['aligned'] else 'unavailable'
+            h = describe_winner(winner) if rows else 'unavailable'
+            room = describe_owner(candidate) if scene['aligned'] else 'unavailable'
             selected = (f'{native["role"]} g{native["group"]}/s{native["slot"]}'
                         if native else 'none/unresolved')
             modeled = ('unavailable' if not scene['rows'] else
                        'match' if native == overall else 'DIFFER')
             lines.append(f'  call {call} {item["ms"]}ms ({x},{y}): '
                          f'native={source} [{selected}], H={h}, '
-                         f'room-overlaps={len(room_rows)}, '
+                         f'room-candidate={room}, room-overlaps={len(room_rows)}, '
                          f'picker-model={modeled}')
     output = [f'Original picker geometry: {len(calls)} calls, '
-              f'{counts["highlighted"]} H-marked, {counts["unmarked"]} unmarked, '
-              f'{counts["unavailable"]} unknown (unaligned scene)',
-              f'Native room selections absent from H: {counts["room_unmarked"]}',
-              f'Native room object differs from H owner: {counts["room_different_object"]}',
-              f'GUI/fallback selections over H-marked scene: {counts["gui_override"]}',
+              f'{counts["highlighted"]} H winners, {counts["unmarked"]} unmarked, '
+              f'{counts["unavailable"]} unavailable (no native rows)',
+              f'Native selections absent from H winner: {counts["native_not_h"]}',
+              f'Legacy scene-only candidates: {counts["room_candidates"]} marked, '
+              f'{counts["room_unmarked_all"]} unmarked, '
+              f'{counts["room_unavailable"]} unknown (unaligned scene)',
+              f'Native room selections absent from scene-only candidate: '
+              f'{counts["room_unmarked"]}',
+              f'Native room object differs from scene-only owner: '
+              f'{counts["room_different_object"]}',
+              f'GUI/fallback selections over scene-only room: {counts["gui_override"]}',
               f'Native selection differs from frozen picker table: '
               f'{counts["native_model_difference"]} '
               f'({counts["model_unavailable"]} unavailable)',
@@ -180,9 +204,10 @@ def report(path, limit=40):
     output.extend(lines)
     if len(lines) < len(calls):
         output.append(f'  ... {len(calls) - len(lines)} more; use --limit 0')
-    output.extend(['', 'H is the modelled room-only rectangle overlay. Native is the '
-                   'original picker return, not proof that a click was consumed by a '
-                   'GUI or game handler.'])
+    output.extend(['', 'H is the modeled last-enabled winner across all native groups; '
+                   'room-candidate is the legacy room-only picture diagnostic. Native '
+                   'is the original picker return, not proof that a click was consumed '
+                   'by a GUI or game handler.'])
     return '\n'.join(output)
 
 

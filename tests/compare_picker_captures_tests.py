@@ -76,6 +76,9 @@ with tempfile.TemporaryDirectory(prefix='gateway-picker-capture-test-') as tempo
     assert (comparison['before_call'], comparison['after_call']) == (1, 2)
     assert comparison['h_changed_pixels'] == 882
     assert comparison['native_changed_pixels'] > 0
+    assert comparison['display_changed_pixels'] > 0
+    assert any(point['display_before'] != point['display_after']
+               for point in comparison['samples'])
     assert all(261 <= point['x'] < 640 and 0 <= point['y'] < 232
                for point in comparison['samples'])
 
