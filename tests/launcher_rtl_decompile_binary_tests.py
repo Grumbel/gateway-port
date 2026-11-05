@@ -86,6 +86,50 @@ class LauncherRtlBinaryTests(unittest.TestCase):
         self.assertEqual(rtl[0xeded:0xedf4],
                          bytes.fromhex('ff4606268a0798'))
 
+    def test_original_glyph_rasterizer_and_far_pixel_call(self):
+        rtl = self.rtl
+        self.assertEqual(rtl[0xedff:0xee06], bytes.fromhex('558bec83ec1656'))
+        self.assertEqual(rtl[0xefd8], 0xcb)
+        self.assertEqual(rtl[0xee09:0xee13],
+                         bytes.fromhex('3d0900741b3d0a00743a'))
+        self.assertEqual(rtl[0xee17:0xee1c], b'\x26\x80\x7f\x0b\x00')
+        self.assertEqual(rtl[0xee1c], 0x7d)  # signed font mode flag
+        self.assertEqual(rtl[0xee72:0xee78], b'\x26\x80\x7f\x0c\x00\x7d')
+        self.assertEqual(rtl[0xef13:0xef18], b'\x3b\x46\x06\x7e\x03')
+        self.assertEqual(rtl[0xef20:0xef25], b'\x3b\x46\x06\x7d\x03')
+        self.assertEqual(rtl[0xef44:0xef4c],
+                         bytes.fromhex('2bc2f7ebf7e98bde'))
+        self.assertEqual(rtl[0xef4c:0xef54],
+                         bytes.fromhex('2603471a268b571c'))
+        self.assertEqual(rtl[0xef70:0xef88],
+                         bytes.fromhex('268a00988546f2740fff76f4ff76f0ff3602009a00000000'))
+        self.assertEqual(rtl[0xef88:0xef99],
+                         bytes.fromhex('d17ef2837ef2007508c746f28000ff46f8'))
+        self.assertEqual(rtl[0xef9c:0xefa1], b'\xff\x4e\xfe\x79\xc9')
+        self.assertEqual(rtl[0xefaa:0xefb0], bytes.fromhex('0146eaff46f0'))
+        self.assertEqual(rtl[0xefb0:0xefb5], b'\xff\x4e\xfc\x78\x18')
+        self.assertEqual(rtl[0xefcd:0xefd4], bytes.fromhex('8b46fa01064400'))
+
+    def test_original_color_and_cursor_getter_setter_routines(self):
+        rtl = self.rtl
+        for start, end in ((0xecea, 0xed00), (0xed01, 0xed11),
+                           (0xed12, 0xed38)):
+            self.assertEqual(rtl[start:start + 3], b'\x55\x8b\xec')
+            self.assertEqual(rtl[end], 0xcb)
+        # Color getters write through far pointers unconditionally.
+        self.assertEqual(rtl[0xeced:0xecf6],
+                         bytes.fromhex('c45e06a10200268907'))
+        self.assertEqual(rtl[0xecf6:0xecff],
+                         bytes.fromhex('c45e0aa10000268907'))
+        self.assertEqual(rtl[0xed04:0xed10],
+                         bytes.fromhex('8b4606a302008b4608a30000'))
+        # Cursor getters skip each write only when BOTH halves of its far
+        # output pointer are zero (OR offset,segment; JE).
+        self.assertEqual(rtl[0xed15:0xed1d],
+                         bytes.fromhex('8b46060b46087409'))
+        self.assertEqual(rtl[0xed26:0xed2e],
+                         bytes.fromhex('8b460a0b460c7409'))
+
     def test_optional_live_linked_mapping_and_actual_font_header(self):
         path = ROOT / 'build/intro-analysis/at-22000.bin'
         if not path.is_file():
@@ -116,6 +160,9 @@ class LauncherRtlBinaryTests(unittest.TestCase):
         spacing_at = spacing_segment * 16 + spacing_offset
         self.assertEqual(ram[widths_at:widths_at + 128], data[10:138])
         self.assertEqual(ram[spacing_at:spacing_at + 128], data[138:266])
+        bitmap_offset, bitmap_segment = struct.unpack_from('<HH', ram, font_at + 26)
+        bitmap_at = bitmap_segment * 16 + bitmap_offset
+        self.assertEqual(ram[bitmap_at:bitmap_at + len(data) - 266], data[266:])
 
 
 if __name__ == '__main__':

@@ -81,10 +81,10 @@ compared at the same routine boundary.
 
 ## Decompiled linked text RTL (GATE.RTL)
 
-The intro's five text services have now been mapped to original `GATE.RTL`
+The intro's text services have now been mapped to original `GATE.RTL`
 **file offsets**, using both the original `0c4d:xxxx` linked far calls and a
 captured, relocated guest-memory image. They live in `gate_rtl.c`, separately
-from the `GATE.EXE` code. These are the original compiler's five distinct
+from the `GATE.EXE` code. These are the original compiler's distinct
 routines, not newly invented layout/rendering functions:
 
 | Original file range | Linked far call | C function | Recovered original operation |
@@ -92,8 +92,12 @@ routines, not newly invented layout/rendering functions:
 | `rtl:0xebf7–0xec09` | `0c4d:0511` | `gate_rtl_ebf7` | Add two **signed** font-header bytes at +9 and +10 to obtain line advance. |
 | `rtl:0xec0a–0xeca3` | `0c4d:0524` | `gate_rtl_ec0a` | Return special tab/newline widths; otherwise choose fixed, per-character-width or per-character-width-plus-packed-spacing mode via signed bytes at font +11/+12. |
 | `rtl:0xeca4–0xece9` | `0c4d:05be` | `gate_rtl_eca4` | Normalize a far string pointer, sign-extend each character, sum advances modulo 65536; increment only the far pointer's 16-bit offset. |
+| `rtl:0xecea–0xed00` | same RTL segment | `gate_rtl_ecea` | Get ink/background colors, unconditionally writing through two far pointers. |
+| `rtl:0xed01–0xed11` | same RTL segment | `gate_rtl_ed01` | Set the two color words used by the glyph printer. |
+| `rtl:0xed12–0xed38` | same RTL segment | `gate_rtl_ed12` | Return the cursor x/y via optional far pointers; check **both words together** for NULL. |
 | `rtl:0xed39–0xed7d` | `0c4d:0653` | `gate_rtl_ed39` | Store the text cursor; if font header +3 is zero, convert signed pixel x/y to text-mode positions using SAR/IDIV and one-based coordinates. |
 | `rtl:0xed7e–0xedfe` | `0c4d:0698` | `gate_rtl_ed7e` | Normalize a far string, call the original `rtl:0xedff` glyph routine for each signed character, or dispatch via the alternate text-mode printer and update cursor coordinates. |
+| `rtl:0xedff–0xefd8` | same RTL segment | `gate_rtl_edff` | TAB/newline cursor handling, signed-width and packed-bearing calculations, bitmap offset via two truncated IMULs, per-row MSB-first bit traversal, and one far pixel-write call per set bit. |
 
 The intro's active font points at a runtime descriptor with a four-byte
 prefix, followed by the font header. Its `+9=1`, `+10=10`, `+11=-1` and
@@ -109,19 +113,25 @@ globals, and for other external runtime calls still under investigation.
 `launcher-rtl-decompile` runs the reconstructed C with instrumented far
 memory and the original font (when available), checking all printable glyph
 advances plus fixed/per-character modes, signed-byte arithmetic, offset
-wraparound, text-mode control and glyph-print call order. The distinct
+wraparound, text-mode control and glyph-print call order. It additionally
+checks the glyph rasterizer against the original bitmap data for **every
+printable character** of `GATE_305.FNT`, including each ink pixel coordinate
+and advance, plus synthetic bitmask, offset-wrap, background and tab cases.
+The distinct
 `launcher-rtl-decompile-binary` test checks bounded original 8086 functions,
 their compiler branches, far-call identities and, when the optional private
 `build/intro-analysis/at-22000.bin` is present, the original relocated
-DS globals and width/spacing arrays. **No runtime call into the emulator is
-replaced yet**: the linked pointer-normalization and video/glyph services
+DS globals and all original font width/spacing/bitmap arrays. **No runtime
+call into the emulator is replaced yet**: the linked pointer-normalization
+and lower-level video/pixel services
 are explicit unresolved dependencies, not invented native graphics APIs.
 
 ## Immediate next functions
 
-1. Decompile the glyph rasterizer at `rtl:0xedff` and the far pointer
-   normalization services called at `rtl:0xecb0/0xed8a`. Also recover the
-   text-mode cursor/print dependency calls at `rtl:0xed74/0xeda5/0xedb7`.
+1. Decompile the far pointer normalization services called at
+   `rtl:0xecb0/0xed8a` and the pixel writer called at `rtl:0xef83`.
+   Also recover the text-mode cursor/print dependency calls at
+   `rtl:0xed74/0xeda5/0xedb7`.
 2. Recover the linked graphics and RTL calls (`0xf10:1680`, `0xf10:112e`,
    `0xf10:13d2`, `0xf10:16c6`, `0xcdc:04d2`) by their actual code bodies,
    then replace provisional service declarations in the C transcription.
