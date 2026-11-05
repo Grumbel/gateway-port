@@ -9,8 +9,13 @@ are embedded in the source or tests. Host C mock tests are separate.
 
 import hashlib
 from pathlib import Path
+import re
 import struct
+import sys
 import unittest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+from inspect_intro_program import inspect_intro_program
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -84,6 +89,105 @@ class LauncherDecompileBinaryTests(unittest.TestCase):
         self.assertEqual(exe[0x1c5a], 63)         # inclusive loop
         self.assertEqual(u16(exe, 0x1c5e), 500)   # final delay
         self.assertEqual(exe[0x1ca4], 64)         # exclusive loop
+
+    def test_complete_enclosing_intro_function_exits(self):
+        exe = self.exe
+        self.assertEqual(exe[0x1302:0x1304], b'\x33\xc0')
+        far_call(exe, 0x1304, 0x02a5, 0x0c08)  # compiler stack check
+        self.assertEqual(exe[0x1a13], 0xcb)       # one RETF
+        self.assertEqual(exe[0x1398], 0x7d)       # JGE (signed) into long intro
+        self.assertEqual(exe[0x1399] + 0x139a, 0x13fc)
+        self.assertEqual(exe[0x1392:0x1398], b'\x26\x83\x3e\xce\x0f\x02')
+        self.assertEqual(exe[0x13f9], 0xe9)       # short path bypasses cleanup
+        self.assertEqual(0x13fc + struct.unpack_from('<h', exe, 0x13fa)[0], 0x1a0e)
+        self.assertEqual(exe[0x1404], 0xe9)       # Escape uses cleanup
+        self.assertEqual(0x1407 + struct.unpack_from('<h', exe, 0x1405)[0], 0x1a09)
+        near_call(exe, 0x13fd, 0x0e37)
+        near_call(exe, 0x1a06, 0x0e37)
+        far_call(exe, 0x1a09, 0x0f10, 0x0d8e)
+        far_call(exe, 0x1a0e, 0x0df2, 0x0128)
+
+    def test_original_mode_dependent_palette_interlude(self):
+        exe = self.exe
+        self.assertEqual(exe[0x1a14:0x1a17], b'\x55\x8b\xec')
+        self.assertEqual(exe[0x1c10], 0xcb)
+        near_call(exe, 0x138b, 0x1a14)
+        far_call(exe, 0x1a3c, 0x0f10, 0x0c6e)
+        far_call(exe, 0x1a54, 0x0f10, 0x1014)
+        far_call(exe, 0x1b3e, 0x0f10, 0x1014)
+        for call in (0x1a7a, 0x1aa3, 0x1ae5, 0x1b0e,
+                     0x1b64, 0x1b8d, 0x1bcc, 0x1bf5):
+            far_call(exe, call, 0x0cdc, 0x04d2)
+        for cmp_at, branch_at in ((0x1a60, 0x1a66),
+                                  (0x1acb, 0x1ad1),
+                                  (0x1b4a, 0x1b50),
+                                  (0x1bb2, 0x1bb8)):
+            self.assertEqual(exe[cmp_at:cmp_at + 6],
+                             b'\x26\x83\x3e\xce\x0f\x02')
+            self.assertEqual(exe[branch_at], 0x7d)  # signed JGE
+        for site in (0x1abb, 0x1b2a, 0x1ba5):
+            far_call(exe, site, 0x0df2, 0x000a)
+        for site in (0x1a46, 0x1ab5, 0x1b24, 0x1b9f, 0x1c07):
+            near_call(exe, site, 0x0f18)
+        self.assertEqual(exe[0x1a36:0x1a3b], b'\x80\x7e\xfe\x2d\x7c')
+
+    def test_original_picture_palette_fade_arithmetic(self):
+        exe = self.exe
+        self.assertEqual(exe[0x0f61:0x0f64], b'\x55\x8b\xec')
+        self.assertEqual(exe[0x1039], 0xcb)
+        for site, off in ((0x0f6d, 0x0d8e), (0x0f78, 0x1680),
+                          (0x0f8c, 0x112e), (0x0fbf, 0x13d2),
+                          (0x0fcd, 0x16c6)):
+            far_call(exe, site, 0x0f10, off)
+        for site in (0x0fb1, 0x1013, 0x102d):
+            far_call(exe, site, 0x0cdc, 0x04d2)
+        self.assertEqual(u16(exe, 0x0f65), 0x038c)  # local stack size
+        self.assertEqual(u16(exe, 0x0fa7), 0x0300)  # zero palette size
+        self.assertEqual(u16(exe, 0x1009), 0x0300)  # 768 components per step
+        self.assertEqual(exe[0x0feb:0x0ff0], b'\x98\xf7\x6e\xfe\x99')
+        self.assertEqual(exe[0x0ff4:0x0ff9], b'\xb9\x06\x00\xd3\xf8')
+        self.assertEqual(exe[0x101b:0x1025],
+                         b'\x83\x46\xfe\x04\x83\x7e\xfe\x40\x7c\xb5')
+
+    def test_transcribed_c_captions_and_animation_arguments(self):
+        exe = self.exe
+        inspection = inspect_intro_program(exe)
+        source = (ROOT / 'decomp/launcher/gate_exe.c').read_text()
+        source = source.split('void gate_exe_1302(void)', 1)[1]
+
+        captions = re.findall(
+            r'gate_exe_117e\((\d+), (\d+), (\d+), '
+            r'far_pointer\(gate_ds_segment\(\), (0x[0-9a-f]+)\)\);', source)
+        found_captions = [(int(ptr, 16), int(left), int(top), int(right))
+                          for left, top, right, ptr in captions]
+        original_captions = [
+            (row['text_pointer'], row['left'], row['requested_top'], row['right'])
+            for row in inspection['captions']]
+        self.assertEqual(found_captions, original_captions)
+
+        original_bars = [row['bar'] for row in inspection['logo_palette_steps']]
+        c_bars = [int(index) for index in re.findall(
+            r'gate_exe_1c11\((\d+)\);', source)]
+        self.assertEqual(c_bars, original_bars)
+
+        original_animations = [
+            (row['base_resource'], row['next_resource'], row['count'])
+            for row in inspection['animations']]
+        c_animations = [tuple(int(value, 0) for value in match) for match in
+                        re.findall(r'gate_far_0f10_1466\((0x[0-9a-f]+), '
+                                   r'(0x[0-9a-f]+), (\d+)\);', source)]
+        self.assertEqual(c_animations, original_animations)
+
+        original_frames = []
+        for site in (0x1597, 0x1633, 0x1698, 0x16d1, 0x1833,
+                     0x1874, 0x18d4, 0x196a, 0x19ab):
+            near_call(exe, site, 0x0f61)
+            self.assertEqual(exe[site - 5], 0xb8)
+            self.assertEqual(exe[site - 2:site], b'\x50\x0e')
+            original_frames.append(u16(exe, site - 4))
+        c_frames = [int(value, 16) for value in re.findall(
+            r'gate_exe_0f61\((0x[0-9a-f]+)\);', source)]
+        self.assertEqual(c_frames, original_frames)
 
 
 if __name__ == '__main__':

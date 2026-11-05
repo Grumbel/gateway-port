@@ -20,6 +20,19 @@ they are **not** a claim to possess byte-for-byte original source text.
 | `exe:0x0f18–0x0f60` | `gate_exe_0f18(int16_t)` | Signed 16-bit delay added to DX:AX clock, signed-high/unsigned-low deadline, keyboard/mouse early return | Clock RTL name and units inferred; DX:AX ABI certain |
 | `exe:0x1c11–0x1c6b` | `gate_exe_1c11(int16_t)` | If no key pending, update DAC component `45+3*bar` through 64 values and call palette upload each time; wait 500ms | Meaning of palette-upload far pointer not fully proven |
 | `exe:0x1c6c–0x1caa` | `gate_exe_1c6c()` | Write same 0..63 grayscale value to three adjacent DAC components, uploading palette each step | Exact RTL source declarations unknown |
+| `exe:0x1302–0x1a13` | `gate_exe_1302()` | Entire enclosing original intro: initial settings, signed mode fork, short startup branch, 18 explicit caption calls, seven palette-bar calls, five animated sequences, repeated input checks, and distinct cleanup/final paths | Linked graphics services, near calls `0x0f61`/`0x117e`, and original mode meaning remain unresolved |
+| `exe:0x1a14–0x1c10` | `gate_exe_1a14()` | Four mode-dependent title palette stages: single-byte change for signed mode below 2, or 64-step three-component fade otherwise, with three early key exits | RTL 0f10:0c6e service not yet decompiled |
+| `exe:0x0f61–0x1039` | `gate_exe_0f61(uint16_t)` | Prepares image in a 140-byte stack work area; uploads a blank 768-byte RGB palette, then 16 palettes scaled by signed `component * factor / 64` for factors `0,4,…,60`, then the complete original palette | Linked image preparation functions remain opaque; stack far-pointer host substitute is not a recovered compiler ABI |
+
+The long introductory sequence at **`exe:0x13fc` is not a separate
+function**. Its entry is a `JGE` branch target inside `exe:0x1302`, whose
+first instructions occur immediately after the `RETF` of the preceding
+routine. Mode 0 follows an initial two-resource splash into a short path;
+nonzero modes call `exe:0x1a14` first. Signed modes below 2 then select the
+short path; modes at least 2 enter the 18-caption introduction. Escapes from
+that path jump to the cleanup call at `exe:0x1a09`, while the short path
+jumps directly to finalization at `exe:0x1a0e`. This distinction is visible
+in the original 8086 branches and is intentionally explicit in C.
 
 Each function is translated from its complete bounded disassembly, not from
 a collection of framebuffer screenshots. Compiler-generated stack-check calls
@@ -35,27 +48,29 @@ recovered, replace them with C structs and far pointers while preserving
 their offsets. They are not a proposed game engine or renderer API.
 
 The associated `launcher-decompile` CTest target compiles this C directly and
-checks register-width edge cases, keyboard bypasses, exact loop counts, DAC
-offsets, fixed far-pointer arguments and text-display side effects through a
-mock segmented memory. A separate `launcher-decompile-binary` test checks all
-four routine boundaries, their linked far-call targets, the clock comparison
-branch instructions, and the loop constants directly against the SHA-256-pinned
-original executable. This is a *host semantic/static test*, not yet a differential
-guest-execution test or a recompiled DOS binary. A routine is only considered
+checks register-width edge cases, short and long mode branches, Escape
+behavior, all 18 caption calls and argument triples, all five animation
+triples, the ordered frame/image calls, and palette writes through mock
+segmented memory. A separate `launcher-decompile-binary` test checks the
+original routine boundaries, linked far and near call targets, signed mode
+branches, clock comparisons, picture fade arithmetic and loop bounds. It
+also verifies that the transcribed C's literal caption/animation/frame call
+arguments match the SHA-256-pinned original executable. This is a *host
+semantic/static test*, not yet a differential guest-execution test or a
+recompiled DOS binary. A routine is only considered
 fully verified once original-entry guest registers and memory effects can be
 compared at the same routine boundary.
 
 ## Immediate next functions
 
-1. `exe:0x13fc–0x1a13`: decompile the **actual inline introductory call
-   sequence**, with 18 explicit caption calls, seven palette bar calls, five
-   sequence-animation calls, original key checks and shared end path. Do not
-   turn it into a guessed page/animation table.
-2. `exe:0x117e`: recover the common framed-caption routine in C, including
+1. `exe:0x117e`: recover the common framed-caption routine in C, including
    its original local variables, word drawing, and `2000+45*strlen` wait.
-3. `exe:0x103a`: recover the word measurement and wrapping routine, using the
+2. `exe:0x103a`: recover the word measurement and wrapping routine, using the
    `GATE_305.FNT` external data format, not captured panel geometry.
-4. Recover the linked RTL calls by their identities in `GATE.RTL`, then
+3. Recover the linked graphics and RTL calls (`0xf10:1680`, `0xf10:112e`,
+   `0xf10:13d2`, `0xf10:16c6`, `0xcdc:04d2`) by their actual code bodies,
+   then replace provisional service declarations in the C transcription.
+4. Recover the other linked RTL calls by their identities in `GATE.RTL`, then
    replace the provisional far-call prototypes in the C transcription.
 5. Recompile against an appropriate 16-bit C compiler and compare individual
    entry/return register and memory states under the Unicorn probe. The
@@ -70,6 +85,12 @@ objdump -D -b binary -m i8086 -M intel --start-address=0xf18 \
   --stop-address=0xf61 ../gateway-dos/GATE.EXE
 objdump -D -b binary -m i8086 -M intel --start-address=0x1c11 \
   --stop-address=0x1cab ../gateway-dos/GATE.EXE
+objdump -D -b binary -m i8086 -M intel --start-address=0x1302 \
+  --stop-address=0x13fc ../gateway-dos/GATE.EXE
+objdump -D -b binary -m i8086 -M intel --start-address=0x1a14 \
+  --stop-address=0x1c11 ../gateway-dos/GATE.EXE
+objdump -D -b binary -m i8086 -M intel --start-address=0x0f61 \
+  --stop-address=0x103a ../gateway-dos/GATE.EXE
 ```
 
 The disassembler treats the MZ file as a raw byte buffer so its printed
