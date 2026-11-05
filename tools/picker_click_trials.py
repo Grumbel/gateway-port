@@ -17,6 +17,7 @@ memory, saves, image dumps and traces stay under the untracked output dir.
 
 import argparse
 from dataclasses import replace
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -24,7 +25,8 @@ from types import SimpleNamespace
 
 from run_golden import (extract_native_objects, normalized_memory,
                         object_state_changes, read_registers)
-from run_walkthrough import compile_steps, parse_script, run as walkthrough_run
+from run_walkthrough import (compile_steps, parse_script, run as walkthrough_run,
+                             verify_recorded)
 from report_picker_follow import parse_picker_calls
 
 
@@ -180,6 +182,74 @@ def compare_recordings(output, trial_names, *, click_ms=0, post_ms=3600000):
     return result
 
 
+def study_manifest(args, replay, click_ms, post_ms, points):
+    def digest(path):
+        return hashlib.sha256(path.read_bytes()).hexdigest() if path else None
+
+    # The original executable reads many sibling data files, not just its
+    # launcher. Include the full, read-only game fixture in the identity;
+    # writable DOS save slots live under each trial's private state-dir.
+    game_files = {path.name: digest(path)
+                  for path in sorted(args.data.iterdir()) if path.is_file() and
+                  not re.fullmatch(r'GATE[0-9]{3}\.SAV', path.name, re.IGNORECASE)}
+    return {'format': 'gateway-picker-click-trials-v1',
+            'script': args.script.name, 'script_sha256': digest(args.script),
+            'probe_sha256': digest(args.probe),
+            'game_files_sha256': hashlib.sha256(json.dumps(
+                game_files, sort_keys=True, separators=(',', ':')).encode('ascii')).hexdigest(),
+            'import_save_sha256': digest(args.import_save),
+            'scheduled_keys_sha256': hashlib.sha256(json.dumps(
+                replay.keys, separators=(',', ':')).encode('ascii')).hexdigest(),
+            'script_mouse_clicks': replay.mouse_clicks,
+            'actions': len(replay.actions), 'duration_ms': replay.duration_ms,
+            'click_ms': click_ms, 'post_ms': post_ms,
+            'points': [list(point) for point in points],
+            'verify_overlays': args.verify_overlays}
+
+
+def save_report(output, report):
+    result_path = output / 'comparison.json'
+    if result_path.exists():
+        if json.loads(result_path.read_text(encoding='utf-8')) != report:
+            raise ValueError('recorded trial comparison changed; refusing to overwrite')
+    else:
+        result_path.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
+    print(f'Verified controlled comparison: {result_path}')
+
+
+def complete_report(args, points, click_ms, post_ms):
+    trials = [(f'click-{number:03d}', x, y)
+              for number, (x, y) in enumerate(points, 1)]
+    report = compare_recordings(args.output, trials, click_ms=click_ms, post_ms=post_ms)
+    report.update({'script': args.script.name, 'click_ms': click_ms,
+                   'post_ms': post_ms, 'controls': 2, 'points': len(points)})
+    save_report(args.output, report)
+    return report
+
+
+def compare_existing(args, points):
+    replay, click_ms, post_ms = study_plan(
+        args.script, points=points, after_ms=args.after_ms, settle_ms=args.settle_ms,
+        max_actions=args.max_actions, through=args.through)
+    recorded = json.loads((args.output / 'trial-plan.json').read_text(encoding='utf-8'))
+    expected = study_manifest(args, replay, click_ms, post_ms, points)
+    if recorded != expected:
+        raise ValueError('recorded picker trial plan differs from current inputs')
+    for name, click in [('control-a', None), ('control-b', None)] + [
+            (f'click-{index:03d}', point)
+            for index, point in enumerate(points, 1)]:
+        output = args.output / name
+        candidate = replace(replay, mouse_clicks=list(replay.mouse_clicks))
+        if click:
+            candidate.mouse_clicks.append((click_ms, *click))
+        options = recording_args(output, click_ms, post_ms,
+                                 probe=args.probe, data=args.data,
+                                 import_save=args.import_save, timeout=args.timeout,
+                                 verify_overlays=args.verify_overlays)
+        verify_recorded(options, candidate)
+    return complete_report(args, points, click_ms, post_ms)
+
+
 def run_study(args, points):
     if args.output.exists() and any(args.output.iterdir()):
         raise ValueError('trial output directory must be new or empty')
@@ -197,6 +267,9 @@ def run_study(args, points):
     if not args.probe.is_file() or not (args.data / 'GATE.EXE').is_file():
         raise ValueError('original GATE.EXE or Unicorn gateway-probe missing')
     args.output.mkdir(parents=True, exist_ok=True)
+    (args.output / 'trial-plan.json').write_text(json.dumps(
+        study_manifest(args, replay, click_ms, post_ms, points), indent=2) + '\n',
+        encoding='utf-8')
     for name, click in [('control-a', None), ('control-b', None)] + [
             (label, (x, y)) for label, x, y in trials]:
         output = args.output / name
@@ -209,13 +282,7 @@ def run_study(args, points):
                                  verify_overlays=args.verify_overlays)
         print(f'Running {name}...')
         walkthrough_run(options, candidate)
-    report = compare_recordings(args.output, trials, click_ms=click_ms, post_ms=post_ms)
-    report.update({'script': args.script.name, 'click_ms': click_ms,
-                   'post_ms': post_ms, 'controls': 2, 'points': len(points)})
-    (args.output / 'comparison.json').write_text(json.dumps(report, indent=2) + '\n',
-                                                 encoding='utf-8')
-    print(f'Saved controlled comparison: {args.output / "comparison.json"}')
-    return report
+    return complete_report(args, points, click_ms, post_ms)
 
 
 def main():
@@ -239,6 +306,8 @@ def main():
     parser.add_argument('--timeout', type=int, default=1800)
     parser.add_argument('--verify-overlays', action='store_true')
     parser.add_argument('--plan-only', action='store_true')
+    parser.add_argument('--compare-existing', action='store_true',
+                        help='validate completed native recordings and recompute without reruns')
     args = parser.parse_args()
     try:
         if (args.points is None) != (args.capture_call is None) or \
@@ -257,7 +326,13 @@ def main():
                 points.append((x, y))
         if not points:
             raise ValueError('no picker trial coordinates')
-        run_study(args, sorted(set(points))[:args.max_points])
+        points = sorted(set(points))[:args.max_points]
+        if args.plan_only and args.compare_existing:
+            raise ValueError('--plan-only and --compare-existing are mutually exclusive')
+        if args.compare_existing:
+            compare_existing(args, points)
+        else:
+            run_study(args, points)
     except (OSError, ValueError, RuntimeError, KeyError) as error:
         parser.exit(1, f'{error}\n')
 

@@ -542,6 +542,14 @@ xvfb-run -a python3 tools/picker_click_trials.py \
   --points build/picker-entry/oracle-points.tsv --capture-call 2 \
   --max-points 4 --probe build/gateway-probe --data ../gateway-dos \
   --output build/picker-click-trials/drawer-open
+
+# Revalidate the exact completed runs and regenerate their comparison
+# without starting DOS again (repeat all experiment-selection arguments):
+python3 tools/picker_click_trials.py tests/fixtures/gateway-opening.walk \
+  --max-actions 1 --points build/picker-entry/oracle-points.tsv \
+  --capture-call 2 --max-points 4 --probe build/gateway-probe \
+  --data ../gateway-dos --output build/picker-click-trials/drawer-open \
+  --compare-existing
 ```
 
 Choose a stage or original save **corresponding to the capture's condition**;
@@ -560,6 +568,17 @@ and RAM pre-states disagree, the trial is **inconclusive**, not classified as
 accepted. Even a qualified RAM/object change is only a candidate click side
 effect: proving the game accepted the click requires tracing the relevant
 native caller branch, and a valid picker selection by itself is insufficient.
+
+The runner writes `trial-plan.json` before starting the first guest; it hashes
+the walkthrough, probe, all original game resources (not unrelated DOS save
+files), optional imported save, input schedule and chosen coordinates.
+`--compare-existing` requires the same plan and calls the original walkthrough
+recording verifier for **every** control/trial, checking that the recorded
+guest trace delivered all expected BIOS keys and mouse clicks. It then reads
+the frozen `.bin`/`.regs` snapshots. If `comparison.json` already exists and
+the newly computed result differs, it refuses to overwrite it. Incomplete
+runs, changed fixtures and inconsistent reports must be investigated, not
+silently accepted as a valid native experiment.
 
 Private captures contain proprietary executable and game-state bytes:
 **never commit, publish or include them in a Git bundle**. Full-memory

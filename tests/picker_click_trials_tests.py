@@ -14,8 +14,8 @@ from unittest import mock
 
 TOOLS = Path(__file__).resolve().parents[1] / 'tools'
 sys.path.insert(0, str(TOOLS))
-from picker_click_trials import (compare_recordings, picker_observations,
-                                 read_points, run_study,
+from picker_click_trials import (compare_existing, compare_recordings,
+                                 picker_observations, read_points, run_study,
                                  study_plan)  # noqa: E402
 
 
@@ -128,6 +128,81 @@ with tempfile.TemporaryDirectory(prefix='gateway-picker-click-test-') as tempora
     assert actual['control_post_equal']
     assert all(trial['comparison_qualified'] for trial in actual['trials'])
     assert json.loads((output / 'comparison.json').read_text())['points'] == 2
+    assert json.loads((output / 'trial-plan.json').read_text())['points'] == [
+        [280, 80], [320, 80]]
+
+    verified = []
+
+    def fake_verify(options, candidate):
+        verified.append((options.output.name, list(candidate.mouse_clicks)))
+
+    with mock.patch('picker_click_trials.verify_recorded', side_effect=fake_verify):
+        recovered = compare_existing(args, [(280, 80), (320, 80)])
+    assert recovered == actual
+    assert verified == [
+        ('control-a', []), ('control-b', []),
+        ('click-001', [(click, 280, 80)]),
+        ('click-002', [(click, 320, 80)])]
+
+    manifest_file = output / 'trial-plan.json'
+    original_manifest = manifest_file.read_text()
+    manifest = json.loads(original_manifest)
+    manifest['points'][0][0] = 300
+    manifest_file.write_text(json.dumps(manifest))
+    try:
+        compare_existing(args, [(280, 80), (320, 80)])
+    except ValueError as error:
+        assert 'differs' in str(error)
+    else:
+        raise AssertionError('accepted a mismatched trial manifest')
+    manifest_file.write_text(original_manifest)
+
+    stage.write_text('COMMAND open drawer\nLABEL drawer_changed\n')
+    try:
+        compare_existing(args, [(280, 80), (320, 80)])
+    except ValueError as error:
+        assert 'differs' in str(error)
+    else:
+        raise AssertionError('accepted modified walkthrough input')
+    stage.write_text('COMMAND open drawer\nLABEL drawer_open\n')
+
+    (fake_data / 'GATE_002.RGN').write_bytes(b'original region fixture')
+    try:
+        compare_existing(args, [(280, 80), (320, 80)])
+    except ValueError as error:
+        assert 'differs' in str(error)
+    else:
+        raise AssertionError('accepted changed original game data')
+    (fake_data / 'GATE_002.RGN').unlink()
+
+    # User saves placed in the data directory are not used by the isolated
+    # runner: those changes must not invalidate the reference game fixture.
+    (fake_data / 'GATE001.SAV').write_bytes(b'unrelated save')
+    with mock.patch('picker_click_trials.verify_recorded', side_effect=fake_verify):
+        assert compare_existing(args, [(280, 80), (320, 80)]) == actual
+
+    result_file = output / 'comparison.json'
+    original_result = result_file.read_text()
+    altered = json.loads(original_result)
+    altered['control_pre_equal'] = False
+    result_file.write_text(json.dumps(altered))
+    try:
+        with mock.patch('picker_click_trials.verify_recorded', side_effect=fake_verify):
+            compare_existing(args, [(280, 80), (320, 80)])
+    except ValueError as error:
+        assert 'refusing to overwrite' in str(error)
+    else:
+        raise AssertionError('overwrote divergent recorded trial comparison')
+    result_file.write_text(original_result)
+
+    with mock.patch('picker_click_trials.verify_recorded', side_effect=fake_verify):
+        (output / 'click-002' / 'after.bin').unlink()
+        try:
+            compare_existing(args, [(280, 80), (320, 80)])
+        except FileNotFoundError:
+            pass
+        else:
+            raise AssertionError('accepted missing recorded guest memory')
     try:
         run_study(args, [(280, 80)])
     except ValueError as error:

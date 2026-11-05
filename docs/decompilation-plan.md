@@ -1019,6 +1019,17 @@ the original picker returns for each trial and labels missing provenance.
 Synthetic baseline drift, input injection, original object-parser failure,
 and output-isolation checks pass; actual guest execution remains pending.
 
+The controlled trial workflow now persists an input-identity manifest before
+the first native run, hashing the script, native probe, original game-resource
+set, optional seed save, planned BIOS schedule and isolated click coordinates.
+`--compare-existing` rechecks each recorded run against that plan using the
+existing native walkthrough trace verifier, then rederives RAM/CPU/object
+differences without executing the guest or overwriting a divergent prior
+result. Synthetic tests cover recovery, modified scripts/resources, unrelated
+game-directory saves, corrupted manifests, missing snapshots and altered
+reports. The original-game trials still require a host with Unicorn/Xvfb;
+their downstream action-dispatch semantics remain unproven.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |
