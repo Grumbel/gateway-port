@@ -46,12 +46,16 @@ constexpr std::array<IntroSourcePage, 18> observed_pages{{
     {302000, 303, 42, 10, 10, 310},
 }};
 
-// GATE_300 #1..#26 preload at 12.568..13.148s, then display later.
-// #27 is the final non-XOR title. The delta-frame scheduler remains
-// approximate; the credit lettering uses palette index 23 in #27 itself.
-constexpr std::array<std::uint32_t, 7> bar_reveal_ms{{
-    8600, 9200, 9700, 10200, 10800, 11800, 12300,
-}};
+// GATE.EXE:0x1461..0x1517 calls exe:0x1c11 with these seven indices.
+// That routine writes 0..63 to the *red* component of DAC 45+3*index,
+// then waits 500ms. The 64 unthrottled writes span ~77 guest ms in the
+// original deterministic-clock probe; calls begin ~570ms apart. Both the
+// 8578ms origin and measured pace are runtime observations, not explicit
+// timer constants in the executable. The order itself is compiled code.
+constexpr std::array<int, 7> bar_palette_order{{1, 6, 4, 7, 2, 5, 3}};
+constexpr std::uint32_t first_bar_ramp_ms = 8578;
+constexpr std::uint32_t bar_ramp_cadence_ms = 570;
+constexpr std::uint32_t bar_ramp_duration_ms = 77;
 constexpr std::array<int, 7> bar_x{{24, 64, 105, 149, 194, 242, 284}};
 
 struct SpriteKeyframe {
@@ -452,20 +456,33 @@ IntroFrame IntroPresentation::frame_at(std::uint32_t ms) const {
             }
             paint(frame, image);
         } else {
-            // The seven 9x38 rectangles and their order are pixel-exact.
-            // The timestamps are constrained by 500ms snapshots, not exact.
-            for (std::size_t i = 0; i < bar_x.size(); ++i)
-                if (ms >= bar_reveal_ms[i])
-                    fill(frame, bar_x[i], 81, 9, 38, 0xffff0000u);
+            // Only the DAC changes: the 9x38 strokes already exist in the
+            // loaded picture, and they brighten in *palette-index order*,
+            // not from left to right. Expand the original six-bit red to
+            // the probe's eight-bit framebuffer at each render time.
+            for (std::size_t i = 0; i < bar_palette_order.size(); ++i) {
+                const auto start = first_bar_ramp_ms + i * bar_ramp_cadence_ms;
+                if (ms < start)
+                    continue;
+                const auto six = std::min<std::uint32_t>(63,
+                    (ms - start) * 64 / bar_ramp_duration_ms);
+                const auto eight = six << 2 | six >> 4;
+                const int bar = bar_palette_order[i] - 1;
+                fill(frame, bar_x[bar], 81, 9, 38, 0xff000000u | (eight << 16));
+            }
         }
         return frame;
     }
+    // The title disappears before the first Venus image is displayed.
+    // exe:0x159d waits 1000ms after drawing GATE_301 #5, before page 0.
+    if (ms < 19128)
+        return blank(320, 200, 0xff000000u);
     if (ms < observed_pages.front().start_ms) {
         auto frame = blank(320, 200, 0xff000000u);
         paint(frame, load_picture(301, 5));
         return frame;
     }
-    if (ms >= observed_pages[1].start_ms && ms < 45200) {
+    if (ms >= observed_pages[1].start_ms && ms < 45000) {
         // The first caption closes before the spaceship animation. The
         // picture resource sequence at 40.19..41.17s is a preload; the actual
         // 26-frame animation uses the BIOS-clock-like ~55ms display cadence.

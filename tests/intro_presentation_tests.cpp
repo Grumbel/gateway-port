@@ -83,8 +83,8 @@ int main(int argc, char **argv) try {
     assert(red == 2394); // seven 9x38 strokes, as in the native capture
     const auto spacecraft = intro.frame_at(41400);
     assert(spacecraft.argb[25 * 320 + 230] == 0xffffffffu);
-    const auto before_caption = intro.frame_at(45000);
-    const auto after_caption = intro.frame_at(45500);
+    const auto before_caption = intro.frame_at(44999);
+    const auto after_caption = intro.frame_at(45000);
     assert(before_caption.argb[100 * 320 + 20] != 0xffa2a2a2u);
     assert(after_caption.argb[100 * 320 + 20] == 0xffa2a2a2u);
     const auto first = intro.page_frame(0);
@@ -133,8 +133,24 @@ int main(int argc, char **argv) try {
     // framebuffer captures. This detects changes even when the recovered
     // box geometry and line counts remain the same. Original pixels are not
     // embedded in source or Git.
-    constexpr std::array<std::pair<std::uint32_t, std::uint64_t>, 8> pixel_exact{{
+    constexpr std::array<std::pair<std::uint32_t, std::uint64_t>, 22> pixel_exact{{
+        // The original palette ramp visits bars 1,6,4,7,2,5,3, with
+        // non-primary-color samples at 11.5 and 12 seconds.
+        {8500, 0x9ebf9a6ec921bb25ull},
+        {8610, 0xbff27daee428d2a5ull},
+        {9000, 0x57ec896d90382a25ull},
+        {9500, 0xf50f72a95651e435ull},
+        {9750, 0x4c877b0a561178a5ull},
+        {10000, 0xb4028243a992a825ull},
+        {10500, 0x4d7912c733b1f469ull},
+        {11000, 0x2905961d89689425ull},
+        {11500, 0xc31237a932083cd1ull},
+        {12000, 0xe8b6cb9b669248d1ull},
+        {12030, 0x86a094f806c3b081ull},
+        {12500, 0x2369d709925b6425ull},
+        {19000, 0x9ebf9a6ec921bb25ull},
         {22000, 0xed01e80d9a31a63eull},
+        {45000, 0x3080c454f329377full},
         {60000, 0x93414ea68191f519ull},
         {70000, 0xcf0ee22b73f42aa5ull},
         {100000, 0x446a224a1b3db04full},

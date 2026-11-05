@@ -88,11 +88,26 @@ picture, first changed entry, and frame count:
 The program also calls `exe:0x1c11` seven times with indices
 `1,6,4,7,2,5,3`. Disassembly of that function shows a 64-step palette
 brightness ramp at **DAC index `45 + 3 * argument`**, followed by a 500ms
-interruptible delay. The existing preview approximates this with seven
-solid bars; the source-level DAC schedule is now identified but not yet
-reproduced frame-by-frame. These calls establish the original *ordering* of
-the animation operations, including `GATE_303` #43–#79; their full timing
-and intervening rendering semantics need additional tracing.
+interruptible delay. It writes only the **red** channel of one DAC entry
+each iteration. The strokes are 9×38 pixels, arranged left-to-right as
+indices 1–7, but they appear in **compiled palette-call order**, not
+left-to-right. Their time-varying color now uses the six-bit VGA DAC
+and the original probe's six-to-eight-bit conversion.
+
+Read-only captures at 20ms intervals from 8.45s through 12.55s establish
+a nearly uniform call cadence of **570 guest milliseconds** beginning at
+approximately 8,578ms; each 64-write ramp takes approximately **77ms**.
+These timings are measurements of the deterministic original emulator,
+not explicit delay operands in the machine code (the source explicitly
+waits 500ms *after* the ramp). A compact native model using the original
+seven-call order and those two measured timing constants reproduces
+**201/206 original framebuffer captures byte-for-byte**. The five remaining
+samples, at 9,190, 9,730, 9,790, 10,330 and 10,350ms, differ by one DAC
+level on exactly one 342-pixel bar, reflecting the unthrottled original loop's
+instruction-level timing. This is much stronger coverage than the earlier
+500ms snapshots but is not a cycle-exact palette-loop reimplementation.
+The compiled sequence also establishes `GATE_303` #43–#79; its precise
+runtime timing has not yet been established.
 
 In read-only deterministic runs on private Xvfb, a Space, Enter, or letter
 pressed at 22,000ms produces page 1 by 27,000ms, whereas no key leaves page 0
@@ -113,14 +128,15 @@ timestamps. File reads are *not* necessarily draw calls.
 | ---: | --- | --- |
 | 0–3.27 s | White 640×480 screen | Intro starts in VGA mode 12h |
 | 3.27–7.54 s | Black Legend lettering on white | `GATE_201.PIC` #0; frame at 5s is pixel-exact in native renderer |
-| 7.54–12.57 s | Black 320×200 screen; seven red bars appear in order | Mode 13h; `GATE_300.PIC` #0 at 7.539s; 9×38 bars at x=24,64,105,149,194,242,284, y=81 |
+| 7.54–12.57 s | Black 320×200 screen; seven red bars brighten in order 1,6,4,7,2,5,3 | Mode 13h; `GATE_300.PIC` #0 at 7.539s; 9×38 bars at x=24,64,105,149,194,242,284, y=81 |
 | 12.57–13.15 s | Bars remain visible while resources are loaded | `GATE_300.PIC` #1–#26 (XOR deltas) read over ~580 ms |
 | 13.2–14.39 s | Red logo reveal animation | PIC delta composition, native display schedule *approximate* |
 | 14.39–18.58 s | Final title and author's credit (visible from ~15.45s) | `GATE_300.PIC` #27 already contains 1,382 credit pixels in palette index 23; only that DAC entry changes from black to white |
-| 18.58–20.13 s | First painted background, before caption | `GATE_301.PIC` #5 |
+| 18.58–19.13 s | Black screen after the title clears | Original black frame at 19s |
+| ~19.13–20.13 s | First painted background, before caption | `GATE_301.PIC` #5 followed by an explicit 1,000ms delay at `exe:0x159d` |
 | 20.13–~323 s | Prose panels and animated scenery | `GATE_305.FNT` proportional 10px font; 18 NUL-terminated strings from file offset 0x428f in `GATE.EXE` |
 | ~40–42.6 s | First caption clears; spacecraft flies across the painting | `GATE_301` #6–#31 preload at 40.19–41.17s; 26 painted sprite frames with ~55ms cadence |
-| ~45.0–45.5 s | Second caption appears after the animation | Same painting and `GATE_305.FNT` |
+| By 45.0 s | Second caption appears after the animation | Same painting and `GATE_305.FNT`; 45.0s caption frame is pixel-exact |
 | ~255.3–259.3 s | Fade to black, then a spacecraft approaches the station | `GATE_302` #0 with sprites #1–#32; captures at 256/256.5/257/257.5/258/258.5s match #2/#7/#12/#17/#22/#27 exactly |
 | ~259.5–263.4 s | New station background and second spacecraft animation | `GATE_302` #33 with sprites #34–#102; captures at 260/260.5/261/261.5/262/262.5/263s match #37/#40/#43/#47/#50/#53/#57 exactly |
 | ~263.7–268 s | Starfield and third spacecraft animation, then fade to black | `GATE_303` #0 with sprites #1–#41; captures at 264/264.5/265/266s match #7/#14/#24/#41 exactly |
@@ -135,14 +151,18 @@ The credit lettering is already stored in picture #27, initially black;
 changing palette entry 23 through the observed ~85ms ramp reveals it without
 rendering an additional font. The dialog's outer black/beveled border now
 matches the DOS frame. The glyph bearing and whitespace corrections eliminate
-the previous 2,124-pixel mismatch at 22,000ms. Across **87 independent DOS
-captures** from 19 to 322 seconds, the native renderer now matches **82
-byte-for-byte**. Five non-matching timestamps remain: 19,000ms (scene boundary),
-45,000ms (early spacecraft transition), 259,500ms (scene fade), 265,500ms
-(six sprite pixels), and 303,000ms (caption drawing in progress). Eight
-separately sampled, pixel-exact caption frames are protected by source-independent
-RGB fingerprints in the native tests. Original text and art are never embedded
-in the project; the DOS directory is needed at runtime.
+the previous 2,124-pixel mismatch at 22,000ms. The 19,000ms black frame and
+45,000ms second-caption boundary are now matched too. Across **87 independent
+DOS captures** from 19 to 322 seconds, the native renderer matches **84
+byte-for-byte**. Three non-matching timestamps remain: 259,500ms (a transitional
+palette update affecting 5,089 pixels), 265,500ms (six extra spacecraft pixels),
+and 303,000ms (the original text has not finished drawing). At `exe:0x1288`
+the original caption loop calls the RTL string drawer once **per word** after
+measuring and wrapping it; partial text is therefore an in-progress native
+render, not a distinct intro text record. Twenty-two separate, pixel-exact
+frames, including intermediate logo DAC values, are protected by
+source-independent RGB fingerprints in the native tests. Original text and
+art are never embedded in the project; the DOS directory is needed at runtime.
 
 ## All eighteen recovered narrative pages
 
@@ -243,12 +263,14 @@ compiler fallback lives under `build/intro-analysis/` instead.
    input check, `exe:0x0f18` interruptible timer, and `exe:0x1a09` handoff.
    Derive each scene's explicit delays and conditional animation paths, then
    replace approximate page boundaries with a native sequential scheduler.
-2. Recover the exact logo-delta animation display schedule. The completed
-   title and its palette-index-23 credit reveal are recovered, including the
-   original 6-bit palette ramp at 10ms intervals.
-3. Extract the caption's intermediate display calls and clarify the timing
-   of its partial text draw. Font rasterization, whitespace, line counts,
-   all eighteen rectangles, and completed caption pixels now match.
+2. Recover the exact logo-delta animation display schedule. The seven
+   palette-bar ramps now match 201/206 dense 20ms samples and the final
+   title's palette-index-23 credit reveal is recovered. The PIC XOR
+   delta-frame cadence at 13.2–14.39s remains interpolated.
+3. Trace the caption's intermediate *per-word* RTL string-drawer calls at
+   `exe:0x1288` to reproduce the in-progress text frame at 303,000ms.
+   Font rasterization, whitespace, line counts, all eighteen rectangles,
+   and completed caption pixels now match.
 4. Derive the actual `GATE_302`/`303` timer loops, fill gaps between the
    sampled frames, and verify fade states around 259.5s. All 18 panel bounds
    are known; their exact timing is only bracketed for the last eight.
