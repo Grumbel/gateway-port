@@ -34,10 +34,12 @@ uint16_t gate_far_0df2_0030(void); /* consume key */
 void gate_far_0df2_00f8(void);     /* keyboard cleanup */
 uint16_t gate_far_0e48_07fe(void); /* mouse flags in AL */
 uint32_t gate_far_02a5_38c4(void); /* clock returned in DX:AX */
+uint16_t gate_far_02a5_2bba(GateFarPtr text); /* string length, AX */
 void gate_far_123f_0004(void);
 void gate_far_0c4d_018d(uint16_t value);
 void gate_far_0c4d_061b(uint16_t handle, uint16_t mode);
 uint16_t gate_far_0c4d_05be(GateFarPtr string);
+uint16_t gate_far_0c4d_0524(uint16_t character);
 uint16_t gate_far_0c4d_0511(void);
 void gate_far_0c4d_0653(int16_t x, int16_t y);
 void gate_far_0c4d_0698(GateFarPtr string);
@@ -60,13 +62,16 @@ void gate_far_0cdc_0aac(uint16_t value);
 void gate_far_0cdc_0aee(uint16_t arg0, uint16_t arg1, uint16_t arg2,
                          uint16_t arg3, uint16_t arg4);
 void gate_far_0e48_011b(void);
+void gate_far_0cdc_0e50(uint16_t left, uint16_t top, uint16_t right,
+                         uint16_t bottom, uint16_t style);
 void gate_far_0df2_0128(void);
 
 /* A stack-local buffer's SS:offset; a host substitute for 16-bit &local. */
 GateFarPtr gate_stack_pointer(void *buffer);
 
 /* Linked near calls not yet independently decompiled. */
-void gate_exe_117e(uint16_t left, uint16_t top, uint16_t right, GateFarPtr text);
+void gate_exe_103a(uint16_t *left, uint16_t *top, uint16_t *right,
+                   uint16_t *bottom, GateFarPtr text);
 
 /* The original routines use far return (`RETF`), with C-style stack args. */
 uint16_t gate_exe_0e37(void);
@@ -76,5 +81,6 @@ void gate_exe_1c6c(void);
 void gate_exe_1302(void);
 void gate_exe_1a14(void);
 void gate_exe_0f61(uint16_t image);
+void gate_exe_117e(uint16_t left, uint16_t top, uint16_t right, GateFarPtr text);
 
 #endif

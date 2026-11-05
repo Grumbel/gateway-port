@@ -116,6 +116,132 @@ void gate_exe_0f61(uint16_t image)
     gate_far_0cdc_04d2(far_pointer(0x1a7a, 0x0fdc));
 }
 
+/* GATE.EXE file 0x103a..0x117d. Measure an intro text box before drawing.
+ *
+ * The original function receives FAR POINTERS to the caller's left, top,
+ * right and output-bottom words. They are passed as &stack locals, not
+ * copied values. The four pointers mutate the caller's parameters in
+ * place, including a signed y-position adjustment when bottom > 185.
+ *
+ * There is one 80-byte local word buffer at BP-5a, terminated at every
+ * word. The original does NOT test its capacity (ORIGINAL BUG: a word of
+ * 80 or more bytes overwrites nearby stack locals). We do not truncate it.
+ * String traversal increments only the 16-bit offset of the far pointer.
+ */
+void gate_exe_103a(uint16_t *left, uint16_t *top, uint16_t *right,
+                   uint16_t *bottom, GateFarPtr text)
+{
+    char word[80];
+    uint16_t cursor = text.offset;
+    uint16_t x;
+    uint16_t y;
+
+    gate_far_0c4d_018d(5);
+    *left = (uint16_t)(*left + 5);
+    *top = (uint16_t)(*top + 5);
+    *right = (uint16_t)(*right - 5);
+    x = *left;
+    y = *top;
+
+    while (gate_far_byte(text.segment, cursor) != 0) {
+        uint16_t count = 0;
+        uint16_t width;
+        uint8_t separator;
+
+        while ((separator = gate_far_byte(text.segment, cursor)) != 0 &&
+               separator != ' ' && separator != '\n') {
+            word[count++] = (char)separator;
+            cursor = (uint16_t)(cursor + 1);
+        }
+        word[count] = '\0';
+        width = gate_far_0c4d_05be(gate_stack_pointer(word));
+
+        if ((int16_t)(uint16_t)(x + width) > (int16_t)*right) {
+            x = *left;
+            y = (uint16_t)(y + gate_far_0c4d_0511());
+        }
+        x = (uint16_t)(x + width);
+
+        separator = gate_far_byte(text.segment, cursor);
+        if (separator == '\n') {
+            x = *left;
+            y = (uint16_t)(y + gate_far_0c4d_0511());
+            cursor = (uint16_t)(cursor + 1);
+        } else if (separator == ' ') {
+            x = (uint16_t)(x + gate_far_0c4d_0524(' '));
+            while (gate_far_byte(text.segment, cursor) == ' ')
+                cursor = (uint16_t)(cursor + 1);
+        }
+    }
+
+    *bottom = (uint16_t)(gate_far_0c4d_0511() + y - 2);
+    if ((int16_t)*bottom > 185) {
+        *top = (uint16_t)(*top - (uint16_t)(*bottom - 185));
+        *bottom = 185;
+    }
+}
+
+/* GATE.EXE file 0x117e..0x1301. The caption-display routine.
+ *
+ * Exactly two passes over the original text: the near 103a call measures
+ * and MOVES the local arguments left/top/right, then 117e draws the frame
+ * and prints each word using the same delimiter and wrap logic. The word
+ * buffer is again 80 bytes and has the same unchecked original overflow.
+ * The final wait is uint16_t(2000 + 45 * strlen(text)), not a table lookup.
+ */
+void gate_exe_117e(uint16_t left, uint16_t top, uint16_t right, GateFarPtr text)
+{
+    char word[80];
+    uint16_t bottom;
+    uint16_t cursor;
+    uint16_t x;
+    uint16_t y;
+
+    gate_far_0c4d_018d(5);
+    gate_far_0c4d_061b(gate_far_word(gate_ds_word(0x4e44), 0x004c), 0xffff);
+    gate_exe_103a(&left, &top, &right, &bottom, text);
+    gate_far_0cdc_0e50((uint16_t)(left - 5), (uint16_t)(top - 5),
+                         (uint16_t)(right + 5), (uint16_t)(bottom + 5), 4);
+
+    x = left;
+    y = top;
+    cursor = text.offset;
+    while (gate_far_byte(text.segment, cursor) != 0) {
+        uint16_t count = 0;
+        uint16_t width;
+        uint8_t separator;
+
+        while ((separator = gate_far_byte(text.segment, cursor)) != 0 &&
+               separator != ' ' && separator != '\n') {
+            word[count++] = (char)separator;
+            cursor = (uint16_t)(cursor + 1);
+        }
+        word[count] = '\0';
+        width = gate_far_0c4d_05be(gate_stack_pointer(word));
+
+        if ((int16_t)(uint16_t)(x + width) > (int16_t)right) {
+            x = left;
+            y = (uint16_t)(y + gate_far_0c4d_0511());
+        }
+        gate_far_0c4d_0653((int16_t)x, (int16_t)y);
+        gate_far_0c4d_0698(gate_stack_pointer(word));
+        x = (uint16_t)(x + width);
+
+        separator = gate_far_byte(text.segment, cursor);
+        if (separator == '\n') {
+            x = left;
+            y = (uint16_t)(y + gate_far_0c4d_0511());
+            cursor = (uint16_t)(cursor + 1);
+        } else if (separator == ' ') {
+            x = (uint16_t)(x + gate_far_0c4d_0524(' '));
+            while (gate_far_byte(text.segment, cursor) == ' ')
+                cursor = (uint16_t)(cursor + 1);
+        }
+    }
+    gate_exe_0f18((int16_t)(uint16_t)(2000u +
+        (uint16_t)(45u * gate_far_02a5_2bba(text))));
+}
+
 /* GATE.EXE file 0x1c11..0x1c6b. One of the seven red DAC bars.
  *
  * `bar * 3 + 45` is computed by signed IMUL, low word only; the loop byte

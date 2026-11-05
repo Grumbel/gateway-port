@@ -20,8 +20,10 @@ static unsigned intro_cleanup, intro_finished, intro_setup, intro_video, intro_c
 static unsigned intro_fullscreen, intro_palette, intro_mode1, intro_rect;
 static unsigned intro_caption_count, intro_image_count, intro_anim_count;
 static unsigned intro_fade_count;
+static unsigned intro_frame_count, intro_text_font_calls;
 static uint16_t intro_caption_text[18], intro_caption_left[18];
 static uint16_t intro_caption_top[18], intro_caption_right[18];
+static uint16_t intro_frame_bottom[18];
 static uint16_t intro_images[16], intro_fades[16];
 static uint16_t intro_anim_base[5], intro_anim_next[5], intro_anim_lengths[5];
 static uint16_t intro_word_writes, intro_last_segment, intro_last_offset;
@@ -30,6 +32,15 @@ static uint8_t *stack_pointer;
 static unsigned local_palette_uploads, fade_prepare_calls, fade_finish_calls;
 static uint8_t local_palette_sample_zero[9 * 17];
 static uint8_t local_palette_sample_one[9 * 17];
+static const char *synthetic_text;
+static char last_printed_word[80];
+
+static const uint16_t caption_pointers[18] = {
+    0x363b, 0x37bf, 0x3899, 0x395a, 0x3a65, 0x3b9b,
+    0x3c4f, 0x3d71, 0x3e79, 0x3f3b, 0x4086, 0x4198,
+    0x42ae, 0x436c, 0x4436, 0x45c4, 0x46c5, 0x4820
+};
+static const char intro_test_text[] = "aa   bb\nccc";
 
 static void reset(void)
 {
@@ -46,11 +57,14 @@ static void reset(void)
     intro_cleanup = intro_finished = intro_setup = intro_video = intro_credit = 0;
     intro_fullscreen = intro_palette = intro_mode1 = intro_rect = 0;
     intro_caption_count = intro_image_count = intro_anim_count = intro_fade_count = 0;
+    intro_frame_count = intro_text_font_calls = 0;
     intro_word_writes = intro_last_segment = intro_last_offset = intro_last_value = 0;
     stack_pointer = NULL;
     local_palette_uploads = fade_prepare_calls = fade_finish_calls = 0;
     memset(intro_caption_text, 0, sizeof intro_caption_text);
     memset(intro_images, 0, sizeof intro_images);
+    synthetic_text = NULL;
+    last_printed_word[0] = '\0';
 }
 
 uint16_t gate_ds_word(uint16_t offset) { return ds[offset]; }
@@ -58,8 +72,21 @@ void gate_ds_set_word(uint16_t offset, uint16_t value) { ds[offset] = value; }
 uint16_t gate_ds_segment(void) { return 0x1234; }
 uint8_t gate_far_byte(uint16_t segment, uint16_t offset)
 {
-    assert(segment == 0x6666);
-    return palette[offset];
+    if (segment == 0x6666) return palette[offset];
+    if (segment == 0x8888) {
+        assert(synthetic_text && offset >= 0x0200);
+        unsigned index = offset - 0x0200;
+        return index < strlen(synthetic_text) ? (uint8_t)synthetic_text[index] : 0;
+    }
+    if (segment == 0x1234) {
+        for (unsigned i = 0; i < 18; ++i) {
+            unsigned delta = (uint16_t)(offset - caption_pointers[i]);
+            if (delta <= strlen(intro_test_text))
+                return (uint8_t)intro_test_text[delta];
+        }
+    }
+    assert(!"unexpected far byte read");
+    return 0;
 }
 uint16_t gate_far_word(uint16_t segment, uint16_t offset)
 {
@@ -67,6 +94,7 @@ uint16_t gate_far_word(uint16_t segment, uint16_t offset)
     if (segment == 0x3333 && offset == 0x3e) return 80;
     if (segment == 0x4444 && offset == 0x42) return 25;
     if (segment == 0x5555 && offset == 0x0fce) return intro_mode;
+    if (segment == 0x7776 && offset == 0x4c) return 34;
     assert(!"unexpected far memory read");
     return 0;
 }
@@ -89,17 +117,40 @@ uint16_t gate_far_0df2_0030(void) { ++key_reads; return keyboard_key; }
 void gate_far_0df2_00f8(void) { ++keyboard_flushes; }
 uint16_t gate_far_0e48_07fe(void) { return mouse_flags; }
 uint32_t gate_far_02a5_38c4(void) { clock_now += clock_step; return clock_now; }
+uint16_t gate_far_02a5_2bba(GateFarPtr text)
+{
+    uint16_t length = 0;
+    while (gate_far_byte(text.segment, (uint16_t)(text.offset + length)) != 0)
+        ++length;
+    if (text.segment == 0x1234) {
+        assert(intro_caption_count < 18);
+        intro_caption_text[intro_caption_count++] = text.offset;
+    }
+    return length;
+}
 void gate_far_123f_0004(void) { ++special_calls; }
-void gate_far_0c4d_018d(uint16_t value) { assert(value == 1); ++clear_calls; }
+void gate_far_0c4d_018d(uint16_t value)
+{
+    assert(value == 1 || value == 5);
+    if (value == 1) ++clear_calls;
+    else ++intro_text_font_calls;
+}
 void gate_far_0c4d_061b(uint16_t handle, uint16_t mode)
 {
-    assert(handle == 12 && mode == 0xffff);
+    assert((handle == 12 || handle == 34) && mode == 0xffff);
     ++message_calls;
 }
 uint16_t gate_far_0c4d_05be(GateFarPtr string)
 {
+    if (string.segment == 0x7777 && string.offset == 0x7777)
+        return (uint16_t)strlen((const char *)stack_pointer);
     assert(string.segment == 0x1234 && string.offset == 0x35fe);
     return 16;
+}
+uint16_t gate_far_0c4d_0524(uint16_t character)
+{
+    assert(character == ' ');
+    return 1;
 }
 uint16_t gate_far_0c4d_0511(void) { return 5; }
 void gate_far_0c4d_0653(int16_t x, int16_t y)
@@ -110,7 +161,13 @@ void gate_far_0c4d_0653(int16_t x, int16_t y)
 }
 void gate_far_0c4d_0698(GateFarPtr string)
 {
-    assert(string.segment == 0x1234 && string.offset == 0x35fe);
+    if (string.segment == 0x7777) {
+        assert(string.offset == 0x7777 && stack_pointer);
+        assert(strlen((const char *)stack_pointer) < sizeof last_printed_word);
+        strcpy(last_printed_word, (const char *)stack_pointer);
+    } else {
+        assert(string.segment == 0x1234 && string.offset == 0x35fe);
+    }
     ++print_calls;
 }
 void gate_far_0cdc_04d2(GateFarPtr ptr)
@@ -193,16 +250,17 @@ void gate_far_0cdc_0aee(uint16_t a, uint16_t b, uint16_t c,
     ++intro_rect;
 }
 void gate_far_0e48_011b(void) { ++intro_credit; }
-void gate_far_0df2_0128(void) { ++intro_finished; }
-void gate_exe_117e(uint16_t left, uint16_t top, uint16_t right, GateFarPtr text)
+void gate_far_0cdc_0e50(uint16_t left, uint16_t top, uint16_t right,
+                         uint16_t bottom, uint16_t style)
 {
-    unsigned i = intro_caption_count++;
-    assert(i < 18 && text.segment == 0x1234);
-    intro_caption_text[i] = text.offset;
-    intro_caption_left[i] = left;
-    intro_caption_top[i] = top;
-    intro_caption_right[i] = right;
+    assert(style == 4 && intro_frame_count < 18);
+    intro_caption_left[intro_frame_count] = left;
+    intro_caption_top[intro_frame_count] = top;
+    intro_caption_right[intro_frame_count] = right;
+    intro_frame_bottom[intro_frame_count] = bottom;
+    ++intro_frame_count;
 }
+void gate_far_0df2_0128(void) { ++intro_finished; }
 
 static void test_wait(void)
 {
@@ -334,6 +392,7 @@ static void test_enclosing_intro_short_paths(void)
     reset();
     ds[0x4e2a] = 0x5555;
     ds[0x4e42] = 0x6666;
+    ds[0x4e44] = 0x7776;
     ds[0x4e46] = 0x7000;
     ds[0x4e48] = 0x7001;
     ds[0x4e4a] = 0x7002;
@@ -392,6 +451,47 @@ static void test_original_picture_fade_signed_palette(void)
     assert(palette[0x0fdc] == 63 && palette[0x0fdd] == (uint8_t)-64);
 }
 
+static void test_original_caption_two_pass_layout(void)
+{
+    GateFarPtr text = {0x8888, 0x0200};
+    uint16_t left, top, right, bottom;
+
+    reset();
+    synthetic_text = intro_test_text;
+    left = 10;
+    top = 20;
+    right = 24;
+    bottom = 0xffff;
+    gate_exe_103a(&left, &top, &right, &bottom, text);
+    /* Space run is counted as ONE advance; 2nd word wraps to next line. */
+    assert(left == 15 && top == 25 && right == 19 && bottom == 38);
+    assert(intro_text_font_calls == 1 && intro_frame_count == 0);
+
+    reset();
+    synthetic_text = intro_test_text;
+    ds[0x4e44] = 0x7776;
+    clock_step = 1;
+    gate_exe_117e(10, 20, 24, text);
+    assert(intro_text_font_calls == 2 && message_calls == 1);
+    assert(intro_frame_count == 1 && intro_caption_count == 0);
+    assert(intro_caption_left[0] == 10 && intro_caption_top[0] == 20);
+    assert(intro_caption_right[0] == 24 && intro_frame_bottom[0] == 43);
+    assert(center_calls == 3 && print_calls == 3);
+    assert(center_x == 15 && center_y == 35);
+    assert(strcmp(last_printed_word, "ccc") == 0);
+    assert(clock_now == 1 + 2000 + 45 * strlen(intro_test_text));
+
+    reset();
+    synthetic_text = intro_test_text;
+    left = 10;
+    top = 182;
+    right = 310;
+    bottom = 0xffff;
+    gate_exe_103a(&left, &top, &right, &bottom, text);
+    /* The helper moves TOP upward by the bottom overflow, clamps at 185. */
+    assert(left == 15 && top == 177 && right == 305 && bottom == 185);
+}
+
 static void test_enclosing_intro_complete_sequence(void)
 {
     static const uint16_t text[] = {
@@ -430,6 +530,7 @@ static void test_enclosing_intro_complete_sequence(void)
     reset();
     ds[0x4e2a] = 0x5555;
     ds[0x4e42] = 0x6666;
+    ds[0x4e44] = 0x7776;
     ds[0x4e46] = 0x7000;
     ds[0x4e48] = 0x7001;
     ds[0x4e4a] = 0x7002;
@@ -438,7 +539,10 @@ static void test_enclosing_intro_complete_sequence(void)
     intro_mode = 2;
     gate_exe_1302();
     assert(intro_short_init == 0 && intro_interlude == 1 && intro_short_special == 0);
-    assert(intro_caption_count == 18 && intro_anim_count == 5);
+    assert(intro_caption_count == 18 && intro_frame_count == 18 &&
+           intro_anim_count == 5);
+    assert(intro_text_font_calls == 36 && print_calls == 18 * 3 &&
+           message_calls == 18);
     assert(intro_fade_count == 9 && intro_image_count == 12);
     assert(intro_video == 2 && intro_cleanup == 2 + 9 && intro_finished == 1);
     assert(ds[0x35fc] == 1 && palette_uploads == 4 * 64 + 7 * 64 + 64 + 9 * 18);
@@ -484,7 +588,8 @@ int main(void)
     test_enclosing_intro_short_paths();
     test_original_interlude_fade_and_key_exit();
     test_original_picture_fade_signed_palette();
+    test_original_caption_two_pass_layout();
     test_enclosing_intro_complete_sequence();
-    puts("GATE.EXE C decompilation: seven source-shaped routines checked by mocks");
+    puts("GATE.EXE C decompilation: nine source-shaped routines checked by mocks");
     return 0;
 }

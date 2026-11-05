@@ -149,6 +149,44 @@ class LauncherDecompileBinaryTests(unittest.TestCase):
         self.assertEqual(exe[0x101b:0x1025],
                          b'\x83\x46\xfe\x04\x83\x7e\xfe\x40\x7c\xb5')
 
+    def test_two_pass_caption_layout_original_code(self):
+        exe = self.exe
+        for start, end, frame in ((0x103a, 0x117d, 0x60),
+                                  (0x117e, 0x1301, 0x62)):
+            self.assertEqual(exe[start:start + 3], b'\x55\x8b\xec')
+            self.assertEqual(exe[start + 3], 0xb8)
+            self.assertEqual(u16(exe, start + 4), frame)
+            far_call(exe, start + 6, 0x02a5, 0x0c08)
+            self.assertEqual(exe[end], 0xcb)
+
+        # Both functions use the same BP-0x5a text-buffer offset; the
+        # caller's frame also stores a bottom word before the 80-byte area.
+        self.assertEqual(exe[0x1091:0x1094], b'\x8d\x46\xa6')
+        self.assertEqual(exe[0x1217:0x121a], b'\x8d\x46\xa6')
+        # BP+6, +10, +14 are FAR pointers to left/top/right in the helper.
+        self.assertEqual(exe[0x1052:0x1055], b'\xc4\x5e\x06')
+        self.assertEqual(exe[0x1059:0x105c], b'\xc4\x5e\x0a')
+        self.assertEqual(exe[0x1060:0x1063], b'\xc4\x5e\x0e')
+        self.assertEqual(exe[0x10e7], 0x7e)  # signed JLE wrap test
+        self.assertEqual(exe[0x126a], 0x7e)  # signed JLE in print pass
+        self.assertEqual(u16(exe, 0x1163), 185)
+        self.assertEqual(exe[0x1165], 0x7e)  # signed JLE vertical clamp
+
+        near_call(exe, 0x11c5, 0x103a)
+        self.assertEqual(exe[0x11c8:0x11cb], b'\x83\xc4\x14')
+        for site, offset in ((0x104a, 0x018d), (0x10d0, 0x05be),
+                             (0x10f2, 0x0511), (0x112f, 0x0524),
+                             (0x118d, 0x018d), (0x11a2, 0x061b),
+                             (0x1256, 0x05be), (0x1272, 0x0511),
+                             (0x1280, 0x0653), (0x128d, 0x0698),
+                             (0x12b5, 0x0511), (0x12c7, 0x0524)):
+            far_call(exe, site, 0x0c4d, offset)
+        far_call(exe, 0x11eb, 0x0cdc, 0x0e50)
+        far_call(exe, 0x12e9, 0x02a5, 0x2bba)
+        near_call(exe, 0x12fb, 0x0f18)
+        self.assertEqual(exe[0x12f1:0x12f9],
+                         b'\xb9\x2d\x00\xf7\xe1\x05\xd0\x07')
+
     def test_transcribed_c_captions_and_animation_arguments(self):
         exe = self.exe
         inspection = inspect_intro_program(exe)
