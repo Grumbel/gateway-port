@@ -125,6 +125,36 @@ class OriginalIntroGraphicsEvidence(unittest.TestCase):
                           int.from_bytes(live[1:3], 'little'))
                 self.assertEqual(linked, expected)
 
+    def test_original_resource_selector_and_far_services(self):
+        # GATE.RTL:11ecb..120f2 has two return sites, and its next routine
+        # begins at 120f3; unlike the other wrappers it does not end in RETF.
+        self.assertEqual(self.rtl[0x11ecb:0x11ece], b'\x55\x8b\xec')
+        self.assertEqual(self.rtl[0x11edf], 0xcb)
+        self.assertEqual(self.rtl[0x1206f], 0xcb)
+        self.assertEqual(self.rtl[0x120f3:0x120f6], b'\x55\x8b\xec')
+        snapshot = ROOT / 'build/intro-analysis/at-22000.bin'
+        if not snapshot.is_file():
+            self.skipTest('private guest RAM snapshot unavailable')
+        image = snapshot.read_bytes()
+        base = GRAPHICS_TARGETS[0x0f10, 0x112e] - 0x112e
+        for site, expected in ((0x11f3e, (0x0c33, 0x019a)),
+                               (0x11f50, (0x0c33, 0x0040)),
+                               (0x11f90, (0x0c33, 0x0091)),
+                               (0x11fad, (0x0c33, 0x00f2)),
+                               (0x12022, (0x0c33, 0x0091)),
+                               (0x12033, (0x0c33, 0x00d4)),
+                               (0x12047, (0x0c33, 0x00d4)),
+                               (0x12094, (0x0c33, 0x0091)),
+                               (0x120c7, (0x0c33, 0x00f2))):
+            with self.subTest(callsite=site):
+                self.assertEqual(self.rtl[site], 0x9a)
+                addr = (0x0f10 + 0x1000) * 16 + site - base
+                live = image[addr:addr + 5]
+                self.assertEqual(live[0], 0x9a)
+                linked = (int.from_bytes(live[3:5], 'little') - 0x1000,
+                          int.from_bytes(live[1:3], 'little'))
+                self.assertEqual(linked, expected)
+
     def test_intro_graphics_segment_consistency(self):
         # Ten 0f10 calls share the same original file origin. Entries in
         # the independent 0cdc segment share another origin.

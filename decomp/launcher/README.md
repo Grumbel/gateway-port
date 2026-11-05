@@ -225,10 +225,23 @@ The new isolated C test exercises the active, load-failure, allocation-failure,
 validation-failure and successful paths, exact call order, FAR offset wrapping,
 header fields and signed stride edge cases. The pinned-original binary test
 checks the loader's near calls and three linked far service identities using
-the optional private guest RAM snapshot. **None of these tests is a full
-guest-entry differential run**, and `rtl:0x11ecb`, `rtl:0x12205` and the
-far services remain unresolved external dependencies. This is still **not a
-rendered or playable source-C intro**.
+the optional private guest RAM snapshot.
+
+`gate_rtl_resource.c` also reconstructs the original resource selector
+`GATE.RTL:0x11ecb..0x120f2` used by that loader. It preserves resource group
+selection (including the special high-bit form), the 100-entry group stride,
+the resource file cache and sticky open-error latch, 12-byte descriptor
+reads, 32-bit descriptor offsets, signed mode limit, optional two-word mode
+data, compressed-format table lookup, and dimension validation. All nine
+original resource I/O call sites resolve to five distinct `0c33` FAR
+services. The isolated C test covers cache hits/misses, sticky failures,
+resource-ID calculations, descriptor rejection, negative mode handling,
+compressed formats, and exact ordered calls.
+
+**None of these tests is a full guest-entry differential run.** The
+underlying five `0c33` file services and `rtl:0x12205` post-load routine
+are still unresolved external dependencies. This remains **neither a
+rendered nor a playable source-C intro**.
 
 ### Independent C build, including the Nix flake
 
@@ -250,8 +263,8 @@ not this decompilation. A successful CMake/Nix build only proves the archive
 and tests can compile; it does *not* demonstrate that the C intro plays.
 
 With graphics now mapped to immutable file identities, the immediate intro
-dependencies to recover next are the original RTL `0x11ecb` resource
-selector, the `0x12205` post-load setup, the `0x12ed7` image processor and
+dependencies to recover next are the original RTL `0x12205` post-load setup,
+the `0x12ed7` image processor and
 the `0x1266f` preparer, plus the `145d:016c` resource-release service. Recover the remaining
 video/keyboard/timing services and use the original guest as an entry-state
 oracle *before* claiming a standalone intro or resuming game logic.
