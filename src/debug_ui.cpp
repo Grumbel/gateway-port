@@ -269,84 +269,109 @@ std::uint32_t debug_hotspot_color(std::uint16_t object_id) {
 }
 
 namespace {
-// Use the original picker's last-enabled-match order for *room* slots only.
-// Its other groups contain command buttons, scrollbars and broad fallback
-// targets, not objects in the picture. Neighboring winning slots belonging to
-// the same object share a raster owner, so their internal edges disappear.
-void draw_native_scene_winners(std::span<std::uint32_t> image, int width, int height,
-                               const Mouse &mouse, const DebugSceneView &scene) {
+// Model the complete original last-enabled-match scan, not just the aligned
+// room group. Other groups can override a room rectangle at the same pixel,
+// and their controls/fallbacks are also real picker results. Row-zero
+// fallbacks are only lightly marked on hover to avoid tinting entire panels.
+void draw_native_picker_winners(std::span<std::uint32_t> image, int width, int height,
+                                const Mouse &mouse, const DebugSceneView &scene) {
     const auto &rows = scene.native_picker_rows;
-    if (rows.empty() || !scene.native_picker_aligned || !scene.native_room_group)
+    if (rows.empty())
         return;
-    constexpr std::uint32_t unnamed_base = 65536;
-    const int scene_left = 261 * width / 640;
-    const int scene_height = std::min(height, 232);
-    std::vector<std::uint32_t> owner(std::size_t(width) * scene_height);
-    std::size_t enabled = 0;
+    enum class Target { room, control, fallback };
+    struct Style {
+        Target target;
+        std::uint32_t key, color;
+    };
+    constexpr std::uint32_t unnamed_base = 0x10000;
+    constexpr std::uint32_t control_base = 0x20000;
+    constexpr std::uint32_t fallback_base = 0x30000;
+    std::vector<std::uint32_t> winner(std::size_t(width) * height);
+    std::vector<Style> styles;
+    styles.reserve(rows.size());
+    std::size_t room_count = 0, control_count = 0, fallback_count = 0;
     for (std::size_t i = 0; i < rows.size(); ++i) {
         const auto &row = rows[i];
-        if ((row.flags & 0x80) || row.group != *scene.native_room_group ||
-            row.slot == 0 || row.slot > scene.boxes.size())
+        const bool room = scene.native_picker_aligned && scene.native_room_group &&
+                          row.group == *scene.native_room_group && row.slot > 0 &&
+                          row.slot <= scene.boxes.size();
+        const auto target = row.slot == 0 ? Target::fallback :
+                            room ? Target::room : Target::control;
+        const auto object_id = room ? scene.boxes[row.slot - 1].object_id : 0;
+        const auto key = target == Target::room ?
+                             (object_id ? std::uint32_t(object_id)
+                                        : unnamed_base + std::uint32_t(i)) :
+                         target == Target::control ? control_base + std::uint32_t(i)
+                                                   : fallback_base + std::uint32_t(i);
+        const auto color = target == Target::room ?
+                               debug_hotspot_color(std::uint16_t(object_id ? object_id : i)) :
+                           target == Target::control ? 0xff80c9ffu : 0xff648ca0u;
+        styles.push_back({target, key, color});
+        if (row.flags & 0x80)
             continue;
-        ++enabled;
-        const auto object_id = scene.boxes[row.slot - 1].object_id;
-        const auto id = object_id ? std::uint32_t(object_id) : unnamed_base + std::uint32_t(i);
-        const int x0 = std::clamp(int(std::int64_t(row.x0) * width / 640), scene_left, width);
-        const int x1 = std::clamp(int(std::int64_t(row.x1 + 1) * width / 640), scene_left, width);
-        const int y0 = std::clamp(row.y0, 0, scene_height);
-        const int y1 = std::clamp(row.y1 + 1, 0, scene_height);
+        if (target == Target::room) ++room_count;
+        else if (target == Target::control) ++control_count;
+        else ++fallback_count;
+        const int x0 = std::clamp(int(std::int64_t(row.x0) * width / 640), 0, width);
+        const int x1 = std::clamp(int(std::int64_t(row.x1 + 1) * width / 640), 0, width);
+        const int y0 = std::clamp(row.y0, 0, height);
+        const int y1 = std::clamp(row.y1 + 1, 0, height);
         if (x0 >= x1 || y0 >= y1)
             continue;
         for (int y = y0; y < y1; ++y) {
-            auto begin = owner.begin() + std::size_t(y) * width + x0;
-            std::fill(begin, begin + (x1 - x0), id);
+            auto begin = winner.begin() + std::size_t(y) * width + x0;
+            std::fill(begin, begin + (x1 - x0), std::uint32_t(i + 1));
         }
     }
     const int mx = mouse.x * width / 640;
-    const auto hovered = mx >= scene_left && mx < width && mouse.y >= 0 &&
-                                 mouse.y < scene_height
-                             ? owner[std::size_t(mouse.y) * width + mx]
-                             : 0;
-    for (int y = 0; y < scene_height; ++y) {
+    const auto hovered_row = mx >= 0 && mx < width && mouse.y >= 0 && mouse.y < height
+                                 ? winner[std::size_t(mouse.y) * width + mx] : 0;
+    const auto hovered_key = hovered_row ? styles[hovered_row - 1].key : 0;
+    const auto key_at = [&winner, &styles](std::size_t at) {
+        const auto row = winner[at];
+        return row ? styles[row - 1].key : 0u;
+    };
+    for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
             const auto offset = std::size_t(y) * width + x;
-            const auto id = owner[offset];
-            if (!id)
+            const auto row = winner[offset];
+            if (!row)
                 continue;
-            const bool hover = id == hovered;
+            const auto &style = styles[row - 1];
+            const bool hover = style.key == hovered_key;
             const bool outline = x == 0 || x + 1 == width || y == 0 ||
-                                 y + 1 == scene_height || owner[offset - 1] != id ||
-                                 owner[offset + 1] != id || owner[offset - width] != id ||
-                                 owner[offset + width] != id;
+                                 y + 1 == height || key_at(offset - 1) != style.key ||
+                                 key_at(offset + 1) != style.key ||
+                                 key_at(offset - width) != style.key ||
+                                 key_at(offset + width) != style.key;
             auto &pixel_value = image[offset];
-            const auto color = debug_hotspot_color(
-                std::uint16_t(id < unnamed_base ? id : id - unnamed_base));
             if (outline)
-                pixel_value = hover ? white : color;
-            else
-                pixel_value = tint(pixel_value, color, hover ? 100 : 55);
+                pixel_value = hover ? white : style.color;
+            else if (style.target != Target::fallback || hover)
+                pixel_value = tint(pixel_value, style.color,
+                                   style.target == Target::fallback ? 25 : hover ? 100 : 55);
         }
     }
-    // The ordinary hitbox status identifies scene objects, never GUI controls
-    // or the select-all fallback rectangle underneath the picture.
     const int status_x = width > 420 ? width - 318 : 2;
     rect(image, width, height, status_x, height - 23, width - 2, height - 2, panel, true);
     char info[128];
-    std::snprintf(info, sizeof info, "Native room g%u: %zu/%zu slots",
-                  unsigned(*scene.native_room_group), enabled, scene.boxes.size());
+    std::snprintf(info, sizeof info, "Picker: %zu room, %zu UI, %zu fallback",
+                  room_count, control_count, fallback_count);
     text(image, width, height, status_x + 6, height - 18, info, white, 37);
-    if (hovered) {
-        if (hovered >= unnamed_base) {
-            std::snprintf(info, sizeof info, "Unnamed room slot (row #%u)",
-                          unsigned(hovered - unnamed_base));
+    if (hovered_row) {
+        const auto &row = rows[hovered_row - 1];
+        const auto &style = styles[hovered_row - 1];
+        if (style.target == Target::fallback) {
+            std::snprintf(info, sizeof info, "Native fallback g%u slot%u kind%u",
+                          unsigned(row.group), unsigned(row.slot), unsigned(row.kind));
+        } else if (style.target == Target::control) {
+            std::snprintf(info, sizeof info, "Native %s g%u slot%u kind%u",
+                          scene.native_picker_aligned ? "UI" : "unmapped",
+                          unsigned(row.group), unsigned(row.slot), unsigned(row.kind));
         } else {
-            const auto found = std::find_if(scene.boxes.begin(), scene.boxes.end(),
-                                            [hovered](const auto &box) {
-                                                return box.object_id == hovered;
-                                            });
-            const auto name = found != scene.boxes.end() ? found->name.c_str() : "";
+            const auto &box = scene.boxes[row.slot - 1];
             std::snprintf(info, sizeof info, "Native room Object #%u: %.23s",
-                          unsigned(hovered), name);
+                          unsigned(box.object_id), box.name.c_str());
         }
         rect(image, width, height, status_x, height - 44, width - 2, height - 24,
              panel, true);
@@ -364,9 +389,8 @@ void draw_debug_overlay(std::span<std::uint32_t> image, int width, int height,
     const bool hitboxes_enabled = show_hitboxes;
     const bool show_native_observation = menu_open || show_hitboxes;
     if (show_hitboxes && data.scene.native_picker_decoded &&
-        data.scene.native_picker_aligned && data.scene.native_room_group &&
         !data.scene.native_picker_rows.empty() && !show_all_regions) {
-        draw_native_scene_winners(image, width, height, mouse, data.scene);
+        draw_native_picker_winners(image, width, height, mouse, data.scene);
         show_hitboxes = false;
     }
     if (show_hitboxes) {
@@ -462,8 +486,8 @@ void draw_debug_overlay(std::span<std::uint32_t> image, int width, int height,
             }
         }
 
-        // GUI controls and fallback rectangles belong to the raw R view only;
-        // the normal H overlay must stay confined to in-picture room objects.
+        // Without a decoded native winner table, R reveals raw candidate
+        // GUI/fallback rectangles; H remains an RGN-only approximation.
         const auto picked = data.scene.picker_at(mouse.x, mouse.y);
         const DebugPickerControl *hovered_control = nullptr;
         std::size_t active_controls = 0;

@@ -133,10 +133,11 @@ int main() try {
     std::vector<std::uint32_t> backdrop(640 * 480, 0xff123456);
     gateway::draw_debug_overlay(backdrop, 640, 480, fallback_mouse, fallback,
                                 false, true, 0);
-    require(backdrop[50 * 640] == 0xff123456 &&
-                backdrop[30 * 640 + 20] == 0xff123456 &&
-                backdrop[10 * 640 + 30] == 0xff123456,
-            "ordinary H view must hide the group fallback and unmapped controls");
+    require(backdrop[50 * 640] == 0xffe6edfa &&
+                backdrop[30 * 640 + 20] != 0xff123456 &&
+                backdrop[10 * 640 + 30] == 0xff80c9ff &&
+                backdrop[15 * 640 + 35] != 0xff123456,
+            "H view must show the native fallback and winning UI controls");
     gateway::draw_debug_overlay(backdrop, 640, 480, fallback_mouse, fallback,
                                 false, true, 0, {}, true);
     require(backdrop[50 * 640] == 0xffe6edfa &&
@@ -147,10 +148,10 @@ int main() try {
     gateway::draw_debug_overlay(unmapped, 640, 480, fallback_mouse, fallback,
                                 false, true, 0);
     require(fallback.scene.picker_at(35, 15)->slot == 1 &&
-                unmapped[10 * 640 + 30] == 0xff123456,
-            "unmapped native picker must not pollute the scene overlay");
-    // Native room slots from different rows merge by *object ID*, even when
-    // an overlapping GUI picker row has higher native selection priority.
+                unmapped[10 * 640 + 30] == 0xff80c9ff,
+            "unaligned native picker controls are still selectable and visible");
+    // Adjacent native room slots merge by object ID, but later GUI rows
+    // override their actual selection within the overlapping area.
     gateway::DebugOverlayData scene_only;
     scene_only.scene.native_picker_decoded = true;
     scene_only.scene.native_picker_aligned = true;
@@ -175,27 +176,37 @@ int main() try {
     };
     gateway::Mouse room_mouse;
     room_mouse.x = 295;
-    room_mouse.y = 50;
-    require(scene_only.scene.picker_at(room_mouse.x, room_mouse.y)->group == 1,
+    room_mouse.y = 43;
+    require(scene_only.scene.picker_at(room_mouse.x, 50)->group == 1 &&
+                scene_only.scene.picker_at(room_mouse.x, room_mouse.y)->group == 0,
             "fixture must have a competing GUI row above the room selection");
     std::vector<std::uint32_t> merged(640 * 480, 0xff123456);
     gateway::draw_debug_overlay(merged, 640, 480, room_mouse, scene_only,
                                 false, true, 0);
-    require(merged[50 * 640 + 280] == 0xffe6edfa &&
-                merged[50 * 640 + 300] == merged[50 * 640 + 301] &&
-                merged[50 * 640 + 300] != 0xffe6edfa &&
-                merged[50 * 640 + 300] != 0xff123456,
+    require(merged[43 * 640 + 280] == 0xffe6edfa &&
+                merged[43 * 640 + 300] == merged[43 * 640 + 301] &&
+                merged[43 * 640 + 300] != 0xffe6edfa &&
+                merged[43 * 640 + 300] != 0xff123456,
             "adjacent native room slots of the same object form one hovered contour");
     require(merged[50 * 640 + 314] == gateway::debug_hotspot_color(234) &&
                 merged[50 * 640 + 334] == 0xff123456 &&
                 merged[50 * 640 + 270] == 0xff123456 &&
                 merged[50 * 640 + 150] == 0xff123456,
-            "scene map keeps object boundaries while excluding disabled rows, fallbacks and GUI");
+            "winner map preserves object boundaries, skipped rows and broad fallback background");
     require(merged[50 * 640 + 350] == gateway::debug_hotspot_color(5) &&
                 merged[50 * 640 + 351] == gateway::debug_hotspot_color(6),
             "anonymous room slots must retain separate outlines without a shared object ID");
-    // The observation model still sees all five groups and their priorities:
-    // that is a separate diagnostic from the H-only scene visualization.
+    room_mouse.y = 50;
+    std::vector<std::uint32_t> competing(640 * 480, 0xff123456);
+    gateway::draw_debug_overlay(competing, 640, 480, room_mouse, scene_only,
+                                false, true, 0);
+    require(competing[50 * 640 + 285] == 0xffe6edfa &&
+                competing[50 * 640 + 295] != 0xff123456 &&
+                competing[50 * 640 + 295] != gateway::debug_hotspot_color(123) &&
+                competing[50 * 640 + 314] == gateway::debug_hotspot_color(234),
+            "a later UI picker row must visibly override the room object's contour");
+    // The observation model independently checks native calls against the
+    // same all-group ordering now used by the winner overlay.
     gateway::DebugOverlayData winners;
     winners.scene.native_picker_decoded = true;
     winners.scene.native_picker_aligned = true;
@@ -213,11 +224,26 @@ int main() try {
     std::vector<std::uint32_t> selected(640 * 480, 0xff123456);
     gateway::draw_debug_overlay(selected, 640, 480, winner_mouse, winners,
                                 false, true, 0);
-    require(selected[40 * 640 + 40] == 0xff123456 &&
-                selected[55 * 640 + 50] == 0xff123456 &&
+    require(selected[40 * 640 + 40] == gateway::debug_hotspot_color(123) &&
+                selected[55 * 640 + 50] == 0xffe6edfa &&
                 selected[25 * 640 + 25] == 0xff123456 &&
-                selected[55 * 640 + 71] == 0xff123456,
-            "the native scene map must stay inside the picture even for malformed rows");
+                selected[55 * 640 + 71] == 0xff648ca0 &&
+                selected[55 * 640 + 75] == 0xff123456,
+            "native winner map must show room and UI but not tint broad fallbacks");
+    auto covered = winners;
+    covered.scene.native_picker_rows.push_back({42, 42, 48, 48, 3, 0, 4, 1, 0});
+    gateway::Mouse covered_mouse;
+    covered_mouse.x = 45;
+    covered_mouse.y = 45;
+    require(covered.scene.picker_at(45, 45)->group == 3,
+            "last group fallback must override an earlier room candidate");
+    std::vector<std::uint32_t> covered_pixels(640 * 480, 0xff123456);
+    gateway::draw_debug_overlay(covered_pixels, 640, 480, covered_mouse, covered,
+                                false, true, 0);
+    require(covered_pixels[42 * 640 + 42] == 0xffe6edfa &&
+                covered_pixels[45 * 640 + 45] != 0xff123456 &&
+                covered_pixels[45 * 640 + 45] != gateway::debug_hotspot_color(123),
+            "a later fallback also masks the room target and is identifiable on hover");
     // A real guest call is distinct from the cursor's model-only hover.
     gateway::DebugPickerObservation observed;
     observed.guest_ms = 12000;

@@ -1096,6 +1096,22 @@ Synthetic tests verify mixed-match rejection, stale-plan/report detection,
 incorrect labels, unknown statuses and out-of-window picker calls. This
 narrows leads without claiming a recovered downstream acceptance branch.
 
+On 2026-11-05 the F10/H raster's omitted targets were traced to a deliberate
+room-only filter: the old renderer never outlined winning GUI and slot-zero
+fallback picker rows, and could paint room slots even when another native
+group took selection priority. The normal H view now rasterizes the entire
+decoded native table in original last-enabled-match order, retaining merged
+room-object colors but distinguishing blue UI and muted/hover-only fallback
+areas. Synthetic C++ tests cover cross-group overlaps, disabled rows,
+anonymous room slots, unaligned groups and a later fallback masking a room.
+The standalone g++ raster and original-scene tracker tests pass without
+SDL3/Xvfb, as do the 79 probe tests and a read-only native startup smoke
+test using the supplied Unicorn archive. The fallback builder was also
+fixed to restore owner-executable mode when relinking an existing binary.
+Native visual and downstream click-acceptance checks remain pending.
+Workspace invocation is recorded in [workspace-setup.md](workspace-setup.md);
+§3.6 remains ongoing.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |

@@ -77,16 +77,21 @@ picture background, text panel, and scrollbar backgrounds all respond to
 mouse clicks. The remaining rows are 30 room-picture RGN rectangles and
 **22 non-RGN UI controls**, of which 18 are currently enabled.
 
-The normal **H** hitbox view shows **scene objects only**. When a live native
-picker group has been fully matched to the room's RGN rectangles, it uses the
-actual room slots and their dynamic `0x80` skip bits. Within that group, the
-last enabled rectangle covering a pixel wins; *adjacent slots belonging to the
-same engine object are merged* into one colored contour. The overlay stays
-inside the room picture (X >= 261, Y < 232). GUI buttons, scrollbars and the
-five broad slot-zero fallback rectangles are never highlighted by H, even
-where a non-scene picker row overlaps the picture. These native-derived room
-outlines are still **predictions of potential scene selection**, not proof that
-a later game handler accepted the click.
+With a decoded live native picker table, the normal **H** view now shows the
+**last enabled matching row across every group**, including UI controls and
+fallback rows. It honors the original `0x80` skip bits, signed bounds,
+inclusive edges, and scan priority: a later GUI or fallback row can mask an
+earlier room-object rectangle. Room slots are colored by object ID when an
+exact RGN association exists, and neighboring winning slots of the same
+object merge into one contour. GUI controls, including scrollbars and buttons,
+use blue outlines and translucent interiors. Slot-zero fallback rectangles
+use muted contours, with a very light interior tint **only on hover**, since
+their bounds can cover whole panels. The hover legend distinguishes room,
+UI/unmapped, and fallback results. If no native table is decoded, H falls
+back to the approximate, picture-only RGN highlighting; **R** still exposes
+raw RGN candidates, skipped native controls, and overlapping source rows.
+These overlays predict what the *rectangle picker* would select, **not**
+whether a later handler accepts the mouse click or draws the object.
 To inspect the **actual result of an original picker call** while running
 Gateway 1, start the SDL runtime with `--debug-native-picker`:
 
@@ -107,7 +112,7 @@ It observes the bounded `GATE.RTL:0x14186..0x14244` routine at the physical
 addresses recovered from the known Gateway 1 launch layout; do not enable it
 for other Legend titles or different load layouts. It does **not** prove that
 the later handler dispatched or accepted an action. Without the opt-in flag,
-the H room hitbox map remains a prediction only.
+the H picker winner map remains a prediction only.
 The panel also identifies the **original returned row's source** using the
 table captured at picker entry: `room` (with object ID only after full RGN
 alignment), `fallback` (slot zero), `control` (other aligned groups), or
@@ -208,10 +213,11 @@ anonymous rectangles lie entirely to the right of the picture's 380-pixel
 local scene width: `GATE_015.PIC` and `GATE_115.PIC`, frame 0, with corners
 `(396,34)-(440,53)` and `(396,59)-(440,78)` in each file. These are real RGN
 records **outside the scene**, not evidence that a click selected a scene
-object. The normal H highlighting remains confined to the picture and merges
-neighboring rectangles with the same object ID. The raw R debugger can still
-inspect GUI and fallback picker rows; the audit reports off-picture RGN data
-that would be clipped by the graphical overlay.
+object. The RGN-only fallback H highlighting remains confined to the picture
+and merges neighboring rectangles with the same object ID. With the native
+picker decoded, H additionally shows GUI and fallback targets, while R
+exposes underlying candidates and skipped rows. The audit reports off-picture
+RGN data that would be clipped by the picture-only approximation.
 
 For **live** comparisons, `gateway-probe --trace-picker FILE` observes the
 original picker routine at its entry and return addresses without replacing
@@ -406,12 +412,14 @@ python3 tools/report_picker_scene.py build/picker-follow/continuation.tsv
 python3 tools/report_picker_scene.py build/picker-follow/continuation.tsv --limit 0
 ```
 
-The report recreates the normal H overlay's room-only last-match ownership
+The report recreates a room-only last-match ownership raster
 at each recorded click point (640×480 logical coordinates, scene X=261..639
 and Y=0..231), merging neighboring rows through the shared object ID. It
-counts native room selections **not marked by H**, native room selections
-whose object differs from H, and GUI/fallback selections that override an
-underlying highlighted room region. Each result is explicitly compared with
+counts native room selections **not marked by this scene-only raster**, room
+selections whose object differs from it, and GUI/fallback selections that
+override an underlying room region. This is a *legacy room-only diagnostic*;
+the interactive H view now paints the full native picker winner, including
+UI and fallback rows. Each report result is explicitly compared with
 the frozen native table, and older traces without those rows are reported
 as geometry-unavailable. This diagnoses scene mapping, clipping, overlap and
 conditional-flag discrepancies; it still cannot establish that the scene
