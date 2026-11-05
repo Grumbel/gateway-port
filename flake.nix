@@ -26,6 +26,8 @@
         });
       apps = eachSystem (system: {
         default = { type = "app"; program = "${self.packages.${system}.default}/bin/gateway"; };
+        intro = { type = "app"; program = "${self.packages.${system}.default}/bin/gateway-intro"; };
+        intro-dump = { type = "app"; program = "${self.packages.${system}.default}/bin/gateway-intro-dump"; };
       });
       checks = eachSystem (system:
         let pkgs = import nixpkgs { inherit system; }; in {

@@ -410,6 +410,20 @@ creates `RESTART.DAT` in writable state and reaches Your Quarters. Space advance
 MORE prompts; typing `look` and Enter redraws the room description in the tested
 SDL session. Complete intro playback and reference timing still need validation.
 
+A separate native C++ intro prototype renders the initial Legend splash,
+logo sequence, and first ten narrative pages directly from `GATE.EXE`, PIC
+archives, and the proportional font, without executing DOS instructions:
+
+```sh
+nix run .#intro -- ../gateway-dos
+./build/gateway-intro-dump ../gateway-dos --ms 22000 build/native-intro.ppm
+```
+
+This is still a preview, not a full launcher replacement: later pages,
+sound, exact sprite-animation timing and game handoff are unfinished.
+See [native intro reconstruction](docs/intro-reconstruction.md) for the
+observed resource/scene mapping and reproducible comparisons.
+
 For a bounded capture (1–60000 ms of virtual guest time):
 
 ```sh

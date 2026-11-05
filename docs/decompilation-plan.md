@@ -578,6 +578,7 @@ passes with `--replace-verified`.
 
 | Date | Step | Result |
 | --- | --- | --- |
+| 2026-11-05 | Launcher intro (outside story tracker) | Added isolated host-side intro reconstruction loading `GATE.EXE` text, `GATE_305.FNT`, and original PICs; matched original 5s splash, 13s bars, 14.5s logo, and 41.4s spacecraft frames byte-for-byte, and mapped first ten prose panels. Later transitions and remaining pages incomplete; see [intro reconstruction](intro-reconstruction.md). |
 | 2026-11-03 | 3.0 | Ghidra 12.1.4 via PyGhidra; 58 sections, 13,947 fixups, 76/76 decompile targets with object and callback labels; 1,512 functions exported (502 resident, 1,010 overlay; 13 outside known blocks skipped) |
 | 2026-11-03 | 3.1 | REUSE licensing, 216/216 files |
 | 2026-11-03 | 3.2 | Tracker seeded: 1,778 routines (696 handlers, 191 actions, 44 callbacks, 51 services, 796 unclassified), 266 without Ghidra functions, 20 named |

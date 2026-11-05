@@ -98,6 +98,33 @@ This exercises the H/R raster with synthetic native picker groups, including
 cross-group overwrites, disabled rows and large slot-zero fallbacks. It is
 **not** a substitute for inspecting real guest input on private Xvfb.
 
+## Native intro reconstruction without SDL3
+
+The separate intro framebuffer renderer also builds with the system C++20
+compiler alone. These commands were used in this workspace to verify its
+resource loader, original proportional font, and first ten narrative pages:
+
+```sh
+mkdir -p build/intro-analysis
+g++ -std=c++20 -O1 -Wall -Wextra -Wpedantic -Isrc \
+  src/intro_dump.cpp src/story/intro_presentation.cpp \
+  src/scene_compositor.cpp src/pic.cpp src/png.cpp src/crusher.cpp \
+  -o build/intro-analysis/gateway-intro-dump
+build/intro-analysis/gateway-intro-dump ../gateway-dos \
+  --ms 22000 build/intro-analysis/native-22000.ppm
+
+g++ -std=c++20 -O1 -Wall -Wextra -Wpedantic -Isrc \
+  tests/intro_presentation_tests.cpp src/story/intro_presentation.cpp \
+  src/scene_compositor.cpp src/pic.cpp src/png.cpp src/crusher.cpp \
+  -o build/intro-analysis/intro-presentation-tests
+build/intro-analysis/intro-presentation-tests ../gateway-dos
+```
+
+`docs/intro-reconstruction.md` lists the original read-only capture times and
+the byte-identical checkpoints. The SDL3 `gateway-intro` viewer is available
+from the normal Nix/CMake build, **not** from this restricted fallback; it
+could not be compiled or exercised in this container.
+
 The scene tracker, including its original PIC/RGN fixture comparisons, can
 likewise be tested without SDL3:
 
