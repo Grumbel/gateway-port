@@ -79,12 +79,49 @@ recompiled DOS binary. A routine is only considered
 fully verified once original-entry guest registers and memory effects can be
 compared at the same routine boundary.
 
+## Decompiled linked text RTL (GATE.RTL)
+
+The intro's five text services have now been mapped to original `GATE.RTL`
+**file offsets**, using both the original `0c4d:xxxx` linked far calls and a
+captured, relocated guest-memory image. They live in `gate_rtl.c`, separately
+from the `GATE.EXE` code. These are the original compiler's five distinct
+routines, not newly invented layout/rendering functions:
+
+| Original file range | Linked far call | C function | Recovered original operation |
+| --- | --- | --- | --- |
+| `rtl:0xebf7–0xec09` | `0c4d:0511` | `gate_rtl_ebf7` | Add two **signed** font-header bytes at +9 and +10 to obtain line advance. |
+| `rtl:0xec0a–0xeca3` | `0c4d:0524` | `gate_rtl_ec0a` | Return special tab/newline widths; otherwise choose fixed, per-character-width or per-character-width-plus-packed-spacing mode via signed bytes at font +11/+12. |
+| `rtl:0xeca4–0xece9` | `0c4d:05be` | `gate_rtl_eca4` | Normalize a far string pointer, sign-extend each character, sum advances modulo 65536; increment only the far pointer's 16-bit offset. |
+| `rtl:0xed39–0xed7d` | `0c4d:0653` | `gate_rtl_ed39` | Store the text cursor; if font header +3 is zero, convert signed pixel x/y to text-mode positions using SAR/IDIV and one-based coordinates. |
+| `rtl:0xed7e–0xedfe` | `0c4d:0698` | `gate_rtl_ed7e` | Normalize a far string, call the original `rtl:0xedff` glyph routine for each signed character, or dispatch via the alternate text-mode printer and update cursor coordinates. |
+
+The intro's active font points at a runtime descriptor with a four-byte
+prefix, followed by the font header. Its `+9=1`, `+10=10`, `+11=-1` and
+`+12=-1` bytes select the proportional graphics path. Two far pointers at
+descriptor offsets +14 and +18 reference the exact original 128-byte
+width and packed-spacing tables from `GATE_305.FNT`. A *captured* guest
+at 22,000ms resolves the linked font pointer at `DS:54ca` and cursor x/y
+at `DS:550a/550c`. Those linked offsets are **not present** in the
+unrelocated RTL's zero-placeholder operands and may depend on its link
+layout; the source presently uses named externals for these original C
+globals, and for other external runtime calls still under investigation.
+
+`launcher-rtl-decompile` runs the reconstructed C with instrumented far
+memory and the original font (when available), checking all printable glyph
+advances plus fixed/per-character modes, signed-byte arithmetic, offset
+wraparound, text-mode control and glyph-print call order. The distinct
+`launcher-rtl-decompile-binary` test checks bounded original 8086 functions,
+their compiler branches, far-call identities and, when the optional private
+`build/intro-analysis/at-22000.bin` is present, the original relocated
+DS globals and width/spacing arrays. **No runtime call into the emulator is
+replaced yet**: the linked pointer-normalization and video/glyph services
+are explicit unresolved dependencies, not invented native graphics APIs.
+
 ## Immediate next functions
 
-1. Decompile the `0xc4d:05be` font width, `0xc4d:0511` line-height,
-   `0xc4d:0524` character width, `0xc4d:0653` cursor and `0xc4d:0698`
-   word-print services in the linked `GATE.RTL`. Reconcile their far
-   argument types and the `GATE_305.FNT` metrics against disassembly.
+1. Decompile the glyph rasterizer at `rtl:0xedff` and the far pointer
+   normalization services called at `rtl:0xecb0/0xed8a`. Also recover the
+   text-mode cursor/print dependency calls at `rtl:0xed74/0xeda5/0xedb7`.
 2. Recover the linked graphics and RTL calls (`0xf10:1680`, `0xf10:112e`,
    `0xf10:13d2`, `0xf10:16c6`, `0xcdc:04d2`) by their actual code bodies,
    then replace provisional service declarations in the C transcription.

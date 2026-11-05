@@ -49,6 +49,11 @@ if(BUILD_TESTING)
     decomp/launcher/gate_exe.c tests/launcher_decompile_tests.c)
   target_include_directories(launcher-decompile-tests PRIVATE decomp/launcher)
   add_test(NAME launcher-decompile COMMAND launcher-decompile-tests)
+  add_executable(launcher-rtl-decompile-tests
+    decomp/launcher/gate_rtl.c tests/launcher_rtl_decompile_tests.c)
+  target_include_directories(launcher-rtl-decompile-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-rtl-decompile COMMAND launcher-rtl-decompile-tests
+    ${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos)
   add_executable(intro-presentation-tests tests/intro_presentation_tests.cpp)
   target_link_libraries(intro-presentation-tests PRIVATE gateway_core)
   add_test(NAME intro-presentation COMMAND intro-presentation-tests
@@ -191,6 +196,8 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/intro_program_tests.py)
     add_test(NAME launcher-decompile-binary COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_decompile_binary_tests.py)
+    add_test(NAME launcher-rtl-decompile-binary COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_rtl_decompile_binary_tests.py)
     add_test(NAME story-visibility-correlation COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/visibility_correlation_tests.py)
     add_test(NAME story-object-write-trace COMMAND ${Python3_EXECUTABLE}
