@@ -14,6 +14,7 @@
 #include <iostream>
 #include <iterator>
 #include <map>
+#include <random>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -76,6 +77,156 @@ Pick original_pick(uc_engine *uc, int x, int y, std::uint16_t ds) {
     std::array<std::uint16_t, 3> result{};
     check(uc_mem_read(uc, 0xf8000, result.data(), sizeof result));
     return {get(uc, UC_X86_REG_AX), result[0], result[1], result[2]};
+}
+
+// GATE.RTL:0x14186..0x14244 is a self-contained picker: it has no calls,
+// relocated segment constants or external jumps. The on-disk code uses
+// unrelocated data offsets (0x106, 0x30a, ...), whereas a live Gateway 1
+// picker has data at DS:a6d0, DS:a8d4, ... . Mirroring a test table at both
+// sets of offsets exercises the *original instruction stream* without making
+// any claim about RTLink relocation or a particular in-game RAM capture.
+void write_byte(std::vector<std::uint8_t> &memory, std::uint16_t segment,
+                unsigned offset, std::uint8_t value) {
+    const auto address = std::size_t(segment) * 16 + offset;
+    require(address < memory.size(), "test table exceeds emulated RAM");
+    memory[address] = value;
+}
+void write_word(std::vector<std::uint8_t> &memory, std::uint16_t segment,
+                unsigned offset, std::uint16_t value) {
+    write_byte(memory, segment, offset, std::uint8_t(value));
+    write_byte(memory, segment, offset + 1, std::uint8_t(value >> 8));
+}
+void mirrored_byte(std::vector<std::uint8_t> &memory, std::uint16_t ds,
+                   unsigned raw, std::uint8_t value) {
+    write_byte(memory, ds, raw, value);
+    write_byte(memory, ds, raw + 0xa5ca, value);
+}
+void mirrored_word(std::vector<std::uint8_t> &memory, std::uint16_t ds,
+                   unsigned raw, std::uint16_t value) {
+    write_word(memory, ds, raw, value);
+    write_word(memory, ds, raw + 0xa5ca, value);
+}
+
+std::size_t compare_synthetic_picker(const std::filesystem::path &original) {
+    const auto rtl = read(original / "GATE.RTL");
+    constexpr std::size_t start = 0x14186, end = 0x14245;
+    require(rtl.size() >= end && rtl[start] == 0x55 && rtl[start + 1] == 0x8b &&
+            rtl[start + 2] == 0xec && rtl[start + 3] == 0x83 && rtl[end - 1] == 0xcb,
+            "GATE.RTL does not contain the known original picker routine");
+    constexpr std::uint16_t ds = 0x3000, index_segment = 0x5000;
+    constexpr std::size_t entry = 0x269d1;
+    const std::vector<std::vector<unsigned>> layouts = {
+        {3}, {18, 7}, {12, 9, 8, 5, 4}, {35, 6, 5, 5, 4, 3}, {1, 1, 1},
+        {9, 9, 9, 9, 9, 9},
+    };
+    std::mt19937 random(0x61542025);
+    std::uniform_int_distribution<int> xdist(-16, 639), ydist(-16, 479);
+    std::uniform_int_distribution<int> width(0, 440), height(0, 370);
+    std::size_t comparisons = 0;
+    std::size_t total_hits = 0, total_misses = 0, later_group_hits = 0;
+    for (unsigned scenario = 0; scenario < layouts.size(); ++scenario) {
+        const auto &groups = layouts[scenario];
+        std::vector<std::uint8_t> memory(0x100000);
+        std::copy(rtl.begin() + start, rtl.begin() + end, memory.begin() + entry);
+        // Original on-disk picker: ES:[0] for group count, DS:[6] for ES.
+        // The native debugger's relocated shape uses ES:[1576]/DS:[8cc6].
+        write_word(memory, ds, 0x0006, index_segment);
+        write_word(memory, ds, 0x8cc6, index_segment);
+        write_word(memory, index_segment, 0x0000, std::uint16_t(groups.size()));
+        write_word(memory, index_segment, 0x1576, std::uint16_t(groups.size()));
+        unsigned index = 0;
+        for (unsigned group = 0; group < groups.size(); ++group) {
+            mirrored_byte(memory, ds, 0x030a + group,
+                          std::uint8_t(groups[group]));
+            for (unsigned slot = 0; slot < groups[group]; ++slot, ++index) {
+                require(index < 64, "synthetic case has too many rectangles");
+                mirrored_byte(memory, ds, 0x03aa + group * 35 + slot,
+                              std::uint8_t(index));
+                int x0 = xdist(random), y0 = ydist(random);
+                int x1 = std::min(1024, x0 + width(random));
+                int y1 = std::min(1024, y0 + height(random));
+                // Include full-screen fallbacks, single-pixel lines, negative
+                // coordinates, intersecting rows and partly off-screen rows.
+                if (slot == 0 && (scenario + group) % 2 == 0) {
+                    x0 = -16; y0 = -16; x1 = 1024; y1 = 1024;
+                } else if (index % 9 == 0) {
+                    x1 = x0; y1 = y0;
+                }
+                mirrored_word(memory, ds, 0x0106 + index * 2,
+                              std::uint16_t(x0));
+                mirrored_word(memory, ds, 0x0186 + index * 2,
+                              std::uint16_t(x1));
+                mirrored_word(memory, ds, 0x0206 + index * 2,
+                              std::uint16_t(y0));
+                mirrored_word(memory, ds, 0x0286 + index * 2,
+                              std::uint16_t(y1));
+                mirrored_byte(memory, ds, 0x0356 + index,
+                              std::uint8_t((index % 7 == 0 ? 0x80 : 0) |
+                                           (index % 8)));
+                mirrored_byte(memory, ds, 0x0484 + index,
+                              std::uint8_t(1 + index % 6));
+            }
+        }
+        gateway::DebugSceneTracker tracker;
+        tracker.set_native_picker_state(memory, ds);
+        const auto view = tracker.view();
+        require(view.native_picker_decoded && view.native_picker_rows.size() == index,
+                "native picker debugger rejected mirrored synthetic tables");
+        std::set<std::pair<int, int>> points;
+        for (int y = 0; y < 480; y += 37)
+            for (int x = 0; x < 640; x += 47)
+                points.emplace(x, y);
+        for (int x : {-17, -16, -1, 0, 639, 640, 1024})
+            for (int y : {-17, -16, -1, 0, 479, 480, 1024})
+                points.emplace(x, y);
+        for (const auto &row : view.native_picker_rows)
+            for (int x : {row.x0 - 1, row.x0, row.x1, row.x1 + 1})
+                for (int y : {row.y0 - 1, row.y0, row.y1, row.y1 + 1})
+                    points.emplace(x, y);
+        uc_engine *uc = nullptr;
+        check(uc_open(UC_ARCH_X86, UC_MODE_16, &uc));
+        std::size_t hits = 0, misses = 0;
+        try {
+            check(uc_mem_map(uc, 0, memory.size(), UC_PROT_ALL));
+            check(uc_mem_write(uc, 0, memory.data(), memory.size()));
+            for (const auto &[x, y] : points) {
+                const auto expected = view.picker_at(x, y);
+                const auto actual = original_pick(uc, x, y, ds);
+                const bool equal = expected
+                    ? actual.result == 1 && actual.group == expected->group &&
+                      actual.slot == expected->slot && actual.kind == expected->kind
+                    : actual.result == 0 && actual.group == 0xffff &&
+                      actual.slot == 0xffff && actual.kind == 0;
+                require(equal, "synthetic case " + std::to_string(scenario) +
+                        " native picker mismatch at " + std::to_string(x) + "," +
+                        std::to_string(y) + ": native=" +
+                        std::to_string(actual.result) + "/" +
+                        std::to_string(actual.group) + "/" +
+                        std::to_string(actual.slot) + "/" +
+                        std::to_string(actual.kind));
+                if (expected) {
+                    ++hits;
+                    later_group_hits += expected->group > 0;
+                } else {
+                    ++misses;
+                }
+                ++comparisons;
+            }
+        } catch (...) {
+            uc_close(uc);
+            throw;
+        }
+        uc_close(uc);
+        require(hits > 0 && misses > 0, "synthetic test did not exercise hits and misses");
+        total_hits += hits;
+        total_misses += misses;
+        std::cout << "synthetic table " << scenario << ": " << points.size()
+                  << " original-code comparisons (" << hits << " hits, " << misses
+                  << " misses) passed\n";
+    }
+    require(later_group_hits > 0 && total_hits + total_misses == comparisons,
+            "synthetic oracle did not exercise cross-group picker winners");
+    return comparisons;
 }
 
 std::map<std::string, std::string> read_metadata(const std::filesystem::path &path) {
@@ -177,6 +328,12 @@ int main(int argc, char **argv) try {
         std::cout << "native picker oracle skipped: provide original-game and RAM directories\n";
         return 77;
     }
+    if (argc == 3 && std::string(argv[2]) == "--synthetic") {
+        const auto comparisons = compare_synthetic_picker(argv[1]);
+        std::cout << "Gateway original picker synthetic oracle: " << comparisons
+                  << " comparisons passed\n";
+        return 0;
+    }
     if ((argc == 4 || (argc == 6 && std::string(argv[4]) == "--points")) &&
         std::string(argv[2]) == "--captured") {
         const std::filesystem::path original = argv[1], captures = argv[3];
@@ -220,7 +377,8 @@ int main(int argc, char **argv) try {
         return 0;
     }
     require(argc == 3,
-            "usage: native-picker-oracle-tests GATEWAY-DOS RAM-CAPTURES\n"
+            "usage: native-picker-oracle-tests GATEWAY-DOS --synthetic\n"
+            "   or: native-picker-oracle-tests GATEWAY-DOS RAM-CAPTURES\n"
             "   or: native-picker-oracle-tests GATEWAY-DOS --captured DIR [--points TSV]");
     const std::filesystem::path original = argv[1], captures = argv[2];
     if (captures == "--captured")

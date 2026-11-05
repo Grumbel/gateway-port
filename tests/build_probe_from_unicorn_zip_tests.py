@@ -13,13 +13,23 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 from build_probe_from_unicorn_zip import (core_sources, ensure_executable,  # noqa: E402
-                                          extract_unicorn)
+                                          extract_unicorn, picker_oracle_sources)
 
 
 sources = core_sources((ROOT / 'CMakeLists.txt').read_text(encoding='utf-8'))
 assert sources[0] == 'src/probe.cpp'
 assert 'src/rtlink.cpp' in sources and 'src/picker_capture.cpp' in sources
 assert len(sources) == len(set(sources))
+oracle_sources = picker_oracle_sources(sources)
+assert oracle_sources[-1] == 'tests/native_picker_oracle_tests.cpp'
+assert 'src/probe.cpp' not in oracle_sources
+assert len(oracle_sources) == len(set(oracle_sources))
+try:
+    picker_oracle_sources(['src/wrong.cpp'])
+except ValueError as error:
+    assert 'probe' in str(error)
+else:
+    raise AssertionError('accepted a core source list without probe entry')
 try:
     core_sources('add_library(gateway_core src/foo.cpp bad_source)')
 except ValueError as error:

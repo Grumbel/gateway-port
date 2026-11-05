@@ -1132,6 +1132,22 @@ row at X=20..40, Y=300..320 changes 441 full-window pixels while producing
 zero picture-only changes, verifying the omitted-control case without
 replaying original input. Real click acceptance still requires private Xvfb.
 
+The next picker-oracle pass recovered an input-independent differential
+test from original `GATE.RTL:0x14186..0x14244`, a self-contained 16-bit
+rectangle selector. The `native-picker-oracle-tests GATEWAY-DOS --synthetic`
+mode loads that original instruction stream directly into private Unicorn
+RAM and mirrors generated group/index/rectangle tables at the on-disk and
+observed runtime data offsets. Six deterministic cases compare original AX,
+group, slot and kind against the reconstructed `DebugSceneView::picker_at`
+over rectangular boundaries and sampled screen coordinates. The headless
+GCC/Unicorn-ZIP fallback now optionally builds this oracle with
+`--with-picker-oracle`; no SDL3/Xvfb input injection is needed. All 3,983
+points passed (3,667 hits and 316 misses). This checks picker *instruction
+semantics*, not actual RTLink relocation or the
+downstream click dispatcher. Read-only headless startup produced zero live
+picker-entry captures in 10,000 guest milliseconds; capturing a real entry
+and testing mouse acceptance remains pending private Xvfb.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |

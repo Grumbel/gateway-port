@@ -42,11 +42,12 @@ From `gateway-port/`, with the archive at the path used in this workspace:
 
 ```sh
 python3 tools/build_probe_from_unicorn_zip.py \
-  --unicorn-zip ../upload/unicorn.zip
+  --unicorn-zip ../upload/unicorn.zip --with-picker-oracle
 build/local-probe/gateway-probe --help
 build/local-probe/gateway-probe ../gateway-dos/GATE.EXE \
   --headless --milliseconds 1500 --read-only --deterministic-clock
 python3 tests/probe_tests.py build/local-probe/gateway-probe
+build/local-probe/native-picker-oracle-tests ../gateway-dos --synthetic
 python3 tools/decomp_status.py check
 ```
 
@@ -59,6 +60,27 @@ it compiles the probe, Nuked OPL3 and all core sources with the system
 produce `gateway` or otherwise substitute for SDL3. The helper ensures the
 linked probe remains owner-executable even if an existing output had mode
 `0644` and the linker preserved that mode.
+
+With `--with-picker-oracle` the helper also links
+`build/local-probe/native-picker-oracle-tests` from the already compiled
+engine core plus `tests/native_picker_oracle_tests.cpp`. Its `--synthetic`
+mode executes the **original** self-contained picker instructions read from
+private `GATE.RTL:0x14186..0x14244` against six deterministic tables, then
+compares every returned group/slot/kind and hit status with the C++ picker
+over grids and rectangle boundaries. To keep this test independent of the
+runtime overlay manager, it mirrors the synthetic tables at both the
+unrelocated data offsets used in `GATE.RTL` and the observed relocated offsets
+used by the debugger. It is an **instruction-level picker differential test**,
+not evidence that live RTLink fixups, scene transitions or mouse dispatch work.
+No extracted original instruction bytes or generated RAM is committed.
+
+For real-world, relocated memory, the same executable still accepts
+`GATEWAY-DOS RAM-CAPTURES` (the first-room four-stage snapshots) or
+`GATEWAY-DOS --captured DIR [--points TSV]` (observational picker-entry
+captures). These modes need live picker RAM dumps that this workspace does
+not currently contain. A read-only, headless startup captured **zero** picker
+entries at 10,000 guest milliseconds; reaching the live picker requires a
+private GUI session, so no input was injected here.
 
 The standalone debugger raster test does not require SDL3, Xvfb or Unicorn.
 With the same host C++20 compiler, compile only the debugger and its scene

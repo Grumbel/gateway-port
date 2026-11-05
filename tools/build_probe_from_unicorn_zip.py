@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
 # SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 
-"""Build the headless Gateway probe with GCC and a supplied Nix Unicorn ZIP.
+"""Build headless Gateway tools with GCC and a supplied Nix Unicorn ZIP.
 
 This is a fallback for restricted analysis containers without Nix/CMake.
 The archive contains native Unicorn headers and libunicorn.a, never game data.
@@ -69,17 +69,32 @@ def ensure_executable(output):
     output.chmod(output.stat().st_mode | stat.S_IXUSR)
 
 
-def build(archive, output, cc, cxx):
+def picker_oracle_sources(sources):
+    """The oracle needs the core but must not link the probe's main()."""
+    if not sources or sources[0] != 'src/probe.cpp':
+        raise ValueError('expected the probe as the first source')
+    return [*sources[1:], 'tests/native_picker_oracle_tests.cpp']
+
+
+def build(archive, output, cc, cxx, with_picker_oracle=False):
     output = output.resolve()
     # A local fallback must not overwrite source or leave compiled guest bytes
     # in the committed tree. Keep all intermediates near the build output.
     if not output.is_relative_to(ROOT / 'build'):
         raise ValueError('output must be inside the ignored build/ directory')
+    oracle = output.with_name('native-picker-oracle-tests')
+    if with_picker_oracle and oracle == output:
+        raise ValueError('probe and oracle output paths must differ')
     output.parent.mkdir(parents=True, exist_ok=True)
     include, library = extract_unicorn(archive, output.parent / 'unicorn')
     sources = core_sources((ROOT / 'CMakeLists.txt').read_text(encoding='utf-8'))
-    objects = []
-    for index, name in enumerate(['third_party/nuked-opl3/opl3.c', *sources]):
+    oracle_sources = picker_oracle_sources(sources) if with_picker_oracle else []
+    probe_sources = ['third_party/nuked-opl3/opl3.c', *sources]
+    names = list(probe_sources)
+    if with_picker_oracle:
+        names.append('tests/native_picker_oracle_tests.cpp')
+    objects = {}
+    for index, name in enumerate(names):
         source = ROOT / name
         obj = output.parent / 'obj' / f'{index:02d}-{source.stem}.o'
         obj.parent.mkdir(parents=True, exist_ok=True)
@@ -89,12 +104,20 @@ def build(archive, output, cc, cxx):
                     '-I', str(ROOT / 'third_party/nuked-opl3'),
                     '-I', str(include), '-c', str(source), '-o', str(obj)]
         subprocess.run(command, check=True)
-        objects.append(obj)
-    subprocess.run([cxx, *map(str, objects), str(library),
-                    '-o', str(output), '-pthread', '-ldl', '-lm', '-latomic'],
+        objects[name] = obj
+    link_args = ['-pthread', '-ldl', '-lm', '-latomic']
+    subprocess.run([cxx, *map(str, (objects[name] for name in probe_sources)),
+                    str(library),
+                    '-o', str(output), *link_args],
                    check=True)
     ensure_executable(output)
     print(f'Headless Unicorn probe: {output}')
+    if with_picker_oracle:
+        source_names = ['third_party/nuked-opl3/opl3.c', *oracle_sources]
+        subprocess.run([cxx, *map(str, (objects[name] for name in source_names)),
+                        str(library), '-o', str(oracle), *link_args], check=True)
+        ensure_executable(oracle)
+        print(f'Original-code native picker oracle: {oracle}')
 
 
 def main():
@@ -105,9 +128,12 @@ def main():
                         default=ROOT / 'build/local-probe/gateway-probe')
     parser.add_argument('--cc', default='gcc')
     parser.add_argument('--cxx', default='g++')
+    parser.add_argument('--with-picker-oracle', action='store_true',
+                        help='also build the original-code picker differential test')
     args = parser.parse_args()
     try:
-        build(args.unicorn_zip, args.output, args.cc, args.cxx)
+        build(args.unicorn_zip, args.output, args.cc, args.cxx,
+              args.with_picker_oracle)
     except (OSError, ValueError, zipfile.BadZipFile,
             subprocess.CalledProcessError) as error:
         parser.exit(1, f'{error}\n')
