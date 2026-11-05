@@ -4,6 +4,7 @@
 
 """Synthetic original-picker condition matching without original game data."""
 
+import hashlib
 import json
 from copy import deepcopy
 from pathlib import Path
@@ -87,6 +88,11 @@ with tempfile.TemporaryDirectory(prefix='gateway-trial-state-test-') as director
 
     report = match_study(captures, 1, study)
     trials = report['trials']
+    assert report['format'] == 'gateway-picker-state-check-v1'
+    assert report['trial_plan_sha256'] == hashlib.sha256(
+        (study / 'trial-plan.json').read_bytes()).hexdigest()
+    assert report['comparison_sha256'] == hashlib.sha256(
+        (study / 'comparison.json').read_bytes()).hexdigest()
     assert report['reference_scene'] == 'GATE_102.PIC'
     assert trials[0]['calls'][0]['status'] == 'matching_skip_mask'
     assert trials[0]['calls'][0]['all_flags_equal']

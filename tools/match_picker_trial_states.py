@@ -10,6 +10,7 @@ capture entry coordinates need not equal the tested trial coordinates.
 """
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -81,8 +82,10 @@ def read_reference(captures, reference_call):
 
 def match_study(captures, reference_call, study):
     reference, metadata = read_reference(captures, reference_call)
-    plan = json.loads((study / 'trial-plan.json').read_text(encoding='utf-8'))
-    comparison = json.loads((study / 'comparison.json').read_text(encoding='utf-8'))
+    plan_bytes = (study / 'trial-plan.json').read_bytes()
+    comparison_bytes = (study / 'comparison.json').read_bytes()
+    plan = json.loads(plan_bytes)
+    comparison = json.loads(comparison_bytes)
     if plan.get('format') != 'gateway-picker-click-trials-v1':
         raise ValueError('unsupported trial manifest')
     points = plan.get('points')
@@ -127,7 +130,10 @@ def match_study(captures, reference_call, study):
                              'baseline_qualified': prior['comparison_qualified'],
                              'calls': entries,
                              'status': 'observed' if matched else 'no_matching_picker_call'})
-    return {'reference_call': reference_call,
+    return {'format': 'gateway-picker-state-check-v1',
+            'reference_call': reference_call,
+            'trial_plan_sha256': hashlib.sha256(plan_bytes).hexdigest(),
+            'comparison_sha256': hashlib.sha256(comparison_bytes).hexdigest(),
             'reference_scene': reference[0]['picture'],
             'reference_entry': reference[0]['entry'],
             'reference_ms': metadata['guest_ms'],
