@@ -102,7 +102,8 @@ cross-group overwrites, disabled rows and large slot-zero fallbacks. It is
 
 The separate intro framebuffer renderer also builds with the system C++20
 compiler alone. These commands were used in this workspace to verify its
-resource loader, original proportional font, and first ten narrative pages:
+resource loader, original proportional font, all eighteen narrative pages,
+and several original spacecraft animations:
 
 ```sh
 mkdir -p build/intro-analysis
@@ -124,6 +125,14 @@ build/intro-analysis/intro-presentation-tests ../gateway-dos
 the byte-identical checkpoints. The SDL3 `gateway-intro` viewer is available
 from the normal Nix/CMake build, **not** from this restricted fallback; it
 could not be compiled or exercised in this container.
+
+`Xvfb` and `xvfb-run` are available here, so extended reference traces are
+now run on a private Xvfb display. The original intro captures use read-only
+guest state and a dummy keyboard-script entry *after* the last requested
+snapshot to satisfy the probe's long-duration guard. The GCC-only intro
+renderer and the original Unicorn probe were both built locally. SDL3 and
+`nix` remain unavailable in the container; interactive SDL playback, CMake's
+full SDL3 target and `nix flake check` still require a host with those tools.
 
 The scene tracker, including its original PIC/RGN fixture comparisons, can
 likewise be tested without SDL3:

@@ -20,7 +20,7 @@ void require(bool ok) {
 int main(int argc, char **argv) try {
     if (argc != 2 || std::string_view(argv[1]) == "--help") {
         std::cout << "usage: gateway-intro DOS-DIR\n"
-                     "Native introduction reconstruction (first ten narrative pages).\n"
+                     "Native introduction reconstruction (all eighteen narrative pages).\n"
                      "Space: next page; Escape: exit preview; N: toggle filtering.\n"
                      "No game launch or music playback yet.\n";
         return argc == 2 ? 0 : 2;

@@ -411,16 +411,19 @@ MORE prompts; typing `look` and Enter redraws the room description in the tested
 SDL session. Complete intro playback and reference timing still need validation.
 
 A separate native C++ intro prototype renders the initial Legend splash,
-logo sequence, and first ten narrative pages directly from `GATE.EXE`, PIC
-archives, and the proportional font, without executing DOS instructions:
+logo sequence, all eighteen narrative pages, and several background/sprite
+animations directly from `GATE.EXE`, the original PIC archives, and its
+proportional font, without executing DOS instructions:
 
 ```sh
 nix run .#intro -- ../gateway-dos
 ./build/gateway-intro-dump ../gateway-dos --ms 22000 build/native-intro.ppm
 ```
 
-This is still a preview, not a full launcher replacement: later pages,
-sound, exact sprite-animation timing and game handoff are unfinished.
+This is still a preview, not a full launcher replacement: music, the exact
+animation clock/input loop and game handoff are unfinished. Many checkpoints,
+including later spacecraft frames and the title's palette-revealed credit,
+match the original framebuffer byte-for-byte.
 See [native intro reconstruction](docs/intro-reconstruction.md) for the
 observed resource/scene mapping and reproducible comparisons.
 

@@ -29,8 +29,9 @@ struct IntroPageInfo {
 
 // A bounded, independent reconstruction of the introductory presentation in
 // GATE.EXE. It never executes guest code and reads all art/text from the user's
-// original DOS distribution. The first ten narrative pages and the title
-// resource order are observed; later pages and exact timings remain unknown.
+// original DOS distribution. All eighteen narrative pages, the title palette
+// reveal, and several sprite-animation snapshots have reference captures;
+// the original timing/input scheduler is still under investigation.
 class IntroPresentation {
 public:
     explicit IntroPresentation(const std::filesystem::path &data_directory);
@@ -55,7 +56,7 @@ private:
         int advance(unsigned char character) const;
     };
 
-    std::vector<std::uint8_t> pic201_, pic300_, pic301_, pic302_;
+    std::vector<std::uint8_t> pic201_, pic300_, pic301_, pic302_, pic303_, pic310_;
     std::vector<std::string> paragraphs_;
     Font caption_font_;
     mutable std::map<std::pair<unsigned, std::size_t>, PicImage> picture_cache_;

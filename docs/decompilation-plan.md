@@ -578,6 +578,7 @@ passes with `--replace-verified`.
 
 | Date | Step | Result |
 | --- | --- | --- |
+| 2026-11-05 | Launcher intro continuation | Mapped the remaining eight prose panels (all 18 now recovered) and composite animations from `GATE_302` #1–#102 and `GATE_303` #1–#41. Seventeen later sprite frames match the original pixel-for-pixel, and `GATE_310` #4 was identified as the fiery star background. Reconstructed title credit as palette-index-23 reveal (1,382 pixels) and corrected dialog border; native playback remains a timed presentation, not decompiled control flow. See [intro reconstruction](intro-reconstruction.md). |
 | 2026-11-05 | Launcher intro (outside story tracker) | Added isolated host-side intro reconstruction loading `GATE.EXE` text, `GATE_305.FNT`, and original PICs; matched original 5s splash, 13s bars, 14.5s logo, and 41.4s spacecraft frames byte-for-byte, and mapped first ten prose panels. Later transitions and remaining pages incomplete; see [intro reconstruction](intro-reconstruction.md). |
 | 2026-11-03 | 3.0 | Ghidra 12.1.4 via PyGhidra; 58 sections, 13,947 fixups, 76/76 decompile targets with object and callback labels; 1,512 functions exported (502 resident, 1,010 overlay; 13 outside known blocks skipped) |
 | 2026-11-03 | 3.1 | REUSE licensing, 216/216 files |

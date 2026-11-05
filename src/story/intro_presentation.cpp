@@ -17,7 +17,7 @@ namespace {
 // replays under a fixed guest clock. These are not yet verified as source-code
 // timer constants. The PIC index is the original directory slot, not a sprite
 // number inferred from its appearance.
-constexpr std::array<IntroPageInfo, 10> observed_pages{{
+constexpr std::array<IntroPageInfo, 18> observed_pages{{
     {20128, 301, 5, 12, 96, 297, 93},
     {39698, 301, 5, 12, 96, 167, 93},
     {55379, 301, 0, 12, 12, 147, 93},
@@ -28,15 +28,68 @@ constexpr std::array<IntroPageInfo, 10> observed_pages{{
     {132560, 302, 33, 132, 12, 177, 104},
     {152058, 302, 33, 142, 12, 167, 82},
     {163217, 302, 33, 142, 12, 167, 137},
+    // The later panels were bracketed by independent original framebuffer
+    // captures. The millisecond boundaries are still approximate.
+    {181000, 302, 33, 142, 12, 167, 115},
+    {197000, 301, 3, 12, 12, 127, 159},
+    {212000, 301, 4, 62, 122, 247, 60},
+    {222000, 301, 4, 142, 96, 167, 93},
+    {235500, 302, 0, 122, 12, 187, 148},
+    {271000, 310, 4, 12, 63, 147, 126},
+    {285500, 303, 42, 12, 12, 297, 82},
+    {302000, 303, 42, 12, 12, 297, 126},
 }};
 
 // GATE_300 #1..#26 preload at 12.568..13.148s, then display later.
-// #27 is the final non-XOR title. We have not yet recovered the precise
-// title-frame scheduler or its separately drawn credit lettering.
+// #27 is the final non-XOR title. The delta-frame scheduler remains
+// approximate; the credit lettering uses palette index 23 in #27 itself.
 constexpr std::array<std::uint32_t, 7> bar_reveal_ms{{
     8600, 9200, 9700, 10200, 10800, 11800, 12300,
 }};
 constexpr std::array<int, 7> bar_x{{24, 64, 105, 149, 194, 242, 284}};
+
+struct SpriteKeyframe {
+    std::uint32_t ms;
+    unsigned entry;
+};
+
+// Timings sampled at 0.5-second intervals in the original DOS launcher.
+// Adjacent sprite indices are interpolated between the measured points, so
+// intermediate frames are plausible but are not yet instruction-level timing
+// matches. Each listed sample was independently verified pixel-for-pixel.
+constexpr std::array<SpriteKeyframe, 6> approach_ship{{
+    {256000, 2}, {256500, 7}, {257000, 12},
+    {257500, 17}, {258000, 22}, {258500, 27},
+}};
+constexpr std::array<SpriteKeyframe, 7> station_ship{{
+    {260000, 37}, {260500, 40}, {261000, 43}, {261500, 47},
+    {262000, 50}, {262500, 53}, {263000, 57},
+}};
+constexpr std::array<SpriteKeyframe, 6> departing_ship{{
+    {263700, 1}, {264000, 7}, {264500, 14},
+    {265000, 24}, {265500, 34}, {266000, 41},
+}};
+
+// The credit is not a second font. GATE_300 #27 already contains its 1,382
+// glyph pixels as palette index 23, initially black. The native launcher
+// brightens that one DAC slot (6-bit grayscale) during an ~85ms reveal.
+constexpr std::array<SpriteKeyframe, 10> title_credit_ramp{{
+    {15440, 0}, {15450, 1}, {15460, 9}, {15470, 18}, {15480, 26},
+    {15490, 34}, {15500, 43}, {15510, 51}, {15520, 60}, {15530, 63},
+}};
+
+unsigned sprite_at(std::uint32_t ms, std::span<const SpriteKeyframe> timeline) {
+    if (ms < timeline.front().ms)
+        return timeline.front().entry;
+    for (std::size_t i = 1; i < timeline.size(); ++i) {
+        if (ms < timeline[i].ms) {
+            const auto &a = timeline[i - 1], &b = timeline[i];
+            return a.entry + static_cast<unsigned>(
+                (std::uint64_t(ms - a.ms) * (b.entry - a.entry)) / (b.ms - a.ms));
+        }
+    }
+    return timeline.back().entry;
+}
 
 std::vector<std::uint8_t> load_file(const std::filesystem::path &path) {
     std::ifstream stream(path, std::ios::binary);
@@ -107,6 +160,20 @@ IntroFrame blank(int width, int height, std::uint32_t color) {
     return {width, height, std::vector<std::uint32_t>(std::size_t(width) * height, color)};
 }
 
+void fade_vga_dac(IntroFrame &frame, unsigned eighths) {
+    // The original VGA DAC has six bits per channel. The launcher animates
+    // those values, then the probe expands them to eight bits. Performing the
+    // fade on the already-expanded RGB would lose the observable quantization.
+    for (auto &p : frame.argb) {
+        const auto channel = [eighths](unsigned value) {
+            const auto six = (value >> 2) * eighths / 8;
+            return six << 2 | six >> 4;
+        };
+        p = 0xff000000u | (channel((p >> 16) & 255) << 16) |
+            (channel((p >> 8) & 255) << 8) | channel(p & 255);
+    }
+}
+
 } // namespace
 
 int IntroPresentation::Font::advance(unsigned char character) const {
@@ -121,6 +188,8 @@ IntroPresentation::IntroPresentation(const std::filesystem::path &directory)
       pic300_(load_file(directory / "GATE_300.PIC")),
       pic301_(load_file(directory / "GATE_301.PIC")),
       pic302_(load_file(directory / "GATE_302.PIC")),
+      pic303_(load_file(directory / "GATE_303.PIC")),
+      pic310_(load_file(directory / "GATE_310.PIC")),
       paragraphs_(load_paragraphs(load_file(directory / "GATE.EXE"))) {
     const auto file = load_file(directory / "GATE_305.FNT");
     if (file.size() < 266 || file[0] != 1 || file[1] != 1 ||
@@ -164,6 +233,8 @@ PicImage IntroPresentation::load_picture(unsigned file, std::size_t index) const
     case 300: data = &pic300_; break;
     case 301: data = &pic301_; break;
     case 302: data = &pic302_; break;
+    case 303: data = &pic303_; break;
+    case 310: data = &pic310_; break;
     default: throw std::runtime_error("unknown native intro picture file");
     }
     const auto entries = parse_pic_directory(*data);
@@ -180,6 +251,14 @@ PicImage IntroPresentation::load_picture(unsigned file, std::size_t index) const
                 picture.palette = load_picture(300, 0).palette;
             else if (file == 301 && index >= 6 && index <= 31)
                 picture.palette = load_picture(301, 5).palette;
+            else if (file == 302 && index >= 1 && index <= 32)
+                picture.palette = load_picture(302, 0).palette;
+            else if (file == 302 && index >= 34 && index <= 102)
+                picture.palette = load_picture(302, 33).palette;
+            else if (file == 303 && index >= 1 && index <= 41)
+                picture.palette = load_picture(303, 0).palette;
+            else if (file == 303 && index >= 43 && index <= 79)
+                picture.palette = load_picture(303, 42).palette;
             else
                 throw std::runtime_error("unresolved intro picture palette");
         }
@@ -194,13 +273,17 @@ void IntroPresentation::caption(IntroFrame &frame, std::size_t page) const {
     const int w = area.text_width, h = area.text_height;
     constexpr std::uint32_t black = 0xff000000u;
     constexpr std::uint32_t dark_gray = 0xff616161u;
-    fill(frame, x + 2, y + 2, w, h, black); // 2px window shadow
-    fill(frame, x + 1, y + 1, w, h, dark_gray);
-    fill(frame, x, y, w, h, 0xffa2a2a2u);
-    fill(frame, x, y, w, 1, 0xffffffffu);
-    fill(frame, x, y, 1, h, 0xffffffffu);
-    fill(frame, x, y + h - 1, w, 1, dark_gray);
-    fill(frame, x + w - 1, y, 1, h, dark_gray);
+    // The DOS dialog surrounds the measured interior with an *outer* black
+    // edge, then two bevel pixels. The earlier prototype only drew the inner
+    // edge; the missing left/top pixels were obvious against dark paintings.
+    fill(frame, x - 2, y - 2, w + 4, h + 4, black);
+    fill(frame, x - 1, y - 1, w + 1, h + 1, 0xffffffffu);
+    fill(frame, x + 1, y + 1, w - 2, h - 2, 0xffa2a2a2u);
+    fill(frame, x + w - 1, y + 1, 2, h - 2, dark_gray);
+    fill(frame, x, y + h - 1, w + 1, 2, dark_gray);
+    fill(frame, x - 1, y + h, 1, 1, dark_gray);
+    fill(frame, x + w, y - 1, 1, 1, dark_gray);
+    fill(frame, x + w - 1, y, 2, 1, dark_gray);
 
     // The original caption font is a proportional 10px bitmap with explicit
     // per-character margins. The exact text-break algorithm remains to be
@@ -235,7 +318,10 @@ void IntroPresentation::caption(IntroFrame &frame, std::size_t page) const {
             continue;
         }
         if (paragraph[at] == ' ') {
-            cursor_x += caption_font_.advance(' ');
+            // The launcher discards a run of spaces following a hard or
+            // wrapped line break (visible in the final indented paragraph).
+            if (cursor_x != left)
+                cursor_x += caption_font_.advance(' ');
             ++at;
             continue;
         }
@@ -290,9 +376,18 @@ IntroFrame IntroPresentation::frame_at(std::uint32_t ms) const {
     }
     if (ms < 18579) {
         auto frame = blank(320, 200, 0xff000000u);
-        if (ms >= 14391)
-            paint(frame, load_picture(300, 27));
-        else if (ms >= 13200) {
+        if (ms >= 14391) {
+            const auto title = load_picture(300, 27);
+            paint(frame, title);
+            if (ms >= title_credit_ramp.front().ms) {
+                const auto six = sprite_at(ms, title_credit_ramp);
+                const auto eight = six << 2 | six >> 4;
+                const auto color = 0xff000000u | (eight << 16) | (eight << 8) | eight;
+                for (std::size_t i = 0; i < title.pixels.size(); ++i)
+                    if (title.pixels[i] == 23)
+                        frame.argb[i] = color;
+            }
+        } else if (ms >= 13200) {
             auto image = load_picture(300, 0);
             // Display begins after all 26 resource reads, not at read time.
             // The original display cadence still needs instruction-level
@@ -330,6 +425,60 @@ IntroFrame IntroPresentation::frame_at(std::uint32_t ms) const {
         }
         return frame;
     }
+    const auto backdrop = [&](unsigned file, unsigned entry) {
+        auto frame = blank(320, 200, 0xff000000u);
+        paint(frame, load_picture(file, entry));
+        return frame;
+    };
+    const auto sprite = [&](unsigned file, unsigned background, unsigned entry) {
+        auto frame = backdrop(file, background);
+        paint(frame, load_picture(file, entry));
+        return frame;
+    };
+    // The later section interleaves text panels with several picture-driven
+    // animations. A scene change is not identical to a new prose record.
+    if (ms >= 233000 && ms < observed_pages[14].start_ms)
+        return backdrop(302, 0);
+    if (ms >= 196000 && ms < observed_pages[11].start_ms)
+        return backdrop(301, 3);
+    if (ms >= 255300 && ms < 255900)
+        return blank(320, 200, 0xff000000u);
+    if (ms >= 255900 && ms < 259000) {
+        const auto entry = ms < approach_ship.front().ms ? 1
+                         : ms > approach_ship.back().ms
+                             ? 27 + (ms - 258500) / 100
+                             : sprite_at(ms, approach_ship);
+        return sprite(302, 0, std::min<unsigned>(entry, 32));
+    }
+    if (ms >= 259000 && ms < 259300) {
+        auto frame = backdrop(302, 0);
+        fade_vga_dac(frame, 7);
+        return frame;
+    }
+    if (ms >= 259300 && ms < 259700) {
+        auto frame = backdrop(302, 33);
+        // The source fades in a new scene by changing the six-bit VGA DAC.
+        // An exact transition curve has not yet been recovered.
+        const unsigned brightness = ms < 259500 ? 3 : ms < 259600 ? 4 : 6;
+        fade_vga_dac(frame, brightness);
+        return frame;
+    }
+    if (ms >= 259700 && ms < 263400)
+        return sprite(302, 33, sprite_at(ms, station_ship));
+    if (ms >= 263400 && ms < 263700)
+        return blank(320, 200, 0xff000000u);
+    if (ms >= 263700 && ms < 266000)
+        return sprite(303, 0, sprite_at(ms, departing_ship));
+    if (ms >= 266000 && ms < 267800)
+        return backdrop(303, 0);
+    if (ms >= 267800 && ms < 268500)
+        return blank(320, 200, 0xff000000u);
+    if (ms >= 268500 && ms < observed_pages[15].start_ms)
+        return backdrop(310, 4);
+    if (ms >= 283800 && ms < 284400)
+        return blank(320, 200, 0xff000000u);
+    if (ms >= 284400 && ms < observed_pages[16].start_ms)
+        return backdrop(303, 42);
     return page_frame(page_at(ms));
 }
 
