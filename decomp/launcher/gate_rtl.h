@@ -5,6 +5,7 @@
 #define GATE_LAUNCHER_RTL_DECOMP_H
 
 #include "gate_exe.h"
+#include "gate_rtl_video.h"
 
 /* The recovered functions are named for ORIGINAL GATE.RTL file offsets.
  * They use the same segmented-memory intrinsics as gate_exe.c. */
@@ -24,14 +25,10 @@ void gate_rtl_edff(uint16_t character);      /* glyph scan and pixel writes */
  * establish these offsets; they are exposed as named C globals here. */
 GateFarPtr gate_rtl_active_font(void);
 uint16_t gate_rtl_tab_advance(void);
-GateFarPtr gate_rtl_normalize_pointer(GateFarPtr ptr);
 void gate_rtl_set_cursor(int16_t x, int16_t y);
 int16_t gate_rtl_cursor_x(void);
 int16_t gate_rtl_cursor_y(void);
 int16_t gate_rtl_text_mode_pitch(void);
-void gate_rtl_text_mode_set_cursor(uint16_t x, uint16_t y);
-void gate_rtl_text_mode_get_cursor(int16_t *x, int16_t *y);
-void gate_rtl_text_mode_print(GateFarPtr text);
 int16_t gate_rtl_tab_pitch(void);
 int16_t gate_rtl_tab_limit(void);
 int16_t gate_rtl_newline_pitch(void);

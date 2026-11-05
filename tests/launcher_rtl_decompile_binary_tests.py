@@ -130,6 +130,62 @@ class LauncherRtlBinaryTests(unittest.TestCase):
         self.assertEqual(rtl[0xed26:0xed2e],
                          bytes.fromhex('8b460a0b460c7409'))
 
+    def test_original_text_video_routines_and_abi(self):
+        rtl, exe = self.rtl, self.exe
+        self.assertEqual(exe[0x0bb8:0x0bbd], bytes.fromhex('558bec33c0'))
+        self.assertEqual(exe[0x0bc2:0x0bca],
+                         bytes.fromhex('8b46068b56085dcb'))
+        for start, end in ((0xf8eb, 0xf920), (0xf937, 0xf958),
+                           (0xf959, 0xf995), (0xf997, 0xfa16),
+                           (0xfa45, 0xfbf3)):
+            self.assertEqual(rtl[start:start + 3], b'\x55\x8b\xec')
+            self.assertEqual(rtl[end], 0xcb)
+
+        # The same stack buffer goes to the linked video command twice;
+        # packet +1 is command (2, 3, 9), +6 column and +7 row.
+        self.assertEqual(rtl[0xf8f1:0xf8f9],
+                         bytes.fromhex('c646f309c646f2db'))
+        self.assertEqual(rtl[0xf967:0xf971],
+                         bytes.fromhex('8d46f216508d46f21650'))
+        self.assertEqual(rtl[0xf97a:0xf983],
+                         bytes.fromhex('c45e0a8a46f92ae440'))
+        self.assertEqual(rtl[0xf986:0xf98f],
+                         bytes.fromhex('c45e068a46f82ae440'))
+        self.assertEqual(rtl[0xf9bb:0xf9c1],
+                         bytes.fromhex('ff4e08ff4e06'))
+        self.assertEqual(rtl[0xfa6c:0xfa70], b'\xc6\x46\xf3\x03')
+        self.assertEqual(rtl[0xfa74:0xfa7e],
+                         bytes.fromhex('8d46f216508d46f21650'))
+        self.assertEqual(rtl[0xfb86:0xfb8a], b'\x46\xff\x46\x06')
+        self.assertEqual(rtl[0xfb9c:0xfba0], b'\x2b\xf6\x47\xc6')
+
+        # In the unlinked RTL file, all these FAR calls have zero fixups.
+        for site in (0xf918, 0xf975, 0xf9b3, 0xfa00, 0xfa53,
+                     0xfa82, 0xfb4c, 0xfb7e, 0xfbdb):
+            self.assertEqual(rtl[site:site + 5], b'\x9a\x00\x00\x00\x00')
+
+    def test_original_text_video_runtime_linkage(self):
+        path = ROOT / 'build/intro-analysis/at-22000.bin'
+        if not path.is_file():
+            self.skipTest('private 22000ms DOS guest-memory capture absent')
+        ram = path.read_bytes()
+        # The screen text functions form a second linked RTL block. Its
+        # captured runtime origin is independent of the font RTL segment.
+        origin = (0x1cdc * 16 + 0x0810) - 0xf959
+        self.assertEqual(ram[origin + 0xf959:origin + 0xf96c],
+                         self.rtl[0xf959:0xf96c])
+        self.assertEqual(ram[origin + 0xfa45:origin + 0xfa4d],
+                         self.rtl[0xfa45:0xfa4d])
+        for site in (0xf918, 0xf975, 0xf9b3, 0xfa00,
+                     0xfa82, 0xfb4c, 0xfb7e, 0xfbdb):
+            self.assertEqual(ram[origin + site], 0x9a)
+            self.assertEqual(struct.unpack_from('<HH', ram, origin + site + 1),
+                             (0x2d8a, 0x12a5))
+        self.assertEqual(struct.unpack_from('<HH', ram, origin + 0xfa53 + 1),
+                         (0x001e, 0x1000))
+        self.assertEqual(ram[0x1000 * 16 + 0x001e:0x1000 * 16 + 0x0023],
+                         self.exe[0x0bb8:0x0bbd])
+
     def test_optional_live_linked_mapping_and_actual_font_header(self):
         path = ROOT / 'build/intro-analysis/at-22000.bin'
         if not path.is_file():

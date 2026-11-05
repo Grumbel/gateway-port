@@ -69,6 +69,9 @@ void gate_far_0df2_0128(void);
 /* A stack-local buffer's SS:offset; a host substitute for 16-bit &local. */
 GateFarPtr gate_stack_pointer(void *buffer);
 
+/* GATE.EXE:0x0bb8; identity of the FAR pointer passed on the stack. */
+GateFarPtr gate_exe_0bb8(GateFarPtr pointer);
+
 /* Linked near calls not yet independently decompiled. */
 void gate_exe_103a(uint16_t *left, uint16_t *top, uint16_t *right,
                    uint16_t *bottom, GateFarPtr text);

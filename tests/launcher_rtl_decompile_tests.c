@@ -10,7 +10,7 @@ enum { FONT_SEG = 0x1111, WIDTH_SEG = 0x2222,
        SPACING_SEG = 0x3333, TEXT_SEG = 0x4444, BITMAP_SEG = 0x5555 };
 
 static uint8_t font[65536], widths[65536], spacing[65536], text[65536], bitmap[65536];
-static uint16_t normalize_count, tab_advance;
+static uint16_t tab_advance;
 static uint16_t video_set_x, video_set_y, video_print_count;
 static int16_t cursor_x, cursor_y, video_cursor_x, video_cursor_y, video_pitch;
 static int16_t tab_limit, newline_pitch, background_color;
@@ -33,7 +33,7 @@ static void initialize(void)
     memset(spacing, 0, sizeof spacing);
     memset(text, 0, sizeof text);
     memset(bitmap, 0, sizeof bitmap);
-    normalize_count = video_print_count = 0;
+    video_print_count = 0;
     background_setups = background_rects = pixel_count = 0;
     tab_advance = 6;
     tab_limit = 99;
@@ -95,12 +95,6 @@ GateFarPtr gate_rtl_active_font(void)
 }
 
 uint16_t gate_rtl_tab_advance(void) { return tab_advance; }
-GateFarPtr gate_rtl_normalize_pointer(GateFarPtr ptr)
-{
-    ++normalize_count;
-    return ptr;
-}
-
 void gate_rtl_set_cursor(int16_t x, int16_t y)
 {
     cursor_x = x;
@@ -110,21 +104,34 @@ void gate_rtl_set_cursor(int16_t x, int16_t y)
 int16_t gate_rtl_cursor_x(void) { return cursor_x; }
 int16_t gate_rtl_cursor_y(void) { return cursor_y; }
 int16_t gate_rtl_text_mode_pitch(void) { return video_pitch; }
-void gate_rtl_text_mode_set_cursor(uint16_t x, uint16_t y)
+void gate_rtl_video_command(uint16_t function, uint8_t *input, uint8_t *output)
 {
-    video_set_x = x;
-    video_set_y = y;
+    assert(function == 0x10 && input == output);
+    switch (input[1]) {
+    case 2:
+        video_set_x = input[6];
+        video_set_y = input[7];
+        video_cursor_x = (int16_t)video_set_x;
+        video_cursor_y = (int16_t)video_set_y;
+        break;
+    case 3:
+        output[6] = (uint8_t)video_cursor_x;
+        output[7] = (uint8_t)video_cursor_y;
+        break;
+    case 9:
+        ++video_print_count;
+        break;
+    default:
+        assert(!"unknown original video command");
+    }
 }
-void gate_rtl_text_mode_get_cursor(int16_t *x, int16_t *y)
-{
-    *x = video_cursor_x;
-    *y = video_cursor_y;
-}
-void gate_rtl_text_mode_print(GateFarPtr ptr)
-{
-    assert(ptr.segment == TEXT_SEG);
-    ++video_print_count;
-}
+uint16_t gate_rtl_video_block_mode(void) { return 0; }
+void gate_rtl_video_set_block_mode(uint16_t mode) { assert(mode == 0); }
+uint16_t gate_rtl_video_inversion(void) { return 0; }
+uint8_t gate_rtl_video_attribute(void) { return 0x07; }
+int16_t gate_rtl_video_columns(void) { return 80; }
+int16_t gate_rtl_video_rows(void) { return 25; }
+int16_t gate_rtl_video_tab_base(void) { return 60; }
 
 int16_t gate_rtl_tab_pitch(void) { return 8; }
 int16_t gate_rtl_tab_limit(void) { return tab_limit; }
@@ -220,7 +227,9 @@ static void test_string_width_and_offset_wrap(void)
     text[0] = 10;   /* width 0; same segment after 16-bit offset wrap */
     text[1] = 9;    /* width 6, not the ordinary font's 5 */
     text[2] = 0;
-    assert(gate_rtl_eca4(ptr) == 16 && normalize_count == 1);
+    assert(gate_rtl_eca4(ptr) == 16);
+    assert(gate_exe_0bb8(ptr).segment == TEXT_SEG);
+    assert(gate_exe_0bb8(ptr).offset == 0xfffe);
 
     /* Advance adds in AX, not an arbitrarily wide host integer. */
     font[11] = 0x80;
@@ -228,7 +237,7 @@ static void test_string_width_and_offset_wrap(void)
     widths[0x0100 + 'A'] = 0x80;
     widths[0x0100 + 'B'] = 0x80;
     text[0] = 0;
-    assert(gate_rtl_eca4(ptr) == 0xff02 && normalize_count == 2);
+    assert(gate_rtl_eca4(ptr) == 0xff02);
 }
 
 static void test_text_cursor_and_printing(void)
@@ -246,7 +255,7 @@ static void test_text_cursor_and_printing(void)
     gate_rtl_ed39(-9, 40);
     assert(cursor_x == -9 && cursor_y == 40 && video_set_x == 0);
     gate_rtl_ed7e(ptr);
-    assert(normalize_count == 1 && video_print_count == 0);
+    assert(video_print_count == 0);
     assert(pixel_count == 2 && pixels[0].x == (uint16_t)-8 &&
            pixels[0].y == 40 && pixels[1].x == (uint16_t)-8 &&
            pixels[1].y == 41 && pixels[1].color == 0x23);
@@ -256,14 +265,14 @@ static void test_text_cursor_and_printing(void)
     font[3] = 0;
     gate_rtl_ed39(-9, -25);
     assert(cursor_x == -9 && cursor_y == -25);
-    assert(video_set_x == 0 && video_set_y == 0xffff);
+    assert(video_set_x == 0xff && video_set_y == 0xfe);
     gate_rtl_ed39((int16_t)0x8000, 0);
-    assert(video_set_x == 0x1001 && video_set_y == 1);
-    video_cursor_x = 3;
-    video_cursor_y = 4;
+    assert(video_set_x == 0 && video_set_y == 0);
+    video_cursor_x = 2;
+    video_cursor_y = 3;
     gate_rtl_ed7e(ptr);
-    assert(video_print_count == 1 && pixel_count == 2);
-    assert(cursor_x == 16 && cursor_y == 30 && normalize_count == 2);
+    assert(video_print_count == 2 && pixel_count == 2);
+    assert(cursor_x == 32 && cursor_y == 30);
 }
 
 static void test_original_glyph_bit_scan(void)

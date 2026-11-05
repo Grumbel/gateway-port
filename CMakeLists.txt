@@ -46,14 +46,21 @@ if(GATEWAY_WITH_SDL)
 endif()
 if(BUILD_TESTING)
   add_executable(launcher-decompile-tests
-    decomp/launcher/gate_exe.c tests/launcher_decompile_tests.c)
+    decomp/launcher/gate_exe.c decomp/launcher/gate_exe_helpers.c
+    tests/launcher_decompile_tests.c)
   target_include_directories(launcher-decompile-tests PRIVATE decomp/launcher)
   add_test(NAME launcher-decompile COMMAND launcher-decompile-tests)
   add_executable(launcher-rtl-decompile-tests
-    decomp/launcher/gate_rtl.c tests/launcher_rtl_decompile_tests.c)
+    decomp/launcher/gate_rtl.c decomp/launcher/gate_rtl_video.c
+    decomp/launcher/gate_exe_helpers.c tests/launcher_rtl_decompile_tests.c)
   target_include_directories(launcher-rtl-decompile-tests PRIVATE decomp/launcher)
   add_test(NAME launcher-rtl-decompile COMMAND launcher-rtl-decompile-tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos)
+  add_executable(launcher-rtl-video-decompile-tests
+    decomp/launcher/gate_rtl_video.c decomp/launcher/gate_exe_helpers.c
+    tests/launcher_rtl_video_decompile_tests.c)
+  target_include_directories(launcher-rtl-video-decompile-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-rtl-video-decompile COMMAND launcher-rtl-video-decompile-tests)
   add_executable(intro-presentation-tests tests/intro_presentation_tests.cpp)
   target_link_libraries(intro-presentation-tests PRIVATE gateway_core)
   add_test(NAME intro-presentation COMMAND intro-presentation-tests

@@ -63,14 +63,14 @@ uint16_t gate_rtl_ec0a(uint16_t character)
     return width;
 }
 
-/* GATE.RTL file 0xeca4..0xece9: the external far-pointer helper at
- * original 0xecb0 returns DX:AX and the caller then mutates only the
- * OFFSET half of its stack pointer. Signed bytes are passed through CBW;
+/* GATE.RTL file 0xeca4..0xece9: EXE:0x0bb8 returns the original pointer
+ * unchanged in DX:AX; the caller then mutates only the OFFSET half of its
+ * stack pointer. Signed bytes are passed through CBW;
  * the total accumulates in a wrapping 16-bit local. */
 uint16_t gate_rtl_eca4(GateFarPtr text)
 {
     uint16_t total = 0;
-    text = gate_rtl_normalize_pointer(text);
+    text = gate_exe_0bb8(text);
     while (gate_far_byte(text.segment, text.offset) != 0) {
         uint16_t ch = (uint16_t)(int16_t)(int8_t)gate_far_byte(text.segment,
                                                                text.offset);
@@ -108,8 +108,9 @@ void gate_rtl_ed12(GateFarPtr x, GateFarPtr y)
 
 /* GATE.RTL file 0xed39..0xed7d: always store x/y; text-mode fonts additionally
  * convert the pixel coordinates into character-cell coordinates. The two
- * linked video calls and the pitch global are unresolved, but the signed
- * IDIV, sign/magnitude SAR and +1 conversion come directly from x86. */
+ * linked video call is now decompiled at RTL:0xf997; its underlying video
+ * dispatcher and the pitch global are unresolved. The signed IDIV,
+ * sign/magnitude SAR and +1 conversion come directly from x86. */
 void gate_rtl_ed39(int16_t x, int16_t y)
 {
     GateFarPtr font = gate_rtl_active_font();
@@ -122,24 +123,25 @@ void gate_rtl_ed39(int16_t x, int16_t y)
                                        ((abs_x & 0x8000) ? 0xe000 : 0));
         if (x < 0)
             shifted = (uint16_t)(-shifted);
-        gate_rtl_text_mode_set_cursor((uint16_t)(shifted + 1),
-                                      (uint16_t)((int16_t)(y / pitch) + 1));
+        gate_rtl_f997((uint16_t)(shifted + 1),
+                       (uint16_t)((int16_t)(y / pitch) + 1));
     }
 }
 
 /* GATE.RTL file 0xed7e..0xedfe: normalized far pointer; a special text-mode
  * branch delegates printing and rescales the saved coordinates. In the
- * graphics-font branch it calls RTL:0xedff once per SIGNED input character. */
+ * graphics-font branch it calls RTL:0xedff once per SIGNED input character.
+ * Text-mode calls now resolve to RTL:0xfa45 and RTL:0xf959. */
 void gate_rtl_ed7e(GateFarPtr text)
 {
     GateFarPtr font;
-    text = gate_rtl_normalize_pointer(text);
+    text = gate_exe_0bb8(text);
     font = gate_rtl_active_font();
     if (font_byte(font, 3) == 0) {
-        int16_t x, y;
-        gate_rtl_text_mode_print(text);
-        gate_rtl_text_mode_get_cursor(&x, &y);
-        gate_rtl_set_cursor((int16_t)(uint16_t)((uint16_t)x * 8u - 8u),
+        uint16_t x, y;
+        gate_rtl_fa45(text);
+        gate_rtl_f959(&x, &y);
+        gate_rtl_set_cursor((int16_t)(uint16_t)(x * 8u - 8u),
                             (int16_t)(uint16_t)((uint16_t)(y - 1) *
                                                  (uint16_t)gate_rtl_text_mode_pitch()));
     } else {
