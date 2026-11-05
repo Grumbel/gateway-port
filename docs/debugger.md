@@ -107,6 +107,14 @@ addresses recovered from the known Gateway 1 launch layout; do not enable it
 for other Legend titles or different load layouts. It does **not** prove that
 the later handler dispatched or accepted an action. Without the opt-in flag,
 the F10 winner-map remains a prediction only.
+The panel also identifies the **original returned row's source** using the
+table captured at picker entry: `room` (with object ID only after full RGN
+alignment), `fallback` (slot zero), `control` (other aligned groups), or
+`unmapped` when picture tracking cannot identify the room group. `unresolved`
+means the returned group/slot did not point to a matching enabled rectangle at
+those coordinates; this is important evidence, not a guessed object. The
+`overlaps` count tells how many enabled rectangles contained the click,
+including fallbacks and rows later overridden by the winning row.
 
 The native room X origin is 261, one pixel to the right of the previous
 approximate RGN overlay origin. The **R** raw view shows every RGN candidate
@@ -181,6 +189,23 @@ assume the known Gateway 1 executable mapping, and are not enabled by default.
 The `--trace-picker` flag also fills the on-screen last-result panel when used
 with the SDL runtime; `--debug-native-picker` enables just that panel and the
 same observational hooks without writing a TSV file.
+New `.tsv` traces append `native_source`, `native_index`, `native_flags`,
+`native_object`, and `enabled_overlaps` to the established twelve columns.
+The source is derived from the **actual returned native group/slot/kind** and
+a frozen native row table at call entry, not from the current mouse hover or a
+later PIC/RGN estimate. Object ID zero means no independently established
+association. Older twelve-column traces remain accepted by the checker.
+
+```sh
+python3 tools/report_picker_trace.py build/picker-live/picker.tsv
+```
+
+This prints counts by native source, repeated overlap hotspots, and the exact
+coordinates and results of mismatched or unresolved calls. Unlike the strict
+`check_picker_trace.py` verifier, the report is intended for investigating
+disagreements, so it does not reject a trace merely for containing them.
+Neither tool establishes the later action dispatch or whether the click was
+visible to the player.
 
 For example, add a timed mouse click during the first-room walkthrough (the
 coordinates are *screen* coordinates, unlike the RGN picture-local X values):

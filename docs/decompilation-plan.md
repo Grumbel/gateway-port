@@ -873,6 +873,18 @@ Synthetic return comparison and raster tests pass with the host C++ compiler;
 the original guest dispatch and click acceptance remain unverified, and
 full SDL/Unicorn execution requires the original data and toolchain.
 
+2026-11-05 native picker source provenance (§3.6): the observational hook now
+freezes the native rectangle table at picker entry and resolves the *actual*
+returned group/slot/kind at picker exit, independently of the model prediction.
+The debugger and extended TSV identify group fallbacks, aligned room objects,
+other controls, unaligned rows and unresolved returns. Counting all enabled
+rectangles at the call's coordinates also exposes overlap/priority cases.
+The checker accepts prior twelve-column traces and validates the extended
+provenance fields; `report_picker_trace.py` summarizes source counts, overlap
+hotspots and mismatches without suppressing disagreements. Synthetic C++ and
+Python tests pass; live evidence across multiple rooms and later UI dispatch
+are still pending.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |
