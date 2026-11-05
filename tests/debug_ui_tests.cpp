@@ -167,6 +167,70 @@ int main() try {
                 selected[55 * 640 + 71] == 0xff648ca0,
             "native winner pixels must honor last-match priority, disabled rows,"
             " and original RGN object color");
+    // A real guest call is distinct from the cursor's model-only hover.
+    gateway::DebugPickerObservation observed;
+    observed.guest_ms = 12000;
+    observed.x = 55;
+    observed.y = 55;
+    observed.native_ax = 1;
+    observed.native_outputs = {1, 1, 5};
+    observed.model_ready = true;
+    observed.predicted = winners.scene.picker_at(55, 55);
+    require(gateway::debug_picker_verdict(observed) == gateway::DebugPickerVerdict::match,
+            "guest result must match the original last-enabled rectangle prediction");
+    winners.native_picker_monitoring = true;
+    winners.native_picker = observed;
+    winners.guest_ms = 12500;
+    std::vector<std::uint32_t> captured(640 * 480, 0xff123456);
+    gateway::draw_debug_overlay(captured, 640, 480, winner_mouse, winners,
+                                false, true, 0);
+    require(captured[55 * 640 + 55] == 0xff77efa8 &&
+                captured[390 * 640 + 2] == 0xff75aaff,
+            "F10 should mark an actual recent guest pick and draw its evidence panel");
+    // Even with H off, the F10 menu must show the original result, rather
+    // than implying the highlighted mouse-over row is native evidence.
+    std::vector<std::uint32_t> menu_result(640 * 480, 0xff123456);
+    gateway::draw_debug_overlay(menu_result, 640, 480, winner_mouse, winners,
+                                true, false, 0);
+    require(menu_result[390 * 640 + 2] == 0xff75aaff,
+            "native picker result must be visible in the F10 menu with H off");
+    observed.native_outputs = {1, 0, 1};
+    require(gateway::debug_picker_verdict(observed) == gateway::DebugPickerVerdict::mismatch,
+            "different original group/slot/kind must be labeled mismatch");
+    winners.native_picker = observed;
+    std::vector<std::uint32_t> disagreement(640 * 480, 0xff123456);
+    gateway::draw_debug_overlay(disagreement, 640, 480, winner_mouse, winners,
+                                false, true, 0);
+    require(disagreement[55 * 640 + 55] == 0xffff7777,
+            "disagreement must visibly distinguish real native and predicted picks");
+    observed.model_ready = false;
+    require(gateway::debug_picker_verdict(observed) == gateway::DebugPickerVerdict::unmodeled,
+            "unknown live table must not be misreported as an incorrect prediction");
+    observed.model_ready = true;
+    observed.predicted.reset();
+    observed.native_ax = 0;
+    observed.native_outputs = {0xffff, 0xffff, 0};
+    require(gateway::debug_picker_verdict(observed) == gateway::DebugPickerVerdict::match,
+            "native no-match result with sentinel outputs must compare correctly");
+    observed.native_ax = 1;
+    require(gateway::debug_picker_verdict(observed) == gateway::DebugPickerVerdict::mismatch,
+            "original AX must be compared, not only the three output words");
+    observed.native_ax = 0;
+    winners.native_picker = observed;
+    winners.guest_ms = 20000;
+    std::vector<std::uint32_t> old_result(640 * 480, 0xff123456);
+    gateway::draw_debug_overlay(old_result, 640, 480, winner_mouse, winners,
+                                false, true, 0);
+    require(old_result[55 * 640 + 55] != 0xff77efa8 &&
+                old_result[390 * 640 + 2] == 0xff75aaff,
+            "last native result remains visible but stale position marker expires");
+    winners.native_picker_error = "unreadable guest output";
+    std::vector<std::uint32_t> capture_error(640 * 480, 0xff123456);
+    gateway::draw_debug_overlay(capture_error, 640, 480, winner_mouse, winners,
+                                false, true, 0);
+    require(capture_error[390 * 640 + 2] == 0xff75aaff &&
+                capture_error[55 * 640 + 55] != 0xff77efa8,
+            "failed observation must show a capture error instead of a stale success");
     gateway::draw_debug_overlay(pixels, 640, 480, mouse, debug, true, false, 4);
     require(pixels[232 * 640 + 286] == 0xff75aaff &&
                 pixels[100 * 640 + 500] == 0xff123456,

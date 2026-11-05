@@ -86,6 +86,28 @@ particular point. The five large fallback regions receive outlines but stay
 transparent away from hover, while specific controls are tinted. Matched
 room slots retain their RGN object colors and names. The RGN-independent
 selection map does not imply that a later game handler accepts the click.
+To inspect the **actual result of an original picker call** while running
+Gateway 1, start the SDL runtime with `--debug-native-picker`:
+
+```sh
+gateway-run ../gateway-dos/GATE.EXE --debug-native-picker
+```
+
+Press **F10** (or **H** to leave the hitbox map visible). A separate, left-side
+`Native pick` panel records the **last completed native picker invocation**:
+the guest's call coordinates and timestamp, its actual AX/group/slot/kind
+return values, the model's independent prediction, and `MATCH`, `MISMATCH`, or
+`UNMODELED` when the native rectangle table cannot be decoded. A small green,
+red or yellow cross marks the original call's position for five seconds; it
+does **not** follow the mouse cursor. The result itself stays visible until the
+next call. `Capture ERROR` means the hook could not read a valid guest result.
+This diagnostic reads guest state only, and does not modify input or picking.
+It observes the bounded `GATE.RTL:0x14186..0x14244` routine at the physical
+addresses recovered from the known Gateway 1 launch layout; do not enable it
+for other Legend titles or different load layouts. It does **not** prove that
+the later handler dispatched or accepted an action. Without the opt-in flag,
+the F10 winner-map remains a prediction only.
+
 The native room X origin is 261, one pixel to the right of the previous
 approximate RGN overlay origin. The **R** raw view shows every RGN candidate
 and independent native rectangle, including skipped controls as dim outlines.
@@ -156,6 +178,9 @@ decoded native picker table can be compared even if its RGN association is
 unknown; `unmodeled` means the native table could not be decoded at all.
 These hooks currently
 assume the known Gateway 1 executable mapping, and are not enabled by default.
+The `--trace-picker` flag also fills the on-screen last-result panel when used
+with the SDL runtime; `--debug-native-picker` enables just that panel and the
+same observational hooks without writing a TSV file.
 
 For example, add a timed mouse click during the first-room walkthrough (the
 coordinates are *screen* coordinates, unlike the RGN picture-local X values):

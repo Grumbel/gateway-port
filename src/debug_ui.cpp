@@ -17,6 +17,8 @@ constexpr std::uint32_t border = 0xff75aaff;
 constexpr std::uint32_t white = 0xffe6edfa;
 constexpr std::uint32_t muted = 0xffa5b4c5;
 constexpr std::uint32_t accent = 0xffffd65c;
+constexpr std::uint32_t success = 0xff77efa8;
+constexpr std::uint32_t failure = 0xffff7777;
 constexpr int menu_width = 354, menu_height = 248;
 
 void pixel(std::span<std::uint32_t> image, int width, int height, int x, int y,
@@ -56,6 +58,78 @@ std::uint32_t tint(std::uint32_t base, std::uint32_t color, unsigned alpha) {
     return 0xff000000 | (channel((base >> 16) & 255, (color >> 16) & 255) << 16) |
            (channel((base >> 8) & 255, (color >> 8) & 255) << 8) |
            channel(base & 255, color & 255);
+}
+} // namespace
+
+DebugPickerVerdict debug_picker_verdict(const DebugPickerObservation &observation) {
+    if (!observation.model_ready)
+        return DebugPickerVerdict::unmodeled;
+    const auto &row = observation.predicted;
+    const std::array<std::uint16_t, 3> expected{
+        std::uint16_t(row ? row->group : 0xffff),
+        std::uint16_t(row ? row->slot : 0xffff),
+        std::uint16_t(row ? row->kind : 0),
+    };
+    return observation.native_ax == (row ? 1 : 0) && observation.native_outputs == expected
+               ? DebugPickerVerdict::match : DebugPickerVerdict::mismatch;
+}
+
+namespace {
+void draw_native_picker_observation(std::span<std::uint32_t> image, int width, int height,
+                                    const DebugOverlayData &data) {
+    if (!data.native_picker_monitoring)
+        return;
+    // Stay left of the draggable F10 menu (which defaults to the right) and
+    // above the original bottom scrollbar controls. Never replace the
+    // winner-map hover legend: that represents a different kind of evidence.
+    const int right = std::min(width - 2, 283);
+    const int top = std::max(2, height - 91);
+    if (right <= 4)
+        return;
+    rect(image, width, height, 2, top, right, top + 53, panel, true);
+    rect(image, width, height, 2, top, right, top + 53, border, false);
+    char line[128];
+    if (!data.native_picker_error.empty()) {
+        text(image, width, height, 8, top + 6, "Native picker capture ERROR", failure, 33);
+        text(image, width, height, 8, top + 22, data.native_picker_error, muted, 33);
+        return;
+    }
+    if (!data.native_picker) {
+        text(image, width, height, 8, top + 6, "Native picker: awaiting call", muted, 33);
+        return;
+    }
+    const auto &pick = *data.native_picker;
+    const auto verdict = debug_picker_verdict(pick);
+    const char *label = verdict == DebugPickerVerdict::match ? "MATCH" :
+                        verdict == DebugPickerVerdict::mismatch ? "MISMATCH" : "UNMODELED";
+    const auto color = verdict == DebugPickerVerdict::match ? success :
+                       verdict == DebugPickerVerdict::mismatch ? failure : accent;
+    std::snprintf(line, sizeof line, "Native pick @%d,%d t=%ums", pick.x, pick.y, pick.guest_ms);
+    text(image, width, height, 8, top + 5, line, white, 33);
+    std::snprintf(line, sizeof line, "AX=%u g=%u s=%u k=%u [%s]", unsigned(pick.native_ax),
+                  unsigned(pick.native_outputs[0]), unsigned(pick.native_outputs[1]),
+                  unsigned(pick.native_outputs[2]), label);
+    text(image, width, height, 8, top + 21, line, color, 33);
+    if (pick.model_ready) {
+        if (pick.predicted)
+            std::snprintf(line, sizeof line, "Model g=%u s=%u k=%u", unsigned(pick.predicted->group),
+                          unsigned(pick.predicted->slot), unsigned(pick.predicted->kind));
+        else
+            std::snprintf(line, sizeof line, "Model: no rectangle selected");
+        text(image, width, height, 8, top + 37, line, muted, 33);
+    } else {
+        text(image, width, height, 8, top + 37, "Model: table not decoded", muted, 33);
+    }
+    // Only mark *recent* actual invocations on the map. The current cursor
+    // may have moved since the original picker ran; don't label it as native.
+    if (data.guest_ms >= pick.guest_ms && data.guest_ms - pick.guest_ms <= 5000 &&
+        pick.x >= 0 && pick.x < 640 && pick.y >= 0 && pick.y < height) {
+        const int x = int(std::int64_t(pick.x) * width / 640);
+        for (int delta = -4; delta <= 4; ++delta) {
+            pixel(image, width, height, x + delta, pick.y, color);
+            pixel(image, width, height, x, pick.y + delta, color);
+        }
+    }
 }
 } // namespace
 
@@ -188,6 +262,7 @@ void draw_debug_overlay(std::span<std::uint32_t> image, int width, int height,
                         DebugMenuPosition position, bool show_all_regions) {
     if (width < 1 || height < 1 || image.size() < std::size_t(width) * height)
         return;
+    const bool show_native_observation = menu_open || show_hitboxes;
     if (show_hitboxes && data.scene.native_picker_decoded && !show_all_regions) {
         draw_native_picker_winners(image, width, height, mouse, data.scene);
         show_hitboxes = false;
@@ -364,6 +439,8 @@ void draw_debug_overlay(std::span<std::uint32_t> image, int width, int height,
                  37);
         }
     }
+    if (show_native_observation)
+        draw_native_picker_observation(image, width, height, data);
     if (!menu_open)
         return;
     const auto bounds = debug_menu_bounds(width, height, position);

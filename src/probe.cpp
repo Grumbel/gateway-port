@@ -10,6 +10,7 @@
 #include "dos_memory.hpp"
 #include "debug_scene.hpp"
 #include "debug_state.hpp"
+#include "debug_ui.hpp"
 #include "mouse.hpp"
 #include "mz.hpp"
 #include "object_flags.hpp"
@@ -82,6 +83,8 @@ struct State {
         bool model_ready = false;
     };
     std::optional<PickerFrame> picker_frame;
+    std::optional<gateway::DebugPickerObservation> picker_observation;
+    std::string picker_error;
     std::vector<std::uint8_t> picker_memory;
     unsigned picker_calls = 0, picker_matched = 0, picker_mismatched = 0;
     unsigned picker_unmodeled = 0, picker_errors = 0;
@@ -1086,35 +1089,51 @@ void trace_picker(uc_engine *uc, std::uint64_t address, std::uint32_t,
                 check(uc_mem_read(uc, std::uint32_t(frame.out_segments[i]) * 16 +
                                       frame.out_offsets[i], &actual[i], sizeof(actual[i])));
             const auto ax = reg(uc, UC_X86_REG_AX);
+            gateway::DebugPickerObservation observation;
+            observation.guest_ms = state.elapsed_ms;
+            observation.x = frame.x;
+            observation.y = frame.y;
+            observation.native_ax = ax;
+            observation.native_outputs = actual;
+            observation.model_ready = frame.model_ready;
+            observation.predicted = frame.expected;
+            state.picker_observation = observation;
+            state.picker_error.clear();
             const int model_result = !frame.model_ready ? -1 : frame.expected ? 1 : 0;
             const unsigned model_group = frame.expected ? frame.expected->group : 0xffff;
             const unsigned model_slot = frame.expected ? frame.expected->slot : 0xffff;
             const unsigned model_kind = frame.expected ? frame.expected->kind : 0;
-            const bool equal = frame.model_ready && ax == model_result &&
-                               actual[0] == model_group && actual[1] == model_slot &&
-                               actual[2] == model_kind;
-            const auto verdict = !frame.model_ready ? "unmodeled" : equal ? "match" : "mismatch";
+            const auto verdict = gateway::debug_picker_verdict(observation);
             ++state.picker_calls;
-            if (!frame.model_ready)
+            if (verdict == gateway::DebugPickerVerdict::unmodeled)
                 ++state.picker_unmodeled;
-            else if (equal)
+            else if (verdict == gateway::DebugPickerVerdict::match)
                 ++state.picker_matched;
             else
                 ++state.picker_mismatched;
-            state.picker_trace << std::dec << state.elapsed_ms << '\t'
-                               << frame.x << '\t' << frame.y << '\t' << model_result << '\t'
-                               << model_group << '\t' << model_slot << '\t' << model_kind << '\t'
-                               << ax << '\t' << actual[0] << '\t' << actual[1] << '\t'
-                               << actual[2] << '\t' << verdict << '\n';
+            if (state.picker_trace.is_open()) {
+                const char *verdict_name = verdict == gateway::DebugPickerVerdict::match
+                                               ? "match"
+                                           : verdict == gateway::DebugPickerVerdict::mismatch
+                                               ? "mismatch"
+                                               : "unmodeled";
+                state.picker_trace << std::dec << state.elapsed_ms << '\t'
+                                   << frame.x << '\t' << frame.y << '\t' << model_result << '\t'
+                                   << model_group << '\t' << model_slot << '\t' << model_kind << '\t'
+                                   << ax << '\t' << actual[0] << '\t' << actual[1] << '\t'
+                                   << actual[2] << '\t' << verdict_name << '\n';
+            }
         }
     } catch (const std::exception &error) {
         // This is an observational tool: a failed inference must never
         // interrupt the original game. Report an incomplete diagnostic and
         // let the checker reject it.
         state.picker_frame.reset();
+        state.picker_error = error.what();
         ++state.picker_errors;
-        state.picker_trace << "# picker-error ms=" << state.elapsed_ms
-                           << " detail=" << error.what() << '\n';
+        if (state.picker_trace.is_open())
+            state.picker_trace << "# picker-error ms=" << state.elapsed_ms
+                               << " detail=" << error.what() << '\n';
     }
 }
 
@@ -2088,6 +2107,7 @@ int main(int argc, char **argv) {
     std::string dump_prefix, block_trace_path, rtlink_calls_path, rtlink_events_path;
     std::string rtlink_sequence_path;
     std::string trace_picker_path;
+    bool debug_native_picker = false;
     std::filesystem::path key_script_path;
     bool key_at_used = false;
     std::set<std::tuple<std::uint16_t, std::uint16_t, std::uint16_t>> rtlink_event_targets;
@@ -2132,7 +2152,7 @@ int main(int argc, char **argv) {
                      "[--break-at HEX] [--state-dir DIR | --read-only] [--trace-blocks FILE] "
                      "[--trace-rtlink-calls FILE] "
                      "[--trace-rtlink-sequence FILE] "
-                     "[--trace-picker FILE] "
+                     "[--trace-picker FILE] [--debug-native-picker] "
                      "[--key-script FILE --milliseconds N] "
                      "[--dump-at MS:PREFIX ...] "
                      "[--mouse-click-at MS:X:Y ...] "
@@ -2214,6 +2234,10 @@ int main(int argc, char **argv) {
             }
         } else if (option == "--debug-scene")
             headless_debug_scene = true;
+        else if (option == "--debug-native-picker") {
+            debug_native_picker = true;
+            headless_debug_scene = true;
+        }
         else if (option == "--trace-picker" && i + 1 < argc) {
             trace_picker_path = argv[++i];
             headless_debug_scene = true;
@@ -2820,7 +2844,7 @@ int main(int argc, char **argv) {
                               reinterpret_cast<void *>(trace_entry), &state, entry_addresses[i],
                               entry_addresses[i]));
         std::array<uc_hook, 2> picker_hooks{};
-        if (state.picker_trace.is_open()) {
+        if (state.picker_trace.is_open() || debug_native_picker) {
             constexpr std::uint64_t picker_start = 0x269d1;
             constexpr std::uint64_t picker_return = picker_start + (0x14244 - 0x14186);
             check(uc_hook_add(engine.uc, &picker_hooks[0], UC_HOOK_CODE,
@@ -3074,6 +3098,10 @@ int main(int argc, char **argv) {
                 state.pit.mix_speaker(samples);
                 if (host->debug_open() || host->hitboxes_visible() || host->widescreen_ui()) {
                     debug_overlay.guest_ms = state.elapsed_ms;
+                    debug_overlay.native_picker_monitoring = debug_native_picker ||
+                                                              state.picker_trace.is_open();
+                    debug_overlay.native_picker = state.picker_observation;
+                    debug_overlay.native_picker_error = state.picker_error;
                     debug_overlay.dump_message = state.debug_status;
                     char registers[72];
                     std::snprintf(registers, sizeof registers, "CS:IP %04X:%04X DS %04X ms %u",

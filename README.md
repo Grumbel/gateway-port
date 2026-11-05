@@ -198,6 +198,8 @@ Launch the original Gateway 1 executable, enter a room, then press **F10**:
 gateway-run ../gateway-dos/GATE.EXE
 # Or choose an explicit location for snapshots:
 gateway-run ../gateway-dos/GATE.EXE --debug-dir build/gateway-snapshots
+# Also observe the original mouse picker return values, beside the hover map:
+gateway-run ../gateway-dos/GATE.EXE --debug-native-picker
 ```
 
 The host-drawn menu does not modify guest VGA memory. Its keyboard shortcuts
@@ -207,7 +209,7 @@ when the menu closes. Use Up/Down and Enter to select a menu item, or:
 | Key | Debug action |
 | --- | --- |
 | **F10**, **Esc** | Open/close the menu (Esc only when the menu is open) |
-| **H** | Toggle merged, colored and translucent hotspots; hover for the object ID/name |
+| **H** | Toggle merged, colored and translucent hotspots; hover for the object ID/name. With `--debug-native-picker`, also see the last actual native picker selection. |
 | **R** | Toggle between filtered hotspots and every raw RGN candidate (debug menu open) |
 | **A** | Toggle automatic scene selection from recent PIC reads |
 | **Left/Right** (or PageUp/PageDown) | Examine previous/next RGN frame manually |

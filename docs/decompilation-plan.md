@@ -862,6 +862,17 @@ association so the overlay can be audited without inferring unknown object IDs.
 Synthetic overlap/disabled/priority raster tests and the private
 first-room RAM checks pass; a live Unicorn graphical run remains pending.
 
+2026-11-05 native picker return-value debugger (§3.6): opt-in
+`--debug-native-picker` installs the existing observational Gateway 1 picker
+entry/return hooks even without a TSV trace. The F10/H overlay now keeps the
+last original call's coordinates/time, actual AX and three far output words,
+independent model result, and match/mismatch/unmodeled verdict visibly
+separate from the current hover winner-map. Recent calls have a short-lived
+colored position marker; errors are shown instead of a stale success.
+Synthetic return comparison and raster tests pass with the host C++ compiler;
+the original guest dispatch and click acceptance remain unverified, and
+full SDL/Unicorn execution requires the original data and toolchain.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |

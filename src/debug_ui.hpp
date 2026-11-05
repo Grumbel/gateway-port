@@ -4,7 +4,9 @@
 #pragma once
 #include "debug_scene.hpp"
 #include "mouse.hpp"
+#include <array>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 
@@ -14,12 +16,27 @@ struct DebugActions {
     bool toggle_auto_follow = false;
     int scene_step = 0;
 };
+// The last completed call to the original Gateway 1 rectangle picker, not a
+// hover prediction or evidence that the later action dispatcher accepted it.
+struct DebugPickerObservation {
+    unsigned guest_ms = 0;
+    int x = 0, y = 0;
+    std::uint16_t native_ax = 0;
+    std::array<std::uint16_t, 3> native_outputs{}; // group, slot, kind
+    bool model_ready = false;
+    std::optional<DebugPickerControl> predicted;
+};
+enum class DebugPickerVerdict { match, mismatch, unmodeled };
+DebugPickerVerdict debug_picker_verdict(const DebugPickerObservation &observation);
 struct DebugOverlayData {
     DebugSceneView scene;
     std::string registers;
     std::string object_summary;
     std::string dump_message;
     unsigned guest_ms = 0;
+    bool native_picker_monitoring = false;
+    std::optional<DebugPickerObservation> native_picker;
+    std::string native_picker_error;
 };
 struct DebugMenuPosition {
     // Negative coordinates mean the default position: bottom-right.
