@@ -514,6 +514,53 @@ are derived from actual differing pixels, never bounding-box midpoints.
 The tool operates on already captured private data; it does not itself
 execute mouse clicks or prove later game-action acceptance.
 
+### Test real click side effects against two unchanged controls
+
+For positions selected by the capture comparator, run **each click in a
+fresh DOS process and writable state directory**. The controlled-trial runner
+reuses the reviewed walkthrough's deterministic BIOS input schedule and
+optionally imports the exact same original saved game for every run. It
+automatically runs two no-click controls, then a separate run for each chosen
+position; snapshots are recorded one millisecond before injection and after
+a fixed observation interval. It compares normalized native RAM (with only
+the golden-run volatile exclusions), all CPU registers and any unambiguously
+decoded 734-object state records. It also retains original picker selections
+observed during the click interval.
+
+For example, to try positions associated with one captured conditional state
+*after* the first `open drawer` command:
+
+```sh
+# Inspect the plan without starting a guest:
+python3 tools/picker_click_trials.py tests/fixtures/gateway-opening.walk \
+  --max-actions 1 --points build/picker-entry/oracle-points.tsv \
+  --capture-call 2 --max-points 4 --plan-only
+
+# The actual input experiments must use a private Xvfb display:
+xvfb-run -a python3 tools/picker_click_trials.py \
+  tests/fixtures/gateway-opening.walk --max-actions 1 \
+  --points build/picker-entry/oracle-points.tsv --capture-call 2 \
+  --max-points 4 --probe build/gateway-probe --data ../gateway-dos \
+  --output build/picker-click-trials/drawer-open
+```
+
+Choose a stage or original save **corresponding to the capture's condition**;
+the tool cannot infer that equivalence from shared coordinates. To specify a
+single position manually use `--point 360:200` rather than `--points` and
+`--capture-call`. The default click is 1000 guest milliseconds after the
+selected walkthrough prefix ends; `--after-ms` and `--settle-ms` adjust the
+delay and post-click observation window. All output contains private game
+memory under `build/` and must not be committed.
+
+`comparison.json` reports separately whether the two controls have identical
+pre/post snapshots, whether a click trial started from the same pre-click
+state, native picker selections during the interval, changed normalized RAM
+bytes and changed verified object IDs. If either control differs or the CPU
+and RAM pre-states disagree, the trial is **inconclusive**, not classified as
+accepted. Even a qualified RAM/object change is only a candidate click side
+effect: proving the game accepted the click requires tracing the relevant
+native caller branch, and a valid picker selection by itself is insufficient.
+
 Private captures contain proprietary executable and game-state bytes:
 **never commit, publish or include them in a Git bundle**. Full-memory
 reads inside the CPU hook may slow gameplay. The entry address is only

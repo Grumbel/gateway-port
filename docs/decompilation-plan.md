@@ -1009,6 +1009,16 @@ accepts that list to replay the exact candidate pixels against both entry
 states, beyond its fixed grid and rectangle-edge tests. This still checks
 picker selection, not action-dispatch acceptance.
 
+Controlled click trials now have a standalone walkthrough driver. It runs
+two independent no-click controls and one isolated injected click per selected
+pixel, with deterministic DOS date/time and separate writable game state.
+Its strict comparison requires identical pre-click normalized RAM and CPU
+registers, plus a stable pair of no-click post states, before it reports
+potential click-correlated RAM and object-record differences. It also retains
+the original picker returns for each trial and labels missing provenance.
+Synthetic baseline drift, input injection, original object-parser failure,
+and output-isolation checks pass; actual guest execution remains pending.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |
