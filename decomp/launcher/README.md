@@ -271,8 +271,33 @@ patched operands and linked FAR call targets against private guest RAM.
 Segment words and the remaining hardware/file services still require
 independent runtime backing.
 
+`gate_rtl_image_processor.c` recovers five more bounded original image
+functions: `rtl:0x12ed7` (active-record draw wrapper), `0x12f2b`
+(draw an array of 136-byte records), `0x13115` (draw frames with the original
+two timing bytes), `0x13191` (initialize an array's active flags) and
+`0x131f7` (release each array member). The draw wrapper sign-extends the
+one-byte draw mode, applies the two relocated 16-bit origins, and calls
+the original three FAR services at linked `1e48:04d9`, `24a7:000c`,
+`1e48:03c5`; **the actual `24a7:000c` renderer remains unresolved**.
+The timed array's delay uses `50*byte6 + clock_low % (50*byte7+1)` without
+carrying a FAR pointer into the next segment. Mock tests cover mode sign,
+coordinate wrap, inactive records, signed array counts, clock remainder,
+pointer rollover and null guards.
+
+`gate_rtl_intro_animation.c` reconstructs the main intro frame controller
+`rtl:0x12f6b..0x130aa` (original linked `0f10:1466`), now wired to its
+`GATE.EXE` far-call alias. It fades out, resets original display state,
+optionally draws the initial splash, and then loads consecutive resources
+in mode 1. For each, it waits until the **signed-high/unsigned-low**
+32-bit deadline or stops on the original input callback, prepares/draws,
+cleans up, and schedules the next frame using the original timing bytes.
+Host tests check the complete call ordering, first-image bypass, resource
+failure, signed-clock overflow, input interruption and the resource-ID
+increment across `0xffff`. The restored C remains an **archive of routines**,
+not a standalone intro player.
+
 **None of these tests is a full guest-entry differential run.** The
-underlying five `0c33` file services, `rtl:0x12ed7` image processor and
+underlying five `0c33` file services, `24a7:000c` image rasterizer and
 other DOS/RTL dependencies remain unresolved external dependencies. This
 remains **neither a rendered nor a playable source-C intro**.
 
@@ -296,8 +321,9 @@ not this decompilation. A successful CMake/Nix build only proves the archive
 and tests can compile; it does *not* demonstrate that the C intro plays.
 
 With graphics now mapped to immutable file identities, the immediate intro
-dependencies to recover next are the original RTL `0x12ed7` image processor,
-the five resource-file `0c33` services and the `145d:016c` resource-release service. Recover the remaining
+dependencies to recover next are the `24a7:000c` image rasterizer,
+the `rtl:0x130ab` animation entry, five resource-file `0c33` services and
+the `145d:016c` resource-release service. Recover the remaining
 video/keyboard/timing services and use the original guest as an entry-state
 oracle *before* claiming a standalone intro or resuming game logic.
 

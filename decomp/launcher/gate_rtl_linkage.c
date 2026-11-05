@@ -47,3 +47,8 @@ void gate_far_0f10_112e(GateFarPtr work, uint16_t resource, uint16_t mode)
 {
     (void)gate_rtl_12c33(work, resource, mode);
 }
+void gate_far_0f10_13d2(GateFarPtr work) { gate_rtl_12ed7(work); }
+void gate_far_0f10_1466(uint16_t first, uint16_t next, uint16_t count)
+{
+    gate_rtl_12f6b(first, next, (int16_t)count);
+}

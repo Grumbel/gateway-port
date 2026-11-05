@@ -60,6 +60,11 @@ class OriginalIntroGraphicsEvidence(unittest.TestCase):
                            (0x12b19, 0x12b66),
                            (0x12c33, 0x12d66),
                            (0x1266f, 0x12771),
+                           (0x12ed7, 0x12f2a),
+                           (0x12f2b, 0x12f6a),
+                           (0x13115, 0x13184),
+                           (0x13191, 0x131c8),
+                           (0x131f7, 0x1323e),
                            (0x12205, 0x1230e),
                            (0x12383, 0x123d3),
                            (0x12773, 0x12821),
@@ -229,6 +234,14 @@ class OriginalIntroGraphicsEvidence(unittest.TestCase):
             (0x12693, 0x141c),  # palette upload pending flag
             (0x12735, 0x4dd2),  # preparer source-flags segment
             (0x1273a, 0x0082),  # preparer source-flags offset
+            (0x12f08, 0x1418),  # image draw x origin
+            (0x12f11, 0x141a),  # image draw y origin
+            (0x12f7a, 0x4de6),  # animation video segment A
+            (0x12f7f, 0x004c),  # animation video offset A
+            (0x12f8b, 0x4de8),  # animation video segment B
+            (0x12f90, 0x0042),  # animation video offset B
+            (0x12f94, 0x4dea),  # animation video segment C
+            (0x12f99, 0x003e),  # animation video offset C
         )
         for file_offset, expected in displacements:
             with self.subTest(original_rtl_offset=file_offset):
@@ -236,6 +249,78 @@ class OriginalIntroGraphicsEvidence(unittest.TestCase):
                         - base)
                 self.assertEqual(int.from_bytes(image[addr:addr + 2],
                                                  'little'), expected)
+
+    def test_image_processor_original_calls(self):
+        # Each address is the original RTL *file* offset, independently
+        # checked against the already relocated DOS guest image.
+        for site, entry in ((0x12f58, 0x12ed7),
+                            (0x13142, 0x12ed7),
+                            (0x1322c, 0x131cb)):
+            with self.subTest(near_call=site):
+                self.assertEqual(self.rtl[site - 1], 0x0e)
+                self.assertEqual(self.rtl[site], 0xe8)
+                delta = int.from_bytes(self.rtl[site + 1:site + 3],
+                                       'little', signed=True)
+                self.assertEqual(site + 3 + delta, entry)
+        snapshot = ROOT / 'build/intro-analysis/at-22000.bin'
+        if not snapshot.is_file():
+            self.skipTest('private guest RAM snapshot unavailable')
+        image = snapshot.read_bytes()
+        base = GRAPHICS_TARGETS[0x0f10, 0x13d2] - 0x13d2
+        for site, expected in ((0x12ee6, (0x0e48, 0x04d9)),
+                               (0x12f17, (0x14a7, 0x000c)),
+                               (0x12f1f, (0x0e48, 0x03c5)),
+                               (0x13148, (0x02a5, 0x3b0c)),
+                               (0x13170, (0x123f, 0x00b6))):
+            with self.subTest(far_call=site):
+                addr = (0x0f10 + 0x1000) * 16 + site - base
+                live = image[addr:addr + 5]
+                self.assertEqual(self.rtl[site], 0x9a)
+                self.assertEqual(live[0], 0x9a)
+                linked = (int.from_bytes(live[3:5], 'little') - 0x1000,
+                          int.from_bytes(live[1:3], 'little'))
+                self.assertEqual(linked, expected)
+
+    def test_intro_animation_original_calls(self):
+        # This controller has an early RETF at 1302b, and finishes with
+        # a jump back into its load loop, not a final contiguous RETF.
+        self.assertEqual(self.rtl[0x12f6b:0x12f6e], b'\x55\x8b\xec')
+        self.assertEqual(self.rtl[0x1302b], 0xcb)
+        self.assertEqual(self.rtl[0x130ab:0x130ae], b'\x55\x8b\xec')
+        for site, entry in ((0x12f75, 0x12893),
+                            (0x12fc3, 0x12c33),
+                            (0x12fd0, 0x12ed7),
+                            (0x12fd7, 0x12773),
+                            (0x12fe1, 0x131cb),
+                            (0x1302e, 0x1266f),
+                            (0x13038, 0x12ed7),
+                            (0x13045, 0x131cb),
+                            (0x1309a, 0x12c33)):
+            with self.subTest(near_call=site):
+                self.assertEqual(self.rtl[site - 1], 0x0e)
+                self.assertEqual(self.rtl[site], 0xe8)
+                delta = int.from_bytes(self.rtl[site + 1:site + 3],
+                                       'little', signed=True)
+                self.assertEqual(site + 3 + delta, entry)
+        snapshot = ROOT / 'build/intro-analysis/at-22000.bin'
+        if not snapshot.is_file():
+            self.skipTest('private guest RAM snapshot unavailable')
+        image = snapshot.read_bytes()
+        base = GRAPHICS_TARGETS[0x0f10, 0x1466] - 0x1466
+        for site, expected in ((0x12f81, (0x0cdc, 0x0aac)),
+                               (0x12fa3, (0x0cdc, 0x0aee)),
+                               (0x12ff9, (0x02a5, 0x38c4)),
+                               (0x1300a, (0x0000, 0x0008)),
+                               (0x1304b, (0x02a5, 0x38c4)),
+                               (0x13058, (0x02a5, 0x3b0c))):
+            with self.subTest(far_call=site):
+                addr = (0x0f10 + 0x1000) * 16 + site - base
+                live = image[addr:addr + 5]
+                self.assertEqual(self.rtl[site], 0x9a)
+                self.assertEqual(live[0], 0x9a)
+                linked = (int.from_bytes(live[3:5], 'little') - 0x1000,
+                          int.from_bytes(live[1:3], 'little'))
+                self.assertEqual(linked, expected)
 
     def test_intro_graphics_segment_consistency(self):
         # Ten 0f10 calls share the same original file origin. Entries in

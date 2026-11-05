@@ -90,7 +90,32 @@ uint16_t gate_far_0c33_00f2(uint16_t handle, GateFarPtr destination,
                             uint16_t word_arg);
 uint16_t gate_far_0c33_00d4(uint16_t handle);
 
-/* More image dependencies awaiting bounded decompilations. */
+/* Original image draw wrapper and its 136-byte-record array helpers. */
 void gate_rtl_12ed7(GateFarPtr work);
+void gate_rtl_12f2b(GateFarPtr work, int16_t count);
+void gate_rtl_13115(GateFarPtr work, int16_t count);
+void gate_rtl_13191(GateFarPtr work, int16_t count);
+void gate_rtl_131f7(GateFarPtr work, int16_t count);
+
+/* Verified original linked FAR identities used by the image processor.
+ * The 24a7 service consumes its 12-byte argument block in the callee. */
+uint16_t gate_far_1e48_04d9(void);
+void gate_far_24a7_000c(uint16_t zero, uint16_t y, uint16_t x,
+                        uint16_t signed_mode, GateFarPtr pixels);
+void gate_far_1e48_03c5(uint16_t saved);
+uint16_t gate_far_12a5_3b0c(void);
+void gate_far_223f_00b6(uint32_t delay);
+
+/* Original intro animation controller: GATE.RTL:0x12f6b..0x130aa,
+ * linked as GATE.EXE:0f10:1466 (all three original stack WORDs). */
+void gate_rtl_12f6b(uint16_t first, uint16_t next, int16_t count);
+uint16_t gate_rtl_anim_segment_22(void); /* linked DS:4de6 segment */
+uint16_t gate_rtl_anim_segment_24(void); /* linked DS:4de8 segment */
+uint16_t gate_rtl_anim_segment_26(void); /* linked DS:4dea segment */
+void gate_far_0cdc_0aac(uint16_t video_value);
+void gate_far_0cdc_0aee(uint16_t two, uint16_t zero_a, uint16_t zero_b,
+                         uint16_t video_value_b, uint16_t video_value_a);
+uint32_t gate_far_12a5_38c4(void);
+uint16_t gate_far_1000_0008(void);
 
 #endif
