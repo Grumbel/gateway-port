@@ -964,6 +964,16 @@ view continues clipping to the scene, grouping adjacent rectangles by
 object ID, and excluding GUI groups; raw R can show the unfiltered rows.
 These geometry observations are not native picker return traces.
 
+The next picker instrumentation step now records an entry-time copy of every
+native picker row alongside each opt-in continuation trace (`# scene`,
+`# picker-row`). The independent `report_picker_scene.py` compares those
+frozen condition flags and original returned group/slot to the H overlay's
+scene-only raster ownership at the click position. It reports cases where a
+native room selection has no scene highlight, or a GUI selection overrides a
+highlighted room object; it preserves older traces as geometry-unavailable.
+Synthetic C++ serialization and Python analysis regressions pass. Actual
+original-code picker returns remain pending on a host with Unicorn/SDL3.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |

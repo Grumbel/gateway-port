@@ -8,7 +8,7 @@ option(GATEWAY_WITH_SDL "Build the SDL3 host diagnostic" ON)
 option(GATEWAY_WITH_UNICORN "Build the real-mode startup probe" ON)
 add_library(nuked_opl3 STATIC third_party/nuked-opl3/opl3.c)
 target_include_directories(nuked_opl3 PUBLIC third_party/nuked-opl3)
-add_library(gateway_core src/mz.cpp src/rtlink.cpp src/object_flags.cpp src/story_model.cpp src/dos_clock.cpp src/dos_files.cpp src/dos_fcb.cpp src/dos_memory.cpp src/vga.cpp src/opl.cpp src/adlib_driver.cpp src/pit.cpp src/pic.cpp src/scene_compositor.cpp src/scene_animation.cpp src/host_scene_preview.cpp src/crusher.cpp src/png.cpp src/regions.cpp src/debug_scene.cpp src/debug_state.cpp src/debug_ui.cpp src/ui_layout.cpp)
+add_library(gateway_core src/mz.cpp src/rtlink.cpp src/object_flags.cpp src/story_model.cpp src/dos_clock.cpp src/dos_files.cpp src/dos_fcb.cpp src/dos_memory.cpp src/vga.cpp src/opl.cpp src/adlib_driver.cpp src/pit.cpp src/pic.cpp src/scene_compositor.cpp src/scene_animation.cpp src/host_scene_preview.cpp src/crusher.cpp src/png.cpp src/regions.cpp src/debug_scene.cpp src/debug_state.cpp src/debug_ui.cpp src/picker_scene_trace.cpp src/ui_layout.cpp)
 target_include_directories(gateway_core PUBLIC src)
 target_link_libraries(gateway_core PUBLIC nuked_opl3)
 target_compile_options(gateway_core PRIVATE -Wall -Wextra -Wpedantic)
@@ -120,6 +120,9 @@ if(BUILD_TESTING)
   add_executable(picker-follow-tests tests/picker_follow_tests.cpp)
   target_link_libraries(picker-follow-tests PRIVATE gateway_core)
   add_test(NAME picker-follow COMMAND picker-follow-tests)
+  add_executable(picker-scene-trace-tests tests/picker_scene_trace_tests.cpp)
+  target_link_libraries(picker-scene-trace-tests PRIVATE gateway_core)
+  add_test(NAME picker-scene-trace COMMAND picker-scene-trace-tests)
   find_package(Python3 COMPONENTS Interpreter QUIET)
   if(Python3_Interpreter_FOUND)
     add_test(NAME picker-trace-check COMMAND ${Python3_EXECUTABLE}
@@ -130,6 +133,8 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_picker_follow_tests.py)
     add_test(NAME picker-follow-report COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/report_picker_follow_tests.py)
+    add_test(NAME picker-scene-report COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/report_picker_scene_tests.py)
     add_test(NAME gateway-original-assets COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/gateway_original_assets_tests.py
       --data ${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos

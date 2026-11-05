@@ -388,6 +388,35 @@ list all groups. The report accepts earlier call markers without the new
 object/overlap/verdict annotations and explicitly marks their provenance
 unavailable. The default listing limit is 40 calls (`--limit 0` shows all).
 
+### Compare a native result with the scene-only H highlighting
+
+New `--trace-picker-follow` recordings also preserve the entire native picker
+rectangle table **at each call's entry**, after the original game has updated
+its conditional skip bits. The `# scene` record identifies the correlated
+picture/frame; `# picker-row` records retain original group, slot, kind,
+signed inclusive bounds, skip flags, and the engine object ID *only* for a
+proven-aligned room slot. Ordinary GUI rows and group fallbacks keep separate
+roles; ambiguous RGN associations are `unmapped`. A `selected=1` marker refers
+to the **original native return**, not the model's predicted cursor hit.
+These records are comment lines, so the established continuation TSV and
+comparators remain readable.
+
+```sh
+python3 tools/report_picker_scene.py build/picker-follow/continuation.tsv
+python3 tools/report_picker_scene.py build/picker-follow/continuation.tsv --limit 0
+```
+
+The report recreates the normal H overlay's room-only last-match ownership
+at each recorded click point (640×480 logical coordinates, scene X=261..639
+and Y=0..231), merging neighboring rows through the shared object ID. It
+counts native room selections **not marked by H**, native room selections
+whose object differs from H, and GUI/fallback selections that override an
+underlying highlighted room region. Each result is explicitly compared with
+the frozen native table, and older traces without those rows are reported
+as geometry-unavailable. This diagnoses scene mapping, clipping, overlap and
+conditional-flag discrepancies; it still cannot establish that the scene
+image was drawn or that a downstream handler accepted the mouse click.
+
 The F10 native-picker panel shows the last observed dispatcher candidate as
 its fifth row and the nearest preceding guest `INT 33h` read as a sixth,
 when monitoring with `--debug-native-picker` or `--trace-picker-follow`.

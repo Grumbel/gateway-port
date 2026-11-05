@@ -17,6 +17,7 @@
 #include "opl.hpp"
 #include "pit.hpp"
 #include "picker_follow.hpp"
+#include "picker_scene_trace.hpp"
 #include "rtlink.hpp"
 #include "vga.hpp"
 #ifdef GATEWAY_SDL
@@ -1173,6 +1174,8 @@ void trace_picker(uc_engine *uc, std::uint64_t address, std::uint32_t,
                                           << " verdict=" << verdict_name
                                           << " return=" << std::hex << frame.return_cs << ':'
                                           << frame.return_ip << std::dec << '\n';
+                gateway::write_picker_scene_trace(state.picker_follow_trace, call_id,
+                                                  frame.entry_scene, ax, actual);
                 if (input) {
                     const auto &read = input->read;
                     state.picker_follow_trace << "# input call=" << call_id
