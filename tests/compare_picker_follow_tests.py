@@ -20,7 +20,7 @@ def row(call, step, ip, opcode, ax='1'):
     return '\t'.join(columns)
 
 
-def make(path, rows, writes=(), legacy=False, dispatches=None):
+def make(path, rows, writes=(), legacy=False, dispatches=None, inputs=None):
     calls = max(int(row.split('\t', 1)[0]) for row in rows)
     per_call = {}
     for item in rows:
@@ -33,17 +33,23 @@ def make(path, rows, writes=(), legacy=False, dispatches=None):
                        for call in range(1, calls + 1) if call not in per_call)
     completed = sum(count == 3 for count in per_call.values())
     picker_calls = (''.join(f'# call={call} ms=1200 x=100 y=100\n'
-                            for call in range(1, calls + 1)) if dispatches is not None else '')
+                            for call in range(1, calls + 1))
+                    if dispatches is not None or inputs is not None else '')
     path.write_text('\t'.join(MODULE.FIELDS) + '\n' + picker_calls +
                     '\n'.join(rows) + '\n' +
                     ''.join(event + '\n' for event in writes) +
                     ''.join(event + '\n' for event in (dispatches or ())) +
+                    ''.join(event + '\n' for event in (inputs or ())) +
                     endings + f'# follow-summary calls={calls} completed={completed} '
                     f'interrupted={len(per_call) - completed} missed={missing} '
                     'errors=0 pending=0 steps=3' +
                     ('' if legacy else f' writes={len(writes)} write_errors=0') +
                     ('' if dispatches is None else
-                     f' dispatches={len(dispatches)} dispatch_errors=0 dispatch_ms=2000') + '\n')
+                     f' dispatches={len(dispatches)} dispatch_errors=0 dispatch_ms=2000') +
+                    ('' if inputs is None else
+                     f' inputs={sum("status=observed" in event for event in inputs)}'
+                     f' input_missing={sum("status=none" in event for event in inputs)}'
+                     ' input_ms=2000') + '\n')
 
 
 def write(call, step, address, value, size=2):
@@ -53,6 +59,13 @@ def write(call, step, address, value, size=2):
 def dispatch(kind, action, first=0, second=0, cs=0, ip=0, age=10, call=1):
     return (f'# dispatch call={call} ms={1200 + age} age={age} kind={kind} '
             f'action={action:x} first={first:x} second={second:x} target={cs:x}:{ip:x}')
+
+
+def mouse_input(func=5, button=0, buttons=0, count=1, x=100, y=100,
+                coords='match', age=10, call=1, seq=8, caller='1000:04d5'):
+    return (f'# input call={call} status=observed seq={seq} age={age} func={func} '
+            f'button={button} buttons={buttons} count={count} x={x} y={y} '
+            f'resume={caller} coords={coords}')
 
 
 with tempfile.TemporaryDirectory() as dirname:
@@ -176,6 +189,42 @@ with tempfile.TemporaryDirectory() as dirname:
         raise AssertionError('dispatch error must reject trace')
     make(right, samples)
     assert 'older format' in MODULE.compare(left, right)
+    make(left, samples, dispatches=[], inputs=[mouse_input()])
+    make(right, samples, dispatches=[], inputs=[mouse_input(x=200, coords='differ')])
+    report = MODULE.compare(left, right)
+    assert 'Nearest preceding guest mouse reads' in report
+    assert 'left:  INT 33h/5' in report and 'right: INT 33h/5' in report
+    assert 'Guest mouse-read results differ' in report
+    make(right, samples, dispatches=[], inputs=[mouse_input(age=35, seq=17)])
+    assert 'Guest mouse-read results agree' in MODULE.compare(left, right)
+    make(right, samples, dispatches=[], inputs=[mouse_input(caller='1000:04d6')])
+    assert 'Guest mouse-read results differ' in MODULE.compare(left, right)
+    make(right, samples, dispatches=[], inputs=['# input call=1 status=none'])
+    assert 'no recent guest INT 33h read' in MODULE.compare(left, right)
+    make(left, samples, dispatches=[], inputs=['# input call=1 status=none'])
+    assert 'Guest mouse-read results agree' in MODULE.compare(left, right)
+    make(left, samples, dispatches=[], inputs=[mouse_input()])
+    for malformed in (mouse_input(func=3, button=0, count=0),
+                      mouse_input(age=2001), mouse_input(call=2),
+                      mouse_input(func=5, count=-1),
+                      mouse_input(coords='maybe')):
+        make(right, samples, dispatches=[], inputs=[malformed])
+        try:
+            MODULE.read_trace(right)
+        except ValueError as error:
+            assert 'invalid guest input' in str(error) or 'guest input markers disagree' in str(error)
+        else:
+            raise AssertionError('invalid guest mouse observation should fail')
+    make(right, samples, dispatches=[], inputs=[mouse_input()])
+    right.write_text(right.read_text().replace('inputs=1', 'inputs=0'))
+    try:
+        MODULE.read_trace(right)
+    except ValueError as error:
+        assert 'input summary' in str(error)
+    else:
+        raise AssertionError('inconsistent guest mouse summary should fail')
+    make(right, samples, dispatches=[])
+    assert 'Guest mouse-read comparison unavailable' in MODULE.compare(left, right)
     make(left, [row(1, 0, '100', '85c0'), row(1, 1, '102', '7404'),
                 row(1, 2, '104', '8b00')])
     make(right, [row(2, 0, '200', '9090')])

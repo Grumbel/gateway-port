@@ -919,6 +919,17 @@ reports the first candidate-dispatch difference while ignoring timing-only
 variation. Synthetic association, parsing and raster tests pass; native mouse
 replay is still required to show whether either dispatcher consumes these picks.
 
+2026-11-05 guest mouse-read correlation (§3.6): the HLE DOS mouse interrupt
+observer now retains the last 64 genuine guest reads (`INT 33h` AX=3/5/6)
+when picker diagnostics are enabled. It records returned buttons, position,
+press/release count (before clearing), and resume CS:IP; a bounded lookback
+attaches only the most recent read to each completed native picker, with
+explicit `none` and coordinate disagreement cases. F10 displays the observed
+guest read below the previously added dispatcher candidate; the comparator
+validates input markers and reports differing mouse-service results. These
+are observations of HLE service delivery, not proof the picker used that
+read; live original-game mouse replay is still required.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |

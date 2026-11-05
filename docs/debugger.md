@@ -263,12 +263,26 @@ summary includes `dispatches`, `dispatch_errors` and `dispatch_ms`, which the
 comparator checks. They are *time-correlated dispatcher candidates*, **not**
 proof that the click caused their execution or successfully handled anything.
 
+The same opt-in diagnostic now remembers the last 64 **guest-visible DOS
+mouse reads** (`INT 33h` functions `3`, `5`, `6`). It captures the returned
+button mask, position, and—on function `5`/`6`—the press/release count before
+the HLE resets that count, with the guest's interrupt-resume CS:IP. For each
+completed native picker it selects the **most recent preceding** guest read
+within 2000 guest milliseconds (configurable as `--picker-input-ms N`, 1–20000),
+and records `# input call=N status=observed ... coords=match|differ`. If no
+read qualifies it writes `# input call=N status=none`. A coordinate mismatch
+is retained honestly; an older coincidentally matching read is not selected.
+The final summary accounts for every picker as `inputs` or `input_missing`.
+Guest reads can represent hovering, button polls, or cached state; even
+`INT 33h/5` returning a positive press count does not prove the later picker
+consumed the same mouse click.
+
 ```sh
 mkdir -p build/picker-follow
 gateway-run ../gateway-dos/GATE.EXE \
   --trace-picker build/picker-follow/picks.tsv \
   --trace-picker-follow build/picker-follow/continuation.tsv \
-  --picker-follow-steps 128 --picker-dispatch-ms 3000
+  --picker-follow-steps 128 --picker-dispatch-ms 3000 --picker-input-ms 3000
 ```
 
 The trace is written when the runtime exits. Only the known Gateway 1 picker
@@ -311,11 +325,17 @@ and target address; timing-only differences are ignored. A report showing
 `No known resident dispatcher candidates` does **not** establish rejection:
 the click may use another UI path, take longer, or bypass those sites.
 Older traces remain usable with dispatch evidence labeled unavailable.
+The comparator also shows the last guest mouse read preceding each pick,
+including its age, button count and coordinate agreement. It distinguishes
+unavailable legacy evidence, an observed but unmatched read, and no read
+within the configured bound; timing and polling frequency are not treated
+as semantic differences between runs.
 
-The F10 native-picker panel also shows the last observed candidate as a fifth
-row, when monitoring with `--debug-native-picker` or `--trace-picker-follow`.
+The F10 native-picker panel shows the last observed dispatcher candidate as
+its fifth row and the nearest preceding guest `INT 33h` read as a sixth,
+when monitoring with `--debug-native-picker` or `--trace-picker-follow`.
 It distinguishes "no candidate observed" from "monitoring disabled". For
-interactive F10-only debugging, `--debug-native-picker --picker-dispatch-ms 3000`
+interactive F10-only debugging, `--debug-native-picker --picker-dispatch-ms 3000 --picker-input-ms 3000`
 activates just the two focused hooks without the expensive global
 instruction trace.
 

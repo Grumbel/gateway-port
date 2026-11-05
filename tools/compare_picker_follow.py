@@ -26,7 +26,9 @@ def read_trace(path):
     required = {'calls', 'completed', 'interrupted', 'missed', 'errors', 'pending', 'steps'}
     write_fields = {'writes', 'write_errors'}
     dispatch_fields = {'dispatches', 'dispatch_errors', 'dispatch_ms'}
-    has_dispatch = set(summary) == required | write_fields | dispatch_fields
+    input_fields = {'inputs', 'input_missing', 'input_ms'}
+    has_input = set(summary) == required | write_fields | dispatch_fields | input_fields
+    has_dispatch = has_input or set(summary) == required | write_fields | dispatch_fields
     has_writes = has_dispatch or set(summary) == required | write_fields
     if not has_writes and set(summary) != required:
         raise ValueError('unexpected continuation summary fields')
@@ -40,6 +42,9 @@ def read_trace(path):
         raise ValueError('continuation contains failed memory-write observations')
     if has_dispatch and (summary['dispatch_errors'] or not 1 <= summary['dispatch_ms'] <= 20000):
         raise ValueError('continuation contains failed or invalid dispatch observations')
+    if has_input and (not 1 <= summary['input_ms'] <= 20000 or
+                      summary['inputs'] + summary['input_missing'] != summary['calls']):
+        raise ValueError('mouse input summary does not account for every picker call')
     endings = {}
     for line in lines:
         if not line.startswith('# end call='):
@@ -160,7 +165,53 @@ def read_trace(path):
         raise ValueError('dispatch event without dispatch-enabled summary')
     if any(line.startswith('# dispatch-error ') for line in lines):
         raise ValueError('continuation contains failed dispatch observations')
-    return calls, endings, writes if has_writes else None, dispatches if has_dispatch else None
+    inputs = {}
+    for line in lines:
+        if not line.startswith('# input '):
+            continue
+        if not has_input:
+            raise ValueError('guest input marker without input-enabled summary')
+        fields = line.split()[2:]
+        if any('=' not in field for field in fields):
+            raise ValueError('malformed guest input marker')
+        details = dict(field.split('=', 1) for field in fields)
+        status = details.get('status')
+        expected = {'call', 'status'} if status == 'none' else {
+            'call', 'status', 'seq', 'age', 'func', 'button', 'buttons', 'count',
+            'x', 'y', 'resume', 'coords'}
+        if len(fields) != len(expected) or set(details) != expected:
+            raise ValueError('invalid guest input marker fields')
+        try:
+            call = int(details['call'])
+            if status == 'observed':
+                seq, age, func, button, buttons, count, x, y = (
+                    int(details[key]) for key in ('seq', 'age', 'func', 'button',
+                                                 'buttons', 'count', 'x', 'y'))
+                cs, ip = (int(value, 16) for value in details['resume'].split(':'))
+        except ValueError as error:
+            raise ValueError('invalid guest input marker values') from error
+        if call in inputs or not 1 <= call <= summary['calls']:
+            raise ValueError('duplicate or invalid guest input call association')
+        if status == 'none':
+            inputs[call] = None
+        elif status == 'observed':
+            if (seq < 1 or not 0 <= age <= summary['input_ms'] or func not in (3, 5, 6) or
+                (button != -1 if func == 3 else not 0 <= button <= 2) or
+                not 0 <= buttons <= 7 or count < 0 or (func == 3 and count != 0) or
+                not 0 <= x <= 65535 or not 0 <= y <= 65535 or
+                not 0 <= cs <= 65535 or not 0 <= ip <= 65535 or
+                details['coords'] not in ('match', 'differ') or
+                not re.fullmatch('[0-9a-f]+:[0-9a-f]+', details['resume'])):
+                raise ValueError('invalid guest input contents or age')
+            inputs[call] = (func, button, buttons, count, x, y, cs, ip, seq, age,
+                            details['coords'])
+        else:
+            raise ValueError('invalid guest input marker status')
+    if has_input and (len(inputs) != summary['calls'] or
+                      sum(value is not None for value in inputs.values()) != summary['inputs']):
+        raise ValueError('guest input markers disagree with summary')
+    return (calls, endings, writes if has_writes else None,
+            dispatches if has_dispatch else None, inputs if has_input else None)
 
 
 def describe(row):
@@ -179,9 +230,18 @@ def describe_dispatch(event):
             f'target={cs:x}:{ip:x} age={age}ms')
 
 
+def describe_input(read):
+    if read is None:
+        return 'no recent guest INT 33h read'
+    func, button, buttons, count, x, y, cs, ip, seq, age, coords = read
+    return (f'INT 33h/{func} button={button} buttons={buttons} count={count} '
+            f'position={x},{y} coords={coords} resume={cs:x}:{ip:x} '
+            f'seq={seq} age={age}ms')
+
+
 def compare(first, second, left_call=None, right_call=None):
-    left_calls, left_endings, left_writes, left_dispatches = read_trace(first)
-    right_calls, right_endings, right_writes, right_dispatches = read_trace(second)
+    left_calls, left_endings, left_writes, left_dispatches, left_inputs = read_trace(first)
+    right_calls, right_endings, right_writes, right_dispatches, right_inputs = read_trace(second)
     if left_call is None:
         left_call = min(left_calls)
     if right_call is None:
@@ -260,6 +320,21 @@ def compare(first, second, left_call=None, right_call=None):
         else:
             output.append('No known resident dispatcher candidates observed after either picker.')
         output.append('Dispatch associations are time-bounded observations, not causal proof.')
+    if left_inputs is None or right_inputs is None:
+        output.append('Guest mouse-read comparison unavailable: older trace format.')
+    else:
+        left_input, right_input = left_inputs[left_call], right_inputs[right_call]
+        output.append('Nearest preceding guest mouse reads:')
+        output.append(f'  left:  {describe_input(left_input)}')
+        output.append(f'  right: {describe_input(right_input)}')
+        # Compare both returned service contents and the guest caller; ignore
+        # only incidental guest timing and the absolute polling sequence ID.
+        a = left_input[:8] + left_input[10:] if left_input else None
+        b = right_input[:8] + right_input[10:] if right_input else None
+        if a != b:
+            output.append('Guest mouse-read results differ (not proof of click consumption).')
+        else:
+            output.append('Guest mouse-read results agree within the configured age limit.')
     output.append('No claim of click dispatch or action acceptance is implied.')
     return '\n'.join(output)
 
