@@ -1059,6 +1059,16 @@ GUI conditions, missing geometry and inconsistent experiment provenance.
 This closes a possible false attribution when test coordinates are reused in
 the wrong story condition; no native acceptance or scene visibility is claimed.
 
+A read-only cross-study RTLink target ranker now aggregates only controlled
+trials that have qualified RAM/CPU/handler baselines. The section-qualified
+target addresses are mapped through the validated Ghidra overlay plan to
+original OVL file offsets, and matched to *exact* tracked function entries
+where possible. Synthetic same-runtime-address/different-section fixtures
+ensure overlay code identities remain distinct; missing/truncated censuses
+are explicitly marked as incomplete. Rankings combine whole-run target count
+deltas with room-picker, changed-RAM and near-time context observations, but
+do not claim any of these as causal evidence for native action acceptance.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |

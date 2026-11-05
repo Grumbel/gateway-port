@@ -615,6 +615,35 @@ accepted. `baseline_qualified` repeats the existing controlled comparison's
 status; this command cannot recover evidence from unstable controls. Before
 trusting a previously recorded study, run its `--compare-existing` check.
 
+### Rank the original-code leads from several controlled studies
+
+Once several stages/conditions have been replayed independently, compare the
+**section-qualified** original RTLink count changes across their completed
+`comparison.json` reports:
+
+```sh
+python3 tools/rank_picker_trial_targets.py \
+  build/picker-click-trials/drawer-open \
+  build/picker-click-trials/drawer-closed \
+  --plan build/ghidra/ghidra-plan.json --json \
+  > build/picker-click-trials/handler-leads.json
+```
+
+The optional verified overlay plan resolves runtime segment:offset targets
+back to original `GATEMAIN.OVL` offsets; an **exact** matching tracker entry
+can supply its known name and analysis state. The report ranks only qualified
+click experiments and lists changed-target frequency, net/absolute call
+differences, RAM changes, actual room selections, observed room object IDs
+and nearby *temporal* object-context references. Two overlay sections sharing
+a runtime address remain distinct original code identities. Missing or
+truncated native call censuses make ranking explicitly incomplete; malformed
+or out-of-bounds native targets are rejected. The first twelve occurrence
+examples for each original target retain the experiment filename, isolated
+trial name, exact screen coordinates and signed call-count delta, so the
+investigation can return directly to a reproducible click. This is prioritization for
+disassembly and follow-up live tracing, never a conclusion that the target
+was actually called *because* of the injected click.
+
 The runner writes `trial-plan.json` before starting the first guest; it hashes
 the walkthrough, probe, all original game resources (not unrelated DOS save
 files), optional imported save, input schedule and chosen coordinates.

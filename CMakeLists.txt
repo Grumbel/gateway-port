@@ -146,6 +146,8 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/picker_click_trials_tests.py)
     add_test(NAME picker-trial-state-match COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/match_picker_trial_states_tests.py)
+    add_test(NAME picker-trial-target-rank COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/rank_picker_trial_targets_tests.py)
     add_test(NAME gateway-original-assets COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/gateway_original_assets_tests.py
       --data ${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos
