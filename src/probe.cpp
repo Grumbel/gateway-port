@@ -79,11 +79,15 @@ struct State {
     std::ofstream picker_trace;
     std::ofstream picker_follow_trace;
     gateway::PickerFollowGate picker_follow_gate;
+    gateway::PickerDispatchWindow picker_dispatch_window;
     unsigned picker_follow_steps = 96;
+    unsigned picker_dispatch_ms = 2000;
     unsigned picker_follow_calls = 0, picker_follow_completed = 0;
     unsigned picker_follow_interrupted = 0, picker_follow_missed = 0;
     unsigned picker_follow_errors = 0;
     unsigned picker_follow_writes = 0, picker_follow_write_errors = 0;
+    unsigned picker_dispatches = 0, picker_dispatch_errors = 0;
+    bool debug_native_picker = false;
     struct PickerFrame {
         int x = 0, y = 0;
         std::uint16_t return_ip = 0, return_cs = 0;
@@ -1044,6 +1048,7 @@ void trace_picker(uc_engine *uc, std::uint64_t address, std::uint32_t,
     constexpr std::uint64_t picker_return = picker_start + (0x14244 - 0x14186);
     try {
         if (address == picker_start) {
+            state.picker_dispatch_window.clear(); // A newer picker supersedes this click.
             if (state.picker_frame)
                 throw std::runtime_error("nested or unfinished native picker invocation");
             if (state.picker_follow_trace.is_open() && state.picker_follow_gate.active()) {
@@ -1168,6 +1173,9 @@ void trace_picker(uc_engine *uc, std::uint64_t address, std::uint32_t,
                                    << '\t' << observation.native_object_id << '\t'
                                    << observation.enabled_overlaps << '\n';
             }
+            if (state.picker_follow_trace.is_open() || state.debug_native_picker)
+                state.picker_dispatch_window.arm(state.picker_calls, state.elapsed_ms,
+                                                 state.picker_dispatch_ms);
         }
     } catch (const std::exception &error) {
         // This is an observational tool: a failed inference must never
@@ -1261,6 +1269,91 @@ void trace_picker_follow_write(uc_engine *, uc_mem_type type, std::uint64_t addr
         state.picker_follow_trace << "# write-error call=" << instruction->call
                                   << " step=" << instruction->step
                                   << " detail=" << error.what() << '\n';
+    }
+}
+
+// These two *known* resident Gateway 1 call sites are independent of the
+// bounded CODE sampling window. Only correlate them with the last completed
+// picker in a short guest-time window. A temporal match is not proof that the
+// click caused the action (or that its result was accepted).
+void trace_picker_dispatch(uc_engine *uc, std::uint64_t address, std::uint32_t,
+                           void *opaque) noexcept {
+    auto &state = *static_cast<State *>(opaque);
+    const auto match = state.picker_dispatch_window.match(state.elapsed_ms);
+    if (!match)
+        return;
+    try {
+        const auto cs = reg(uc, UC_X86_REG_CS);
+        const char *kind = nullptr;
+        std::uint16_t action = 0, first = 0, second = 0;
+        std::uint16_t target_ip = 0, target_cs = 0;
+        if (address == 0x101a4 && cs == 0x1000) {
+            // exe:0x105e, resident action-context coordinator. The stack
+            // contains action/event and two object IDs at its far-call entry.
+            std::array<std::uint8_t, 3> prologue{};
+            check(uc_mem_read(uc, address, prologue.data(), prologue.size()));
+            if (prologue != std::array<std::uint8_t, 3>{0x55, 0x8b, 0xec})
+                return; // Unrelated code can occupy the same linear address.
+            const auto ss = reg(uc, UC_X86_REG_SS), sp = reg(uc, UC_X86_REG_SP);
+            auto stack_word = [&](unsigned offset) {
+                std::uint16_t result = 0;
+                check(uc_mem_read(uc, std::uint32_t(ss) * 16 +
+                                      std::uint16_t(sp + offset), &result, sizeof(result)));
+                return result;
+            };
+            action = stack_word(4);
+            first = stack_word(6);
+            second = stack_word(8);
+            kind = "context";
+        } else if (address == 0x147c0 && cs == 0x1476) {
+            // exe:0x59ae, ES:[BX+0x28], original indirect far action CALL.
+            std::array<std::uint8_t, 5> instruction{};
+            check(uc_mem_read(uc, address, instruction.data(), instruction.size()));
+            if (instruction != std::array<std::uint8_t, 5>{0x26, 0xff, 0x9f, 0x28, 0x00})
+                return;
+            const auto index = reg(uc, UC_X86_REG_BX);
+            if (index % 6 != 0 || index / 6 < 1 || index / 6 > 195)
+                throw std::runtime_error("invalid original action table index");
+            action = index / 6;
+            const auto pointer = std::uint32_t(reg(uc, UC_X86_REG_ES)) * 16 +
+                                 std::uint16_t(index + 0x28);
+            if (pointer + 4 > 0xa0000)
+                throw std::runtime_error("original action pointer outside conventional RAM");
+            std::array<std::uint16_t, 2> target{};
+            check(uc_mem_read(uc, pointer, target.data(), sizeof(target)));
+            target_ip = target[0];
+            target_cs = target[1];
+            kind = "action-table";
+        } else {
+            return;
+        }
+        if (state.picker_observation) {
+            state.picker_observation->downstream_candidate =
+                gateway::DebugPickerObservation::DispatchCandidate{
+                    address == 0x147c0, action, first, second, target_cs, target_ip,
+                    match->age_ms};
+        }
+        if (state.picker_follow_trace.is_open()) {
+            state.picker_follow_trace << "# dispatch call=" << match->call
+                                      << " ms=" << state.elapsed_ms
+                                      << " age=" << match->age_ms
+                                      << " kind=" << kind
+                                      << " action=" << std::hex << action
+                                      << " first=" << first << " second=" << second
+                                      << " target=" << target_cs << ':' << target_ip
+                                      << std::dec << '\n';
+            ++state.picker_dispatches;
+        }
+    } catch (const std::exception &error) {
+        if (state.picker_follow_trace.is_open()) {
+            ++state.picker_dispatch_errors;
+            state.picker_follow_trace << "# dispatch-error call=" << match->call
+                                      << " ms=" << state.elapsed_ms
+                                      << " detail=" << error.what() << '\n';
+        } else {
+            state.debug_status = std::string("Native dispatch observation failed: ") +
+                                 error.what();
+        }
     }
 }
 
@@ -2237,6 +2330,8 @@ int main(int argc, char **argv) {
     std::string trace_picker_follow_path;
     unsigned picker_follow_steps = 96;
     bool picker_follow_steps_used = false;
+    unsigned picker_dispatch_ms = 2000;
+    bool picker_dispatch_ms_used = false;
     bool debug_native_picker = false;
     std::filesystem::path key_script_path;
     bool key_at_used = false;
@@ -2283,7 +2378,8 @@ int main(int argc, char **argv) {
                      "[--trace-rtlink-calls FILE] "
                      "[--trace-rtlink-sequence FILE] "
                      "[--trace-picker FILE] [--debug-native-picker] "
-                     "[--trace-picker-follow FILE --picker-follow-steps N] "
+                     "[--trace-picker-follow FILE --picker-follow-steps N "
+                     "--picker-dispatch-ms N] "
                      "[--key-script FILE --milliseconds N] "
                      "[--dump-at MS:PREFIX ...] "
                      "[--mouse-click-at MS:X:Y ...] "
@@ -2391,6 +2487,16 @@ int main(int argc, char **argv) {
             if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() ||
                 picker_follow_steps < 1 || picker_follow_steps > 1024) {
                 usage();
+                return 2;
+            }
+        } else if (option == "--picker-dispatch-ms" && i + 1 < argc) {
+            picker_dispatch_ms_used = true;
+            const auto value = std::string_view(argv[++i]);
+            const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(),
+                                                     picker_dispatch_ms);
+            if (error != std::errc{} || end != value.data() + value.size() ||
+                picker_dispatch_ms < 1 || picker_dispatch_ms > 20000) {
+                std::cerr << "--picker-dispatch-ms requires an integer from 1 to 20000\n";
                 return 2;
             }
         } else if (option == "--trace-rgn-dos" || option == "--trace-rgn-memory")
@@ -2775,6 +2881,11 @@ int main(int argc, char **argv) {
         std::cerr << "--picker-follow-steps requires --trace-picker-follow FILE\n";
         return 2;
     }
+    if (picker_dispatch_ms_used && trace_picker_follow_path.empty() && !debug_native_picker) {
+        std::cerr << "--picker-dispatch-ms requires --trace-picker-follow or "
+                     "--debug-native-picker\n";
+        return 2;
+    }
     try {
         std::ifstream file(argv[1], std::ios::binary);
         if (!file)
@@ -2782,9 +2893,11 @@ int main(int argc, char **argv) {
         std::vector<std::uint8_t> bytes{std::istreambuf_iterator<char>(file), {}};
         auto image = gateway::load_mz(bytes);
         State state;
+        state.debug_native_picker = debug_native_picker;
         if (deterministic_clock)
             state.clock = gateway::DosClock::deterministic();
         state.trace_video = trace_video;
+        state.picker_dispatch_ms = picker_dispatch_ms;
         state.probe_adlib = probe_adlib;
         state.trace_entry_start_ms = trace_entry_start_ms;
         state.trace_entry_end_ms = trace_entry_end_ms;
@@ -3018,11 +3131,20 @@ int main(int argc, char **argv) {
         }
         uc_hook picker_follow_hook{};
         uc_hook picker_follow_write_hook{};
+        std::array<uc_hook, 2> picker_dispatch_hooks{};
         if (state.picker_follow_trace.is_open()) {
             check(uc_hook_add(engine.uc, &picker_follow_hook, UC_HOOK_CODE,
                               reinterpret_cast<void *>(trace_picker_follow), &state, 1, 0));
             check(uc_hook_add(engine.uc, &picker_follow_write_hook, UC_HOOK_MEM_WRITE,
                               reinterpret_cast<void *>(trace_picker_follow_write), &state, 1, 0));
+        }
+        if (state.picker_follow_trace.is_open() || debug_native_picker) {
+            for (std::size_t i = 0; i < picker_dispatch_hooks.size(); ++i) {
+                const auto at = i == 0 ? 0x101a4 : 0x147c0;
+                check(uc_hook_add(engine.uc, &picker_dispatch_hooks[i], UC_HOOK_CODE,
+                                  reinterpret_cast<void *>(trace_picker_dispatch), &state,
+                                  at, at));
+            }
         }
         std::array<uc_hook, 10> object_hooks{};
         if (!object_flags_mode.empty()) {
@@ -3271,6 +3393,8 @@ int main(int argc, char **argv) {
                     debug_overlay.native_picker_monitoring = debug_native_picker ||
                                                               state.picker_trace.is_open() ||
                                                               state.picker_follow_trace.is_open();
+                    debug_overlay.downstream_monitoring = debug_native_picker ||
+                                                          state.picker_follow_trace.is_open();
                     debug_overlay.native_picker = state.picker_observation;
                     debug_overlay.native_picker_error = state.picker_error;
                     debug_overlay.dump_message = state.debug_status;
@@ -3421,7 +3545,10 @@ int main(int argc, char **argv) {
                                       << " pending=" << (state.picker_follow_gate.active() ? 1 : 0)
                                       << " steps=" << state.picker_follow_steps
                                       << " writes=" << state.picker_follow_writes
-                                      << " write_errors=" << state.picker_follow_write_errors << '\n';
+                                      << " write_errors=" << state.picker_follow_write_errors
+                                      << " dispatches=" << state.picker_dispatches
+                                      << " dispatch_errors=" << state.picker_dispatch_errors
+                                      << " dispatch_ms=" << state.picker_dispatch_ms << '\n';
             state.picker_follow_trace.close();
             if (!state.picker_follow_trace)
                 throw std::runtime_error("cannot write native picker continuation trace");

@@ -65,6 +65,26 @@ int main() try {
     gate.observe(0x12345);
     gate.clear();
     require(!gate.current_instruction(), "forced abort must clear store attribution");
+    gateway::PickerDispatchWindow dispatch;
+    require(!dispatch.match(100), "dispatch association is opt-in");
+    dispatch.arm(23, 100, 2000);
+    require(dispatch.match(100) && dispatch.match(100)->call == 23 &&
+                dispatch.match(100)->age_ms == 0,
+            "picker dispatch window begins at the native return timestamp");
+    require(dispatch.match(2100) && dispatch.match(2100)->age_ms == 2000,
+            "inclusive age limit retains the last candidate");
+    require(!dispatch.match(2101) && !dispatch.active(),
+            "old clicks must not be associated with unrelated later actions");
+    dispatch.arm(24, 3000, 2000);
+    dispatch.arm(25, 3100, 2000);
+    require(dispatch.match(3101) && dispatch.match(3101)->call == 25,
+            "a second picker supersedes the previous temporal association");
+    dispatch.clear();
+    require(!dispatch.match(3110), "new picker entry invalidates old dispatch candidates");
+    dispatch.arm(26, 3000, 2000);
+    require(!dispatch.match(2999), "time reversal invalidates the association");
+    dispatch.arm(27, 100, 0);
+    require(!dispatch.match(100), "zero-size dispatch windows remain disabled");
     std::cout << "Gateway bounded picker continuation checks passed\n";
 } catch (const std::exception &error) {
     std::cerr << error.what() << '\n';

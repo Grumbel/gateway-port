@@ -81,4 +81,36 @@ class PickerFollowGate {
     std::uint64_t return_linear_ = 0, retf_linear_ = 0;
 };
 
+// A candidate native dispatch can be associated with the most recent
+// completed picker only while this short guest-time window is active. An
+// association is temporal evidence, never proof of a causal click dispatch.
+class PickerDispatchWindow {
+  public:
+    struct Match {
+        unsigned call;
+        unsigned age_ms;
+    };
+    void arm(unsigned call, unsigned now_ms, unsigned limit_ms) {
+        call_ = call;
+        start_ms_ = now_ms;
+        limit_ms_ = limit_ms;
+        active_ = limit_ms != 0;
+    }
+    void clear() { active_ = false; }
+    bool active() const { return active_; }
+    std::optional<Match> match(unsigned now_ms) {
+        if (!active_)
+            return {};
+        if (now_ms < start_ms_ || now_ms - start_ms_ > limit_ms_) {
+            active_ = false;
+            return {};
+        }
+        return Match{call_, now_ms - start_ms_};
+    }
+
+  private:
+    bool active_ = false;
+    unsigned call_ = 0, start_ms_ = 0, limit_ms_ = 0;
+};
+
 } // namespace gateway

@@ -142,11 +142,11 @@ void draw_native_picker_observation(std::span<std::uint32_t> image, int width, i
     // above the original bottom scrollbar controls. Never replace the
     // winner-map hover legend: that represents a different kind of evidence.
     const int right = std::min(width - 2, 283);
-    const int top = std::max(2, height - 91);
+    const int top = std::max(2, height - 105);
     if (right <= 4)
         return;
-    rect(image, width, height, 2, top, right, top + 53, panel, true);
-    rect(image, width, height, 2, top, right, top + 53, border, false);
+    rect(image, width, height, 2, top, right, top + 67, panel, true);
+    rect(image, width, height, 2, top, right, top + 67, border, false);
     char line[128];
     if (!data.native_picker_error.empty()) {
         text(image, width, height, 8, top + 6, "Native picker capture ERROR", failure, 33);
@@ -190,6 +190,21 @@ void draw_native_picker_observation(std::span<std::uint32_t> image, int width, i
         text(image, width, height, 8, top + 40, line, muted, 33);
     } else {
         text(image, width, height, 8, top + 40, "Model: table not decoded", muted, 33);
+    }
+    if (pick.downstream_candidate) {
+        const auto &candidate = *pick.downstream_candidate;
+        if (candidate.action_table)
+            std::snprintf(line, sizeof line, "Candidate action %02x -> %04x:%04x +%ums",
+                          candidate.action, candidate.target_cs, candidate.target_ip,
+                          candidate.age_ms);
+        else
+            std::snprintf(line, sizeof line, "Candidate context %02x obj %x,%x +%ums",
+                          candidate.action, candidate.first, candidate.second, candidate.age_ms);
+        text(image, width, height, 8, top + 53, line, accent, 33);
+    } else if (data.downstream_monitoring) {
+        text(image, width, height, 8, top + 53, "Dispatch: no candidate observed", muted, 33);
+    } else {
+        text(image, width, height, 8, top + 53, "Dispatch: monitoring disabled", muted, 33);
     }
     // Only mark *recent* actual invocations on the map. The current cursor
     // may have moved since the original picker ran; don't label it as native.

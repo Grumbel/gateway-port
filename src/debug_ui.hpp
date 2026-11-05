@@ -32,6 +32,15 @@ struct DebugPickerObservation {
     std::optional<DebugPickerControl> native_row;
     std::uint16_t native_object_id = 0; // Only a fully aligned room RGN association.
     unsigned enabled_overlaps = 0;
+    struct DispatchCandidate {
+        bool action_table = false;
+        std::uint16_t action = 0, first = 0, second = 0;
+        std::uint16_t target_cs = 0, target_ip = 0;
+        unsigned age_ms = 0;
+    };
+    // Last matching resident dispatch site within the bounded post-pick
+    // window. Temporal observation, NOT proof this click caused the dispatch.
+    std::optional<DispatchCandidate> downstream_candidate;
 };
 enum class DebugPickerVerdict { match, mismatch, unmodeled };
 DebugPickerVerdict debug_picker_verdict(const DebugPickerObservation &observation);
@@ -45,6 +54,7 @@ struct DebugOverlayData {
     std::string dump_message;
     unsigned guest_ms = 0;
     bool native_picker_monitoring = false;
+    bool downstream_monitoring = false;
     std::optional<DebugPickerObservation> native_picker;
     std::string native_picker_error;
 };
