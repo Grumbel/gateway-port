@@ -974,6 +974,15 @@ highlighted room object; it preserves older traces as geometry-unavailable.
 Synthetic C++ serialization and Python analysis regressions pass. Actual
 original-code picker returns remain pending on a host with Unicorn/SDL3.
 
+Conditional-picker follow-up: `compare_picker_scene.py` now contrasts two
+frozen tables for the same PIC frame, rejects changes in geometry or unknown
+RGN association, and measures native winner pixels independently of the H
+overlay's merged object pixels. It lists actual differing screen coordinates
+for separate same-save click trials, with JSON output for an automation
+driver. Synthetic before/after drawer-like skip-bit swaps, GUI overlap,
+anonymous shape ownership, and same-object merge tests pass; no unrecorded
+native game result is claimed.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |

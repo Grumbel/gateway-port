@@ -417,6 +417,31 @@ as geometry-unavailable. This diagnoses scene mapping, clipping, overlap and
 conditional-flag discrepancies; it still cannot establish that the scene
 image was drawn or that a downstream handler accepted the mouse click.
 
+For two picker calls with the **same** PIC/frame but different conditional
+flags (for example, before and after opening the first-room drawer), compare
+the frozen scene maps without replaying the old state from scratch:
+
+```sh
+python3 tools/compare_picker_scene.py build/picker-follow/continuation.tsv \
+  --before 1 --after 2
+# To obtain candidate screen pixels for separate controlled click trials:
+python3 tools/compare_picker_scene.py build/picker-follow/continuation.tsv \
+  --before 1 --after 2 --json
+```
+
+The comparison requires an identical aligned room group and rectangle
+geometry; it refuses to attribute scene transitions or unmapped tables to
+conditional skip flags. It rasterizes the original last-enabled native
+winner **and** the merged-by-object H owner over the 379×232 scene viewport.
+Its output counts H gains, losses and object changes independently of native
+selection changes, and identifies cases where two native rows change winners
+but the scene highlight remains one object. Representative coordinates are
+actual changed pixels, including overlapping GUI-vs-room candidates. Test
+each coordinate in a **separate run from the same restored guest state**;
+clicking them sequentially would alter game state and invalidate the
+comparison. A flipped native skip bit remains only selection eligibility,
+not proof that the scene was rendered or an action was accepted.
+
 The F10 native-picker panel shows the last observed dispatcher candidate as
 its fifth row and the nearest preceding guest `INT 33h` read as a sixth,
 when monitoring with `--debug-native-picker` or `--trace-picker-follow`.
