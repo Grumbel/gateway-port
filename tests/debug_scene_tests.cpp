@@ -53,6 +53,11 @@ int main(int argc, char **argv) try {
             "Gateway room-picture RGN mapping");
     require(gateway::DebugSceneTracker::matching_rgn("GATE_315.PIC") == "GATE_315.RGN",
             "non-1xx RGN mapping");
+    require(gateway::DebugSceneTracker::matching_rgn("GATE_000.PIC") == "GATE_000.RGN" &&
+                gateway::DebugSceneTracker::matching_rgn("GATE_099.PIC") == "GATE_099.RGN" &&
+                gateway::DebugSceneTracker::matching_rgn("GATE_199.PIC") == "GATE_099.RGN" &&
+                gateway::DebugSceneTracker::matching_rgn("GATE_999.PIC") == "GATE_999.RGN",
+            "fixed-width RGN names retain all three digits at the boundaries");
     require(gateway::DebugSceneTracker::matching_rgn("C:S301_107.PIC") == "S301_007.RGN" &&
                 gateway::DebugSceneTracker::matching_rgn("HOME_115.PIC") == "HOME_015.RGN" &&
                 gateway::DebugSceneTracker::matching_rgn("HOME_304.PIC") == "HOME_304.RGN",

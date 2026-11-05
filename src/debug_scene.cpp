@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
-#include <cstdio>
 #include <stdexcept>
 
 namespace gateway {
@@ -313,9 +312,14 @@ std::string DebugSceneTracker::matching_rgn(const std::string &picture) {
         std::isdigit(static_cast<unsigned char>(file[7]))) {
         const int number = (file[5] - '0') * 100 + (file[6] - '0') * 10 + file[7] - '0';
         const int candidate = number >= 100 && number < 200 ? number - 100 : number;
-        char name[16];
-        std::snprintf(name, sizeof name, "%s%03d.RGN", file.substr(0, 5).c_str(), candidate);
-        return name;
+        // candidate is proven to be 0..999 by the three digit checks above.
+        // Construct the fixed-width filename directly; snprintf's generic
+        // range analysis warns about a theoretically truncated destination.
+        std::string name = file.substr(0, 5);
+        name.push_back(char('0' + candidate / 100));
+        name.push_back(char('0' + (candidate / 10) % 10));
+        name.push_back(char('0' + candidate % 10));
+        return name + ".RGN";
     }
     if (file.size() == 11 && file[0] == 'S' &&
         (file.substr(0, 4) == "S101" || file.substr(0, 4) == "S201") &&
