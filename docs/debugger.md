@@ -648,6 +648,45 @@ investigation can return directly to a reproducible click. This is prioritizatio
 disassembly and follow-up live tracing, never a conclusion that the target
 was actually called *because* of the injected click.
 
+### Require the same captured picker condition before ranking
+
+The basic ranking above intentionally includes every baseline-qualified
+experiment, even if its frozen picker rows later proved to represent a
+different room or disabled-rectangle state. For a conditional-hitbox
+investigation, regenerate each read-only state check from its actual
+reference capture (one separate reference per condition/study), then supply
+one state report **for each** ranked study:
+
+```sh
+python3 tools/match_picker_trial_states.py \
+  build/picker-entry/open-captures build/picker-click-trials/drawer-open \
+  --reference-call 2 > build/picker-click-trials/drawer-open-state-check.json
+python3 tools/match_picker_trial_states.py \
+  build/picker-entry/closed-captures build/picker-click-trials/drawer-closed \
+  --reference-call 2 > build/picker-click-trials/drawer-closed-state-check.json
+python3 tools/rank_picker_trial_targets.py \
+  build/picker-click-trials/drawer-open \
+  build/picker-click-trials/drawer-closed \
+  --state-check build/picker-click-trials/drawer-open=build/picker-click-trials/drawer-open-state-check.json \
+  --state-check build/picker-click-trials/drawer-closed=build/picker-click-trials/drawer-closed-state-check.json \
+  --plan build/ghidra/ghidra-plan.json --json
+```
+
+`--state-check` enables a strict **matching picker state** ranking scope.
+Each state report is matched against the exact original `trial-plan.json`
+and `comparison.json` byte hashes; stale, mismatched, mislabelled and
+partially supplied reports fail closed. A qualifying trial must have at
+least one original picker call at the injected coordinate **and every such
+call** must have `matching_skip_mask` against the capture, including GUI
+skip bits. If even one call reflects a changed room/GUI mask, scene, geometry
+or missing picker data, that trial is excluded. The JSON records qualified
+baseline trials, state-matched trials and exclusions by reason separately.
+The matcher currently emits `gateway-picker-state-check-v1` reports; older
+pre-hash state reports must be regenerated from the original recordings.
+This verifies the picker's *condition*, not painted visibility, click
+acceptance or causal action execution. The unfiltered command remains
+available for investigating independent scene conditions.
+
 The runner writes `trial-plan.json` before starting the first guest; it hashes
 the walkthrough, probe, all original game resources (not unrelated DOS save
 files), optional imported save, input schedule and chosen coordinates.

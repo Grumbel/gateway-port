@@ -1084,6 +1084,18 @@ fallback build and limitations are recorded in
 [workspace-setup.md](workspace-setup.md). No native click-acceptance result
 or verified new C++ story routine is claimed.
 
+The next read-only conditional-hitbox analysis combines captured picker
+state matching with the RTLink ranker. The matcher now records SHA-256
+digests of the exact native study plan and comparison JSON, and the optional
+ranker `--state-check STUDY=REPORT` requires one valid report per study.
+Only baseline-qualified trials whose *every* original call at the injected
+point shares the captured scene geometry and complete room/GUI skip mask
+contribute to the filtered ranking. Mismatched conditions are counted by
+reason and cannot inflate candidates for the actual conditional state.
+Synthetic tests verify mixed-match rejection, stale-plan/report detection,
+incorrect labels, unknown statuses and out-of-window picker calls. This
+narrows leads without claiming a recovered downstream acceptance branch.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |

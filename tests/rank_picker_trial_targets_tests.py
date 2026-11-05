@@ -4,6 +4,7 @@
 
 """Synthetic original-identity RTLink ranking checks; no DOS guest needed."""
 
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -55,6 +56,33 @@ def write_study(directory, trials):
     return path
 
 
+def write_state_check(comparison, statuses):
+    report = json.loads(comparison.read_text())
+    assert len(statuses) == len(report['trials'])
+    plan = comparison.parent / 'trial-plan.json'
+    plan.write_text(json.dumps({'format': 'gateway-picker-click-trials-v1',
+                                'click_ms': 22000, 'post_ms': 25000,
+                                'points': [[row['x'], row['y']]
+                                           for row in report['trials']]}))
+    states = []
+    for row, statuses_at_point in zip(report['trials'], statuses):
+        calls = [{'call': index, 'ms': 23000, 'source': 'room',
+                  'object': 292, 'status': status}
+                 for index, status in enumerate(statuses_at_point, 1)]
+        states.append({'name': row['name'], 'x': row['x'], 'y': row['y'],
+                       'baseline_qualified': row['comparison_qualified'],
+                       'status': 'observed' if calls else 'no_matching_picker_call',
+                       'calls': calls})
+    state_path = comparison.parent / 'state-check.json'
+    state_path.write_text(json.dumps({
+        'format': 'gateway-picker-state-check-v1',
+        'reference_call': 2, 'click_ms': 22000, 'post_ms': 25000,
+        'trial_plan_sha256': hashlib.sha256(plan.read_bytes()).hexdigest(),
+        'comparison_sha256': hashlib.sha256(comparison.read_bytes()).hexdigest(),
+        'trials': states}))
+    return state_path
+
+
 with tempfile.TemporaryDirectory(prefix='gateway-picker-rank-test-') as temporary:
     root = Path(temporary)
     plan = root / 'ghidra-plan.json'
@@ -92,6 +120,97 @@ with tempfile.TemporaryDirectory(prefix='gateway-picker-rank-test-') as temporar
     assert other['original'] == 'ovl:0x013d5d' and not other['tracker_exact_entry']
     assert other['trials_with_delta'] == 2 and other['net_call_delta'] == 4
     assert len(rank_studies([first])['targets']) == 2  # no Ghidra needed
+
+    first_state = write_state_check(first, [
+        ['matching_skip_mask'],
+        ['matching_skip_mask', 'different_room_skip_mask'],
+        []])
+    second_state = write_state_check(second, [['matching_skip_mask']])
+    selected = rank_studies([first, second], sections, tracker, state_checks={
+        str(first.resolve()): first_state, str(second.resolve()): second_state})
+    assert selected['ranking_scope'] == 'matching_picker_state'
+    assert selected['qualified_trials'] == 3
+    assert selected['qualified_state_matched_trials'] == 2
+    assert selected['qualified_state_excluded_trials'] == 1
+    assert selected['state_exclusion_reasons'] == {'different_room_skip_mask': 1}
+    assert selected['ranking_is_complete']
+    assert selected['targets'][0]['trials_with_delta'] == 2
+    assert selected['targets'][1]['trials_with_delta'] == 1
+    assert selected['targets'][0]['room_objects'] == [292]
+    # An ambiguous sequence with one matching native call still gets excluded.
+    assert selected['targets'][0]['net_call_delta'] == 4
+
+    state_command = subprocess.run(
+        [sys.executable, str(TOOLS / 'rank_picker_trial_targets.py'), str(first),
+         '--state-check', f'{first.parent}={first_state}', '--json'],
+        capture_output=True, text=True, check=True)
+    state_json = json.loads(state_command.stdout)
+    assert state_json['qualified_state_matched_trials'] == 1
+    assert state_json['qualified_state_excluded_trials'] == 1
+
+    missing_check = {str(first.resolve()): first_state}
+    try:
+        rank_studies([first, second], state_checks=missing_check)
+    except ValueError as error:
+        assert 'no picker state check' in str(error)
+    else:
+        raise AssertionError('accepted unchecked second study in state-filtered ranking')
+    try:
+        rank_studies([first], state_checks={
+            str(first.resolve()): first_state, str(second.resolve()): second_state})
+    except ValueError as error:
+        assert 'unrequested' in str(error)
+    else:
+        raise AssertionError('accepted an unrelated picker state check')
+    original_state = first_state.read_text()
+    first_check = json.loads(original_state)
+    first_check['trials'][0]['x'] += 1
+    first_state.write_text(json.dumps(first_check))
+    try:
+        rank_studies([first], state_checks={str(first.resolve()): first_state})
+    except ValueError as error:
+        assert 'identity differs' in str(error)
+    else:
+        raise AssertionError('accepted a mislabelled reference state trial')
+    first_state.write_text(original_state)
+    first_check = json.loads(original_state)
+    first_check['trials'][0]['calls'][0]['status'] = 'unrecognized_future_status'
+    first_state.write_text(json.dumps(first_check))
+    try:
+        rank_studies([first], state_checks={str(first.resolve()): first_state})
+    except ValueError as error:
+        assert 'malformed picker state-check call' in str(error)
+    else:
+        raise AssertionError('accepted unknown reference picker verdict')
+    first_state.write_text(original_state)
+    first_check = json.loads(original_state)
+    first_check['trials'][0]['calls'][0]['ms'] = 26000
+    first_state.write_text(json.dumps(first_check))
+    try:
+        rank_studies([first], state_checks={str(first.resolve()): first_state})
+    except ValueError as error:
+        assert 'malformed picker state-check call' in str(error)
+    else:
+        raise AssertionError('accepted out-of-window native picker state')
+    first_state.write_text(original_state)
+    original_comparison = first.read_text()
+    first.write_text(original_comparison + '\n')
+    try:
+        rank_studies([first], state_checks={str(first.resolve()): first_state})
+    except ValueError as error:
+        assert 'provenance differs' in str(error)
+    else:
+        raise AssertionError('accepted a stale picker state check')
+    first.write_text(original_comparison)
+    original_plan = (first.parent / 'trial-plan.json').read_text()
+    (first.parent / 'trial-plan.json').write_text(original_plan + '\n')
+    try:
+        rank_studies([first], state_checks={str(first.resolve()): first_state})
+    except ValueError as error:
+        assert 'provenance differs' in str(error)
+    else:
+        raise AssertionError('accepted a stale picker trial plan')
+    (first.parent / 'trial-plan.json').write_text(original_plan)
 
     # The saved report intentionally truncates at 32 deltas. Verify every
     # omitted original section-qualified target is recovered from the actual

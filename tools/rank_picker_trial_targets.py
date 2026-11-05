@@ -11,6 +11,7 @@ the section-qualified, validated original Ghidra overlay plan.
 
 import argparse
 from collections import defaultdict
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -19,6 +20,7 @@ from decomp_status import read_tracker
 from inventory_native_handlers import map_entry
 from picker_click_trials import (compare_rtlink_counts, rtlink_census,
                                  rtlink_target_deltas)
+from report_picker_follow import SOURCES
 
 
 TARGET = re.compile(r'(\d+):([0-9a-f]{1,4}):([0-9a-f]{1,4})\Z')
@@ -91,7 +93,85 @@ def complete_target_rows(report, trial, summary):
     return rtlink_target_deltas(baseline, observed), True
 
 
-def rank_studies(paths, sections=None, tracked=None):
+VALID_PICKER_STATES = {
+    'matching_skip_mask', 'different_room_skip_mask',
+    'different_gui_skip_mask', 'different_scene', 'different_geometry',
+    'reference_unaligned', 'trial_unaligned', 'missing_picker_geometry',
+}
+
+
+def verified_state_matches(report, trials, state_path):
+    """Check matching-scene evidence is tied to this *exact* native study.
+
+    The state report is produced separately from the immutable click report.
+    Binding both SHA-256 values prevents accidentally combining a state check
+    from a different walkthrough, point list or revision of the recordings.
+    """
+    study = Path(report).parent
+    plan_file = study / 'trial-plan.json'
+    if not plan_file.is_file():
+        raise ValueError(f'{report}: missing picker trial manifest for state check')
+    plan = json.loads(plan_file.read_text(encoding='utf-8'))
+    check = json.loads(state_path.read_text(encoding='utf-8'))
+    if (not isinstance(plan, dict) or not isinstance(check, dict) or
+        plan.get('format') != 'gateway-picker-click-trials-v1' or
+        check.get('format') != 'gateway-picker-state-check-v1' or
+        type(plan.get('click_ms')) is not int or
+        type(plan.get('post_ms')) is not int or
+        not 0 <= plan['click_ms'] < plan['post_ms'] <= 3600000 or
+        type(check.get('reference_call')) is not int or
+        not 1 <= check['reference_call'] <= 128 or
+        check.get('click_ms') != plan.get('click_ms') or
+        check.get('post_ms') != plan.get('post_ms') or
+        check.get('trial_plan_sha256') != hashlib.sha256(plan_file.read_bytes()).hexdigest() or
+        check.get('comparison_sha256') != hashlib.sha256(Path(report).read_bytes()).hexdigest()):
+        raise ValueError(f'{state_path}: picker state check provenance differs from '
+                         'the recorded study (regenerate with match_picker_trial_states.py)')
+    states = check.get('trials')
+    if not isinstance(states, list) or len(states) != len(trials):
+        raise ValueError(f'{state_path}: incomplete picker state-check trials')
+    matches = {}
+    for trial, state in zip(trials, states):
+        if (not isinstance(state, dict) or
+            any(state.get(field) != trial.get(field)
+                for field in ('name', 'x', 'y')) or
+            type(state.get('baseline_qualified')) is not bool or
+            state['baseline_qualified'] != trial.get('comparison_qualified')):
+            raise ValueError(f'{state_path}: picker state-check trial identity differs')
+        status = state.get('status')
+        calls = state.get('calls')
+        if (status not in ('observed', 'missing_picker_trace',
+                           'no_matching_picker_call') or
+            not isinstance(calls, list) or bool(calls) != (status == 'observed')):
+            raise ValueError(f'{state_path}: malformed picker state-check observations')
+        seen_calls = set()
+        observed = []
+        for call in calls:
+            if (not isinstance(call, dict) or
+                type(call.get('call')) is not int or call['call'] <= 0 or
+                call['call'] in seen_calls or
+                type(call.get('ms')) is not int or
+                not plan['click_ms'] <= call['ms'] <= plan['post_ms'] or
+                call.get('source') not in SOURCES or
+                (call.get('object') is not None and (
+                    type(call['object']) is not int or
+                    not 0 <= call['object'] <= 0xffff)) or
+                call.get('status') not in VALID_PICKER_STATES):
+                raise ValueError(f'{state_path}: malformed picker state-check call')
+            seen_calls.add(call['call'])
+            observed.append(call['status'])
+        if observed:
+            # Ambiguous multiple picks are *not* a successful state match
+            # unless every call at these coordinates agrees with reference.
+            matches[trial['name']] = ('matching_skip_mask' if all(
+                value == 'matching_skip_mask' for value in observed)
+                else ','.join(sorted(set(observed) - {'matching_skip_mask'})))
+        else:
+            matches[trial['name']] = status
+    return matches
+
+
+def rank_studies(paths, sections=None, tracked=None, *, state_checks=None):
     if not paths:
         raise ValueError('provide one or more completed controlled click studies')
     tracked = tracked or {}
@@ -102,11 +182,18 @@ def rank_studies(paths, sections=None, tracked=None):
                                    'studies': set(), 'examples': []})
     seen = set()
     qualified = inconclusive = incomplete = recovered = validated = missing = 0
+    state_matched = state_excluded = 0
+    state_exclusions = defaultdict(int)
     for argument in paths:
         name, trials = study_trials(argument)
         if name in seen:
             raise ValueError(f'duplicate controlled click report {name}')
         seen.add(name)
+        states = None
+        if state_checks is not None:
+            if name not in state_checks:
+                raise ValueError(f'{name}: no picker state check supplied for this study')
+            states = verified_state_matches(name, trials, Path(state_checks[name]))
         trial_names = set()
         for trial in trials:
             if not isinstance(trial, dict) or type(trial.get('comparison_qualified')) is not bool:
@@ -122,6 +209,12 @@ def rank_studies(paths, sections=None, tracked=None):
                 inconclusive += 1
                 continue
             qualified += 1
+            if states is not None:
+                if states[trial['name']] != 'matching_skip_mask':
+                    state_excluded += 1
+                    state_exclusions[states[trial['name']]] += 1
+                    continue
+                state_matched += 1
             delta = trial.get('rtlink_diff', {})
             if not delta.get('available'):
                 missing += 1
@@ -172,6 +265,8 @@ def rank_studies(paths, sections=None, tracked=None):
                                              'x': trial['x'], 'y': trial['y'],
                                              'delta': row['delta']})
 
+    if state_checks is not None and set(state_checks) != seen:
+        raise ValueError('picker state checks include an unrequested click study')
     ranked = []
     for key, record in targets.items():
         identity = target_identity(key, sections, tracked)
@@ -188,6 +283,11 @@ def rank_studies(paths, sections=None, tracked=None):
                                   -row['total_absolute_delta'], row['target']))
     return {'studies': len(seen), 'qualified_trials': qualified,
             'inconclusive_trials': inconclusive,
+            'ranking_scope': ('matching_picker_state' if state_checks is not None
+                              else 'all_qualified'),
+            'qualified_state_matched_trials': state_matched if state_checks is not None else None,
+            'qualified_state_excluded_trials': state_excluded if state_checks is not None else None,
+            'state_exclusion_reasons': dict(sorted(state_exclusions.items())),
             'qualified_missing_censuses': missing,
             'qualified_truncated_censuses': incomplete + recovered,
             'validated_raw_census_pairs': validated,
@@ -206,6 +306,10 @@ def main():
     parser.add_argument('--tracker', type=Path,
                         default=Path(__file__).resolve().parents[1] /
                                 'decomp/functions.tsv')
+    parser.add_argument('--state-check', action='append', default=[],
+                        metavar='STUDY=REPORT',
+                        help='require matching frozen picker condition from a verified '
+                             'match_picker_trial_states.py JSON (one per study)')
     parser.add_argument('--limit', type=int, default=40)
     parser.add_argument('--json', action='store_true')
     args = parser.parse_args()
@@ -214,7 +318,20 @@ def main():
             raise ValueError('--limit must be 0..10000 (0 means all)')
         tracker = {int(row['offset'], 16): row for row in read_tracker(args.tracker)
                    if row['file'] == 'ovl'}
-        results = rank_studies(args.studies, read_plan(args.plan), tracker)
+        checks = {}
+        for spec in args.state_check:
+            study, sep, report = spec.partition('=')
+            if not sep or not study or not report:
+                raise ValueError('use --state-check STUDY=REPORT')
+            study_file = Path(study)
+            if study_file.is_dir():
+                study_file /= 'comparison.json'
+            key = str(study_file.resolve())
+            if key in checks:
+                raise ValueError(f'duplicate picker state check for {key}')
+            checks[key] = Path(report)
+        results = rank_studies(args.studies, read_plan(args.plan), tracker,
+                               state_checks=checks if checks else None)
         if args.json:
             print(json.dumps(results, indent=2))
             return
@@ -224,6 +341,11 @@ def main():
               f'{results["unrecovered_truncated_censuses"]} unrecovered truncated lists, '
               f'{results["recovered_truncated_censuses"]} recovered lists, '
               f'{results["validated_raw_census_pairs"]} validated raw census pairs')
+        if checks:
+            print(f'Matching frozen picker state: '
+                  f'{results["qualified_state_matched_trials"]} included, '
+                  f'{results["qualified_state_excluded_trials"]} excluded; '
+                  f'reasons: {results["state_exclusion_reasons"]}')
         for item in results['targets'][:args.limit or None]:
             identity = item.get('original', item['target'])
             label = item.get('name') or '(untracked)'
