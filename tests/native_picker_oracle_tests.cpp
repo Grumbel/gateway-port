@@ -15,6 +15,7 @@
 #include <iterator>
 #include <map>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -94,7 +95,8 @@ std::map<std::string, std::string> read_metadata(const std::filesystem::path &pa
 }
 
 std::size_t compare_captured_picker(const std::filesystem::path &original,
-                                    const std::filesystem::path &capture_meta) {
+                                    const std::filesystem::path &capture_meta,
+                                    const std::set<std::pair<int, int>> &extra_points) {
     const auto details = read_metadata(capture_meta);
     const auto memory_path = capture_meta.parent_path() /
         (capture_meta.stem().string() + ".bin");
@@ -131,6 +133,7 @@ std::size_t compare_captured_picker(const std::filesystem::path &original,
 
     std::set<std::pair<int, int>> points;
     points.emplace(std::stoi(details.at("x")), std::stoi(details.at("y")));
+    points.insert(extra_points.begin(), extra_points.end());
     for (int y = 0; y < 480; y += 19)
         for (int x = 0; x < 640; x += 17)
             points.emplace(x, y);
@@ -174,9 +177,30 @@ int main(int argc, char **argv) try {
         std::cout << "native picker oracle skipped: provide original-game and RAM directories\n";
         return 77;
     }
-    if (argc == 4 && std::string(argv[2]) == "--captured") {
+    if ((argc == 4 || (argc == 6 && std::string(argv[4]) == "--points")) &&
+        std::string(argv[2]) == "--captured") {
         const std::filesystem::path original = argv[1], captures = argv[3];
         require(std::filesystem::is_directory(captures), "no picker capture directory");
+        std::map<unsigned, std::set<std::pair<int, int>>> extra_points;
+        if (argc == 6) {
+            std::ifstream file(argv[5]);
+            require(bool(file), "cannot open picker oracle points TSV");
+            std::string line;
+            require(bool(std::getline(file, line)) && line == "call\tx\ty",
+                    "invalid picker oracle points header");
+            unsigned total = 0;
+            while (std::getline(file, line)) {
+                std::istringstream row(line);
+                unsigned call = 0;
+                int x = 0, y = 0;
+                std::string trailing;
+                require(bool(row >> call >> x >> y) && !(row >> trailing) &&
+                        call >= 1 && call <= 128 && x >= 0 && x < 640 &&
+                        y >= 0 && y < 480 && ++total <= 10000,
+                        "invalid picker oracle sample row");
+                extra_points[call].emplace(x, y);
+            }
+        }
         std::vector<std::filesystem::path> entries;
         for (const auto &item : std::filesystem::directory_iterator(captures))
             if (item.is_regular_file() && item.path().extension() == ".meta")
@@ -184,15 +208,20 @@ int main(int argc, char **argv) try {
         std::sort(entries.begin(), entries.end());
         require(!entries.empty(), "no native picker entry captures found");
         std::size_t comparisons = 0;
-        for (const auto &entry : entries)
-            comparisons += compare_captured_picker(original, entry);
+        for (const auto &entry : entries) {
+            const auto capture_call = std::stoul(entry.stem().string().substr(5));
+            comparisons += compare_captured_picker(original, entry,
+                                                  extra_points[unsigned(capture_call)]);
+            extra_points.erase(unsigned(capture_call));
+        }
+        require(extra_points.empty(), "oracle points reference a missing capture");
         std::cout << "Gateway native picker oracle: " << entries.size() << " captures, "
                   << comparisons << " original-code comparisons passed\n";
         return 0;
     }
     require(argc == 3,
             "usage: native-picker-oracle-tests GATEWAY-DOS RAM-CAPTURES\n"
-            "   or: native-picker-oracle-tests GATEWAY-DOS --captured DIR");
+            "   or: native-picker-oracle-tests GATEWAY-DOS --captured DIR [--points TSV]");
     const std::filesystem::path original = argv[1], captures = argv[2];
     if (captures == "--captured")
         throw std::runtime_error("--captured requires a capture directory");

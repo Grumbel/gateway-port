@@ -1003,6 +1003,11 @@ It reports native winner changes and merged-by-object scene highlight changes
 separately, reusing the existing independent raster oracle. Synthetic
 repeated-state, GUI overlap, missing return/RAM and provenance-corruption
 cases pass. Native capture and actual click acceptance remain to be verified.
+The comparator can also emit a per-capture oracle point list for every changed
+screen-pixel signature in its compared transitions; the native Unicorn oracle
+accepts that list to replay the exact candidate pixels against both entry
+states, beyond its fixed grid and rectangle-edge tests. This still checks
+picker selection, not action-dispatch acceptance.
 
 ## 10. Risks and how to react
 

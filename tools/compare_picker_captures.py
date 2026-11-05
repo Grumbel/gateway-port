@@ -97,7 +97,8 @@ def load_captures(directory):
     return '\n'.join(records) + '\n', metadata
 
 
-def analyze_captures(directory, *, max_pairs=12, sample_limit=12, trace_output=None):
+def analyze_captures(directory, *, max_pairs=12, sample_limit=12,
+                     trace_output=None, oracle_points=None):
     if not 0 <= max_pairs <= 128 or not 0 <= sample_limit <= 10000:
         raise ValueError('invalid comparison or sample limit')
     text, metadata = load_captures(directory)
@@ -142,6 +143,15 @@ def analyze_captures(directory, *, max_pairs=12, sample_limit=12, trace_output=N
             if trace_output.exists():
                 raise ValueError('refusing to overwrite capture trace')
             trace_output.write_text(text, encoding='ascii')
+        if oracle_points is not None:
+            if oracle_points.exists() or oracle_points == trace_output:
+                raise ValueError('refusing to overwrite oracle points')
+            positions = sorted({(call, point['x'], point['y'])
+                                for item in comparisons
+                                for point in item['samples']
+                                for call in (item['before_call'], item['after_call'])})
+            oracle_points.write_text('call\tx\ty\n' + ''.join(
+                f'{call}\t{x}\t{y}\n' for call, x, y in positions), encoding='ascii')
     return {'captured_calls': len(metadata), 'aligned_calls': sum(
                 scene['aligned'] for scene, _ in scenes.values()),
             'unique_aligned_states': unique_states,
@@ -157,12 +167,15 @@ def main():
     parser.add_argument('--sample-limit', type=int, default=12)
     parser.add_argument('--trace-output', type=Path,
                         help='optional private merged #scene/#picker-row trace')
+    parser.add_argument('--oracle-points', type=Path,
+                        help='save per-capture native picker coordinates for the Unicorn oracle')
     parser.add_argument('--json', action='store_true')
     args = parser.parse_args()
     try:
         report = analyze_captures(args.captures, max_pairs=args.max_pairs,
                                   sample_limit=args.sample_limit,
-                                  trace_output=args.trace_output)
+                                  trace_output=args.trace_output,
+                                  oracle_points=args.oracle_points)
     except (OSError, ValueError, KeyError, UnicodeError) as error:
         parser.exit(1, f'{error}\n')
     if args.json:

@@ -472,7 +472,11 @@ build/native-picker-oracle-tests ../gateway-dos \
 
 # Find all observed conditional hitbox-state transitions in that batch:
 python3 tools/compare_picker_captures.py build/picker-entry/captures \
-  --trace-output build/picker-entry/merged-scene.tsv --json
+  --trace-output build/picker-entry/merged-scene.tsv \
+  --oracle-points build/picker-entry/oracle-points.tsv --json
+build/native-picker-oracle-tests ../gateway-dos \
+  --captured build/picker-entry/captures \
+  --points build/picker-entry/oracle-points.tsv
 ```
 
 Each `call-NNNN.bin` contains 1 MiB of original guest memory, while
@@ -501,6 +505,12 @@ remain excluded from H. `--max-pairs N` and `--sample-limit N` bound output,
 and the optional merged trace supports `compare_picker_scene.py` for manual
 before/after pairs. An unrelated picture frame, ambiguous RGN association or
 different geometry is deliberately never attributed to conditional flags.
+The `--oracle-points` output names the **two specific captured entry states**
+and the exact changed screen pixel for each representative comparison. Passing
+those points to `native-picker-oracle-tests --captured ... --points ...`
+executes the original picker on **both states** at every difference, in
+addition to its ordinary grid and rectangle-edge checks. All candidate points
+are derived from actual differing pixels, never bounding-box midpoints.
 The tool operates on already captured private data; it does not itself
 execute mouse clicks or prove later game-action acceptance.
 

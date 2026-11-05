@@ -82,6 +82,20 @@ with tempfile.TemporaryDirectory(prefix='gateway-picker-capture-test-') as tempo
     trace = Path(temporary) / 'private-picker-merged.tsv'
     summary = analyze_captures(directory, trace_output=trace)
     assert trace.exists() and '# capture call=3 base=call-0003' in trace.read_text()
+    points = Path(temporary) / 'native-picker-points.tsv'
+    analyze_captures(directory, oracle_points=points)
+    point_rows = [tuple(map(int, row.split('\t'))) for row in
+                  points.read_text().splitlines()[1:]]
+    assert point_rows and all(call in (1, 2) and 261 <= x < 640 and 0 <= y < 232
+                              for call, x, y in point_rows)
+    assert all((2 if call == 1 else 1, x, y) in point_rows
+               for call, x, y in point_rows)
+    try:
+        analyze_captures(directory, oracle_points=points)
+    except ValueError as error:
+        assert 'overwrite' in str(error)
+    else:
+        raise AssertionError('existing oracle points were overwritten')
     try:
         analyze_captures(directory, trace_output=trace)
     except ValueError as error:
