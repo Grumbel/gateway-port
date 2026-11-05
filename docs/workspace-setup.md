@@ -134,6 +134,18 @@ renderer and the original Unicorn probe were both built locally. SDL3 and
 `nix` remain unavailable in the container; interactive SDL playback, CMake's
 full SDL3 target and `nix flake check` still require a host with those tools.
 
+The native intro's compiled caption program can also be inspected without
+SDL3, Unicorn or Ghidra:
+
+```sh
+python3 tools/inspect_intro_program.py ../gateway-dos/GATE.EXE
+python3 tests/intro_program_tests.py
+```
+
+The inspector verifies 18 executable CALLs, original text pointers and
+requested placement arguments; the tests include a synthetic DOS-image fixture
+and skip original-file assertions when the DOS directory is absent.
+
 The scene tracker, including its original PIC/RGN fixture comparisons, can
 likewise be tested without SDL3:
 

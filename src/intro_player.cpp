@@ -21,7 +21,8 @@ int main(int argc, char **argv) try {
     if (argc != 2 || std::string_view(argv[1]) == "--help") {
         std::cout << "usage: gateway-intro DOS-DIR\n"
                      "Native introduction reconstruction (all eighteen narrative pages).\n"
-                     "Space: next page; Escape: exit preview; N: toggle filtering.\n"
+                     "Any key: next narrative page; Escape: exit preview; "
+                     "F9: toggle filtering.\n"
                      "No game launch or music playback yet.\n";
         return argc == 2 ? 0 : 2;
     }
@@ -56,20 +57,22 @@ int main(int argc, char **argv) try {
                     running = false;
                 if (event.type != SDL_EVENT_KEY_DOWN || event.key.repeat)
                     continue;
-                if (event.key.key == SDLK_ESCAPE)
+                if (event.key.key == SDLK_ESCAPE) {
                     running = false;
-                if (event.key.key == SDLK_SPACE) {
-                    const auto current = forced_page.value_or(
-                        presentation.page_at(static_cast<std::uint32_t>(SDL_GetTicks() - start)));
-                    const auto target = forced_page ? current + 1
-                        : current + (SDL_GetTicks() - start >= 20128 ? 1 : 0);
-                    forced_page = std::min(target, presentation.verified_pages() - 1);
+                    continue;
                 }
-                if (event.key.key == SDLK_N) {
+                // Original GATE.EXE:0x0f18 breaks its text wait when any BIOS
+                // key becomes available; GATE.EXE:0x0e37 then consumes it.
+                // This preview still jumps directly between static pages.
+                if (event.key.key == SDLK_F9) {
                     nearest = !nearest;
                     if (texture)
                         require(SDL_SetTextureScaleMode(texture,
                                    nearest ? SDL_SCALEMODE_NEAREST : SDL_SCALEMODE_LINEAR));
+                } else if (SDL_GetTicks() - start >= presentation.page_info(0).start_ms) {
+                    const auto current = forced_page.value_or(
+                        presentation.page_at(static_cast<std::uint32_t>(SDL_GetTicks() - start)));
+                    forced_page = std::min(current + 1, presentation.verified_pages() - 1);
                 }
             }
             const auto time = static_cast<std::uint32_t>(SDL_GetTicks() - start);

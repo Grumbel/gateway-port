@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 
 #include "story/intro_presentation.hpp"
+#include <array>
 #include <cassert>
 #include <filesystem>
 #include <iostream>
@@ -31,9 +32,17 @@ int main(int argc, char **argv) try {
     assert(intro.page_at(274000) == 15);
     assert(intro.page_at(286000) == 16);
     assert(intro.page_at(303000) == 17);
+    assert(intro.page_info(0).text_y == 96);  // bottom-clamped preferred y=120
+    assert(intro.page_info(12).text_y == 122); // preferred y=120 fits here
+    assert(intro.page_info(15).text_y == 63); // tall text moves preferred y=100 up
+    assert(intro.page_info(4).text_x == 162);
+    assert(intro.page_info(4).text_width == 147);
     assert(intro.text(0).size() > 350);
     assert(intro.text(9).size() > 300);
     assert(intro.text(17).size() > 400);
+    assert(intro.page_display_duration_ms(0) == 19415);
+    assert(intro.page_display_duration_ms(1) == 11765);
+    assert(intro.page_display_duration_ms(17) == 20585);
 
     const auto splash = intro.frame_at(5000);
     assert(splash.width == 640 && splash.height == 480);
@@ -78,11 +87,30 @@ int main(int argc, char **argv) try {
     assert(intro.frame_at(268000).argb[70 * 320 + 185] == 0xff000000u);
     assert(intro.frame_at(284000).argb[70 * 320 + 185] == 0xff000000u);
     assert(intro.frame_at(285000).argb != intro.frame_at(284000).argb);
-    // Every verified narrative page must decode its source picture and fit its caption.
+    // All eighteen rectangles were independently measured from the original
+    // framebuffer. The implementation must instead derive them from the
+    // original call arguments and the reconstructed proportional word layout.
+    constexpr std::array<int, 18> original_x{{
+        12, 12, 12, 12, 162, 182, 182, 132, 142, 142, 142, 12, 62, 142, 122, 12, 12, 12
+    }};
+    constexpr std::array<int, 18> original_y{{
+        96, 96, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 122, 96, 12, 63, 12, 12
+    }};
+    constexpr std::array<int, 18> original_width{{
+        297, 167, 147, 297, 147, 127, 127, 177, 167, 167, 167, 127, 247, 167, 187, 147, 297, 297
+    }};
+    constexpr std::array<int, 18> original_height{{
+        93, 93, 93, 60, 148, 104, 159, 104, 82, 137, 115, 159, 60, 93, 148, 126, 82, 126
+    }};
     for (std::size_t page = 0; page < intro.verified_pages(); ++page) {
         const auto frame = intro.page_frame(page);
         assert(frame.argb.size() == 320u * 200);
-        assert(intro.page_info(page).start_ms >= 20128);
+        const auto info = intro.page_info(page);
+        assert(info.start_ms >= 20128);
+        assert(info.text_x == original_x[page]);
+        assert(info.text_y == original_y[page]);
+        assert(info.text_width == original_width[page]);
+        assert(info.text_height == original_height[page]);
     }
     std::cout << "Gateway native intro: splash, all eighteen narrative pages, "
                  "and animations decoded\n";

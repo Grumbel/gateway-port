@@ -6,6 +6,75 @@ The native prototype in `src/story/intro_presentation.*` reads the original
 resources and renders a fixed-clock sequence without Unicorn. The SDL3 viewer
 is `gateway-intro`; `gateway-intro-dump` renders one frame to PPM without SDL.
 
+## Original compiled control flow (GATE.EXE)
+
+The launcher does **not** interpret a separate intro script. Its introductory
+sequence contains exactly **18 direct calls** to a common far function at
+original `GATE.EXE:0x117e`, between call sites `0x15c4` and `0x19fe`. Each
+call pushes a pointer to one of the 18 consecutive source strings and three
+placement arguments: requested left edge, preferred top edge, and right edge.
+The first call specifies `(10,120,310)`; the last specifies `(10,10,310)`.
+These are input arguments to the layout function, **not** the final drawn
+caption rectangles. The first string begins at original file offset `0x428f`.
+
+The following original file offsets have bounded disassembly evidence:
+
+| Original identity | Recovered purpose | Confidence |
+| --- | --- | --- |
+| `exe:0x0e37` | Poll keyboard; consume a pending key; Escape (`0x1b`) returns nonzero to the caller's common end path (`exe:0x1a09`). Other ordinary keys return zero after consumption once the intro has started. Also checks the mouse. | Disassembly + separate key injections |
+| `exe:0x0f18` | Add a 16-bit delay argument to the 32-bit clock returned by the RTL helper, then wait until the deadline or pending keyboard/mouse input. The keyboard is *not* consumed by this wait. | Disassembly |
+| `exe:0x103a` | Scan and measure words, wrap at right edge, calculate lower edge and shift overly tall boxes upward to fit the viewport. | Disassembly; drawing details not fully matched |
+| `exe:0x117e` | Show a framed caption, draw its words, then calculate and wait for the text's display time. | Disassembly + original output |
+| `rtl:0x08298` | Far `strlen` implementation, returning the exact NUL-terminated text length. | Disassembly (`repnz scasb`) |
+
+At `exe:0x12e3`, the caption routine calls that RTL `strlen` helper; at
+`exe:0x12f1`, it multiplies the returned 16-bit length by 45, adds 2,000, and
+calls the interruptible wait (`exe:0x0f18`). The original timeout is therefore
+`uint16_t(2000 + 45 * strlen(text))` milliseconds. For example, page 0 has
+387 bytes and a 19,415ms text timeout; page 17 has 413 bytes and a 20,585ms
+timeout. Image loading, animation playback, and explicit scene delays add
+additional time between caption starts. The native C++ presentation exposes
+`page_display_duration_ms()` using this recovered expression; its full frame
+timeline still includes some sampled/interpolated boundaries.
+
+The displayed panel positions also follow a consistent transformation of the
+original placement arguments. For requested `left`, `preferred_top`, `right`
+and the reconstructed number of wrapped lines, the drawn bounds are:
+
+```text
+line_height = font.height + 1 = 11
+height = 5 + line_height * wrapped_lines
+box_left = left + 2
+box_width = right - left - 3
+box_top = min(preferred_top + 2, 189 - height)
+```
+
+Word widths come from `GATE_305.FNT`'s glyph widths and left/right spacing
+bytes. The native layout wraps whole words at `box_width - 8` and discards
+leading spaces at a new line. It yields exactly the *observed* number of lines
+for every original paragraph: `8,8,8,5,13,9,14,9,7,12,10,14,5,8,13,11,7,11`.
+Thus **all 18 rectangle positions and sizes** now come from the original
+`GATE.EXE` arguments and font data; no captured rectangle heights are stored
+in the implementation. The tests retain all original measured rectangles as
+independent regression expectations. Pixel-perfect glyph rasterization and
+some spacing details remain to be recovered.
+
+To inspect all original call sites without embedding any source text:
+
+```sh
+python3 tools/inspect_intro_program.py ../gateway-dos/GATE.EXE
+python3 tools/inspect_intro_program.py ../gateway-dos/GATE.EXE --json
+python3 tests/intro_program_tests.py
+```
+
+In read-only deterministic runs on private Xvfb, a Space, Enter, or letter
+pressed at 22,000ms produces page 1 by 27,000ms, whereas no key leaves page 0
+visible. Escape at the same point takes the common end path and reaches the
+main game's loading screen; the read-only test then fails at the expected
+`RESTART.DAT` write. Inputs during the opening logo did not advance beyond
+the ordinary first page by 26,000ms. This establishes the high-level input
+boundary but not yet a cycle-exact keyboard/event scheduler.
+
 ## Observed opening
 
 The following results come from the unmodified, SHA-256-pinned `GATE.EXE`
@@ -45,8 +114,9 @@ embedded in the project; the DOS directory is needed at runtime.
 
 ## All eighteen recovered narrative pages
 
-These are DOS PIC reads and caption rectangles observed by comparing gray
-panel bounds in full framebuffer dumps. Coordinates are 320×200 pixels.
+These are DOS PIC reads and caption rectangles first observed by comparing gray
+panel bounds in full framebuffer dumps and now independently reproduced from
+the original executable's caption arguments and the font. Coordinates are 320×200 pixels.
 `(x, y, width, height)` covers the panel, not its separate shadow. The page
 text is sequentially indexed in the original executable (starting with 0).
 
@@ -93,10 +163,12 @@ cmake --build build --target gateway-intro gateway-intro-dump
 ./build/gateway-intro-dump ../gateway-dos --ms 22000 build/native-intro.ppm
 ```
 
-The viewer plays the observed timeline; Space advances manually among all
-eighteen narrative pages, N toggles image filtering, and Escape exits.
+The viewer plays the observed timeline; ordinary keys manually advance among
+all eighteen narrative pages, F9 toggles image filtering, and Escape exits.
 Escape **does not yet launch the main game**. Audio/music and some animation
-timing are still absent from the native version.
+timing are still absent from the native version. Manual advancement in this
+preview selects the next static panel; the original's conditional animation
+transitions after an early key press have not been reproduced yet.
 The existing Unicorn-based `gateway` executable remains the playable path.
 
 Reference captures can be reproduced without SDL, Xvfb, or input injection
@@ -134,14 +206,16 @@ compiler fallback lives under `build/intro-analysis/` instead.
 
 ## Remaining reconstruction tasks
 
-1. Trace the launcher code controlling the timer, skip-to-next-page and
-   Escape handoff. Current dates are observation timestamps and can vary with
-   the guest clock/CPU model.
+1. Complete the launcher control flow around the now-identified `exe:0x0e37`
+   input check, `exe:0x0f18` interruptible timer, and `exe:0x1a09` handoff.
+   Derive each scene's explicit delays and conditional animation paths, then
+   replace approximate page boundaries with a native sequential scheduler.
 2. Recover the exact logo-delta animation display schedule. The completed
    title and its palette-index-23 credit reveal are recovered, including the
    original 6-bit palette ramp at 10ms intervals.
-3. Match caption glyph placement and line wrapping at several panel widths.
-   The outer black/beveled rectangle now matches the original.
+3. Recover the remaining caption glyph placement and spacing differences.
+   Line counts and all eighteen box rectangles are reproduced without
+   measured geometry, and the outer black/beveled rectangle matches.
 4. Derive the actual `GATE_302`/`303` timer loops, fill gaps between the
    sampled frames, and verify fade states around 259.5s. All 18 panel bounds
    are known; their exact timing is only bracketed for the last eight.

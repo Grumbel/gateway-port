@@ -183,6 +183,8 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/picture_condition_tests.py)
     add_test(NAME story-rtl-animation COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/rtl_animation_tests.py)
+    add_test(NAME intro-program-inspector COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/intro_program_tests.py)
     add_test(NAME story-visibility-correlation COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/visibility_correlation_tests.py)
     add_test(NAME story-object-write-trace COMMAND ${Python3_EXECUTABLE}

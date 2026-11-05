@@ -13,31 +13,37 @@
 namespace gateway {
 namespace {
 
-// DOS-read transitions and caption rectangles measured from read-only GATE.EXE
-// replays under a fixed guest clock. These are not yet verified as source-code
-// timer constants. The PIC index is the original directory slot, not a sprite
-// number inferred from its appearance.
-constexpr std::array<IntroPageInfo, 18> observed_pages{{
-    {20128, 301, 5, 12, 96, 297, 93},
-    {39698, 301, 5, 12, 96, 167, 93},
-    {55379, 301, 0, 12, 12, 147, 93},
-    {67687, 301, 0, 12, 12, 297, 60},
-    {82369, 301, 1, 162, 12, 147, 148},
-    {101369, 301, 2, 182, 12, 127, 104},
-    {114428, 301, 2, 182, 12, 127, 159},
-    {132560, 302, 33, 132, 12, 177, 104},
-    {152058, 302, 33, 142, 12, 167, 82},
-    {163217, 302, 33, 142, 12, 167, 137},
+// GATE.EXE:0x15c4..0x19fe pushes (left, preferred_top, right) for each
+// caption. GATE.EXE:0x103a measures its lines and shifts overly tall boxes
+// upward. The arguments below come from those original call sites; only PIC
+// backgrounds and guest-millisecond starts still rely on framebuffer captures.
+struct IntroSourcePage {
+    std::uint32_t start_ms;
+    unsigned pic_file;
+    std::size_t pic_entry;
+    int left, preferred_top, right;
+};
+constexpr std::array<IntroSourcePage, 18> observed_pages{{
+    {20128, 301, 5, 10, 120, 310},
+    {39698, 301, 5, 10, 100, 180},
+    {55379, 301, 0, 10, 10, 160},
+    {67687, 301, 0, 10, 10, 310},
+    {82369, 301, 1, 160, 10, 310},
+    {101369, 301, 2, 180, 10, 310},
+    {114428, 301, 2, 180, 10, 310},
+    {132560, 302, 33, 130, 10, 310},
+    {152058, 302, 33, 140, 10, 310},
+    {163217, 302, 33, 140, 10, 310},
     // The later panels were bracketed by independent original framebuffer
     // captures. The millisecond boundaries are still approximate.
-    {181000, 302, 33, 142, 12, 167, 115},
-    {197000, 301, 3, 12, 12, 127, 159},
-    {212000, 301, 4, 62, 122, 247, 60},
-    {222000, 301, 4, 142, 96, 167, 93},
-    {235500, 302, 0, 122, 12, 187, 148},
-    {271000, 310, 4, 12, 63, 147, 126},
-    {285500, 303, 42, 12, 12, 297, 82},
-    {302000, 303, 42, 12, 12, 297, 126},
+    {181000, 302, 33, 140, 10, 310},
+    {197000, 301, 3, 10, 10, 140},
+    {212000, 301, 4, 60, 120, 310},
+    {222000, 301, 4, 140, 120, 310},
+    {235500, 302, 0, 120, 10, 310},
+    {271000, 310, 4, 10, 100, 160},
+    {285500, 303, 42, 10, 10, 310},
+    {302000, 303, 42, 10, 10, 310},
 }};
 
 // GATE_300 #1..#26 preload at 12.568..13.148s, then display later.
@@ -209,6 +215,65 @@ IntroPresentation::IntroPresentation(const std::filesystem::path &directory)
     caption_font_.pixels.assign(file.begin() + 266, file.end());
     if (paragraphs_.size() < observed_pages.size())
         throw std::runtime_error("intro has fewer text pages than verified frames");
+
+    // Recreate the dimensions calculated by the original GATE.EXE caption
+    // helper instead of storing rectangles measured from screen captures.
+    // The source passes the horizontal text bounds and a preferred top; the
+    // box's height follows from the proportional font's wrapped line count.
+    for (std::size_t page = 0; page < observed_pages.size(); ++page) {
+        const auto &source = observed_pages[page];
+        const int width = source.right - source.left - 3;
+        auto layout = layout_caption(page, width - 8);
+        const int height = 5 + (caption_font_.height + 1) * layout.lines;
+        if (height > 189)
+            throw std::runtime_error("intro caption taller than available screen area");
+        page_infos_.push_back({source.start_ms, source.pic_file, source.pic_entry,
+                               source.left + 2,
+                               std::min(source.preferred_top + 2, 189 - height),
+                               width, height});
+        caption_layouts_.push_back(std::move(layout));
+    }
+}
+
+IntroPresentation::CaptionLayout IntroPresentation::layout_caption(
+    std::size_t page, int line_width) const {
+    CaptionLayout result;
+    int cursor_x = 0, cursor_y = 0;
+    const auto &paragraph = paragraphs_.at(page);
+    for (std::size_t at = 0; at < paragraph.size();) {
+        if (paragraph[at] == '\n') {
+            cursor_x = 0;
+            cursor_y += caption_font_.height + 1;
+            ++result.lines;
+            ++at;
+            continue;
+        }
+        if (paragraph[at] == ' ') {
+            // Match the original renderer: a space at the beginning of a
+            // wrapped or explicit line does not advance the cursor.
+            if (cursor_x != 0)
+                cursor_x += caption_font_.advance(' ');
+            ++at;
+            continue;
+        }
+        const auto end = paragraph.find_first_of(" \n", at);
+        const auto length = end == std::string::npos ? paragraph.size() - at : end - at;
+        int word_width = 0;
+        for (std::size_t i = 0; i < length; ++i)
+            word_width += caption_font_.advance(static_cast<unsigned char>(paragraph[at + i]));
+        if (cursor_x != 0 && cursor_x + word_width > line_width) {
+            cursor_x = 0;
+            cursor_y += caption_font_.height + 1;
+            ++result.lines;
+        }
+        for (std::size_t i = 0; i < length; ++i) {
+            const auto ch = static_cast<unsigned char>(paragraph[at + i]);
+            result.glyphs.push_back({ch, cursor_x, cursor_y});
+            cursor_x += caption_font_.advance(ch);
+        }
+        at += length;
+    }
+    return result;
 }
 
 std::size_t IntroPresentation::verified_pages() const noexcept {
@@ -216,11 +281,18 @@ std::size_t IntroPresentation::verified_pages() const noexcept {
 }
 
 IntroPageInfo IntroPresentation::page_info(std::size_t page) const {
-    return observed_pages.at(page);
+    return page_infos_.at(page);
 }
 
 const std::string &IntroPresentation::text(std::size_t page) const {
     return paragraphs_.at(page);
+}
+
+std::uint16_t IntroPresentation::page_display_duration_ms(std::size_t page) const {
+    // GATE.EXE:0x12e3 calls RTL strlen, multiplies its u16 result by 45,
+    // adds 2000 and passes the wrapped 16-bit value to GATE.EXE:0x0f18.
+    // Scene changes and animation waits are additional to this caption time.
+    return static_cast<std::uint16_t>(2000u + 45u * text(page).size());
 }
 
 PicImage IntroPresentation::load_picture(unsigned file, std::size_t index) const {
@@ -285,11 +357,8 @@ void IntroPresentation::caption(IntroFrame &frame, std::size_t page) const {
     fill(frame, x + w, y - 1, 1, 1, dark_gray);
     fill(frame, x + w - 1, y, 2, 1, dark_gray);
 
-    // The original caption font is a proportional 10px bitmap with explicit
-    // per-character margins. The exact text-break algorithm remains to be
-    // recovered; words never exceed the fixed rectangle's width.
-    const int left = x + 4, right = x + w - 4;
-    int cursor_x = left, cursor_y = y + 3;
+    // The original caption font is proportional with explicit per-character
+    // margins. Cached glyph positions also determined this box's height.
     const auto draw = [&](unsigned char ch, int px, int py) {
         if (ch < caption_font_.first || ch > caption_font_.last)
             return;
@@ -309,38 +378,8 @@ void IntroPresentation::caption(IntroFrame &frame, std::size_t page) const {
                     frame.argb[std::size_t(draw_y) * frame.width + draw_x] = black;
             }
     };
-    const std::string &paragraph = paragraphs_[page];
-    for (std::size_t at = 0; at < paragraph.size();) {
-        if (paragraph[at] == '\n') {
-            cursor_x = left;
-            cursor_y += caption_font_.height + 1;
-            ++at;
-            continue;
-        }
-        if (paragraph[at] == ' ') {
-            // The launcher discards a run of spaces following a hard or
-            // wrapped line break (visible in the final indented paragraph).
-            if (cursor_x != left)
-                cursor_x += caption_font_.advance(' ');
-            ++at;
-            continue;
-        }
-        const std::size_t end = paragraph.find_first_of(" \n", at);
-        const std::size_t length = end == std::string::npos ? paragraph.size() - at : end - at;
-        int word_width = 0;
-        for (std::size_t i = 0; i < length; ++i)
-            word_width += caption_font_.advance(static_cast<unsigned char>(paragraph[at + i]));
-        if (cursor_x != left && cursor_x + word_width > right) {
-            cursor_x = left;
-            cursor_y += caption_font_.height + 1;
-        }
-        for (std::size_t i = 0; i < length; ++i) {
-            const auto ch = static_cast<unsigned char>(paragraph[at + i]);
-            draw(ch, cursor_x, cursor_y);
-            cursor_x += caption_font_.advance(ch);
-        }
-        at += length;
-    }
+    for (const auto &glyph : caption_layouts_.at(page).glyphs)
+        draw(glyph.character, x + 4 + glyph.x, y + 3 + glyph.y);
 }
 
 IntroFrame IntroPresentation::page_frame(std::size_t page) const {

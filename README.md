@@ -424,6 +424,10 @@ This is still a preview, not a full launcher replacement: music, the exact
 animation clock/input loop and game handoff are unfinished. Many checkpoints,
 including later spacecraft frames and the title's palette-revealed credit,
 match the original framebuffer byte-for-byte.
+The launcher also contains a recoverable sequential program: all 18 compiled
+caption calls are mapped, with a shared `2000 + 45 * strlen(text)` millisecond
+timeout and an interruptible keyboard/mouse wait. Inspect the original call
+arguments with `python3 tools/inspect_intro_program.py ../gateway-dos/GATE.EXE`.
 See [native intro reconstruction](docs/intro-reconstruction.md) for the
 observed resource/scene mapping and reproducible comparisons.
 

@@ -42,9 +42,18 @@ public:
     std::size_t verified_pages() const noexcept;
     std::size_t text_count() const noexcept { return paragraphs_.size(); }
     const std::string &text(std::size_t page) const;
+    std::uint16_t page_display_duration_ms(std::size_t page) const;
     IntroPageInfo page_info(std::size_t page) const;
 
 private:
+    struct CaptionGlyph {
+        unsigned char character;
+        int x, y;
+    };
+    struct CaptionLayout {
+        std::vector<CaptionGlyph> glyphs;
+        int lines = 1;
+    };
     struct Font {
         int row_bytes = 0;
         int height = 0;
@@ -59,8 +68,11 @@ private:
     std::vector<std::uint8_t> pic201_, pic300_, pic301_, pic302_, pic303_, pic310_;
     std::vector<std::string> paragraphs_;
     Font caption_font_;
+    std::vector<CaptionLayout> caption_layouts_;
+    std::vector<IntroPageInfo> page_infos_;
     mutable std::map<std::pair<unsigned, std::size_t>, PicImage> picture_cache_;
     PicImage load_picture(unsigned file, std::size_t index) const;
+    CaptionLayout layout_caption(std::size_t page, int line_width) const;
     void caption(IntroFrame &frame, std::size_t page) const;
 };
 
