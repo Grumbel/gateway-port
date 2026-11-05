@@ -15,8 +15,8 @@ enum {
     MODE_SEG = 0x1234, HEADER_SEG = 0x2345, HANDLE_SEG = 0x3456,
     TABLE_SEG = 0x4567, PALETTE_SEG = 0x5678,
 };
-static uint8_t data[0x80], mode_data[0x100], header[0x100];
-static uint8_t handle_data[0x100], table_data[0x100];
+static uint8_t data[0x80], mode_data[0x10000], header[0x10000];
+static uint8_t handle_data[0x10000], table_data[0x10000];
 static uint16_t descriptor_result, open_result;
 static unsigned word_reads;
 static struct Event {
@@ -50,7 +50,6 @@ static uint8_t *segment(uint16_t seg)
 
 uint8_t gate_far_byte(uint16_t seg, uint16_t offset)
 {
-    assert(offset < 0x100);
     return segment(seg)[offset];
 }
 
@@ -62,7 +61,6 @@ uint16_t gate_far_word(uint16_t seg, uint16_t offset)
 
 void gate_far_set_byte(uint16_t seg, uint16_t offset, uint8_t value)
 {
-    assert(offset < 0x100);
     segment(seg)[offset] = value;
 }
 
@@ -105,6 +103,11 @@ uint16_t gate_rtl_resource_size_table_segment(void)
     return TABLE_SEG;
 }
 
+GateFarPtr gate_rtl_image_palette_source(void)
+{
+    return (GateFarPtr){0x6789, GATE_RTL_TRANSFORM_OFFSET};
+}
+
 void gate_far_0c33_019a(uint16_t handle)
 {
     record('C', handle, 0, 0);
@@ -122,10 +125,11 @@ void gate_far_0c33_0091(uint16_t handle, uint32_t offset)
     record('S', handle, 0, offset);
 }
 
-uint16_t gate_far_0c33_00f2(uint16_t handle, uint32_t value, uint16_t count)
+uint16_t gate_far_0c33_00f2(uint16_t handle, GateFarPtr destination,
+                            uint16_t count)
 {
-    assert(value == 0);
-    record('R', handle, count, value);
+    record('R', handle, count,
+           ((uint32_t)destination.segment << 16) | destination.offset);
     return descriptor_result;
 }
 
@@ -148,14 +152,14 @@ static void reset_case(uint8_t count, uint8_t flags, uint16_t video_mode)
     open_result = 0x44;
     gate_rtl_resource_ds_set_word(8, 0xffff);
     gate_rtl_resource_ds_set_word(0x0a, MODE_SEG);
-    gate_far_set_word(MODE_SEG, 0, video_mode);
-    gate_far_set_word(HEADER_SEG, 0, 0xfff0);
-    gate_far_set_word(HEADER_SEG, 2, 0x1234);
-    gate_far_set_word(HEADER_SEG, 6, 320);
-    gate_far_set_word(HEADER_SEG, 8, 200);
-    gate_far_set_byte(HEADER_SEG, 4, count);
-    gate_far_set_byte(HEADER_SEG, 5, flags);
-    gate_far_set_word(TABLE_SEG, 6, 0x5a);
+    gate_far_set_word(MODE_SEG, GATE_RTL_VIDEO_MODE_OFFSET, video_mode);
+    gate_far_set_word(HEADER_SEG, GATE_RTL_HEADER_OFFSET, 0xfff0);
+    gate_far_set_word(HEADER_SEG, GATE_RTL_HEADER_OFFSET + 2, 0x1234);
+    gate_far_set_word(HEADER_SEG, GATE_RTL_HEADER_OFFSET + 6, 320);
+    gate_far_set_word(HEADER_SEG, GATE_RTL_HEADER_OFFSET + 8, 200);
+    gate_far_set_byte(HEADER_SEG, GATE_RTL_HEADER_OFFSET + 4, count);
+    gate_far_set_byte(HEADER_SEG, GATE_RTL_HEADER_OFFSET + 5, flags);
+    gate_far_set_word(TABLE_SEG, GATE_RTL_SIZE_TABLE_OFFSET + 6, 0x5a);
 }
 
 static void expect_event(unsigned i, char kind, uint16_t a, uint16_t b,
@@ -172,13 +176,14 @@ static void test_basic_resource_selection(void)
     reset_case(3, 0, 3);
     assert(gate_rtl_11ecb(0x0123, 2) == 1);
     assert(gate_rtl_resource_ds_word(8) == 101);
-    assert(gate_far_word(HANDLE_SEG, 0) == 0x44);
+    assert(gate_far_word(HANDLE_SEG, GATE_RTL_FILE_HANDLE_OFFSET) == 0x44);
     assert(gate_rtl_resource_ds_word(0x0a) == MODE_SEG);
     assert(gate_rtl_resource_ds_word(0x0c) == PALETTE_SEG);
     assert(nevents == 7);
     expect_event(0, 'O', 0, 101, 0);
     expect_event(1, 'S', 0x44, 0, 0x23u * 12u);
-    expect_event(2, 'R', 0x44, 12, 0);
+    expect_event(2, 'R', 0x44, 12,
+                 ((uint32_t)HEADER_SEG << 16) | GATE_RTL_HEADER_OFFSET);
     expect_event(3, 'S', 0x44, 0, 0x1234fff0u + 4u);
     expect_event(4, 'W', 0x44, 0, 0);
     expect_event(5, 'W', 0x44, 0, 0);
@@ -223,17 +228,17 @@ static void test_descriptor_failures(void)
     assert(nevents == 3);
 
     reset_case(2, 0, 2);
-    gate_far_set_word(HEADER_SEG, 0, 0);
-    gate_far_set_word(HEADER_SEG, 2, 0);
+    gate_far_set_word(HEADER_SEG, GATE_RTL_HEADER_OFFSET, 0);
+    gate_far_set_word(HEADER_SEG, GATE_RTL_HEADER_OFFSET + 2, 0);
     assert(gate_rtl_11ecb(0x0123, 2) == 0);
     assert(nevents == 3);
 
     reset_case(2, 0, 2);
-    gate_far_set_word(HEADER_SEG, 6, 0);
+    gate_far_set_word(HEADER_SEG, GATE_RTL_HEADER_OFFSET + 6, 0);
     assert(gate_rtl_11ecb(0x0123, 2) == 0);
     assert(nevents == 7);
     reset_case(2, 0, 2);
-    gate_far_set_word(HEADER_SEG, 8, 0);
+    gate_far_set_word(HEADER_SEG, GATE_RTL_HEADER_OFFSET + 8, 0);
     assert(gate_rtl_11ecb(0x0123, 2) == 0);
 }
 
@@ -266,6 +271,7 @@ static void test_compressed_format(void)
     assert(events[0].kind == 'O' && events[0].b == 101);
     assert(nevents == 8 && events[7].kind == 'R');
     assert(events[7].b == 0x5a);
+    assert(events[7].dword == 0x67890fdcu);
     assert(gate_rtl_resource_ds_word(6) == 1);
 
     reset_case(1, 0x13, 1);

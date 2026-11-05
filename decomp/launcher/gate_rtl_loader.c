@@ -33,9 +33,9 @@ uint16_t gate_rtl_12c33(GateFarPtr work, uint16_t resource, uint16_t mode)
     destination.offset = (uint16_t)(work.offset + 8u);
     mode_segment = gate_rtl_image_mode_segment();
     header_segment = gate_rtl_image_header_segment();
-    video_mode = gate_far_word(mode_segment, 0);
-    if (gate_far_145d_00f7(gate_far_word(header_segment, 8),
-                           gate_far_word(header_segment, 6),
+    video_mode = gate_far_word(mode_segment, GATE_RTL_VIDEO_MODE_OFFSET);
+    if (gate_far_145d_00f7(gate_far_word(header_segment, GATE_RTL_HEADER_OFFSET + 8),
+                           gate_far_word(header_segment, GATE_RTL_HEADER_OFFSET + 6),
                            video_mode, destination, 0) != 0)
         return 0;
 
@@ -48,15 +48,15 @@ uint16_t gate_rtl_12c33(GateFarPtr work, uint16_t resource, uint16_t mode)
     gate_far_set_word(work.segment, (uint16_t)(work.offset + 4u),
                       gate_rtl_image_palette_segment());
     gate_far_set_byte(work.segment, (uint16_t)(work.offset + 6u),
-                      gate_far_byte(header_segment, 10));
+                      gate_far_byte(header_segment, GATE_RTL_HEADER_OFFSET + 10));
     gate_far_set_byte(work.segment, (uint16_t)(work.offset + 7u),
-                      gate_far_byte(header_segment, 11));
+                      gate_far_byte(header_segment, GATE_RTL_HEADER_OFFSET + 11));
     gate_far_set_byte(work.segment, (uint16_t)(work.offset + 1u),
-                      (gate_far_byte(header_segment, 5) & 0x40u) != 0 ? 3 : 0);
+                      (gate_far_byte(header_segment, GATE_RTL_HEADER_OFFSET + 5) & 0x40u) != 0 ? 3 : 0);
     gate_far_set_byte(work.segment, work.offset, 1);
 
-    width = gate_far_word(header_segment, 6);
-    if (gate_far_word(mode_segment, 0) != 3) {
+    width = gate_far_word(header_segment, GATE_RTL_HEADER_OFFSET + 6);
+    if (gate_far_word(mode_segment, GATE_RTL_VIDEO_MODE_OFFSET) != 3) {
         /* Match ADD/CWD/XOR/SUB/SAR/XOR/SUB as WORD operations. Ordinarily
          * this means signed division by eight toward zero. The original
          * 8086 also retains the two's-complement -32768 overflow in its

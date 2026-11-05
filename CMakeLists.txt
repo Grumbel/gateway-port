@@ -21,6 +21,8 @@ add_library(gateway_intro_decompiled STATIC
   decomp/launcher/gate_rtl_image.c
   decomp/launcher/gate_rtl_loader.c
   decomp/launcher/gate_rtl_resource.c
+  decomp/launcher/gate_rtl_image_finish.c
+  decomp/launcher/gate_rtl_image_prepare.c
   decomp/launcher/gate_rtl_linkage.c)
 target_include_directories(gateway_intro_decompiled PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/decomp/launcher>
@@ -77,6 +79,16 @@ if(BUILD_TESTING)
     tests/launcher_rtl_image_resource_decompile_tests.c)
   target_include_directories(launcher-rtl-image-resource-decompile-tests PRIVATE decomp/launcher)
   add_test(NAME launcher-rtl-image-resource-decompile COMMAND launcher-rtl-image-resource-decompile-tests)
+  add_executable(launcher-rtl-image-finish-decompile-tests
+    decomp/launcher/gate_rtl_image_finish.c
+    tests/launcher_rtl_image_finish_decompile_tests.c)
+  target_include_directories(launcher-rtl-image-finish-decompile-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-rtl-image-finish-decompile COMMAND launcher-rtl-image-finish-decompile-tests)
+  add_executable(launcher-rtl-image-prepare-decompile-tests
+    decomp/launcher/gate_rtl_image_prepare.c
+    tests/launcher_rtl_image_prepare_decompile_tests.c)
+  target_include_directories(launcher-rtl-image-prepare-decompile-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-rtl-image-prepare-decompile COMMAND launcher-rtl-image-prepare-decompile-tests)
   find_package(Python3 COMPONENTS Interpreter QUIET)
   if(Python3_Interpreter_FOUND)
     add_test(NAME launcher-rtl-graphics-binary COMMAND ${Python3_EXECUTABLE}

@@ -148,12 +148,12 @@ static void reset_case(uint16_t video_mode, uint16_t width, uint16_t height,
     resource_status = 1;
     allocate_status = 0;
     validate_status = 0;
-    gate_far_set_word(MODE_SEG, 0, video_mode);
-    gate_far_set_word(HEADER_SEG, 6, width);
-    gate_far_set_word(HEADER_SEG, 8, height);
-    gate_far_set_byte(HEADER_SEG, 5, flags);
-    gate_far_set_byte(HEADER_SEG, 10, 0xd3);
-    gate_far_set_byte(HEADER_SEG, 11, 0xe4);
+    gate_far_set_word(MODE_SEG, GATE_RTL_VIDEO_MODE_OFFSET, video_mode);
+    gate_far_set_word(HEADER_SEG, GATE_RTL_HEADER_OFFSET + 6, width);
+    gate_far_set_word(HEADER_SEG, GATE_RTL_HEADER_OFFSET + 8, height);
+    gate_far_set_byte(HEADER_SEG, GATE_RTL_HEADER_OFFSET + 5, flags);
+    gate_far_set_byte(HEADER_SEG, GATE_RTL_HEADER_OFFSET + 10, 0xd3);
+    gate_far_set_byte(HEADER_SEG, GATE_RTL_HEADER_OFFSET + 11, 0xe4);
     gate_far_set_byte(work.segment, work.offset, 0);
 }
 

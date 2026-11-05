@@ -59,6 +59,9 @@ class OriginalIntroGraphicsEvidence(unittest.TestCase):
                            (0xf61b, 0xf826),
                            (0x12b19, 0x12b66),
                            (0x12c33, 0x12d66),
+                           (0x1266f, 0x12771),
+                           (0x12205, 0x1230e),
+                           (0x12383, 0x123d3),
                            (0x12773, 0x12821),
                            (0x12823, 0x12891),
                            (0x12893, 0x12995),
@@ -154,6 +157,85 @@ class OriginalIntroGraphicsEvidence(unittest.TestCase):
                 linked = (int.from_bytes(live[3:5], 'little') - 0x1000,
                           int.from_bytes(live[1:3], 'little'))
                 self.assertEqual(linked, expected)
+
+    def test_original_image_postload_dependencies(self):
+        # The post-load code calls exactly these recovered original near
+        # helper boundaries, preserving all source-file identities.
+        for site, target in ((0x1220c, 0x120f3),
+                             (0x1221b, 0x12131),
+                             (0x12249, 0x121b5),
+                             (0x1225d, 0x121b5),
+                             (0x122eb, 0x12383)):
+            with self.subTest(near_call=site):
+                self.assertEqual(self.rtl[site - 1], 0x0e)
+                self.assertEqual(self.rtl[site], 0xe8)
+                delta = int.from_bytes(self.rtl[site + 1:site + 3],
+                                       'little', signed=True)
+                self.assertEqual(site + 3 + delta, target)
+        for start, exit_site in ((0x120f3, 0x12128),
+                                 (0x12131, 0x121b4),
+                                 (0x121b5, 0x121f4)):
+            with self.subTest(helper=start):
+                self.assertEqual(self.rtl[start:start + 3], b'\x55\x8b\xec')
+                self.assertEqual(self.rtl[exit_site], 0xcb)
+
+    def test_original_image_postload_relocated_services(self):
+        snapshot = ROOT / 'build/intro-analysis/at-22000.bin'
+        if not snapshot.is_file():
+            self.skipTest('private guest RAM snapshot unavailable')
+        image = snapshot.read_bytes()
+        base = GRAPHICS_TARGETS[0x0f10, 0x112e] - 0x112e
+        for site, expected in ((0x12161, (0x0cdc, 0x0430)),
+                               (0x12197, (0x0cdc, 0x0396)),
+                               (0x122ad, (0x1258, 0x172e))):
+            with self.subTest(callsite=site):
+                self.assertEqual(self.rtl[site], 0x9a)
+                addr = (0x0f10 + 0x1000) * 16 + site - base
+                live = image[addr:addr + 5]
+                self.assertEqual(live[0], 0x9a)
+                linked = (int.from_bytes(live[3:5], 'little') - 0x1000,
+                          int.from_bytes(live[1:3], 'little'))
+                self.assertEqual(linked, expected)
+
+    def test_image_preparer_relocated_palette_service(self):
+        snapshot = ROOT / 'build/intro-analysis/at-22000.bin'
+        if not snapshot.is_file():
+            self.skipTest('private guest RAM snapshot unavailable')
+        image = snapshot.read_bytes()
+        base = GRAPHICS_TARGETS[0x0f10, 0x112e] - 0x112e
+        call_site = 0x126a6
+        self.assertEqual(self.rtl[call_site], 0x9a)
+        addr = (0x0f10 + 0x1000) * 16 + call_site - base
+        self.assertEqual(image[addr:addr + 5], b'\x9a\xd2\x04\xdc\x1c')
+
+    def test_original_relocated_image_data_references(self):
+        # The original .RTL uses zero placeholders for many operand
+        # displacements. Testing the actual linked image guards against
+        # silently interpreting those as data at offset zero in C.
+        snapshot = ROOT / 'build/intro-analysis/at-22000.bin'
+        if not snapshot.is_file():
+            self.skipTest('private guest RAM snapshot unavailable')
+        image = snapshot.read_bytes()
+        base = GRAPHICS_TARGETS[0x0f10, 0x112e] - 0x112e
+        displacements = (
+            (0x11ed4, 0x1416),  # resource selector busy flag
+            (0x11eea, 0x4dce),  # video-mode segment
+            (0x11eee, 0x0fce),  # video-mode word
+            (0x11f37, 0x4dd6),  # file-handle segment
+            (0x12679, 0x4dce),  # preparer video-mode segment
+            (0x1267e, 0x0fce),  # preparer video-mode word
+            (0x12688, 0x4dd4),  # preparer status segment
+            (0x1268d, 0x0070),  # preparer status word
+            (0x12693, 0x141c),  # palette upload pending flag
+            (0x12735, 0x4dd2),  # preparer source-flags segment
+            (0x1273a, 0x0082),  # preparer source-flags offset
+        )
+        for file_offset, expected in displacements:
+            with self.subTest(original_rtl_offset=file_offset):
+                addr = ((0x0f10 + 0x1000) * 16 + file_offset
+                        - base)
+                self.assertEqual(int.from_bytes(image[addr:addr + 2],
+                                                 'little'), expected)
 
     def test_intro_graphics_segment_consistency(self):
         # Ten 0f10 calls share the same original file origin. Entries in

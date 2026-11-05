@@ -238,10 +238,43 @@ services. The isolated C test covers cache hits/misses, sticky failures,
 resource-ID calculations, descriptor rejection, negative mode handling,
 compressed formats, and exact ordered calls.
 
+`gate_rtl_image_finish.c` now recovers the next bounded cluster, from the
+original `GATE.RTL` offsets `0x120f3`, `0x12131`, `0x121b5`, `0x12205`
+and `0x12383`. These are the format-tag selector, optional 16/48-byte
+transform table setup, signed coordinate transformer, post-load descriptor
+adjuster and in-place four-row image compactor. They retain the original
+signed division/remainder, 16-bit `-32768` overflow behavior, forward FAR
+copies without segment carry, conditional message call and work-record
+field writes. Isolated tests cover both format branches, palette table
+sources, coordinate extremes, row skips, far-offset wrap and the no-op
+condition. The original `0cdc:0430`, `0cdc:0396` and `1258:172e` FAR
+services are still externally declared, not fabricated C implementations.
+
+`gate_rtl_image_prepare.c` adds the bounded original video preparer
+`GATE.RTL:0x1266f..0x12771`. For nonzero video modes, it clears the status
+word, conditionally uploads the pending palette and copies its 768 bytes,
+zeros the eight-byte staging area, copies the original words and two flag
+bytes, then clears those source flags and derives a new status. The isolated
+C test covers the early return, optional palette path, both flag outcomes
+and original ordered memory effects.
+
+**Important relocation correction:** raw `GATE.RTL` disassembly shows
+zero-valued displacement placeholders for global references. They are
+**not** accesses to offset zero. The captured *linked* guest RAM shows,
+for example, the mode at `ES:0fce`, the resource header at `ES:005c`,
+file handle at `ES:005a`, image-table data at `DS:1480/1486`, and scalar
+selector globals relocated from `DS:0000..0010` to `DS:1416..1426`.
+The C resource selector, image loader and new image post-load routines use
+those linked offsets; service arguments also preserve the original FAR
+destination pointers. The pinned-original binary tests check selected
+patched operands and linked FAR call targets against private guest RAM.
+Segment words and the remaining hardware/file services still require
+independent runtime backing.
+
 **None of these tests is a full guest-entry differential run.** The
-underlying five `0c33` file services and `rtl:0x12205` post-load routine
-are still unresolved external dependencies. This remains **neither a
-rendered nor a playable source-C intro**.
+underlying five `0c33` file services, `rtl:0x12ed7` image processor and
+other DOS/RTL dependencies remain unresolved external dependencies. This
+remains **neither a rendered nor a playable source-C intro**.
 
 ### Independent C build, including the Nix flake
 
@@ -263,9 +296,8 @@ not this decompilation. A successful CMake/Nix build only proves the archive
 and tests can compile; it does *not* demonstrate that the C intro plays.
 
 With graphics now mapped to immutable file identities, the immediate intro
-dependencies to recover next are the original RTL `0x12205` post-load setup,
-the `0x12ed7` image processor and
-the `0x1266f` preparer, plus the `145d:016c` resource-release service. Recover the remaining
+dependencies to recover next are the original RTL `0x12ed7` image processor,
+the five resource-file `0c33` services and the `145d:016c` resource-release service. Recover the remaining
 video/keyboard/timing services and use the original guest as an entry-state
 oracle *before* claiming a standalone intro or resuming game logic.
 
