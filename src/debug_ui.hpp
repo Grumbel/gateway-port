@@ -25,9 +25,19 @@ struct DebugPickerObservation {
     std::array<std::uint16_t, 3> native_outputs{}; // group, slot, kind
     bool model_ready = false;
     std::optional<DebugPickerControl> predicted;
+    // Resolved from the live table captured at entry, using the *native*
+    // outputs after return, not by trusting the predicted winning row.
+    enum class Source { unmodeled, none, fallback, room, control, unmapped, unresolved };
+    Source source = Source::unmodeled;
+    std::optional<DebugPickerControl> native_row;
+    std::uint16_t native_object_id = 0; // Only a fully aligned room RGN association.
+    unsigned enabled_overlaps = 0;
 };
 enum class DebugPickerVerdict { match, mismatch, unmodeled };
 DebugPickerVerdict debug_picker_verdict(const DebugPickerObservation &observation);
+void debug_picker_resolve_source(DebugPickerObservation &observation,
+                                 const DebugSceneView &entry_scene);
+const char *debug_picker_source_name(DebugPickerObservation::Source source);
 struct DebugOverlayData {
     DebugSceneView scene;
     std::string registers;

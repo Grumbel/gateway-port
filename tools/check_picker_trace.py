@@ -12,9 +12,37 @@ import csv
 from pathlib import Path
 
 
-FIELDS = ('ms', 'x', 'y', 'model_result', 'model_group', 'model_slot',
-          'model_kind', 'native_result', 'native_group', 'native_slot',
-          'native_kind', 'verdict')
+LEGACY_FIELDS = ('ms', 'x', 'y', 'model_result', 'model_group', 'model_slot',
+                 'model_kind', 'native_result', 'native_group', 'native_slot',
+                 'native_kind', 'verdict')
+FIELDS = LEGACY_FIELDS + ('native_source', 'native_index', 'native_flags',
+                          'native_object', 'enabled_overlaps')
+SOURCES = {'unmodeled', 'none', 'fallback', 'room', 'control',
+           'unmapped', 'unresolved'}
+
+
+def check_provenance(row, line_number):
+    source = row['native_source']
+    if source not in SOURCES:
+        raise ValueError(f'invalid picker source on row {line_number}: {source}')
+    index, flags, object_id, overlaps = (
+        int(row[field]) for field in
+        ('native_index', 'native_flags', 'native_object', 'enabled_overlaps'))
+    has_row = 0 <= index < 64 and 0 <= flags <= 255
+    no_row = index == -1 and flags == -1
+    if not (has_row or no_row) or not (0 <= object_id <= 65535) or overlaps < 0:
+        raise ValueError(f'invalid picker provenance values on row {line_number}')
+    if (source in ('unmodeled', 'none') and not no_row or
+        source in ('fallback', 'room', 'control', 'unmapped') and not has_row or
+        source != 'room' and object_id != 0 or
+        source in ('fallback', 'room', 'control', 'unmapped') and
+            ((flags & 0x80) or overlaps < 1) or
+        source == 'none' and int(row['native_result']) != 0 or
+        source == 'unmodeled' and row['verdict'] != 'unmodeled' or
+        row['verdict'] == 'unmodeled' and source != 'unmodeled' or
+        row['verdict'] == 'match' and int(row['native_result']) == 1 and
+            source in ('none', 'unmodeled', 'unresolved')):
+        raise ValueError(f'inconsistent picker provenance on row {line_number}')
 
 
 def check_trace(path, allow_unmodeled=False):
@@ -29,7 +57,8 @@ def check_trace(path, allow_unmodeled=False):
     summary = {name: int(summary[name]) for name in required}
     table = [line for line in lines if not line.startswith('#')]
     reader = csv.DictReader(table, delimiter='\t')
-    if tuple(reader.fieldnames or ()) != FIELDS:
+    columns = tuple(reader.fieldnames or ())
+    if columns not in (LEGACY_FIELDS, FIELDS):
         raise ValueError('unexpected picker trace columns')
     counts = {'match': 0, 'mismatch': 0, 'unmodeled': 0}
     for line_number, row in enumerate(reader, start=2):
@@ -39,6 +68,8 @@ def check_trace(path, allow_unmodeled=False):
         if verdict not in counts:
             raise ValueError(f'invalid picker verdict on row {line_number}: {verdict}')
         counts[verdict] += 1
+        if columns == FIELDS:
+            check_provenance(row, line_number)
         if verdict != 'unmodeled':
             model = tuple(int(row[f'model_{field}'])
                           for field in ('result', 'group', 'slot', 'kind'))

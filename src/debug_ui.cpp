@@ -74,6 +74,65 @@ DebugPickerVerdict debug_picker_verdict(const DebugPickerObservation &observatio
                ? DebugPickerVerdict::match : DebugPickerVerdict::mismatch;
 }
 
+void debug_picker_resolve_source(DebugPickerObservation &observation,
+                                 const DebugSceneView &entry_scene) {
+    using Source = DebugPickerObservation::Source;
+    observation.source = Source::unmodeled;
+    observation.native_row.reset();
+    observation.native_object_id = 0;
+    observation.enabled_overlaps = 0;
+    if (!entry_scene.native_picker_decoded)
+        return;
+    for (const auto &row : entry_scene.native_picker_rows)
+        if (!(row.flags & 0x80) && observation.x >= row.x0 && observation.x <= row.x1 &&
+            observation.y >= row.y0 && observation.y <= row.y1)
+            ++observation.enabled_overlaps;
+    if (observation.native_ax == 0) {
+        observation.source = Source::none;
+        return;
+    }
+    observation.source = Source::unresolved;
+    if (observation.native_ax != 1)
+        return;
+    for (const auto &row : entry_scene.native_picker_rows) {
+        if (row.group != observation.native_outputs[0] ||
+            row.slot != observation.native_outputs[1])
+            continue;
+        // Retain the raw row for a surprising output, but never attribute
+        // a skipped, out-of-bounds or wrong-kind row to a visible object.
+        observation.native_row = row;
+        if (row.kind != observation.native_outputs[2] || (row.flags & 0x80) ||
+            observation.x < row.x0 || observation.x > row.x1 ||
+            observation.y < row.y0 || observation.y > row.y1)
+            return;
+        if (row.slot == 0)
+            observation.source = Source::fallback;
+        else if (!entry_scene.native_picker_aligned)
+            observation.source = Source::unmapped;
+        else if (entry_scene.native_room_group && row.group == *entry_scene.native_room_group &&
+                 row.slot <= entry_scene.boxes.size()) {
+            observation.source = Source::room;
+            observation.native_object_id = entry_scene.boxes[row.slot - 1].object_id;
+        } else
+            observation.source = Source::control;
+        return;
+    }
+}
+
+const char *debug_picker_source_name(DebugPickerObservation::Source source) {
+    using Source = DebugPickerObservation::Source;
+    switch (source) {
+    case Source::unmodeled: return "unmodeled";
+    case Source::none: return "none";
+    case Source::fallback: return "fallback";
+    case Source::room: return "room";
+    case Source::control: return "control";
+    case Source::unmapped: return "unmapped";
+    case Source::unresolved: return "unresolved";
+    }
+    return "unresolved";
+}
+
 namespace {
 void draw_native_picker_observation(std::span<std::uint32_t> image, int width, int height,
                                     const DebugOverlayData &data) {
@@ -105,20 +164,32 @@ void draw_native_picker_observation(std::span<std::uint32_t> image, int width, i
     const auto color = verdict == DebugPickerVerdict::match ? success :
                        verdict == DebugPickerVerdict::mismatch ? failure : accent;
     std::snprintf(line, sizeof line, "Native pick @%d,%d t=%ums", pick.x, pick.y, pick.guest_ms);
-    text(image, width, height, 8, top + 5, line, white, 33);
+    text(image, width, height, 8, top + 4, line, white, 33);
     std::snprintf(line, sizeof line, "AX=%u g=%u s=%u k=%u [%s]", unsigned(pick.native_ax),
                   unsigned(pick.native_outputs[0]), unsigned(pick.native_outputs[1]),
                   unsigned(pick.native_outputs[2]), label);
-    text(image, width, height, 8, top + 21, line, color, 33);
+    text(image, width, height, 8, top + 16, line, color, 33);
+    const char *source = debug_picker_source_name(pick.source);
+    if (pick.native_row && pick.source == DebugPickerObservation::Source::room)
+        std::snprintf(line, sizeof line, "%s #%u index%u overlaps%u", source,
+                      unsigned(pick.native_object_id), unsigned(pick.native_row->index),
+                      pick.enabled_overlaps);
+    else if (pick.native_row)
+        std::snprintf(line, sizeof line, "%s index%u flags%02x overlaps%u", source,
+                      unsigned(pick.native_row->index), unsigned(pick.native_row->flags),
+                      pick.enabled_overlaps);
+    else
+        std::snprintf(line, sizeof line, "%s overlaps%u", source, pick.enabled_overlaps);
+    text(image, width, height, 8, top + 28, line, accent, 33);
     if (pick.model_ready) {
         if (pick.predicted)
             std::snprintf(line, sizeof line, "Model g=%u s=%u k=%u", unsigned(pick.predicted->group),
                           unsigned(pick.predicted->slot), unsigned(pick.predicted->kind));
         else
             std::snprintf(line, sizeof line, "Model: no rectangle selected");
-        text(image, width, height, 8, top + 37, line, muted, 33);
+        text(image, width, height, 8, top + 40, line, muted, 33);
     } else {
-        text(image, width, height, 8, top + 37, "Model: table not decoded", muted, 33);
+        text(image, width, height, 8, top + 40, "Model: table not decoded", muted, 33);
     }
     // Only mark *recent* actual invocations on the map. The current cursor
     // may have moved since the original picker ran; don't label it as native.

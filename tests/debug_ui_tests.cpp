@@ -176,8 +176,60 @@ int main() try {
     observed.native_outputs = {1, 1, 5};
     observed.model_ready = true;
     observed.predicted = winners.scene.picker_at(55, 55);
+    gateway::debug_picker_resolve_source(observed, winners.scene);
     require(gateway::debug_picker_verdict(observed) == gateway::DebugPickerVerdict::match,
             "guest result must match the original last-enabled rectangle prediction");
+    using PickerSource = gateway::DebugPickerObservation::Source;
+    require(observed.source == PickerSource::control && observed.native_row &&
+                observed.native_row->index == 2 && observed.enabled_overlaps == 3 &&
+                observed.native_object_id == 0,
+            "native control provenance must use returned group/slot and count masked rows");
+    auto classified = observed;
+    classified.x = 45;
+    classified.y = 45;
+    classified.native_outputs = {0, 1, 3};
+    gateway::debug_picker_resolve_source(classified, winners.scene);
+    require(classified.source == PickerSource::room && classified.native_object_id == 123 &&
+                classified.native_row && classified.native_row->index == 1 &&
+                classified.enabled_overlaps == 2,
+            "only the aligned room group can assign a native RGN object ID");
+    classified.x = 10;
+    classified.y = 10;
+    classified.native_outputs = {0, 0, 1};
+    gateway::debug_picker_resolve_source(classified, winners.scene);
+    require(classified.source == PickerSource::fallback && classified.enabled_overlaps == 1 &&
+                classified.native_row && classified.native_row->index == 0,
+            "the picker's real slot-zero fallback is selectable and independently labeled");
+    classified.x = 25;
+    classified.y = 25;
+    classified.native_outputs = {2, 1, 5};
+    gateway::debug_picker_resolve_source(classified, winners.scene);
+    require(classified.source == PickerSource::unresolved && classified.native_row &&
+                classified.native_row->flags == 0x80 && classified.enabled_overlaps == 1,
+            "native output naming a skipped row must not be claimed as an active control");
+    classified.x = 75;
+    classified.y = 55;
+    classified.native_outputs = {0, 1, 3};
+    gateway::debug_picker_resolve_source(classified, winners.scene);
+    require(classified.source == PickerSource::unresolved && classified.native_object_id == 0,
+            "row whose inclusive bounds exclude the call must be marked unresolved");
+    classified.x = 45;
+    classified.y = 45;
+    auto unmatched_scene = winners.scene;
+    unmatched_scene.native_picker_aligned = false;
+    gateway::debug_picker_resolve_source(classified, unmatched_scene);
+    require(classified.source == PickerSource::unmapped && classified.native_object_id == 0,
+            "uncorrelated PIC/RGN scene must not acquire a guessed object identity");
+    classified.native_ax = 0;
+    classified.native_outputs = {0xffff, 0xffff, 0};
+    gateway::debug_picker_resolve_source(classified, unmatched_scene);
+    require(classified.source == PickerSource::none && !classified.native_row &&
+                classified.enabled_overlaps == 2,
+            "native no-match return must be recorded even when the model sees candidates");
+    gateway::debug_picker_resolve_source(classified, {});
+    require(classified.source == PickerSource::unmodeled && !classified.native_row &&
+                classified.enabled_overlaps == 0,
+            "missing picker memory must not inherit provenance from the preceding call");
     winners.native_picker_monitoring = true;
     winners.native_picker = observed;
     winners.guest_ms = 12500;

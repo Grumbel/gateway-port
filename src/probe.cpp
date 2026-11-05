@@ -80,6 +80,7 @@ struct State {
         int x = 0, y = 0;
         std::array<std::uint16_t, 3> out_segments{}, out_offsets{};
         std::optional<gateway::DebugPickerControl> expected;
+        gateway::DebugSceneView entry_scene;
         bool model_ready = false;
     };
     std::optional<PickerFrame> picker_frame;
@@ -1072,17 +1073,17 @@ void trace_picker(uc_engine *uc, std::uint64_t address, std::uint32_t,
                 read_table(segment, 0x1576, 2);
                 read_table(ds, 0xa6d0, 0x400);
                 state.debug_scene->set_native_picker_state(state.picker_memory, ds);
-                const auto scene = state.debug_scene->view();
+                frame.entry_scene = state.debug_scene->view();
                 // A complete native table is sufficient to predict picker
                 // group/slot outputs. RGN alignment is only required before
                 // attributing those rows to game object identities.
-                frame.model_ready = scene.native_picker_decoded;
+                frame.model_ready = frame.entry_scene.native_picker_decoded;
                 if (frame.model_ready)
-                    frame.expected = scene.picker_at(frame.x, frame.y);
+                    frame.expected = frame.entry_scene.picker_at(frame.x, frame.y);
             }
-            state.picker_frame = frame;
+            state.picker_frame = std::move(frame);
         } else if (address == picker_return && state.picker_frame) {
-            const auto frame = *state.picker_frame;
+            const auto frame = std::move(*state.picker_frame);
             state.picker_frame.reset();
             std::array<std::uint16_t, 3> actual{};
             for (unsigned i = 0; i < 3; ++i)
@@ -1097,6 +1098,7 @@ void trace_picker(uc_engine *uc, std::uint64_t address, std::uint32_t,
             observation.native_outputs = actual;
             observation.model_ready = frame.model_ready;
             observation.predicted = frame.expected;
+            gateway::debug_picker_resolve_source(observation, frame.entry_scene);
             state.picker_observation = observation;
             state.picker_error.clear();
             const int model_result = !frame.model_ready ? -1 : frame.expected ? 1 : 0;
@@ -1121,7 +1123,13 @@ void trace_picker(uc_engine *uc, std::uint64_t address, std::uint32_t,
                                    << frame.x << '\t' << frame.y << '\t' << model_result << '\t'
                                    << model_group << '\t' << model_slot << '\t' << model_kind << '\t'
                                    << ax << '\t' << actual[0] << '\t' << actual[1] << '\t'
-                                   << actual[2] << '\t' << verdict_name << '\n';
+                                   << actual[2] << '\t' << verdict_name << '\t'
+                                   << gateway::debug_picker_source_name(observation.source) << '\t'
+                                   << (observation.native_row ? int(observation.native_row->index) : -1)
+                                   << '\t'
+                                   << (observation.native_row ? int(observation.native_row->flags) : -1)
+                                   << '\t' << observation.native_object_id << '\t'
+                                   << observation.enabled_overlaps << '\n';
             }
         }
     } catch (const std::exception &error) {
@@ -2656,7 +2664,8 @@ int main(int argc, char **argv) {
                 throw std::runtime_error("cannot open native picker trace");
             state.picker_trace << "ms\tx\ty\tmodel_result\tmodel_group\tmodel_slot"
                                   "\tmodel_kind\tnative_result\tnative_group\tnative_slot"
-                                  "\tnative_kind\tverdict\n";
+                                  "\tnative_kind\tverdict\tnative_source\tnative_index"
+                                  "\tnative_flags\tnative_object\tenabled_overlaps\n";
         }
         state.object_flags_mode = object_flags_mode;
         state.object_state_services = object_state_services;
