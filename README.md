@@ -410,10 +410,17 @@ creates `RESTART.DAT` in writable state and reaches Your Quarters. Space advance
 MORE prompts; typing `look` and Enter redraws the room description in the tested
 SDL session. Complete intro playback and reference timing still need validation.
 
+The main reverse-engineering effort has now switched to **decompiling the
+original launcher into source-shaped 16-bit C**, preserving its functions,
+far calls, data offsets and control flow before making a modern translation.
+The first translated routines and their remaining uncertainties are in
+[`decomp/launcher/README.md`](decomp/launcher/README.md).
+
 A separate native C++ intro prototype renders the initial Legend splash,
 logo sequence, all eighteen narrative pages, and several background/sprite
 animations directly from `GATE.EXE`, the original PIC archives, and its
-proportional font, without executing DOS instructions:
+proportional font, without executing DOS instructions. This SDL viewer is
+retained as an independent reference:
 
 ```sh
 nix run .#intro -- ../gateway-dos

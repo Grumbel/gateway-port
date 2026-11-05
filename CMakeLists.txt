@@ -45,6 +45,10 @@ if(GATEWAY_WITH_SDL)
   install(TARGETS gateway-intro RUNTIME DESTINATION bin)
 endif()
 if(BUILD_TESTING)
+  add_executable(launcher-decompile-tests
+    decomp/launcher/gate_exe.c tests/launcher_decompile_tests.c)
+  target_include_directories(launcher-decompile-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-decompile COMMAND launcher-decompile-tests)
   add_executable(intro-presentation-tests tests/intro_presentation_tests.cpp)
   target_link_libraries(intro-presentation-tests PRIVATE gateway_core)
   add_test(NAME intro-presentation COMMAND intro-presentation-tests
@@ -185,6 +189,8 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/rtl_animation_tests.py)
     add_test(NAME intro-program-inspector COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/intro_program_tests.py)
+    add_test(NAME launcher-decompile-binary COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_decompile_binary_tests.py)
     add_test(NAME story-visibility-correlation COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/visibility_correlation_tests.py)
     add_test(NAME story-object-write-trace COMMAND ${Python3_EXECUTABLE}

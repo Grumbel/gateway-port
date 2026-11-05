@@ -1,5 +1,12 @@
 # Gateway launcher intro: native reconstruction
 
+**Current priority: source-faithful decompilation.** See
+[`decomp/launcher/README.md`](../decomp/launcher/README.md) for the original
+`GATE.EXE` routines translated to C. The framebuffer-based presentation
+below remains useful as a regression oracle, but reconstructing the original
+control flow and data structures takes precedence over matching more
+individual pixels.
+
 This is a **separate** program from the game's command/verb loop. It belongs
 to the small launcher `GATE.EXE`, not `GATEMAIN.EXE` or its story overlays.
 The native prototype in `src/story/intro_presentation.*` reads the original
