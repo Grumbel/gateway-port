@@ -32,6 +32,14 @@ def snapshot(directory, phase, extra=None):
         encoding='ascii')
 
 
+def rtlink(directory, count=1):
+    (directory / 'native.rtlink-calls').write_text(
+        f'rtlink-census manager_hits={count} validated={count} unrecognized=0\n'
+        f'rtlink-call section=4 target=4319:d5d count={count} '
+        f'first_ms=1000 last_ms={1000 if count == 1 else 23000}\n',
+        encoding='ascii')
+
+
 with tempfile.TemporaryDirectory(prefix='gateway-picker-click-test-') as temporary:
     root = Path(temporary)
     stage = root / 'stage.walk'
@@ -70,6 +78,38 @@ with tempfile.TemporaryDirectory(prefix='gateway-picker-click-test-') as tempora
     assert report['trials'][0]['post_diff']['first_offsets'] == ['0x02000']
     assert not report['trials'][0]['object_changes']['available']
     assert not report['trials'][0]['picker_trace']['available']
+    assert report['control_rtlink_equal'] is None
+    assert not report['trials'][0]['rtlink_diff']['available']
+
+    for name in ('control-a', 'control-b'):
+        rtlink(folder / name)
+    rtlink(folder / 'click-001', 2)
+    calls = compare_recordings(folder, [('click-001', 280, 80)])
+    assert calls['control_rtlink_equal'] is True
+    delta = calls['trials'][0]['rtlink_diff']
+    assert delta['available'] and delta['validated_calls_delta'] == 1
+    assert delta['first_targets'] == [
+        {'target': '4:4319:0d5d', 'before': 1, 'after': 2, 'delta': 1}]
+    rtlink(folder / 'control-b', 3)
+    unstable_calls = compare_recordings(folder, [('click-001', 280, 80)])
+    assert not unstable_calls['control_rtlink_equal']
+    assert not unstable_calls['controls_stable']
+    assert not unstable_calls['trials'][0]['comparison_qualified']
+    assert unstable_calls['control_post_equal']  # RAM/CPU alone still match
+    rtlink(folder / 'control-b')
+    (folder / 'control-b' / 'native.rtlink-calls').unlink()
+    missing_calls = compare_recordings(folder, [('click-001', 280, 80)])
+    assert not missing_calls['controls_stable']
+    assert not missing_calls['trials'][0]['comparison_qualified']
+    rtlink(folder / 'control-b')
+    (folder / 'control-b' / 'native.rtlink-calls').write_text('broken census\n')
+    try:
+        compare_recordings(folder, [('click-001', 280, 80)])
+    except ValueError as error:
+        assert 'invalid RTLink call census' in str(error)
+    else:
+        raise AssertionError('accepted a malformed original RTLink census')
+    rtlink(folder / 'control-b')
 
     (folder / 'click-001' / 'picker-follow.tsv').write_text(
         '# call=1 ms=1234 x=280 y=80 native_ax=1 group=0 slot=2 kind=3 '
@@ -114,6 +154,7 @@ with tempfile.TemporaryDirectory(prefix='gateway-picker-click-test-') as tempora
         captured.append((name, list(candidate.mouse_clicks), options.probe_arg))
         snapshot(options.output, 'before')
         snapshot(options.output, 'after', {0x3000: 1} if name.startswith('click-') else None)
+        rtlink(options.output, 2 if name.startswith('click-') else 1)
 
     with mock.patch('picker_click_trials.walkthrough_run', side_effect=fake_run):
         actual = run_study(args, [(280, 80), (320, 80)])
@@ -126,7 +167,9 @@ with tempfile.TemporaryDirectory(prefix='gateway-picker-click-test-') as tempora
     assert all('--deterministic-clock' in extra and '--dump-at' in extra
                for _, _, extra in captured)
     assert actual['control_post_equal']
+    assert actual['control_rtlink_equal']
     assert all(trial['comparison_qualified'] for trial in actual['trials'])
+    assert actual['trials'][0]['rtlink_diff']['changed_targets'] == 1
     assert json.loads((output / 'comparison.json').read_text())['points'] == 2
     assert json.loads((output / 'trial-plan.json').read_text())['points'] == [
         [280, 80], [320, 80]]

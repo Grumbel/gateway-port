@@ -28,6 +28,7 @@ from run_golden import (extract_native_objects, normalized_memory,
 from run_walkthrough import (compile_steps, parse_script, run as walkthrough_run,
                              verify_recorded)
 from report_picker_follow import parse_picker_calls
+from inventory_native_handlers import parse_calls
 
 
 def read_points(path, capture_call):
@@ -136,6 +137,41 @@ def picker_observations(directory, start_ms, end_ms):
     return {'available': True, 'calls': selected}
 
 
+def rtlink_census(directory):
+    """Read the original runtime's complete section-qualified call counts."""
+    path = directory / 'native.rtlink-calls'
+    if not path.is_file():
+        return None
+    calls, totals = parse_calls(path.read_text(encoding='ascii').splitlines())
+    return calls, totals
+
+
+def compare_rtlink_counts(baseline, trial):
+    """Full-run RTLink delta, never assumed to originate at the click time."""
+    if baseline is None or trial is None:
+        return {'available': False, 'reason': 'native RTLink census unavailable'}
+    original, original_totals = baseline
+    changed, changed_totals = trial
+    deltas = []
+    for key in sorted(set(original) | set(changed)):
+        before = original.get(key, {}).get('calls', 0)
+        after = changed.get(key, {}).get('calls', 0)
+        if before != after:
+            sid, cs, ip = key
+            deltas.append({'target': f'{sid}:{cs:04x}:{ip:04x}',
+                           'before': before, 'after': after, 'delta': after - before})
+    deltas.sort(key=lambda row: (-abs(row['delta']), row['target']))
+    return {'available': True,
+            'manager_hits_delta': changed_totals['manager_hits'] -
+                                  original_totals['manager_hits'],
+            'validated_calls_delta': changed_totals['validated_calls'] -
+                                     original_totals['validated_calls'],
+            'unrecognized_hits_delta': changed_totals['unrecognized_manager_hits'] -
+                                       original_totals['unrecognized_manager_hits'],
+            'changed_targets': len(deltas), 'first_targets': deltas[:32],
+            'truncated': len(deltas) > 32}
+
+
 def compare_recordings(output, trial_names, *, click_ms=0, post_ms=3600000):
     a = output / 'control-a'
     b = output / 'control-b'
@@ -143,14 +179,26 @@ def compare_recordings(output, trial_names, *, click_ms=0, post_ms=3600000):
     initial_b, initial_b_regs, _ = snapshot(b / 'before')
     final_a, final_regs, _ = snapshot(a / 'after')
     final_b, final_b_regs, _ = snapshot(b / 'after')
+    control_a_calls, control_b_calls = rtlink_census(a), rtlink_census(b)
+    if control_a_calls is None and control_b_calls is None:
+        control_rtlink_equal = None
+    else:
+        control_rtlink_equal = (control_a_calls is not None and
+                                control_b_calls is not None and
+                                control_a_calls == control_b_calls)
     control_pre_cpu_equal = initial_regs == initial_b_regs
     control_post_cpu_equal = final_regs == final_b_regs
     initial_consistent = initial_a == initial_b and control_pre_cpu_equal
-    controls_stable = final_a == final_b and control_post_cpu_equal
+    controls_post_equal = final_a == final_b and control_post_cpu_equal
+    controls_stable = controls_post_equal and control_rtlink_equal is not False
     result = {'control_pre_equal': initial_consistent,
-              'control_post_equal': controls_stable,
+              'control_post_equal': controls_post_equal,
+              'controls_stable': controls_stable,
               'control_pre_cpu_equal': control_pre_cpu_equal,
               'control_post_cpu_equal': control_post_cpu_equal,
+              'control_rtlink_equal': control_rtlink_equal,
+              'control_rtlink_diff': compare_rtlink_counts(control_a_calls,
+                                                           control_b_calls),
               'control_pre_diff': diff_memory(initial_a, initial_b),
               'control_post_diff': diff_memory(final_a, final_b),
               'control_picker_traces': {
@@ -163,6 +211,7 @@ def compare_recordings(output, trial_names, *, click_ms=0, post_ms=3600000):
         trial_post, trial_post_regs, _ = snapshot(trial / 'after')
         same_entry = initial_consistent and trial_pre == initial_a and trial_regs == initial_regs
         qualified = same_entry and controls_stable
+        trial_calls = rtlink_census(trial)
         result['trials'].append({
             'name': name, 'x': x, 'y': y,
             'same_pre_state': same_entry,
@@ -175,6 +224,9 @@ def compare_recordings(output, trial_names, *, click_ms=0, post_ms=3600000):
             'object_changes': changed_objects(a / 'after', trial / 'after')
                               if qualified else {'available': False,
                                                  'reason': 'unverified common baseline'},
+            'rtlink_diff': compare_rtlink_counts(control_a_calls, trial_calls)
+                           if qualified else {'available': False,
+                                              'reason': 'unverified common baseline'},
             'picker_trace': picker_observations(trial, click_ms, post_ms),
             'interpretation': ('candidate click-associated state difference only'
                                if qualified else 'inconclusive: baseline/pre-state mismatch'),

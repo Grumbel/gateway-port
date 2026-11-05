@@ -563,11 +563,16 @@ memory under `build/` and must not be committed.
 `comparison.json` reports separately whether the two controls have identical
 pre/post snapshots, whether a click trial started from the same pre-click
 state, native picker selections during the interval, changed normalized RAM
-bytes and changed verified object IDs. If either control differs or the CPU
-and RAM pre-states disagree, the trial is **inconclusive**, not classified as
-accepted. Even a qualified RAM/object change is only a candidate click side
-effect: proving the game accepted the click requires tracing the relevant
-native caller branch, and a valid picker selection by itself is insufficient.
+bytes and changed verified object IDs. It also compares the original probe's
+section-qualified RTLink call census for every run, listing the largest
+per-target count changes alongside manager-hit deltas. If two no-click controls
+disagree in RTLink counts, timing, RAM or CPU state, or a click trial's RAM/CPU
+pre-state differs, the trial is **inconclusive**, not classified as accepted.
+The call census covers the **entire walkthrough replay**, so even a changed
+RTLink target is a lead for follow-up tracing, not proof of a click-specific
+call. A qualified RAM/object difference is only a candidate click side effect:
+proving the game accepted the click requires tracing the relevant native
+caller branch, and a valid picker selection by itself is insufficient.
 
 The runner writes `trial-plan.json` before starting the first guest; it hashes
 the walkthrough, probe, all original game resources (not unrelated DOS save

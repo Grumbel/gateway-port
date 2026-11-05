@@ -1030,6 +1030,14 @@ game-directory saves, corrupted manifests, missing snapshots and altered
 reports. The original-game trials still require a host with Unicorn/Xvfb;
 their downstream action-dispatch semantics remain unproven.
 
+Per-trial reports also include a strict original RTLink target-count
+comparison against the no-click control; the two controls must agree on the
+entire section-qualified census before click-associated evidence is qualified.
+The report lists changed target counts and call-manager totals, while clearly
+marking them as *whole-run* differences rather than assigning any untraced
+call to the injected click. Synthetic tests distinguish matching CPU/RAM with
+divergent native handler activity. Host guest execution remains the next step.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |
