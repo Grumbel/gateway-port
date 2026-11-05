@@ -587,6 +587,34 @@ rejected by the game. All such action events are **temporal candidates**, not
 verified causal dispatches. Older or malformed continuation data is reported
 as unavailable instead of being turned into a false acceptance verdict.
 
+### Check that a click reproduced the captured conditional state
+
+A screen coordinate taken from one original picker-entry capture may not
+represent the same condition after a different walkthrough prefix. Once the
+isolated click study is complete, compare its *actual frozen picker tables*
+against the reference state used to select the candidate coordinates:
+
+```sh
+python3 tools/match_picker_trial_states.py \
+  build/picker-entry/captures build/picker-click-trials/drawer-open \
+  --reference-call 2 > build/picker-click-trials/drawer-open-state-check.json
+```
+
+This read-only check requires `trial-plan.json`, `comparison.json` and the
+original picker follow traces. It validates the reference capture's private
+RAM sidecar and returned row geometry, then checks each trial's original
+picker calls at the **exact injected coordinates** within the observation
+interval. It distinguishes different pictures/frames, different rectangle
+geometry, room skip-bit differences, non-room GUI/fallback skip-bit differences,
+and exact skip-mask matches. It never merges GUI rows into scene-object
+hitboxes; all room row identities include original object IDs, while
+distinct slots of one object remain distinct internally for priority checks.
+An identical native skip mask means the same rectangle eligibility in that
+captured scene, **not** that the scene was painted or that an action was
+accepted. `baseline_qualified` repeats the existing controlled comparison's
+status; this command cannot recover evidence from unstable controls. Before
+trusting a previously recorded study, run its `--compare-existing` check.
+
 The runner writes `trial-plan.json` before starting the first guest; it hashes
 the walkthrough, probe, all original game resources (not unrelated DOS save
 files), optional imported save, input schedule and chosen coordinates.

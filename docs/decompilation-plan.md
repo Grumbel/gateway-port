@@ -1048,6 +1048,17 @@ object references, malformed continuation summaries and legacy traces with
 no continuation metadata. These are branch-investigation leads only, not
 evidence that a click was accepted by a downstream game handler.
 
+An independent read-only matcher now cross-checks each completed trial's
+actual entry-frozen picker scene against one validated private reference
+entry capture. It requires matching picture frame and *entire* rectangle
+geometry before comparing the per-row dynamic `0x80` disabled flags, and
+reports room and GUI/fallback mask differences separately. Trial picker calls
+at other coordinates or outside the injection window are excluded. Synthetic
+reference capture and trial fixtures cover matched masks, changed room and
+GUI conditions, missing geometry and inconsistent experiment provenance.
+This closes a possible false attribution when test coordinates are reused in
+the wrong story condition; no native acceptance or scene visibility is claimed.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |
