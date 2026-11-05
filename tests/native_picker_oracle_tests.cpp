@@ -6,12 +6,14 @@
 // our read-only debug view. No original bytes are committed to the repo.
 #include "debug_scene.hpp"
 #include <unicorn/unicorn.h>
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <map>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -74,6 +76,97 @@ Pick original_pick(uc_engine *uc, int x, int y, std::uint16_t ds) {
     check(uc_mem_read(uc, 0xf8000, result.data(), sizeof result));
     return {get(uc, UC_X86_REG_AX), result[0], result[1], result[2]};
 }
+
+std::map<std::string, std::string> read_metadata(const std::filesystem::path &path) {
+    std::ifstream file(path);
+    require(bool(file), "cannot open " + path.string());
+    std::map<std::string, std::string> result;
+    std::string line;
+    while (std::getline(file, line)) {
+        const auto equal = line.find('=');
+        require(equal != std::string::npos && equal > 0 && equal + 1 < line.size(),
+                "invalid picker capture metadata line");
+        require(result.emplace(line.substr(0, equal), line.substr(equal + 1)).second,
+                "duplicate picker capture metadata field");
+    }
+    require(result.at("format") == "gateway-picker-entry-v1", "wrong capture format");
+    return result;
+}
+
+std::size_t compare_captured_picker(const std::filesystem::path &original,
+                                    const std::filesystem::path &capture_meta) {
+    const auto details = read_metadata(capture_meta);
+    const auto memory_path = capture_meta.parent_path() /
+        (capture_meta.stem().string() + ".bin");
+    const auto memory = read(memory_path);
+    require(memory.size() == 0x100000, "picker entry snapshot must be 1 MiB");
+    const auto ds = std::uint16_t(std::stoul(details.at("DS"), nullptr, 0));
+    const auto cs = std::uint16_t(std::stoul(details.at("CS"), nullptr, 0));
+    const auto ip = std::uint16_t(std::stoul(details.at("IP"), nullptr, 0));
+    require(std::uint32_t(cs) * 16 + ip == 0x269d1,
+            "capture was not taken at the verified native picker entry");
+    constexpr std::size_t entry = 0x269d1;
+    require(memory[entry] == 0x55 && memory[entry + 1] == 0x8b &&
+            memory[entry + 2] == 0xec && memory[entry + 3] == 0x83,
+            "capture contains a different picker implementation");
+
+    gateway::DebugSceneTracker tracker;
+    const auto picture_name = details.at("picture");
+    if (!picture_name.empty()) {
+        const auto pic = read(original / picture_name);
+        const auto region_name = gateway::DebugSceneTracker::matching_rgn(picture_name);
+        if (!region_name.empty() && std::filesystem::exists(original / region_name)) {
+            require(tracker.add_picture(picture_name, pic, read(original / region_name)),
+                    "cannot load captured PIC/RGN pair");
+            const auto entries = gateway::parse_pic_directory(pic);
+            const auto frame = std::stoul(details.at("picture_entry"));
+            require(frame < entries.size() && entries[frame].offset,
+                    "invalid captured picture directory entry");
+            tracker.note_read(picture_name, entries[frame].offset, 1);
+        }
+    }
+    tracker.set_native_picker_state(memory, ds);
+    const auto view = tracker.view();
+    require(view.native_picker_decoded, "capture has no decodable native picker table");
+
+    std::set<std::pair<int, int>> points;
+    points.emplace(std::stoi(details.at("x")), std::stoi(details.at("y")));
+    for (int y = 0; y < 480; y += 19)
+        for (int x = 0; x < 640; x += 17)
+            points.emplace(x, y);
+    for (const auto &row : view.native_picker_rows) {
+        for (int x : {row.x0 - 1, row.x0, row.x1, row.x1 + 1})
+            for (int y : {row.y0 - 1, row.y0, row.y1, row.y1 + 1})
+                if (x >= 0 && x < 640 && y >= 0 && y < 480)
+                    points.emplace(x, y);
+    }
+    uc_engine *uc = nullptr;
+    check(uc_open(UC_ARCH_X86, UC_MODE_16, &uc));
+    std::size_t compared = 0;
+    try {
+        check(uc_mem_map(uc, 0, 0x100000, UC_PROT_ALL));
+        check(uc_mem_write(uc, 0, memory.data(), memory.size()));
+        for (const auto &[x, y] : points) {
+            const auto expected = view.picker_at(x, y);
+            const auto actual = original_pick(uc, x, y, ds);
+            const bool equal = expected
+                ? actual.result == 1 && actual.group == expected->group &&
+                  actual.slot == expected->slot && actual.kind == expected->kind
+                : actual.result == 0 && actual.group == 0xffff &&
+                  actual.slot == 0xffff && actual.kind == 0;
+            require(equal, capture_meta.filename().string() + " native picker mismatch at " +
+                               std::to_string(x) + "," + std::to_string(y));
+            ++compared;
+        }
+    } catch (...) {
+        uc_close(uc);
+        throw;
+    }
+    uc_close(uc);
+    std::cout << capture_meta.filename().string() << ": " << compared
+              << " native comparisons, PIC/RGN aligned=" << view.native_picker_aligned << '\n';
+    return compared;
+}
 } // namespace
 
 int main(int argc, char **argv) try {
@@ -81,8 +174,28 @@ int main(int argc, char **argv) try {
         std::cout << "native picker oracle skipped: provide original-game and RAM directories\n";
         return 77;
     }
-    require(argc == 3, "usage: native-picker-oracle-tests GATEWAY-DOS RAM-CAPTURES");
+    if (argc == 4 && std::string(argv[2]) == "--captured") {
+        const std::filesystem::path original = argv[1], captures = argv[3];
+        require(std::filesystem::is_directory(captures), "no picker capture directory");
+        std::vector<std::filesystem::path> entries;
+        for (const auto &item : std::filesystem::directory_iterator(captures))
+            if (item.is_regular_file() && item.path().extension() == ".meta")
+                entries.push_back(item.path());
+        std::sort(entries.begin(), entries.end());
+        require(!entries.empty(), "no native picker entry captures found");
+        std::size_t comparisons = 0;
+        for (const auto &entry : entries)
+            comparisons += compare_captured_picker(original, entry);
+        std::cout << "Gateway native picker oracle: " << entries.size() << " captures, "
+                  << comparisons << " original-code comparisons passed\n";
+        return 0;
+    }
+    require(argc == 3,
+            "usage: native-picker-oracle-tests GATEWAY-DOS RAM-CAPTURES\n"
+            "   or: native-picker-oracle-tests GATEWAY-DOS --captured DIR");
     const std::filesystem::path original = argv[1], captures = argv[2];
+    if (captures == "--captured")
+        throw std::runtime_error("--captured requires a capture directory");
     gateway::DebugSceneTracker tracker;
     const auto picture = read(original / "GATE_102.PIC");
     require(tracker.add_picture("GATE_102.PIC", picture, read(original / "GATE_002.RGN")),

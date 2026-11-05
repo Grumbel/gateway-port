@@ -983,6 +983,16 @@ driver. Synthetic before/after drawer-like skip-bit swaps, GUI overlap,
 anonymous shape ownership, and same-object merge tests pass; no unrecorded
 native game result is claimed.
 
+The picker instrumentation now offers opt-in bounded entry-time RAM/register
+captures (`--picker-capture-dir`, up to 128 one-MiB snapshots) and an offline
+`native-picker-oracle-tests GATEWAY-DOS --captured DIR` mode. Captures retain
+native picker entry registers, original RAM, click coordinates, PIC frame and
+return address, with an optional guest-time start filter; the oracle uses
+those bytes to check a grid, row boundaries
+and the actual click against original picker execution. It does not treat GUI
+rows as scene objects, and never bundles game-owned memory. Capture-format
+tests and syntax checks pass; native Unicorn replay still requires the host.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |

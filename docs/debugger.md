@@ -442,6 +442,51 @@ clicking them sequentially would alter game state and invalidate the
 comparison. A flipped native skip bit remains only selection eligibility,
 not proof that the scene was rendered or an action was accepted.
 
+### Capture the actual original picker entry state
+
+`--dump-at` snapshots sample the guest at a scheduled millisecond and may
+land **before or after** a changing native picker table. For reproducing
+precise conditional hitboxes, `--picker-capture-dir DIR` instead saves guest
+RAM and registers **at the original picker entry instruction**, before it
+executes. `--picker-capture-limit N` bounds the number of 1-MiB snapshots
+to 1–128 (default 16). The directory must be new or empty; old captures
+are never overwritten. Use `--picker-capture-from-ms N` to ignore title-screen
+and other early picker calls until the target replay stage (guest milliseconds).
+
+```sh
+mkdir -p build/picker-entry
+xvfb-run -a python3 tools/run_walkthrough.py run \
+  tests/fixtures/gateway-opening.walk \
+  --probe /tmp/gateway-port-build/gateway-probe \
+  --data ../gateway-dos --output build/picker-entry/replay \
+  --probe-arg=--picker-capture-dir \
+  --probe-arg=build/picker-entry/captures \
+  --probe-arg=--picker-capture-limit --probe-arg=32 \
+  --probe-arg=--picker-capture-from-ms --probe-arg=15000 \
+  --probe-arg=--trace-picker-follow \
+  --probe-arg=build/picker-entry/continuation.tsv
+
+# Offline against captured private memory:
+build/native-picker-oracle-tests ../gateway-dos \
+  --captured build/picker-entry/captures
+```
+
+Each `call-NNNN.bin` contains 1 MiB of original guest memory, while
+`call-NNNN.meta` records the entry registers, click coordinates, guest time,
+far return address, and PIC/frame when known. The continuation trace adds
+`# capture call=N base=call-NNNN` for completed invocations. The oracle
+checks the pinned original picker entry bytes and executes the **original**
+picker with Unicorn over a coordinate grid, rectangle boundaries and the
+captured click, comparing native returns with the independently decoded
+group/slot/kind. It reports PIC/RGN alignment separately; GUI rows do not
+become scene objects merely because the picker could select them.
+
+Private captures contain proprietary executable and game-state bytes:
+**never commit, publish or include them in a Git bundle**. Full-memory
+reads inside the CPU hook may slow gameplay. The entry address is only
+verified for this pinned Gateway 1 layout. Live capture/replay has not been
+exercised on this host, which lacks the Unicorn/SDL3 runtime.
+
 The F10 native-picker panel shows the last observed dispatcher candidate as
 its fifth row and the nearest preceding guest `INT 33h` read as a sixth,
 when monitoring with `--debug-native-picker` or `--trace-picker-follow`.

@@ -16,6 +16,7 @@
 #include "object_flags.hpp"
 #include "opl.hpp"
 #include "pit.hpp"
+#include "picker_capture.hpp"
 #include "picker_follow.hpp"
 #include "picker_scene_trace.hpp"
 #include "rtlink.hpp"
@@ -79,6 +80,11 @@ struct State {
     std::ofstream research_trace;
     std::ofstream picker_trace;
     std::ofstream picker_follow_trace;
+    std::filesystem::path picker_capture_dir;
+    unsigned picker_capture_limit = 16;
+    unsigned picker_capture_from_ms = 0;
+    unsigned picker_capture_seen = 0, picker_capture_written = 0;
+    unsigned picker_capture_errors = 0;
     gateway::PickerFollowGate picker_follow_gate;
     gateway::PickerDispatchWindow picker_dispatch_window;
     gateway::PickerInputHistory picker_input_history;
@@ -99,6 +105,7 @@ struct State {
         std::array<std::uint16_t, 3> out_segments{}, out_offsets{};
         std::optional<gateway::DebugPickerControl> expected;
         gateway::DebugSceneView entry_scene;
+        std::string capture_name;
         bool model_ready = false;
     };
     std::optional<PickerFrame> picker_frame;
@@ -1080,6 +1087,41 @@ void trace_picker(uc_engine *uc, std::uint64_t address, std::uint32_t,
                 frame.out_offsets[i] = stack_word(8 + i * 4);
                 frame.out_segments[i] = stack_word(10 + i * 4);
             }
+            if (!state.picker_capture_dir.empty() &&
+                state.elapsed_ms >= state.picker_capture_from_ms) {
+                ++state.picker_capture_seen;
+                if (state.picker_capture_seen <= state.picker_capture_limit) {
+                    try {
+                        gateway::PickerEntryCapture capture;
+                        capture.call = state.picker_capture_seen;
+                        capture.guest_ms = state.elapsed_ms;
+                        capture.x = frame.x;
+                        capture.y = frame.y;
+                        capture.return_cs = frame.return_cs;
+                        capture.return_ip = frame.return_ip;
+                        if (state.debug_scene) {
+                            const auto scene = state.debug_scene->view();
+                            capture.picture = scene.picture;
+                            capture.picture_entry = scene.entry;
+                        }
+                        constexpr int ids[] = {UC_X86_REG_AX, UC_X86_REG_BX, UC_X86_REG_CX,
+                                               UC_X86_REG_DX, UC_X86_REG_CS, UC_X86_REG_IP,
+                                               UC_X86_REG_SS, UC_X86_REG_SP, UC_X86_REG_DS,
+                                               UC_X86_REG_ES, UC_X86_REG_BP, UC_X86_REG_FLAGS};
+                        for (std::size_t i = 0; i < capture.registers.size(); ++i)
+                            capture.registers[i] = reg(uc, ids[i]);
+                        std::vector<std::uint8_t> memory(0x100000);
+                        check(uc_mem_read(uc, 0, memory.data(), memory.size()));
+                        frame.capture_name = gateway::write_picker_entry_capture(
+                            state.picker_capture_dir, capture, memory);
+                        ++state.picker_capture_written;
+                    } catch (const std::exception &error) {
+                        ++state.picker_capture_errors;
+                        std::cerr << "Picker entry capture failed at call "
+                                  << state.picker_capture_seen << ": " << error.what() << '\n';
+                    }
+                }
+            }
             if (state.debug_scene) {
                 // The picker tables occupy <1 KiB, so avoid copying the
                 // entire 1-MiB emulated address space for each mouse event.
@@ -1176,6 +1218,9 @@ void trace_picker(uc_engine *uc, std::uint64_t address, std::uint32_t,
                                           << frame.return_ip << std::dec << '\n';
                 gateway::write_picker_scene_trace(state.picker_follow_trace, call_id,
                                                   frame.entry_scene, ax, actual);
+                if (!frame.capture_name.empty())
+                    state.picker_follow_trace << "# capture call=" << call_id
+                                              << " base=" << frame.capture_name << '\n';
                 if (input) {
                     const auto &read = input->read;
                     state.picker_follow_trace << "# input call=" << call_id
@@ -2379,6 +2424,11 @@ int main(int argc, char **argv) {
     std::string rtlink_sequence_path;
     std::string trace_picker_path;
     std::string trace_picker_follow_path;
+    std::filesystem::path picker_capture_dir;
+    unsigned picker_capture_limit = 16;
+    bool picker_capture_limit_used = false;
+    unsigned picker_capture_from_ms = 0;
+    bool picker_capture_from_ms_used = false;
     unsigned picker_follow_steps = 96;
     bool picker_follow_steps_used = false;
     unsigned picker_dispatch_ms = 2000;
@@ -2431,6 +2481,8 @@ int main(int argc, char **argv) {
                      "[--trace-rtlink-calls FILE] "
                      "[--trace-rtlink-sequence FILE] "
                      "[--trace-picker FILE] [--debug-native-picker] "
+                     "[--picker-capture-dir DIR --picker-capture-limit N "
+                     "--picker-capture-from-ms N] "
                      "[--trace-picker-follow FILE --picker-follow-steps N "
                      "--picker-dispatch-ms N --picker-input-ms N] "
                      "[--key-script FILE --milliseconds N] "
@@ -2530,6 +2582,37 @@ int main(int argc, char **argv) {
             headless_debug_scene = true;
             if (trace_picker_follow_path.empty()) {
                 usage();
+                return 2;
+            }
+        } else if (option == "--picker-capture-dir" && i + 1 < argc) {
+            if (!picker_capture_dir.empty()) {
+                usage();
+                return 2;
+            }
+            picker_capture_dir = argv[++i];
+            headless_debug_scene = true;
+            if (picker_capture_dir.empty()) {
+                usage();
+                return 2;
+            }
+        } else if (option == "--picker-capture-limit" && i + 1 < argc) {
+            picker_capture_limit_used = true;
+            const std::string_view value(argv[++i]);
+            const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(),
+                                                     picker_capture_limit);
+            if (error != std::errc{} || end != value.data() + value.size() ||
+                picker_capture_limit < 1 || picker_capture_limit > 128) {
+                std::cerr << "--picker-capture-limit requires an integer from 1 to 128\n";
+                return 2;
+            }
+        } else if (option == "--picker-capture-from-ms" && i + 1 < argc) {
+            picker_capture_from_ms_used = true;
+            const std::string_view value(argv[++i]);
+            const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(),
+                                                     picker_capture_from_ms);
+            if (error != std::errc{} || end != value.data() + value.size() ||
+                picker_capture_from_ms > 3600000) {
+                std::cerr << "--picker-capture-from-ms requires 0..3600000\n";
                 return 2;
             }
         } else if (option == "--picker-follow-steps" && i + 1 < argc) {
@@ -2944,6 +3027,11 @@ int main(int argc, char **argv) {
         std::cerr << "--picker-follow-steps requires --trace-picker-follow FILE\n";
         return 2;
     }
+    if ((picker_capture_limit_used || picker_capture_from_ms_used) &&
+        picker_capture_dir.empty()) {
+        std::cerr << "picker capture settings require --picker-capture-dir DIR\n";
+        return 2;
+    }
     if (picker_dispatch_ms_used && trace_picker_follow_path.empty() && !debug_native_picker) {
         std::cerr << "--picker-dispatch-ms requires --trace-picker-follow or "
                      "--debug-native-picker\n";
@@ -2961,6 +3049,19 @@ int main(int argc, char **argv) {
         std::vector<std::uint8_t> bytes{std::istreambuf_iterator<char>(file), {}};
         auto image = gateway::load_mz(bytes);
         State state;
+        if (!picker_capture_dir.empty()) {
+            if (std::filesystem::exists(picker_capture_dir)) {
+                if (!std::filesystem::is_directory(picker_capture_dir) ||
+                    std::filesystem::directory_iterator(picker_capture_dir) !=
+                        std::filesystem::directory_iterator())
+                    throw std::runtime_error("picker capture directory must be empty");
+            } else {
+                std::filesystem::create_directories(picker_capture_dir);
+            }
+            state.picker_capture_dir = picker_capture_dir;
+            state.picker_capture_limit = picker_capture_limit;
+            state.picker_capture_from_ms = picker_capture_from_ms;
+        }
         state.debug_native_picker = debug_native_picker;
         state.picker_input_monitoring = debug_native_picker || !trace_picker_follow_path.empty();
         state.picker_input_ms = picker_input_ms;
@@ -3189,7 +3290,7 @@ int main(int argc, char **argv) {
                               entry_addresses[i]));
         std::array<uc_hook, 2> picker_hooks{};
         if (state.picker_trace.is_open() || state.picker_follow_trace.is_open() ||
-            debug_native_picker) {
+            debug_native_picker || !state.picker_capture_dir.empty()) {
             constexpr std::uint64_t picker_start = 0x269d1;
             constexpr std::uint64_t picker_return = picker_start + (0x14244 - 0x14186);
             check(uc_hook_add(engine.uc, &picker_hooks[0], UC_HOOK_CODE,
@@ -3633,6 +3734,17 @@ int main(int argc, char **argv) {
             throw std::runtime_error("scheduled snapshot was never captured before probe stopped");
         if (!scheduled_mouse.empty())
             throw std::runtime_error("scheduled mouse click was not completed before probe stopped");
+        if (!state.picker_capture_dir.empty()) {
+            std::cerr << "Picker entry captures: observed=" << state.picker_capture_seen
+                      << " written=" << state.picker_capture_written
+                      << " limit=" << state.picker_capture_limit
+                      << " from_ms=" << state.picker_capture_from_ms
+                      << " errors=" << state.picker_capture_errors << '\n';
+            if (state.picker_capture_errors)
+                throw std::runtime_error("one or more native picker entry captures failed");
+            if (!state.picker_capture_written)
+                throw std::runtime_error("no native picker entries captured");
+        }
         if (!dump_prefix.empty()) {
             dump_guest(engine.uc, state, dump_prefix);
         }
