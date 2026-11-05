@@ -148,6 +148,8 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/match_picker_trial_states_tests.py)
     add_test(NAME picker-trial-target-rank COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/rank_picker_trial_targets_tests.py)
+    add_test(NAME local-static-unicorn-builder COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/build_probe_from_unicorn_zip_tests.py)
     add_test(NAME gateway-original-assets COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/gateway_original_assets_tests.py
       --data ${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos

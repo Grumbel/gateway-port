@@ -1064,10 +1064,25 @@ trials that have qualified RAM/CPU/handler baselines. The section-qualified
 target addresses are mapped through the validated Ghidra overlay plan to
 original OVL file offsets, and matched to *exact* tracked function entries
 where possible. Synthetic same-runtime-address/different-section fixtures
-ensure overlay code identities remain distinct; missing/truncated censuses
-are explicitly marked as incomplete. Rankings combine whole-run target count
+ensure overlay code identities remain distinct; missing censuses are
+explicitly marked as incomplete. Rankings combine whole-run target count
 deltas with room-picker, changed-RAM and near-time context observations, but
 do not claim any of these as causal evidence for native action acceptance.
+
+On 2026-11-05 the cross-study RTLink ranker gained lossless recovery of target
+deltas omitted from the 32-entry `comparison.json` preview. When the paired
+original `native.rtlink-calls` sidecars exist, it recomputes and verifies
+the **entire** frozen summary, and only then ranks all target deltas; a lone
+sidecar is an error. The new 35-target synthetic fixture checks that the
+previously omitted three targets are visible and that edited native evidence
+is rejected. In a restricted container the supplied Unicorn 2.1.4 ZIP's
+static library successfully built and ran the headless probe with GCC 13 and
+`-latomic`; the probe's 79 synthetic integration tests passed. The shared
+library required a newer glibc; apt's Ubuntu snapshot mirror returned 500/502,
+so Xvfb/SDL3 live click experiments remain unrun in that container. The exact
+fallback build and limitations are recorded in
+[workspace-setup.md](workspace-setup.md). No native click-acceptance result
+or verified new C++ story routine is claimed.
 
 ## 10. Risks and how to react
 

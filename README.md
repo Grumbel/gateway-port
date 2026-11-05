@@ -83,6 +83,11 @@ For detailed local checks, see [Spellcasting research](docs/spellcasting.md),
 
 ## Build and run
 
+For restricted analysis containers and the user-supplied Unicorn ZIP, see
+[workspace setup](docs/workspace-setup.md) for a tested GCC/static-Unicorn
+headless probe build that does not require CMake or Nix. Interactive SDL3
+recordings still require the normal development environment and private Xvfb.
+
 From this directory:
 
 ```sh
