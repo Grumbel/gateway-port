@@ -1038,6 +1038,16 @@ marking them as *whole-run* differences rather than assigning any untraced
 call to the injected click. Synthetic tests distinguish matching CPU/RAM with
 divergent native handler activity. Host guest execution remains the next step.
 
+The trial comparison now also joins each original picker selection to the
+existing validated continuation evidence: guest mouse-read source and
+coordinate agreement, bounded CPU stores, near-time action/context event
+records, and whether the selected room object appears in those context
+objects. The exact injected coordinate is matched separately from any other
+picker calls within the observation window. Synthetic tests cover positive
+object references, malformed continuation summaries and legacy traces with
+no continuation metadata. These are branch-investigation leads only, not
+evidence that a click was accepted by a downstream game handler.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |

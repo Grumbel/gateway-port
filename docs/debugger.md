@@ -574,6 +574,19 @@ call. A qualified RAM/object difference is only a candidate click side effect:
 proving the game accepted the click requires tracing the relevant native
 caller branch, and a valid picker selection by itself is insufficient.
 
+For native picker calls recorded in the injected time interval, the report now
+also retains the original result kind, overlap count and model verdict. Where
+the detailed continuation trace is available, it attaches the recent guest
+INT 33h read (including whether its coordinates match), completed picker
+continuation status, bounded observed CPU-store count, and nearby action-table
+or action-context events. A room object referenced by a nearby context event
+is explicitly distinguished from a context mentioning other objects. The
+`picker_calls_at_injected_point` list identifies original picker returns at
+the exact trial coordinates; an empty list does not imply the input was
+rejected by the game. All such action events are **temporal candidates**, not
+verified causal dispatches. Older or malformed continuation data is reported
+as unavailable instead of being turned into a false acceptance verdict.
+
 The runner writes `trial-plan.json` before starting the first guest; it hashes
 the walkthrough, probe, all original game resources (not unrelated DOS save
 files), optional imported save, input schedule and chosen coordinates.

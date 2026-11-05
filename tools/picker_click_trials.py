@@ -27,7 +27,8 @@ from run_golden import (extract_native_objects, normalized_memory,
                         object_state_changes, read_registers)
 from run_walkthrough import (compile_steps, parse_script, run as walkthrough_run,
                              verify_recorded)
-from report_picker_follow import parse_picker_calls
+from report_picker_follow import context_reference, parse_picker_calls
+from compare_picker_follow import read_trace
 from inventory_native_handlers import parse_calls
 
 
@@ -123,18 +124,65 @@ def picker_observations(directory, start_ms, end_ms):
     if not trace.is_file():
         return {'available': False, 'reason': 'native picker trace unavailable'}
     calls = parse_picker_calls(trace)
+    # Older probe output has only original picker returns. Newer output also
+    # has bounded post-return instructions, guest INT 33h reads and temporal
+    # dispatch candidates. Keep missing old evidence explicit.
+    follow = None
+    if calls and any(line.startswith('# follow-summary ')
+                     for line in trace.read_text(encoding='utf-8').splitlines()):
+        try:
+            follow = read_trace(trace)
+        except ValueError as error:
+            follow = {'invalid': str(error)}
     selected = []
     for call, event in sorted(calls.items()):
         if start_ms <= event['ms'] <= end_ms:
-            selected.append({'call': call, 'ms': event['ms'],
-                             'x': event['x'], 'y': event['y'],
-                             'source': event['source'],
-                             'object': event['object'],
-                             'group': int(event['group']) if 'group' in event else None,
-                             'slot': int(event['slot']) if 'slot' in event else None,
-                             'native_ax': int(event['native_ax'])
-                             if 'native_ax' in event else None})
+            result = {'call': call, 'ms': event['ms'],
+                      'x': event['x'], 'y': event['y'],
+                      'source': event['source'],
+                      'object': event['object'], 'verdict': event['verdict'],
+                      'overlaps': event['overlaps'],
+                      'group': int(event['group']) if 'group' in event else None,
+                      'slot': int(event['slot']) if 'slot' in event else None,
+                      'kind': int(event['kind']) if 'kind' in event else None,
+                      'native_ax': int(event['native_ax'])
+                      if 'native_ax' in event else None}
+            if isinstance(follow, tuple):
+                _, endings, writes, dispatches, inputs = follow
+                candidates = (dispatches or {}).get(call, [])
+                result['continuation'] = {
+                    'available': True,
+                    'status': endings.get(call, ('unavailable', 0))[0],
+                    'cpu_store_count': len(writes.get(call, [])) if writes is not None else None,
+                    'object_context': context_reference(event['object'], candidates)
+                                      if dispatches is not None else 'unavailable',
+                    'guest_input': mouse_read_evidence(inputs, call),
+                    'dispatch_candidates': [
+                        {'kind': kind, 'action': action,
+                         'first_object': first, 'second_object': second,
+                         'target': f'{cs:04x}:{ip:04x}' if kind == 'action-table' else None,
+                         'age_ms': age}
+                        for kind, action, first, second, cs, ip, age in candidates]}
+            else:
+                result['continuation'] = {
+                    'available': False,
+                    'reason': follow.get('invalid', 'continuation trace unavailable')
+                    if follow is not None else 'continuation trace unavailable'}
+            selected.append(result)
     return {'available': True, 'calls': selected}
+
+
+def mouse_read_evidence(inputs, call):
+    if inputs is None:
+        return {'available': False, 'reason': 'guest mouse-read trace unavailable'}
+    observed = inputs.get(call)
+    if observed is None:
+        return {'available': True, 'observed': False}
+    func, button, buttons, count, x, y, cs, ip, seq, age, coords = observed
+    return {'available': True, 'observed': True, 'function': func,
+            'button': button, 'buttons': buttons, 'press_count': count,
+            'x': x, 'y': y, 'resume': f'{cs:04x}:{ip:04x}',
+            'sequence': seq, 'age_ms': age, 'coords': coords}
 
 
 def rtlink_census(directory):
@@ -212,6 +260,7 @@ def compare_recordings(output, trial_names, *, click_ms=0, post_ms=3600000):
         same_entry = initial_consistent and trial_pre == initial_a and trial_regs == initial_regs
         qualified = same_entry and controls_stable
         trial_calls = rtlink_census(trial)
+        picker = picker_observations(trial, click_ms, post_ms)
         result['trials'].append({
             'name': name, 'x': x, 'y': y,
             'same_pre_state': same_entry,
@@ -227,7 +276,10 @@ def compare_recordings(output, trial_names, *, click_ms=0, post_ms=3600000):
             'rtlink_diff': compare_rtlink_counts(control_a_calls, trial_calls)
                            if qualified else {'available': False,
                                               'reason': 'unverified common baseline'},
-            'picker_trace': picker_observations(trial, click_ms, post_ms),
+            'picker_trace': picker,
+            'picker_calls_at_injected_point': [
+                item['call'] for item in picker.get('calls', [])
+                if item['x'] == x and item['y'] == y],
             'interpretation': ('candidate click-associated state difference only'
                                if qualified else 'inconclusive: baseline/pre-state mismatch'),
         })

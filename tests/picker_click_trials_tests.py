@@ -117,7 +117,40 @@ with tempfile.TemporaryDirectory(prefix='gateway-picker-click-test-') as tempora
     event = picker_observations(folder / 'click-001', 1000, 2000)
     assert event['available'] and len(event['calls']) == 1
     assert event['calls'][0]['object'] == 292
+    assert not event['calls'][0]['continuation']['available']
     assert picker_observations(folder / 'click-001', 2000, 3000)['calls'] == []
+
+    trace = folder / 'click-001' / 'picker-follow.tsv'
+    old_marker = trace.read_text()
+    header = ('call\tstep\tms\tcs\tip\tlinear\tbytes\tax\tbx\tcx\tdx\t'
+              'si\tdi\tbp\tss\tsp\tflags\n')
+    step = '1\t0\t1234\t4100\t123\t41123\t85c0\t1\t0\t0\t0\t0\t0\t0\t5200\t100\t202\n'
+    markers = (
+        '# dispatch call=1 ms=1241 age=7 kind=context action=5f '
+        'first=124 second=0 target=0:0\n'
+        '# input call=1 status=observed seq=1 age=3 func=5 button=0 '
+        'buttons=1 count=1 x=280 y=80 resume=1000:04d5 coords=match\n'
+        '# end call=1 status=complete steps=1\n'
+        '# follow-summary calls=1 completed=1 interrupted=0 missed=0 errors=0 '
+        'pending=0 steps=1 writes=0 write_errors=0 dispatches=1 '
+        'dispatch_errors=0 dispatch_ms=2000 inputs=1 input_missing=0 input_ms=2000\n')
+    trace.write_text(header + old_marker + step + markers)
+    detailed = picker_observations(folder / 'click-001', 1000, 2000)['calls'][0]
+    details = detailed['continuation']
+    assert detailed['verdict'] == 'match' and detailed['overlaps'] == 1
+    assert details['available'] and details['status'] == 'complete'
+    assert details['object_context'] == 'object-referenced'
+    assert details['guest_input']['coords'] == 'match'
+    assert details['guest_input']['press_count'] == 1
+    assert details['dispatch_candidates'] == [
+        {'kind': 'context', 'action': 95, 'first_object': 292,
+         'second_object': 0, 'target': None, 'age_ms': 7}]
+    trace.write_text((header + old_marker + step + markers).replace(
+        'dispatches=1', 'dispatches=2'))
+    invalid = picker_observations(folder / 'click-001', 1000, 2000)['calls'][0]
+    assert not invalid['continuation']['available']
+    assert 'disagrees' in invalid['continuation']['reason']
+    trace.write_text(old_marker)
 
     snapshot(folder / 'control-b', 'after', {0x2000: 5})
     unstable = compare_recordings(folder, [('click-001', 280, 80)])
@@ -155,6 +188,12 @@ with tempfile.TemporaryDirectory(prefix='gateway-picker-click-test-') as tempora
         snapshot(options.output, 'before')
         snapshot(options.output, 'after', {0x3000: 1} if name.startswith('click-') else None)
         rtlink(options.output, 2 if name.startswith('click-') else 1)
+        if name.startswith('click-'):
+            ms, x, y = candidate.mouse_clicks[-1]
+            (options.output / 'picker-follow.tsv').write_text(
+                f'# call=1 ms={ms + 5} x={x} y={y} native_ax=1 group=0 slot=2 '
+                'kind=3 source=room object=292 overlaps=1 verdict=match '
+                'return=4100:0123\n')
 
     with mock.patch('picker_click_trials.walkthrough_run', side_effect=fake_run):
         actual = run_study(args, [(280, 80), (320, 80)])
@@ -170,6 +209,7 @@ with tempfile.TemporaryDirectory(prefix='gateway-picker-click-test-') as tempora
     assert actual['control_rtlink_equal']
     assert all(trial['comparison_qualified'] for trial in actual['trials'])
     assert actual['trials'][0]['rtlink_diff']['changed_targets'] == 1
+    assert actual['trials'][0]['picker_calls_at_injected_point'] == [1]
     assert json.loads((output / 'comparison.json').read_text())['points'] == 2
     assert json.loads((output / 'trial-plan.json').read_text())['points'] == [
         [280, 80], [320, 80]]
