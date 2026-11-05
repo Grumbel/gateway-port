@@ -17,6 +17,8 @@ import struct
 CAPTION_FUNCTION = 0x117e  # GATE.EXE file offset, native far function
 FIRST_TEXT = 0x428f       # GATE.EXE file offset
 CAPTION_COUNT = 18
+SEQUENCE_BEGIN = 0x13fc
+SEQUENCE_END = 0x1a09
 
 
 def read_word(data, offset):
@@ -88,6 +90,54 @@ def native_duration_formula(exe):
     return scale, minimum
 
 
+def inspect_animation_calls(exe):
+    """Extract native three-argument picture-sequence calls in program order.
+
+    These use the linked far target 0xf10:1466; it is *not* an RTL file
+    offset. They are identified by the original 8086 call operands, rather
+    than guessed from nearby picture resource reads.
+    """
+    rows = []
+    marker = b'\x9a\x66\x14\x10\x0f'
+    for call in range(SEQUENCE_BEGIN + 12, min(SEQUENCE_END, len(exe) - 4)):
+        if exe[call:call + 5] != marker:
+            continue
+        values = []
+        for at in (call - 12, call - 8, call - 4):
+            if exe[at] != 0xb8 or exe[at + 3] != 0x50:
+                raise ValueError(f'unsupported animation arguments at 0x{call:x}')
+            values.append(read_word(exe, at + 1))
+        count, next_resource, base_resource = values
+        if (not 0 < count <= 256 or next_resource >> 8 != base_resource >> 8 or
+                not 0x30 <= base_resource >> 8 <= 0x39):
+            raise ValueError(f'invalid picture sequence at 0x{call:x}')
+        rows.append(dict(call_file_offset=call, count=count,
+                         base_resource=base_resource, next_resource=next_resource,
+                         pic_file=300 + (base_resource >> 8) - 0x30,
+                         base_entry=base_resource & 255,
+                         next_entry=next_resource & 255))
+    return rows
+
+
+def inspect_logo_palette_calls(exe):
+    """Recover the seven ordered palette fade IDs passed to exe:0x1c11."""
+    rows = []
+    for call in range(SEQUENCE_BEGIN + 4, min(SEQUENCE_END, len(exe) - 3)):
+        if exe[call:call + 2] != b'\x0e\xe8':
+            continue
+        displacement = struct.unpack_from('<h', exe, call + 2)[0]
+        if call + 4 + displacement != 0x1c11:
+            continue
+        if exe[call - 4] != 0xb8 or exe[call - 1] != 0x50:
+            raise ValueError(f'unsupported logo fade arguments at 0x{call:x}')
+        index = read_word(exe, call - 3)
+        if not 1 <= index <= 7:
+            raise ValueError(f'invalid logo fade index at 0x{call:x}')
+        rows.append(dict(call_file_offset=call, bar=index,
+                         dac_palette_index=45 + 3 * index))
+    return rows
+
+
 def inspect_intro_program(exe):
     if exe[:2] != b'MZ' or len(exe) <= FIRST_TEXT:
         raise ValueError('expected original GATE.EXE MZ layout')
@@ -117,7 +167,9 @@ def inspect_intro_program(exe):
     return dict(show_caption_file_offset=CAPTION_FUNCTION,
                 strlen_file='GATE.RTL', strlen_offset=0x8298,
                 delay_file_offset=0x0f18, delay_multiplier=scale,
-                delay_base_ms=minimum, captions=captions)
+                delay_base_ms=minimum, captions=captions,
+                animations=inspect_animation_calls(exe),
+                logo_palette_steps=inspect_logo_palette_calls(exe))
 
 
 def main():
@@ -140,6 +192,14 @@ def main():
                   f'0x{row["text_file_offset"]:04x} {row["text_length"]:>5} '
                   f'({row["left"]:>3},{row["requested_top"]:>3},'
                   f'{row["right"]:>3}) {row["display_ms"]:>5}ms')
+        print('Picture animations (original linked call target f10:1466):')
+        for row in report['animations']:
+            print(f'0x{row["call_file_offset"]:04x} GATE_{row["pic_file"]:03d}.PIC '
+                  f'base #{row["base_entry"]}, next #{row["next_entry"]}, '
+                  f'count {row["count"]}')
+        print('Logo palette reveals (original exe:0x1c11):')
+        print(', '.join(f'bar {row["bar"]} -> DAC {row["dac_palette_index"]}'
+                        for row in report['logo_palette_steps']))
 
 
 if __name__ == '__main__':

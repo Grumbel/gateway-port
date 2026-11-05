@@ -11,7 +11,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 from inspect_intro_program import (CAPTION_COUNT, FIRST_TEXT, caption_call_sites,
-                                   inspect_intro_program, parse_caption_arguments)
+                                   inspect_animation_calls, inspect_intro_program,
+                                   inspect_logo_palette_calls, parse_caption_arguments)
 
 
 def synthetic_executable():
@@ -73,6 +74,27 @@ class IntroProgramTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'dimensions out of range'):
             parse_caption_arguments(exe, call)
 
+    def test_synthetic_animation_and_logo_calls(self):
+        exe = synthetic_executable()
+        begin = 0x1800
+        values = (32, 0x3201, 0x3200)
+        code = b''.join(struct.pack('<BH', 0xb8, value) + b'\x50'
+                        for value in values)
+        exe[begin:begin + 17] = code + b'\x9a\x66\x14\x10\x0f'
+        bar = 0x1820
+        exe[bar:bar + 8] = (struct.pack('<BH', 0xb8, 7) + b'\x50\x0e\xe8' +
+                            struct.pack('<h', 0x1c11 - (bar + 8)))
+        rows = inspect_animation_calls(exe)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0]['pic_file'], rows[0]['base_entry'],
+                          rows[0]['next_entry'], rows[0]['count']),
+                         (302, 0, 1, 32))
+        self.assertEqual(inspect_logo_palette_calls(exe)[0]['dac_palette_index'], 66)
+        # A parameter change is not allowed to silently produce a new frame range.
+        exe[begin + 10] = 0x31  # malformed source resource prefix
+        with self.assertRaisesRegex(ValueError, 'invalid picture sequence'):
+            inspect_animation_calls(exe)
+
     def test_optional_original_game(self):
         path = ROOT.parent / 'gateway-dos' / 'GATE.EXE'
         if not path.is_file():
@@ -84,6 +106,15 @@ class IntroProgramTests(unittest.TestCase):
         self.assertEqual((rows[-1]['call_file_offset'], rows[-1]['display_ms']),
                          (0x19fe, 20585))
         self.assertEqual(sum(row['text_length'] for row in rows), 4977)
+        animations = report['animations']
+        self.assertEqual([row['call_file_offset'] for row in animations],
+                         [0x1743, 0x1762, 0x191f, 0x1933, 0x1947])
+        self.assertEqual([(row['pic_file'], row['base_entry'], row['next_entry'],
+                           row['count']) for row in animations],
+                         [(303, 42, 43, 37), (302, 33, 61, 42),
+                          (302, 0, 1, 32), (302, 33, 34, 27), (303, 0, 1, 41)])
+        self.assertEqual([row['bar'] for row in report['logo_palette_steps']],
+                         [1, 6, 4, 7, 2, 5, 3])
 
 
 if __name__ == '__main__':

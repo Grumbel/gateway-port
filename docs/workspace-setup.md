@@ -143,8 +143,9 @@ python3 tests/intro_program_tests.py
 ```
 
 The inspector verifies 18 executable CALLs, original text pointers and
-requested placement arguments; the tests include a synthetic DOS-image fixture
-and skip original-file assertions when the DOS directory is absent.
+requested placement arguments, five picture-animation calls and seven logo
+palette fade indices; the tests include a synthetic DOS-image fixture and skip
+original-file assertions when the DOS directory is absent.
 
 The scene tracker, including its original PIC/RGN fixture comparisons, can
 likewise be tested without SDL3:

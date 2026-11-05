@@ -50,14 +50,19 @@ box_top = min(preferred_top + 2, 189 - height)
 ```
 
 Word widths come from `GATE_305.FNT`'s glyph widths and left/right spacing
-bytes. The native layout wraps whole words at `box_width - 8` and discards
-leading spaces at a new line. It yields exactly the *observed* number of lines
+bytes. The native layout wraps whole words at `box_width - 8`, consumes runs
+of spaces as a single word separator, and preserves one leading space after
+an explicit newline while dropping it after an automatic wrap. The glyph ink
+origin uses the **upper spacing nibble minus one**; the earlier lower-nibble
+interpretation drew some characters one pixel too far right. The recovered
+layout yields exactly the *observed* number of lines
 for every original paragraph: `8,8,8,5,13,9,14,9,7,12,10,14,5,8,13,11,7,11`.
 Thus **all 18 rectangle positions and sizes** now come from the original
 `GATE.EXE` arguments and font data; no captured rectangle heights are stored
 in the implementation. The tests retain all original measured rectangles as
-independent regression expectations. Pixel-perfect glyph rasterization and
-some spacing details remain to be recovered.
+independent regression expectations. The native glyph rasterization is now
+pixel-exact at all tested, fully drawn caption states; see the differential
+results below.
 
 To inspect all original call sites without embedding any source text:
 
@@ -66,6 +71,28 @@ python3 tools/inspect_intro_program.py ../gateway-dos/GATE.EXE
 python3 tools/inspect_intro_program.py ../gateway-dos/GATE.EXE --json
 python3 tests/intro_program_tests.py
 ```
+
+The same original machine-code scan finds five **picture-sequence** calls to
+linked far target `0xf10:0x1466`. That target is a runtime address, not an
+original RTL file offset. Their three immediate arguments identify the base
+picture, first changed entry, and frame count:
+
+| Original call file offset | Resource | Base | First changed | Count |
+| --- | --- | ---: | ---: | ---: |
+| `exe:0x1743` | `GATE_303.PIC` | 42 | 43 | 37 |
+| `exe:0x1762` | `GATE_302.PIC` | 33 | 61 | 42 |
+| `exe:0x191f` | `GATE_302.PIC` | 0 | 1 | 32 |
+| `exe:0x1933` | `GATE_302.PIC` | 33 | 34 | 27 |
+| `exe:0x1947` | `GATE_303.PIC` | 0 | 1 | 41 |
+
+The program also calls `exe:0x1c11` seven times with indices
+`1,6,4,7,2,5,3`. Disassembly of that function shows a 64-step palette
+brightness ramp at **DAC index `45 + 3 * argument`**, followed by a 500ms
+interruptible delay. The existing preview approximates this with seven
+solid bars; the source-level DAC schedule is now identified but not yet
+reproduced frame-by-frame. These calls establish the original *ordering* of
+the animation operations, including `GATE_303` #43–#79; their full timing
+and intervening rendering semantics need additional tracing.
 
 In read-only deterministic runs on private Xvfb, a Space, Enter, or letter
 pressed at 22,000ms produces page 1 by 27,000ms, whereas no key leaves page 0
@@ -107,10 +134,15 @@ spacecraft), and most sampled frames of the later spacecraft animations.
 The credit lettering is already stored in picture #27, initially black;
 changing palette entry 23 through the observed ~85ms ramp reveals it without
 rendering an additional font. The dialog's outer black/beveled border now
-matches the DOS frame. Text glyph and line-break differences remain: at
-22,000ms, 2,124/64,000 pixels differ, primarily inside the dialog, while
-the underlying painting is pixel-exact. Original text and art are never
-embedded in the project; the DOS directory is needed at runtime.
+matches the DOS frame. The glyph bearing and whitespace corrections eliminate
+the previous 2,124-pixel mismatch at 22,000ms. Across **87 independent DOS
+captures** from 19 to 322 seconds, the native renderer now matches **82
+byte-for-byte**. Five non-matching timestamps remain: 19,000ms (scene boundary),
+45,000ms (early spacecraft transition), 259,500ms (scene fade), 265,500ms
+(six sprite pixels), and 303,000ms (caption drawing in progress). Eight
+separately sampled, pixel-exact caption frames are protected by source-independent
+RGB fingerprints in the native tests. Original text and art are never embedded
+in the project; the DOS directory is needed at runtime.
 
 ## All eighteen recovered narrative pages
 
@@ -150,7 +182,8 @@ Many such composites match complete original frames exactly, including
 all 13 sampled anchors between 256 and 263 seconds. Intermediate frames
 are interpolated from these observed pairs; this is **output reconstruction**,
 not yet a decompilation of the original timer and input loops. `GATE_303`
-#43–#79 is present in the archive but its playback trigger is unconfirmed.
+#43–#79 is confirmed as a compiled picture-sequence call at `exe:0x1743`,
+though its precise runtime timing has not been established.
 
 ## Run and compare
 
@@ -213,9 +246,9 @@ compiler fallback lives under `build/intro-analysis/` instead.
 2. Recover the exact logo-delta animation display schedule. The completed
    title and its palette-index-23 credit reveal are recovered, including the
    original 6-bit palette ramp at 10ms intervals.
-3. Recover the remaining caption glyph placement and spacing differences.
-   Line counts and all eighteen box rectangles are reproduced without
-   measured geometry, and the outer black/beveled rectangle matches.
+3. Extract the caption's intermediate display calls and clarify the timing
+   of its partial text draw. Font rasterization, whitespace, line counts,
+   all eighteen rectangles, and completed caption pixels now match.
 4. Derive the actual `GATE_302`/`303` timer loops, fill gaps between the
    sampled frames, and verify fade states around 259.5s. All 18 panel bounds
    are known; their exact timing is only bracketed for the last eight.
