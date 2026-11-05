@@ -58,6 +58,7 @@ class OriginalIntroGraphicsEvidence(unittest.TestCase):
         for start, end in ((0xf473, 0xf49a),
                            (0xf61b, 0xf826),
                            (0x12b19, 0x12b66),
+                           (0x12c33, 0x12d66),
                            (0x12773, 0x12821),
                            (0x12823, 0x12891),
                            (0x12893, 0x12995),
@@ -91,6 +92,38 @@ class OriginalIntroGraphicsEvidence(unittest.TestCase):
                 delta = int.from_bytes(self.rtl[site + 1:site + 3],
                                        'little', signed=True)
                 self.assertEqual(site + 3 + delta, entry)
+
+    def test_image_loader_calls_original_helpers(self):
+        # Original resource open, conditional cleanup, and post-load setup.
+        for site, entry in ((0x12c5d, 0x11ecb),
+                            (0x12d49, 0x131cb),
+                            (0x12d5a, 0x12205)):
+            with self.subTest(callsite=site):
+                self.assertEqual(self.rtl[site - 1], 0x0e)
+                self.assertEqual(self.rtl[site], 0xe8)
+                delta = int.from_bytes(self.rtl[site + 1:site + 3],
+                                       'little', signed=True)
+                self.assertEqual(site + 3 + delta, entry)
+
+    def test_image_loader_relocated_far_services(self):
+        # Original RTL has relocation placeholders. Private guest RAM is
+        # necessary to verify which original services were actually linked.
+        snapshot = ROOT / 'build/intro-analysis/at-22000.bin'
+        if not snapshot.is_file():
+            self.skipTest('private guest RAM snapshot unavailable')
+        image = snapshot.read_bytes()
+        base = GRAPHICS_TARGETS[0x0f10, 0x112e] - 0x112e
+        for site, expected in ((0x12c8c, (0x145d, 0x00f7)),
+                               (0x12ca3, (0x1479, 0x0002)),
+                               (0x12d33, (0x0eec, 0x018a))):
+            with self.subTest(callsite=site):
+                self.assertEqual(self.rtl[site], 0x9a)
+                addr = (0x0f10 + 0x1000) * 16 + site - base
+                live = image[addr:addr + 5]
+                self.assertEqual(live[0], 0x9a)
+                linked = (int.from_bytes(live[3:5], 'little') - 0x1000,
+                          int.from_bytes(live[1:3], 'little'))
+                self.assertEqual(linked, expected)
 
     def test_intro_graphics_segment_consistency(self):
         # Ten 0f10 calls share the same original file origin. Entries in

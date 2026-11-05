@@ -205,9 +205,30 @@ cleanup, and returns 1. On load failure, it returns 0 immediately.
 The original callers ignore AX; the source-level far-call adapter retains
 their `void` signature but `gate_rtl_12b19()` itself preserves the original
 16-bit result. Independent tests check both paths and complete call order;
-the pinned RTL binary test verifies the four **near call** targets. The
-resource loader and image processor are still external, so this is a
-verified boundary/structural reconstruction, **not a rendered image**.
+the pinned RTL binary test verifies the four **near call** targets.
+
+`gate_rtl_loader.c` now also transcribes the complete bounded image loader
+`GATE.RTL:0x12c33..0x12d66`, linked as `0f10:112e`. It rejects an active
+work record, clears the two display bytes, asks the original resource service
+`rtl:0x11ecb` to load the requested resource, calls original allocation
+service `145d:00f7` with the header dimensions, then initializes the work
+area using `1479:0002`. It retains the relocated DS segment words at record
+offsets 2/4, copies the two header bytes to offsets 6/7, derives the display
+flag at offset 1, and computes the mode-dependent stride at offset `0x1c`.
+The unusual CWD/XOR/SUB/SAR/XOR/SUB sequence is preserved as wrapping 16-bit
+arithmetic, *including* the `-32768` negation overflow. Finally, the original
+`0eec:018a` service checks the work record's words at `0x20/0x22`: failure
+calls `rtl:0x131cb` to clean up and returns 0; success calls `rtl:0x12205`
+and returns 1. Earlier allocation/resource failures do not call cleanup.
+
+The new isolated C test exercises the active, load-failure, allocation-failure,
+validation-failure and successful paths, exact call order, FAR offset wrapping,
+header fields and signed stride edge cases. The pinned-original binary test
+checks the loader's near calls and three linked far service identities using
+the optional private guest RAM snapshot. **None of these tests is a full
+guest-entry differential run**, and `rtl:0x11ecb`, `rtl:0x12205` and the
+far services remain unresolved external dependencies. This is still **not a
+rendered or playable source-C intro**.
 
 ### Independent C build, including the Nix flake
 
@@ -229,15 +250,15 @@ not this decompilation. A successful CMake/Nix build only proves the archive
 and tests can compile; it does *not* demonstrate that the C intro plays.
 
 With graphics now mapped to immutable file identities, the immediate intro
-dependencies to recover next are original RTL `0x12c33` (image resource
-loading), its processing call `0x12ed7`, and the preparation `0x1266f`,
-and the `145d:016c` resource-release service. Recover the remaining
+dependencies to recover next are the original RTL `0x11ecb` resource
+selector, the `0x12205` post-load setup, the `0x12ed7` image processor and
+the `0x1266f` preparer, plus the `145d:016c` resource-release service. Recover the remaining
 video/keyboard/timing services and use the original guest as an entry-state
 oracle *before* claiming a standalone intro or resuming game logic.
 
 ## Immediate next functions
 
-1. Decompile the remaining nine mapped graphics/video entry points,
+1. Decompile the remaining eight mapped graphics/video entry points,
    preserving their original ABI and data globals.
 2. Recover the linked font pixel service (`rtl:0xef83`), text-mode video
    dependencies (`rtl:0xed74/0xeda5/0xedb7`), keyboard, mouse and timing
