@@ -4,9 +4,26 @@
 #include "story/intro_presentation.hpp"
 #include <array>
 #include <cassert>
+#include <cstdint>
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
+#include <utility>
+
+namespace {
+
+std::uint64_t rgb_fingerprint(const gateway::IntroFrame &frame) {
+    // FNV-1a over PPM-order RGB bytes, independent of pixel endianness.
+    std::uint64_t value = 14695981039346656037ull;
+    for (const auto pixel : frame.argb)
+        for (unsigned shift : {16u, 8u, 0u}) {
+            value ^= (pixel >> shift) & 255u;
+            value *= 1099511628211ull;
+        }
+    return value;
+}
+
+} // namespace
 
 int main(int argc, char **argv) try {
     if (argc != 2)
@@ -112,6 +129,22 @@ int main(int argc, char **argv) try {
         assert(info.text_width == original_width[page]);
         assert(info.text_height == original_height[page]);
     }
+    // Fingerprints taken from independent, read-only original GATE.EXE
+    // framebuffer captures. This detects changes even when the recovered
+    // box geometry and line counts remain the same. Original pixels are not
+    // embedded in source or Git.
+    constexpr std::array<std::pair<std::uint32_t, std::uint64_t>, 8> pixel_exact{{
+        {22000, 0xed01e80d9a31a63eull},
+        {60000, 0x93414ea68191f519ull},
+        {70000, 0xcf0ee22b73f42aa5ull},
+        {100000, 0x446a224a1b3db04full},
+        {145000, 0xf8744e400db78d32ull},
+        {186000, 0x3ddb1e10ba0020edull},
+        {274000, 0x94c1e710d35a7a92ull},
+        {305000, 0x8dd2e333a431bef7ull},
+    }};
+    for (const auto &[ms, fingerprint] : pixel_exact)
+        assert(rgb_fingerprint(intro.frame_at(ms)) == fingerprint);
     std::cout << "Gateway native intro: splash, all eighteen narrative pages, "
                  "and animations decoded\n";
     return 0;

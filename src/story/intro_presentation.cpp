@@ -239,21 +239,27 @@ IntroPresentation::CaptionLayout IntroPresentation::layout_caption(
     std::size_t page, int line_width) const {
     CaptionLayout result;
     int cursor_x = 0, cursor_y = 0;
+    bool hard_line_start = false;
     const auto &paragraph = paragraphs_.at(page);
     for (std::size_t at = 0; at < paragraph.size();) {
         if (paragraph[at] == '\n') {
             cursor_x = 0;
             cursor_y += caption_font_.height + 1;
             ++result.lines;
+            hard_line_start = true;
             ++at;
             continue;
         }
         if (paragraph[at] == ' ') {
-            // Match the original renderer: a space at the beginning of a
-            // wrapped or explicit line does not advance the cursor.
-            if (cursor_x != 0)
+            // The original scanner consumes runs of spaces as one word
+            // separator. It drops them at wrapped lines, but preserves one
+            // space after an explicit newline (page 17's indented ending).
+            if (cursor_x != 0 || hard_line_start)
                 cursor_x += caption_font_.advance(' ');
-            ++at;
+            hard_line_start = false;
+            do {
+                ++at;
+            } while (at < paragraph.size() && paragraph[at] == ' ');
             continue;
         }
         const auto end = paragraph.find_first_of(" \n", at);
@@ -265,12 +271,14 @@ IntroPresentation::CaptionLayout IntroPresentation::layout_caption(
             cursor_x = 0;
             cursor_y += caption_font_.height + 1;
             ++result.lines;
+            hard_line_start = false;
         }
         for (std::size_t i = 0; i < length; ++i) {
             const auto ch = static_cast<unsigned char>(paragraph[at + i]);
             result.glyphs.push_back({ch, cursor_x, cursor_y});
             cursor_x += caption_font_.advance(ch);
         }
+        hard_line_start = false;
         at += length;
     }
     return result;
@@ -364,7 +372,12 @@ void IntroPresentation::caption(IntroFrame &frame, std::size_t page) const {
             return;
         const int width = caption_font_.widths[ch];
         const auto space = caption_font_.spacing[ch];
-        const int offset_x = space & 15;
+        // The upper nibble controls the glyph's ink origin relative to the
+        // character cursor, with a -1 bias. This is distinct from the total
+        // advance, which uses both spacing nibbles. Measuring the original
+        // glyph pixels shows the lower-nibble interpretation shifted glyphs
+        // with spacing 0x00 or 0x11 one pixel to the right.
+        const int offset_x = (space >> 4) - 1;
         const std::size_t start = std::size_t(ch - caption_font_.first) *
                                   caption_font_.row_bytes * caption_font_.height;
         for (int row = 0; row < caption_font_.height; ++row)

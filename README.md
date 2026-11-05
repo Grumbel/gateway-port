@@ -421,9 +421,10 @@ nix run .#intro -- ../gateway-dos
 ```
 
 This is still a preview, not a full launcher replacement: music, the exact
-animation clock/input loop and game handoff are unfinished. Many checkpoints,
-including later spacecraft frames and the title's palette-revealed credit,
-match the original framebuffer byte-for-byte.
+animation clock/input loop and game handoff are unfinished. In the captured
+intro sequence, 82 of 87 sampled frames from 19 to 322 seconds now match the
+original framebuffer byte-for-byte, including fully drawn text captions,
+later spacecraft frames and the title's palette-revealed credit.
 The launcher also contains a recoverable sequential program: all 18 compiled
 caption calls are mapped, with a shared `2000 + 45 * strlen(text)` millisecond
 timeout and an interruptible keyboard/mouse wait. Inspect the original call
