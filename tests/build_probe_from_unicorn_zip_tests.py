@@ -12,7 +12,8 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
-from build_probe_from_unicorn_zip import core_sources, extract_unicorn  # noqa: E402
+from build_probe_from_unicorn_zip import (core_sources, ensure_executable,  # noqa: E402
+                                          extract_unicorn)
 
 
 sources = core_sources((ROOT / 'CMakeLists.txt').read_text(encoding='utf-8'))
@@ -28,6 +29,12 @@ else:
 
 with tempfile.TemporaryDirectory(prefix='gateway-probe-static-') as temporary:
     root = Path(temporary)
+    existing = root / 'old-probe'
+    existing.write_bytes(b'not a real executable')
+    existing.chmod(0o644)
+    ensure_executable(existing)
+    assert existing.stat().st_mode & 0o700 == 0o700
+    assert existing.stat().st_mode & 0o077 == 0o044
     archive = root / 'unicorn.zip'
     prefix = 'nix/store/abcdefghijkl-unicorn-2.1.4/'
     with zipfile.ZipFile(archive, 'w') as output:

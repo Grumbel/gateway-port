@@ -13,6 +13,7 @@ For SDL/interactive runs, use the supported CMake/Nix build instead.
 import argparse
 from pathlib import Path
 import re
+import stat
 import subprocess
 import zipfile
 
@@ -63,6 +64,11 @@ def extract_unicorn(archive, directory):
     return directory / 'include', directory / 'lib' / 'libunicorn.a'
 
 
+def ensure_executable(output):
+    """A preexisting output can retain mode 0644 after the linker rewrites it."""
+    output.chmod(output.stat().st_mode | stat.S_IXUSR)
+
+
 def build(archive, output, cc, cxx):
     output = output.resolve()
     # A local fallback must not overwrite source or leave compiled guest bytes
@@ -87,6 +93,7 @@ def build(archive, output, cc, cxx):
     subprocess.run([cxx, *map(str, objects), str(library),
                     '-o', str(output), '-pthread', '-ldl', '-lm', '-latomic'],
                    check=True)
+    ensure_executable(output)
     print(f'Headless Unicorn probe: {output}')
 
 

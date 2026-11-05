@@ -56,7 +56,36 @@ it compiles the probe, Nuked OPL3 and all core sources with the system
 `dl`, `m` and `atomic`. It extracts only headers and `libunicorn.a` to
 `build/local-probe/unicorn/`. Everything it generates lives under ignored
 `build/`; the original ZIP is not copied into a commit. It does **not**
-produce `gateway` or otherwise substitute for SDL3.
+produce `gateway` or otherwise substitute for SDL3. The helper ensures the
+linked probe remains owner-executable even if an existing output had mode
+`0644` and the linker preserved that mode.
+
+The standalone debugger raster test does not require SDL3, Xvfb or Unicorn.
+With the same host C++20 compiler, compile only the debugger and its scene
+model with function-level dead-code elimination (to exclude unused
+game-dependent tracker functions):
+
+```sh
+g++ -std=c++20 -O0 -ffunction-sections -fdata-sections -Isrc \
+  tests/debug_ui_tests.cpp src/debug_ui.cpp src/debug_scene.cpp \
+  -Wl,--gc-sections -o build/local-probe/debug-ui-tests
+build/local-probe/debug-ui-tests
+```
+
+This exercises the H/R raster with synthetic native picker groups, including
+cross-group overwrites, disabled rows and large slot-zero fallbacks. It is
+**not** a substitute for inspecting real guest input on private Xvfb.
+
+The scene tracker, including its original PIC/RGN fixture comparisons, can
+likewise be tested without SDL3:
+
+```sh
+g++ -std=c++20 -O0 -ffunction-sections -fdata-sections -Isrc \
+  tests/debug_scene_tests.cpp src/debug_scene.cpp src/regions.cpp \
+  src/pic.cpp src/crusher.cpp src/debug_state.cpp src/story_model.cpp \
+  -Wl,--gc-sections -o build/local-probe/debug-scene-tests
+build/local-probe/debug-scene-tests ../gateway-dos
+```
 
 The available package manager could not install Xvfb or SDL3 here:
 `apt-get update` first failed to drop supplementary groups, and
