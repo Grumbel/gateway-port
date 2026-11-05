@@ -3,8 +3,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 """Compare bounded original-code continuations after two native mouse picks.
 
-Only execution addresses and instruction bytes establish a shared code path.
-Matching code paths or different branches do NOT prove action acceptance.
+Execution addresses and instruction bytes establish a shared code path; guest
+CPU stores provide additional side-effect evidence. Neither proves acceptance.
 """
 
 import argparse
@@ -24,7 +24,9 @@ def read_trace(path):
         raise ValueError('missing or duplicate continuation summary')
     summary = dict(field.split('=', 1) for field in summaries[0].split()[2:])
     required = {'calls', 'completed', 'interrupted', 'missed', 'errors', 'pending', 'steps'}
-    if set(summary) != required:
+    write_fields = {'writes', 'write_errors'}
+    has_writes = set(summary) == required | write_fields
+    if not has_writes and set(summary) != required:
         raise ValueError('unexpected continuation summary fields')
     summary = {key: int(value) for key, value in summary.items()}
     if min(summary.values()) < 0 or summary['pending'] > 1 or summary['steps'] < 1:
@@ -32,6 +34,8 @@ def read_trace(path):
     if (summary['completed'] + summary['interrupted'] + summary['missed'] +
         summary['errors'] + summary['pending'] != summary['calls']):
         raise ValueError('continuation summary does not account for every call')
+    if has_writes and summary['write_errors']:
+        raise ValueError('continuation contains failed memory-write observations')
     endings = {}
     for line in lines:
         if not line.startswith('# end call='):
@@ -73,7 +77,34 @@ def read_trace(path):
         if count != len(calls.get(call, ())) or (status == 'complete' and
                                                   count != summary['steps']):
             raise ValueError('continuation end marker step count mismatch')
-    return calls, endings
+    writes = {}
+    for line in lines:
+        if not line.startswith('# write '):
+            continue
+        if not has_writes:
+            raise ValueError('write event without write-enabled summary')
+        fields = line.split()[2:]
+        if len(fields) != 6 or any('=' not in field for field in fields):
+            raise ValueError('malformed continuation write marker')
+        details = dict(field.split('=', 1) for field in fields)
+        if set(details) != {'call', 'step', 'ms', 'linear', 'size', 'value'}:
+            raise ValueError('invalid continuation write marker fields')
+        try:
+            call, step, ms = (int(details[key]) for key in ('call', 'step', 'ms'))
+            address, value = (int(details[key], 16) for key in ('linear', 'value'))
+            size = int(details['size'])
+        except ValueError as error:
+            raise ValueError('invalid continuation write marker value') from error
+        if (call not in calls or step < 0 or step >= len(calls[call]) or ms < 0 or
+            address < 0 or not 1 <= size <= 8 or not 0 <= value < 1 << (8 * size) or
+            not all(re.fullmatch('[0-9a-f]+', details[key]) for key in ('linear', 'value'))):
+            raise ValueError('invalid continuation write address, width, or sample')
+        writes.setdefault(call, []).append((step, address, size, value))
+    if has_writes and sum(map(len, writes.values())) != summary['writes']:
+        raise ValueError('continuation write count disagrees with summary')
+    if any(line.startswith('# write-error ') for line in lines):
+        raise ValueError('continuation contains failed memory-write observations')
+    return calls, endings, writes if has_writes else None
 
 
 def describe(row):
@@ -81,9 +112,14 @@ def describe(row):
             f"bytes={row['bytes']} AX=0x{row['ax']} flags=0x{row['flags']}")
 
 
+def describe_write(write):
+    step, address, size, value = write
+    return f'step={step} address=0x{address:x} size={size} value=0x{value:x}'
+
+
 def compare(first, second, left_call=None, right_call=None):
-    left_calls, left_endings = read_trace(first)
-    right_calls, right_endings = read_trace(second)
+    left_calls, left_endings, left_writes = read_trace(first)
+    right_calls, right_endings, right_writes = read_trace(second)
     if left_call is None:
         left_call = min(left_calls)
     if right_call is None:
@@ -113,6 +149,30 @@ def compare(first, second, left_call=None, right_call=None):
                       'capture more steps before inferring a branch difference.')
     else:
         output.append('No code-path divergence inside the captured window.')
+    if left_writes is None or right_writes is None:
+        output.append('Guest-store comparison unavailable: one or both traces use the legacy format.')
+    else:
+        a_stores = left_writes.get(left_call, [])
+        b_stores = right_writes.get(right_call, [])
+        output.append(f'Observed guest CPU stores: left={len(a_stores)}, right={len(b_stores)}')
+        common = 0
+        for a, b in zip(a_stores, b_stores):
+            if a != b:
+                break
+            common += 1
+        if common < min(len(a_stores), len(b_stores)):
+            output.append(f'First guest-store divergence at event {common}:')
+            output.append(f'  left:  {describe_write(a_stores[common])}')
+            output.append(f'  right: {describe_write(b_stores[common])}')
+        elif len(a_stores) != len(b_stores):
+            remaining = a_stores if len(a_stores) > len(b_stores) else b_stores
+            side = 'left' if len(a_stores) > len(b_stores) else 'right'
+            output.append(f'First guest-store divergence at event {common}:')
+            output.append(f'  only {side}: {describe_write(remaining[common])}')
+        elif a_stores:
+            output.append('No guest-store divergence inside the captured window.')
+        else:
+            output.append('No guest CPU stores observed inside either captured window.')
     output.append('No claim of click dispatch or action acceptance is implied.')
     return '\n'.join(output)
 

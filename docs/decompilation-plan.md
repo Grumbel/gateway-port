@@ -896,6 +896,16 @@ or instruction bytes across two runs from comparable saved states. This is
 observational debugging: no downstream action-acceptance ABI has yet been
 proven, and a live original-game continuation trace is still required.
 
+2026-11-05 post-picker side-effect observation (§3.6): the opt-in bounded
+continuation tracer now associates Unicorn guest CPU writes (address, width,
+value) with each recorded original instruction, including the final sampled
+instruction. The comparator validates write counts, detects the first differing
+store even when executed code matches, and marks pre-extension traces as
+unavailable for side-effect comparison. Synthetic state-machine and parser
+regressions pass. CPU stores may be stack/temporary writes; host HLE memory
+changes are not captured, and click dispatch/acceptance remains unproven.
+Original-game replay with two equivalent saved states is still pending.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |

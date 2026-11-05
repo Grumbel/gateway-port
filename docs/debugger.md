@@ -237,8 +237,12 @@ The opt-in `--trace-picker-follow FILE` also observes the original picker's
 entry and exit, reads the *far return address from its real guest stack*, and
 captures a bounded sequence of executed guest instructions beginning at that
 caller continuation. It records the native selection, exact caller CS:IP,
-instruction bytes, and registers/flags before each instruction. The default
-window is 96 instructions; `--picker-follow-steps N` accepts 1–1024.
+instruction bytes, and registers/flags before each instruction. It also records
+CPU memory writes attributed to the instruction that executed them as
+`# write call=N step=N ms=N linear=HEX size=N value=HEX`. Values are the
+written low-order bytes in hexadecimal (unlike the decimal `size`). A store
+from the final sampled instruction is included. The default window is 96
+instructions; `--picker-follow-steps N` accepts 1–1024.
 
 ```sh
 mkdir -p build/picker-follow
@@ -258,6 +262,14 @@ be marked `interrupted` by another picker call; unfinished windows are reported
 in the final summary. Guest execution, registers, memory and control flow are
 never changed by this observer.
 
+`# follow-summary` counts observed stores as `writes` and failed write
+observations as `write_errors`. The comparator rejects write errors and
+inconsistent counts. The write hook observes guest CPU stores, **not** every
+change to emulated memory: host-side `uc_mem_write()` calls performed by HLE
+are absent, and a write may be a stack push or unrelated bookkeeping. A
+missing write is not evidence that no state changed. The hook rejects writes
+wider than eight bytes rather than silently truncating their values.
+
 For two runs started from the **same saved guest state** with different clicks:
 
 ```sh
@@ -270,8 +282,11 @@ python3 tools/compare_picker_follow.py \
 ```
 
 The comparison finds the first difference in executed instruction address or
-bytes, not a guessed acceptance condition. Register differences are displayed
-for inspection but do not by themselves establish a different code path.
+bytes and independently the first difference in guest-store sequence (step,
+linear address, size, value), not a guessed acceptance condition. It accepts
+older continuation captures without write information and explicitly reports
+their limited evidence. Register differences are displayed for inspection but
+do not by themselves establish a different code path.
 This is the next step toward locating the downstream click consumer, **not**
 proof that it accepted an action. Do not label a click `accepted` without
 tracing the relevant caller branch and its actual side effects.

@@ -20,7 +20,7 @@ def row(call, step, ip, opcode, ax='1'):
     return '\t'.join(columns)
 
 
-def make(path, rows):
+def make(path, rows, writes=(), legacy=False):
     calls = max(int(row.split('\t', 1)[0]) for row in rows)
     per_call = {}
     for item in rows:
@@ -33,9 +33,15 @@ def make(path, rows):
                        for call in range(1, calls + 1) if call not in per_call)
     completed = sum(count == 3 for count in per_call.values())
     path.write_text('\t'.join(MODULE.FIELDS) + '\n' + '\n'.join(rows) + '\n' +
+                    ''.join(event + '\n' for event in writes) +
                     endings + f'# follow-summary calls={calls} completed={completed} '
                     f'interrupted={len(per_call) - completed} missed={missing} '
-                    'errors=0 pending=0 steps=3\n')
+                    'errors=0 pending=0 steps=3' +
+                    ('' if legacy else f' writes={len(writes)} write_errors=0') + '\n')
+
+
+def write(call, step, address, value, size=2):
+    return f'# write call={call} step={step} ms=1200 linear={address:x} size={size} value={value:x}'
 
 
 with tempfile.TemporaryDirectory() as dirname:
@@ -53,6 +59,52 @@ with tempfile.TemporaryDirectory() as dirname:
     make(right, [row(1, 0, '100', '85c0'), row(1, 1, '102', '7404'),
                  row(1, 2, '104', '8b00', '2')])
     assert 'No code-path divergence' in MODULE.compare(left, right)  # AX alone differs.
+    assert 'No guest CPU stores observed' in MODULE.compare(left, right)
+    make(left, [row(1, 0, '100', '85c0'), row(1, 1, '102', '7404'),
+                row(1, 2, '104', '8b00')],
+         writes=[write(1, 0, 0x1234, 0x10), write(1, 2, 0x1236, 0xffff)])
+    make(right, [row(1, 0, '100', '85c0'), row(1, 1, '102', '7404'),
+                 row(1, 2, '104', '8b00')],
+         writes=[write(1, 0, 0x1234, 0x10), write(1, 2, 0x1236, 0x15)])
+    report = MODULE.compare(left, right)
+    assert 'No code-path divergence' in report
+    assert 'Observed guest CPU stores: left=2, right=2' in report
+    assert 'First guest-store divergence at event 1' in report
+    assert 'left:  step=2 address=0x1236 size=2 value=0xffff' in report
+    make(right, [row(1, 0, '100', '85c0'), row(1, 1, '102', '7404'),
+                 row(1, 2, '104', '8b00')], writes=[write(1, 0, 0x1234, 0x10)])
+    assert 'only left: step=2' in MODULE.compare(left, right)
+    make(right, [row(1, 0, '100', '85c0'), row(1, 1, '102', '7404'),
+                 row(1, 2, '104', '8b00')], legacy=True)
+    assert 'legacy format' in MODULE.compare(left, right)
+    for malformed in (write(1, 3, 0x1234, 0x12), write(2, 0, 0x1234, 0x12),
+                      write(1, 0, 0x1234, 0x100, 1),
+                      '# write call=1 step=0 ms=1200 linear=x size=2 value=0'):
+        make(right, [row(1, 0, '100', '85c0')], writes=[malformed])
+        try:
+            MODULE.read_trace(right)
+        except ValueError as error:
+            assert 'invalid continuation write' in str(error)
+        else:
+            raise AssertionError('invalid guest store should fail')
+    make(right, [row(1, 0, '100', '85c0')], writes=[write(1, 0, 0x1234, 0x12)])
+    right.write_text(right.read_text().replace('writes=1', 'writes=2'))
+    try:
+        MODULE.read_trace(right)
+    except ValueError as error:
+        assert 'write count' in str(error)
+    else:
+        raise AssertionError('mismatched guest store summary should fail')
+    make(right, [row(1, 0, '100', '85c0')], writes=[write(1, 0, 0x1234, 0x12)])
+    right.write_text(right.read_text().replace('write_errors=0', 'write_errors=1'))
+    try:
+        MODULE.read_trace(right)
+    except ValueError as error:
+        assert 'failed memory-write' in str(error)
+    else:
+        raise AssertionError('failed memory-write observation should fail')
+    make(left, [row(1, 0, '100', '85c0'), row(1, 1, '102', '7404'),
+                row(1, 2, '104', '8b00')])
     make(right, [row(2, 0, '200', '9090')])
     assert 'different immediate return paths' in MODULE.compare(left, right, 1, 2)
     assert 'continuation windows are incomplete' in MODULE.compare(left, right, 1, 2)
