@@ -106,6 +106,11 @@ if(BUILD_TESTING)
   add_executable(debug-scene-tests tests/debug_scene_tests.cpp)
   target_link_libraries(debug-scene-tests PRIVATE gateway_core)
   add_test(NAME debug-scene COMMAND debug-scene-tests)
+  add_executable(gateway-original-regions-tests tests/gateway_original_regions_tests.cpp)
+  target_link_libraries(gateway-original-regions-tests PRIVATE gateway_core)
+  add_test(NAME gateway-original-regions COMMAND gateway-original-regions-tests
+    ${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos)
+  set_tests_properties(gateway-original-regions PROPERTIES SKIP_RETURN_CODE 77)
   add_executable(debug-state-tests tests/debug_state_tests.cpp)
   target_link_libraries(debug-state-tests PRIVATE gateway_core)
   add_test(NAME debug-state COMMAND debug-state-tests)
@@ -125,6 +130,12 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_picker_follow_tests.py)
     add_test(NAME picker-follow-report COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/report_picker_follow_tests.py)
+    add_test(NAME gateway-original-assets COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/gateway_original_assets_tests.py
+      --data ${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos
+      --extract $<TARGET_FILE:gateway-extract>
+      --overlay $<TARGET_FILE:gateway-overlay>)
+    set_tests_properties(gateway-original-assets PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120)
     add_test(NAME pic-extract COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/extract_pic_tests.py $<TARGET_FILE:gateway-extract>)
     add_test(NAME story-disassembly COMMAND ${Python3_EXECUTABLE}

@@ -178,6 +178,41 @@ skipped by the ordinary public CTest run:
 build/native-picker-oracle-tests ../gateway-dos build/rgn-scenes-v026
 ```
 
+The lighter original-asset test requires the pinned Gateway files but **no
+Unicorn or guest RAM snapshot**. It runs all 40 original PICs through the
+native decoder, validates the 58-section RTLink relocation manifest, and
+re-scans all original conditional region and picture-layer call sites:
+
+```sh
+python3 tests/gateway_original_assets_tests.py --data ../gateway-dos \
+  --extract build/gateway-extract --overlay build/gateway-overlay
+```
+
+This is also registered as `gateway-original-assets` in CTest, with a clean
+skip when original files are not installed. The pinned archive yields 1,504
+decoded PIC images, 13,947 RTLink fixups, 433 region rules and 244 potential
+picture-layer records. These **static** inventories do not reveal which
+native rectangles the running game enables, or whether a click is accepted.
+
+An independent `gateway-original-regions` CTest exercises the scene debugger's
+own `parse_regions`/`DebugSceneTracker::add_picture` path on original PIC/RGN
+pairs (also skipped without private files):
+
+```sh
+build/gateway-original-regions-tests ../gateway-dos
+```
+
+In the pinned data, 22 matching PIC/RGN pairs comprise 773 picture frames
+and 2,521 rectangular regions; 160 are anonymous (object ID zero). Four
+anonymous rectangles lie entirely to the right of the picture's 380-pixel
+local scene width: `GATE_015.PIC` and `GATE_115.PIC`, frame 0, with corners
+`(396,34)-(440,53)` and `(396,59)-(440,78)` in each file. These are real RGN
+records **outside the scene**, not evidence that a click selected a scene
+object. The normal H highlighting remains confined to the picture and merges
+neighboring rectangles with the same object ID. The raw R debugger can still
+inspect GUI and fallback picker rows; the audit reports off-picture RGN data
+that would be clipped by the graphical overlay.
+
 For **live** comparisons, `gateway-probe --trace-picker FILE` observes the
 original picker routine at its entry and return addresses without replacing
 its results. It records the actual click coordinates, all three returned

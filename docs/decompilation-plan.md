@@ -942,6 +942,28 @@ Legacy trace markers without the new provenance fields remain readable;
 synthetic source filtering, grouping, validation and CLI tests pass. The
 next step needs original-game clicks from contrasting saved states.
 
+2026-11-05 pinned original-asset audit (§3.6): a supplied archive restored
+the exact seven-file Gateway 1 data/executable revision (SHA-256 verified)
+outside the repository. With standalone host-built parsing tools, all 40
+original PIC files produced 1,504 images without decode failures. The
+58-section RTLink manifest accounts for all 13,947 fixups. Independent
+static scans of the original EXE/OVL validate all 75 conditional RGN calls
+(433 unique source records) and all 81 conditional picture-layer calls
+(244 unique records). Added `gateway-original-assets` as an optional CTest
+oracle that repeats these checks and skips cleanly without private files;
+generated pictures and overlay data remain temporary. No guest picker
+execution or accepted-click evidence is inferred: this host lacks the
+Unicorn/SDL3 runtime and captured RAM states.
+
+The original PIC/RGN parser audit (`gateway-original-regions`) independently
+exercises the scene tracker's ingestion on 22 real picture/region pairs:
+773 frames, 2,521 rectangles, 160 with object ID zero. Four out-of-picture
+anonymous rectangles appear in the first frame of `GATE_015.PIC` and
+`GATE_115.PIC`, outside the 380-pixel local picture width. The standard H
+view continues clipping to the scene, grouping adjacent rectangles by
+object ID, and excluding GUI groups; raw R can show the unfiltered rows.
+These geometry observations are not native picker return traces.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |
