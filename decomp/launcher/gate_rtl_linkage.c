@@ -4,6 +4,8 @@
 #include "gate_exe.h"
 #include "gate_rtl.h"
 #include "gate_rtl_graphics.h"
+#include "gate_rtl_palette.h"
+#include "gate_rtl_image.h"
 
 /* Source-level linker aliases, not additional recovered original routines.
  * The original EXE calls fixed linked segment:offset addresses; the
@@ -22,3 +24,21 @@ void gate_far_0f10_0d1e(void) { gate_rtl_12823(); }
 void gate_far_0f10_0d8e(void) { gate_rtl_12893(); }
 void gate_far_0f10_1680(GateFarPtr work) { gate_rtl_13185(work); }
 void gate_far_0f10_16c6(GateFarPtr work) { gate_rtl_131cb(work); }
+
+void gate_far_0cdc_04d2(GateFarPtr palette) { gate_rtl_f61b(palette); }
+
+/* The original graphics code passes SS:offset of its local palette array,
+ * while host C represents that stack storage as a native pointer. Keep
+ * this source-level FAR-pointer translation at the link boundary. */
+void gate_rtl_graphics_palette_upload(const uint8_t *palette)
+{
+    GateFarPtr original_pointer = palette != 0
+        ? gate_stack_pointer((void *)palette)
+        : (GateFarPtr){0, 0};
+    gate_rtl_f61b(original_pointer);
+}
+
+void gate_far_0f10_1014(uint16_t resource, uint16_t mode)
+{
+    (void)gate_rtl_12b19(resource, mode);
+}

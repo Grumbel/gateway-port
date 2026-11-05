@@ -55,7 +55,10 @@ class OriginalIntroGraphicsEvidence(unittest.TestCase):
             setattr(cls, key, content)
 
     def test_bounded_graphics_functions(self):
-        for start, end in ((0x12773, 0x12821),
+        for start, end in ((0xf473, 0xf49a),
+                           (0xf61b, 0xf826),
+                           (0x12b19, 0x12b66),
+                           (0x12773, 0x12821),
                            (0x12823, 0x12891),
                            (0x12893, 0x12995),
                            (0x13185, 0x13190),
@@ -66,6 +69,28 @@ class OriginalIntroGraphicsEvidence(unittest.TestCase):
                 self.assertEqual(self.rtl[start + 1], 0x8b)
                 self.assertEqual(self.rtl[start + 2], 0xec)
                 self.assertEqual(self.rtl[end], 0xcb)
+
+    def test_palette_uploader_calls_original_retrace_wait(self):
+        # GATE.RTL:f62d uses PUSH CS / near CALL with a negative displacement,
+        # preserving the original bounded wait at GATE.RTL:f473.
+        site = 0xf62e
+        self.assertEqual(self.rtl[site - 1], 0x0e)
+        self.assertEqual(self.rtl[site], 0xe8)
+        delta = int.from_bytes(self.rtl[site + 1:site + 3],
+                               'little', signed=True)
+        self.assertEqual(site + 3 + delta, 0xf473)
+
+    def test_image_entry_calls_original_helpers(self):
+        for site, entry in ((0x12b32, 0x12c33),
+                            (0x12b3d, 0x1266f),
+                            (0x12b47, 0x12ed7),
+                            (0x12b54, 0x131cb)):
+            with self.subTest(callsite=site):
+                self.assertEqual(self.rtl[site - 1], 0x0e)
+                self.assertEqual(self.rtl[site], 0xe8)
+                delta = int.from_bytes(self.rtl[site + 1:site + 3],
+                                       'little', signed=True)
+                self.assertEqual(site + 3 + delta, entry)
 
     def test_intro_graphics_segment_consistency(self):
         # Ten 0f10 calls share the same original file origin. Entries in

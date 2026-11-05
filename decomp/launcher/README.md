@@ -149,8 +149,8 @@ work-area cleanup service resolves to `145d:016c` and remains external.
 `gate_rtl_linkage.c` connects these five far-call names and five already
 recovered font far-call names directly to their source-shaped C functions;
 it is a source-level linker adapter, not a fake graphics renderer or an
-additional original C routine. Original RTL globals and the palette uploader
-remain explicit unresolved dependencies.
+additional original C routine. Original RTL graphics globals remain explicit
+unresolved dependencies.
 
 The `launcher-rtl-graphics-decompile` test covers palette data and ordering,
 signed sample values, both mode branches, the 16-byte destructive transform,
@@ -161,6 +161,53 @@ all 16 mapped intro graphics/video entries; if the private captured RAM is
 available, it also proves all 16 original RTL file identities and the
 relevant relocated 8086 `CALL FAR` targets. These are host/source-level
 checks, **not yet original-entry guest differential tests**.
+
+## Original palette hardware and retrace services
+
+`gate_rtl_palette.c` recovers the actual palette uploader reached at
+`0cdc:04d2`, rather than treating it as a generic drawing callback:
+
+| Original `GATE.RTL` file range | C function | Recovered control flow |
+| --- | --- | --- |
+| `0xf473–0xf49a` | `gate_rtl_f473()` | Read the original display status port until retrace bit 3 clears, then repeatedly until it sets. No timeout. |
+| `0xf61b–0xf826` | `gate_rtl_f61b(GateFarPtr)` | Wait for retrace; dispatch by original palette mode and display-adapter type. For adapter type 5, program VGA DAC index `0x3c8` and data `0x3c9` through direct RGB triples, 2-bit packed-to-6-bit RGB, or two original lookup tables plus a zero blue component. For other adapters, program 16 attribute-controller entries at `0x3c0`. Re-enable the attribute controller after non-mode-3 output. |
+
+The original source reads the first byte of the FAR palette argument even
+when the argument is `0000:0000`, and the low-level palette uploader is
+therefore *not* a null-pointer-safe host routine. It uses signed comparison
+and `IDIV` for the color count and lookup quotient; the FAR pointer's offset
+increments by three without segment carry in the direct/converted paths.
+None of these quirks were removed.
+
+The source-level linkage now maps `gate_far_0cdc_04d2` to `gate_rtl_f61b`.
+The earlier fade helpers pass a host stack pointer; their isolated linker
+adapter converts it into the original FAR shape via `gate_stack_pointer()`.
+That stack-memory service and the original palette globals still need a
+real guest-memory/host adapter before the intro can run outside DOS.
+
+`launcher-rtl-palette-decompile` verifies all major palette modes through
+instrumented port reads/writes and FAR memory, including retrace transitions,
+byte-exact ordered VGA writes, packed channel extraction, signed lookup
+quotients and wrapping FAR pointers. Original routine boundaries and the
+near retrace-call target are checked by `launcher-rtl-graphics-binary`.
+This **does not yet prove native 8086 entry-state equivalence**.
+
+## Original image display entry point
+
+`gate_rtl_image.c` also recovers the complete outer image-display routine
+`GATE.RTL:0x12b19..0x12b66`, linked from `GATE.EXE` at `0f10:1014`.
+It allocates an unchecked 136-byte stack work record, initializes only its
+first byte, calls original `rtl:0x12c33` to load a requested resource,
+and, only on nonzero return, invokes original `rtl:0x1266f`, calls the
+`rtl:0x12ed7` image processor, invokes the recovered `rtl:0x131cb` work
+cleanup, and returns 1. On load failure, it returns 0 immediately.
+
+The original callers ignore AX; the source-level far-call adapter retains
+their `void` signature but `gate_rtl_12b19()` itself preserves the original
+16-bit result. Independent tests check both paths and complete call order;
+the pinned RTL binary test verifies the four **near call** targets. The
+resource loader and image processor are still external, so this is a
+verified boundary/structural reconstruction, **not a rendered image**.
 
 ### Independent C build, including the Nix flake
 
@@ -182,16 +229,16 @@ not this decompilation. A successful CMake/Nix build only proves the archive
 and tests can compile; it does *not* demonstrate that the C intro plays.
 
 With graphics now mapped to immutable file identities, the immediate intro
-dependencies to recover next are original RTL `0xf61b` (palette uploader),
-`0x12b19` (image display), its processing calls `0x12c33`/`0x12ed7`,
+dependencies to recover next are original RTL `0x12c33` (image resource
+loading), its processing call `0x12ed7`, and the preparation `0x1266f`,
 and the `145d:016c` resource-release service. Recover the remaining
 video/keyboard/timing services and use the original guest as an entry-state
 oracle *before* claiming a standalone intro or resuming game logic.
 
 ## Immediate next functions
 
-1. Decompile `rtl:0xf61b` and the remaining 11 mapped graphics/video
-   entry points, preserving their original ABI and data globals.
+1. Decompile the remaining nine mapped graphics/video entry points,
+   preserving their original ABI and data globals.
 2. Recover the linked font pixel service (`rtl:0xef83`), text-mode video
    dependencies (`rtl:0xed74/0xeda5/0xedb7`), keyboard, mouse and timing
    services on the intro's actual call graph.

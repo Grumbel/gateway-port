@@ -17,6 +17,8 @@ add_library(gateway_intro_decompiled STATIC
   decomp/launcher/gate_rtl.c
   decomp/launcher/gate_rtl_video.c
   decomp/launcher/gate_rtl_graphics.c
+  decomp/launcher/gate_rtl_palette.c
+  decomp/launcher/gate_rtl_image.c
   decomp/launcher/gate_rtl_linkage.c)
 target_include_directories(gateway_intro_decompiled PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/decomp/launcher>
@@ -27,6 +29,8 @@ install(TARGETS gateway_intro_decompiled ARCHIVE DESTINATION lib)
 install(FILES decomp/launcher/gate_exe.h decomp/launcher/gate_rtl.h
               decomp/launcher/gate_rtl_video.h
               decomp/launcher/gate_rtl_graphics.h
+              decomp/launcher/gate_rtl_palette.h
+              decomp/launcher/gate_rtl_image.h
         DESTINATION include/gateway/intro)
 
 if(BUILD_TESTING)
@@ -51,6 +55,16 @@ if(BUILD_TESTING)
     tests/launcher_rtl_graphics_decompile_tests.c)
   target_include_directories(launcher-rtl-graphics-decompile-tests PRIVATE decomp/launcher)
   add_test(NAME launcher-rtl-graphics-decompile COMMAND launcher-rtl-graphics-decompile-tests)
+  add_executable(launcher-rtl-palette-decompile-tests
+    decomp/launcher/gate_rtl_palette.c
+    tests/launcher_rtl_palette_decompile_tests.c)
+  target_include_directories(launcher-rtl-palette-decompile-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-rtl-palette-decompile COMMAND launcher-rtl-palette-decompile-tests)
+  add_executable(launcher-rtl-image-decompile-tests
+    decomp/launcher/gate_rtl_image.c
+    tests/launcher_rtl_image_decompile_tests.c)
+  target_include_directories(launcher-rtl-image-decompile-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-rtl-image-decompile COMMAND launcher-rtl-image-decompile-tests)
   find_package(Python3 COMPONENTS Interpreter QUIET)
   if(Python3_Interpreter_FOUND)
     add_test(NAME launcher-rtl-graphics-binary COMMAND ${Python3_EXECUTABLE}
