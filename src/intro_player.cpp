@@ -65,7 +65,7 @@ int main(int argc, char **argv) try {
                         : current + (SDL_GetTicks() - start >= 20128 ? 1 : 0);
                     forced_page = std::min(target, presentation.verified_pages() - 1);
                 }
-                if (event.key.key == SDLK_n) {
+                if (event.key.key == SDLK_N) {
                     nearest = !nearest;
                     if (texture)
                         require(SDL_SetTextureScaleMode(texture,
