@@ -447,7 +447,12 @@ fields `display_*` now describe the actual H winner; historical `h_*`
 fields retain their room-only meaning for existing capture consumers. The
 report counts both types of change separately and identifies cases where
 native rows change but their displayed object remains the same. Sample
-coordinates are actual changed pixels, including GUI-vs-room overlaps. Test
+coordinates are actual changed pixels, including GUI-vs-room overlaps.
+Additional `full_display_*`, `full_native_*` and `full_samples` JSON fields
+audit the entire **640×480** native picker window, so conditional command
+buttons and scrollbars outside the picture are not silently omitted. The
+original `samples` remain confined to the 379×232 picture to preserve
+existing controlled-trial scripts. Test
 each coordinate in a **separate run from the same restored guest state**;
 clicking them sequentially would alter game state and invalidate the
 comparison. A flipped native skip bit remains only selection eligibility,
@@ -509,15 +514,19 @@ sidecars, including entry/return click coordinates, scene identity, original
 selected row and file completeness. It groups captures with the **same
 verified PIC frame and exact rectangle geometry**, folds repeated skip masks
 into distinct condition states, and compares each observed transition.
-Results include the native selection winner separately from the H overlay's
-scene-only merged object shapes. In particular, different slots of the same
-object do **not** create separate highlights; GUI and fallback picker rows
-remain excluded from H. `--max-pairs N` and `--sample-limit N` bound output,
+Results separately identify complete H winners, raw native selected rows,
+and the historical room-only candidate shapes. In particular, different
+room slots of the same object do **not** create separate H highlights;
+GUI and fallback rows are included as distinct H targets.
+`--max-pairs N` and `--sample-limit N` bound output,
 and the optional merged trace supports `compare_picker_scene.py` for manual
 before/after pairs. An unrelated picture frame, ambiguous RGN association or
 different geometry is deliberately never attributed to conditional flags.
 The `--oracle-points` output names the **two specific captured entry states**
-and the exact changed screen pixel for each representative comparison. Passing
+and the exact changed screen pixel for each representative comparison.
+By default it remains within the picture; `--oracle-points-scope full`
+selects from the entire 640×480 native picker, including outside-picture
+GUI/fallback changes. Passing
 those points to `native-picker-oracle-tests --captured ... --points ...`
 executes the original picker on **both states** at every difference, in
 addition to its ordinary grid and rectangle-edge checks. All candidate points

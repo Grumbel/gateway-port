@@ -26,9 +26,10 @@ IDENTITY = ('group', 'slot', 'index', 'kind', 'x0', 'y0', 'x1', 'y1',
             'role', 'object')
 
 
-def paint(rows):
+def paint(rows, origin_x=SCENE_X, origin_y=SCENE_Y,
+          raster_width=SCENE_WIDTH, raster_height=SCENE_HEIGHT):
     """Rasterize native rows, legacy room candidates, and complete H identity."""
-    pixels = SCENE_WIDTH * SCENE_HEIGHT
+    pixels = raster_width * raster_height
     native, highlighted = [None] * pixels, [None] * pixels
     identities = {}
     for row in rows:
@@ -38,15 +39,15 @@ def paint(rows):
         identities[selected] = owned if row['role'] == 'room' else selected
         if row['flags'] & 0x80:
             continue
-        left = max(SCENE_X, row['x0'])
-        right = min(639, row['x1'])
-        top = max(SCENE_Y, row['y0'])
-        bottom = min(SCENE_HEIGHT - 1, row['y1'])
+        left = max(origin_x, row['x0'])
+        right = min(origin_x + raster_width - 1, row['x1'])
+        top = max(origin_y, row['y0'])
+        bottom = min(origin_y + raster_height - 1, row['y1'])
         if left > right or top > bottom:
             continue
         width = right - left + 1
         for y in range(top, bottom + 1):
-            start = y * SCENE_WIDTH + left - SCENE_X
+            start = (y - origin_y) * raster_width + left - origin_x
             end = start + width
             native[start:end] = [selected] * width
             if row['role'] == 'room':
@@ -102,6 +103,8 @@ def analyze(path, before, after, limit=12):
 
     first_native, first_h, first_display = paint(first_rows)
     second_native, second_h, second_display = paint(second_rows)
+    full_first_native, _, full_first_display = paint(first_rows, 0, 0, 640, 480)
+    full_second_native, _, full_second_display = paint(second_rows, 0, 0, 640, 480)
     changed_h = changed_native = h_gained = h_lost = h_swapped = native_only = 0
     changed_display = display_gained = display_lost = display_swapped = 0
     native_only_display = 0
@@ -151,8 +154,47 @@ def analyze(path, before, after, limit=12):
                        'display_after': label_owner(new_d),
                        'native_before': label_native(old_n),
                        'native_after': label_native(new_n)})
+    full_display_changed = full_native_changed = full_native_only_display = 0
+    full_gained = full_lost = full_swapped = 0
+    full_groups = defaultdict(list)
+    for offset, (old_d, new_d, old_n, new_n) in enumerate(zip(
+            full_first_display, full_second_display,
+            full_first_native, full_second_native)):
+        display_different = old_d != new_d
+        native_different = old_n != new_n
+        if display_different:
+            full_display_changed += 1
+            if old_d is None:
+                full_gained += 1
+            elif new_d is None:
+                full_lost += 1
+            else:
+                full_swapped += 1
+        if native_different:
+            full_native_changed += 1
+            if not display_different:
+                full_native_only_display += 1
+        if display_different or native_different:
+            full_groups[(old_d, new_d, old_n, new_n)].append((offset % 640, offset // 640))
+    full_ranked = sorted(full_groups.items(), key=lambda item: (-len(item[1]), repr(item[0])))
+    full_points = []
+    for (old_d, new_d, old_n, new_n), coords in full_ranked[:limit or None]:
+        x, y = coords[len(coords) // 2]
+        full_points.append({'x': x, 'y': y, 'pixels': len(coords),
+                            'display_before': label_owner(old_d),
+                            'display_after': label_owner(new_d),
+                            'native_before': label_native(old_n),
+                            'native_after': label_native(new_n)})
     return {'picture': first_scene['picture'], 'entry': first_scene['entry'],
             'before_call': before, 'after_call': after, 'total_pixels': SCENE_WIDTH * SCENE_HEIGHT,
+            'full_window_pixels': 640 * 480,
+            'full_display_changed_pixels': full_display_changed,
+            'full_display_gained_pixels': full_gained,
+            'full_display_lost_pixels': full_lost,
+            'full_display_retargeted_pixels': full_swapped,
+            'full_native_changed_pixels': full_native_changed,
+            'full_native_only_display_changed_pixels': full_native_only_display,
+            'full_sample_groups': len(full_groups), 'full_samples': full_points,
             'flags_changed': toggles, 'native_changed_pixels': changed_native,
             'display_changed_pixels': changed_display,
             'display_gained_pixels': display_gained,
@@ -177,6 +219,12 @@ def format_report(data):
                       f'object={row["object"]}: 0x{row["before_flags"]:02x} -> '
                       f'0x{row["after_flags"]:02x} ({change})')
     result.extend([
+        f'Full-window H winner pixels changed: {data["full_display_changed_pixels"]} '
+        f'(gained {data["full_display_gained_pixels"]}, '
+        f'lost {data["full_display_lost_pixels"]}, '
+        f'retargeted {data["full_display_retargeted_pixels"]})',
+        f'Full-window native row pixels changed: {data["full_native_changed_pixels"]} '
+        f'({data["full_native_only_display_changed_pixels"]} with H unchanged)',
         f'H native-winner pixels changed: {data["display_changed_pixels"]} '
         f'(gained {data["display_gained_pixels"]}, lost {data["display_lost_pixels"]}, '
         f'retargeted {data["display_retargeted_pixels"]})',
@@ -193,6 +241,12 @@ def format_report(data):
         result.append(f'  ({item["x"]},{item["y"]}) [{item["pixels"]} pixels]: '
                       f'H {item["display_before"]} -> {item["display_after"]}; '
                       f'room {item["h_before"]} -> {item["h_after"]}; '
+                      f'native {item["native_before"]} -> {item["native_after"]}')
+    result.append(f'Full-window differing points: {len(data["full_samples"])} '
+                  f'of {data["full_sample_groups"]} signatures:')
+    for item in data['full_samples']:
+        result.append(f'  ({item["x"]},{item["y"]}) [{item["pixels"]} pixels]: '
+                      f'H {item["display_before"]} -> {item["display_after"]}; '
                       f'native {item["native_before"]} -> {item["native_after"]}')
     result.extend(['', 'Positions are logical VGA coordinates for separate '
                    'native click experiments from the same restored game state. '

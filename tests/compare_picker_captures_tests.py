@@ -16,7 +16,7 @@ sys.path.insert(0, str(TOOLS))
 from compare_picker_captures import analyze_captures  # noqa: E402
 
 
-def capture(directory, number, first_flags, second_flags):
+def capture(directory, number, first_flags, second_flags, outside_flags=0):
     base = directory / f'call-{number:04d}'
     x, y, slot = (285, 50, 1) if first_flags == 0 else (320, 50, 2)
     registers = {'AX': 0, 'BX': 0, 'CX': 0, 'DX': 0, 'CS': 0x2649,
@@ -35,6 +35,7 @@ def capture(directory, number, first_flags, second_flags):
         (0, 2, 2, 3, second_flags, 301, 40, 321, 60, 'room', 292),
         (1, 0, 3, 1, 0, 350, 0, 400, 20, 'fallback', 0),
         (1, 1, 4, 5, 0, 305, 45, 312, 55, 'control', 0),
+        (1, 2, 5, 5, outside_flags, 20, 300, 40, 320, 'control', 0),
     ]
     header = (f'# call={number} ms={number * 1000} x={x} y={y} '
               f'native_ax=1 group=0 slot={slot} kind=3 source=room '
@@ -110,6 +111,37 @@ with tempfile.TemporaryDirectory(prefix='gateway-picker-capture-test-') as tempo
                          capture_output=True, text=True, check=True)
     assert json.loads(cmd.stdout)['conditional_transitions'] == 1
     trace.unlink()
+
+    # Batch exports can request full-window points for a conditional GUI
+    # region outside the room picture; the default keeps the scene-only ABI.
+    outside_dir = Path(temporary) / 'outside-captures'
+    outside_dir.mkdir()
+    capture(outside_dir, 1, 0, 0, outside_flags=0)
+    capture(outside_dir, 2, 0, 0, outside_flags=128)
+    scene_points = Path(temporary) / 'scene-only-points.tsv'
+    full_points = Path(temporary) / 'full-window-points.tsv'
+    outside_report = analyze_captures(outside_dir, oracle_points=scene_points)
+    assert outside_report['comparisons'][0]['display_changed_pixels'] == 0
+    assert outside_report['comparisons'][0]['full_display_changed_pixels'] == 441
+    assert scene_points.read_text() == 'call\tx\ty\n'
+    analyze_captures(outside_dir, oracle_points=full_points, point_scope='full')
+    full_rows = [tuple(map(int, line.split('\t'))) for line in
+                 full_points.read_text().splitlines()[1:]]
+    assert len(full_rows) == 2 and all(
+        call in (1, 2) and 20 <= x <= 40 and 300 <= y <= 320
+        for call, x, y in full_rows)
+    cli_points = Path(temporary) / 'cli-full-window-points.tsv'
+    subprocess.run([sys.executable, str(TOOLS / 'compare_picker_captures.py'),
+                    str(outside_dir), '--oracle-points', str(cli_points),
+                    '--oracle-points-scope', 'full'],
+                   capture_output=True, text=True, check=True)
+    assert cli_points.read_text() == full_points.read_text()
+    try:
+        analyze_captures(outside_dir, point_scope='unsupported')
+    except ValueError as error:
+        assert 'scope' in str(error)
+    else:
+        raise AssertionError('invalid point selection scope accepted')
 
     second.with_suffix('.result').unlink()
     must_fail(directory, 'never returned')

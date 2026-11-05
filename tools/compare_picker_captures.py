@@ -98,9 +98,11 @@ def load_captures(directory):
 
 
 def analyze_captures(directory, *, max_pairs=12, sample_limit=12,
-                     trace_output=None, oracle_points=None):
+                     trace_output=None, oracle_points=None, point_scope='scene'):
     if not 0 <= max_pairs <= 128 or not 0 <= sample_limit <= 10000:
         raise ValueError('invalid comparison or sample limit')
+    if point_scope not in ('scene', 'full'):
+        raise ValueError('oracle point scope must be scene or full')
     text, metadata = load_captures(directory)
     with tempfile.TemporaryDirectory(prefix='gateway-picker-batch-') as temp:
         trace = Path(temp) / 'capture-summary.tsv'
@@ -146,9 +148,10 @@ def analyze_captures(directory, *, max_pairs=12, sample_limit=12,
         if oracle_points is not None:
             if oracle_points.exists() or oracle_points == trace_output:
                 raise ValueError('refusing to overwrite oracle points')
+            sample_key = 'full_samples' if point_scope == 'full' else 'samples'
             positions = sorted({(call, point['x'], point['y'])
                                 for item in comparisons
-                                for point in item['samples']
+                                for point in item[sample_key]
                                 for call in (item['before_call'], item['after_call'])})
             oracle_points.write_text('call\tx\ty\n' + ''.join(
                 f'{call}\t{x}\t{y}\n' for call, x, y in positions), encoding='ascii')
@@ -169,13 +172,16 @@ def main():
                         help='optional private merged #scene/#picker-row trace')
     parser.add_argument('--oracle-points', type=Path,
                         help='save per-capture native picker coordinates for the Unicorn oracle')
+    parser.add_argument('--oracle-points-scope', choices=('scene', 'full'), default='scene',
+                        help='scene image (default) or full 640x480 native picker coordinates')
     parser.add_argument('--json', action='store_true')
     args = parser.parse_args()
     try:
         report = analyze_captures(args.captures, max_pairs=args.max_pairs,
                                   sample_limit=args.sample_limit,
                                   trace_output=args.trace_output,
-                                  oracle_points=args.oracle_points)
+                                  oracle_points=args.oracle_points,
+                                  point_scope=args.oracle_points_scope)
     except (OSError, ValueError, KeyError, UnicodeError) as error:
         parser.exit(1, f'{error}\n')
     if args.json:
@@ -189,7 +195,8 @@ def main():
         for item in report['comparisons']:
             print(f'  calls {item["before_call"]}->{item["after_call"]}: '
                   f'{item["picture"]} frame={item["entry"]} '
-                  f'H changed={item["display_changed_pixels"]}, '
+                  f'H picture changed={item["display_changed_pixels"]}, '
+                  f'H full-window changed={item["full_display_changed_pixels"]}, '
                   f'room candidates changed={item["h_changed_pixels"]}, '
                   f'native changed={item["native_changed_pixels"]}')
             for point in item['samples']:

@@ -17,7 +17,7 @@ from compare_picker_scene import analyze, format_report  # noqa: E402
 
 
 def snapshot(call, flags1=0, flags2=128, flags_gui=0, frame=15, aligned=True,
-             geometry_offset=0, anonymous=False):
+             geometry_offset=0, anonymous=False, flags_outside=0):
     x, y, slot = ((280, 50, 1) if call == 1 else (320, 50, 2))
     object_id = 0 if anonymous else 292
     rows = [
@@ -27,6 +27,7 @@ def snapshot(call, flags1=0, flags2=128, flags_gui=0, frame=15, aligned=True,
         (1, 0, 3, 1, 0, 350, 0, 400, 20, 'fallback', 0),
         (1, 1, 4, 5, 0, 285, 45, 312, 55, 'control', 0),
         (1, 2, 5, 5, flags_gui, 340, 45, 360, 55, 'control', 0),
+        (1, 3, 6, 5, flags_outside, 20, 300, 40, 320, 'control', 0),
     ]
     header = (f'# call={call} ms={call * 1000} x={x} y={y} native_ax=1 '
               f'group=0 slot={slot} kind=3 source=room object={object_id} '
@@ -57,6 +58,9 @@ with tempfile.TemporaryDirectory() as temp:
     assert result['h_retargeted_pixels'] == 0
     assert result['native_only_changed_pixels'] == 231
     assert result['native_changed_pixels'] == 805
+    assert result['full_window_pixels'] == 640 * 480
+    assert result['full_display_changed_pixels'] == 805
+    assert result['full_native_changed_pixels'] == 805
     assert result['display_changed_pixels'] == 805
     assert result['display_gained_pixels'] == result['display_lost_pixels'] == 0
     assert result['display_retargeted_pixels'] == 805
@@ -71,6 +75,7 @@ with tempfile.TemporaryDirectory() as temp:
                for item in result['samples'])
     text = format_report(result)
     assert 'H native-winner pixels changed: 805 (gained 0, lost 0' in text
+    assert 'Full-window H winner pixels changed: 805' in text
     assert 'Legacy room-candidate pixels changed: 882 (gained 441, lost 441' in text
     assert 'Native winner pixels changed: 805 (0 with H unchanged; 231 with room candidates' in text
     assert 'same restored game state' in text
@@ -100,6 +105,20 @@ with tempfile.TemporaryDirectory() as temp:
     assert separate['h_retargeted_pixels'] == 441
     assert separate['h_gained_pixels'] == separate['h_lost_pixels'] == 0
     assert separate['display_retargeted_pixels'] == 309
+    # A conditional scrollbar/command target outside the 379x232 picture
+    # is an H change even though historical scene-only reports see nothing.
+    trace.write_text(snapshot(1, flags2=0, flags_outside=0) +
+                     snapshot(2, flags2=0, flags_outside=128), encoding='utf-8')
+    outside = analyze(trace, 1, 2)
+    assert outside['native_changed_pixels'] == 0
+    assert outside['h_changed_pixels'] == outside['display_changed_pixels'] == 0
+    assert outside['full_display_changed_pixels'] == 441
+    assert outside['full_native_changed_pixels'] == 441
+    assert outside['full_display_retargeted_pixels'] == 441
+    assert any(20 <= item['x'] <= 40 and 300 <= item['y'] <= 320 and
+               item['display_before'] == 'control g1/s3' and
+               item['display_after'] == 'fallback g0/s0'
+               for item in outside['full_samples'])
     for altered in (
         snapshot(1) + snapshot(2, frame=16, flags1=128, flags2=0),
         snapshot(1) + snapshot(2, aligned=False, flags1=128, flags2=0),

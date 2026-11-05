@@ -1123,6 +1123,15 @@ display, GUI masking and fallback retargeting. The Python report, comparison
 and batch-capture fixtures pass; actual native click consumption remains an
 open experiment under private Xvfb.
 
+The conditional comparison now additionally measures H winners and native
+row changes over the **complete 640×480 window**, without changing the
+existing picture-only JSON keys or `samples` used by older trial tools.
+Full-window coordinates are available as `full_samples`; the private capture
+batch can export them using `--oracle-points-scope full`. A synthetic GUI
+row at X=20..40, Y=300..320 changes 441 full-window pixels while producing
+zero picture-only changes, verifying the omitted-control case without
+replaying original input. Real click acceptance still requires private Xvfb.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |
