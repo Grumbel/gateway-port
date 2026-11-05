@@ -469,6 +469,10 @@ xvfb-run -a python3 tools/run_walkthrough.py run \
 # Offline against captured private memory:
 build/native-picker-oracle-tests ../gateway-dos \
   --captured build/picker-entry/captures
+
+# Find all observed conditional hitbox-state transitions in that batch:
+python3 tools/compare_picker_captures.py build/picker-entry/captures \
+  --trace-output build/picker-entry/merged-scene.tsv --json
 ```
 
 Each `call-NNNN.bin` contains 1 MiB of original guest memory, while
@@ -484,6 +488,21 @@ picker with Unicorn over a coordinate grid, rectangle boundaries and the
 captured click, comparing native returns with the independently decoded
 group/slot/kind. It reports PIC/RGN alignment separately; GUI rows do not
 become scene objects merely because the picker could select them.
+
+`compare_picker_captures.py` validates all `.meta`, `.bin` and `.result`
+sidecars, including entry/return click coordinates, scene identity, original
+selected row and file completeness. It groups captures with the **same
+verified PIC frame and exact rectangle geometry**, folds repeated skip masks
+into distinct condition states, and compares each observed transition.
+Results include the native selection winner separately from the H overlay's
+scene-only merged object shapes. In particular, different slots of the same
+object do **not** create separate highlights; GUI and fallback picker rows
+remain excluded from H. `--max-pairs N` and `--sample-limit N` bound output,
+and the optional merged trace supports `compare_picker_scene.py` for manual
+before/after pairs. An unrelated picture frame, ambiguous RGN association or
+different geometry is deliberately never attributed to conditional flags.
+The tool operates on already captured private data; it does not itself
+execute mouse clicks or prove later game-action acceptance.
 
 Private captures contain proprietary executable and game-state bytes:
 **never commit, publish or include them in a Git bundle**. Full-memory

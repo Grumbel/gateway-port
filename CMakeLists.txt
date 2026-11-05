@@ -140,6 +140,8 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/report_picker_scene_tests.py)
     add_test(NAME picker-scene-compare COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_picker_scene_tests.py)
+    add_test(NAME picker-capture-compare COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_picker_captures_tests.py)
     add_test(NAME gateway-original-assets COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/gateway_original_assets_tests.py
       --data ${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos

@@ -996,6 +996,14 @@ and the actual click against original picker execution. It does not treat GUI
 rows as scene objects, and never bundles game-owned memory. Capture-format
 tests and syntax checks pass; native Unicorn replay still requires the host.
 
+The offline capture batch comparator now validates complete original-picker
+entry/return pairs and discovers transitions between unique skip masks only
+within identical, fully aligned PIC frames and native rectangle geometries.
+It reports native winner changes and merged-by-object scene highlight changes
+separately, reusing the existing independent raster oracle. Synthetic
+repeated-state, GUI overlap, missing return/RAM and provenance-corruption
+cases pass. Native capture and actual click acceptance remain to be verified.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |
