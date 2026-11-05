@@ -231,6 +231,51 @@ by itself prove that the game's later click dispatch consumed the event.
 The fixed `2649:0541` runtime entry is verified only for those four opening
 snapshots; this is not a universal segment address or a replacement picker.
 
+### Follow the original game after the picker returns
+
+The opt-in `--trace-picker-follow FILE` also observes the original picker's
+entry and exit, reads the *far return address from its real guest stack*, and
+captures a bounded sequence of executed guest instructions beginning at that
+caller continuation. It records the native selection, exact caller CS:IP,
+instruction bytes, and registers/flags before each instruction. The default
+window is 96 instructions; `--picker-follow-steps N` accepts 1–1024.
+
+```sh
+mkdir -p build/picker-follow
+gateway-run ../gateway-dos/GATE.EXE \
+  --trace-picker build/picker-follow/picks.tsv \
+  --trace-picker-follow build/picker-follow/continuation.tsv \
+  --picker-follow-steps 128
+```
+
+The trace is written when the runtime exits. Only the known Gateway 1 picker
+layout is supported. The global instruction hook has substantial overhead,
+so leave this diagnostic disabled during ordinary gameplay. The tracer skips
+the `RETF` instruction itself and waits for the exact caller address (up to
+4096 other instructions, which can include IRQ code). It records an explicit
+`missed-return` if the continuation does not appear. An earlier window may
+be marked `interrupted` by another picker call; unfinished windows are reported
+in the final summary. Guest execution, registers, memory and control flow are
+never changed by this observer.
+
+For two runs started from the **same saved guest state** with different clicks:
+
+```sh
+python3 tools/compare_picker_follow.py \
+  build/picker-follow/click-a.tsv build/picker-follow/click-b.tsv
+# If a run contains several picks, select the matching call IDs:
+python3 tools/compare_picker_follow.py \
+  build/picker-follow/click-a.tsv build/picker-follow/click-b.tsv \
+  --left-call 2 --right-call 3
+```
+
+The comparison finds the first difference in executed instruction address or
+bytes, not a guessed acceptance condition. Register differences are displayed
+for inspection but do not by themselves establish a different code path.
+This is the next step toward locating the downstream click consumer, **not**
+proof that it accepted an action. Do not label a click `accepted` without
+tracing the relevant caller branch and its actual side effects.
+
 ### Headless scene checkpoints
 
 The probe's `--debug-scene` option enables its existing PIC/RGN scene tracker

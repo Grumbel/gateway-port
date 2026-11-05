@@ -885,6 +885,17 @@ hotspots and mismatches without suppressing disagreements. Synthetic C++ and
 Python tests pass; live evidence across multiple rooms and later UI dispatch
 are still pending.
 
+2026-11-05 bounded post-picker continuation tracing (§3.6): optional
+`--trace-picker-follow FILE` records the original far-return destination from
+the real stack and samples 1–1024 subsequent executed guest instructions with
+CS:IP, opcode bytes, registers and flags. An independently tested gate waits
+for the exact continuation (allowing intervening interrupts), limits the
+observation window, and explicitly records missing, interrupted or unfinished
+captures. The offline comparator locates the first differing executed address
+or instruction bytes across two runs from comparable saved states. This is
+observational debugging: no downstream action-acceptance ABI has yet been
+proven, and a live original-game continuation trace is still required.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |

@@ -112,12 +112,17 @@ if(BUILD_TESTING)
   add_executable(debug-ui-tests tests/debug_ui_tests.cpp)
   target_link_libraries(debug-ui-tests PRIVATE gateway_core)
   add_test(NAME debug-ui COMMAND debug-ui-tests)
+  add_executable(picker-follow-tests tests/picker_follow_tests.cpp)
+  target_link_libraries(picker-follow-tests PRIVATE gateway_core)
+  add_test(NAME picker-follow COMMAND picker-follow-tests)
   find_package(Python3 COMPONENTS Interpreter QUIET)
   if(Python3_Interpreter_FOUND)
     add_test(NAME picker-trace-check COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/picker_trace_tests.py)
     add_test(NAME picker-trace-report COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/report_picker_trace_tests.py)
+    add_test(NAME picker-follow-compare COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_picker_follow_tests.py)
     add_test(NAME pic-extract COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/extract_pic_tests.py $<TARGET_FILE:gateway-extract>)
     add_test(NAME story-disassembly COMMAND ${Python3_EXECUTABLE}
