@@ -64,6 +64,8 @@ class OriginalIntroGraphicsEvidence(unittest.TestCase):
                            (0x12f2b, 0x12f6a),
                            (0x13115, 0x13184),
                            (0x13191, 0x131c8),
+                           (0x12d67, 0x12dda),
+                           (0x130ab, 0x13114),
                            (0x131f7, 0x1323e),
                            (0x12205, 0x1230e),
                            (0x12383, 0x123d3),
@@ -302,6 +304,7 @@ class OriginalIntroGraphicsEvidence(unittest.TestCase):
                 delta = int.from_bytes(self.rtl[site + 1:site + 3],
                                        'little', signed=True)
                 self.assertEqual(site + 3 + delta, entry)
+
         snapshot = ROOT / 'build/intro-analysis/at-22000.bin'
         if not snapshot.is_file():
             self.skipTest('private guest RAM snapshot unavailable')
@@ -321,6 +324,35 @@ class OriginalIntroGraphicsEvidence(unittest.TestCase):
                 linked = (int.from_bytes(live[3:5], 'little') - 0x1000,
                           int.from_bytes(live[1:3], 'little'))
                 self.assertEqual(linked, expected)
+
+    def test_intro_record_array_call_graph(self):
+        # Loader and launcher remain FAR-returning original C functions.
+        # Their array helpers are CS-prefixed near calls inside RTL:0f10.
+        for site, target in ((0x12db5, 0x12c33),
+                             (0x130d3, 0x13191),
+                             (0x130ea, 0x12d67),
+                             (0x130fb, 0x13115),
+                             (0x1310b, 0x131f7)):
+            with self.subTest(site=site):
+                self.assertEqual(self.rtl[site - 1], 0x0e)
+                self.assertEqual(self.rtl[site], 0xe8)
+                delta = int.from_bytes(self.rtl[site + 1:site + 3],
+                                       'little', signed=True)
+                self.assertEqual(site + 3 + delta, target)
+
+        snapshot = ROOT / 'build/intro-analysis/at-22000.bin'
+        if not snapshot.is_file():
+            self.skipTest('private guest RAM snapshot unavailable')
+        image = snapshot.read_bytes()
+        base = GRAPHICS_TARGETS[0x0f10, 0x15a6] - 0x15a6
+        source_site = 0x130bd  # original oversized-count diagnostic
+        self.assertEqual(self.rtl[source_site], 0x9a)
+        addr = (0x0f10 + 0x1000) * 16 + source_site - base
+        live = image[addr:addr + 5]
+        self.assertEqual(live[0], 0x9a)
+        self.assertEqual((int.from_bytes(live[3:5], 'little') - 0x1000,
+                          int.from_bytes(live[1:3], 'little')),
+                         (0x1258, 0x172e))
 
     def test_intro_graphics_segment_consistency(self):
         # Ten 0f10 calls share the same original file origin. Entries in

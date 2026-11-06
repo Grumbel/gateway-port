@@ -323,9 +323,38 @@ failure, signed-clock overflow, input interruption and the resource-ID
 increment across `0xffff`. The restored C remains an **archive of routines**,
 not a standalone intro player.
 
+`gate_rtl_intro_sequence.c` recovers both the 136-byte consecutive-record
+loader `rtl:0x12d67..0x12dda` and the 32-frame stack-based animation entry
+`rtl:0x130ab..0x13114` (the original `0f10:15a6` FAR call). The 4,352-byte
+stack array, 32-record error diagnostic, original `rtl:0x13191` initializer,
+mode-1 sequential resource loading, timed playback and cleanup are preserved.
+The lower-level loader's unusual `count < 1` fallback to 256 records and
+relocated `DS:1424` flag are deliberately retained; a zero/negative count
+can exceed the animation entry's stack allocation, just as in the binary.
+Original-byte tests verify all five near-call targets and the relocated
+diagnostic service; C tests cover success, failure, count overflow and
+resource-ID wrap. This closes another original EXE far-call alias, but does
+not itself supply the graphics or host services.
+
+`gate_dos_file_runtime.c` reconstructs the five original resident DOS file
+thunks at absolute `1c29:0000`, `0028`, `0036`, `0055` and `0074`:
+open/create, close, byte read, byte write and seek. The exact INT 21h
+register ABI, carry-bit handling and ignored return words are preserved.
+The companion `gateway_intro_file_host` archive provides a tested native
+file backend for 8.3 assets under a caller-supplied DOS directory, with
+FAR-offset wrap, file handles and 32-bit seek. Mock tests verify wrapper
+semantics; native tests create/read/seek/delete a scratch DOS asset. The
+host file adapter also covers the **two intro-used calls** of the `12a5`
+runtime: read-permission checking and the verified `%s_%03d.%s` resource
+filename template. This is explicitly a narrow host implementation, not a
+claim to have decompiled the entire original `sprintf`/`access` runtime. The
+saved RAM also reveals that `24a7:000c` **does contain executable VFX code**
+at physical `0x24a7c`; the earlier unlinked RTL copy was a **different**
+region, physical `0x34a7c`. The VFX decoder and other services remain open.
+
 **None of these tests is a full guest-entry differential run.** The
-underlying file runtime reached by the now-reconstructed five `0c33`
-wrappers, the `24a7:000c` image rasterizer and other DOS/RTL dependencies
+unhandled `12a5` runtime variants, the `24a7:000c` VFX rasterizer,
+other DOS/RTL dependencies and complete segmented-memory backing
 remain unresolved external dependencies. This
 remains **neither a rendered nor a playable source-C intro**.
 
@@ -348,9 +377,9 @@ There is no source-C executable entry point or native host adapter yet.
 not this decompilation. A successful CMake/Nix build only proves the archive
 and tests can compile; it does *not* demonstrate that the C intro plays.
 
-With graphics now mapped to immutable file identities, the immediate intro
-dependencies to recover next are the `24a7:000c` image rasterizer,
-the `rtl:0x130ab` animation entry, lower-level `1c29` file runtime and
+With graphics now mapped to immutable file identities and both resident
+runtime banks located, the immediate intro dependencies to recover next
+are the `24a7:000c` VFX rasterizer, its format dispatch and
 the `145d:016c` resource-release service. Recover the remaining
 video/keyboard/timing services and use the original guest as an entry-state
 oracle *before* claiming a standalone intro or resuming game logic.

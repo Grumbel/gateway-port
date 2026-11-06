@@ -97,6 +97,12 @@ void gate_rtl_13115(GateFarPtr work, int16_t count);
 void gate_rtl_13191(GateFarPtr work, int16_t count);
 void gate_rtl_131f7(GateFarPtr work, int16_t count);
 
+/* Original consecutive-resource loader and 32-record intro animation entry. */
+uint16_t gate_rtl_12d67(GateFarPtr work, int16_t count,
+                        uint16_t first_resource, uint16_t mode);
+void gate_rtl_130ab(uint16_t first_resource, int16_t count);
+/* Uses the existing gate_far_1258_172e print service at RTL DS:14b2. */
+
 /* Verified original linked FAR identities used by the image processor.
  * The 24a7 service consumes its 12-byte argument block in the callee. */
 uint16_t gate_far_1e48_04d9(void);

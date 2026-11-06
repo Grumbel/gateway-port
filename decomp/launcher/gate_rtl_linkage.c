@@ -70,3 +70,7 @@ void gate_far_0f10_1466(uint16_t first, uint16_t next, uint16_t count)
 {
     gate_rtl_12f6b(first, next, (int16_t)count);
 }
+void gate_far_0f10_15a6(uint16_t first, uint16_t count)
+{
+    gate_rtl_130ab(first, (int16_t)count);
+}

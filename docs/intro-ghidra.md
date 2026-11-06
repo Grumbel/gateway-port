@@ -117,19 +117,25 @@ runtime addresses:
 
 These five entries and eight neighboring RTL functions have now been transcribed
 into C (`gate_rtl_file.c`), preserving the original call order and argument
-widths. The low-level `1c29` file runtime and `12a5` path formatter are still
-external, not host implementations. The last function's code overlaps the
+widths. Five resident `1c29` INT 21h file thunks are now reconstructed and
+bound to a tested native file adapter. The host adapter additionally
+implements only the original intro's verified `12a5` filename format
+`%s_%03d.%s` and read-permission check, not the generic C runtime.
+The last function's code overlaps the
 next loaded segment in physical RAM; the import stops at its original `RETF`.
 A different snapshot can have different occupancy.
 
-**Do not import the `24a7` raw image as linked code.** At 22 seconds,
-`24a7:0000` is an exact copy of original RTL bytes beginning at file offset
-`0x101ef`, including a zero-filled FAR call at `24a7:0010`. This establishes
-that its *snapshot contents* are unrelocated, not that the referenced
-`24a7:000c` rasterizer will never be loaded/executed. The preparer records
-the staging observation under `unlinked_staging_candidates`, without creating
-Ghidra functions from those bytes. Capture a later live call/return to find
-the actual linked renderer before interpreting it.
+**Critical address-space distinction:** the importer adds the EXE load
+segment `0x1000` to its *relative* RTL identifiers. Its `24a7` staging
+copy therefore lives physically at `0x34a70` and really does contain
+unrelocated RTL file bytes from offset `0x101ef`. **The real executable VFX
+rasterizer is already resident at the absolute guest address `24a7:000c`
+(physical `0x24a7c`) in that same snapshot.** It starts with a standard
+BP prologue, calls VFX initialization at `24a7:0120` and dispatches image
+formats through an indirect FAR jump. Likewise the resident file thunks
+live at absolute `1c29:0000..0093` (physical `0x1c290..0x1c323`), not
+`0x2c290`. These absolute resident code banks must not be conflated with
+the different `0x1000`-relative RTL imports.
 
 ## Next verification and implementation work
 
@@ -138,8 +144,8 @@ the actual linked renderer before interpreting it.
 2. Review `intro-ghidra-unresolved.tsv` and extend the section map using
    additional linked call-site and guest-memory witnesses, then rerun Ghidra
    in a **fresh** output/project directory.
-3. Prioritize the rasterizer reached at runtime `24a7:000c`, the newly
-   mapped `0c33` file I/O services, animation `rtl:0x130ab`, and the remaining
+3. Prioritize the now-located absolute `24a7:000c` VFX decoder and its
+   format dispatch, general `12a5` CRT calls still used elsewhere, and the other
    hardware/keyboard/time services.
 4. Derive readable C from the pseudocode, verifying disassembly, original
    register/stack state and differential behavior; **never paste generated

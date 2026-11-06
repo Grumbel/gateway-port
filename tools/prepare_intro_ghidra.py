@@ -61,11 +61,10 @@ RTL_CANDIDATES = {
     0x130ab: 'animation-entry-candidate',
 }
 
-# In the same snapshot, 24a7:0000 contains a byte-for-byte copy of part of
-# the *unlinked* RTL on disk.  In particular 24a7:0010 contains a FAR CALL
-# whose segment and offset operands are still all zero.  The known renderer
-# reference 24a7:000c therefore does not justify importing this as a linked
-# code bank.  Report the observation, but never seed functions from it.
+# The 0x1000 base is added only for *relative* RTL banks. The physical
+# (0x1000+0x24a7):0000 region holds a byte-for-byte unlinked RTL copy;
+# however absolute guest 24a7:000c is independently verified executable VFX
+# code. These are different locations. Never import the former as the latter.
 RAW_COPY_CANDIDATE = dict(segment=0x24a7, file_base=0x101ef, size=0x400)
 
 

@@ -20,12 +20,14 @@ add_library(gateway_intro_decompiled STATIC
   decomp/launcher/gate_rtl_palette.c
   decomp/launcher/gate_rtl_image.c
   decomp/launcher/gate_rtl_file.c
+  decomp/launcher/gate_dos_file_runtime.c
   decomp/launcher/gate_rtl_loader.c
   decomp/launcher/gate_rtl_resource.c
   decomp/launcher/gate_rtl_image_finish.c
   decomp/launcher/gate_rtl_image_prepare.c
   decomp/launcher/gate_rtl_image_processor.c
   decomp/launcher/gate_rtl_intro_animation.c
+  decomp/launcher/gate_rtl_intro_sequence.c
   decomp/launcher/gate_rtl_linkage.c)
 target_include_directories(gateway_intro_decompiled PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/decomp/launcher>
@@ -33,12 +35,19 @@ target_include_directories(gateway_intro_decompiled PUBLIC
 target_compile_features(gateway_intro_decompiled PUBLIC c_std_11)
 target_compile_options(gateway_intro_decompiled PRIVATE -Wall -Wextra -Wpedantic)
 install(TARGETS gateway_intro_decompiled ARCHIVE DESTINATION lib)
+add_library(gateway_intro_file_host STATIC src/intro_dos_host_files.c)
+target_include_directories(gateway_intro_file_host PUBLIC decomp/launcher)
+target_compile_features(gateway_intro_file_host PUBLIC c_std_11)
+target_compile_options(gateway_intro_file_host PRIVATE -Wall -Wextra -Wpedantic)
+install(TARGETS gateway_intro_file_host ARCHIVE DESTINATION lib)
 install(FILES decomp/launcher/gate_exe.h decomp/launcher/gate_rtl.h
               decomp/launcher/gate_rtl_video.h
               decomp/launcher/gate_rtl_graphics.h
               decomp/launcher/gate_rtl_palette.h
               decomp/launcher/gate_rtl_image.h
               decomp/launcher/gate_rtl_file.h
+              decomp/launcher/gate_dos_file_runtime.h
+              decomp/launcher/gate_dos_host_files.h
         DESTINATION include/gateway/intro)
 
 if(BUILD_TESTING)
@@ -88,6 +97,16 @@ if(BUILD_TESTING)
     tests/launcher_rtl_file_decompile_tests.c)
   target_include_directories(launcher-rtl-file-decompile-tests PRIVATE decomp/launcher)
   add_test(NAME launcher-rtl-file-decompile COMMAND launcher-rtl-file-decompile-tests)
+  add_executable(launcher-dos-file-runtime-decompile-tests
+    decomp/launcher/gate_dos_file_runtime.c
+    tests/launcher_dos_file_runtime_decompile_tests.c)
+  target_include_directories(launcher-dos-file-runtime-decompile-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-dos-file-runtime-decompile COMMAND launcher-dos-file-runtime-decompile-tests)
+  add_executable(launcher-dos-host-files-tests
+    decomp/launcher/gate_dos_file_runtime.c src/intro_dos_host_files.c
+    tests/launcher_dos_host_files_tests.c)
+  target_include_directories(launcher-dos-host-files-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-dos-host-files COMMAND launcher-dos-host-files-tests)
   add_executable(launcher-rtl-image-finish-decompile-tests
     decomp/launcher/gate_rtl_image_finish.c
     tests/launcher_rtl_image_finish_decompile_tests.c)
@@ -108,12 +127,19 @@ if(BUILD_TESTING)
     tests/launcher_rtl_intro_animation_decompile_tests.c)
   target_include_directories(launcher-rtl-intro-animation-decompile-tests PRIVATE decomp/launcher)
   add_test(NAME launcher-rtl-intro-animation-decompile COMMAND launcher-rtl-intro-animation-decompile-tests)
+  add_executable(launcher-rtl-intro-sequence-decompile-tests
+    decomp/launcher/gate_rtl_intro_sequence.c
+    tests/launcher_rtl_intro_sequence_decompile_tests.c)
+  target_include_directories(launcher-rtl-intro-sequence-decompile-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-rtl-intro-sequence-decompile COMMAND launcher-rtl-intro-sequence-decompile-tests)
   find_package(Python3 COMPONENTS Interpreter QUIET)
   if(Python3_Interpreter_FOUND)
     add_test(NAME launcher-rtl-graphics-binary COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_rtl_graphics_binary_tests.py)
     add_test(NAME launcher-rtl-file-binary COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_rtl_file_binary_tests.py)
+    add_test(NAME launcher-dos-file-runtime-binary COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_dos_file_runtime_binary_tests.py)
     add_test(NAME intro-ghidra-preparation COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/intro_ghidra_tests.py)
   endif()
