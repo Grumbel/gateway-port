@@ -123,7 +123,7 @@ GateFarPtr gate_intro_memory_alloc(uint32_t bytes)
 
     if (active_memory == 0)
         abort();
-    if (bytes > 0xffffu)
+    if (bytes > IMAGE_HEAP_END - IMAGE_HEAP_FIRST)
         return (GateFarPtr){0, 0};
     size = ((bytes == 0 ? 1u : bytes) + 15u) & ~15u;
     slot = 0;
@@ -185,4 +185,43 @@ GateFarPtr gate_far_253a_0004(uint32_t bytes)
 uint16_t gate_far_253a_0048(GateFarPtr pointer)
 {
     return gate_intro_memory_free(pointer);
+}
+
+/* The VGA mode-12h A000 aperture is a 64KiB bank selected by sequencer
+ * plane masks and graphics-controller read state. It is not ordinary RAM:
+ * retain each physical plane rather than aliasing all four at A000:xxxx.
+ * The VFX host models the register-driven raster operation over these
+ * palette indices, and a future SDL presenter can read the same pixels. */
+uint8_t gate_intro_vga16_pixel(uint16_t x, uint16_t y)
+{
+    uint32_t offset;
+    uint8_t bit;
+    uint8_t color = 0;
+    unsigned plane;
+    if (active_memory == 0 || x >= 640u || y >= 480u)
+        abort();
+    offset = (uint32_t)y * 80u + x / 8u;
+    bit = (uint8_t)(0x80u >> (x & 7u));
+    for (plane = 0; plane < 4; ++plane)
+        if ((active_memory->vga_planes[plane][offset] & bit) != 0)
+            color |= (uint8_t)(1u << plane);
+    return color;
+}
+
+void gate_intro_vga16_set_pixel(uint16_t x, uint16_t y, uint8_t index)
+{
+    uint32_t offset;
+    uint8_t bit;
+    unsigned plane;
+    if (active_memory == 0 || x >= 640u || y >= 480u || index > 15u)
+        abort();
+    offset = (uint32_t)y * 80u + x / 8u;
+    bit = (uint8_t)(0x80u >> (x & 7u));
+    for (plane = 0; plane < 4; ++plane) {
+        uint8_t *value = &active_memory->vga_planes[plane][offset];
+        if ((index & (1u << plane)) != 0)
+            *value |= bit;
+        else
+            *value &= (uint8_t)~bit;
+    }
 }

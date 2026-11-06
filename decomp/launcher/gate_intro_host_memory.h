@@ -32,6 +32,9 @@ typedef struct GateIntroStackView {
 
 typedef struct GateIntroMemory {
     uint8_t bytes[GATE_INTRO_RAM_BYTES];
+    /* VGA mode 12h has four independent 64KiB bitplanes at A000; the
+     * conventional 20-bit address space cannot represent all four. */
+    uint8_t vga_planes[4][0x10000];
     uint16_t ds_segment;
     uint16_t stack_view_count;
     GateIntroStackView stack_views[GATE_INTRO_MAX_STACK];
@@ -46,8 +49,16 @@ void gate_intro_memory_detach(void);
 /* Native 16-byte-aligned conventional-RAM arena for original VFX pixel
  * allocations. Only the standalone C intro uses the reserved 60000..9efff
  * physical span; it must not be enabled during guest CPU emulation. Reuses
- * freed intervals. Failure returns segment=offset=0. */
+ * freed intervals. A buffer may exceed 64KiB and cross a FAR segment
+ * boundary; the caller must normalize subsequent 16-bit offset wraps.
+ * Failure returns segment=offset=0. */
 GateFarPtr gate_intro_memory_alloc(uint32_t bytes);
 uint16_t gate_intro_memory_free(GateFarPtr pointer);
+
+/* Native VGA mode 12h (640x480x16) plane storage used by original 24a7:02fe.
+ * Unrelated to A000:offset RAM used by linear mode 13h. These accessors
+ * operate on palette indices; palette programming is a separate service. */
+uint8_t gate_intro_vga16_pixel(uint16_t x, uint16_t y);
+void gate_intro_vga16_set_pixel(uint16_t x, uint16_t y, uint8_t index);
 
 #endif

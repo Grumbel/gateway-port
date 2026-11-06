@@ -14,6 +14,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 SNAPSHOT = ROOT / 'build/intro-analysis/at-22000.bin'
+MODE12_SNAPSHOT = ROOT / 'build/intro-analysis/at-1000.bin'
 VFX_DS = 0x2a7a * 16
 
 
@@ -83,6 +84,35 @@ class NativeVfxProvenance(unittest.TestCase):
                          bytes.fromhex('2603451883d200'))
         self.assertEqual(self.ram[0x24af9:0x24b05],
                          bytes.fromhex('8b44328946e28b44308946f6'))
+
+    def test_original_mode12_four_plane_rasterizer(self):
+        # The early title is shown in VGA mode 12h, before later mode 13h.
+        # Original 2409:00e8 returns descriptor #2 for 640x480, 1 bit,
+        # four independently addressable video planes and a pitch of 80.
+        if not MODE12_SNAPSHOT.is_file():
+            self.skipTest('private original 640x480 guest RAM unavailable')
+        ram = MODE12_SNAPSHOT.read_bytes()
+        self.assertEqual(len(ram), 0x100000)
+        self.assertEqual(struct.unpack_from('<H', ram, VFX_DS + 0x15cc)[0], 2)
+        descriptor = VFX_DS + 0x27ee + 2 * 0x3e
+        self.assertEqual(ram[descriptor + 0x16:descriptor + 0x18], b'\x12\x01')
+        self.assertEqual([struct.unpack_from('<H', ram, descriptor + off)[0]
+                          for off in (0x18, 0x1a, 0x1c)], [640, 480, 80])
+        self.assertEqual(ram[descriptor + 0x1e], 4)
+        self.assertEqual([struct.unpack_from('<H', ram, descriptor + off)[0]
+                          for off in (0x26, 0x28, 0x2a, 0x2c)],
+                         [0x0032, 0x252c, 0x02fe, 0x24a7])
+        # 24a7:02fe: exclusive mode-12h VGA map-mask/bit-mask handler.
+        self.assertEqual(ram[0x24d6e:0x24d7d],
+                         bytes.fromhex('8b460a3407fec024078a66e28946e2'))
+        self.assertEqual(ram[0x24d7d:0x24d91],
+                         bytes.fromhex('b005bace03ee42b008eeb007bace03ee42b000ee'))
+        # Original 245d:0006 constructor stores plane count * height
+        # at image+34; 2479:0002 uses this total scanline count directly.
+        self.assertEqual(ram[0x24639:0x24647],
+                         bytes.fromhex('8a441e26884512f7660626894534'))
+        self.assertEqual(ram[0x247d6:0x247e6],
+                         bytes.fromhex('268b5d34895ef633db268a5d12895ef8'))
 
 
 if __name__ == '__main__':

@@ -177,7 +177,8 @@ if(BUILD_TESTING)
     decomp/launcher/gate_dos_file_runtime.c
     src/intro_dos_host_files.c src/intro_host_memory.c src/intro_host_vfx.c
     src/intro_host_rtl_globals.c
-    tests/launcher_intro_native_file_integration_tests.c)
+    tests/launcher_intro_native_file_integration_tests.c
+    tests/launcher_intro_planar_oracle.cpp)
   target_include_directories(launcher-intro-native-file-integration-tests PRIVATE decomp/launcher)
   target_link_libraries(launcher-intro-native-file-integration-tests
     PRIVATE gateway_intro_pic_host)
@@ -187,6 +188,13 @@ if(BUILD_TESTING)
     add_test(NAME launcher-intro-native-original-pic
       COMMAND launcher-intro-native-file-integration-tests
         ${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin
+        ${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos)
+  endif()
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-1000.bin" AND
+     EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos/GATE_201.PIC")
+    add_test(NAME launcher-intro-native-original-planar-pic
+      COMMAND launcher-intro-native-file-integration-tests --mode2
+        ${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-1000.bin
         ${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos)
   endif()
   add_executable(launcher-intro-host-vfx-tests
