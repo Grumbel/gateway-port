@@ -14,12 +14,14 @@ option(GATEWAY_INTRO_DECOMPILE_ONLY "Build only the reconstructed original GATE 
 add_library(gateway_intro_decompiled STATIC
   decomp/launcher/gate_exe.c
   decomp/launcher/gate_exe_helpers.c
+  decomp/launcher/gate_c_runtime_string.c
   decomp/launcher/gate_rtl.c
   decomp/launcher/gate_rtl_video.c
   decomp/launcher/gate_rtl_graphics.c
   decomp/launcher/gate_rtl_palette.c
   decomp/launcher/gate_rtl_image.c
   decomp/launcher/gate_rtl_file.c
+  decomp/launcher/gate_rtl_file_linkage.c
   decomp/launcher/gate_dos_file_runtime.c
   decomp/launcher/gate_rtl_loader.c
   decomp/launcher/gate_rtl_resource.c
@@ -40,6 +42,18 @@ target_include_directories(gateway_intro_file_host PUBLIC decomp/launcher)
 target_compile_features(gateway_intro_file_host PUBLIC c_std_11)
 target_compile_options(gateway_intro_file_host PRIVATE -Wall -Wextra -Wpedantic)
 install(TARGETS gateway_intro_file_host ARCHIVE DESTINATION lib)
+add_library(gateway_intro_memory_host STATIC
+  src/intro_host_memory.c src/intro_host_rtl_globals.c
+  src/intro_host_rtl_text_globals.c src/intro_host_rtl_graphics_globals.c)
+target_include_directories(gateway_intro_memory_host PUBLIC decomp/launcher)
+target_compile_features(gateway_intro_memory_host PUBLIC c_std_11)
+target_compile_options(gateway_intro_memory_host PRIVATE -Wall -Wextra -Wpedantic)
+install(TARGETS gateway_intro_memory_host ARCHIVE DESTINATION lib)
+add_library(gateway_intro_input_host STATIC src/intro_host_input.c)
+target_include_directories(gateway_intro_input_host PUBLIC decomp/launcher)
+target_compile_features(gateway_intro_input_host PUBLIC c_std_11)
+target_compile_options(gateway_intro_input_host PRIVATE -Wall -Wextra -Wpedantic)
+install(TARGETS gateway_intro_input_host ARCHIVE DESTINATION lib)
 install(FILES decomp/launcher/gate_exe.h decomp/launcher/gate_rtl.h
               decomp/launcher/gate_rtl_video.h
               decomp/launcher/gate_rtl_graphics.h
@@ -48,6 +62,8 @@ install(FILES decomp/launcher/gate_exe.h decomp/launcher/gate_rtl.h
               decomp/launcher/gate_rtl_file.h
               decomp/launcher/gate_dos_file_runtime.h
               decomp/launcher/gate_dos_host_files.h
+              decomp/launcher/gate_intro_host_memory.h
+              decomp/launcher/gate_intro_host_input.h
         DESTINATION include/gateway/intro)
 
 if(BUILD_TESTING)
@@ -107,6 +123,46 @@ if(BUILD_TESTING)
     tests/launcher_dos_host_files_tests.c)
   target_include_directories(launcher-dos-host-files-tests PRIVATE decomp/launcher)
   add_test(NAME launcher-dos-host-files COMMAND launcher-dos-host-files-tests)
+  add_executable(launcher-intro-host-memory-tests
+    src/intro_host_memory.c tests/launcher_intro_host_memory_tests.c)
+  target_include_directories(launcher-intro-host-memory-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-intro-host-memory COMMAND launcher-intro-host-memory-tests)
+  add_executable(launcher-intro-host-input-tests
+    src/intro_host_input.c tests/launcher_intro_host_input_tests.c)
+  target_include_directories(launcher-intro-host-input-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-intro-host-input COMMAND launcher-intro-host-input-tests)
+  add_executable(launcher-intro-runtime-string-tests
+    decomp/launcher/gate_c_runtime_string.c src/intro_host_memory.c
+    tests/launcher_intro_runtime_string_tests.c)
+  target_include_directories(launcher-intro-runtime-string-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-intro-runtime-string COMMAND launcher-intro-runtime-string-tests)
+  add_executable(launcher-intro-rtl-global-host-tests
+    src/intro_host_memory.c src/intro_host_rtl_globals.c
+    tests/launcher_intro_rtl_global_host_tests.c)
+  target_include_directories(launcher-intro-rtl-global-host-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-intro-rtl-global-host COMMAND launcher-intro-rtl-global-host-tests)
+  add_executable(launcher-intro-rtl-graphics-global-host-tests
+    src/intro_host_memory.c src/intro_host_rtl_globals.c
+    src/intro_host_rtl_graphics_globals.c
+    tests/launcher_intro_rtl_graphics_global_host_tests.c)
+  target_include_directories(launcher-intro-rtl-graphics-global-host-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-intro-rtl-graphics-global-host
+    COMMAND launcher-intro-rtl-graphics-global-host-tests)
+  add_executable(launcher-intro-rtl-text-host-tests
+    src/intro_host_memory.c src/intro_host_rtl_text_globals.c
+    tests/launcher_intro_rtl_text_host_tests.c)
+  target_include_directories(launcher-intro-rtl-text-host-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-intro-rtl-text-host COMMAND launcher-intro-rtl-text-host-tests)
+  add_executable(launcher-intro-native-file-integration-tests
+    decomp/launcher/gate_rtl_file.c
+    decomp/launcher/gate_rtl_file_linkage.c
+    decomp/launcher/gate_rtl_resource.c
+    decomp/launcher/gate_dos_file_runtime.c
+    src/intro_dos_host_files.c src/intro_host_memory.c
+    src/intro_host_rtl_globals.c
+    tests/launcher_intro_native_file_integration_tests.c)
+  target_include_directories(launcher-intro-native-file-integration-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-intro-native-file-integration COMMAND launcher-intro-native-file-integration-tests)
   add_executable(launcher-rtl-image-finish-decompile-tests
     decomp/launcher/gate_rtl_image_finish.c
     tests/launcher_rtl_image_finish_decompile_tests.c)

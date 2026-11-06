@@ -1173,6 +1173,19 @@ downstream click dispatcher. Read-only headless startup produced zero live
 picker-entry captures in 10,000 guest milliseconds; capturing a real entry
 and testing mouse acceptance remains pending private Xvfb.
 
+2026-11-06 intro-specific progress (separate from still-open §3.6 game
+goldens): linked the reconstructed intro RTL resource selector and original
+`0c33` DOS file entries through native 1 MiB segmented memory and host files.
+An optional test imports only the original 22-second guest-RAM capture at
+runtime and verifies direct reads from `GATE_200.PIC` plus descriptor #1 of
+`GATE_300.PIC` (270×38, flags 0x43). Also connected 17 relocated RTL image
+global accessors, graphics palette/mode globals, seven text globals,
+injectable clock/keyboard/mouse host callbacks, the linked `0c4d:061b` color service,
+and bounded original `12a5:2bba` FAR `strlen`. GCC/UBSan unit and
+integration tests and 37 original-byte checks pass; no new main-game
+handler is marked ported. No image renderer, event loop or standalone
+source-C executable is present, so **intro playability is still open**.
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |

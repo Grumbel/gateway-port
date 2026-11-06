@@ -358,6 +358,60 @@ other DOS/RTL dependencies and complete segmented-memory backing
 remain unresolved external dependencies. This
 remains **neither a rendered nor a playable source-C intro**.
 
+### Native linked-runtime stepping stone (after bundle 087)
+
+`gateway_intro_memory_host` now implements the original 20-bit guest-RAM
+aliasing and relocated DS words for the source-C intro. C stack-local FAR
+buffers use reserved synthetic segments `e000..efff`; these are a temporary
+host bridge, **not** a claim of complete DOS high-memory emulation. The
+image-resource globals at linked DS `4dce..4dea`, scalar selector words at
+`DS:1416..1426`, renderer palette pointer, font FAR pointer (`DS:54ca`),
+text cursor (`DS:550a/550c`) and text colors (`DS:54c6/54c8`) now read
+real bound RAM, without embedding a particular DOS load segment.
+The original graphics mode, status, mode-specific allocation sizes and
+mutable palette bytes are likewise backed by the recovered RTL globals.
+The separate `gateway_intro_input_host` archive lets a future SDL3 runner
+inject a monotonic millisecond clock, key queue and mouse state. Its tests
+use deterministic callbacks; it does not yet initialize SDL or play video.
+
+The separately recovered `12a5:2bba` FAR `strlen` now implements its actual
+`REPNE SCASB` scan bound and 16-bit offset behavior. The recovered
+`0c4d:061b` text-color linker alias and `0c33` file-service aliases resolve
+to source C; the latter are separated into a dedicated archive object to
+support native resource linking without pulling the entire graphics bank.
+
+The integration test links **original reconstructed C functions** for
+`RTL:e4ff/e531/e5e3/e68b`, `RTL:11ecb` and all five linked `0c33` file
+aliases to these native adapters. Its optional original-snapshot test
+reads the live relocated filename table from a 22-second capture, opens and
+reads `GATE_200.PIC`, and follows the complete resource-selector control flow
+to read descriptor #1 of `GATE_300.PIC` (verified width `0x010e`, height
+`0x0026`, flags `0x43`). No original assets are in Git. With GCC alone:
+
+```sh
+mkdir -p build
+gcc -std=c11 -Wall -Wextra -Wpedantic -Werror -Idecomp/launcher \
+  decomp/launcher/gate_rtl_file.c \
+  decomp/launcher/gate_rtl_file_linkage.c \
+  decomp/launcher/gate_rtl_resource.c \
+  decomp/launcher/gate_dos_file_runtime.c \
+  src/intro_dos_host_files.c src/intro_host_memory.c \
+  src/intro_host_rtl_globals.c \
+  tests/launcher_intro_native_file_integration_tests.c \
+  -o build/intro-native-resource-test
+build/intro-native-resource-test \
+  build/intro-analysis/at-22000.bin ../gateway-dos
+```
+
+Without snapshot arguments the executable runs only its synthetic
+scratch-directory test. The capture-based test expects the specific original
+DS `2a7a`, and the isolated successful 2-byte read uses a test-only initial
+stack word because the original C runtime's uninitialized-stack behavior
+still needs a faithful host equivalent. **Native input and clock hooks exist,
+but their SDL3 event loop, font drawing, VFX rasterization, picture allocation
+and screen output are not yet wired;
+this is not the source-C playable intro.**
+
 ### Independent C build, including the Nix flake
 
 ```sh
@@ -372,7 +426,7 @@ ctest --test-dir build/intro-c-only --output-on-failure
 
 **This is not yet a playable source-C intro.** The archive contains C object
 code with unresolved original DOS/RTL services and segmented-memory globals.
-There is no source-C executable entry point or native host adapter yet.
+There is no source-C executable entry point or complete native host adapter yet.
 `nix run .#intro` still starts the independent C++ presentation prototype,
 not this decompilation. A successful CMake/Nix build only proves the archive
 and tests can compile; it does *not* demonstrate that the C intro plays.
