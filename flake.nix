@@ -55,10 +55,26 @@
             };
         });
       apps = eachSystem (system: {
-        default = { type = "app"; program = "${self.packages.${system}.default}/bin/gateway"; };
-        intro = { type = "app"; program = "${self.packages.${system}.default}/bin/gateway-intro"; };
-        intro-dump = { type = "app"; program = "${self.packages.${system}.default}/bin/gateway-intro-dump"; };
-        intro-ghidra = { type = "app"; program = "${self.packages.${system}.intro-ghidra}/bin/gateway-decompile-intro"; };
+        default = {
+          type = "app";
+          program = "${self.packages.${system}.default}/bin/gateway";
+          meta.description = "Run the original Gateway DOS game through the SDL3/Unicorn port";
+        };
+        intro = {
+          type = "app";
+          program = "${self.packages.${system}.default}/bin/gateway-intro";
+          meta.description = "Preview the Gateway intro with the native C++ renderer";
+        };
+        intro-dump = {
+          type = "app";
+          program = "${self.packages.${system}.default}/bin/gateway-intro-dump";
+          meta.description = "Render a Gateway intro frame to a PPM image at a specified time";
+        };
+        intro-ghidra = {
+          type = "app";
+          program = "${self.packages.${system}.intro-ghidra}/bin/gateway-decompile-intro";
+          meta.description = "Decompile a relocated Gateway intro snapshot with Ghidra";
+        };
       });
       checks = eachSystem (system:
         let pkgs = import nixpkgs { inherit system; }; in {
