@@ -189,7 +189,7 @@ The earlier fade helpers pass a host stack pointer; their isolated linker
 adapter converts it into the original FAR shape via `gate_stack_pointer()`.
 The palette's relocated DS globals and VGA port writes now have bounded
 native host implementations, described below. The stack-pointer bridge,
-video initialization and complete intro call graph remain unconnected.
+actual BIOS/video presentation and complete intro call graph remain unconnected.
 
 `launcher-rtl-palette-decompile` verifies all major palette modes through
 instrumented port reads/writes and FAR memory, including retrace transitions,
@@ -197,6 +197,35 @@ byte-exact ordered VGA writes, packed channel extraction, signed lookup
 quotients and wrapping FAR pointers. Original routine boundaries and the
 near retrace-call target are checked by `launcher-rtl-graphics-binary`.
 This **does not yet prove native 8086 entry-state equivalence**.
+
+## Original display-mode switch (GATE.RTL)
+
+`gate_rtl_mode.c` reconstructs `GATE.RTL:0xf14d..0xf389`, linked into the
+intro as `0cdc:0004`. Its original C returns 0 for failure and 1 after
+successful setup. It first marks mode `DS:0fce` as `0xffff`, even when an
+out-of-range request fails. It queries resident adapter service `242a:000a`,
+tests adapter and monitor capability tables, then selects the BIOS mode
+through `2409:0008`. Graphics mode 4 optionally remaps to SVGA modes 5, 6
+or 7. The separate `2409:003e` service enables the display.
+
+The relocated source tables occupy `DS:12e2/12ee` (capabilities) and
+`DS:12f8/1302/130c/1316/1320` (five mode descriptors). The routine writes
+dimensions and the original signed-division-derived row count through far
+segment selectors `DS:4d92..4d9e`, then initializes the mode-dependent
+color and mask words through `DS:4da0..4da8`. The near helper
+`rtl:0xf49b..0xf4de` initializes the VGA attribute entries 0..15 for
+modes 1, 2 and 4 using the original `rtl:f473` retrace wait.
+
+The native hardware adapter models the observed resident boundary:
+adapter query, optional SVGA variant, BIOS mode selection, initial enable,
+clip rectangle `25b7:003a` and clip enable `25b7:0008`. The resident
+`2409:0008` stores the live pixel-dispatch mode at `DS:15cc`; the host
+does likewise, so the **original source-C mode switch** configures the
+existing planar and linear framebuffer services. Strict C11/UBSan tests
+exercise normal modes, failures, SVGA variants, attribute palettes,
+graphics-global writes and source-C mode-2/mode-3 pixel output. Another
+test uses the original 22-second DOS RAM to verify the mode-3 table state.
+Neither actual BIOS `INT 10h` nor an SDL window transition occurs yet.
 
 ## Original image display entry point
 
@@ -467,10 +496,11 @@ not this decompilation. A successful CMake/Nix build only proves the archive
 and tests can compile; it does *not* demonstrate that the C intro plays.
 
 Mode-12h and mode-13h image allocation, DCL decoding and drawing are linked
-through the original C loader. Font rasterization, solid text backgrounds
-and palette uploads also have bounded native hardware services; the next
-dependencies are the original video-mode initialization, startup entry and
-remaining keyboard/timing services. Use guest-entry differential checks
+through the original C loader. Font rasterization, solid text backgrounds,
+palette uploads and original display-mode selection now have bounded native
+hardware services. The remaining dependencies include actual window/video
+presentation, the startup entry and keyboard/timing services. Use guest-entry
+differential checks
 before calling the complete intro playable or resuming game logic.
 
 The graphics-font pixel path is now connected: the source-C `rtl:0xedff`
@@ -500,13 +530,15 @@ to `3c8/3c9` and the VGA attribute-controller entries at `3c0`. It
 provides an artificial clear/set retrace transition to complete the
 original polling loops; this does **not** reproduce real VGA timing.
 Unit tests exercise source-C modes 1/2/3, mode-zero early return, attribute
-changes, real snapshot globals and all 256 mode-13h DAC colors. The native
-SDL presenter, original video-mode initialization, startup entry and
-complete timing/input handling remain outstanding; this is not playable.
+changes, real snapshot globals and all 256 mode-13h DAC colors. The
+mode-switch C also configures the descriptor and pixel dispatcher through
+the native BIOS adapter. The SDL presenter, real BIOS video effects,
+startup entry and complete timing/input handling remain outstanding;
+this is not playable.
 
 ## Immediate next functions
 
-1. Decompile the remaining eight mapped graphics/video entry points,
+1. Decompile the remaining mapped graphics/video entry points,
    preserving their original ABI and data globals.
 2. Recover the remaining patterned/background and text-mode video
    dependencies (`rtl:0xed74/0xeda5/0xedb7`), keyboard, mouse and timing

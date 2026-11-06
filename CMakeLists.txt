@@ -19,6 +19,7 @@ add_library(gateway_intro_decompiled STATIC
   decomp/launcher/gate_rtl_video.c
   decomp/launcher/gate_rtl_graphics.c
   decomp/launcher/gate_rtl_palette.c
+  decomp/launcher/gate_rtl_mode.c
   decomp/launcher/gate_rtl_image.c
   decomp/launcher/gate_rtl_file.c
   decomp/launcher/gate_rtl_file_linkage.c
@@ -56,6 +57,11 @@ target_include_directories(gateway_intro_vga_ports_host PUBLIC decomp/launcher)
 target_compile_features(gateway_intro_vga_ports_host PUBLIC c_std_11)
 target_compile_options(gateway_intro_vga_ports_host PRIVATE -Wall -Wextra -Wpedantic)
 install(TARGETS gateway_intro_vga_ports_host ARCHIVE DESTINATION lib)
+add_library(gateway_intro_video_mode_host STATIC src/intro_host_video_mode.c)
+target_include_directories(gateway_intro_video_mode_host PUBLIC decomp/launcher)
+target_compile_features(gateway_intro_video_mode_host PUBLIC c_std_11)
+target_compile_options(gateway_intro_video_mode_host PRIVATE -Wall -Wextra -Wpedantic)
+install(TARGETS gateway_intro_video_mode_host ARCHIVE DESTINATION lib)
 add_library(gateway_intro_input_host STATIC src/intro_host_input.c)
 target_include_directories(gateway_intro_input_host PUBLIC decomp/launcher)
 target_compile_features(gateway_intro_input_host PUBLIC c_std_11)
@@ -77,6 +83,7 @@ install(FILES decomp/launcher/gate_exe.h decomp/launcher/gate_rtl.h
               decomp/launcher/gate_rtl_video.h
               decomp/launcher/gate_rtl_graphics.h
               decomp/launcher/gate_rtl_palette.h
+              decomp/launcher/gate_rtl_mode.h
               decomp/launcher/gate_rtl_image.h
               decomp/launcher/gate_rtl_file.h
               decomp/launcher/gate_dos_file_runtime.h
@@ -84,6 +91,7 @@ install(FILES decomp/launcher/gate_exe.h decomp/launcher/gate_rtl.h
               decomp/launcher/gate_intro_host_memory.h
               decomp/launcher/gate_intro_host_input.h
               decomp/launcher/gate_intro_host_vga_ports.h
+              decomp/launcher/gate_intro_host_video_mode.h
         DESTINATION include/gateway/intro)
 
 if(BUILD_TESTING)
@@ -193,6 +201,19 @@ if(BUILD_TESTING)
   if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin")
     add_test(NAME launcher-intro-original-palette
       COMMAND launcher-intro-native-palette-tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin)
+  endif()
+  add_executable(launcher-intro-native-video-mode-tests
+    decomp/launcher/gate_rtl_mode.c decomp/launcher/gate_rtl_palette.c
+    src/intro_host_memory.c src/intro_host_rtl_pixel.c
+    src/intro_host_rtl_palette_globals.c
+    src/intro_host_video_mode.c src/intro_host_vga_ports.c
+    tests/launcher_intro_native_video_mode_tests.c)
+  target_include_directories(launcher-intro-native-video-mode-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-intro-native-video-mode COMMAND launcher-intro-native-video-mode-tests)
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin")
+    add_test(NAME launcher-intro-original-video-mode
+      COMMAND launcher-intro-native-video-mode-tests
         ${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin)
   endif()
   add_executable(launcher-intro-native-file-integration-tests

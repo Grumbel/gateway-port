@@ -56,6 +56,7 @@ class OriginalIntroGraphicsEvidence(unittest.TestCase):
 
     def test_bounded_graphics_functions(self):
         for start, end in ((0xf473, 0xf49a),
+                           (0xf49b, 0xf4de),
                            (0xf61b, 0xf826),
                            (0x12b19, 0x12b66),
                            (0x12c33, 0x12d66),
@@ -80,6 +81,64 @@ class OriginalIntroGraphicsEvidence(unittest.TestCase):
                 self.assertEqual(self.rtl[start + 1], 0x8b)
                 self.assertEqual(self.rtl[start + 2], 0xec)
                 self.assertEqual(self.rtl[end], 0xcb)
+
+    def test_original_video_mode_switch_and_resident_services(self):
+        # The large f14d C routine has multiple FAR returns, and calls
+        # f49b through PUSH CS/near CALL after successful BIOS setup.
+        self.assertEqual(self.rtl[0xf14d:0xf150], b'\x55\x8b\xec')
+        self.assertEqual(self.rtl[0xf16c], 0xcb)
+        self.assertEqual(self.rtl[0xf389], 0xcb)
+        self.assertEqual(self.rtl[0xf25a], 0x0e)
+        self.assertEqual(self.rtl[0xf25b], 0xe8)
+        delta = int.from_bytes(self.rtl[0xf25c:0xf25e], 'little', signed=True)
+        self.assertEqual(0xf25e + delta, 0xf49b)
+        snapshot = ROOT / 'build/intro-analysis/at-22000.bin'
+        if not snapshot.is_file():
+            self.skipTest('private guest RAM snapshot unavailable')
+        ram = snapshot.read_bytes()
+        # Original f14d is relocated to 0cdc:0004, loaded at 1cdc4;
+        # hardware targets are observed, not guessed from placeholders.
+        base = (0x0cdc + 0x1000) * 16 + 4 - 0xf14d
+        calls = ((0xf172, (0x000a, 0x242a)),
+                 (0xf19d, (0x0004, 0x241d)),
+                 (0xf238, (0x0008, 0x2409)),
+                 (0xf248, (0x003e, 0x2409)),
+                 (0xf374, (0x003a, 0x25b7)),
+                 (0xf37d, (0x0008, 0x25b7)))
+        for site, target in calls:
+            with self.subTest(callsite=site):
+                linked = ram[site + base:site + base + 5]
+                self.assertEqual(linked[0], 0x9a)
+                self.assertEqual((int.from_bytes(linked[1:3], 'little'),
+                                  int.from_bytes(linked[3:5], 'little')),
+                                 target)
+        # These are relocated DS operands for the same globals used by
+        # the native mode host, not locations from a guessed C struct.
+        for site, expected in ((0xf156, 0x0fce), (0xf17d, 0x5516),
+                               (0xf233, 0x5514), (0xf265, 0x4d92),
+                               (0xf271, 0x4d94), (0xf27d, 0x4d96),
+                               (0xf289, 0x4d98), (0xf2aa, 0x4d9a),
+                               (0xf2b7, 0x4d9c), (0xf2bf, 0x4d9e)):
+            with self.subTest(ds_operand=site):
+                self.assertEqual(int.from_bytes(
+                    ram[site + base:site + base + 2], 'little'), expected)
+        # The two resident drawing calls store the signed clip rectangle
+        # and switch its enable WORD in the same state read by the font
+        # pixel dispatcher. Validate their real DOS bodies as well.
+        self.assertEqual(ram[0x25b78:0x25b7b], b'\x55\x8b\xec')
+        self.assertEqual(ram[0x25baa:0x25bad], b'\x55\x8b\xec')
+        for site, offset in ((0x25b95, 0x18), (0x25bbf, 0x1a),
+                             (0x25bc5, 0x1c), (0x25bcb, 0x1e),
+                             (0x25bd1, 0x20)):
+            with self.subTest(resident_clip=site):
+                self.assertEqual(ram[site:site + 3],
+                                 bytes((0x89, 0x44, offset)))
+        # Resident 2409:0008 selects the live renderer's mode word; its
+        # paired 2409:003e initializer stores the enabled/BIOS state.
+        self.assertEqual(ram[0x240b9:0x240bc], b'\xa3\xcc\x15')
+        self.assertEqual(ram[0x240fe:0x24101], b'\xa3\xce\x15')
+        self.assertEqual(ram[0x24101:0x24107],
+                         bytes.fromhex('c706d0150000'))
 
     def test_palette_uploader_calls_original_retrace_wait(self):
         # GATE.RTL:f62d uses PUSH CS / near CALL with a negative displacement,
