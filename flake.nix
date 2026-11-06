@@ -40,11 +40,25 @@
               ctest --output-on-failure
             '';
           };
+          # Run Ghidra's batch decompiler on a *relocated* intro snapshot.
+          # The original binaries/snapshot are runtime inputs, never copied
+          # into the Nix store or the repository's source derivation.
+          intro-ghidra =
+            let python = pkgs.python3.withPackages (ps: [ ps.pyghidra ]);
+            in pkgs.writeShellApplication {
+              name = "gateway-decompile-intro";
+              runtimeInputs = [ python pkgs.openjdk21 pkgs.ghidra ];
+              text = ''
+                export GHIDRA_INSTALL_DIR="${pkgs.ghidra}/lib/ghidra"
+                exec ${python}/bin/python3 ${source}/tools/run_intro_ghidra.py "$@"
+              '';
+            };
         });
       apps = eachSystem (system: {
         default = { type = "app"; program = "${self.packages.${system}.default}/bin/gateway"; };
         intro = { type = "app"; program = "${self.packages.${system}.default}/bin/gateway-intro"; };
         intro-dump = { type = "app"; program = "${self.packages.${system}.default}/bin/gateway-intro-dump"; };
+        intro-ghidra = { type = "app"; program = "${self.packages.${system}.intro-ghidra}/bin/gateway-decompile-intro"; };
       });
       checks = eachSystem (system:
         let pkgs = import nixpkgs { inherit system; }; in {
@@ -161,7 +175,8 @@ except Exception:
           ghidra = pkgs.mkShell {
             inputsFrom = [ self.devShells.${system}.default ];
             packages = [ pkgs.ghidra pkgs.openjdk21
-                         (pkgs.python3.withPackages (ps: [ ps.pyghidra ])) ];
+                         (pkgs.python3.withPackages (ps: [ ps.pyghidra ]))
+                         self.packages.${system}.intro-ghidra ];
             GHIDRA_INSTALL_DIR = "${pkgs.ghidra}/lib/ghidra";
           };
         });

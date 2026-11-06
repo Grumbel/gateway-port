@@ -1,5 +1,9 @@
 # Ghidra: original Gateway native code and RTLink overlays
 
+For the **separate `GATE.EXE`/`GATE.RTL` introductory program**, use the
+dedicated [intro Ghidra batch workflow](intro-ghidra.md). The commands below
+apply to the main-game binaries only.
+
 For the independently replayed receptionist event-4 handler
 (`GATEMAIN.OVL:0x56f9f`, `GIVE BOOK` branch `0x570a9–0x57114`),
 native entry/return/object-write corroboration, and a five-object Ghidra

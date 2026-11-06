@@ -1,5 +1,10 @@
 # GATE.EXE: source-shaped C decompilation
 
+Bulk Ghidra extraction for the intro's relocated `GATE.RTL` is now documented
+in [intro Ghidra workflow](../../docs/intro-ghidra.md). The generated
+pseudocode stays ignored under `build/` and is not automatically incorporated
+into these manually reviewed C files.
+
 This directory is the **decompilation**, not the native SDL intro player.
 Its goal is to reconstruct the original 16-bit C program function by function,
 with its actual calls, loops, data accesses, argument order, arithmetic and
