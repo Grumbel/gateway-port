@@ -41,12 +41,14 @@ uint16_t gate_rtl_12c33(GateFarPtr work, uint16_t resource, uint16_t mode)
 
     gate_far_1479_0002(0, destination);
 
-    /* These WORDs are the original relocated DS globals themselves, not
-     * the contents of the FAR pointers to which they refer. */
+    /* The original linked A1 20 14 / A1 22 14 read relocated *near DS
+     * scalar values* (RTL DS:000a/000c -> linked DS:1420/1422): picture
+     * x/y from the resource selector. They are NOT segment selectors.
+     * Confusing them with DS:4dce/4dd0 put pictures far off-screen. */
     gate_far_set_word(work.segment, (uint16_t)(work.offset + 2u),
-                      gate_rtl_image_mode_segment());
+                      gate_rtl_resource_ds_word(0x0au));
     gate_far_set_word(work.segment, (uint16_t)(work.offset + 4u),
-                      gate_rtl_image_palette_segment());
+                      gate_rtl_resource_ds_word(0x0cu));
     gate_far_set_byte(work.segment, (uint16_t)(work.offset + 6u),
                       gate_far_byte(header_segment, GATE_RTL_HEADER_OFFSET + 10));
     gate_far_set_byte(work.segment, (uint16_t)(work.offset + 7u),

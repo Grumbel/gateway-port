@@ -19,6 +19,7 @@ static unsigned ncalls;
 static uint16_t resource_status, allocate_status, validate_status;
 static uint16_t expected_resource, expected_mode, expected_width, expected_height;
 static uint16_t expected_video_mode;
+static uint16_t resource_x, resource_y;
 
 static void record(char c)
 {
@@ -76,6 +77,13 @@ static void set_work_word(uint16_t offset, uint16_t value)
 uint16_t gate_rtl_image_mode_segment(void) { return MODE_SEG; }
 uint16_t gate_rtl_image_palette_segment(void) { return 0x6789; }
 uint16_t gate_rtl_image_header_segment(void) { return HEADER_SEG; }
+uint16_t gate_rtl_resource_ds_word(uint16_t offset)
+{
+    if (offset == 0x0a)
+        return resource_x;
+    assert(offset == 0x0c);
+    return resource_y;
+}
 
 uint16_t gate_rtl_11ecb(uint16_t resource, uint16_t mode)
 {
@@ -148,6 +156,8 @@ static void reset_case(uint16_t video_mode, uint16_t width, uint16_t height,
     resource_status = 1;
     allocate_status = 0;
     validate_status = 0;
+    resource_x = 0x0123;
+    resource_y = 0x0234;
     gate_far_set_word(MODE_SEG, GATE_RTL_VIDEO_MODE_OFFSET, video_mode);
     gate_far_set_word(HEADER_SEG, GATE_RTL_HEADER_OFFSET + 6, width);
     gate_far_set_word(HEADER_SEG, GATE_RTL_HEADER_OFFSET + 8, height);
@@ -165,8 +175,8 @@ static void test_success_layout(uint16_t video_mode, uint16_t width,
     assert(ncalls == 5 && memcmp(calls, "RAISP", 5) == 0);
     assert(work_byte(0) == 1);
     assert(work_byte(1) == ((flags & 0x40u) ? 3 : 0));
-    assert(work_word(2) == MODE_SEG);
-    assert(work_word(4) == 0x6789);
+    assert(work_word(2) == resource_x);
+    assert(work_word(4) == resource_y);
     assert(work_byte(6) == 0xd3 && work_byte(7) == 0xe4);
     assert(work_word(0x1c) == expected_stride);
     assert(work_word(0x20) == 0xabcd && work_word(0x22) == 0x4321);

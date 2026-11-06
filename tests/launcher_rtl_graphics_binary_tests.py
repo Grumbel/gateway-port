@@ -135,6 +135,24 @@ class OriginalIntroGraphicsEvidence(unittest.TestCase):
                           int.from_bytes(live[1:3], 'little'))
                 self.assertEqual(linked, expected)
 
+    def test_image_loader_x_y_are_relocated_near_scalars(self):
+        # The older native C reconstruction accidentally used DS:4dce/4dd0
+        # segment selector WORDs as image coordinates. Original 8086 A1
+        # instructions instead use two *near DS scalar* addresses.
+        self.assertEqual(self.rtl[0x12cab:0x12cb0],
+                         bytes.fromhex('a10a002689'))
+        self.assertEqual(self.rtl[0x12cb2:0x12cb7],
+                         bytes.fromhex('a10c002689'))
+        snapshot = ROOT / 'build/intro-analysis/at-22000.bin'
+        if not snapshot.is_file():
+            self.skipTest('private guest RAM snapshot unavailable')
+        ram = snapshot.read_bytes()
+        base = GRAPHICS_TARGETS[0x0f10, 0x112e] - 0x112e
+        for site, expected in ((0x12cab, b'\xa1\x20\x14'),
+                               (0x12cb2, b'\xa1\x22\x14')):
+            linked = (0x0f10 + 0x1000) * 16 + site - base
+            self.assertEqual(ram[linked:linked + 3], expected)
+
     def test_original_resource_selector_and_far_services(self):
         # GATE.RTL:11ecb..120f2 has two return sites, and its next routine
         # begins at 120f3; unlike the other wrappers it does not end in RETF.
