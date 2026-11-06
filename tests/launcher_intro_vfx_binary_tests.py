@@ -145,6 +145,38 @@ class NativeVfxProvenance(unittest.TestCase):
                           for off in (0x34, 0x3a, 0x3c, 0x3e)],
                          [11, 24, 8, 319])
 
+    def test_original_graphics_font_background_services(self):
+        # RTL:edff invokes a resident fill-state setter and rectangle
+        # rasterizer before placing any ink pixels, but only when the
+        # original text background color is nonnegative. The RAM snapshot
+        # proves these are separate FAR services, not font bitmap routines.
+        linked = 0x1c4d0 + 0x0511 - 0xebf7
+        for original, offset, segment in ((0xeeb6, 0x0002, 0x25a3),
+                                          (0xeede, 0x0006, 0x2698)):
+            call = linked + original
+            self.assertEqual(self.ram[call], 0x9a)
+            self.assertEqual((self.word(call + 1), self.word(call + 3)),
+                             (offset, segment))
+        self.assertEqual(self.ram[0x25a32], 0x55)
+        self.assertEqual(self.ram[0x26986], 0x55)
+
+    def test_original_palette_driver_relocated_globals(self):
+        # Original RTL:f61b is linked at 0cdc:04d2 in the verified bank.
+        # Its live operands use DS offsets, not raw RTL file placeholders.
+        self.assertEqual(self.ram[0x1d292], 0x55)  # far-call prologue
+        for site, offset in ((0x1d29c, 0x0fce),
+                             (0x1d2aa, 0x5516),
+                             (0x1d0f4, 0x5514),
+                             (0x1d40f, 0x4daa),
+                             (0x1d36d, 0x132a),
+                             (0x1d377, 0x1334)):
+            self.assertEqual(self.word(site), offset)
+        self.assertEqual(self.word(VFX_DS + 0x0fce), 3)
+        self.assertEqual(self.word(VFX_DS + 0x5514), 0x03da)
+        self.assertEqual(self.word(VFX_DS + 0x5516), 5)
+        self.assertEqual(self.word(VFX_DS + 0x0fd8), 768)
+        self.assertEqual(self.word(VFX_DS + 0x4daa), 0x2a70)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -12,20 +12,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Original video/text-mode and opaque rectangle services are separate
- * link boundaries. The tested graphics-font cases have background=-1 and
- * therefore cannot call a rectangle service. */
-void gate_rtl_background_setup(uint16_t a, uint16_t b, uint16_t c)
-{
-    (void)a; (void)b; (void)c;
-    abort();
-}
-void gate_rtl_background_rect(uint16_t a, uint16_t b, uint16_t c,
-                              uint16_t d, uint16_t e)
-{
-    (void)a; (void)b; (void)c; (void)d; (void)e;
-    abort();
-}
+/* The text-mode video dispatcher remains a separate unresolved boundary.
+ * Only the original graphics font (font+3 != 0) is exercised here. */
 void gate_rtl_f997(uint16_t x, uint16_t y)
 {
     (void)x; (void)y;
@@ -154,6 +142,37 @@ static void check_synthetic_glyph(void)
             assert(gate_intro_vga16_pixel((uint16_t)(20 + column),
                                          (uint16_t)(30 + row)) == expected);
         }
+
+    /* RTL:edff calls the resident style-2 background-rectangle services
+     * before drawing ink. The full 8x11 cell is first painted color 2;
+     * the original bitmap then overwrites five columns on three rows. */
+    gate_ds_set_word(0x29de + 0x0c, 0x1234);
+    gate_ds_set_word(0x29de + 0x28, 0xabcd);
+    gate_ds_set_word(0x29de + 0x2a, 3);
+    gate_rtl_set_cursor(40, 50);
+    gate_rtl_set_colors(13, 2);
+    gate_rtl_edff('A');
+    assert(gate_rtl_cursor_x() == 48 && gate_rtl_cursor_y() == 50);
+    assert(gate_ds_word(0x29de + 0x0c) == 0x1234);
+    assert(gate_ds_word(0x29de + 0x28) == 0xabcd);
+    assert(gate_ds_word(0x29de + 0x2a) == 3);
+    for (row = 0; row < 12; ++row)
+        for (column = 0; column < 10; ++column) {
+            uint8_t expected = 0;
+            if (row < 11 && column < 8)
+                expected = 2;
+            if (row < 3 && column >= 1 && column <= 5 &&
+                (rows[row] & (0x80u >> (column - 1))) != 0)
+                expected = 13;
+            assert(gate_intro_vga16_pixel((uint16_t)(40 + column),
+                                         (uint16_t)(50 + row)) == expected);
+        }
+
+    /* The original rectangle routine returns without filling if its
+     * signed height difference is zero, even for an otherwise valid rect. */
+    gate_rtl_background_setup(0, 7, 0);
+    gate_rtl_background_rect(2, 75, 70, 75, 60);
+    assert(gate_intro_vga16_pixel(60, 75) == 0);
 }
 
 /* Every character below exercises the *real* live-linked font descriptors
@@ -220,6 +239,42 @@ static void check_original_glyphs(const char *capture)
     }
     for (i = 0; i < sizeof expected; ++i)
         assert(memory->bytes[0xa0000 + i] == expected[i]);
+
+    /* Opaque-background pass: exercise the native 25a3/2698 rectangle
+     * bridge with a real original proportional character, verifying that
+     * it covers the complete advance-by-line-height cell before ink. */
+    {
+        const uint8_t ch = 'A';
+        const uint16_t x = 100, y = 90;
+        const uint8_t width = gate_far_byte(width_table.segment,
+                                           (uint16_t)(width_table.offset + ch));
+        const uint8_t spacing = gate_far_byte(spacing_table.segment,
+                                             (uint16_t)(spacing_table.offset + ch));
+        const uint16_t advance = (uint16_t)(width + (spacing >> 4) +
+                                             (spacing & 15));
+        const uint16_t glyph_offset = (uint16_t)((ch - first) *
+                                                  row_bytes * height);
+        const uint16_t line_height = (uint16_t)gate_rtl_newline_pitch();
+        memset(expected, 0, sizeof expected);
+        memset(memory->bytes + 0xa0000, 0, sizeof expected);
+        gate_rtl_set_colors(15, 2);
+        gate_rtl_set_cursor((int16_t)x, (int16_t)y);
+        gate_rtl_edff(ch);
+        assert(gate_rtl_cursor_x() == (int16_t)(x + advance));
+        for (row = 0; row < line_height; ++row)
+            for (col = 0; col < advance; ++col)
+                expected[(y + row) * 320 + x + col] = 2;
+        for (row = 0; row < height; ++row)
+            for (col = 0; col < width; ++col) {
+                const uint16_t source = (uint16_t)(bitmap.offset + glyph_offset +
+                                                   row * row_bytes + col / 8u);
+                const uint8_t bits = gate_far_byte(bitmap.segment, source);
+                if ((bits & (0x80u >> (col & 7u))) != 0)
+                    expected[(y + row) * 320 + x + (spacing >> 4) + col] = 15;
+            }
+        for (i = 0; i < sizeof expected; ++i)
+            assert(memory->bytes[0xa0000 + i] == expected[i]);
+    }
     gate_intro_memory_detach();
     free(memory);
 }

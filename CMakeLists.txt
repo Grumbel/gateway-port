@@ -46,11 +46,16 @@ install(TARGETS gateway_intro_file_host ARCHIVE DESTINATION lib)
 add_library(gateway_intro_memory_host STATIC
   src/intro_host_memory.c src/intro_host_rtl_globals.c
   src/intro_host_rtl_text_globals.c src/intro_host_rtl_graphics_globals.c
-  src/intro_host_rtl_pixel.c)
+  src/intro_host_rtl_pixel.c src/intro_host_rtl_palette_globals.c)
 target_include_directories(gateway_intro_memory_host PUBLIC decomp/launcher)
 target_compile_features(gateway_intro_memory_host PUBLIC c_std_11)
 target_compile_options(gateway_intro_memory_host PRIVATE -Wall -Wextra -Wpedantic)
 install(TARGETS gateway_intro_memory_host ARCHIVE DESTINATION lib)
+add_library(gateway_intro_vga_ports_host STATIC src/intro_host_vga_ports.c)
+target_include_directories(gateway_intro_vga_ports_host PUBLIC decomp/launcher)
+target_compile_features(gateway_intro_vga_ports_host PUBLIC c_std_11)
+target_compile_options(gateway_intro_vga_ports_host PRIVATE -Wall -Wextra -Wpedantic)
+install(TARGETS gateway_intro_vga_ports_host ARCHIVE DESTINATION lib)
 add_library(gateway_intro_input_host STATIC src/intro_host_input.c)
 target_include_directories(gateway_intro_input_host PUBLIC decomp/launcher)
 target_compile_features(gateway_intro_input_host PUBLIC c_std_11)
@@ -78,6 +83,7 @@ install(FILES decomp/launcher/gate_exe.h decomp/launcher/gate_rtl.h
               decomp/launcher/gate_dos_host_files.h
               decomp/launcher/gate_intro_host_memory.h
               decomp/launcher/gate_intro_host_input.h
+              decomp/launcher/gate_intro_host_vga_ports.h
         DESTINATION include/gateway/intro)
 
 if(BUILD_TESTING)
@@ -176,6 +182,17 @@ if(BUILD_TESTING)
   if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin")
     add_test(NAME launcher-intro-original-glyph
       COMMAND launcher-intro-native-glyph-tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin)
+  endif()
+  add_executable(launcher-intro-native-palette-tests
+    decomp/launcher/gate_rtl_palette.c
+    src/intro_host_memory.c src/intro_host_rtl_palette_globals.c
+    src/intro_host_vga_ports.c tests/launcher_intro_native_palette_tests.c)
+  target_include_directories(launcher-intro-native-palette-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-intro-native-palette COMMAND launcher-intro-native-palette-tests)
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin")
+    add_test(NAME launcher-intro-original-palette
+      COMMAND launcher-intro-native-palette-tests
         ${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin)
   endif()
   add_executable(launcher-intro-native-file-integration-tests

@@ -126,10 +126,10 @@ The distinct
 `launcher-rtl-decompile-binary` test checks bounded original 8086 functions,
 their compiler branches, far-call identities and, when the optional private
 `build/intro-analysis/at-22000.bin` is present, the original relocated
-DS globals and all original font width/spacing/bitmap arrays. **No runtime
-call into the emulator is replaced yet**: the linked pointer-normalization
-and lower-level video/pixel services
-are explicit unresolved dependencies, not invented native graphics APIs.
+DS globals and all original font width/spacing/bitmap arrays. These tests
+are separate from the native host's bounded VGA pixel and solid-background
+services described below. The source-C intro has not been wired into the
+emulator or an independent runnable host.
 
 ## Decompiled graphics palette transitions (GATE.RTL)
 
@@ -187,8 +187,9 @@ None of these quirks were removed.
 The source-level linkage now maps `gate_far_0cdc_04d2` to `gate_rtl_f61b`.
 The earlier fade helpers pass a host stack pointer; their isolated linker
 adapter converts it into the original FAR shape via `gate_stack_pointer()`.
-That stack-memory service and the original palette globals still need a
-real guest-memory/host adapter before the intro can run outside DOS.
+The palette's relocated DS globals and VGA port writes now have bounded
+native host implementations, described below. The stack-pointer bridge,
+video initialization and complete intro call graph remain unconnected.
 
 `launcher-rtl-palette-decompile` verifies all major palette modes through
 instrumented port reads/writes and FAR memory, including retrace transitions,
@@ -465,11 +466,12 @@ There is no source-C executable entry point or complete native host adapter yet.
 not this decompilation. A successful CMake/Nix build only proves the archive
 and tests can compile; it does *not* demonstrate that the C intro plays.
 
-With mode-12h and mode-13h image allocation, DCL decoding and drawing now
-linked through the original C loader, the next dependencies are font/text
-rasterization, palette/video initialization, the original startup entry and
-remaining keyboard/timing services. Use guest-entry differential
-checks before calling the complete intro playable or resuming game logic.
+Mode-12h and mode-13h image allocation, DCL decoding and drawing are linked
+through the original C loader. Font rasterization, solid text backgrounds
+and palette uploads also have bounded native hardware services; the next
+dependencies are the original video-mode initialization, startup entry and
+remaining keyboard/timing services. Use guest-entry differential checks
+before calling the complete intro playable or resuming game logic.
 
 The graphics-font pixel path is now connected: the source-C `rtl:0xedff`
 printer's FAR pixel call at `rtl:0xef83` resolves in captured RAM to the
@@ -482,14 +484,31 @@ words are read from the relocated mode-descriptor segment selectors at
 the *actual source-C glyph routine* with the original 22-second font bitmap,
 then verify all 64,000 video bytes against independently decoded font bits.
 Synthetic tests exercise all four pixel operations and the planar mode.
-This covers **foreground glyph pixels**, not background rectangles, video
-initialization, palette programming or the source-C entry loop.
+The original opaque-background calls link to resident `25a3:0002` and
+`2698:0006`; a bounded host implements their **style-2, solid-fill branch**,
+including the inclusive background cell and restoration of graphics state.
+Both synthetic planar and captured-font linear-framebuffer tests cover
+opaque backgrounds followed by glyph ink. Pattern fills and alternate
+rectangle styles are still intentionally unavailable.
+
+The original `rtl:0xf61b` **palette-upload C** also runs against live-linked
+globals instead of test mocks: graphics mode `DS:0fce`, VGA type `DS:5516`,
+retrace port `DS:5514`, palette color-count table `DS:0fd2`, conversion
+flag through `DS:4daa`, and relocated lookup bytes at `DS:132a/1334`.
+A native hardware port boundary records the exact DAC RGB6 values written
+to `3c8/3c9` and the VGA attribute-controller entries at `3c0`. It
+provides an artificial clear/set retrace transition to complete the
+original polling loops; this does **not** reproduce real VGA timing.
+Unit tests exercise source-C modes 1/2/3, mode-zero early return, attribute
+changes, real snapshot globals and all 256 mode-13h DAC colors. The native
+SDL presenter, original video-mode initialization, startup entry and
+complete timing/input handling remain outstanding; this is not playable.
 
 ## Immediate next functions
 
 1. Decompile the remaining eight mapped graphics/video entry points,
    preserving their original ABI and data globals.
-2. Recover the remaining background-rectangle and text-mode video
+2. Recover the remaining patterned/background and text-mode video
    dependencies (`rtl:0xed74/0xeda5/0xedb7`), keyboard, mouse and timing
    services on the intro's actual call graph. The far call at `rtl:0xef83`
    now has a bounded native VGA host but its resident source is not yet C.
