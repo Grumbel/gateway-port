@@ -42,3 +42,34 @@ void gate_rtl_set_colors(uint16_t ink, int16_t background)
     gate_ds_set_word(0x54c8, ink);
     gate_ds_set_word(0x54c6, (uint16_t)background);
 }
+
+/* The linked RTL text routines read these mode-dependent words through
+ * segment selectors in DS. Their exact relocated operands are visible in
+ * the 22-second capture: ec0a/ed39/edff reference 4d82, 4d86, 4d8a and
+ * 4d90, then read the original mode descriptor at offsets 3a/3c/34/3e.
+ * The values change when the intro switches VGA modes; they must not be
+ * cached or hardcoded to the 320x200 caption path. */
+uint16_t gate_rtl_tab_advance(void)
+{
+    return gate_far_word(gate_ds_word(0x4d82), 0x003a);
+}
+
+int16_t gate_rtl_text_mode_pitch(void)
+{
+    return (int16_t)gate_far_word(gate_ds_word(0x4d86), 0x003c);
+}
+
+int16_t gate_rtl_tab_pitch(void)
+{
+    return (int16_t)gate_rtl_tab_advance();
+}
+
+int16_t gate_rtl_tab_limit(void)
+{
+    return (int16_t)gate_far_word(gate_ds_word(0x4d90), 0x003e);
+}
+
+int16_t gate_rtl_newline_pitch(void)
+{
+    return (int16_t)gate_far_word(gate_ds_word(0x4d8a), 0x0034);
+}

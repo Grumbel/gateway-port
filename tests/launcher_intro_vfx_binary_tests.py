@@ -114,6 +114,37 @@ class NativeVfxProvenance(unittest.TestCase):
         self.assertEqual(ram[0x247d6:0x247e6],
                          bytes.fromhex('268b5d34895ef633db268a5d12895ef8'))
 
+    def test_original_rtl_glyph_pixel_call_and_video_dispatch(self):
+        # Original RTL:ef83 in the *relocated* 0c4d text bank links to the
+        # resident graphics service 25d7:0004, not a function in GATE.RTL.
+        # Its table selects the exact mode-12h and mode-13h pixel routines.
+        call = 0x1c4d0 + 0x0511 + (0xef83 - 0xebf7)
+        self.assertEqual(self.ram[call], 0x9a)  # CALL FAR
+        self.assertEqual((self.word(call + 1), self.word(call + 3)),
+                         (0x0004, 0x25d7))
+        self.assertEqual(self.ram[0x25d74], 0x55)  # dispatcher prologue
+        self.assertEqual(self.word(VFX_DS + 0x15cc), 3)
+        for mode, handler in ((2, 0x00d6), (3, 0x0133)):
+            entry = VFX_DS + 0x2a8f + 20 * mode
+            self.assertEqual((self.word(entry + 4), self.word(entry + 6)),
+                             (handler, 0x25d7))
+        # Real 22s clipping is enabled and limits the 320x200 aperture.
+        self.assertEqual(self.word(VFX_DS + 0x29de + 0x18), 1)
+        self.assertEqual([self.word(VFX_DS + 0x29de + off)
+                          for off in (0x1a, 0x1c, 0x1e, 0x20)],
+                         [0, 0, 319, 199])
+
+    def test_original_linked_text_pitch_sources(self):
+        # These segment selectors in the linked RTL are patched from zero
+        # placeholders in the file. They point into the current VGA mode
+        # descriptor. The scalars are read by real source-C text helpers.
+        for slot in (0x4d82, 0x4d86, 0x4d8a, 0x4d90):
+            self.assertEqual(self.word(VFX_DS + slot), 0x2a70)
+        mode = 0x2a70 * 16
+        self.assertEqual([self.word(mode + off)
+                          for off in (0x34, 0x3a, 0x3c, 0x3e)],
+                         [11, 24, 8, 319])
+
 
 if __name__ == '__main__':
     unittest.main()

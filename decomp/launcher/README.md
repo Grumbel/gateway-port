@@ -471,13 +471,28 @@ rasterization, palette/video initialization, the original startup entry and
 remaining keyboard/timing services. Use guest-entry differential
 checks before calling the complete intro playable or resuming game logic.
 
+The graphics-font pixel path is now connected: the source-C `rtl:0xedff`
+printer's FAR pixel call at `rtl:0xef83` resolves in captured RAM to the
+**resident `25d7:0004` graphics dispatcher**. A separate native video host
+implements its observed 640×480 planar and 320×200 linear pixel outputs,
+including the original DS `29de` raster-operation byte and optional signed
+clip rectangle. The linked `rtl:ec0a/ed39/edff` tab, line and text-pitch
+words are read from the relocated mode-descriptor segment selectors at
+`DS:4d82/4d86/4d8a/4d90`. Tests pass seven different characters through
+the *actual source-C glyph routine* with the original 22-second font bitmap,
+then verify all 64,000 video bytes against independently decoded font bits.
+Synthetic tests exercise all four pixel operations and the planar mode.
+This covers **foreground glyph pixels**, not background rectangles, video
+initialization, palette programming or the source-C entry loop.
+
 ## Immediate next functions
 
 1. Decompile the remaining eight mapped graphics/video entry points,
    preserving their original ABI and data globals.
-2. Recover the linked font pixel service (`rtl:0xef83`), text-mode video
+2. Recover the remaining background-rectangle and text-mode video
    dependencies (`rtl:0xed74/0xeda5/0xedb7`), keyboard, mouse and timing
-   services on the intro's actual call graph.
+   services on the intro's actual call graph. The far call at `rtl:0xef83`
+   now has a bounded native VGA host but its resident source is not yet C.
 3. Replace the source-C shim's unresolved callback globals and services with
    individually verified original source or narrow host hardware adapters.
 4. Validate the decompiled C with guest-entry memory/register/side-effect

@@ -45,7 +45,8 @@ target_compile_options(gateway_intro_file_host PRIVATE -Wall -Wextra -Wpedantic)
 install(TARGETS gateway_intro_file_host ARCHIVE DESTINATION lib)
 add_library(gateway_intro_memory_host STATIC
   src/intro_host_memory.c src/intro_host_rtl_globals.c
-  src/intro_host_rtl_text_globals.c src/intro_host_rtl_graphics_globals.c)
+  src/intro_host_rtl_text_globals.c src/intro_host_rtl_graphics_globals.c
+  src/intro_host_rtl_pixel.c)
 target_include_directories(gateway_intro_memory_host PUBLIC decomp/launcher)
 target_compile_features(gateway_intro_memory_host PUBLIC c_std_11)
 target_compile_options(gateway_intro_memory_host PRIVATE -Wall -Wextra -Wpedantic)
@@ -166,6 +167,17 @@ if(BUILD_TESTING)
     tests/launcher_intro_rtl_text_host_tests.c)
   target_include_directories(launcher-intro-rtl-text-host-tests PRIVATE decomp/launcher)
   add_test(NAME launcher-intro-rtl-text-host COMMAND launcher-intro-rtl-text-host-tests)
+  add_executable(launcher-intro-native-glyph-tests
+    decomp/launcher/gate_rtl.c decomp/launcher/gate_exe_helpers.c
+    src/intro_host_memory.c src/intro_host_rtl_text_globals.c
+    src/intro_host_rtl_pixel.c tests/launcher_intro_native_glyph_tests.c)
+  target_include_directories(launcher-intro-native-glyph-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-intro-native-glyph COMMAND launcher-intro-native-glyph-tests)
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin")
+    add_test(NAME launcher-intro-original-glyph
+      COMMAND launcher-intro-native-glyph-tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin)
+  endif()
   add_executable(launcher-intro-native-file-integration-tests
     decomp/launcher/gate_rtl_file.c
     decomp/launcher/gate_rtl_file_linkage.c
