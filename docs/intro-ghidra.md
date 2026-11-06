@@ -9,11 +9,12 @@ original recovered source nor a playable native executable.
 The raw `GATE.RTL` has unresolved relocation placeholders. **Do not import it
 as if its on-disk bytes were linked machine code.** This pipeline uses a
 specific 22-second 1 MiB guest-memory snapshot and verifies its segment/file
-identities against both SHA-256-pinned DOS binaries. It currently imports
-three independently established resident RTL segments, not the complete
-RTL file, and preserves their potentially overlapping addresses using Ghidra
-overlay spaces. A linked far-call destination outside those segments remains
-unresolved, not a guessed function.
+identities against both SHA-256-pinned DOS binaries. It imports four
+independently established resident RTL segments, not the complete RTL file,
+and preserves their potentially overlapping addresses using Ghidra overlay
+spaces. The newly added `0c33` file-service bank has four independent entry
+signatures and five known far-entry targets. A linked far-call destination
+outside these segments remains unresolved, not a guessed function.
 
 ## Capture the reference snapshot
 
@@ -82,33 +83,61 @@ for another batch, or open the existing `project/GatewayIntro.gpr` manually.
 | `intro-ghidra-functions.tsv` | All Ghidra-discovered intro functions and their original offset identities |
 | `intro-pseudocode.txt` | All generated C-like function bodies (not suitable for Git) |
 | `intro-ghidra-callgraph.json` | Per-function static calls and explicit unresolved targets |
+| `intro-ghidra-unresolved.tsv` | Unmapped calls ranked by target and frequency, with original caller identities |
 | `intro-ghidra-report.json` | Coverage, decompile failures, missing entries and unresolved call count |
 
 Known C recovery seeds include 10 `GATE.EXE` functions, 36 reconstructed
-`GATE.RTL` routines, and nine additional linked-entry candidates, including
+`GATE.RTL` routines, and fourteen additional linked-entry candidates, including
 the not-yet-reconstructed `rtl:0x130ab` animation entry. The original
-`rtl:0x8298` `strlen` remains explicitly outside these three imported banks.
+`rtl:0x8298` `strlen` remains explicitly outside these four imported banks.
 The post-analysis script additionally follows statically discovered direct
-calls where the callee belongs to the verified linked blocks, and enumerates
-all functions Ghidra finds in those blocks. This is intended to produce large
+calls where the callee belongs to the verified linked blocks, including signed
+near calls whose original targets are inside the same verified RTL overlay,
+and enumerates all functions Ghidra finds in those blocks. This is intended to produce large
 batches for inspection instead of manually translating six functions per turn.
 
-**Current coverage limitation:** the three verified RTL spans are
-`0c4d:0000..08ff`, `0cdc:0000..10ff`, and `0f10:0000..1aff` in the captured
-load layout. They deliberately exclude unknown sections and external service
+**Current coverage limitation:** the four verified RTL spans are
+`0c33:0000..01a8`, `0c4d:0000..08ff`, `0cdc:0000..10ff`, and
+`0f10:0000..1aff` in the captured load layout. They deliberately exclude unknown sections and external service
 segments. All missing calls must be mapped/verified before the intro is
 complete. An imported label or successful pseudocode export is not evidence
 that the original calling convention, signedness, data structure or guest
 side effects are correct.
 
+The fourth bank correlates the following *original file offsets*, not just
+runtime addresses:
+
+| Linked entry | `GATE.RTL` entry | Candidate operation |
+| --- | --- | --- |
+| `0c33:0040` | `0xe531` | Open resource file |
+| `0c33:0091` | `0xe582` | Seek to file offset |
+| `0c33:00d4` | `0xe5c5` | Read word |
+| `0c33:00f2` | `0xe5e3` | Read bytes |
+| `0c33:019a` | `0xe68b` | Close file handle |
+
+These roles are inferred from the reconstructed caller, not yet verified as
+source C or as the original ABI. The last function's code overlaps the next
+loaded segment in physical RAM; the import stops immediately after its last
+observed return. A different snapshot can have different occupancy.
+
+**Do not import the `24a7` raw image as linked code.** At 22 seconds,
+`24a7:0000` is an exact copy of original RTL bytes beginning at file offset
+`0x101ef`, including a zero-filled FAR call at `24a7:0010`. This establishes
+that its *snapshot contents* are unrelocated, not that the referenced
+`24a7:000c` rasterizer will never be loaded/executed. The preparer records
+the staging observation under `unlinked_staging_candidates`, without creating
+Ghidra functions from those bytes. Capture a later live call/return to find
+the actual linked renderer before interpreting it.
+
 ## Next verification and implementation work
 
 1. Run Ghidra and inspect `intro-ghidra-report.json`; fix any unresolved
    EXE signatures, split functions or missing RTL entry boundaries.
-2. Extend the section map by verifying additional RTL code against guest
-   memory, then rerun Ghidra in a **fresh** output/project directory.
-3. Prioritize the rasterizer reached at runtime `24a7:000c`, the linked
-   `0c33` file I/O services, animation `rtl:0x130ab`, and the remaining
+2. Review `intro-ghidra-unresolved.tsv` and extend the section map using
+   additional linked call-site and guest-memory witnesses, then rerun Ghidra
+   in a **fresh** output/project directory.
+3. Prioritize the rasterizer reached at runtime `24a7:000c`, the newly
+   mapped `0c33` file I/O services, animation `rtl:0x130ab`, and the remaining
    hardware/keyboard/time services.
 4. Derive readable C from the pseudocode, verifying disassembly, original
    register/stack state and differential behavior; **never paste generated

@@ -23,6 +23,11 @@ RTL_SHA256 = 'c187f5ee7be86482cff89e668d934dc961ac50e960df7baa98965910f1ea9566'
 # section overwrites the mapped image (there are different RTL load layouts).
 # There is intentionally no assertion that all of GATE.RTL is mapped here.
 RTL_BANKS = (
+    # Five original 0c33 file-service entry points map to e531/e582/e5c5/
+    # e5e3/e68b.  The last function ends at 0c33:01a8; after that address
+    # the snapshot has the overlapping 0c4d image instead of its RTL bytes.
+    dict(segment=0x0c33, file_base=0xe4f1, size=0x1a9,
+         witnesses=(0xe531, 0xe582, 0xe5c5, 0xe5e3)),
     dict(segment=0x0c4d, file_base=0xe6e6, size=0x900,
          witnesses=(0xec0a, 0xed39, 0xed7e, 0xedff)),
     dict(segment=0x0cdc, file_base=0xf149, size=0x1100,
@@ -40,6 +45,11 @@ EXE_ENTRIES = (0x0bb8, 0x0e37, 0x0f18, 0x0f61, 0x103a, 0x117e,
 # bank and must remain explicitly out of coverage.
 RTL_CANDIDATES = {
     0x8298: 'unmapped-strlen-candidate',
+    0xe531: 'file-open-entry-candidate',
+    0xe582: 'file-seek-entry-candidate',
+    0xe5c5: 'file-word-read-entry-candidate',
+    0xe5e3: 'file-buffer-read-entry-candidate',
+    0xe68b: 'file-close-entry-candidate',
     0xe873: 'linked-far-entry-candidate',
     0xf14d: 'linked-far-entry-candidate',
     0xf4df: 'linked-far-entry-candidate',
@@ -50,6 +60,13 @@ RTL_CANDIDATES = {
     0xff99: 'linked-far-entry-candidate',
     0x130ab: 'animation-entry-candidate',
 }
+
+# In the same snapshot, 24a7:0000 contains a byte-for-byte copy of part of
+# the *unlinked* RTL on disk.  In particular 24a7:0010 contains a FAR CALL
+# whose segment and offset operands are still all zero.  The known renderer
+# reference 24a7:000c therefore does not justify importing this as a linked
+# code bank.  Report the observation, but never seed functions from it.
+RAW_COPY_CANDIDATE = dict(segment=0x24a7, file_base=0x101ef, size=0x400)
 
 
 def sha256(data):
@@ -154,6 +171,19 @@ def validate_bank(rtl, snapshot, bank, load_segment):
     return start, matches, verified
 
 
+def staged_unlinked_copy(rtl, snapshot, load_segment):
+    """Flag the observed unrelocated RTL staging region, if still present."""
+    candidate = RAW_COPY_CANDIDATE
+    start = (load_segment + candidate['segment']) * 16
+    original = candidate['file_base']
+    size = candidate['size']
+    if (start + size > len(snapshot) or original + size > len(rtl) or
+            snapshot[start:start + size] != rtl[original:original + size]):
+        return []
+    return [dict(candidate, reason='exact on-disk bytes including unresolved '
+                 'FAR operands; not proven linked executable code')]
+
+
 def prepare(exe_path, rtl_path, snapshot_path, output, load_segment=0x1000,
             source=None):
     if not 0 <= load_segment <= 0xffff:
@@ -201,6 +231,8 @@ def prepare(exe_path, rtl_path, snapshot_path, output, load_segment=0x1000,
                 rtl_sha256=sha256(rtl), snapshot_sha256=sha256(snapshot),
                 load_segment=load_segment, exe_labels=exe_labels,
                 sections=sections, unmapped_rtl_entries=unmapped,
+                unlinked_staging_candidates=staged_unlinked_copy(
+                    rtl, snapshot, load_segment),
                 note='Live relocated image from one 22-second DOS launch; '
                      'not a complete RTL section map or proof of function ABIs')
     output.mkdir(parents=True, exist_ok=True)

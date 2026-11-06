@@ -41,7 +41,8 @@ def run(exe, rtl, snapshot, output, project_name='GatewayIntro',
                output / 'intro-ghidra-report.json',
                output / 'intro-pseudocode.txt',
                output / 'intro-ghidra-callgraph.json',
-               output / 'intro-ghidra-functions.tsv')
+               output / 'intro-ghidra-functions.tsv',
+               output / 'intro-ghidra-unresolved.tsv')
     if not prepare_only and (
             (output / 'project' / (project_name + '.gpr')).exists() or
             any(path.exists() for path in reports)):
@@ -77,7 +78,9 @@ def run(exe, rtl, snapshot, output, project_name='GatewayIntro',
             len(exported.get('functions', [])) != exported['requested'] or
             graph.get('schema_version') != 1 or
             len(graph.get('functions', [])) != exported['requested'] or
-            len(graph.get('unresolved', [])) != exported.get('unresolved_calls')):
+            len(graph.get('unresolved', [])) != exported.get('unresolved_calls') or
+            sum(item['count'] for item in exported.get('unresolved_targets', [])) !=
+            exported.get('unresolved_calls')):
         raise ValueError('Ghidra intro decompilation/callgraph is incomplete')
     print('Ghidra decompiled %d/%d intro functions. %d unresolved calls, '
           '%d missing seed entries.' %
@@ -86,6 +89,10 @@ def run(exe, rtl, snapshot, output, project_name='GatewayIntro',
     print('Generated pseudocode: %s' % reports[2])
     print('Coverage/status: %s' % reports[1])
     print('Static callgraph: %s' % reports[3])
+    print('Ranked unresolved callees: %s' % reports[5])
+    for item in exported['unresolved_targets'][:5]:
+        print('  %s (%s): %d call sites' %
+              (item['target'], item['kind'], item['count']))
     return path
 
 

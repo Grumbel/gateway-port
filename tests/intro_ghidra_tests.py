@@ -13,7 +13,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 from prepare_intro_ghidra import (EXE_SHA256, RTL_SHA256, EXE_ENTRIES,
-                                  RTL_BANKS, mz_relocations, prepare)
+                                  RTL_BANKS, RAW_COPY_CANDIDATE,
+                                  mz_relocations, prepare, staged_unlinked_copy)
 from run_intro_ghidra import command, run
 
 
@@ -68,6 +69,11 @@ class RealGatewayIntroEvidence(unittest.TestCase):
             self.assertGreaterEqual(sum(len(s['entries']) for s in plan['sections']), 44)
             self.assertTrue(any(e['name'] == 'gate_rtl_130ab'
                                 for s in plan['sections'] for e in s['entries']))
+            file_services = next(section for section in plan['sections']
+                                 if section['segment'] == 0x0c33)
+            self.assertEqual({item['file_offset'] for item in file_services['entries']},
+                             {0xe531, 0xe582, 0xe5c5, 0xe5e3, 0xe68b})
+            self.assertEqual(len(file_services['witnesses']), 4)
             snapshot = self.snapshot.read_bytes()
             for section in plan['sections']:
                 with self.subTest(segment=section['segment']):
@@ -82,6 +88,23 @@ class RealGatewayIntroEvidence(unittest.TestCase):
                         self.assertEqual(entry['offset'],
                                          entry['file_offset'] - section['file_base'])
             self.assertIn(0x8298, plan['unmapped_rtl_entries'])
+            self.assertEqual(plan['unlinked_staging_candidates'][0]['segment'],
+                             RAW_COPY_CANDIDATE['segment'])
+            self.assertNotIn(RAW_COPY_CANDIDATE['segment'],
+                             {section['segment'] for section in plan['sections']})
+
+    def test_staged_copy_cannot_be_imported_as_linked_code(self):
+        ram = bytearray(self.snapshot.read_bytes())
+        rtl = self.rtl.read_bytes()
+        region = RAW_COPY_CANDIDATE
+        start = (0x1000 + region['segment']) * 16
+        base = region['file_base']
+        self.assertEqual(ram[start:start + region['size']],
+                         rtl[base:base + region['size']])
+        self.assertEqual(rtl[base + 0x11:base + 0x15], b'\0' * 4)
+        self.assertEqual(len(staged_unlinked_copy(rtl, ram, 0x1000)), 1)
+        ram[start + 0x20] ^= 0xff
+        self.assertEqual(staged_unlinked_copy(rtl, ram, 0x1000), [])
 
     def test_refuse_snapshot_not_matching_linked_bank(self):
         with tempfile.TemporaryDirectory() as directory:

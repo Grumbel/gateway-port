@@ -9,7 +9,6 @@ import csv
 import json
 import os
 from ghidra.app.decompiler import DecompInterface
-from ghidra.program.model.symbol import SourceType
 
 
 args = getScriptArgs()
@@ -88,6 +87,33 @@ def linked_callee(bytes_):
     return None
 
 
+def near_callee(address, bytes_):
+    """Decode a plain 8086 E8 call within the verified linked RTL bank.
+
+    Ghidra's normal references can instead point to the non-overlay DOS
+    address space.  The call's signed displacement is relative to the next
+    instruction *inside the current overlay*, and is independent of Ghidra's
+    current segment-register assumption.
+    """
+    if len(bytes_) != 3 or bytes_[0] != 0xe8:
+        return None
+    source = identity(address)
+    if source is None or source['file'] != 'rtl':
+        return None
+    segment = source['linked_segment']
+    bank, block = blocks[segment]
+    displacement = bytes_[1] | bytes_[2] << 8
+    if displacement & 0x8000:
+        displacement -= 0x10000
+    local = address.subtract(block.getStart()) + 3 + displacement
+    if 0 <= local < bank['size']:
+        return dict(kind='near', segment=segment, offset=local,
+                    target=block.getStart().add(local),
+                    source_file_offset=bank['file_base'] + local)
+    return dict(kind='out-of-bank-near', segment=segment,
+                offset=local & 0xffff, target=None)
+
+
 def calls(function):
     calls = []
     instructions = listing.getInstructions(function.getBody(), True)
@@ -98,6 +124,8 @@ def calls(function):
         address = instruction.getAddress()
         raw = [(int(value) & 255) for value in instruction.getBytes()]
         target = linked_callee(raw)
+        if target is None:
+            target = near_callee(address, raw)
         if target is None:
             references = [ref for ref in instruction.getReferencesFrom()
                           if ref.getReferenceType().isCall()]
@@ -115,6 +143,11 @@ def calls(function):
         if 'segment' in target:
             data['segment'] = target['segment']
             data['offset'] = target['offset']
+        if destination is None:
+            # Calls that resolve outside these verified images are not
+            # automatically new functions.  Preserve their original byte
+            # encoding for prioritizing the next source-bank mapping.
+            data['opcode'] = ''.join('%02x' % value for value in raw)
         if destination is not None:
             data['function'] = (str(getFunctionAt(destination).getEntryPoint())
                                 if getFunctionAt(destination) is not None else None)
@@ -217,12 +250,29 @@ for entry in plan['exe_labels']:
 unresolved = [dict(caller=record['caller'], **edge)
               for record in all_calls for edge in record['calls']
               if edge['target_identity'] is None]
+hotspots = {}
+for edge in unresolved:
+    if 'segment' in edge:
+        key = ('%04x:%04x' % (edge['segment'], edge['offset']), edge['kind'])
+    else:
+        key = (edge.get('destination') or edge.get('opcode', 'unknown')[:4],
+               edge['kind'])
+    if key not in hotspots:
+        hotspots[key] = dict(target=key[0], kind=key[1], count=0, callers=[])
+    hotspot = hotspots[key]
+    hotspot['count'] += 1
+    caller = edge['caller']
+    if caller is not None and caller not in hotspot['callers']:
+        hotspot['callers'].append(caller)
+unresolved_targets = sorted(hotspots.values(),
+                            key=lambda item: (-item['count'], item['target'], item['kind']))
 report = dict(schema_version=1, requested=len(entries),
               completed=sum(item['status'] == 'ok' for item in entries),
               functions=entries, seeded=len(known_addresses),
               missing_seeded=missing_seeded,
               unmapped_rtl_entries=plan['unmapped_rtl_entries'],
               unresolved_calls=len(unresolved),
+              unresolved_targets=unresolved_targets,
               note='Static analysis of one relocated intro snapshot, not native verification')
 
 with open(os.path.join(report_dir, 'intro-pseudocode.txt'), 'w') as stream:
@@ -239,6 +289,14 @@ with open(os.path.join(report_dir, 'intro-ghidra-functions.tsv'), 'w') as stream
         writer.writerow([entry['identity']['file'], '0x%x' % entry['identity']['offset'],
                          entry['name'], entry['status'], int(entry['seeded']),
                          entry['call_count']])
+with open(os.path.join(report_dir, 'intro-ghidra-unresolved.tsv'), 'w') as stream:
+    writer = csv.writer(stream, delimiter='\t')
+    writer.writerow(['target', 'kind', 'call_sites', 'distinct_callers', 'caller_identities'])
+    for target in unresolved_targets:
+        callers = sorted('%s:0x%x' % (caller['file'], caller['offset'])
+                         for caller in target['callers'])
+        writer.writerow([target['target'], target['kind'], target['count'],
+                         len(callers), ','.join(callers)])
 println('Gateway intro: decompiled %d/%d functions; %d unresolved static calls; '
         '%d missing original seed entries' %
         (report['completed'], report['requested'], len(unresolved),
