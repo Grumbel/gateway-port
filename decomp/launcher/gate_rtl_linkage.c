@@ -6,6 +6,7 @@
 #include "gate_rtl_graphics.h"
 #include "gate_rtl_palette.h"
 #include "gate_rtl_mode.h"
+#include "gate_rtl_draw.h"
 #include "gate_rtl_image.h"
 
 /* Source-level linker aliases, not additional recovered original routines.
@@ -32,6 +33,12 @@ void gate_far_0f10_16c6(GateFarPtr work) { gate_rtl_131cb(work); }
 
 void gate_far_0cdc_04d2(GateFarPtr palette) { gate_rtl_f61b(palette); }
 void gate_far_0cdc_0004(uint16_t mode) { (void)gate_rtl_f14d((int16_t)mode); }
+void gate_far_0cdc_0aac(uint16_t color) { (void)gate_rtl_fbf5(color); }
+void gate_far_0cdc_0aee(uint16_t style, uint16_t left, uint16_t top,
+                         uint16_t right, uint16_t bottom)
+{
+    gate_rtl_fc37(style, left, top, right, bottom);
+}
 
 /* The original graphics code passes SS:offset of its local palette array,
  * while host C represents that stack storage as a native pointer. Keep

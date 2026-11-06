@@ -20,6 +20,7 @@ add_library(gateway_intro_decompiled STATIC
   decomp/launcher/gate_rtl_graphics.c
   decomp/launcher/gate_rtl_palette.c
   decomp/launcher/gate_rtl_mode.c
+  decomp/launcher/gate_rtl_draw.c
   decomp/launcher/gate_rtl_image.c
   decomp/launcher/gate_rtl_file.c
   decomp/launcher/gate_rtl_file_linkage.c
@@ -84,6 +85,7 @@ install(FILES decomp/launcher/gate_exe.h decomp/launcher/gate_rtl.h
               decomp/launcher/gate_rtl_graphics.h
               decomp/launcher/gate_rtl_palette.h
               decomp/launcher/gate_rtl_mode.h
+              decomp/launcher/gate_rtl_draw.h
               decomp/launcher/gate_rtl_image.h
               decomp/launcher/gate_rtl_file.h
               decomp/launcher/gate_dos_file_runtime.h
@@ -121,6 +123,11 @@ if(BUILD_TESTING)
     tests/launcher_rtl_palette_decompile_tests.c)
   target_include_directories(launcher-rtl-palette-decompile-tests PRIVATE decomp/launcher)
   add_test(NAME launcher-rtl-palette-decompile COMMAND launcher-rtl-palette-decompile-tests)
+  add_executable(launcher-rtl-draw-decompile-tests
+    decomp/launcher/gate_rtl_draw.c
+    tests/launcher_rtl_draw_decompile_tests.c)
+  target_include_directories(launcher-rtl-draw-decompile-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-rtl-draw-decompile COMMAND launcher-rtl-draw-decompile-tests)
   add_executable(launcher-rtl-image-decompile-tests
     decomp/launcher/gate_rtl_image.c
     tests/launcher_rtl_image_decompile_tests.c)
@@ -187,6 +194,16 @@ if(BUILD_TESTING)
     src/intro_host_rtl_pixel.c tests/launcher_intro_native_glyph_tests.c)
   target_include_directories(launcher-intro-native-glyph-tests PRIVATE decomp/launcher)
   add_test(NAME launcher-intro-native-glyph COMMAND launcher-intro-native-glyph-tests)
+  add_executable(launcher-intro-native-draw-tests
+    decomp/launcher/gate_rtl_draw.c src/intro_host_memory.c
+    src/intro_host_rtl_pixel.c tests/launcher_intro_native_draw_tests.c)
+  target_include_directories(launcher-intro-native-draw-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-intro-native-draw COMMAND launcher-intro-native-draw-tests)
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin")
+    add_test(NAME launcher-intro-original-draw
+      COMMAND launcher-intro-native-draw-tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin)
+  endif()
   if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin")
     add_test(NAME launcher-intro-original-glyph
       COMMAND launcher-intro-native-glyph-tests

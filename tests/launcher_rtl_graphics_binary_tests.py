@@ -140,6 +140,66 @@ class OriginalIntroGraphicsEvidence(unittest.TestCase):
         self.assertEqual(ram[0x24101:0x24107],
                          bytes.fromhex('c706d0150000'))
 
+    def test_original_color_and_rectangle_wrappers(self):
+        # Source-C endpoints in the original unrelocated RTL image:
+        # ink fb f5, fill-pattern fc23, rectangle fc37, then next fc81.
+        for start, end in ((0xfbf5, 0xfc22), (0xfc23, 0xfc36),
+                           (0xfc37, 0xfc80)):
+            self.assertEqual(self.rtl[start:start + 3], b'\x55\x8b\xec')
+            self.assertEqual(self.rtl[end], 0xcb)
+        self.assertEqual(self.rtl[0xfc2c:0xfc32],
+                         bytes.fromhex('3d01001bc040'))
+        self.assertEqual(self.rtl[0xfc3a:0xfc3e],
+                         bytes.fromhex('f6460680'))
+        self.assertEqual(self.rtl[0xfc60:0xfc6b],
+                         bytes.fromhex('837e0aff7d05c7460affff'))
+
+        snapshot = ROOT / 'build/intro-analysis/at-22000.bin'
+        if not snapshot.is_file():
+            self.skipTest('private guest RAM snapshot unavailable')
+        ram = snapshot.read_bytes()
+        # The linker places fb f5 at 0cdc:0aac (1d86c physical). Every
+        # operand below was patched from the RTL's zero placeholders.
+        base = (0x0cdc + 0x1000) * 16 + 0x0aac - 0xfbf5
+        for site, offset in ((0xfbfc, 0x5512), (0xfc06, 0x4da8),
+                             (0xfc0b, 0x0054), (0xfc14, 0x5512),
+                             (0xfc2a, 0x12de), (0xfc33, 0x12e0),
+                             (0xfc46, 0x5512), (0xfc51, 0x12de),
+                             (0xfc55, 0x5512), (0xfc59, 0x12e0)):
+            with self.subTest(ds_operand=site):
+                self.assertEqual(int.from_bytes(ram[base + site:
+                                                     base + site + 2],
+                                                'little'), offset)
+        for site, target in ((0xfc17, (0x011e, 0x25a3)),
+                             (0xfc5b, (0x0002, 0x25a3)),
+                             (0xfc7a, (0x0006, 0x2698))):
+            with self.subTest(callsite=site):
+                call = ram[base + site:base + site + 5]
+                self.assertEqual(call[0], 0x9a)
+                self.assertEqual((int.from_bytes(call[1:3], 'little'),
+                                  int.from_bytes(call[3:5], 'little')),
+                                 target)
+        # The 25a3:011e resident color writer actually stores the ink
+        # at DS:29de+0c; the fill setter accepts patterns 0..11 and
+        # stores its state at +22/+24/+26.
+        self.assertEqual(ram[0x25b60:0x25b66],
+                         bytes.fromhex('8b460689440c'))
+        for site, field, opcode in ((0x25a51, 0x22, 0x44),
+                                    (0x25a57, 0x24, 0x44),
+                                    (0x25a68, 0x26, 0x5c)):
+            self.assertEqual(ram[site:site + 3], bytes((0x89, opcode, field)))
+        # At the resident 25d7:0004 dispatcher, the linked handler table
+        # DS:2a8f has 20-byte mode records. Both VGA mode 1 (640x350)
+        # and mode 2 (640x480) select the SAME 25d7:00d6 planar callback.
+        ds = (0x2a7a << 4)
+        for mode in (1, 2):
+            entry = ds + 0x2a8f + 20 * mode + 4
+            self.assertEqual(ram[entry:entry + 4],
+                             bytes.fromhex('d600d725'))
+        self.assertEqual(int.from_bytes(ram[ds + 0x1302 + 2:
+                                              ds + 0x1302 + 4], 'little'),
+                         349)
+
     def test_palette_uploader_calls_original_retrace_wait(self):
         # GATE.RTL:f62d uses PUSH CS / near CALL with a negative displacement,
         # preserving the original bounded wait at GATE.RTL:f473.

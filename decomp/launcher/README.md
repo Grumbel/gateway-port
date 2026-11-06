@@ -536,9 +536,38 @@ the native BIOS adapter. The SDL presenter, real BIOS video effects,
 startup entry and complete timing/input handling remain outstanding;
 this is not playable.
 
+The next three bounded **original RTL drawing routines** are now source C:
+`GATE.RTL:fbf5..fc22` selects the graphics ink and returns the preceding
+ink, clamping only values *signed-greater* than the mode descriptor's
+maximum; `fc23..fc36` stores the fill pattern and its `pattern != 0`
+transparency flag using the original `CMP/SBB/INC` (unsigned carry);
+`fc37..fc80` selects normal versus style-bit-7 hatch setup, clamps the
+signed top coordinate to -1, and passes its five arguments to the original
+resident rectangle entry. They are linked to the actual EXE calls
+`0cdc:0aac` and `0cdc:0aee` rather than new presentation-layer drawing.
+Live 22-second RAM confirms the relocated DS fields `5512`, `4da8`,
+`12de/12e0`, the ink writer `25a3:011e`, fill state `25a3:0002` and
+rectangle `2698:0006`. The native setup adapter accepts and records all
+original resident fill-pattern numbers 0..11, but **only solid pattern 0,
+style 2, opaque rectangles can be painted**; patterned and bordered
+rectangles are still separate unmodeled resident paths. In particular,
+calling `fc37` with a high-bit hatch style is source-C translated but
+not renderable by the current host.
+
+The original resident `25d7` dispatch table also proves VGA modes 1 and 2
+share the same `25d7:00d6` four-plane pixel callback. The native C video
+host consequently supports the intro's **mode-1 640x350** clip and its
+short-branch solid rectangle alongside mode 2 (640x480) and mode 3
+(320x200). Strict C11 UBSan tests cover both original wrappers with
+mocked FAR calls, native planar/linear rectangles and an original 22-second
+snapshot, plus binary-dispatch provenance. This advances a source-C branch,
+**not** complete intro playback; the original entry, mode-1 image blits,
+font loader, caption frames and SDL event/presentation loop still need work.
+
 ## Immediate next functions
 
-1. Decompile the remaining mapped graphics/video entry points,
+1. Decompile the remaining mapped graphics/video entry points, especially
+   `GATE.RTL:ff99` caption-frame drawing and the `e873` font selector,
    preserving their original ABI and data globals.
 2. Recover the remaining patterned/background and text-mode video
    dependencies (`rtl:0xed74/0xeda5/0xedb7`), keyboard, mouse and timing

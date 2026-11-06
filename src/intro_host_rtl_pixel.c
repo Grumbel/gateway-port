@@ -2,6 +2,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception */
 
 #include "gate_rtl.h"
+#include "gate_rtl_draw.h"
 #include "gate_intro_host_memory.h"
 
 #include <stdlib.h>
@@ -29,19 +30,21 @@ void gate_rtl_plot_pixel(uint16_t color, uint16_t y, uint16_t x)
             return;
     }
 
-    /* Only the two original intro VGA modes are modeled. In other modes
-     * the 25d7 dispatcher reaches different callbacks, which must be
-     * recovered separately before source-C execution can use them. */
+    /* The resident 25d7 dispatcher maps modes 1 and 2 to the SAME
+     * 25d7:00d6 planar pixel callback. Mode 1 has a shorter 640x350
+     * viewport; the source-mode switch supplies its clip rectangle.
+     * Modes 0/4 still use separate, unmodeled callbacks. */
     mode = gate_ds_word(0x15cc);
-    if (mode != 2 && mode != 3)
+    if (mode != 1 && mode != 2 && mode != 3)
         abort();
-    if ((mode == 2 && (x >= 640 || y >= 480)) ||
+    if (((mode == 1 || mode == 2) &&
+         (x >= 640 || y >= (mode == 1 ? 350 : 480))) ||
         (mode == 3 && (x >= 320 || y >= 200)))
         return; /* outside the modeled video aperture */
 
     operation = gate_ds_word(0x29de + 0x16) & 0xffu;
     incoming = (uint8_t)color;
-    if (mode == 2) {
+    if (mode == 1 || mode == 2) {
         incoming &= 15u;
         old = gate_intro_vga16_pixel(x, y);
     } else {
@@ -54,7 +57,7 @@ void gate_rtl_plot_pixel(uint16_t color, uint16_t y, uint16_t x)
     default: output = (uint8_t)(old | incoming); break;
     }
 
-    if (mode == 2)
+    if (mode == 1 || mode == 2)
         gate_intro_vga16_set_pixel(x, y, output);
     else
         gate_far_set_byte(0xa000, (uint16_t)(320u * y + x), output);
@@ -66,14 +69,23 @@ void gate_rtl_plot_pixel(uint16_t color, uint16_t y, uint16_t x)
  * lines at every y from top through bottom, both inclusive. No patterned
  * fills or border variants are currently used by the recovered C printer.
  * Reject those unimplemented resident paths instead of approximating them. */
+void gate_rtl_resident_set_pen_color(uint16_t color)
+{
+    /* The actual 25a3:011e resident body stores the low WORD at +0c. */
+    gate_ds_set_word(0x29de + 0x0c, color);
+}
+
 void gate_rtl_background_setup(uint16_t pattern, uint16_t color,
                                uint16_t transparent)
 {
-    if (pattern != 0 || transparent != 0)
+    /* Resident 25a3:0002 accepts 0..11 and normalizes its third WORD
+     * to one only if it equals 1; the rectangle implementation below
+     * still rejects unverified patterned drawing. */
+    if ((int16_t)pattern < 0 || (int16_t)pattern > 11)
         abort();
     gate_ds_set_word(0x29de + 0x22, pattern);
     gate_ds_set_word(0x29de + 0x24, color);
-    gate_ds_set_word(0x29de + 0x26, transparent);
+    gate_ds_set_word(0x29de + 0x26, transparent == 1 ? 1u : 0u);
 }
 
 void gate_rtl_background_rect(uint16_t style, uint16_t bottom,

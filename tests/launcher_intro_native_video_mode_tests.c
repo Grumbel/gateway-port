@@ -113,6 +113,8 @@ static void check_synthetic(GateIntroVideoModeHardware *video,
 
     assert(gate_rtl_f14d(1) == 1);
     check_state(1, video, ports);
+    gate_rtl_plot_pixel(12, 30, 20);
+    assert(gate_intro_vga16_pixel(20, 30) == 12);
 
     for (i = 1; i <= 5; ++i) {
         video->svga_variant = i;
