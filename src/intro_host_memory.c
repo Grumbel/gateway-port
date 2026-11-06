@@ -107,3 +107,82 @@ GateFarPtr gate_stack_pointer(void *ptr)
     result.offset = 0;
     return result;
 }
+
+/* Replacement for the DOS image heap allocator used at 253a:0004.
+ * Original DOS-owned code/data in this range is not executed in the native
+ * source-C player. All allocations are paragraph-aligned so a FAR pointer
+ * can address 64KiB in one segment. The original image routines constrain
+ * a single bitmap to this offset range. */
+enum { IMAGE_HEAP_FIRST = 0x60000u, IMAGE_HEAP_END = 0x9f000u };
+
+GateFarPtr gate_intro_memory_alloc(uint32_t bytes)
+{
+    unsigned slot;
+    uint32_t cursor;
+    uint32_t size;
+
+    if (active_memory == 0)
+        abort();
+    if (bytes > 0xffffu)
+        return (GateFarPtr){0, 0};
+    size = ((bytes == 0 ? 1u : bytes) + 15u) & ~15u;
+    slot = 0;
+    while (slot < GATE_INTRO_MAX_ALLOCATIONS &&
+           active_memory->allocations[slot].active)
+        ++slot;
+    if (slot == GATE_INTRO_MAX_ALLOCATIONS)
+        return (GateFarPtr){0, 0};
+
+    cursor = IMAGE_HEAP_FIRST;
+    while (cursor + size <= IMAGE_HEAP_END) {
+        unsigned i;
+        uint32_t end = cursor + size;
+        uint32_t next = cursor;
+        for (i = 0; i < GATE_INTRO_MAX_ALLOCATIONS; ++i) {
+            const GateIntroAllocation *block = &active_memory->allocations[i];
+            if (!block->active)
+                continue;
+            if (cursor < block->linear + block->length &&
+                end > block->linear && next < block->linear + block->length)
+                next = block->linear + block->length;
+        }
+        if (next == cursor) {
+            GateIntroAllocation *block = &active_memory->allocations[slot];
+            block->linear = cursor;
+            block->length = size;
+            block->active = 1;
+            return (GateFarPtr){(uint16_t)(cursor >> 4), 0};
+        }
+        cursor = (next + 15u) & ~15u;
+    }
+    return (GateFarPtr){0, 0};
+}
+
+uint16_t gate_intro_memory_free(GateFarPtr pointer)
+{
+    unsigned i;
+    uint32_t linear;
+    if (active_memory == 0)
+        abort();
+    linear = (((uint32_t)pointer.segment << 4) + pointer.offset) & 0xfffffu;
+    for (i = 0; i < GATE_INTRO_MAX_ALLOCATIONS; ++i) {
+        GateIntroAllocation *block = &active_memory->allocations[i];
+        if (block->active && block->linear == linear && pointer.offset == 0) {
+            block->active = 0;
+            return 0;
+        }
+    }
+    return 0xffe4u; /* invalid original VFX pixel allocation */
+}
+
+/* The recovered 245d image allocator keeps the original DOS FAR service
+ * addresses. These two native thunks provide its pixel allocation boundary. */
+GateFarPtr gate_far_253a_0004(uint32_t bytes)
+{
+    return gate_intro_memory_alloc(bytes);
+}
+
+uint16_t gate_far_253a_0048(GateFarPtr pointer)
+{
+    return gate_intro_memory_free(pointer);
+}

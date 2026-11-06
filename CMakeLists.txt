@@ -22,6 +22,7 @@ add_library(gateway_intro_decompiled STATIC
   decomp/launcher/gate_rtl_image.c
   decomp/launcher/gate_rtl_file.c
   decomp/launcher/gate_rtl_file_linkage.c
+  decomp/launcher/gate_vfx_image.c
   decomp/launcher/gate_dos_file_runtime.c
   decomp/launcher/gate_rtl_loader.c
   decomp/launcher/gate_rtl_resource.c
@@ -54,6 +55,18 @@ target_include_directories(gateway_intro_input_host PUBLIC decomp/launcher)
 target_compile_features(gateway_intro_input_host PUBLIC c_std_11)
 target_compile_options(gateway_intro_input_host PRIVATE -Wall -Wextra -Wpedantic)
 install(TARGETS gateway_intro_input_host ARCHIVE DESTINATION lib)
+add_library(gateway_intro_vfx_host STATIC src/intro_host_vfx.c)
+target_include_directories(gateway_intro_vfx_host PUBLIC decomp/launcher)
+target_compile_features(gateway_intro_vfx_host PUBLIC c_std_11)
+target_compile_options(gateway_intro_vfx_host PRIVATE -Wall -Wextra -Wpedantic)
+install(TARGETS gateway_intro_vfx_host ARCHIVE DESTINATION lib)
+add_library(gateway_intro_pic_host STATIC
+  src/intro_host_pic_decode.cpp src/pic.cpp src/crusher.cpp)
+target_include_directories(gateway_intro_pic_host PUBLIC
+  decomp/launcher src)
+target_compile_features(gateway_intro_pic_host PUBLIC cxx_std_20)
+target_compile_options(gateway_intro_pic_host PRIVATE -Wall -Wextra -Wpedantic)
+install(TARGETS gateway_intro_pic_host ARCHIVE DESTINATION lib)
 install(FILES decomp/launcher/gate_exe.h decomp/launcher/gate_rtl.h
               decomp/launcher/gate_rtl_video.h
               decomp/launcher/gate_rtl_graphics.h
@@ -157,12 +170,32 @@ if(BUILD_TESTING)
     decomp/launcher/gate_rtl_file.c
     decomp/launcher/gate_rtl_file_linkage.c
     decomp/launcher/gate_rtl_resource.c
+    decomp/launcher/gate_rtl_loader.c
+    decomp/launcher/gate_rtl_image_finish.c
+    decomp/launcher/gate_rtl_image_processor.c
+    decomp/launcher/gate_vfx_image.c
     decomp/launcher/gate_dos_file_runtime.c
-    src/intro_dos_host_files.c src/intro_host_memory.c
+    src/intro_dos_host_files.c src/intro_host_memory.c src/intro_host_vfx.c
     src/intro_host_rtl_globals.c
     tests/launcher_intro_native_file_integration_tests.c)
   target_include_directories(launcher-intro-native-file-integration-tests PRIVATE decomp/launcher)
+  target_link_libraries(launcher-intro-native-file-integration-tests
+    PRIVATE gateway_intro_pic_host)
   add_test(NAME launcher-intro-native-file-integration COMMAND launcher-intro-native-file-integration-tests)
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin" AND
+     EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos/GATE_300.PIC")
+    add_test(NAME launcher-intro-native-original-pic
+      COMMAND launcher-intro-native-file-integration-tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin
+        ${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos)
+  endif()
+  add_executable(launcher-intro-host-vfx-tests
+    decomp/launcher/gate_rtl_image_processor.c
+    decomp/launcher/gate_vfx_image.c
+    src/intro_host_vfx.c src/intro_host_memory.c src/intro_host_rtl_globals.c
+    tests/launcher_intro_host_vfx_tests.c)
+  target_include_directories(launcher-intro-host-vfx-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-intro-host-vfx COMMAND launcher-intro-host-vfx-tests)
   add_executable(launcher-rtl-image-finish-decompile-tests
     decomp/launcher/gate_rtl_image_finish.c
     tests/launcher_rtl_image_finish_decompile_tests.c)
@@ -192,6 +225,8 @@ if(BUILD_TESTING)
   if(Python3_Interpreter_FOUND)
     add_test(NAME launcher-rtl-graphics-binary COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_rtl_graphics_binary_tests.py)
+    add_test(NAME launcher-intro-vfx-binary COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_intro_vfx_binary_tests.py)
     add_test(NAME launcher-rtl-file-binary COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_rtl_file_binary_tests.py)
     add_test(NAME launcher-dos-file-runtime-binary COMMAND ${Python3_EXECUTABLE}

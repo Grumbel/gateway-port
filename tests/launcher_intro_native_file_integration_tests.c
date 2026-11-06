@@ -8,6 +8,7 @@
 
 #include "gate_rtl_file.h"
 #include "gate_rtl_image.h"
+#include "gate_rtl_graphics.h"
 #include "gate_dos_host_files.h"
 #include "gate_intro_host_memory.h"
 
@@ -23,6 +24,27 @@
  * observable on the tested selector path. Division by zero still traps. */
 uint16_t gate_rtl_file_stack_word(void) { return 0; }
 _Noreturn void gate_rtl_file_divide_fault(void) { abort(); }
+
+/* The original 0eec:018a service is provided by the separate C++ DCL host
+ * bridge, using the *already selected* DOS file cursor. The remaining
+ * callbacks below are not image decoding: state save/restore is a VGA host
+ * responsibility. Post-load correction uses the actual recovered RTL C.
+ * This integration exercises the ordinary (no-transform) DCL path. */
+uint16_t gate_far_1e48_04d9(void) { return 0; }
+void gate_far_1e48_03c5(uint16_t saved) { (void)saved; }
+uint16_t gate_far_12a5_3b0c(void) { return 0; }
+void gate_far_223f_00b6(uint32_t milliseconds) { (void)milliseconds; }
+GateFarPtr gate_far_0cdc_0430(GateFarPtr palette) { return palette; }
+GateFarPtr gate_far_0cdc_0396(GateFarPtr palette) { return palette; }
+void gate_far_1258_172e(GateFarPtr message) { (void)message; abort(); }
+void gate_rtl_131cb(GateFarPtr work)
+{
+    if (gate_far_byte(work.segment, work.offset)) {
+        gate_rtl_graphics_release((GateFarPtr){work.segment,
+            (uint16_t)(work.offset + 8u)});
+        gate_far_set_byte(work.segment, work.offset, 0);
+    }
+}
 
 static void guest_string(GateFarPtr pointer, const char *text)
 {
@@ -133,7 +155,74 @@ static void test_original_linked_snapshot(const char *capture,
                          GATE_RTL_HEADER_OFFSET + 8) == 0x0026);
     assert(gate_far_byte(gate_rtl_image_header_segment(),
                          GATE_RTL_HEADER_OFFSET + 5) == 0x43);
-    puts("reconstructed PIC selector read original GATE_300.PIC entry #1: OK");
+    assert(gate_rtl_resource_ds_word(0x0a) == 24);
+    assert(gate_rtl_resource_ds_word(0x0c) == 81);
+    assert(gate_rtl_120f3() == 0); /* no post-load format transform */
+    /* Continue with reconstructed original 145d VFX allocation, its
+     * 1479 fill and the 24a7 VGA rasterizer. Only the GATE_300 descriptor
+     * is original picture data here; the image pixels are still a test
+     * pattern, pending the original 0eec:018a resource decoder. */
+    {
+        const uint16_t header = gate_rtl_image_header_segment();
+        GateFarPtr image = {0x4000, 0x1000};
+        uint16_t pixels;
+        assert(gate_far_word(0x2a7a, 0x15cc) == 3);
+        assert(gate_far_145d_00f7(
+            gate_far_word(header, GATE_RTL_HEADER_OFFSET + 8),
+            gate_far_word(header, GATE_RTL_HEADER_OFFSET + 6),
+            3, image, 0) == 0);
+        assert(gate_far_word(image.segment, image.offset + 0x2c) == 270);
+        assert(gate_far_word(image.segment, image.offset + 0x2e) == 38);
+        pixels = gate_far_word(image.segment, image.offset + 0x1a);
+        assert(pixels >= 0x6000);
+        gate_far_1479_0002(0x44, image);
+        gate_far_24a7_000c(0, 4, 5, 0, image);
+        assert(gate_far_byte(0xa000, 320 * 4 + 5) == 0x44);
+        assert(gate_far_byte(0xa000, 320 * 41 + 274) == 0x44);
+        gate_rtl_graphics_release(image);
+        assert(gate_far_word(image.segment, image.offset) == 0xffffu);
+    }
+    puts("reconstructed PIC selector -> VFX allocation -> native VGA blit: OK (test pixels)");
+
+    /* Fully loaded original 270x38 PIC payload: reconstructed C selector
+     * and allocator, native DCL host decoder at the original FAR service
+     * boundary, reconstructed original C drawable record, and native VFX
+     * draw into the VGA guest framebuffer. No proprietary data is copied
+     * into the test or binary. */
+    {
+        GateFarPtr work = {0x4000, 0x1800};
+        GateFarPtr image = {work.segment, (uint16_t)(work.offset + 8u)};
+        uint16_t src_segment;
+        uint16_t src_offset;
+        unsigned nonzero = 0;
+        gate_far_set_byte(work.segment, work.offset, 0);
+        assert(gate_rtl_12c33(work, 0x3001, 1) == 1);
+        assert(gate_far_word(work.segment, work.offset + 2) == 24);
+        assert(gate_far_word(work.segment, work.offset + 4) == 81);
+        assert(gate_far_word(image.segment, image.offset + 0x2c) == 270);
+        assert(gate_far_word(image.segment, image.offset + 0x2e) == 38);
+        src_offset = gate_far_word(image.segment, image.offset + 0x18);
+        src_segment = gate_far_word(image.segment, image.offset + 0x1a);
+        for (unsigned y = 0; y < 38; ++y)
+            for (unsigned x = 0; x < 270; ++x)
+                nonzero += gate_far_byte(src_segment,
+                    (uint16_t)(src_offset + 270u * y + x)) != 0;
+        assert(nonzero > 100);
+        for (unsigned y = 0; y < 38; ++y)
+            for (unsigned x = 0; x < 270; ++x)
+                gate_far_set_byte(0xa000,
+                    (uint16_t)(320u * (81u + y) + 24u + x), 0);
+        gate_rtl_12ed7(work);
+        for (unsigned y = 0; y < 38; ++y)
+            for (unsigned x = 0; x < 270; ++x)
+                assert(gate_far_byte(0xa000,
+                           (uint16_t)(320u * (81u + y) + 24u + x)) ==
+                       gate_far_byte(src_segment,
+                           (uint16_t)(src_offset + 270u * y + x)));
+        gate_rtl_131cb(work);
+        assert(gate_far_byte(work.segment, work.offset) == 0);
+        puts("original GATE_300.PIC #1 decoded and rendered through reconstructed C loader: OK");
+    }
     gate_dos_host_files_close_all(&files);
     gate_intro_memory_detach();
     free(memory);

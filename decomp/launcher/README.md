@@ -305,7 +305,8 @@ two timing bytes), `0x13191` (initialize an array's active flags) and
 `0x131f7` (release each array member). The draw wrapper sign-extends the
 one-byte draw mode, applies the two relocated 16-bit origins, and calls
 the original three FAR services at linked `1e48:04d9`, `24a7:000c`,
-`1e48:03c5`; **the actual `24a7:000c` renderer remains unresolved**.
+`1e48:03c5`; the mode-13h path of `24a7:000c` is now implemented in the
+native VFX host below, while the other display-mode handlers remain open.
 The timed array's delay uses `50*byte6 + clock_low % (50*byte7+1)` without
 carrying a FAR pointer into the next segment. Mock tests cover mode sign,
 coordinate wrap, inactive records, signed array counts, clock remainder,
@@ -352,13 +353,12 @@ saved RAM also reveals that `24a7:000c` **does contain executable VFX code**
 at physical `0x24a7c`; the earlier unlinked RTL copy was a **different**
 region, physical `0x34a7c`. The VFX decoder and other services remain open.
 
-**None of these tests is a full guest-entry differential run.** The
-unhandled `12a5` runtime variants, the `24a7:000c` VFX rasterizer,
-other DOS/RTL dependencies and complete segmented-memory backing
-remain unresolved external dependencies. This
-remains **neither a rendered nor a playable source-C intro**.
+**None of these tests is a full guest-entry differential run.** Unhandled
+`12a5` runtime variants, other DOS/RTL services, and complete startup
+initialization still block a standalone source-C intro. The mode-13h VFX
+renderer is now covered below, but the intro is not yet playable.
 
-### Native linked-runtime stepping stone (after bundle 087)
+### Native linked-runtime and real picture playback path (bundles 088–089)
 
 `gateway_intro_memory_host` now implements the original 20-bit guest-RAM
 aliasing and relocated DS words for the source-C intro. C stack-local FAR
@@ -381,36 +381,52 @@ to source C; the latter are separated into a dedicated archive object to
 support native resource linking without pulling the entire graphics bank.
 
 The integration test links **original reconstructed C functions** for
-`RTL:e4ff/e531/e5e3/e68b`, `RTL:11ecb` and all five linked `0c33` file
-aliases to these native adapters. Its optional original-snapshot test
-reads the live relocated filename table from a 22-second capture, opens and
-reads `GATE_200.PIC`, and follows the complete resource-selector control flow
-to read descriptor #1 of `GATE_300.PIC` (verified width `0x010e`, height
-`0x0026`, flags `0x43`). No original assets are in Git. With GCC alone:
+`RTL:e4ff/e531/e5e3/e68b`, `RTL:11ecb`, `RTL:12c33`, `RTL:12205`,
+`RTL:12ed7` and all five linked `0c33` file aliases to these native
+adapters. The optional original-snapshot test reads the live relocated
+filename table from a 22-second capture, opens `GATE_200.PIC`, selects
+entry #1 of `GATE_300.PIC` (270×38 pixels, flags byte `0x43`, frame origin
+`(24,81)`), allocates a `CA00` VFX image record, decodes its real DCL
+pixel payload, and draws it into the 320×200 eight-bit A000 framebuffer.
+It then releases the original image record. No original assets are in Git.
+
+The `12c33` C translation also fixes a critical misplaced-coordinate bug:
+the original binary reads relocated near DS words `1420/1422`, **not** the
+DS `4dce/4dd0` FAR segment selectors. This had previously put every image
+far outside the screen. The corrected operands are pinned to the original
+linked RAM, and the picture selector's actual frame origin is checked.
+
+Three distinct parts remain intentionally separate:
+
+- `gate_vfx_image.c` reconstructs original resident `145d:00f7` allocation,
+  `1479:0002` fill, and `145d:016c` release for eight-bit mode 3.
+- `intro_host_vfx.c` reconstructs mode-3 `24a7:04c4`: copy, XOR, AND, OR,
+  clipping, stride and 16-bit offset wrap. Other VFX handlers are not yet
+  implemented.
+- `intro_host_pic_decode.cpp` is a **host-level DCL codec replacement**
+  for `0eec:018a`, using the existing `gateway::explode_dcl`. It consumes
+  the already-positioned original DOS stream. This is *not* a decompilation
+  of the DOS `1af5` codec. Its C++ requirement does not enter the pure-C
+  reconstructed archive.
+
+With CMake and GCC/G++:
 
 ```sh
-mkdir -p build
-gcc -std=c11 -Wall -Wextra -Wpedantic -Werror -Idecomp/launcher \
-  decomp/launcher/gate_rtl_file.c \
-  decomp/launcher/gate_rtl_file_linkage.c \
-  decomp/launcher/gate_rtl_resource.c \
-  decomp/launcher/gate_dos_file_runtime.c \
-  src/intro_dos_host_files.c src/intro_host_memory.c \
-  src/intro_host_rtl_globals.c \
-  tests/launcher_intro_native_file_integration_tests.c \
-  -o build/intro-native-resource-test
-build/intro-native-resource-test \
+cmake -S . -B build/intro-c-only -DGATEWAY_INTRO_DECOMPILE_ONLY=ON
+cmake --build build/intro-c-only --target \
+  launcher-intro-native-file-integration-tests launcher-intro-host-vfx-tests
+build/intro-c-only/launcher-intro-native-file-integration-tests \
   build/intro-analysis/at-22000.bin ../gateway-dos
 ```
 
 Without snapshot arguments the executable runs only its synthetic
-scratch-directory test. The capture-based test expects the specific original
-DS `2a7a`, and the isolated successful 2-byte read uses a test-only initial
-stack word because the original C runtime's uninitialized-stack behavior
-still needs a faithful host equivalent. **Native input and clock hooks exist,
-but their SDL3 event loop, font drawing, VFX rasterization, picture allocation
-and screen output are not yet wired;
-this is not the source-C playable intro.**
+scratch-directory file test. With original data, the image integration is
+headless and uses the specific recorded original DS `2a7a`. The successful
+two-byte read still uses a test-only initial stack WORD because a faithful
+uninitialized 8086 stack model is unfinished. **The source-C entry point,
+full intro sequence, mode-2 VFX renderer, SDL3 event loop, text drawing and
+several hardware services are still missing; this is not yet a playable
+source-C intro.**
 
 ### Independent C build, including the Nix flake
 
@@ -431,12 +447,11 @@ There is no source-C executable entry point or complete native host adapter yet.
 not this decompilation. A successful CMake/Nix build only proves the archive
 and tests can compile; it does *not* demonstrate that the C intro plays.
 
-With graphics now mapped to immutable file identities and both resident
-runtime banks located, the immediate intro dependencies to recover next
-are the `24a7:000c` VFX rasterizer, its format dispatch and
-the `145d:016c` resource-release service. Recover the remaining
-video/keyboard/timing services and use the original guest as an entry-state
-oracle *before* claiming a standalone intro or resuming game logic.
+With mode-13h image allocation, DCL decoding and drawing now linked through
+the original C loader, the next dependencies are mode-2 packed/planar VFX,
+font/text rasterization, palette/video initialization, the original startup
+entry and remaining keyboard/timing services. Use guest-entry differential
+checks before calling the complete intro playable or resuming game logic.
 
 ## Immediate next functions
 

@@ -39,6 +39,13 @@ void gate_dos_host_files_close_all(GateDosHostFiles *files)
         active_files = 0;
 }
 
+FILE *gate_dos_host_file_stream(uint16_t handle)
+{
+    if (active_files == 0 || handle < 5 || handle >= 256)
+        return 0;
+    return active_files->handles[handle];
+}
+
 /* Select the DOS basename; C:\\ and / are separators and drive prefixes
  * are stripped. No guest-supplied parent path may escape the asset directory.
  * The intro uses short 8.3 names, so an 80-byte input bound suffices. */
