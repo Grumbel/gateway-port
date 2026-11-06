@@ -86,8 +86,8 @@ for another batch, or open the existing `project/GatewayIntro.gpr` manually.
 | `intro-ghidra-unresolved.tsv` | Unmapped calls ranked by target and frequency, with original caller identities |
 | `intro-ghidra-report.json` | Coverage, decompile failures, missing entries and unresolved call count |
 
-Known C recovery seeds include 10 `GATE.EXE` functions, 36 reconstructed
-`GATE.RTL` routines, and fourteen additional linked-entry candidates, including
+Known C recovery seeds include 10 `GATE.EXE` functions, 49 reconstructed
+`GATE.RTL` routines, and nine additional linked-entry candidates, including
 the not-yet-reconstructed `rtl:0x130ab` animation entry. The original
 `rtl:0x8298` `strlen` remains explicitly outside these four imported banks.
 The post-analysis script additionally follows statically discovered direct
@@ -97,7 +97,7 @@ and enumerates all functions Ghidra finds in those blocks. This is intended to p
 batches for inspection instead of manually translating six functions per turn.
 
 **Current coverage limitation:** the four verified RTL spans are
-`0c33:0000..01a8`, `0c4d:0000..08ff`, `0cdc:0000..10ff`, and
+`0c33:0000..01a9`, `0c4d:0000..08ff`, `0cdc:0000..10ff`, and
 `0f10:0000..1aff` in the captured load layout. They deliberately exclude unknown sections and external service
 segments. All missing calls must be mapped/verified before the intro is
 complete. An imported label or successful pseudocode export is not evidence
@@ -115,10 +115,12 @@ runtime addresses:
 | `0c33:00f2` | `0xe5e3` | Read bytes |
 | `0c33:019a` | `0xe68b` | Close file handle |
 
-These roles are inferred from the reconstructed caller, not yet verified as
-source C or as the original ABI. The last function's code overlaps the next
-loaded segment in physical RAM; the import stops immediately after its last
-observed return. A different snapshot can have different occupancy.
+These five entries and eight neighboring RTL functions have now been transcribed
+into C (`gate_rtl_file.c`), preserving the original call order and argument
+widths. The low-level `1c29` file runtime and `12a5` path formatter are still
+external, not host implementations. The last function's code overlaps the
+next loaded segment in physical RAM; the import stops at its original `RETF`.
+A different snapshot can have different occupancy.
 
 **Do not import the `24a7` raw image as linked code.** At 22 seconds,
 `24a7:0000` is an exact copy of original RTL bytes beginning at file offset

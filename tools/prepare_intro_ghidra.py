@@ -24,9 +24,9 @@ RTL_SHA256 = 'c187f5ee7be86482cff89e668d934dc961ac50e960df7baa98965910f1ea9566'
 # There is intentionally no assertion that all of GATE.RTL is mapped here.
 RTL_BANKS = (
     # Five original 0c33 file-service entry points map to e531/e582/e5c5/
-    # e5e3/e68b.  The last function ends at 0c33:01a8; after that address
+    # e5e3/e68b.  The last function ends at 0c33:01a9; after that address
     # the snapshot has the overlapping 0c4d image instead of its RTL bytes.
-    dict(segment=0x0c33, file_base=0xe4f1, size=0x1a9,
+    dict(segment=0x0c33, file_base=0xe4f1, size=0x1aa,
          witnesses=(0xe531, 0xe582, 0xe5c5, 0xe5e3)),
     dict(segment=0x0c4d, file_base=0xe6e6, size=0x900,
          witnesses=(0xec0a, 0xed39, 0xed7e, 0xedff)),
@@ -198,8 +198,8 @@ def prepare(exe_path, rtl_path, snapshot_path, output, load_segment=0x1000,
     exe_entries = find_source_entries(source, 'gate_exe')
     if not set(EXE_ENTRIES) <= exe_entries:
         raise ValueError('missing reconstructed EXE entry labels')
-    rtl_entries = find_source_entries(source, 'gate_rtl')
-    rtl_entries |= set(RTL_CANDIDATES)
+    reconstructed_rtl_entries = find_source_entries(source, 'gate_rtl')
+    rtl_entries = reconstructed_rtl_entries | set(RTL_CANDIDATES)
     sections = []
     for bank in RTL_BANKS:
         start, matches, verified = validate_bank(rtl, snapshot, bank, load_segment)
@@ -212,7 +212,9 @@ def prepare(exe_path, rtl_path, snapshot_path, output, load_segment=0x1000,
         path.write_bytes(image)
         entries = [dict(name='gate_rtl_%x' % off, file_offset=off,
                         offset=off - file_base,
-                        role=RTL_CANDIDATES.get(off, 'source-reconstructed'))
+                        role=('source-reconstructed' if off in
+                              reconstructed_rtl_entries else
+                              RTL_CANDIDATES.get(off, 'source-reconstructed')))
                    for off in sorted(rtl_entries)
                    if file_base <= off < file_base + size]
         sections.append(dict(name='INTRO_RTL_%04X' % segment, segment=segment,

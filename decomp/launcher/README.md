@@ -239,9 +239,31 @@ the resource file cache and sticky open-error latch, 12-byte descriptor
 reads, 32-bit descriptor offsets, signed mode limit, optional two-word mode
 data, compressed-format table lookup, and dimension validation. All nine
 original resource I/O call sites resolve to five distinct `0c33` FAR
-services. The isolated C test covers cache hits/misses, sticky failures,
+services. These are now reconstructed in `gate_rtl_file.c`. The isolated C test covers cache hits/misses, sticky failures,
 resource-ID calculations, descriptor rejection, negative mode handling,
 compressed formats, and exact ordered calls.
+
+`gate_rtl_file.c` transcribes thirteen bounded original-file routines in the
+linked `0c33` bank: `rtl:0xe4ff`, `0xe511`, `0xe531`, `0xe582`, `0xe59b`,
+`0xe5c5`, `0xe5e3`, `0xe5fc`, `0xe61e`, `0xe637`, `0xe650`, `0xe669`, and
+`0xe68b`. They set the
+resource pathname base, test a formatted-path service, format/open a resource
+file, seek, read one byte/word/buffer or element records, write one
+byte/buffer or element records, and close.
+All five calls from the image selector use one-to-one linked wrappers;
+the remaining routines have distinct original entry offsets even where
+their instruction bodies are identical. Original stack layout, the optional
+open flag `0x80`, the untested return from seek, and the **unchecked read
+failure** in the two-byte reader are preserved. An explicit original-stack
+slot accessor prevents a fabricated zero/`0xffff` fallback for the two
+readers; the actual guest stack bytes are a future runtime adapter input.
+The element readers/writers truncate `size * count` to a 16-bit byte count,
+then divide the returned byte count by the original size; a zero size calls
+an explicit guest DIV exception hook. The pinned RTL/linked RAM test checks
+all thirteen boundaries and FAR targets,
+and isolated C tests check call order, arguments and return behavior. The
+underlying `1c29` runtime and `12a5` formatter are still external—not an
+independently working DOS file adapter.
 
 `gate_rtl_image_finish.c` now recovers the next bounded cluster, from the
 original `GATE.RTL` offsets `0x120f3`, `0x12131`, `0x121b5`, `0x12205`
@@ -302,8 +324,9 @@ increment across `0xffff`. The restored C remains an **archive of routines**,
 not a standalone intro player.
 
 **None of these tests is a full guest-entry differential run.** The
-underlying five `0c33` file services, `24a7:000c` image rasterizer and
-other DOS/RTL dependencies remain unresolved external dependencies. This
+underlying file runtime reached by the now-reconstructed five `0c33`
+wrappers, the `24a7:000c` image rasterizer and other DOS/RTL dependencies
+remain unresolved external dependencies. This
 remains **neither a rendered nor a playable source-C intro**.
 
 ### Independent C build, including the Nix flake
@@ -327,7 +350,7 @@ and tests can compile; it does *not* demonstrate that the C intro plays.
 
 With graphics now mapped to immutable file identities, the immediate intro
 dependencies to recover next are the `24a7:000c` image rasterizer,
-the `rtl:0x130ab` animation entry, five resource-file `0c33` services and
+the `rtl:0x130ab` animation entry, lower-level `1c29` file runtime and
 the `145d:016c` resource-release service. Recover the remaining
 video/keyboard/timing services and use the original guest as an entry-state
 oracle *before* claiming a standalone intro or resuming game logic.

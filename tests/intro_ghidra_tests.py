@@ -72,7 +72,11 @@ class RealGatewayIntroEvidence(unittest.TestCase):
             file_services = next(section for section in plan['sections']
                                  if section['segment'] == 0x0c33)
             self.assertEqual({item['file_offset'] for item in file_services['entries']},
-                             {0xe531, 0xe582, 0xe5c5, 0xe5e3, 0xe68b})
+                             {0xe4ff, 0xe511, 0xe531, 0xe582, 0xe59b,
+                              0xe5c5, 0xe5e3, 0xe61e, 0xe637, 0xe650,
+                              0xe5fc, 0xe669, 0xe68b})
+            self.assertTrue(all(item['role'] == 'source-reconstructed'
+                                for item in file_services['entries']))
             self.assertEqual(len(file_services['witnesses']), 4)
             snapshot = self.snapshot.read_bytes()
             for section in plan['sections']:

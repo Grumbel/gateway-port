@@ -19,6 +19,7 @@ add_library(gateway_intro_decompiled STATIC
   decomp/launcher/gate_rtl_graphics.c
   decomp/launcher/gate_rtl_palette.c
   decomp/launcher/gate_rtl_image.c
+  decomp/launcher/gate_rtl_file.c
   decomp/launcher/gate_rtl_loader.c
   decomp/launcher/gate_rtl_resource.c
   decomp/launcher/gate_rtl_image_finish.c
@@ -37,6 +38,7 @@ install(FILES decomp/launcher/gate_exe.h decomp/launcher/gate_rtl.h
               decomp/launcher/gate_rtl_graphics.h
               decomp/launcher/gate_rtl_palette.h
               decomp/launcher/gate_rtl_image.h
+              decomp/launcher/gate_rtl_file.h
         DESTINATION include/gateway/intro)
 
 if(BUILD_TESTING)
@@ -81,6 +83,11 @@ if(BUILD_TESTING)
     tests/launcher_rtl_image_resource_decompile_tests.c)
   target_include_directories(launcher-rtl-image-resource-decompile-tests PRIVATE decomp/launcher)
   add_test(NAME launcher-rtl-image-resource-decompile COMMAND launcher-rtl-image-resource-decompile-tests)
+  add_executable(launcher-rtl-file-decompile-tests
+    decomp/launcher/gate_rtl_file.c
+    tests/launcher_rtl_file_decompile_tests.c)
+  target_include_directories(launcher-rtl-file-decompile-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-rtl-file-decompile COMMAND launcher-rtl-file-decompile-tests)
   add_executable(launcher-rtl-image-finish-decompile-tests
     decomp/launcher/gate_rtl_image_finish.c
     tests/launcher_rtl_image_finish_decompile_tests.c)
@@ -105,6 +112,8 @@ if(BUILD_TESTING)
   if(Python3_Interpreter_FOUND)
     add_test(NAME launcher-rtl-graphics-binary COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_rtl_graphics_binary_tests.py)
+    add_test(NAME launcher-rtl-file-binary COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_rtl_file_binary_tests.py)
     add_test(NAME intro-ghidra-preparation COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/intro_ghidra_tests.py)
   endif()
