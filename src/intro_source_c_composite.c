@@ -96,11 +96,12 @@ static void full_palette_ready(void *userdata)
     Clock *clock = userdata;
     /* Both mode-12h's 16-color upload and mode-13h's 256-color upload
      * follow the original VGA retrace wait. The cold-start live path
-     * uses a 3ms approximation (matched against original DOS captures
-     * at 4/5/8/18s), while legacy 22s GVR1 replay retains its 16ms
-     * deterministic pacing. Neither is a source-C timer constant. */
+     * uses 3ms for the planar interlude and 1ms for the indexed title
+     * reveal, calibrated against original DOS captures at 4/5/8/14/18s.
+     * Legacy 22s GVR1 replay retains its 16ms deterministic pacing.
+     * These are host approximations, not source-C timer constants. */
     uint32_t pace_ms = clock->hooks && clock->hooks->original_video_start
-                       ? 3u : 16u;
+                       ? (gate_ds_word(0x0fce) == 2 ? 3u : 1u) : 16u;
     if (clock->hooks && clock->hooks->delay_ms) {
         clock->hooks->delay_ms(clock->hooks->userdata, pace_ms);
         if (clock->hooks->clock_ms)

@@ -17,6 +17,8 @@ typedef struct TestInput {
     unsigned published;
     unsigned planar_published;
     unsigned logo_checked;
+    unsigned title_reveal_checked;
+    unsigned title_credit_checked;
     unsigned original_start;
     uint8_t logo_fade_levels[64];
     unsigned music_starts;
@@ -64,6 +66,28 @@ static void frame_ready(void *userdata, const uint8_t *pixels,
     if (input->published == 0)
         assert(pixels[0] == 0); /* host starts with a cleared framebuffer */
     ++input->published;
+    if (input->original_start && input->now >= 14000 &&
+        !input->title_reveal_checked) {
+        unsigned orange = 0;
+        for (unsigned i = 0; i < 320u * 200u; ++i) {
+            const uint8_t *rgb = dac[pixels[i]];
+            if (rgb[0] == 63 && rgb[1] == 9 && rgb[2] == 0)
+                ++orange;
+        }
+        assert(orange >= 4000 && orange < 6000);
+        ++input->title_reveal_checked;
+    }
+    if (input->original_start && input->now >= 18000 &&
+        !input->title_credit_checked) {
+        unsigned white = 0;
+        for (unsigned i = 0; i < 320u * 200u; ++i) {
+            const uint8_t *rgb = dac[pixels[i]];
+            if (rgb[0] == 63 && rgb[1] == 63 && rgb[2] == 63)
+                ++white;
+        }
+        assert(white == 1382); /* original Fred Pohl credit pixels */
+        ++input->title_credit_checked;
+    }
 }
 
 static void frame_ready_vga16(void *userdata,
@@ -132,6 +156,8 @@ int main(int argc, char **argv)
         result = gate_source_c_full_run(argv[1], argv[2], &hooks);
         assert(result == 0);
         assert(input.logo_checked == 1);
+        assert(input.title_reveal_checked == 1);
+        assert(input.title_credit_checked == 1);
         assert(input.planar_published > 10);
         assert(input.published > 10);
         assert(input.escape_consumed == 1);

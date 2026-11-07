@@ -233,11 +233,14 @@ palette ramp, palette-only updates, duplicate suppression, and complete
 index/DAC pairs without requiring SDL3. Mode-12h palette uploads terminate
 after 16 RGB triples, not 256; recognizing their actual completion allows
 the opening fades to be presented incrementally. The live cold-start path
-paces uploads at 3ms, calibrated from original DOS frame checkpoints;
+paces planar uploads at 3ms and indexed-color uploads at 1ms, calibrated
+from original DOS frame checkpoints;
 the legacy 22-second headless recorder retains its 16ms model and GVR1
 fingerprints. A separate asset-backed integration test checks the 4-second
 640×480 logo against the original capture's 3,046 black pixels, then checks
-that the 320×200 callback is reached after the BIOS mode transition.
+that the 320×200 callback is reached after the BIOS mode transition. It also
+checks a partial red title reveal at 14 seconds and the 1,382 white credit
+pixels visible at 18 seconds.
 Escape is injected as an original DOS key event: the recovered C code
 takes its own interruption and cleanup branches. Space, Return, Backspace
 and printable keys are also forwarded to the recovered C handler, including
@@ -485,6 +488,8 @@ image-path diagnostic, **not the original animation schedule**.
   it does not preserve the DOS overlay's process memory or CPU state.
 - Original DOS frames at 1, 4, 5, 8 and 18 seconds match the new live
   cold-start RGB output pixel-for-pixel in a deterministic headless probe.
-  The 14-second checkpoint remains an intermediate animation mismatch,
-  and a complete frame-by-frame comparison at equal game time remains open;
-  the 3ms live/16ms replay retrace models and other host delays are provisional.
+  The 14-second original frame also occurs pixel-for-pixel at source-C
+  14.141 seconds (previously at 15.039 seconds); the 14.000-second
+  comparison has 61,669/64,000 matching pixels. A complete frame-by-frame
+  comparison at equal game time remains open. The 3ms planar/1ms indexed
+  live pacing and 16ms replay pacing remain provisional host approximations.
