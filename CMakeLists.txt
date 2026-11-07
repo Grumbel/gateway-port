@@ -17,6 +17,7 @@ add_library(gateway_intro_decompiled STATIC
   decomp/launcher/gate_input.c
   decomp/launcher/gate_c_runtime_string.c
   decomp/launcher/gate_c_runtime_random.c
+  decomp/launcher/gate_c_runtime_clock.c
   decomp/launcher/gate_rtl_font.c
   decomp/launcher/gate_rtl.c
   decomp/launcher/gate_rtl_video.c
@@ -240,6 +241,11 @@ if(BUILD_TESTING)
     tests/launcher_intro_runtime_string_tests.c)
   target_include_directories(launcher-intro-runtime-string-tests PRIVATE decomp/launcher)
   add_test(NAME launcher-intro-runtime-string COMMAND launcher-intro-runtime-string-tests)
+  add_executable(launcher-intro-runtime-clock-tests
+    decomp/launcher/gate_c_runtime_clock.c
+    tests/launcher_intro_runtime_clock_tests.c)
+  target_include_directories(launcher-intro-runtime-clock-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-intro-runtime-clock COMMAND launcher-intro-runtime-clock-tests)
   add_executable(launcher-intro-rtl-global-host-tests
     src/intro_host_memory.c src/intro_host_rtl_globals.c
     tests/launcher_intro_rtl_global_host_tests.c)
@@ -382,6 +388,8 @@ if(BUILD_TESTING)
   if(Python3_Interpreter_FOUND)
     add_test(NAME launcher-intro-runtime-string-binary COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_intro_runtime_string_binary_tests.py)
+    add_test(NAME launcher-intro-runtime-clock-binary COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_intro_runtime_clock_binary_tests.py)
     add_test(NAME launcher-intro-keyboard-binary COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_intro_keyboard_binary_tests.py)
     add_test(NAME launcher-rtl-graphics-binary COMMAND ${Python3_EXECUTABLE}
