@@ -12,8 +12,27 @@ void require(bool value, const char *message) {
     if (!value)
         throw std::runtime_error(message);
 }
-int main() {
+int main(int argc, char **argv) {
     try {
+        // Quit and window-close are terminal requests. Exercise them in
+        // separate processes: the host's caller stops polling after either
+        // one returns false, and SDL need not preserve its event queue for
+        // continued use of a host that was already asked to terminate.
+        if (argc == 2 && std::string_view(argv[1]) == "--quit-only") {
+            gateway::SdlHost host;
+            gateway::Vga vga;
+            vga.set_mode(0x12);
+            gateway::Mouse mouse;
+            std::deque<std::uint16_t> keys;
+            SDL_Event event{};
+            event.type = SDL_EVENT_QUIT;
+            event.common.timestamp = SDL_GetTicksNS();
+            require(SDL_PushEvent(&event), "push quit request");
+            require(!host.poll(keys, mouse, vga), "SDL quit must stop emulation");
+            std::cout << "SDL global quit stopped emulation\n";
+            return EXIT_SUCCESS;
+        }
+        require(argc == 1, "usage: sdl-input-tests [--quit-only]");
         gateway::SdlHost host;
         const char *signal_hint = SDL_GetHint(SDL_HINT_NO_SIGNAL_HANDLERS);
         require(signal_hint && std::string_view(signal_hint) == "1",
@@ -200,13 +219,10 @@ int main() {
         SDL_FlushEvent(SDL_EVENT_QUIT);
         event = {};
         event.type = SDL_EVENT_WINDOW_CLOSE_REQUESTED;
+        event.common.timestamp = SDL_GetTicksNS();
         event.window.windowID = window_id;
         require(SDL_PushEvent(&event), "push window close request");
         require(!host.poll(keys, mouse, vga), "window close must stop emulation");
-        event = {};
-        event.type = SDL_EVENT_QUIT;
-        require(SDL_PushEvent(&event), "push quit request");
-        require(!host.poll(keys, mouse, vga), "SDL quit must stop emulation");
         std::cout << "SDL mouse coordinates, click history, and focus checks passed\n";
     } catch (const std::exception &e) {
         std::cerr << e.what() << '\n';
