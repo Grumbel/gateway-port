@@ -108,6 +108,7 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("gate_rtl_palette_mode", (output / "RTLPAL.C").read_text())
             self.assertIn("gate_rtl_graphics_mode", (output / "RTLGR.C").read_text())
             self.assertIn("mode field remains live", (output / "RTLCHK.C").read_text())
+            self.assertIn('#include "RTLIMAC.H"', (output / "RTLCHK.C").read_text())
             self.assertIn("_dos_allocmem", (output / "RTLCHK.C").read_text())
             link_batch = (output / "LINK.BAT").read_text()
             self.assertIn("C:\\BIN\\LINK.EXE @LINK.RSP > LINK.LOG", link_batch)

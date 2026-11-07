@@ -5,6 +5,7 @@
  * intro. The original DOS DS selector words must remain live, not cached. */
 #include "RTLSTATE.H"
 #include "RTLLAY.H"
+#include "RTLIMAC.H"
 #include <dos.h>
 #include <stdio.h>
 
