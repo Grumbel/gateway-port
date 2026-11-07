@@ -198,43 +198,52 @@ See [Ghidra workflow and limitations](docs/ghidra.md).
 ### Historical Microsoft C 5.1 toolchain (optional)
 
 Gateway's `GATE.RTL` contains a Microsoft C runtime signature dated 1988,
-making Microsoft C 5.1 a useful compiler-code-generation reference. The flake
-offers DOSBox Staging wrappers for a **locally installed** copy of Microsoft C
-5.1. The compiler is proprietary: no Microsoft executable, disk image or
-runtime library is included, downloaded during Nix evaluation, or placed in
-the Nix store.
+making Microsoft C 5.1 a useful compiler-code-generation reference. The
+historical compiler is **proprietary software**. The repository contains none
+of its binaries; the following opt-in Nix targets fetch a separately published
+1988 distribution, with a pinned SHA-512 hash, and unpack it into a Nix store
+path. Do not redistribute the resulting compiler closure.
 
-Distributions can be researched at
-[PCjs (11-disk DOS set)](https://www.pcjs.org/software/pcx86/lang/microsoft/c/5.10/)
-or [WinWorld](https://winworldpc.com/product/microsoft-c-c/5x).
-Install the complete original disks into a writable directory outside this
-repository. The flake can start the original DOS `SETUP.EXE` from your extracted
-floppy images (repeat `--floppy` for every disk, in the original order):
+From the Gateway checkout, with **no floppy or compiler setup required**:
 
 ```sh
-nix run .#msc51-install -- --install-dir "$HOME/opt/msc51-drive" \
-  --floppy /path/to/SETUP.img --floppy /path/to/COMPILER1.img \
-  --floppy /path/to/COMPILER2.img # ... and all remaining disk images
+nix run .#msc51-compare                       # download and compare original CRT
+nix run .#msc51-probe                         # compile and run 32 rand steps in DOSBox
+nix run .#msc51-shell                         # interactive DOSBox compiler
+nix run .#msc51-prepare                       # prepare C89 source only (no download)
+nix build .#msc51                             # optional: inspect assembled DOS tree
+nix develop .#msc51                           # optional DOSBox toolchain shell
 ```
 
-In the DOS installer, install under `C:\MSC51`; press `Ctrl+F4` in DOSBox
-when it asks for the next floppy. The resulting directory must have `BIN/CL.EXE`, `C1.EXE`,
-`C2.EXE`, `C3.EXE`, `LINK.EXE`, `INCLUDE/STDIO.H`, and `LIB/LLIBCR.LIB`.
-The installer mounts only the explicit local images and install destination;
-the DOSBox session is interactive. Do not add the installed files to Git.
+The opt-in `msc51-archive` Nix package downloads
+[WinWorld's Microsoft C 5.1 5¼-inch distribution](https://winworldpc.com/product/microsoft-c-c/5x)
+from either of its two mirrors using the archive's published SHA-512 checksum.
+`msc51` unpacks the 7z file and extracts the contained FAT floppy images using
+mtools, automatically assembling `BIN/CL.EXE`, `C1.EXE`, `C2.EXE`, `C3.EXE`,
+`LINK.EXE`, `LIB/LLIBCR.LIB` and `INCLUDE/STDIO.H`. DOSBox mounts that tree
+**read-only** as drive C and a writable local staging directory as drive D.
+`nix flake check` itself does not download the proprietary compiler.
 
-From the Gateway checkout:
+For an existing download containing raw floppy `.img`/`.ima` images, you can
+import it offline instead of fetching it again:
 
 ```sh
-export GATEWAY_MSC51_DIR="$HOME/opt/msc51-drive/MSC51"  # your installed copy
-nix run .#msc51-prepare                         # prepare C89 source only
-nix run .#msc51-shell                           # interactive DOSBox compiler
-nix run .#msc51-probe                           # compile and run 32 rand steps
-nix run .#msc51-compare -- --json build/intro-msc51/crt-compare.json
-nix develop .#msc51                             # optional DOSBox toolchain shell
+nix run .#msc51-unpack -- \
+  "/path/to/Microsoft C 5.1 Optimizing Compiler (5.25)" build/msc51-local
+nix run .#msc51-compare -- --compiler build/msc51-local
 ```
 
-All generated files are in `build/intro-msc51/`. `PROBE.C` and `RANDOM.C`
+The `GATEWAY_MSC51_DIR` environment variable is for calling the underlying
+Python scripts directly. The Nix `msc51-compare`, `msc51-probe` and
+`msc51-shell` apps deliberately select their pinned compiler by default, even
+if that variable is set. Pass `--compiler DIR` to any app to use your own
+**assembled** installation, not a directory containing floppy images.
+
+For historical reference, the original interactive DOS installer remains
+available via `nix run .#msc51-install -- --install-dir DIR --floppy SETUP.img
+--floppy COMPILER1.img ...`; it is no longer necessary for the usual workflow.
+
+The probe's generated files are in `build/intro-msc51/`. `PROBE.C` and `RANDOM.C`
 are the recovered original-code functions, changed only to include a tiny
 generated C89 compatibility header (Microsoft C 5.1 predates `<stdint.h>`).
 `BUILD.BAT` compiles them using `/AL /Od` and writes `INTROCHK.EXE`,
@@ -244,11 +253,12 @@ toolchain directory or the staging output directory, pass `--compiler DIR`
 or `--output DIR` after `--` in the `nix run` commands.
 
 These tools do **not** build a playable Gateway DOS executable; they are a
-compiler comparison/probe environment. A source-only test runs as the
-`msc51-tooling` flake check even when the historical compiler is absent.
+compiler comparison/probe environment. The `msc51-tooling` check runs without
+fetching Microsoft binaries, including a synthetic FAT floppy-image import
+test with mtools.
 
 The `msc51-compare` app reads the SHA-256-pinned original `GATE.RTL` and the
-installed `LLIBCR.LIB` directly on the host. It searches the raw library for
+assembled `LLIBCR.LIB`. It searches the raw library for
 the original `srand` (`rtl:0x91d8`) and `rand` (`rtl:0x91ea`) instruction
 sequences while ignoring only the mutable address/call operands. The optional
 JSON report contains locations, lengths, and file hashes, **not binary data**.

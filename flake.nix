@@ -53,14 +53,33 @@
                 exec ${python}/bin/python3 ${source}/tools/run_intro_ghidra.py "$@"
               '';
             };
-          # Historical compiler: run the *user-provided* Microsoft C 5.1
-          # installation under DOSBox, never fetch/store proprietary binaries.
-          # The probe stages C89-compatible copies of the recovered C routines
-          # in build/ rather than attempting to package the original compiler.
+          # Explicitly opt-in, SHA-512-pinned historic compiler distribution.
+          # This is proprietary Microsoft software: do not commit it to Git or
+          # redistribute the resulting closure. No default package/check
+          # depends on it; only the msc51 apps and dev shell request it.
+          msc51-archive = pkgs.fetchurl {
+            name = "microsoft-c-5.1-1988-floppies.7z";
+            urls = [
+              "https://dl.winworldpc.com/Abandonware%20Applications/PC/Microsoft%20C%205.1%20Optimizing%20Compiler%20(5.25).7z"
+              "https://dl-alt1.winworldpc.com/Abandonware%20Applications/PC/Microsoft%20C%205.1%20Optimizing%20Compiler%20(5.25).7z"
+            ];
+            hash = "sha512-WDfi77qmgoXVwlh+PdKm6uJpOiG078akK0GtIvgXkcQMLaZO7VRj/Z4IV8I4Hv4M4yCE6m1uqxFzXAV8z8O6gA==";
+          };
+          msc51 = pkgs.runCommand "gateway-microsoft-c-5.1" {
+            archive = self.packages.${system}.msc51-archive;
+            nativeBuildInputs = [ pkgs._7zz pkgs.mtools pkgs.python3 ];
+          } ''
+            mkdir extracted
+            7zz x -y "$archive" -oextracted >/dev/null
+            python3 ${source}/tools/msc51_unpack.py extracted "$out"
+          '';
+          # These wrappers use the pinned Nix compiler by default. An
+          # explicit --compiler DIR still selects a separate installation.
           msc51-probe = pkgs.writeShellApplication {
             name = "gateway-msc51-probe";
             runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
             text = ''
+              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
               exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py probe \
                 --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
             '';
@@ -69,6 +88,7 @@
             name = "gateway-msc51-shell";
             runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
             text = ''
+              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
               exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py shell \
                 --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
             '';
@@ -92,7 +112,15 @@
             name = "gateway-msc51-compare";
             runtimeInputs = [ pkgs.python3 ];
             text = ''
+              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
               exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51_compare.py "$@"
+            '';
+          };
+          msc51-unpack = pkgs.writeShellApplication {
+            name = "gateway-msc51-unpack";
+            runtimeInputs = [ pkgs.python3 pkgs.mtools ];
+            text = ''
+              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51_unpack.py "$@"
             '';
           };
         });
@@ -233,7 +261,12 @@
         msc51-compare = {
           type = "app";
           program = "${self.packages.${system}.msc51-compare}/bin/gateway-msc51-compare";
-          meta.description = "Compare original Gateway C runtime routines with a local Microsoft C 5.1 LLIBCR.LIB code fingerprint";
+          meta.description = "Fetch pinned Microsoft C 5.1 and compare its runtime library against the original Gateway CRT";
+        };
+        msc51-unpack = {
+          type = "app";
+          program = "${self.packages.${system}.msc51-unpack}/bin/gateway-msc51-unpack";
+          meta.description = "Assemble an offline Microsoft C 5.1 installation from a directory of original DOS floppy images";
         };
       });
       checks = eachSystem (system:
@@ -263,12 +296,13 @@
             touch "$out"
           '';
           msc51-tooling = pkgs.runCommand "gateway-port-msc51-tooling" {
-            nativeBuildInputs = [ pkgs.python3 ];
+            nativeBuildInputs = [ pkgs.python3 pkgs.mtools ];
             src = self;
           } ''
             cd "$src"
             python3 tests/test_msc51.py
             python3 tests/test_msc51_compare.py
+            python3 tests/test_msc51_unpack.py
             touch "$out"
           '';
         });
@@ -371,7 +405,8 @@ except Exception:
                          self.packages.${system}.msc51-shell
                          self.packages.${system}.msc51-prepare
                          self.packages.${system}.msc51-install
-                         self.packages.${system}.msc51-compare ];
+                         self.packages.${system}.msc51-compare
+                         self.packages.${system}.msc51-unpack ];
           };
         });
     };

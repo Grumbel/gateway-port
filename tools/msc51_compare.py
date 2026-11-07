@@ -92,7 +92,19 @@ def resolve_library(compiler_root: Path) -> Path:
             for file in candidate.iterdir():
                 if file.name.upper() == "LLIBCR.LIB":
                     return file
-    raise ValueError(f"No LLIBCR.LIB found in {compiler_root}")
+    if compiler_root.is_dir() and any(
+        entry.is_file() and entry.suffix.lower() in (".img", ".ima", ".dsk", ".vfd")
+        for entry in compiler_root.rglob("*")
+    ):
+        raise ValueError(
+            f"{compiler_root} contains floppy images, not an installed compiler. "
+            "Use 'nix run .#msc51-unpack -- IMAGE-DIR OUTPUT-DIR' or "
+            "the default pinned flake compiler."
+        )
+    raise ValueError(
+        f"No LLIBCR.LIB found in {compiler_root}; expected an installed compiler "
+        "with LIB/LLIBCR.LIB (not disk images)"
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

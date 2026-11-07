@@ -49,6 +49,14 @@ class MSC51Tests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "C2.EXE"):
                 msc51.validate_compiler(root)
 
+    def test_floppy_image_directory_is_diagnosed(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            source = Path(scratch) / "Microsoft C 5.1 Optimizing Compiler (5.25)"
+            source.mkdir()
+            (source / "Disk01.img").touch()
+            with self.assertRaisesRegex(ValueError, "contains floppy images, not an installed"):
+                msc51.validate_compiler(source)
+
     def test_only_user_directories_are_mounted(self):
         with tempfile.TemporaryDirectory() as scratch:
             root = Path(scratch)

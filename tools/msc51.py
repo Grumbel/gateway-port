@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
 # SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
-"""Run the user's unmodified Microsoft C 5.1 installation through DOSBox.
+"""Run Microsoft C 5.1 through DOSBox, preserving the original binaries.
 
-No Microsoft binary is downloaded, copied into a Nix derivation, or committed.
-The probe's generated C is staged in a writable directory outside the store.
+The Nix wrapper supplies a pinned, unpacked historical compiler by default;
+the --compiler option accepts an independently installed copy. Generated C
+and executable outputs stay in a writable directory outside the Nix store.
 """
 
 import argparse
@@ -41,6 +42,13 @@ def validate_compiler(directory: Path) -> Path:
                for base in [directory] + ([include_dir] if include_dir is not None else [])):
         missing.append("STDIO.H")
     if missing:
+        if any(entry.suffix.lower() in (".img", ".ima", ".dsk", ".vfd")
+               for entry in directory.rglob("*") if entry.is_file()):
+            raise ValueError(
+                f"{directory} contains floppy images, not an installed compiler. "
+                "Use 'nix run .#msc51-unpack -- IMAGE-DIR OUTPUT-DIR' or "
+                "the default pinned flake compiler."
+            )
         raise ValueError(
             f"Incomplete Microsoft C installation at {directory}: missing {', '.join(missing)}. "
             "Install the complete Microsoft C 5.1 disk set first."

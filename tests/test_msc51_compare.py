@@ -47,6 +47,13 @@ class MSC51CompareTests(unittest.TestCase):
             (root / "lib" / "llibcr.lib").touch()
             self.assertEqual(msc.resolve_library(root), root / "lib" / "llibcr.lib")
 
+    def test_disk_image_directory_is_not_mistaken_for_installation(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            (root / "Disk 1.img").touch()
+            with self.assertRaisesRegex(ValueError, "contains floppy images"):
+                msc.resolve_library(root)
+
     def test_pinned_original_rtl_self_match_when_present(self):
         original = REPO.parent / "gateway-dos/GATE.RTL"
         if not original.is_file():
