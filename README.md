@@ -212,7 +212,8 @@ nix run .#msc51-probe                         # compile and run 32 rand steps in
 nix run .#msc51-shell                         # interactive DOSBox compiler
 nix run .#msc51-prepare                       # prepare C89 source only (no download)
 nix run .#msc51-prepare-launcher              # stage all 28 recovered launcher modules
-nix run -L .#msc51-compile-launcher            # try all 28 with Microsoft C 5.1
+nix run -L .#msc51-compile-launcher            # compile all 28 with Microsoft C 5.1
+nix run -L .#msc51-link-launcher               # try LINK with the resulting objects
 nix build .#msc51                             # optional: inspect assembled DOS tree
 nix develop .#msc51                           # optional DOSBox toolchain shell
 ```
@@ -309,8 +310,10 @@ The first real Microsoft C 5.1 run on 2026-11-07 reached `M00.C` and reported
 identifier-truncation warnings and `C4005` macro collisions. The recovered
 source now uses explicit structure assignments and runtime zeroing for
 automatic buffers; the identifier aliases resolve the 31-character collision
-problem in generated files. **The revised build still needs a DOSBox rerun**;
-the initial run did not produce any `.OBJ` files.
+problem in generated files. **The user's subsequent DOSBox run successfully
+compiled all 28 `.OBJ` files** using Microsoft C 5.1, as reported by the
+`msc51-compile-launcher` success checks. This validates object compilation,
+not original calling conventions or linking.
 
 `msc51-compile-launcher` uses the same pinned Microsoft C 5.1 installation and
 read-only DOSBox mount as `msc51-probe`; `COMPILE.BAT` attempts `CL /AL /Od /c`
@@ -323,14 +326,31 @@ all expected object files. To use another compiler installation:
 nix run -L .#msc51-compile-launcher -- --compiler build/msc51-local
 ```
 
-This is a **compile-to-object experiment, not a DOS link**: original resident
-functions and guest memory/graphics/file/input services still lack real-mode
-implementations. It does not produce a playable Gateway executable. Only
-the source staging and host C89 checks could be run in the current workspace;
-actual Microsoft C compiler results require running the new command in an
-environment with the pinned compiler and DOSBox. The `msc51-tooling` check
-runs without fetching Microsoft binaries, including a synthetic FAT
-floppy-image import test with mtools.
+The separate link-only diagnostic reuses those object files; it **does not
+recompile** the 28 modules:
+
+```sh
+nix run -L .#msc51-link-launcher
+```
+
+It generates `build/msc51-launcher/LINK.RSP` and `LINK.BAT`, then runs the
+original Microsoft `LINK.EXE` with all 28 `Mxx.OBJ` files, the large-model
+`LLIBCR.LIB` and `LIBH.LIB`. The historical LINK response file supplies the
+object list (continued using trailing `+`), EXE name, MAP name, libraries and
+an empty definitions-file answer, as documented by
+[Microsoft KB Q40429](https://www.infania.net/misc/kbarchive/kb/040/Q40429/index.html).
+The attempt writes `LINK.LOG`, and possibly `GATEWAY.MAP`, under the same
+staging directory. The wrapper checks fresh success/failure markers and
+prints the linker diagnostics if the attempt fails; it will not mistake a
+partial `GATEWAY.EXE` for successful linkage or attempt to execute it.
+
+**Actual linking has not yet been attempted with Microsoft LINK.** Original
+resident functions and guest memory/graphics/file/input services still lack
+real-mode implementations, so unresolved symbols are expected. Even if LINK
+produces an EXE, that is not evidence of a playable or correct Gateway build.
+The historical compiler and DOSBox are unavailable in this workspace; the
+linker invocation must be verified on the user host. Host-side Python and
+strict C89 checks, including `msc51-tooling`, do not fetch Microsoft binaries.
 
 The `msc51-compare` app reads the SHA-256-pinned original `GATE.RTL` and the
 assembled `LLIBCR.LIB`. It searches the raw library for

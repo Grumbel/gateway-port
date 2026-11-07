@@ -55,6 +55,16 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("IF NOT EXIST M27.OBJ GOTO BUILD_FAILED", batch)
             self.assertIn("ECHO All reconstructed launcher objects compiled > SUCCESS.LOG", batch)
             self.assertNotIn("/Fe", batch)  # No complete DOS executable yet.
+            response = (output / "LINK.RSP").read_text().splitlines()
+            self.assertEqual(response[:28],
+                             [f"M{index:02d}.OBJ+" for index in range(27)] + ["M27.OBJ"])
+            self.assertEqual(response[28:], ["GATEWAY.EXE", "GATEWAY.MAP",
+                                             "LLIBCR.LIB LIBH.LIB /NOD", ";"])
+            link_batch = (output / "LINK.BAT").read_text()
+            self.assertIn("LINK @LINK.RSP > LINK.LOG", link_batch)
+            self.assertIn("IF ERRORLEVEL 1 GOTO LINK_FAILED", link_batch)
+            self.assertIn("IF NOT EXIST GATEWAY.EXE GOTO LINK_FAILED", link_batch)
+            self.assertIn(":LINK_FAILED\nECHO Original DOS services", link_batch)
 
     def test_c89_compatibility_transformations_preserve_large_constants(self):
         staged = msc51.msc51_enums_to_macros("enum { ONE = 1, SPACE = 0xfffff, FLAG = (1ul << 31) };")
@@ -99,7 +109,8 @@ class MSC51Tests(unittest.TestCase):
             (compiler / "INCLUDE" / "STDIO.H").touch()
             output = root / "launcher"
             objects = msc51.stage_launcher(output)
-            for name in (*objects, "START.LOG", "SUCCESS.LOG", "BUILDFAIL.LOG"):
+            for name in (*objects, "START.LOG", "SUCCESS.LOG", "BUILDFAIL.LOG",
+                         "LINKDONE.LOG", "LINKFAIL.LOG", "GATEWAY.EXE", "GATEWAY.MAP"):
                 (output / name.lower()).write_text("stale")
 
             def simulate_no_compilation(command, check):
@@ -108,6 +119,8 @@ class MSC51Tests(unittest.TestCase):
                 self.assertFalse(any((output / name.lower()).exists() for name in objects))
                 self.assertFalse((output / "success.log").exists())
                 self.assertFalse((output / "buildfail.log").exists())
+                self.assertFalse((output / "linkdone.log").exists())
+                self.assertFalse((output / "gateway.exe").exists())
                 return mock.Mock(returncode=0)
 
             with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
@@ -128,6 +141,65 @@ class MSC51Tests(unittest.TestCase):
                  mock.patch.object(msc51.subprocess, "run", side_effect=simulate_success):
                 self.assertEqual(msc51.main(["compile-launcher", "--compiler", str(compiler),
                                              "--output", str(output)]), 0)
+
+    def test_link_launcher_requires_compiled_objects_and_rejects_stale_exes(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            compiler = root / "compiler"
+            for directory in ("BIN", "LIB", "INCLUDE"):
+                (compiler / directory).mkdir(parents=True)
+            for name in ("CL.EXE", "C1.EXE", "C1L.EXE", "C2.EXE", "C3.EXE", "LINK.EXE"):
+                (compiler / "BIN" / name).touch()
+            for name in ("LLIBCR.LIB", "LIBH.LIB"):
+                (compiler / "LIB" / name).touch()
+            (compiler / "INCLUDE" / "STDIO.H").touch()
+            output = root / "launcher"
+            objects = msc51.stage_launcher(output)
+            args = ["link-launcher", "--compiler", str(compiler), "--output", str(output)]
+
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run") as run, \
+                 redirect_stderr(io.StringIO()) as error:
+                with self.assertRaises(SystemExit):
+                    msc51.main(args)
+                run.assert_not_called()
+            self.assertIn("msc51-compile-launcher first", error.getvalue())
+
+            (output / "start.log").write_text("compiled")
+            (output / "success.log").write_text("compiled")
+            for name in objects:
+                (output / name.lower()).write_bytes(b"compiled object")
+            for name in ("LINKSTART.LOG", "LINKDONE.LOG", "LINKFAIL.LOG",
+                         "LINK.LOG", "GATEWAY.EXE", "GATEWAY.MAP"):
+                (output / name.lower()).write_bytes(b"stale result")
+
+            def simulate_failed_link(command, check):
+                self.assertIn("LINK.BAT", command)
+                self.assertFalse(check)
+                self.assertFalse(any((output / name).exists() for name in
+                                     ("gateway.exe", "linkdone.log", "linkfail.log", "link.log")))
+                (output / "linkstart.log").write_text("started")
+                (output / "linkfail.log").write_text("unresolved")
+                (output / "link.log").write_text("L2029 unresolved external")
+                (output / "gateway.exe").write_bytes(b"partial exe")
+                return mock.Mock(returncode=0)
+
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run", side_effect=simulate_failed_link), \
+                 redirect_stderr(io.StringIO()) as error:
+                self.assertEqual(msc51.main(args), 1)
+            self.assertIn("L2029 unresolved external", error.getvalue())
+
+            def simulate_success(command, check):
+                self.assertIn("LINK.BAT", command)
+                (output / "linkstart.log").write_text("started")
+                (output / "linkdone.log").write_text("linked")
+                (output / "gateway.exe").write_bytes(b"compiled exe")
+                return mock.Mock(returncode=0)
+
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run", side_effect=simulate_success):
+                self.assertEqual(msc51.main(args), 0)
 
     def test_stages_only_recovered_source_with_c89_headers(self):
         with tempfile.TemporaryDirectory() as scratch:

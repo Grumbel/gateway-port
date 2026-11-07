@@ -229,10 +229,10 @@ def msc51_rename_identifiers(source: str, names: dict[str, str]) -> str:
 
 
 def stage_launcher(output: Path) -> list[str]:
-    """Stage all recovered launcher C translation units as DOS 8.3 C89 files.
+    """Stage recovered launcher C and a diagnostic DOS link attempt.
 
-    This compiles .OBJ modules only: original linked resident services and
-    guest memory/graphics adapters are not yet available as DOS objects.
+    The original resident services and guest memory/graphics adapters are
+    unavailable as DOS objects; LINK is expected to report missing symbols.
     """
     output.mkdir(parents=True, exist_ok=True)
     source_dir = REPO / "decomp/launcher"
@@ -312,7 +312,26 @@ def stage_launcher(output: Path) -> list[str]:
                   "ECHO Microsoft C failed to compile a module > BUILDFAIL.LOG",
                   ":DONE", "EXIT"))
     (output / "COMPILE.BAT").write_text("\r\n".join(lines) + "\r\n")
-    return [f"M{index:02d}.OBJ" for index in range(len(sources))]
+    objects = [f"M{index:02d}.OBJ" for index in range(len(sources))]
+    # Microsoft's LINK response file is prompt-oriented: object modules,
+    # output executable, map, libraries/options, and an empty DEF response.
+    # Each trailing + extends the SAME response across CRLFs (MS KB Q40429).
+    response = ([f"{name}+" for name in objects[:-1]] + [objects[-1],
+                "GATEWAY.EXE", "GATEWAY.MAP", "LLIBCR.LIB LIBH.LIB /NOD", ";"])
+    (output / "LINK.RSP").write_text("\r\n".join(response) + "\r\n")
+    link_batch = [
+        "@ECHO OFF", "ECHO Gateway MSC 5.1 link attempt > LINKSTART.LOG",
+        "SET PATH=C:\\BIN;C:\\", "SET INCLUDE=C:\\INCLUDE;C:\\",
+        "SET LIB=C:\\LIB;C:\\", "SET TEMP=D:\\", "SET TMP=D:\\",
+        "LINK @LINK.RSP > LINK.LOG", "IF ERRORLEVEL 1 GOTO LINK_FAILED",
+        "IF NOT EXIST GATEWAY.EXE GOTO LINK_FAILED",
+        "ECHO All reconstructed launcher objects linked > LINKDONE.LOG",
+        "GOTO DONE", ":LINK_FAILED",
+        "ECHO Original DOS services or linker dependencies unresolved > LINKFAIL.LOG",
+        ":DONE", "EXIT",
+    ]
+    (output / "LINK.BAT").write_text("\r\n".join(link_batch) + "\r\n")
+    return objects
 
 
 def remove_probe_outputs(output: Path) -> None:
@@ -331,6 +350,37 @@ def remove_launcher_outputs(output: Path, objects: list[str]) -> None:
         for entry in output.iterdir():
             if entry.is_file() and entry.name.upper() in names:
                 entry.unlink()
+
+
+def validate_launcher_objects(output: Path, objects: list[str]) -> None:
+    """Only link the outputs of a previously successful DOS compilation."""
+    missing = [name for name in objects if locate_case_insensitive(output, name) is None]
+    if (missing or locate_case_insensitive(output, "START.LOG") is None or
+            locate_case_insensitive(output, "SUCCESS.LOG") is None or
+            locate_case_insensitive(output, "BUILDFAIL.LOG") is not None):
+        raise ValueError(f"Cannot link launcher: {len(missing)} of {len(objects)} "
+                         "objects missing or compiler success marker absent. "
+                         "Run msc51-compile-launcher first.")
+
+
+def remove_launcher_link_outputs(output: Path) -> None:
+    """Never accept a previous link's EXE, map or success marker."""
+    names = {"LINKSTART.LOG", "LINK.LOG", "LINKFAIL.LOG", "LINKDONE.LOG",
+             "GATEWAY.EXE", "GATEWAY.MAP"}
+    if output.is_dir():
+        for entry in output.iterdir():
+            if entry.is_file() and entry.name.upper() in names:
+                entry.unlink()
+
+
+def print_launcher_link_diagnostics(output: Path) -> None:
+    for name in ("LINKFAIL.LOG", "LINK.LOG", "LINKDONE.LOG"):
+        path = locate_case_insensitive(output, name)
+        content = path.read_text(errors="replace") if path is not None else "(not created)"
+        if len(content) > 16_000:
+            content = "[earlier linker diagnostics omitted; see full LINK.LOG]\n" + content[-16_000:]
+        print(f"--- {name} ---\n{content.rstrip()}", file=sys.stderr)
+    print(f"Launcher link workspace: {output}", file=sys.stderr)
 
 
 def print_launcher_diagnostics(output: Path) -> None:
@@ -393,7 +443,8 @@ def install_commands(destination: Path, floppies: list[Path]) -> list[str]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("probe", "shell", "prepare", "install",
-                                            "prepare-launcher", "compile-launcher"))
+                                            "prepare-launcher", "compile-launcher",
+                                            "link-launcher"))
     parser.add_argument("--compiler", default=os.environ.get("GATEWAY_MSC51_DIR"),
                         help="installed Microsoft C 5.1 directory (or GATEWAY_MSC51_DIR)")
     parser.add_argument("--output", type=Path,
@@ -404,7 +455,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--floppy", type=Path, action="append", default=[],
                         help="one original floppy image, repeat in original disk order")
     args = parser.parse_args(argv)
-    launcher = args.command in ("prepare-launcher", "compile-launcher")
+    launcher = args.command in ("prepare-launcher", "compile-launcher", "link-launcher")
     output = (args.output or Path("build/msc51-launcher" if launcher else "build/intro-msc51")).expanduser().resolve()
     objects = []
     if launcher:
@@ -423,12 +474,15 @@ def main(argv: list[str] | None = None) -> int:
             commands = install_commands(destination, [p.expanduser().resolve() for p in args.floppy])
             destination.mkdir(parents=True, exist_ok=True)
         else:
+            if args.command == "link-launcher":
+                validate_launcher_objects(output, objects)
             if not args.compiler:
                 parser.error("set GATEWAY_MSC51_DIR or pass --compiler /path/to/installed/MSC51")
             compiler = validate_compiler(Path(args.compiler))
             commands = dosbox_commands(compiler, output,
-                                       args.command in ("probe", "compile-launcher"),
-                                       "COMPILE.BAT" if launcher else "BUILD.BAT")
+                                       args.command in ("probe", "compile-launcher", "link-launcher"),
+                                       ("LINK.BAT" if args.command == "link-launcher" else
+                                        "COMPILE.BAT" if launcher else "BUILD.BAT"))
             output.mkdir(parents=True, exist_ok=True)
     except ValueError as error:
         parser.error(str(error))
@@ -442,15 +496,35 @@ def main(argv: list[str] | None = None) -> int:
         command.append("--exit")
     elif args.command == "compile-launcher":
         remove_launcher_outputs(output, objects)
+        remove_launcher_link_outputs(output)
+        command.append("--exit")
+    elif args.command == "link-launcher":
+        remove_launcher_link_outputs(output)
         command.append("--exit")
     print("DOSBox commands: " + " ; ".join(commands), flush=True)
     result = subprocess.run(command, check=False)
     if result.returncode != 0:
         if args.command == "probe":
             print_probe_diagnostics(output)
-        elif launcher:
+        elif args.command == "compile-launcher":
             print_launcher_diagnostics(output)
+        elif args.command == "link-launcher":
+            print_launcher_link_diagnostics(output)
         return result.returncode
+    if args.command == "link-launcher":
+        started = locate_case_insensitive(output, "LINKSTART.LOG")
+        success = locate_case_insensitive(output, "LINKDONE.LOG")
+        failed = locate_case_insensitive(output, "LINKFAIL.LOG")
+        exe = locate_case_insensitive(output, "GATEWAY.EXE")
+        if (started is None or success is None or failed is not None or
+                exe is None or not exe.is_file() or exe.stat().st_size == 0):
+            print("Microsoft LINK did not produce a verified launcher executable. "
+                  "Missing original DOS/resident symbols are expected.", file=sys.stderr)
+            print_launcher_link_diagnostics(output)
+            return 1
+        print("Microsoft LINK produced GATEWAY.EXE from all 28 launcher objects; "
+              "execution and original DOS semantics remain unverified.")
+        return 0
     if args.command == "compile-launcher":
         success = locate_case_insensitive(output, "SUCCESS.LOG")
         started = locate_case_insensitive(output, "START.LOG")

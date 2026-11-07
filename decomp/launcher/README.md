@@ -878,19 +878,23 @@ filesystem, input and video adapters still need real-mode implementations.
 Compiling the source in OpenWatcom's small model alone cannot reproduce the
 original Microsoft C ABI or segmented data layout.
 
-For a real Microsoft C 5.1 **object-compilation** experiment, use
-`nix run -L .#msc51-compile-launcher` instead. It stages the 28 recovered C
-units under DOS 8.3 names with a source-address-preserving mapping in
-`build/msc51-launcher/SOURCE.MAP` and a long-name mapping in `SYMBOL.MAP`,
-then tries to compile them all as `/AL`
-modules in DOSBox. That command is not yet a linker or a playable DOS game;
-see the toolchain instructions in the top-level README. The staging passes
-strict host C89 syntax checks, but has not yet been exercised with the real
-Microsoft compiler in the current environment. The user's first actual run
-found 31-character name collisions and C5.1's rejection of automatic
-aggregate initializers; both are addressed in the next source/staging pass,
-pending a new original-compiler run. Original file offsets in the source
-comments are retained exactly, not replaced by the shortened identifiers.
+The user has now compiled **all 28** reconstructed modules with the actual
+Microsoft C 5.1 `/AL /Od /c` compiler through
+`nix run -L .#msc51-compile-launcher`. The staged DOS 8.3 source names map
+back to their original files via `build/msc51-launcher/SOURCE.MAP`, and all
+31-character identifier aliases are documented in `SYMBOL.MAP`. The first
+compiler run exposed unsupported C99 automatic aggregate initializers and
+identifier collisions; the corrected staging passed the next actual run.
+Original file offsets in source comments remain intact, not replaced by
+shortened identifiers.
+
+`nix run -L .#msc51-link-launcher` is a **separate diagnostic** for the original
+Microsoft linker. It reuses the successful `.OBJ` files, writes a response
+file and saves `LINK.LOG` for an unresolved-service inventory. No original
+resident, memory, video, file or input adapter is assumed to exist merely
+because object compilation succeeds. This link attempt is not yet verified
+on the user host, and any produced EXE must not be treated as a playable
+game; see the top-level toolchain instructions.
 
 ## Immediate next functions
 
