@@ -23,6 +23,13 @@ RTL_SHA256 = 'c187f5ee7be86482cff89e668d934dc961ac50e960df7baa98965910f1ea9566'
 # section overwrites the mapped image (there are different RTL load layouts).
 # There is intentionally no assertion that all of GATE.RTL is mapped here.
 RTL_BANKS = (
+    # EXE:134c calls original 0a46:01ec, loaded at resident 1a46:01ec.
+    # Its first eight instruction bytes uniquely locate RTL:c3bd. The
+    # c1d1 base is checked against six independent instruction windows.
+    # The linked image is overwritten after relative offset ~0x0b00 in
+    # the 22-second capture, so do not extend this bank into that region.
+    dict(segment=0x0a46, file_base=0xc1d1, size=0xa80,
+         witnesses=(0xc1d1, 0xc29d, 0xc3bd, 0xc4d0, 0xc680, 0xc8c0)),
     # Five original 0c33 file-service entry points map to e531/e582/e5c5/
     # e5e3/e68b.  The last function ends at 0c33:01a9; after that address
     # the snapshot has the overlapping 0c4d image instead of its RTL bytes.
@@ -51,6 +58,7 @@ EXE_ENTRIES = (0x0bb8, 0x0e37, 0x0f18, 0x0f61, 0x103a, 0x117e,
 # Ghidra may have to merge/reject them.  0x8298 is now part of the verified
 # 02a5 bank; retain it as a named source reconstruction seed.
 RTL_CANDIDATES = {
+    0xc3bd: 'exe-134c-startup-callee',
     0x8298: 'verified-linked-strlen',
     0xe531: 'file-open-entry-candidate',
     0xe582: 'file-seek-entry-candidate',

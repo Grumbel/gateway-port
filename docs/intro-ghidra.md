@@ -97,8 +97,8 @@ near calls whose original targets are inside the same verified RTL overlay,
 and enumerates all functions Ghidra finds in those blocks. This is intended to produce large
 batches for inspection instead of manually translating six functions per turn.
 
-**Current coverage limitation:** the five verified RTL spans are
-`0c33:0000..01a9`, `0c4d:0000..08ff`, `0cdc:0000..10ff`, and
+**Current coverage limitation:** the six verified RTL spans are
+`0a46:0000..0a7f`, `0c33:0000..01a9`, `0c4d:0000..08ff`, `0cdc:0000..10ff`, and
 `0f10:0000..1aff`, plus EXE-relative `02a5:0000..3cff` (resident
 `12a5:0000..3cff`) in the captured load layout. The latter maps
 `GATE.RTL:56de..93dd`, including linked `strlen` and the C runtime random
@@ -109,6 +109,15 @@ segments. All missing calls must be mapped/verified before the intro is
 complete. An imported label or successful pseudocode export is not evidence
 that the original calling convention, signedness, data structure or guest
 side effects are correct.
+
+The newly mapped `0a46` span is anchored by the first startup FAR call in
+`GATE.EXE:134c`: original `0a46:01ec` appears at resident `1a46:01ec`
+in the 22-second snapshot. Its unique first instruction signature matches
+`GATE.RTL:c3bd`, establishing the section's file base at `RTL:c1d1`.
+Six separate source/linked instruction windows verify that base, including
+the call entry at `c3bd`; the span stops at relative `0a80` because a later
+image overwrites the following region. Importing this function is **not**
+the same as recovering its source semantics or making the C intro playable.
 
 The fourth bank correlates the following *original file offsets*, not just
 runtime addresses:

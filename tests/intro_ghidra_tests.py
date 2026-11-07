@@ -67,6 +67,12 @@ class RealGatewayIntroEvidence(unittest.TestCase):
             self.assertEqual({e['file_offset'] for e in plan['exe_labels']},
                              set(EXE_ENTRIES))
             self.assertGreaterEqual(sum(len(s['entries']) for s in plan['sections']), 44)
+            startup = next(section for section in plan['sections']
+                           if section['segment'] == 0x0a46)
+            self.assertEqual(startup['file_base'], 0xc1d1)
+            self.assertEqual(startup['size'], 0xa80)
+            self.assertEqual(len(startup['witnesses']), 6)
+            self.assertGreater(startup['exact_byte_matches'], 0xa80 * 0.60)
             self.assertTrue(any(e['name'] == 'gate_rtl_130ab'
                                 for s in plan['sections'] for e in s['entries']))
             file_services = next(section for section in plan['sections']
