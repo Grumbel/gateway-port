@@ -31,11 +31,19 @@ class MSC51CompareTests(unittest.TestCase):
                   dictionary_offset.to_bytes(4, "little") + b"\x01\x00\x00")
         lib = bytearray(header.ljust(page_size, b"\0"))
         module_one = record(0x82, b"\x06RAND.C")
+        names = record(0x96, b"\x05_TEXT\x04CODE\x05_DATA\x04DATA\x00")
+        # SEGDEF 1: _TEXT, CODE; SEGDEF 2: _DATA, DATA.
+        code_segment = record(0x98, b"\x28\x40\x01\x01\x02\x05")
+        data_segment = record(0x98, b"\x28\x40\x01\x03\x04\x05")
         # PUBDEF: group 0, segment 1, _rand at segment offset 0x0120.
         public = record(0x90, b"\x00\x01\x05_rand\x20\x01\x00")
         signature = b"\x55\x8b\xec\x2b\x76\x01\x5d\xcb" + bytes(range(12))
         ledata = record(0xa0, b"\x01\x20\x01" + signature)
-        module_bytes = module_one + public + ledata + record(0x8a, b"\x00")
+        data_public = record(0x90, b"\x00\x02\x06_month\x00\x00\x00")
+        data_signature = b"const-month-data-info"
+        data_ledata = record(0xa0, b"\x02\x00\x00" + data_signature)
+        module_bytes = (module_one + names + code_segment + data_segment + public
+                        + ledata + data_public + data_ledata + record(0x8a, b"\x00"))
         lib.extend(module_bytes)
         lib.extend(bytes((-len(lib)) % page_size))
         second = record(0x80, b"\x08STRAND.C") + record(0x8a, b"\x00")
@@ -49,19 +57,40 @@ class MSC51CompareTests(unittest.TestCase):
         modules = msc.parse_omf_library(bytes(lib))
         self.assertEqual([m.name for m in modules], ["RAND.C", "STRAND.C"])
         self.assertEqual(modules[1].start, second_start)
-        offset = page_size + len(module_one) + len(public) + 3 + 3
+        self.assertEqual(msc.omf_segments(bytes(lib), modules[0]), {
+            1: {"name": "_TEXT", "class": "CODE"},
+            2: {"name": "_DATA", "class": "DATA"},
+        })
+        self.assertEqual(msc.segment_kind({"class": "CODE"}), "code")
+        self.assertEqual(msc.segment_kind({"class": "DATA"}), "other")
+        self.assertEqual(msc.segment_kind({}), "unknown")
+        offset = (page_size + len(module_one) + len(names) + len(code_segment)
+                  + len(data_segment) + len(public) + 3 + 3)
         self.assertEqual(lib[offset:offset + len(signature)], signature)
         self.assertEqual(msc.omf_match_details(bytes(lib), modules, offset, len(signature)), {
             "module": "RAND.C",
             "module_offset": "0x00020",
             "segment_index": 1,
             "segment_offset": "0x0120",
+            "segment_name": "_TEXT",
+            "segment_class": "CODE",
             "public_symbol": "_rand",
         })
         self.assertIsNone(msc.omf_match_details(bytes(lib), modules,
                                                 offset - 1, len(signature)))
         self.assertIsNone(msc.omf_match_details(bytes(lib), modules,
                                                 len(lib) - 1, len(signature)))
+        data_start = offset + len(signature) + 1 + len(data_public) + 6
+        self.assertEqual(msc.omf_match_details(
+            bytes(lib), modules, data_start, len(data_signature)), {
+                "module": "RAND.C",
+                "module_offset": "0x00020",
+                "segment_index": 2,
+                "segment_offset": "0x0000",
+                "segment_name": "_DATA",
+                "segment_class": "DATA",
+                "public_symbol": "_month",
+            })
         candidates = msc.scan_exact_crt_prefixes(
             b"padding" + signature + b"end", bytes(lib), modules)
         self.assertEqual(candidates, [{
@@ -70,8 +99,15 @@ class MSC51CompareTests(unittest.TestCase):
             "rtl_offset": "0x00007",
             "segment_index": 1,
             "segment_offset": "0x0120",
+            "segment_name": "_TEXT",
+            "segment_class": "CODE",
+            "segment_kind": "code",
             "exact_prefix_bytes": len(signature),
         }])
+        both = msc.scan_exact_crt_prefixes(
+            b"padding" + signature + b"end" + data_signature, bytes(lib), modules)
+        self.assertEqual([entry["segment_kind"] for entry in both], ["code", "other"])
+        self.assertEqual(both[1]["symbol"], "_month")
         self.assertEqual(msc.scan_exact_crt_prefixes(
             signature + b"padding" + signature, bytes(lib), modules), [])
         self.assertEqual(msc.scan_exact_crt_prefixes(

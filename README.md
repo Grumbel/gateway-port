@@ -317,6 +317,8 @@ nix run -L .#msc51-compare -- --scan-public-prefixes --json build/msc51-crt-cand
 This optional scan looks for unique, exact prefixes of at least 16 bytes at
 library `PUBDEF` locations inside a single `LEDATA` record, without masking
 relocations; locations claimed by more than one library symbol are omitted.
+It reads `LNAMES` and `SEGDEF` to show the original OMF segment class and
+separate `CODE`-class entries from other classes (such as initialized data).
 It reports **candidates**, not identified Gateway routines: a
 public symbol may be data, a coincidentally equal byte sequence may not be a
 function, and relocated or noncontiguous code will not match. The JSON report
@@ -325,6 +327,18 @@ the two known functions is strong evidence of identical CRT implementations;
 a miss is inconclusive for other OMF modules or compiler options. This
 compares the linked historical *runtime*, not the compiler's code generation
 for Gateway's game logic.
+
+The first user-side full-library scan reported **70 unique public-prefix
+candidates**, many agreeing for all 64 bytes scanned. They include CRT
+startup (`dos\crt0.asm:__astart` at `GATE.RTL:0x0608c`), file I/O (`_fread`,
+`_fclose`), string and formatting functions (`_strcpy`, `_sprintf`), runtime
+helpers (`__chkstk`) and the known RNG. Several hits are data symbols,
+including `days.c:__lpdays`/`__days` around `0x03521` and
+`dos\crt0msg.asm:__FF_MSGBANNER` at `0x062bc`. The code candidates cluster
+from `0x0608c` through `0x09288`, but neither the intervals between entries
+nor the complete function bodies have yet been verified. Run the scan again
+with the segment-class output to establish the code/data counts directly from
+the original OMF metadata.
 
 ### In-game Gateway debugger (F10)
 

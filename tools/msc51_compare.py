@@ -201,6 +201,57 @@ def omf_publics(data: bytes, module: OMFModule) -> list[tuple[int, int, str]]:
     return symbols
 
 
+def omf_segments(data: bytes, module: OMFModule) -> dict[int, dict[str, str]]:
+    """Resolve SEGDEF segment/class names using module-local LNAMES indexes.
+
+    The segment index is the one-based ordinal of SEGDEF records, not the
+    LNAMES index. Unknown or malformed optional metadata is left unlabelled.
+    """
+    names = [""]
+    segments = {}
+    for record in module.records:
+        pos, end = record.start + 3, record.end - 1
+        try:
+            if record.kind == 0x96:  # LNAMES
+                while pos < end:
+                    length = data[pos]
+                    pos += 1
+                    if pos + length > end:
+                        raise ValueError("Truncated OMF LNAMES string")
+                    names.append(data[pos:pos + length].decode("ascii", errors="replace"))
+                    pos += length
+            elif record.kind in (0x98, 0x99):  # SEGDEF / SEGDEF32
+                index = len(segments) + 1
+                if pos >= end:
+                    raise ValueError("Truncated OMF SEGDEF attributes")
+                attributes = data[pos]
+                pos += 1
+                if attributes >> 5 == 0:  # Absolute: frame and offset follow
+                    pos += 3
+                pos += 4 if record.kind == 0x99 else 2  # segment length
+                segment_name, pos = omf_index(data, pos, end)
+                class_name, pos = omf_index(data, pos, end)
+                _, pos = omf_index(data, pos, end)  # overlay name
+                if pos != end or segment_name >= len(names) or class_name >= len(names):
+                    raise ValueError("Invalid OMF SEGDEF names")
+                segments[index] = {"name": names[segment_name], "class": names[class_name]}
+        except (ValueError, IndexError):
+            # Keep indexes stable even if this particular SEGDEF is malformed.
+            if record.kind in (0x98, 0x99):
+                segments[len(segments) + 1] = {}
+    return segments
+
+
+def segment_kind(info: dict[str, str]) -> str:
+    """Separate CODE-class entries from other classes without guessing content."""
+    class_name = info.get("class", "").upper()
+    if not class_name:
+        return "unknown"
+    if class_name == "CODE" or class_name.endswith("_CODE"):
+        return "code"
+    return "other"
+
+
 def omf_match_details(data: bytes, modules: list[OMFModule],
                       position: int, size: int) -> dict | None:
     """Attribute a contiguous signature only if it lies inside LEDATA bytes."""
@@ -230,6 +281,10 @@ def omf_match_details(data: bytes, modules: list[OMFModule],
                     "segment_index": segment,
                     "segment_offset": f"0x{code_offset:04x}",
                 }
+                segment_info = omf_segments(data, module).get(segment, {})
+                if segment_info:
+                    detail["segment_name"] = segment_info["name"]
+                    detail["segment_class"] = segment_info["class"]
                 if names:
                     detail["public_symbol"] = names[0]
                 return detail
@@ -280,6 +335,7 @@ def scan_exact_crt_prefixes(original: bytes, library: bytes,
     """
     hits = []
     for module in modules:
+        segments = omf_segments(library, module)
         for symbol, segment, offset, code in public_code_prefixes(
                 library, module, min_size=min_size):
             prefix = code[:min_size]
@@ -290,12 +346,16 @@ def scan_exact_crt_prefixes(original: bytes, library: bytes,
             while (matched < len(code) and rtl_offset + matched < len(original)
                    and original[rtl_offset + matched] == code[matched]):
                 matched += 1
+            info = segments.get(segment, {})
             hits.append({
                 "symbol": symbol,
                 "module": module.name,
                 "rtl_offset": f"0x{rtl_offset:05x}",
                 "segment_index": segment,
                 "segment_offset": f"0x{offset:04x}",
+                "segment_name": info.get("name", ""),
+                "segment_class": info.get("class", ""),
+                "segment_kind": segment_kind(info),
                 "exact_prefix_bytes": matched,
             })
     # Two library publics with the same opening instructions do not justify
@@ -367,16 +427,29 @@ def main(argv: list[str] | None = None) -> int:
         for details in entry.get("omf_matches", ()):
             if details is not None:
                 symbol = f' symbol={details["public_symbol"]}' if "public_symbol" in details else ""
+                segment_class = (f' class={details["segment_class"]}'
+                                 if "segment_class" in details else "")
                 print(f'  module={details["module"]} at {details["module_offset"]}, '
-                      f'segment #{details["segment_index"]}:{details["segment_offset"]}{symbol}')
+                      f'segment #{details["segment_index"]}:{details["segment_offset"]}'
+                      f'{segment_class}{symbol}')
             else:
                 print("  hit is not entirely within a single OMF LEDATA record")
     if public_candidates is not None:
-        print(f"Unique exact CRT public-prefix candidates (at least 16 bytes): {len(public_candidates)}")
+        counts = {kind: sum(hit["segment_kind"] == kind for hit in public_candidates)
+                  for kind in ("code", "other", "unknown")}
+        print(f"Unique exact CRT public-prefix candidates (at least 16 bytes): "
+              f'{len(public_candidates)} (CODE class: {counts["code"]}, '
+              f'other classes: {counts["other"]}, unknown: {counts["unknown"]})')
         for entry in public_candidates:
             print(f'  GATE.RTL:{entry["rtl_offset"]} {entry["module"]}:{entry["symbol"]} '
                   f'#{entry["segment_index"]}:{entry["segment_offset"]} '
+                  f'class={entry["segment_class"] or "?"} '
                   f'({entry["exact_prefix_bytes"]} exact leading bytes)')
+        code_locations = [int(hit["rtl_offset"], 16) for hit in public_candidates
+                          if hit["segment_kind"] == "code"]
+        if code_locations:
+            print(f"CODE-class entry span: GATE.RTL:0x{min(code_locations):05x}"
+                  f"..0x{max(code_locations):05x} (entry points only; gaps unverified)")
         print("Candidates need separate code/boundary validation; absent matches prove nothing.")
     print(f"Compared against {library} ({len(library_bytes)} bytes)")
     print("A match supports identical CRT code; a miss is inconclusive for OMF modules.")
