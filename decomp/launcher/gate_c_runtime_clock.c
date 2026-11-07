@@ -9,8 +9,59 @@
  * pointer. Its calendar conversion is not reconstructed here. */
 void gate_far_12a5_34d8(GateFarPtr destination);
 
-/* GATE.RTL:8cc8 is the still-unrecovered timezone initializer. */
-void gate_rtl_8cc8(void);
+/* Microsoft-style FAR C runtime imports at linked 12a5:2cd0, :2bd2 and
+ * :2c38, identified by their original 8086 bodies: getenv, strncpy, atol.
+ * This translation keeps the original FAR layout instead of consulting the
+ * host's timezone environment or copying native pointers into guest RAM. */
+GateFarPtr gate_far_12a5_2cd0(GateFarPtr name);
+GateFarPtr gate_far_12a5_2bd2(GateFarPtr destination, GateFarPtr source,
+                               uint16_t length);
+uint32_t gate_far_12a5_2c38(GateFarPtr number);
+
+/* GATE.RTL:8cc8..8d9a, linked 12a5:35ea. Read the DOS process's TZ
+ * environment setting, copy its three-byte standard zone, and convert the
+ * following numeric offset into signed seconds. The suffix search is NOT a
+ * conventional timezone parser: it advances at most three bytes that have
+ * the C runtime's _DIGIT bit (4) or are '-'. '+' is not skipped, and a long
+ * number can consequently be mistaken for the daylight zone suffix.
+ * Those are original behaviors, retained deliberately. */
+void gate_rtl_8cc8(void)
+{
+    GateFarPtr value = gate_far_12a5_2cd0((GateFarPtr){gate_ds_segment(), 0x352c});
+    uint16_t skip = 0;
+
+    if ((value.offset | value.segment) == 0 ||
+        gate_far_byte(value.segment, value.offset) == 0)
+        return;
+
+    gate_far_12a5_2bd2((GateFarPtr){gate_ds_segment(), 0x353e}, value, 3);
+    value.offset = (uint16_t)(value.offset + 3u);
+    /* The MUL return is DX:AX, both words must be retained. */
+    {
+        uint32_t seconds = gate_rtl_933a(gate_far_12a5_2c38(value), 3600u);
+        gate_ds_set_word(0x3538, (uint16_t)seconds);
+        gate_ds_set_word(0x353a, (uint16_t)(seconds >> 16));
+    }
+
+    while (skip < 3u) {
+        uint8_t ch = gate_far_byte(value.segment,
+                                   (uint16_t)(value.offset + skip));
+        int16_t signed_ch = (int8_t)ch;
+        if (ch == 0 || ((gate_far_byte(gate_ds_segment(),
+            (uint16_t)(0x33f7 + signed_ch)) & 4u) == 0 && ch != '-'))
+            break;
+        ++skip;
+    }
+
+    if (gate_far_byte(value.segment, (uint16_t)(value.offset + skip)) != 0) {
+        gate_far_12a5_2bd2((GateFarPtr){gate_ds_segment(), 0x3542},
+                            (GateFarPtr){value.segment,
+                                         (uint16_t)(value.offset + skip)}, 3);
+    } else {
+        gate_far_set_byte(gate_ds_segment(), 0x3542, 0);
+    }
+    gate_ds_set_word(0x353c, gate_far_byte(gate_ds_segment(), 0x3542) >= 1u);
+}
 
 /* GATE.RTL:8cb8..8cc7, linked 12a5:35da. The original startup flag is
  * relocated to DS:6470. Repeated calls skip initialization; the one-time

@@ -474,6 +474,11 @@ image-path diagnostic, **not the original animation schedule**.
 
 ## Remaining limitations
 
+- The original `GATE.RTL:8cc8` DOS timezone initializer is now recovered as
+  source C, including FAR getenv/strncpy/atol imports, the legacy three-byte
+  timezone parsing rule, the daylight-zone flag and linked DS offsets.
+  This standalone runtime recovery is not used by the live SDL clock hook:
+  time/date sampling and original DOS timer calibration remain separate work.
 - The pinned default source-C entry is independent of the DOS snapshot and
   Unicorn. Its initializer rebuilds only the runtime state exercised along
   the verified default 22-second-entry path, not all possible loader options,
