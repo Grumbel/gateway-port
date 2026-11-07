@@ -114,6 +114,13 @@ zeros in the RTL file. This mapping is also verified in the test. It
 identifies the raw code's source but does not yet recover the relocator that
 must generate those words during a cold C startup.
 
+Additional unchanged RTL resident data maps through a *second* file-to-RAM
+base: `RAM = original GATE.RTL file offset + 2a777`. Seven verified read-only
+spans totaling 140 bytes cover the resident resource-extension strings,
+graphics tables and resource metadata. `--restore-rtl-data` now restores
+these spans from the original RTL file as well. The gaps are intentionally
+excluded: they include runtime-modified pointers, mode fields and code.
+
 The independent `--full --restore-rtl-data` option now copies nonzero bytes
 from that original RTL region into the guest image, leaving zero relocation
 placeholders (and hence the 23 already-linked words from the private guest
@@ -129,15 +136,33 @@ the startup buffer. It can be combined with both original-file restorations;
 a missing or malformed PIC fails safely. The other startup variants and
 palette changes made during playback are not inferred from this one entry.
 
+Two further opt-in source-C initializers reconstruct non-file runtime state:
+
+- `--restore-selectors` builds the complete **105-WORD linked FAR selector
+  table** at `DS:4d80..4e50`. Every entry targets either DS itself or the
+  adjacent data bank at `DS-10` paragraphs; all 105 values were verified
+  against the pinned original. The reconstruction is parametrized by the
+  guest DS segment, but is not a general MS C/RTLink relocator.
+- `--restore-defaults` fills the two resource-extension FAR pointers from
+  resident RTL string addresses, sets the already-selected mode-3 video
+  state, creates the `GATE.EXE`-derived filename stem and linked buffer
+  pointer, and initializes the VGA status port and adapter-type fields.
+  These are **the pinned 22-second default settings**, not all original
+  startup or other hardware/command-line variants.
+
 Most importantly, a byte-level sparse-memory regression starts with **all
 1 MiB zero**, preserves only the 7,419 guest bytes first-read before writes
 in the pinned default replay (excluding the ablated `2a000` page), and
-then removes all three disk-reconstructible regions. Only **206 nonzero bytes
-of captured RAM** remain. All three native restorations together reproduce
-the complete 816-frame recording and final PPM, byte for byte. This counts
+then removes all disk-reconstructible regions and both natively initialized
+runtime groups. Eight remaining first-read nonzero values were separately
+ablated as immaterial to the pinned replay (not necessarily every path).
+Only **68 nonzero bytes of captured RAM** remain, precisely **22 nonzero DOS
+interrupt-vector bytes** and **46 bytes in 23 RTL loader-fixup words**.
+Combining all five restoration options still reproduces the complete
+816-frame recording and final PPM, byte for byte. This counts
 the remaining *nonzero values*, not a self-contained serialized bootstrap:
-DOS interrupt-vector state, 23 RTL fixups and some runtime descriptor
-pointers still need native initialization. The
+the DOS interrupt-hook values and RTL code relocations need principled
+initialization before the original Unicorn snapshot can be removed. The
 captured data is neither committed nor copied into the output bundle.
 
 This is a narrow dependency oracle, **not proof that all memory accesses are

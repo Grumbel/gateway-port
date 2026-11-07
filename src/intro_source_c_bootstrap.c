@@ -19,7 +19,9 @@ enum {
     GATE_RTL_SIZE = 109193,
     GATE_RTL_FILE_OFFSET = 0xd7bf,
     GATE_RTL_RAM_OFFSET = 0x1b77c,
-    GATE_RTL_STATIC_BYTES = 768
+    GATE_RTL_STATIC_BYTES = 768,
+    GATE_RTL_RESIDENT_RAM_BASE = 0x2a777,
+    GATE_RTL_RESIDENT_STATIC_BYTES = 140
 };
 
 enum {
@@ -87,9 +89,26 @@ int gate_intro_restore_static_exe_data(GateIntroMemory *memory,
 int gate_intro_restore_static_rtl_data(GateIntroMemory *memory,
                                        const char *dos_directory)
 {
+    /* These seven source-C read windows were independently compared with
+     * their on-disk RTL counterparts. Intermediate runtime globals and
+     * pointers are deliberately NOT copied; several are mutable. */
+    static const struct {
+        uint32_t ram_offset;
+        uint16_t bytes;
+    } regions[] = {
+        {0x2b730, 37}, /* Resource extensions and filename format. */
+        {0x2ba9e, 68}, /* Mode/graphics size constants. */
+        {0x2bbb8, 4},
+        {0x2bbc4, 4},
+        {0x2bc23, 7},
+        {0x2d05e, 16}, /* Static image resource metadata. */
+        {0x2b778, 4}
+    };
     FILE *file;
     uint8_t raw[GATE_RTL_STATIC_BYTES];
+    uint8_t resident[GATE_RTL_RESIDENT_STATIC_BYTES];
     unsigned i;
+    size_t region_cursor = 0;
     int ok = 0;
 
     if (!memory)
@@ -102,6 +121,21 @@ int gate_intro_restore_static_rtl_data(GateIntroMemory *memory,
         fseek(file, GATE_RTL_FILE_OFFSET, SEEK_SET) == 0 &&
         fread(raw, 1, sizeof raw, file) == sizeof raw)
         ok = 1;
+    if (ok) {
+        for (i = 0; i < sizeof regions / sizeof regions[0]; ++i) {
+            const uint32_t origin = regions[i].ram_offset -
+                                    GATE_RTL_RESIDENT_RAM_BASE;
+            if (region_cursor + regions[i].bytes > sizeof resident ||
+                origin + regions[i].bytes > GATE_RTL_SIZE ||
+                fseek(file, (long)origin, SEEK_SET) != 0 ||
+                fread(resident + region_cursor, 1, regions[i].bytes, file) !=
+                regions[i].bytes) {
+                ok = 0;
+                break;
+            }
+            region_cursor += regions[i].bytes;
+        }
+    }
     if (fclose(file) != 0)
         ok = 0;
     if (!ok)
@@ -115,6 +149,12 @@ int gate_intro_restore_static_rtl_data(GateIntroMemory *memory,
     for (i = 0; i < sizeof raw; ++i)
         if (raw[i] != 0)
             memory->bytes[GATE_RTL_RAM_OFFSET + i] = raw[i];
+    region_cursor = 0;
+    for (i = 0; i < sizeof regions / sizeof regions[0]; ++i) {
+        memcpy(memory->bytes + regions[i].ram_offset,
+               resident + region_cursor, regions[i].bytes);
+        region_cursor += regions[i].bytes;
+    }
     return 1;
 }
 
@@ -162,4 +202,89 @@ done:
     if (fclose(file) != 0)
         ok = 0;
     return ok;
+}
+
+int gate_intro_restore_linked_selectors(GateIntroMemory *memory)
+{
+    /* The full original 22-second table at DS:4d80..4e50 consists of FAR
+     * segment values DS or DS-10 paragraphs. These are the offsets whose
+     * target is the DS bank. All other words target the adjacent bank.
+     * The list describes the linked data layout, not executable opcodes. */
+    static const uint16_t ds_target_offsets[] = {
+        0x4d80, 0x4d84, 0x4db0, 0x4db8, 0x4dc0, 0x4dce,
+        0x4dda, 0x4ddc, 0x4df2, 0x4df4, 0x4dfc, 0x4dfe,
+        0x4e00, 0x4e12, 0x4e16, 0x4e1a, 0x4e1c, 0x4e22,
+        0x4e24, 0x4e2a, 0x4e34, 0x4e36, 0x4e38, 0x4e3a,
+        0x4e3c, 0x4e3e, 0x4e42, 0x4e46, 0x4e48, 0x4e4a,
+        0x4e4c, 0x4e4e
+    };
+    const uint32_t base = memory ? (uint32_t)memory->ds_segment * 16u : 0;
+    unsigned offset, index = 0;
+
+    if (!memory || memory->ds_segment < 10 ||
+        base + 0x4e52u > GATE_INTRO_RAM_BYTES)
+        return 0;
+    for (offset = 0x4d80; offset <= 0x4e50; offset += 2) {
+        const uint16_t segment =
+            (index < sizeof ds_target_offsets / sizeof ds_target_offsets[0] &&
+             offset == ds_target_offsets[index]) ? memory->ds_segment :
+            (uint16_t)(memory->ds_segment - 10u);
+        if (segment == memory->ds_segment)
+            ++index;
+        memory->bytes[base + offset] = (uint8_t)segment;
+        memory->bytes[base + offset + 1] = (uint8_t)(segment >> 8);
+    }
+    return index == sizeof ds_target_offsets / sizeof ds_target_offsets[0];
+}
+
+static void write_ds_word(GateIntroMemory *memory, uint16_t offset,
+                          uint16_t value)
+{
+    const uint32_t physical = (uint32_t)memory->ds_segment * 16u + offset;
+    memory->bytes[physical] = (uint8_t)value;
+    memory->bytes[physical + 1] = (uint8_t)(value >> 8);
+}
+
+int gate_intro_restore_default_runtime_state(GateIntroMemory *memory)
+{
+    /* On this launch DS:0fb6/0fbe are FAR pointers into the resource-type
+     * strings supplied by GATE.RTL's resident data, at file fbB and fc3.
+     * The resident image is linked 0x29 bytes before the current DS base. */
+    static const struct {
+        uint16_t pointer_offset;
+        uint16_t resident_file_offset;
+    } resource_ext[] = {{0x0fb6, 0x0fbb}, {0x0fbe, 0x0fc3}};
+    static const char executable_name[] = "GATE.EXE";
+    const char *extension = strchr(executable_name, '.');
+    const size_t stem_length = extension ? (size_t)(extension - executable_name) : 0;
+    const uint32_t base = memory ? (uint32_t)memory->ds_segment * 16u : 0;
+    unsigned i;
+
+    if (!memory || base + 0x5518u > GATE_INTRO_RAM_BYTES ||
+        stem_length > 0x40u || !stem_length)
+        return 0;
+
+    for (i = 0; i < sizeof resource_ext / sizeof resource_ext[0]; ++i) {
+        write_ds_word(memory, resource_ext[i].pointer_offset,
+                      (uint16_t)(resource_ext[i].resident_file_offset - 0x29u));
+        write_ds_word(memory, (uint16_t)(resource_ext[i].pointer_offset + 2u),
+                      memory->ds_segment);
+    }
+
+    /* Mode 3 (VGA 320x200, 256 colors) was already selected before the
+     * pinned entry; RTL's active mode and renderer mode agree. */
+    write_ds_word(memory, 0x0fce, 3);
+    write_ds_word(memory, 0x15cc, 3);
+
+    /* The original DOS filename constructor uses the executable stem as
+     * its resource prefix, with a linked FAR pointer in DS:54c2. */
+    memcpy(memory->bytes + base + 0x3592u, executable_name, stem_length);
+    memory->bytes[base + 0x3592u + stem_length] = 0;
+    write_ds_word(memory, 0x54c2, 0x3592);
+    write_ds_word(memory, 0x54c4, memory->ds_segment);
+
+    /* VGA standard color status port and the original VGA adapter type. */
+    write_ds_word(memory, 0x5514, 0x03dau);
+    write_ds_word(memory, 0x5516, 5);
+    return 1;
 }

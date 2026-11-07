@@ -270,6 +270,7 @@ static int run_intro(const char *snapshot, const char *dos_dir,
                      const char *record_output, const char *memory_output,
                      const char *dependency_output, int restore_exe_data,
                      int restore_rtl_data, int restore_palette,
+                     int restore_selectors, int restore_defaults,
                      const GateSourceCFullHooks *hooks)
 {
     GateIntroMemory *memory;
@@ -314,6 +315,7 @@ static int run_intro(const char *snapshot, const char *dos_dir,
         return 1;
     }
     fclose(in);
+    memory->ds_segment = 0x2a7a;
     if (restore_exe_data &&
         !gate_intro_restore_static_exe_data(memory, dos_dir)) {
         fprintf(stderr, "cannot restore verified GATE.EXE static data from %s\n",
@@ -338,7 +340,20 @@ static int run_intro(const char *snapshot, const char *dos_dir,
         free(memory);
         return 1;
     }
-    memory->ds_segment = 0x2a7a;
+    if (restore_selectors &&
+        !gate_intro_restore_linked_selectors(memory)) {
+        fprintf(stderr, "cannot restore linked RTL segment selector table\n");
+        free(dependency_maps);
+        free(memory);
+        return 1;
+    }
+    if (restore_defaults &&
+        !gate_intro_restore_default_runtime_state(memory)) {
+        fprintf(stderr, "cannot restore default launcher runtime state\n");
+        free(dependency_maps);
+        free(memory);
+        return 1;
+    }
     files.directory = dos_dir;
     gate_intro_memory_attach(memory);
     gate_dos_host_files_attach(&files);
@@ -460,7 +475,8 @@ int gate_source_c_full_run(const char *snapshot, const char *dos_directory,
 {
     if (!snapshot || !dos_directory)
         return 2;
-    return run_intro(snapshot, dos_directory, NULL, 1, NULL, NULL, NULL, 0, 0, 0,
+    return run_intro(snapshot, dos_directory, NULL, 1, NULL, NULL, NULL,
+                     0, 0, 0, 0, 0,
                      hooks);
 }
 
@@ -473,6 +489,8 @@ int main(int argc, char **argv)
     int restore_exe_data = 0;
     int restore_rtl_data = 0;
     int restore_palette = 0;
+    int restore_selectors = 0;
+    int restore_defaults = 0;
     int full = argc >= 5 && strcmp(argv[4], "--full") == 0;
     int i;
     if (argc < 4 || (argc > 4 && !full))
@@ -493,6 +511,16 @@ int main(int argc, char **argv)
             ++i;
             continue;
         }
+        if (strcmp(argv[i], "--restore-selectors") == 0 && !restore_selectors) {
+            restore_selectors = 1;
+            ++i;
+            continue;
+        }
+        if (strcmp(argv[i], "--restore-defaults") == 0 && !restore_defaults) {
+            restore_defaults = 1;
+            ++i;
+            continue;
+        }
         if (i + 1 >= argc)
             goto usage;
         if (strcmp(argv[i], "--record") == 0 && !record_output)
@@ -507,9 +535,10 @@ int main(int argc, char **argv)
     }
     return run_intro(argv[1], argv[2], argv[3], full, record_output,
                      memory_output, dependency_output, restore_exe_data,
-                     restore_rtl_data, restore_palette, NULL);
+                     restore_rtl_data, restore_palette, restore_selectors,
+                     restore_defaults, NULL);
 usage:
-    fputs("usage: gateway-intro-source-c-composite guest-22s.bin DOS-DIR OUTPUT.ppm [--full [--record FILE.gvr] [--dump-memory FILE.bin] [--read-deps FILE.txt] [--restore-exe-data] [--restore-rtl-data] [--restore-palette]]\n",
+    fputs("usage: gateway-intro-source-c-composite guest-22s.bin DOS-DIR OUTPUT.ppm [--full [--record FILE.gvr] [--dump-memory FILE.bin] [--read-deps FILE.txt] [--restore-exe-data] [--restore-rtl-data] [--restore-palette] [--restore-selectors] [--restore-defaults]]\n",
           stderr);
     return 2;
 }

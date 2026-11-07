@@ -24,4 +24,15 @@ int gate_intro_restore_static_rtl_data(GateIntroMemory *memory,
 int gate_intro_restore_initial_palette(GateIntroMemory *memory,
                                        const char *dos_directory);
 
+/* Rebuild the pinned launcher's 105 linked FAR segment-selector words from
+ * its DS load segment. The two resident target banks differ by 10 paragraphs.
+ * This reconstructs a verified table, not the full original RTLink loader. */
+int gate_intro_restore_linked_selectors(GateIntroMemory *memory);
+
+/* Initialize the launcher defaults already established at the 22-second
+ * original DOS boundary: resource-extension FAR pointers, active VGA mode,
+ * video ports and the executable-derived filename prefix. This is only the
+ * pinned default configuration, not a general DOS startup replacement. */
+int gate_intro_restore_default_runtime_state(GateIntroMemory *memory);
+
 #endif

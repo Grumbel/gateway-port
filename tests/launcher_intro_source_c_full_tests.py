@@ -16,6 +16,14 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 EXECUTABLE = None
+# Verified read-only resident RTL spans (physical end exclusive). The gaps
+# contain mutable loader/runtime state and must not be blanket-restored.
+RTL_RESIDENT_RANGES = (
+    (0x2b730, 0x2b755), (0x2ba9e, 0x2bae2),
+    (0x2bbb8, 0x2bbbc), (0x2bbc4, 0x2bbc8),
+    (0x2bc23, 0x2bc2a), (0x2d05e, 0x2d06e),
+    (0x2b778, 0x2b77c),
+)
 
 
 def digest(path):
@@ -184,6 +192,22 @@ class IntroFull(unittest.TestCase):
         self.assertTrue(all(offsets[i + 1] == offsets[i] + 1
                             for i in range(0, len(offsets), 2)))
 
+        # Static RTL resource metadata and presentation tables also survive
+        # byte-for-byte in a *second* original RTL resident memory bank.
+        for start, end in RTL_RESIDENT_RANGES:
+            disk_start = start - 0x2a777
+            self.assertEqual(ram[start:end],
+                             rtl[disk_start:disk_start + end - start])
+
+        # The original launcher has a 105-entry resident FAR selector table.
+        # Every word names either the captured DS or the adjacent bank ten
+        # paragraphs below it, with 32 entries naming DS itself.
+        selectors = [int.from_bytes(ram[0x2f520 + i:0x2f522 + i], 'little')
+                     for i in range(0, 210, 2)]
+        self.assertEqual(len(selectors), 105)
+        self.assertEqual(set(selectors), {0x2a7a, 0x2a70})
+        self.assertEqual(selectors.count(0x2a7a), 32)
+
         pic = (Path(assets) / 'GATE_301.PIC').read_bytes()
         entry = pic[5 * 12:6 * 12]
         palette_at = int.from_bytes(entry[:4], 'little') + 4 * entry[4]
@@ -221,16 +245,36 @@ class IntroFull(unittest.TestCase):
             for index, value in enumerate(rtl):
                 if value:
                     guest[0x1b77c + index] = 0
+            for start, end in RTL_RESIDENT_RANGES:
+                guest[start:end] = bytes(end - start)
             # Source the pinned 0x3105 palette from PIC entry #5 instead
             # of retaining the DOS loader's previous 768-byte RGB buffer.
             guest[0x2b77c:0x2ba7c] = bytes(768)
-            self.assertEqual(sum(value != 0 for value in guest), 206)
+            # Replace the 105 FAR-selector WORDs with a derived native
+            # runtime table based on the current DS segment (2a7a).
+            guest[0x2f520:0x2f5f2] = bytes(210)
+
+            # Defaults for the resident resource-extension pointers, mode,
+            # executable-stem buffer and VGA status registers are recreated
+            # by a separate native step. The loader's temporary four-byte
+            # prefix header, DOS flag and image metadata are first-read but
+            # independently ablated without affecting this recorded path.
+            for start, end in (
+                (0x2b756, 0x2b75a), (0x2b75e, 0x2b762),
+                (0x2b76e, 0x2b770), (0x2bd6c, 0x2bd6e),
+                (0x2d190, 0x2d194), (0x2dd2e, 0x2dd37),
+                (0x2dd9c, 0x2dd9d), (0x2fc62, 0x2fc66),
+                (0x2fcb4, 0x2fcb8),
+            ):
+                guest[start:end] = bytes(end - start)
+            self.assertEqual(sum(value != 0 for value in guest), 68)
             minimal.write_bytes(guest)  # Private, never distributed.
 
             subprocess.run([executable, str(minimal), assets,
                             str(restored_final), '--full',
                             '--restore-exe-data', '--restore-rtl-data',
-                            '--restore-palette',
+                            '--restore-palette', '--restore-selectors',
+                            '--restore-defaults',
                             '--record', str(restored_record)],
                            check=True, capture_output=True, text=True)
             self.assertEqual(digest(restored_final),
