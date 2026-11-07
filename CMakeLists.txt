@@ -380,6 +380,8 @@ if(BUILD_TESTING)
   endif()
   find_package(Python3 COMPONENTS Interpreter QUIET)
   if(Python3_Interpreter_FOUND)
+    add_test(NAME launcher-intro-runtime-string-binary COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_intro_runtime_string_binary_tests.py)
     add_test(NAME launcher-intro-keyboard-binary COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_intro_keyboard_binary_tests.py)
     add_test(NAME launcher-rtl-graphics-binary COMMAND ${Python3_EXECUTABLE}

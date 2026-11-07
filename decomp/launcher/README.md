@@ -667,6 +667,12 @@ so full source-C intro playback is **not independently playable**.
 
 ## Experimental 16-bit DOS compiler probe
 
+The newly supplied original `GATE.RTL` also confirms the previously unmapped
+`rtl:0x8298..0x82ae` is a separate FAR `strlen` entry. Its identical
+bounded scanning semantics are now exposed as `gate_rtl_8298`, with original
+byte evidence and source tests. The original linked bank/segment is still
+unknown; no address alias to the captured `12a5:2bba` is assumed.
+
 With OpenWatcom v2's **16-bit** `wcl` on `PATH`, run
 `sh tools/build_intro_dos_probe.sh` from the repository root. The intended
 output is `build/intro-dos/INTROCHK.EXE`, a real-mode DOS diagnostic testing
