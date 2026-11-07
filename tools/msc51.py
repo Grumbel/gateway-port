@@ -320,10 +320,12 @@ def stage_launcher(output: Path) -> list[str]:
                 "GATEWAY.EXE", "GATEWAY.MAP", "LLIBCR.LIB LIBH.LIB /NOD", ";"])
     (output / "LINK.RSP").write_text("\r\n".join(response) + "\r\n")
     link_batch = [
-        "@ECHO OFF", "ECHO Gateway MSC 5.1 link attempt > LINKSTART.LOG",
+        "@ECHO OFF", "ECHO Gateway MSC 5.1 link attempt > LNKSTART.LOG",
         "SET PATH=C:\\BIN;C:\\", "SET INCLUDE=C:\\INCLUDE;C:\\",
         "SET LIB=C:\\LIB;C:\\", "SET TEMP=D:\\", "SET TMP=D:\\",
-        "LINK @LINK.RSP > LINK.LOG", "IF ERRORLEVEL 1 GOTO LINK_FAILED",
+        # The current directory contains LINK.BAT. Calling bare LINK here
+        # executes this batch file recursively instead of Microsoft's linker.
+        "C:\\BIN\\LINK.EXE @LINK.RSP > LINK.LOG", "IF ERRORLEVEL 1 GOTO LINK_FAILED",
         "IF NOT EXIST GATEWAY.EXE GOTO LINK_FAILED",
         "ECHO All reconstructed launcher objects linked > LINKDONE.LOG",
         "GOTO DONE", ":LINK_FAILED",
@@ -365,7 +367,8 @@ def validate_launcher_objects(output: Path, objects: list[str]) -> None:
 
 def remove_launcher_link_outputs(output: Path) -> None:
     """Never accept a previous link's EXE, map or success marker."""
-    names = {"LINKSTART.LOG", "LINK.LOG", "LINKFAIL.LOG", "LINKDONE.LOG",
+    names = {"LNKSTART.LOG", "LINKSTAR.LOG", "LINKSTART.LOG", "LINK.LOG",
+             "LINKFAIL.LOG", "LINKDONE.LOG",
              "GATEWAY.EXE", "GATEWAY.MAP"}
     if output.is_dir():
         for entry in output.iterdir():
@@ -512,7 +515,7 @@ def main(argv: list[str] | None = None) -> int:
             print_launcher_link_diagnostics(output)
         return result.returncode
     if args.command == "link-launcher":
-        started = locate_case_insensitive(output, "LINKSTART.LOG")
+        started = locate_case_insensitive(output, "LNKSTART.LOG")
         success = locate_case_insensitive(output, "LINKDONE.LOG")
         failed = locate_case_insensitive(output, "LINKFAIL.LOG")
         exe = locate_case_insensitive(output, "GATEWAY.EXE")

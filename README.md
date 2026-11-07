@@ -333,8 +333,8 @@ recompile** the 28 modules:
 nix run -L .#msc51-link-launcher
 ```
 
-It generates `build/msc51-launcher/LINK.RSP` and `LINK.BAT`, then runs the
-original Microsoft `LINK.EXE` with all 28 `Mxx.OBJ` files, the large-model
+It generates `build/msc51-launcher/LINK.RSP` and `LINK.BAT`, then invokes
+`C:\BIN\LINK.EXE` explicitly with all 28 `Mxx.OBJ` files, the large-model
 `LLIBCR.LIB` and `LIBH.LIB`. The historical LINK response file supplies the
 object list (continued using trailing `+`), EXE name, MAP name, libraries and
 an empty definitions-file answer, as documented by
@@ -343,6 +343,11 @@ The attempt writes `LINK.LOG`, and possibly `GATEWAY.MAP`, under the same
 staging directory. The wrapper checks fresh success/failure markers and
 prints the linker diagnostics if the attempt fails; it will not mistake a
 partial `GATEWAY.EXE` for successful linkage or attempt to execute it.
+The explicit executable path matters: calling bare `LINK` from the staged
+`LINK.BAT` resolves to that same batch file in the current directory and
+recursively restarts it. The startup marker is `LNKSTART.LOG` (a valid DOS
+8.3 filename); the earlier `LINKSTART.LOG` was truncated to `LINKSTAR.LOG`
+by DOSBox. Both legacy and current markers are cleared before a new link.
 
 **Actual linking has not yet been attempted with Microsoft LINK.** Original
 resident functions and guest memory/graphics/file/input services still lack

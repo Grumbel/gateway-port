@@ -61,7 +61,10 @@ class MSC51Tests(unittest.TestCase):
             self.assertEqual(response[28:], ["GATEWAY.EXE", "GATEWAY.MAP",
                                              "LLIBCR.LIB LIBH.LIB /NOD", ";"])
             link_batch = (output / "LINK.BAT").read_text()
-            self.assertIn("LINK @LINK.RSP > LINK.LOG", link_batch)
+            self.assertIn("C:\\BIN\\LINK.EXE @LINK.RSP > LINK.LOG", link_batch)
+            self.assertNotIn("\nLINK @LINK.RSP", link_batch)
+            self.assertIn("LNKSTART.LOG", link_batch)
+            self.assertNotIn("LINKSTART.LOG", link_batch)  # Nine-character DOS basename!
             self.assertIn("IF ERRORLEVEL 1 GOTO LINK_FAILED", link_batch)
             self.assertIn("IF NOT EXIST GATEWAY.EXE GOTO LINK_FAILED", link_batch)
             self.assertIn(":LINK_FAILED\nECHO Original DOS services", link_batch)
@@ -169,7 +172,7 @@ class MSC51Tests(unittest.TestCase):
             (output / "success.log").write_text("compiled")
             for name in objects:
                 (output / name.lower()).write_bytes(b"compiled object")
-            for name in ("LINKSTART.LOG", "LINKDONE.LOG", "LINKFAIL.LOG",
+            for name in ("LINKSTAR.LOG", "LNKSTART.LOG", "LINKDONE.LOG", "LINKFAIL.LOG",
                          "LINK.LOG", "GATEWAY.EXE", "GATEWAY.MAP"):
                 (output / name.lower()).write_bytes(b"stale result")
 
@@ -177,8 +180,9 @@ class MSC51Tests(unittest.TestCase):
                 self.assertIn("LINK.BAT", command)
                 self.assertFalse(check)
                 self.assertFalse(any((output / name).exists() for name in
-                                     ("gateway.exe", "linkdone.log", "linkfail.log", "link.log")))
-                (output / "linkstart.log").write_text("started")
+                                     ("gateway.exe", "linkdone.log", "linkfail.log", "link.log",
+                                      "linkstar.log", "lnkstart.log")))
+                (output / "lnkstart.log").write_text("started")
                 (output / "linkfail.log").write_text("unresolved")
                 (output / "link.log").write_text("L2029 unresolved external")
                 (output / "gateway.exe").write_bytes(b"partial exe")
@@ -192,7 +196,7 @@ class MSC51Tests(unittest.TestCase):
 
             def simulate_success(command, check):
                 self.assertIn("LINK.BAT", command)
-                (output / "linkstart.log").write_text("started")
+                (output / "lnkstart.log").write_text("started")
                 (output / "linkdone.log").write_text("linked")
                 (output / "gateway.exe").write_bytes(b"compiled exe")
                 return mock.Mock(returncode=0)
