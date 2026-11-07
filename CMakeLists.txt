@@ -16,6 +16,7 @@ add_library(gateway_intro_decompiled STATIC
   decomp/launcher/gate_exe_helpers.c
   decomp/launcher/gate_input.c
   decomp/launcher/gate_c_runtime_string.c
+  decomp/launcher/gate_c_runtime_random.c
   decomp/launcher/gate_rtl_font.c
   decomp/launcher/gate_rtl.c
   decomp/launcher/gate_rtl_video.c
@@ -364,6 +365,19 @@ if(BUILD_TESTING)
     tests/launcher_rtl_intro_sequence_decompile_tests.c)
   target_include_directories(launcher-rtl-intro-sequence-decompile-tests PRIVATE decomp/launcher)
   add_test(NAME launcher-rtl-intro-sequence-decompile COMMAND launcher-rtl-intro-sequence-decompile-tests)
+  add_executable(launcher-intro-native-random-tests
+    decomp/launcher/gate_c_runtime_random.c
+    decomp/launcher/gate_rtl_image_processor.c
+    src/intro_host_memory.c tests/launcher_intro_native_random_tests.c)
+  target_include_directories(launcher-intro-native-random-tests PRIVATE decomp/launcher)
+  target_compile_options(launcher-intro-native-random-tests PRIVATE -ffunction-sections -fdata-sections)
+  target_link_options(launcher-intro-native-random-tests PRIVATE -Wl,--gc-sections)
+  add_test(NAME launcher-intro-native-random COMMAND launcher-intro-native-random-tests)
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin")
+    add_test(NAME launcher-intro-original-random
+      COMMAND launcher-intro-native-random-tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin)
+  endif()
   find_package(Python3 COMPONENTS Interpreter QUIET)
   if(Python3_Interpreter_FOUND)
     add_test(NAME launcher-intro-keyboard-binary COMMAND ${Python3_EXECUTABLE}

@@ -187,6 +187,31 @@ class OriginalIntroGraphicsEvidence(unittest.TestCase):
         self.assertEqual(ram[0x24a57:0x24a6a],
                          bytes.fromhex('8b46f48b5ef6f7e3d1e88bc88b46088ae0f3ab'))
 
+    def test_original_runtime_random_seed_and_animation_generator(self):
+        snapshot = ROOT / 'build/intro-analysis/at-22000.bin'
+        if not snapshot.is_file():
+            self.skipTest('private guest RAM snapshot unavailable')
+        ram = snapshot.read_bytes()
+
+        # 12a5:3afa srand writes a 16-bit seed and clears the high word.
+        self.assertEqual(ram[0x1654a:0x1655c],
+                         bytes.fromhex('558bec8b4606a38e35c706903500005dcb90'))
+        # 12a5:3b0c rand uses the Microsoft C 32-bit constants, advances
+        # the two-word DS:358e state, then masks DX bit 15 for 0..32767.
+        self.assertEqual(ram[0x1655c:0x16562],
+                         bytes.fromhex('b8fd43ba0300'))  # * 000343fdh
+        self.assertEqual(ram[0x16564:0x16571],
+                         bytes.fromhex('ff369035ff368e359a5c3ca512'))
+        self.assertEqual(ram[0x16571:0x16584],
+                         bytes.fromhex('05c39e83d226a38e35891690358bc280e47fcb'))
+
+        ds = 0x2a7a * 16
+        state = int.from_bytes(ram[ds + 0x358e:ds + 0x3592], 'little')
+        self.assertEqual(state, 0x305e1c7b)
+        next_state = (state * 0x343fd + 0x269ec3) & 0xffffffff
+        self.assertEqual(next_state, 0xc40df552)
+        self.assertEqual((next_state >> 16) & 0x7fff, 17421)
+
     def test_original_video_mode_switch_and_resident_services(self):
         # The large f14d C routine has multiple FAR returns, and calls
         # f49b through PUSH CS/near CALL after successful BIOS setup.

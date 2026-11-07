@@ -109,6 +109,7 @@ uint16_t gate_far_1e48_04d9(void);
 void gate_far_24a7_000c(uint16_t zero, uint16_t y, uint16_t x,
                         uint16_t signed_mode, GateFarPtr pixels);
 void gate_far_1e48_03c5(uint16_t saved);
+void gate_far_12a5_3afa(uint16_t seed); /* original C runtime srand */
 uint16_t gate_far_12a5_3b0c(void);
 void gate_far_223f_00b6(uint32_t delay);
 
