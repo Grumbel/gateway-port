@@ -403,6 +403,26 @@ No invalid FIXUPP or remaining ambiguity was reported. The adaptive
 16–64-byte anchor now addresses this specific source of false negatives,
 but the revised scan has not yet been run against the real library.
 
+The third real-library scan, with the adaptive opening enabled, reported
+**75 relocation-aware candidates** (69 `CODE`-class, six `DATA`-class).
+It recovered `__FF_MSGBANNER`, `__output` and `_tzset` from the exact-only
+list, and added `__iob`, `__exit`, and `__maperror` as relocation-only hits.
+The remaining exact-only `__amsg_exit` has just **10 fixed bytes** even
+after extending its short opening as far as its public boundary permits;
+the conservative 12-fixed-byte criterion remains intact. The union of the
+two candidate sets now contains **76 public symbol/RTL pairs**.
+
+To make this evidence actionable, the JSON now additionally includes
+`public_prefix_evidence_catalogue` (one entry per symbol/RTL pair, labelled
+`both`, `exact_only`, or `relocation_only`) and
+`public_prefix_candidate_span_summary`, with the union of CODE-class
+candidate matching spans and the largest intervening unmatched intervals.
+The CLI prints their counts and the five largest gaps. **Neither a matching
+span nor a gap is a verified function boundary or classification as CRT vs.
+game code**: there can be data inside CODE-class segments, different link
+layouts, and code split over OMF records. These are guides to further
+disassembly and boundary verification, not instructions to delete code.
+
 ### In-game Gateway debugger (F10)
 
 Launch the original Gateway 1 executable, enter a room, then press **F10**:

@@ -202,6 +202,53 @@ class MSC51CompareTests(unittest.TestCase):
         self.assertEqual(hits[0]["relocation_aware_bytes"], len(code))
         self.assertEqual(hits[0]["fixed_compared_bytes"], len(code) - 8)
 
+    def test_public_evidence_catalogue_and_nonoverlapping_gap_summary(self):
+        def entry(offset, symbol, size, kind="code", relocation=False):
+            hit = {
+                "rtl_offset": f"0x{offset:05x}", "module": "CRT.ASM",
+                "symbol": symbol, "segment_class": "CODE" if kind == "code" else "DATA",
+                "segment_kind": kind, "exact_prefix_bytes": size,
+            }
+            if relocation:
+                hit.update({
+                    "relocation_aware_bytes": size, "fixed_compared_bytes": size - 2,
+                    "masked_relocation_bytes": 2, "opening_bytes": 16,
+                })
+            return hit
+
+        exact = [entry(0x10, "_both", 16), entry(0x30, "_data", 20, "other")]
+        relocated = [entry(0x10, "_both", 20, relocation=True),
+                     entry(0x40, "_new", 16, relocation=True)]
+        catalogue = msc.public_evidence_catalogue(exact, relocated)
+        self.assertEqual(len(catalogue), 3)
+        self.assertEqual([item["evidence"] for item in catalogue],
+                         ["both", "exact_only", "relocation_only"])
+        self.assertEqual(catalogue[0]["candidate_span_bytes"], 20)
+        self.assertEqual(catalogue[0]["fixed_compared_bytes"], 18)
+        self.assertEqual(msc.summarize_candidate_spans(catalogue), {
+            "code_class_candidates": 2,
+            "code_class_candidate_extent": ["0x00010", "0x00050"],
+            "candidate_spanned_bytes": 36,
+            "unmatched_gap_count": 1,
+            "unmatched_gap_bytes": 28,
+            "largest_unmatched_gaps": [{
+                "start": "0x00024", "end": "0x00040", "bytes": 28,
+            }],
+        })
+        self.assertEqual(msc.summarize_candidate_spans([]), {
+            "code_class_candidates": 0, "candidate_spanned_bytes": 0,
+            "unmatched_gap_count": 0, "unmatched_gap_bytes": 0,
+            "largest_unmatched_gaps": [],
+        })
+
+        # Overlapping fingerprint windows must be counted once, not
+        # mistaken for extra covered original-code bytes.
+        overlap = msc.public_evidence_catalogue(
+            [entry(0x10, "_one", 32), entry(0x20, "_two", 32)], [])
+        summary = msc.summarize_candidate_spans(overlap)
+        self.assertEqual(summary["candidate_spanned_bytes"], 48)
+        self.assertEqual(summary["unmatched_gap_count"], 0)
+
     def test_omf_module_and_exact_public_symbol_attribution(self):
         def record(kind, payload):
             header = bytes((kind, (len(payload) + 1) & 255,

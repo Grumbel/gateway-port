@@ -588,6 +588,76 @@ def compare_public_scans(exact: list[dict], relocated: list[dict]) -> dict:
     }
 
 
+def public_evidence_catalogue(exact: list[dict], relocated: list[dict]) -> list[dict]:
+    """Union unique public attributions without promoting them to functions."""
+    def key(hit: dict) -> tuple[str, str, str]:
+        return hit["rtl_offset"], hit["module"], hit["symbol"]
+
+    exact_by_key = {key(hit): hit for hit in exact}
+    relocated_by_key = {key(hit): hit for hit in relocated}
+    catalogue = []
+    for offset, module, symbol in sorted(
+            exact_by_key.keys() | relocated_by_key.keys(),
+            key=lambda item: (int(item[0], 16), item[1], item[2])):
+        ident = offset, module, symbol
+        direct = exact_by_key.get(ident)
+        masked = relocated_by_key.get(ident)
+        source = masked or direct
+        entry = {
+            "rtl_offset": offset, "module": module, "symbol": symbol,
+            "segment_class": source["segment_class"],
+            "segment_kind": source["segment_kind"],
+            "evidence": ("both" if direct and masked else
+                         "exact_only" if direct else "relocation_only"),
+            "candidate_span_bytes": max(
+                direct["exact_prefix_bytes"] if direct else 0,
+                masked["relocation_aware_bytes"] if masked else 0),
+        }
+        if masked:
+            entry["fixed_compared_bytes"] = masked["fixed_compared_bytes"]
+            entry["masked_relocation_bytes"] = masked["masked_relocation_bytes"]
+            entry["opening_bytes"] = masked["opening_bytes"]
+        catalogue.append(entry)
+    return catalogue
+
+
+def summarize_candidate_spans(catalogue: list[dict]) -> dict:
+    """Measure gaps *between matches*, not validated C/assembler boundaries.
+
+    The outer extent and covered bytes refer only to matching CODE-class
+    *candidate spans*, and may include data. Unmatched bytes do not prove
+    those locations are original non-CRT game code.
+    """
+    spans = sorted((int(hit["rtl_offset"], 16),
+                    int(hit["rtl_offset"], 16) + hit["candidate_span_bytes"])
+                   for hit in catalogue if hit["segment_kind"] == "code")
+    if not spans:
+        return {"code_class_candidates": 0, "candidate_spanned_bytes": 0,
+                "unmatched_gap_count": 0, "unmatched_gap_bytes": 0,
+                "largest_unmatched_gaps": []}
+    merged = []
+    for start, end in spans:
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    gaps = [(old_end, new_start) for (_, old_end), (new_start, _) in
+            zip(merged, merged[1:]) if old_end < new_start]
+    return {
+        "code_class_candidates": len(spans),
+        "code_class_candidate_extent": [f"0x{merged[0][0]:05x}",
+                                        f"0x{merged[-1][1]:05x}"],
+        "candidate_spanned_bytes": sum(end - start for start, end in merged),
+        "unmatched_gap_count": len(gaps),
+        "unmatched_gap_bytes": sum(end - start for start, end in gaps),
+        "largest_unmatched_gaps": [{"start": f"0x{start:05x}",
+                                     "end": f"0x{end:05x}",
+                                     "bytes": end - start}
+                                    for start, end in sorted(
+                                        gaps, key=lambda gap: (-(gap[1] - gap[0]), gap[0]))[:8]],
+    }
+
+
 def explain_exact_only(original: bytes, library: bytes,
                        modules: list[OMFModule], exact_only: list[dict]) -> list[dict]:
     """Give each lost exact match an actionable OMF/matcher rejection reason."""
@@ -731,6 +801,8 @@ def main(argv: list[str] | None = None) -> int:
             differences = compare_public_scans(exact_baseline, public_candidates)
             explanations = explain_exact_only(
                 original, library_bytes, modules, differences["exact_only"])
+            catalogue = public_evidence_catalogue(exact_baseline, public_candidates)
+            span_summary = summarize_candidate_spans(catalogue)
             print(f'Exact-prefix baseline: {differences["exact_candidates"]} candidates; '
                   f'{len(differences["exact_only"])} exact-only, '
                   f'{len(differences["relocation_only"])} relocation-only.')
@@ -748,6 +820,21 @@ def main(argv: list[str] | None = None) -> int:
                       + (f' ({item["masked_opening_matches"]} possible openings, '
                          f'{item["best_fixed_bytes"]} best fixed bytes)'
                          if "best_fixed_bytes" in item else ""))
+            tiers = {tier: sum(item["evidence"] == tier for item in catalogue)
+                     for tier in ("both", "exact_only", "relocation_only")}
+            print(f'CRT public evidence catalogue: {len(catalogue)} candidate entries '
+                  f'({tiers["both"]} in both scans, '
+                  f'{tiers["exact_only"]} exact-only, '
+                  f'{tiers["relocation_only"]} relocation-only).')
+            print(f'CODE-class candidate spans: {span_summary["candidate_spanned_bytes"]} '
+                  f'bytes matched within {span_summary["code_class_candidates"]} '
+                  f'candidate entries; {span_summary["unmatched_gap_bytes"]} '
+                  f'bytes in {span_summary["unmatched_gap_count"]} intervening gaps.')
+            for gap in span_summary["largest_unmatched_gaps"][:5]:
+                print(f'  Unmatched candidate gap {gap["start"]}..{gap["end"]} '
+                      f'({gap["bytes"]} bytes)')
+            print("These are candidate match spans; gaps and CODE classes do not "
+                  "establish function boundaries or classify game logic.")
     print(f"Compared against {library} ({len(library_bytes)} bytes)")
     print("A match supports identical CRT code; a miss is inconclusive for OMF modules.")
     if args.json is not None:
@@ -766,6 +853,8 @@ def main(argv: list[str] | None = None) -> int:
                 report["public_prefix_exact_baseline"] = exact_baseline
                 report["public_prefix_scan_comparison"] = differences
                 report["public_prefix_exact_only_explanations"] = explanations
+                report["public_prefix_evidence_catalogue"] = catalogue
+                report["public_prefix_candidate_span_summary"] = span_summary
         args.json.write_text(json.dumps(report, indent=2) + "\n")
         print(f"Saved {args.json}")
     return 0
