@@ -260,6 +260,16 @@ actually reports all 32 original `rand()` states correct. To customize the
 toolchain directory or the staging output directory, pass `--compiler DIR`
 or `--output DIR` after `--` in the `nix run` commands.
 
+If DOSBox starts but the compilation fails, `msc51-probe` now prints the
+compiler's `BUILD.LOG` and, when present, `TEST.LOG` automatically. `START.LOG`
+confirms that DOSBox actually reached the batch file; `CLFAIL.LOG` flags a
+nonzero Microsoft compiler exit status. The wrapper clears these files and
+the old executable before each run, and recognizes DOSBox-created filenames
+regardless of case on a case-sensitive host. The compiler's installation is
+still read-only, and its scratch files are directed to the writable D: drive.
+If the failure persists, capture the **new** `BUILD.LOG` output; a successful
+DOSBox process exit by itself does not establish that the DOS compilation ran.
+
 These tools do **not** build a playable Gateway DOS executable; they are a
 compiler comparison/probe environment. The `msc51-tooling` check runs without
 fetching Microsoft binaries, including a synthetic FAT floppy-image import

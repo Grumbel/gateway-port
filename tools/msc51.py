@@ -80,13 +80,47 @@ def stage_probe(output: Path) -> None:
     )
     (output / "BUILD.BAT").write_text(
         "@ECHO OFF\r\n"
+        "ECHO Gateway MSC 5.1 batch started > START.LOG\r\n"
         "SET PATH=C:\\BIN;C:\\\r\n"
         "SET INCLUDE=C:\\INCLUDE;C:\\\r\n"
         "SET LIB=C:\\LIB;C:\\\r\n"
+        "SET TEMP=D:\\\r\n"
+        "SET TMP=D:\\\r\n"
         "IF EXIST INTROCHK.EXE DEL INTROCHK.EXE\r\n"
         "CL /AL /Od PROBE.C RANDOM.C /FeINTROCHK.EXE > BUILD.LOG\r\n"
+        "IF ERRORLEVEL 1 ECHO Microsoft CL returned an error > CLFAIL.LOG\r\n"
         "IF EXIST INTROCHK.EXE INTROCHK.EXE > TEST.LOG\r\n"
     )
+
+
+def remove_probe_outputs(output: Path) -> None:
+    """Ensure a previous DOS run cannot satisfy the next run's checks."""
+    names = {"START.LOG", "INTROCHK.EXE", "TEST.LOG", "BUILD.LOG", "CLFAIL.LOG"}
+    if output.is_dir():
+        for entry in output.iterdir():
+            if entry.is_file() and entry.name.upper() in names:
+                entry.unlink()
+
+
+def print_probe_diagnostics(output: Path) -> None:
+    """Report the DOS compiler's output before asking for a user's logs."""
+    started = locate_case_insensitive(output, "START.LOG")
+    if started is None:
+        print("BUILD.BAT did not create START.LOG; DOSBox may not have "
+              "executed the batch file or could not write to drive D.", file=sys.stderr)
+    for name in ("CLFAIL.LOG", "BUILD.LOG", "TEST.LOG"):
+        path = locate_case_insensitive(output, name)
+        if path is None or not path.is_file():
+            print(f"{name}: not created", file=sys.stderr)
+            continue
+        content = path.read_text(errors="replace")
+        # Compiler diagnostics are usually short, but don't flood terminal
+        # output if an incorrect installation emits megabytes of text.
+        if len(content) > 12_000:
+            content = "[earlier output omitted]\n" + content[-12_000:]
+        print(f"--- {path} ---", file=sys.stderr)
+        print(content.rstrip() or "(empty)", file=sys.stderr)
+    print("Probe workspace: " + str(output), file=sys.stderr)
 
 
 def dosbox_commands(compiler: Path, output: Path, run_probe: bool) -> list[str]:
@@ -154,24 +188,34 @@ def main(argv: list[str] | None = None) -> int:
     command = [dosbox, *(part for line in commands for part in ("-c", line))]
     if args.command == "probe":
         # An old successful EXE/LOG must never masquerade as a fresh build.
-        for name in ("INTROCHK.EXE", "TEST.LOG", "BUILD.LOG"):
-            previous = output / name
-            if previous.is_file():
-                previous.unlink()
+        remove_probe_outputs(output)
         command.append("--exit")
     print("DOSBox commands: " + " ; ".join(commands), flush=True)
     result = subprocess.run(command, check=False)
     if result.returncode != 0:
+        if args.command == "probe":
+            print_probe_diagnostics(output)
         return result.returncode
     if args.command == "probe":
-        exe = output / "INTROCHK.EXE"
-        log = output / "TEST.LOG"
-        if not exe.is_file() or not log.is_file():
-            print(f"Build did not produce {exe} and {log}; inspect {output / 'BUILD.LOG'}", file=sys.stderr)
+        exe = locate_case_insensitive(output, "INTROCHK.EXE")
+        log = locate_case_insensitive(output, "TEST.LOG")
+        started = locate_case_insensitive(output, "START.LOG")
+        compiler_failed = locate_case_insensitive(output, "CLFAIL.LOG")
+        if compiler_failed is not None or started is None:
+            print("DOSBox did not complete the Microsoft C compiler successfully.",
+                  file=sys.stderr)
+            print_probe_diagnostics(output)
+            return 1
+        if exe is None or not exe.is_file() or log is None or not log.is_file():
+            print("Microsoft C 5.1 did not produce both INTROCHK.EXE and TEST.LOG.",
+                  file=sys.stderr)
+            print_probe_diagnostics(output)
             return 1
         test_log = log.read_text(errors="replace")
         if "Intro C runtime: PASS (32 DOS rand steps)" not in test_log:
-            print(f"DOS probe failed; inspect {log}", file=sys.stderr)
+            print("Microsoft C 5.1 compiled the probe, but its DOS run failed.",
+                  file=sys.stderr)
+            print_probe_diagnostics(output)
             return 1
         print("Microsoft C 5.1 DOS probe passed (32 original random steps)")
     return 0
