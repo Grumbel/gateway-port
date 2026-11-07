@@ -216,6 +216,7 @@ nix run -L .#msc51-compile-launcher            # compile all 28 with Microsoft C
 nix run -L .#msc51-compile-memory              # compile and test real DOS memory adapter
 nix run -L .#msc51-compile-dos-files           # compile and test real DOS file operations
 nix run -L .#msc51-compile-rtl-state           # compile and test 40 recovered RTL state functions
+nix run -L .#msc51-compile-hardware            # compile/probe real DOS port I/O and clipping state
 nix run -L .#msc51-link-launcher               # try LINK with the resulting objects
 nix run .#msc51-link-report                    # classify saved LINK.LOG without DOSBox
 nix build .#msc51                             # optional: inspect assembled DOS tree
@@ -355,8 +356,8 @@ and 42h through Microsoft C's `intdosx`, preserving AX, DX and carry. The
 standalone DOS `FILECHK.EXE` creates a disposable `GWTST.TMP` file in the
 staging mount, exercises binary write/read, seek, EOF, close and invalid
 handle carry, and removes its test file. Its `FILOK.LOG` and source
-fingerprint are required before linking. Like the memory stage, this new
-test has not yet been executed under the user's DOS compiler.
+fingerprint are required before linking. The user's successful follow-up
+LINK invocation confirms this stage passed its DOS compiler and probe gate.
 
 An additional `msc51-compile-rtl-state` stage reuses, rather than rewrites,
 the four existing native intro adapters in `src/intro_host_rtl_*_globals.c`.
@@ -376,9 +377,26 @@ segments, tests each relocated segment selector, source pointer, text
 cursor, signed color, mode-dependent pitch, resource scalar, palette table
 and graphics scratch read/write. Its `RTLOK.LOG` and source fingerprint
 must be fresh. This stage does **not** implement video ports, keyboard,
-mouse, resident VFX, startup or original main. The 40-function reduction
-is an expectation for the next actual Microsoft linker run, not yet a
-measured result.
+mouse, resident VFX, startup or original main. These four object modules
+have now passed the user's actual DOS compiler and linker checks.
+
+**Confirmed:** The user's Microsoft LINK 3.65 run with those four RTL
+objects and the DOS file adapter produced exactly **55** unresolved names,
+down from 100 (29 linked original FAR services, 25 RTL hardware/state and
+one CRT entry point). All 40 state functions and all five DOS file services
+are therefore link-resolved; their complete original runtime behavior is
+not implied by this result.
+
+`msc51-compile-hardware` adds another small, separately probed real-DOS
+module, `RTLHW.OBJ`. It implements original VGA port access with Microsoft
+C 5.x `<conio.h>` `inp`/`outp` and the observed resident clip-state writes
+at linked DS:29de+18..20, including the original `(enabled == 1)` rule.
+`HWCHK.EXE` allocates a DOS guest segment, validates all four rectangle
+coordinates and the pen clipping flag, and takes a read-only VGA status
+sample. It intentionally does not write VGA registers merely to test `outp`.
+This should eliminate four more externals, leaving **51** if the historical
+compiler and linker accept the module. The native C89 syntax check has
+passed; the actual DOS run is still required.
 
 The separate link-only diagnostic reuses all 28 original object files and
 the tested `MEMORY.OBJ`, `DOSFILE.OBJ` and four RTL objects, without
@@ -387,13 +405,14 @@ recompiling any of them:
 ```sh
 nix run -L .#msc51-compile-dos-files
 nix run -L .#msc51-compile-rtl-state
+nix run -L .#msc51-compile-hardware
 nix run -L .#msc51-link-launcher
 nix run .#msc51-link-report -- --json build/msc51-link-report.json
 ```
 
 It generates `build/msc51-launcher/LINK.RSP` and `LINK.BAT`, then invokes
 `C:\BIN\LINK.EXE` explicitly with all 28 `Mxx.OBJ` files, `MEMORY.OBJ`, `DOSFILE.OBJ`,
-`RTLIMG.OBJ`, `RTLTEXT.OBJ`, `RTLPAL.OBJ`, and `RTLGR.OBJ`,
+`RTLIMG.OBJ`, `RTLTEXT.OBJ`, `RTLPAL.OBJ`, `RTLGR.OBJ`, and `RTLHW.OBJ`,
 the large-model `LLIBCR.LIB` and `LIBH.LIB`. The historical LINK response file supplies the
 object list (continued using trailing `+`), EXE name, MAP name, libraries and
 an empty definitions-file answer, as documented by

@@ -952,6 +952,21 @@ services and the single C startup `_main`. Neither the 55 count nor the
 DOS probe is yet verified by the historical toolchain; no dummy startup
 or no-op hardware functions are being supplied.
 
+**Verified by the user's Microsoft LINK 3.65 log:** All 28 original game
+modules, `MEMORY.OBJ`, `DOSFILE.OBJ` and the four RTL state objects were
+accepted and exactly 55 symbols remain. The five file and 40 RTL state
+names have disappeared from the error list, as predicted.
+
+The next independent DOS adapter is `dos/msc51_hardware.c`. Its four
+remaining functions use historical Microsoft C's actual VGA byte I/O
+(`inp`/`outp`) and faithfully write the clip rectangle and enable word at
+the linked DS offsets verified for resident 25b7. The probe leaves VGA
+output untouched, reads status port 0x03da, and checks the segment memory
+effects of clipping and the special case `(enabled == 1)`. This module is
+not a substitute for the missing resident video dispatcher, palette
+upload, sound, input, overlays, or startup; if the user confirms it with
+`nix run -L .#msc51-compile-hardware`, the expected linker remainder is 51.
+
 ## Immediate next functions
 
 1. Connect the existing verified native video, font, picture and caption

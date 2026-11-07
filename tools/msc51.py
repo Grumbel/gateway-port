@@ -234,6 +234,8 @@ DOS_FILE_SOURCES = ("GATEDOS.H", "GATEMEM.H", "STDINT.H", "DOSFILE.C", "FILECHK.
 RTL_STATE_SOURCES = ("RTLLAY.H", "RTLIMAC.H", "RTLSTATE.H", "GATEMEM.H", "STDINT.H",
                      "RTLIMG.C", "RTLTEXT.C", "RTLPAL.C", "RTLGR.C", "RTLCHK.C",
                      "MEMORY.C")
+HARDWARE_SOURCES = ("RTLLAY.H", "GATEMEM.H", "STDINT.H", "RTLHW.C", "HWCHK.C",
+                    "MEMORY.C")
 
 
 def memory_source_signature(output: Path) -> str:
@@ -256,6 +258,13 @@ def rtl_state_source_signature(output: Path) -> str:
     """The probe must cover the exact same original adapters as the link."""
     digest = hashlib.sha256(b"MS C 5.1 /AL /Od RTL state adapter v1\n")
     for name in RTL_STATE_SOURCES:
+        digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
+    return digest.hexdigest()[:16]
+
+
+def hardware_source_signature(output: Path) -> str:
+    digest = hashlib.sha256(b"MS C 5.1 /AL /Od RTL hardware adapter v1\n")
+    for name in HARDWARE_SOURCES:
         digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
     return digest.hexdigest()[:16]
 
@@ -471,6 +480,27 @@ def stage_launcher(output: Path) -> list[str]:
         ":DONE", "EXIT",
     ]
     (output / "RTLST.BAT").write_text("\r\n".join(rtl_batch) + "\r\n")
+    for original, staged in (("msc51_hardware.c", "RTLHW.C"),
+                             ("msc51_hardware_probe.c", "HWCHK.C")):
+        (output / staged).write_text(msc51_rename_identifiers(
+            (source_dir / "dos" / original).read_text(), shortened))
+    hardware_signature = hardware_source_signature(output)
+    hardware_batch = [
+        "@ECHO OFF", "ECHO MS C 5.1 RTL hardware adapter > HWSTART.LOG",
+        "SET PATH=C:\\BIN;C:\\", "SET INCLUDE=C:\\INCLUDE;C:\\",
+        "SET LIB=C:\\LIB;C:\\", "SET TEMP=D:\\", "SET TMP=D:\\",
+        "CL /AL /Od /c RTLHW.C > HWBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        "IF NOT EXIST RTLHW.OBJ GOTO FAILED",
+        "CL /AL /Od HWCHK.C RTLHW.OBJ MEMORY.OBJ /FeHWCHK.EXE /link LLIBCR.LIB LIBH.LIB/NOD >> HWBUILD.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST HWCHK.EXE GOTO FAILED",
+        "HWCHK.EXE > HWTEST.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        f"ECHO {hardware_signature} > HWSIG.LOG",
+        "ECHO Real-mode RTL hardware adapter passed > HWOK.LOG",
+        "GOTO DONE", ":FAILED",
+        "ECHO Real-mode RTL hardware adapter failed > HWFAIL.LOG",
+        ":DONE", "EXIT",
+    ]
+    (output / "RTLHW.BAT").write_text("\r\n".join(hardware_batch) + "\r\n")
     lines = [
         "@ECHO OFF", "ECHO Gateway MSC 5.1 launcher objects > START.LOG",
         "SET PATH=C:\\BIN;C:\\", "SET INCLUDE=C:\\INCLUDE;C:\\",
@@ -493,7 +523,8 @@ def stage_launcher(output: Path) -> list[str]:
     # output executable, map, libraries/options, and an empty DEF response.
     # Each trailing + extends the SAME response across CRLFs (MS KB Q40429).
     response = ([f"{name}+" for name in objects] + ["MEMORY.OBJ+", "DOSFILE.OBJ+",
-                "RTLIMG.OBJ+", "RTLTEXT.OBJ+", "RTLPAL.OBJ+", "RTLGR.OBJ",
+                "RTLIMG.OBJ+", "RTLTEXT.OBJ+", "RTLPAL.OBJ+", "RTLGR.OBJ+",
+                "RTLHW.OBJ",
                 "GATEWAY.EXE", "GATEWAY.MAP", "LLIBCR.LIB LIBH.LIB /NOD", ";"])
     (output / "LINK.RSP").write_text("\r\n".join(response) + "\r\n")
     link_batch = [
@@ -637,6 +668,35 @@ def print_rtl_state_diagnostics(output: Path) -> None:
     print(f"RTL state adapter workspace: {output}", file=sys.stderr)
 
 
+def validate_hardware_adapter(output: Path) -> None:
+    if (any(locate_case_insensitive(output, name) is None
+            for name in ("RTLHW.OBJ", "HWSTART.LOG", "HWOK.LOG")) or
+            locate_case_insensitive(output, "HWFAIL.LOG") is not None):
+        raise ValueError("Cannot link launcher: RTL hardware adapter is unverified. "
+                         "Run msc51-compile-hardware first.")
+    signature = locate_case_insensitive(output, "HWSIG.LOG")
+    if signature is None or signature.read_text().strip() != hardware_source_signature(output):
+        raise ValueError("Cannot link launcher: RTL hardware source has changed "
+                         "since its test. Run msc51-compile-hardware again.")
+
+
+def remove_hardware_outputs(output: Path) -> None:
+    names = {"HWSTART.LOG", "HWOK.LOG", "HWFAIL.LOG", "HWBUILD.LOG", "HWSIG.LOG",
+             "HWTEST.LOG", "RTLHW.OBJ", "HWCHK.EXE", "HWCHK.OBJ"}
+    if output.is_dir():
+        for entry in output.iterdir():
+            if entry.is_file() and entry.name.upper() in names:
+                entry.unlink()
+
+
+def print_hardware_diagnostics(output: Path) -> None:
+    for name in ("HWFAIL.LOG", "HWBUILD.LOG", "HWTEST.LOG", "HWOK.LOG"):
+        path = locate_case_insensitive(output, name)
+        content = path.read_text(errors="replace") if path else "(not created)"
+        print(f"--- {name} ---\n{content[-8_000:].rstrip()}", file=sys.stderr)
+    print(f"RTL hardware adapter workspace: {output}", file=sys.stderr)
+
+
 def remove_launcher_link_outputs(output: Path) -> None:
     """Never accept a previous link's EXE, map or success marker."""
     names = {"LNKSTART.LOG", "LINKSTAR.LOG", "LINKSTART.LOG", "LINK.LOG",
@@ -720,7 +780,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("command", choices=("probe", "shell", "prepare", "install",
                                             "prepare-launcher", "compile-launcher",
                                             "compile-memory", "compile-dos-files",
-                                            "compile-rtl-state",
+                                            "compile-rtl-state", "compile-hardware",
                                             "link-launcher"))
     parser.add_argument("--compiler", default=os.environ.get("GATEWAY_MSC51_DIR"),
                         help="installed Microsoft C 5.1 directory (or GATEWAY_MSC51_DIR)")
@@ -734,7 +794,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     launcher = args.command in ("prepare-launcher", "compile-launcher",
                                 "compile-memory", "compile-dos-files",
-                                "compile-rtl-state", "link-launcher")
+                                "compile-rtl-state", "compile-hardware", "link-launcher")
     output = (args.output or Path("build/msc51-launcher" if launcher else "build/intro-msc51")).expanduser().resolve()
     objects = []
     if launcher:
@@ -755,21 +815,25 @@ def main(argv: list[str] | None = None) -> int:
         else:
             if args.command == "link-launcher":
                 validate_launcher_objects(output, objects)
-            if args.command in ("compile-dos-files", "compile-rtl-state", "link-launcher"):
+            if args.command in ("compile-dos-files", "compile-rtl-state",
+                                "compile-hardware", "link-launcher"):
                 validate_memory_adapter(output)
             if args.command == "link-launcher":
                 validate_dos_file_adapter(output)
                 validate_rtl_state_adapter(output)
+                validate_hardware_adapter(output)
             if not args.compiler:
                 parser.error("set GATEWAY_MSC51_DIR or pass --compiler /path/to/installed/MSC51")
             compiler = validate_compiler(Path(args.compiler))
             commands = dosbox_commands(
                 compiler, output,
                 args.command in ("probe", "compile-launcher", "compile-memory",
-                                 "compile-dos-files", "compile-rtl-state", "link-launcher"),
+                                 "compile-dos-files", "compile-rtl-state",
+                                 "compile-hardware", "link-launcher"),
                 ("LINK.BAT" if args.command == "link-launcher" else
                  "DOSFILE.BAT" if args.command == "compile-dos-files" else
                  "RTLST.BAT" if args.command == "compile-rtl-state" else
+                 "RTLHW.BAT" if args.command == "compile-hardware" else
                  "MEMORY.BAT" if args.command == "compile-memory" else
                  "COMPILE.BAT" if launcher else "BUILD.BAT"))
             output.mkdir(parents=True, exist_ok=True)
@@ -799,6 +863,10 @@ def main(argv: list[str] | None = None) -> int:
         remove_rtl_state_outputs(output)
         remove_launcher_link_outputs(output)
         command.append("--exit")
+    elif args.command == "compile-hardware":
+        remove_hardware_outputs(output)
+        remove_launcher_link_outputs(output)
+        command.append("--exit")
     elif args.command == "link-launcher":
         remove_launcher_link_outputs(output)
         command.append("--exit")
@@ -815,6 +883,8 @@ def main(argv: list[str] | None = None) -> int:
             print_dos_file_diagnostics(output)
         elif args.command == "compile-rtl-state":
             print_rtl_state_diagnostics(output)
+        elif args.command == "compile-hardware":
+            print_hardware_diagnostics(output)
         elif args.command == "link-launcher":
             print_launcher_link_diagnostics(output)
         return result.returncode
@@ -848,6 +918,17 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print("Microsoft C 5.1 verified the original linked RTL state and mode selectors; "
               "all four RTL accessor objects are ready for the launcher link.")
+        return 0
+    if args.command == "compile-hardware":
+        try:
+            validate_hardware_adapter(output)
+        except ValueError:
+            print("Microsoft C did not compile and verify the real-mode RTL hardware adapter.",
+                  file=sys.stderr)
+            print_hardware_diagnostics(output)
+            return 1
+        print("Microsoft C 5.1 verified the RTL video clipping state and port-read smoke test; "
+              "RTLHW.OBJ is ready for the launcher link.")
         return 0
     if args.command == "link-launcher":
         started = locate_case_insensitive(output, "LNKSTART.LOG")
