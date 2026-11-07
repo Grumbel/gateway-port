@@ -57,6 +57,7 @@ set(GATEWAY_INTRO_SOURCE_C_COMPOSITE_SOURCES
   ${GATEWAY_INTRO_SOURCE_C_PICTURE_SOURCES}
   decomp/launcher/gate_input.c
   decomp/launcher/gate_c_runtime_random.c
+  decomp/launcher/gate_rtl_audio_startup.c
   decomp/launcher/gate_rtl_graphics.c
   decomp/launcher/gate_rtl_intro_animation.c
   decomp/launcher/gate_rtl_intro_sequence.c

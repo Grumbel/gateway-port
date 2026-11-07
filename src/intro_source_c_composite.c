@@ -11,6 +11,7 @@
 #include "gate_intro_host_vga_ports.h"
 #include "gate_rtl.h"
 #include "gate_rtl_graphics.h"
+#include "gate_rtl_audio_startup.h"
 #include "gate_rtl_image.h"
 
 #include <stdint.h>
@@ -122,13 +123,22 @@ static uint16_t no_mouse(void *context) { (void)context; return 0; }
 
 /* Host boundaries for services not yet represented by recovered C. The
  * source-C original sequence remains in gate_exe_1302; no scene schedule is
- * recreated in this driver. Audio is intentionally silent. */
+ * recreated in this driver. MIDIPlay synthesis lives in the native SDL host. */
 uint16_t gate_far_0e2c_0094(uint16_t size)
 {
     if (size != 0x1000) abort();
     return 0x6500; /* pinned original EXE:1302 entry/134c RAM diff */
 }
-void gate_far_0a46_01ec(void) { /* audio startup: silent host */ }
+void gate_far_0a46_01ec(void)
+{
+    /* At the genuine EXE:134c startup boundary, consult the recovered
+     * original RTL:c3bd device predicates before notifying the host.
+     * The IRQ8-driven loader itself is still deliberately not emulated. */
+    if (active_clock && active_clock->hooks &&
+        active_clock->hooks->music_start &&
+        gate_rtl_c3bd_music_initialization_required())
+        active_clock->hooks->music_start(active_clock->hooks->userdata);
+}
 void gate_far_123f_0004(void) { abort(); /* unimplemented key-3 branch */ }
 void gate_far_0e48_011b(void) { /* mouse cursor setup: headless */ }
 uint16_t gate_far_2488_000a(uint16_t a, uint16_t b)

@@ -14,6 +14,7 @@ typedef struct TestInput {
     unsigned escape_consumed;
     unsigned other_consumed;
     unsigned published;
+    unsigned music_starts;
 } TestInput;
 
 static uint32_t clock_ms(void *userdata)
@@ -60,10 +61,17 @@ static void frame_ready(void *userdata, const uint8_t *pixels,
     ++input->published;
 }
 
+static void music_start(void *userdata)
+{
+    TestInput *input = userdata;
+    assert(input->now == 0); /* original C calls common init before delays */
+    ++input->music_starts;
+}
+
 int main(int argc, char **argv)
 {
     TestInput input = {0};
-    GateSourceCFullHooks hooks;
+    GateSourceCFullHooks hooks = {0};
     int result;
     if (argc != 3) {
         fputs("usage: launcher-intro-source-c-live-tests snapshot.bin DOS-DIR\n", stderr);
@@ -76,11 +84,13 @@ int main(int argc, char **argv)
     hooks.key_pending = key_pending;
     hooks.read_key = read_key;
     hooks.frame_ready = frame_ready;
+    hooks.music_start = music_start;
     result = gate_source_c_full_run(argv[1], argv[2], &hooks);
     assert(result == 0);
     assert(input.escape_consumed == 1);
     assert(input.other_consumed == 0);
     assert(input.published > 10);
+    assert(input.music_starts == 1);
     assert(input.now >= input.interrupt_at && input.now < 100000);
     printf("original C Escape: time=%u ms, published=%u, keys=%u\n",
            input.now, input.published, input.escape_consumed);
@@ -92,6 +102,7 @@ int main(int argc, char **argv)
     assert(input.other_consumed == 1);
     assert(input.escape_consumed == 1);
     assert(input.published > 10);
+    assert(input.music_starts == 1);
     printf("original C other-key + Escape: time=%u ms, frames=%u\n",
            input.now, input.published);
     return 0;

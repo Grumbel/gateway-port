@@ -91,9 +91,13 @@ The original AdLib song is read directly from `GATE_004.MUS` in the same DOS
 directory, so no extraction step or proprietary files in the Nix store are
 needed. The native host parses the MIDIPlay instrument events, note timing,
 channel pressure and rhythm-mode controls and sends the resulting PCM audio
-to SDL3. P pauses both the source-C clock and the audio device. The source-C
-intro sequencing is unchanged; its original `RTL:c3bd` IRQ8 music loader is
-not reproduced by this host bridge. Note and patch parsing is tested, but
+to SDL3. The original `GATE.EXE:134c` startup call now notifies the SDL
+renderer **only when the original `RTL:c3bd` audio-enable predicates hold**.
+The source-C code and its notification are covered by the live-input regression;
+music no longer starts merely because the SDL window was created. P pauses
+both the source-C clock and the audio device. The source-C intro sequencing
+is unchanged; the original `RTL:c3bd` IRQ8 music loader is not reproduced by
+this host bridge. Note and patch parsing is tested, but
 **audible SDL3 playback and precise synchronization against original DOS
 recordings have not been checked in this environment**.
 

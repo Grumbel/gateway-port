@@ -23,6 +23,9 @@ typedef struct GateSourceCFullHooks {
     uint16_t (*read_key)(void *userdata);
     void (*frame_ready)(void *userdata, const uint8_t *pixels,
                         const uint8_t dac[256][3]);
+    /* Called only if the recovered RTL:c3bd predicates enable music at
+     * the original EXE:134c common-init call. Audio synthesis is native. */
+    void (*music_start)(void *userdata);
 } GateSourceCFullHooks;
 
 /* 0 = original entry returned normally, nonzero = missing/invalid input.

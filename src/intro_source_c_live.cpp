@@ -46,6 +46,7 @@ struct LiveState {
     std::atomic<bool> escape_pending{false};
     std::atomic<bool> closing{false};
     std::atomic<bool> completed{false};
+    std::atomic<bool> music_started{false};
     std::atomic<int> result{0};
 
     std::mutex input_mutex;
@@ -108,6 +109,10 @@ std::uint16_t read_key(void *userdata) {
 void queue_key(LiveState &state, std::uint16_t key) {
     std::lock_guard lock(state.input_mutex);
     if (state.keys.size() < 32) state.keys.push_back(key);
+}
+
+void music_start(void *userdata) {
+    static_cast<LiveState *>(userdata)->music_started.store(true);
 }
 
 void frame_ready(void *userdata, const std::uint8_t *indices,
@@ -203,6 +208,7 @@ int main(int argc, char **argv) try {
         hooks.key_pending = key_pending;
         hooks.read_key = read_key;
         hooks.frame_ready = frame_ready;
+        hooks.music_start = music_start;
         std::thread worker([&] {
             state.result.store(gate_source_c_full_run(argv[1], argv[2], &hooks));
             state.completed.store(true);
@@ -257,7 +263,8 @@ int main(int argc, char **argv) try {
                     copy_to_argb(indices, palette, argb);
                     require(SDL_UpdateTexture(texture, nullptr, argb.data(), 320 * 4));
                 }
-                if (audio && !state.completed.load()) {
+                if (audio && state.music_started.load() &&
+                    !state.completed.load()) {
                     const auto queued = SDL_GetAudioStreamQueued(audio);
                     require(queued >= 0);
                     // Keep at most ~200ms of native PCM queued so Escape
