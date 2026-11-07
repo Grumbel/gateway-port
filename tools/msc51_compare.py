@@ -293,10 +293,10 @@ def omf_match_details(data: bytes, modules: list[OMFModule],
 
 def public_code_prefixes(data: bytes, module: OMFModule,
                          min_size: int = 16, max_size: int = 64):
-    """Yield contiguous LEDATA prefixes at PUBDEF entries, with no relocation masking.
+    """Yield contiguous LEDATA bytes at PUBDEF entries and their record offsets.
 
-    Do not run across another public entry or an OMF record boundary. Exact
-    prefixes avoid guessing which bytes a linker might have relocated.
+    Do not run across another public entry or an OMF record boundary. The
+    caller decides whether to use exact comparisons or FIXUPP relocation masks.
     """
     publics = omf_publics(data, module)
     for segment, offset, symbol in publics:
@@ -321,30 +321,154 @@ def public_code_prefixes(data: bytes, module: OMFModule,
             start = cursor + offset - record_offset
             end = min(limit, start + max_size, start + upper - offset)
             if end - start >= min_size:
-                yield symbol, segment, offset, data[start:end]
+                yield symbol, segment, offset, data[start:end], record.start, start - cursor
             break
 
 
+FIXUP_WIDTHS = {0: 1, 1: 2, 2: 2, 3: 4, 4: 1, 5: 2,
+                9: 4, 11: 6, 13: 4}
+
+
+def parse_omf_fixupp(data: bytes, record: OMFRecord,
+                     data_length: int | None) -> list[tuple[int, int]]:
+    """Decode FIXUPP locations; return (data-byte offset, field width).
+
+    Consume FRAME/TARGET threads and explicit target/frame indices to locate
+    the *next* subrecord correctly. The target value is immaterial because we
+    only mask fields that the linker is authorised to modify. Unsupported
+    forms fail closed rather than inventing a mask.
+    """
+    pos, end = record.start + 3, record.end - 1
+    fields = []
+
+    def index(cursor: int) -> int:
+        _, cursor = omf_index(data, cursor, end)
+        return cursor
+
+    while pos < end:
+        first = data[pos]
+        pos += 1
+        if not first & 0x80:  # THREAD subrecord
+            if first & 0x20:
+                raise ValueError("Reserved OMF THREAD flag")
+            method = (first >> 2) & 7
+            if method > 5 or (not first & 0x40 and method > 2):
+                raise ValueError("Unsupported OMF THREAD method")
+            if method <= 2:
+                pos = index(pos)
+            continue
+        if pos + 2 > end:
+            raise ValueError("Truncated OMF FIXUP location and FIX Data")
+        data_offset = ((first & 3) << 8) | data[pos]
+        pos += 1
+        location = (first >> 2) & 15
+        width = FIXUP_WIDTHS.get(location)
+        if width is None:
+            raise ValueError(f"Unsupported OMF FIXUP location type {location}")
+        fixdata = data[pos]
+        pos += 1
+        if not fixdata & 0x80:  # Explicit FRAME datum (when required)
+            frame_method = (fixdata >> 4) & 7
+            if frame_method not in (0, 1, 2, 4, 5):
+                raise ValueError(f"Unsupported OMF FRAME method {frame_method}")
+            if frame_method <= 2:
+                pos = index(pos)
+        if not fixdata & 0x08:  # Explicit TARGET datum (when required)
+            target_method = (4 if fixdata & 0x04 else 0) | (fixdata & 3)
+            if target_method not in (0, 1, 2, 4, 5, 6):
+                raise ValueError(f"Unsupported OMF TARGET method {target_method}")
+            pos = index(pos)
+        if not fixdata & 0x04:  # Target displacement
+            pos += 4 if record.kind == 0x9d else 2
+        if pos > end:
+            raise ValueError("Truncated OMF FIXUP displacement")
+        if data_length is not None:
+            if data_offset + width > data_length:
+                raise ValueError("OMF FIXUP lies outside LEDATA payload")
+            fields.append((data_offset, width))
+    return fields
+
+
+def omf_relocation_masks(data: bytes, module: OMFModule) -> dict[int, bytes | None]:
+    """Make LEDATA masks from immediately following FIXUPP records.
+
+    True/1 means an exact byte must match. False/0 means the linker could
+    change that byte. A malformed or unsupported fixup makes the *entire*
+    associated LEDATA unsuitable for relocation-aware comparison.
+    """
+    masks: dict[int, bytes | None] = {}
+    current_start = None
+    fixed = None
+    for record in module.records:
+        if record.kind in (0xa0, 0xa1):
+            end = record.end - 1
+            try:
+                _, pos = omf_index(data, record.start + 3, end)
+                width = 4 if record.kind == 0xa1 else 2
+                if pos + width > end:
+                    raise ValueError("Truncated OMF LEDATA offset")
+                pos += width
+                fixed = bytearray([1] * (end - pos))
+                masks[record.start] = bytes(fixed)
+            except ValueError:
+                fixed = None
+                masks[record.start] = None
+            current_start = record.start
+        elif record.kind in (0x9c, 0x9d):
+            try:
+                locations = parse_omf_fixupp(
+                    data, record, len(fixed) if fixed is not None else None)
+                if fixed is not None:
+                    for offset, width in locations:
+                        fixed[offset:offset + width] = bytes(width)
+                    masks[current_start] = bytes(fixed)
+            except ValueError:
+                if current_start is not None:
+                    masks[current_start] = None
+                fixed = None
+        else:
+            current_start = None
+            fixed = None
+    return masks
+
+
 def scan_exact_crt_prefixes(original: bytes, library: bytes,
-                            modules: list[OMFModule], min_size: int = 16) -> list[dict]:
+                            modules: list[OMFModule], min_size: int = 16,
+                            relocations: bool = False) -> list[dict]:
     """Find unambiguous exact first bytes of OMF publics in original RTL.
 
-    This is an exploratory *candidate* list: exact bytes alone cannot prove a
-    Gateway file location is code, or that a PUBDEF is a function rather than
-    a variable. Relocated prefixes simply do not match (false negatives).
+    Relocation-aware mode masks only FIXUPP locations and lengthens the
+    comparison to 512 bytes per LEDATA/public boundary, but still requires
+    at least 12 fixed bytes of the initial 16 to yield a unique match.
+    Neither mode establishes that a public is a callable function.
     """
     hits = []
     for module in modules:
         segments = omf_segments(library, module)
-        for symbol, segment, offset, code in public_code_prefixes(
-                library, module, min_size=min_size):
-            prefix = code[:min_size]
-            rtl_offset = original.find(prefix)
-            if rtl_offset < 0 or original.find(prefix, rtl_offset + 1) >= 0:
+        masks = omf_relocation_masks(library, module) if relocations else {}
+        for symbol, segment, offset, code, record_start, data_offset in public_code_prefixes(
+                library, module, min_size=min_size,
+                max_size=512 if relocations else 64):
+            code_mask = (masks.get(record_start) or b"")[data_offset:data_offset + len(code)]
+            if relocations and len(code_mask) != len(code):
                 continue
+            prefix = code[:min_size]
+            if relocations:
+                if sum(code_mask[:min_size]) < 12:
+                    continue
+                locations = search_code(original, prefix, code_mask[:min_size])
+                if len(locations) != 1:
+                    continue
+                rtl_offset = locations[0]
+            else:
+                rtl_offset = original.find(prefix)
+                if rtl_offset < 0 or original.find(prefix, rtl_offset + 1) >= 0:
+                    continue
             matched = min_size
-            while (matched < len(code) and rtl_offset + matched < len(original)
-                   and original[rtl_offset + matched] == code[matched]):
+            while matched < len(code) and rtl_offset + matched < len(original):
+                if ((not relocations or code_mask[matched])
+                        and original[rtl_offset + matched] != code[matched]):
+                    break
                 matched += 1
             info = segments.get(segment, {})
             hits.append({
@@ -358,6 +482,16 @@ def scan_exact_crt_prefixes(original: bytes, library: bytes,
                 "segment_kind": segment_kind(info),
                 "exact_prefix_bytes": matched,
             })
+            if relocations:
+                hits[-1]["relocation_aware_bytes"] = matched
+                hits[-1]["masked_relocation_bytes"] = matched - sum(code_mask[:matched])
+                hits[-1]["fixed_compared_bytes"] = sum(code_mask[:matched])
+                # Retain the legacy exact-prefix metric, independent of the
+                # masked comparison, for easy side-by-side interpretation.
+                exact = 0
+                while exact < matched and original[rtl_offset + exact] == code[exact]:
+                    exact += 1
+                hits[-1]["exact_prefix_bytes"] = exact
     # Two library publics with the same opening instructions do not justify
     # choosing either name, even if those bytes occur only once in GATE.RTL.
     counts = {}
@@ -417,6 +551,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="identify OMF object modules/LEDATA/PUBDEF behind direct matches")
     parser.add_argument("--scan-public-prefixes", action="store_true",
                         help="find unique 16-byte exact CRT public prefixes in GATE.RTL (candidates only)")
+    parser.add_argument("--scan-relocations", action="store_true",
+                        help="scan OMF public prefixes with FIXUPP relocations masked, "
+                             "up to 512 bytes per LEDATA record (candidates only)")
     args = parser.parse_args(argv)
     if args.library is None and args.compiler is None:
         parser.error("provide --library FILE or GATEWAY_MSC51_DIR/--compiler DIR")
@@ -425,15 +562,17 @@ def main(argv: list[str] | None = None) -> int:
         original = args.original.read_bytes()
         library_bytes = library.read_bytes()
         matches = compare_bytes(original, library_bytes)
-        if args.omf_details or args.scan_public_prefixes:
+        if args.omf_details or args.scan_public_prefixes or args.scan_relocations:
             modules = parse_omf_library(library_bytes)
         if args.omf_details:
             for entry in matches:
                 entry["omf_matches"] = [omf_match_details(
                     library_bytes, modules, int(position, 16), entry["bytes"])
                     for position in entry["library_offsets"]]
-        public_candidates = (scan_exact_crt_prefixes(original, library_bytes, modules)
-                             if args.scan_public_prefixes else None)
+        public_candidates = (
+            scan_exact_crt_prefixes(original, library_bytes, modules,
+                                    relocations=args.scan_relocations)
+            if args.scan_public_prefixes or args.scan_relocations else None)
     except (ValueError, OSError) as error:
         parser.error(str(error))
     for entry in matches:
@@ -454,14 +593,20 @@ def main(argv: list[str] | None = None) -> int:
         summary = summarize_public_prefixes(public_candidates)
         counts = {kind: sum(hit["segment_kind"] == kind for hit in public_candidates)
                   for kind in ("code", "other", "unknown")}
-        print(f"Unique exact CRT public-prefix candidates (at least 16 bytes): "
+        mode = "relocation-aware" if args.scan_relocations else "exact"
+        print(f"Unique {mode} CRT public-prefix candidates (at least 16 bytes): "
               f'{len(public_candidates)} (CODE class: {counts["code"]}, '
               f'other classes: {counts["other"]}, unknown: {counts["unknown"]})')
         for entry in public_candidates:
+            length = (f'{entry["relocation_aware_bytes"]} compared bytes, '
+                      f'{entry["masked_relocation_bytes"]} relocation bytes masked, '
+                      f'{entry["exact_prefix_bytes"]} exact leading bytes'
+                      if args.scan_relocations else
+                      f'{entry["exact_prefix_bytes"]} exact leading bytes')
             print(f'  GATE.RTL:{entry["rtl_offset"]} {entry["module"]}:{entry["symbol"]} '
                   f'#{entry["segment_index"]}:{entry["segment_offset"]} '
                   f'class={entry["segment_class"] or "?"} '
-                  f'({entry["exact_prefix_bytes"]} exact leading bytes)')
+                  f'({length})')
         if "code_class_entry_span" in summary:
             first, last = summary["code_class_entry_span"]
             print(f"CODE-class entry span: GATE.RTL:{first}..{last} "
@@ -469,6 +614,9 @@ def main(argv: list[str] | None = None) -> int:
         print("OMF class CODE may contain data (e.g. string literals), "
               "not necessarily callable functions.")
         print("Candidates need separate code/boundary validation; absent matches prove nothing.")
+        if args.scan_relocations:
+            print("FIXUPP masking is restricted to each LEDATA/public boundary; "
+                  "malformed or unsupported fixups are excluded.")
     print(f"Compared against {library} ({len(library_bytes)} bytes)")
     print("A match supports identical CRT code; a miss is inconclusive for OMF modules.")
     if args.json is not None:
@@ -481,6 +629,8 @@ def main(argv: list[str] | None = None) -> int:
         if public_candidates is not None:
             report["public_prefix_candidates"] = public_candidates
             report["public_prefix_summary"] = summary
+            report["public_prefix_scan_mode"] = (
+                "omf-fixupp" if args.scan_relocations else "exact")
         args.json.write_text(json.dumps(report, indent=2) + "\n")
         print(f"Saved {args.json}")
     return 0

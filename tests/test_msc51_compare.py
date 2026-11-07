@@ -19,6 +19,109 @@ SPEC.loader.exec_module(msc)
 
 
 class MSC51CompareTests(unittest.TestCase):
+    @staticmethod
+    def fixture_with_fixups(fixup_records):
+        """Minimal OMF library with a 160-byte CODE public and FIXUPP records."""
+        def record(kind, payload):
+            header = bytes((kind, (len(payload) + 1) & 255,
+                            (len(payload) + 1) >> 8))
+            return header + payload + bytes(((-sum(header + payload)) & 255,))
+
+        code = bytes((i * 37 + 11) & 255 for i in range(160))
+        records = [
+            record(0x82, b"\x06TEST.C"),
+            record(0x96, b"\x05_TEXT\x04CODE\x00"),
+            record(0x98, b"\x28\xa0\x00\x01\x02\x03"),
+            record(0x90, b"\x00\x01\x03_fn\x00\x00\x00"),
+            record(0xa0, b"\x01\x00\x00" + code),
+            *(record(*item) if isinstance(item, tuple) else record(0x9c, item)
+              for item in fixup_records),
+            record(0x8a, b"\x00"),
+        ]
+        page_size = 32
+        dictionary = 512
+        header = (bytes((0xf0, page_size - 3, 0)) +
+                  dictionary.to_bytes(4, "little") + b"\x01\x00\x00")
+        library = bytearray(header.ljust(page_size, b"\0"))
+        for item in records:
+            library.extend(item)
+        library.extend(bytes((-len(library)) % page_size))
+        library.extend(b"\xf1")
+        library.extend(bytes(dictionary - len(library)))
+        library.extend(bytes(512))
+        data = bytes(library)
+        modules = msc.parse_omf_library(data)
+        return data, modules, code
+
+    def test_omf_fixupp_relocation_fields_and_extended_prefix(self):
+        # Offset 4: explicit frame F4, explicit target T0 (index 1), no
+        # displacement. Offset 90: FAR pointer with FRAME/TARGET threads.
+        payload = b"\xc4\x04\x44\x01\x00\x01\x51\xcc\x5a\x9c"
+        library, modules, code = self.fixture_with_fixups([payload])
+        rtl_code = bytearray(code)
+        for offset in (4, 5, 90, 91, 92, 93):
+            rtl_code[offset] ^= 0xff
+        original = b"padding" + rtl_code + b"trailing"
+        self.assertEqual(msc.scan_exact_crt_prefixes(original, library, modules), [])
+        hits = msc.scan_exact_crt_prefixes(
+            original, library, modules, relocations=True)
+        self.assertEqual(len(hits), 1)
+        self.assertEqual(hits[0]["rtl_offset"], "0x00007")
+        self.assertEqual(hits[0]["symbol"], "_fn")
+        self.assertEqual(hits[0]["exact_prefix_bytes"], 4)
+        self.assertEqual(hits[0]["relocation_aware_bytes"], 160)
+        self.assertEqual(hits[0]["masked_relocation_bytes"], 6)
+        self.assertEqual(hits[0]["fixed_compared_bytes"], 154)
+
+        # One unmasked byte beyond the previous 64-byte limit stops the match.
+        rtl_code[110] ^= 1
+        shorter = msc.scan_exact_crt_prefixes(
+            b"padding" + rtl_code, library, modules, relocations=True)
+        self.assertEqual(shorter[0]["relocation_aware_bytes"], 110)
+
+    def test_omf_fixupp_continuations_and_fail_closed(self):
+        first = b"\xc4\x04\x44\x01"
+        second = b"\x00\x01\x51\xcc\x5a\x9c"
+        library, modules, code = self.fixture_with_fixups([first, second])
+        rtl_code = bytearray(code)
+        for offset in (4, 5, 90, 91, 92, 93):
+            rtl_code[offset] ^= 0x7f
+        self.assertEqual(msc.scan_exact_crt_prefixes(
+            b"padding" + rtl_code, library, modules,
+            relocations=True)[0]["relocation_aware_bytes"], 160)
+
+        # Unsupported location type 6, out-of-bounds field, truncated frame
+        # index, or truncated target displacement rejects the entire LEDATA.
+        invalid = (
+            b"\xd8\x04\x44\x01",
+            b"\xc4\x9f\x44\x01",  # 2 bytes starting at offset 159
+            b"\xc4\x04\x00",       # frame F0/target T0 lack indices
+            b"\xc4\x04\x40\x01",  # target displacement missing
+        )
+        for payload in invalid:
+            with self.subTest(payload=payload):
+                bad_lib, bad_modules, _ = self.fixture_with_fixups([payload])
+                self.assertEqual(msc.scan_exact_crt_prefixes(
+                    b"padding" + code, bad_lib, bad_modules,
+                    relocations=True), [])
+
+    def test_omf_fixupp_field_widths(self):
+        self.assertEqual(msc.FIXUP_WIDTHS, {
+            0: 1, 1: 2, 2: 2, 3: 4, 4: 1, 5: 2,
+            9: 4, 11: 6, 13: 4,
+        })
+        # FIXUPP32 uses a four-byte displacement. Parsing it must leave
+        # precisely the 32-bit fixup location masked, not its target datum.
+        fixupp32 = (0x9d, b"\xe4\x64\x40\x01\xef\xbe\xad\xde")
+        library, modules, code = self.fixture_with_fixups([fixupp32])
+        rtl_code = bytearray(code)
+        for offset in range(100, 104):
+            rtl_code[offset] ^= 0xfe
+        hits = msc.scan_exact_crt_prefixes(
+            b"padding" + rtl_code, library, modules, relocations=True)
+        self.assertEqual(hits[0]["relocation_aware_bytes"], 160)
+        self.assertEqual(hits[0]["masked_relocation_bytes"], 4)
+
     def test_omf_module_and_exact_public_symbol_attribution(self):
         def record(kind, payload):
             header = bytes((kind, (len(payload) + 1) & 255,

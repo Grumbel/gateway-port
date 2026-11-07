@@ -346,6 +346,31 @@ constant; therefore **65 CODE-class public symbols does not mean 65 verified
 functions**. The code/data split is an OMF linker classification, not a
 disassembly-based verification of callable boundaries.
 
+For a deeper, relocation-aware comparison, use:
+
+```sh
+nix run -L .#msc51-compare -- \
+  --omf-details --scan-relocations \
+  --json build/msc51-crt-relocations.json
+```
+
+`--scan-relocations` also enables the public-prefix scan. It decodes OMF
+`FIXUPP` subrecords attached to each `LEDATA` record (including frame/target
+threads) and masks **only** the specified linker-modified fields. It compares
+up to **512 bytes** per record/public-symbol boundary, instead of 64, and
+records exact-leading, fixed-compared and masked-relocation byte counts in
+the output and JSON (`public_prefix_scan_mode: omf-fixupp`). It requires at
+least 12 unmasked bytes among the initial 16 and exactly one matching RTL
+position; malformed/unsupported fixups exclude that record from this mode.
+
+This is deliberately an *opt-in candidate search*, not function recovery:
+comparison stops at a new public symbol or OMF record boundary, does not
+reconstruct linker segment placement, and does not verify control flow or
+whole function bodies. An OMF `CODE` class can also contain non-callable
+data. The exact-prefix scan above remains the conservative baseline for
+side-by-side comparison. The relocation encoding follows the
+[TIS OMF 1.1 specification](https://openwatcom.org/ftp/devel/docs/omf.pdf).
+
 ### In-game Gateway debugger (F10)
 
 Launch the original Gateway 1 executable, enter a room, then press **F10**:
