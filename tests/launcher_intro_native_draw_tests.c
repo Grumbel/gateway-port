@@ -15,10 +15,21 @@
 
 static void configure(uint16_t mode, uint16_t max_color)
 {
+    gate_ds_set_word(0x0fce, mode);
     gate_ds_set_word(0x15cc, mode);
     gate_ds_set_word(0x4da8, 0x3100);
+    gate_ds_set_word(0x4da0, 0x3100);
+    gate_ds_set_word(0x4da2, 0x3100);
+    gate_ds_set_word(0x4da4, 0x3100);
+    gate_ds_set_word(0x4da6, 0x3100);
+    gate_far_set_word(0x3100, 0x4c, 4);
+    gate_far_set_word(0x3100, 0x4e, 2);
+    gate_far_set_word(0x3100, 0x50, 6);
+    gate_far_set_word(0x3100, 0x52, 9);
     gate_far_set_word(0x3100, 0x54, max_color);
     gate_ds_set_word(0x29de + 0x16, 0);
+    gate_ds_set_word(0x29de + 0x28, 0xffffu);
+    gate_ds_set_word(0x29de + 0x2a, 1);
     gate_ds_set_word(0x29de + 0x18, 1);
     gate_ds_set_word(0x29de + 0x1a, 0);
     gate_ds_set_word(0x29de + 0x1c, 0);
@@ -60,6 +71,32 @@ static void check_native_mode(uint16_t mode)
     gate_rtl_background_setup(0, 7, 0);
 }
 
+static uint8_t video_pixel(uint16_t mode, uint16_t x, uint16_t y)
+{
+    return mode == 3 ? gate_far_byte(0xa000, (uint16_t)(320u * y + x)) :
+        gate_intro_vga16_pixel(x, y);
+}
+
+static void check_native_frame(uint16_t mode)
+{
+    configure(mode, mode == 3 ? 255 : 15);
+    gate_rtl_resident_move_to(3, 5);
+    gate_rtl_fc37(1, 2, 4, 7, 8);
+    assert(gate_ds_word(0x29de + 0x12) == 3);
+    assert(gate_ds_word(0x29de + 0x14) == 5);
+    assert(gate_ds_word(0x29de + 0x10) == 1);
+
+    gate_rtl_ff99(20, 30, 50, 60, 4);
+    assert(video_pixel(mode, 20, 30) == 4); /* original outer edge */
+    assert(video_pixel(mode, 40, 50) == 6); /* style-2 interior */
+    assert(video_pixel(mode, 21, 31) == 9); /* upper-left highlight */
+    assert(video_pixel(mode, 49, 59) == 2); /* bottom-right shade */
+    assert(gate_ds_word(0x5512) == 2);
+    assert(gate_ds_word(0x29de + 0x0c) == 2);
+    assert(gate_ds_word(0x29de + 0x12) == 48);
+    assert(gate_ds_word(0x29de + 0x14) == 32);
+}
+
 static void check_original_snapshot(const char *path)
 {
     GateIntroMemory *ram = calloc(1, sizeof *ram);
@@ -81,10 +118,20 @@ static void check_original_snapshot(const char *path)
     assert(gate_rtl_fbf5(999) == 2);
     assert(gate_ds_word(0x5512) == 255);
     assert(gate_ds_word(0x29de + 0x0c) == 255);
+    assert(gate_ds_word(0x4da0) == 0x2a70 &&
+           gate_ds_word(0x4da2) == 0x2a70 &&
+           gate_ds_word(0x4da4) == 0x2a70 &&
+           gate_ds_word(0x4da6) == 0x2a70);
+    assert(gate_ds_word(0x29de + 0x28) == 0xffffu);
+    assert(gate_ds_word(0x29de + 0x2a) == 1);
     gate_rtl_fc37(2, 10, 12, 13, 14);
     for (uint16_t y = 12; y <= 14; ++y)
         for (uint16_t x = 10; x <= 13; ++x)
             assert(gate_far_byte(0xa000, (uint16_t)(320u * y + x)) == 255);
+    gate_rtl_ff99(20, 30, 50, 60, 4);
+    assert(gate_far_byte(0xa000, (uint16_t)(320u * 50 + 40)) == 1);
+    assert(gate_far_byte(0xa000, (uint16_t)(320u * 31 + 21)) == 255);
+    assert(gate_far_byte(0xa000, (uint16_t)(320u * 59 + 49)) == 2);
     gate_intro_memory_detach();
     free(ram);
 }
@@ -98,6 +145,8 @@ int main(int argc, char **argv)
     check_native_mode(2);
     check_native_mode(3);
     check_native_mode(1);
+    check_native_frame(2);
+    check_native_frame(3);
     gate_intro_memory_detach();
     free(ram);
     if (argc > 1)

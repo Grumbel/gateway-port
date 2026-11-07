@@ -564,10 +564,35 @@ snapshot, plus binary-dispatch provenance. This advances a source-C branch,
 **not** complete intro playback; the original entry, mode-1 image blits,
 font loader, caption frames and SDL event/presentation loop still need work.
 
+The complete original **caption-frame painter** at `GATE.RTL:ff99..1029f`
+is now source C (`gate_rtl_ff99`), connected to original FAR call
+`0cdc:0e50`. Its full frame-style flow preserves the low-byte bit-1
+outline, bit-2 inset/bevel and bit-3 outset/shadow forks, including the
+special graphics-mode-0 and graphics-mode-1 branches, exact 16-bit corner
+arithmetic and final selected ink. The original 22-second linked bank
+resolves 39 distinct FAR calls to `2621:000e` (move-to) and `2621:003e`
+(line-to); their resident bodies write the pen at `DS:29de+12/+14` and
+send lines to `2621:0079`. The four mode-descriptor color words at offsets
+`4c`, `4e`, `50`, `52` are each read via their own relocated FAR segment
+selector (`DS:4da0..4da6`), not a hardcoded 16-color palette.
+
+The native host models the original resident rectangle's **style-1
+outline** and straight horizontal/vertical line-to commands, preserving
+pen position around the direct rectangle call. Both planar VGA mode 2
+and linear mode 3 now execute source-C frame decoration on top of the
+existing style-2 interior fill. Synthetic tests verify ordered source-C
+move/line and color calls for styles 2/4/8 and the mode-0/mode-1 control
+branches; native tests draw real-color bevel pixels, including the
+captured original mode-13h descriptor's black/white/grey shading.
+The resident diagonal-line, pen-width, patterned and text-mode raster
+paths remain unimplemented. The font-selector `RTL:e873`, video startup
+and SDL3 presentation are still outstanding, so full source-C intro
+playback remains **unverified and not independently playable**.
+
 ## Immediate next functions
 
 1. Decompile the remaining mapped graphics/video entry points, especially
-   `GATE.RTL:ff99` caption-frame drawing and the `e873` font selector,
+   the `GATE.RTL:e873` font selector and the resident `2621` line raster,
    preserving their original ABI and data globals.
 2. Recover the remaining patterned/background and text-mode video
    dependencies (`rtl:0xed74/0xeda5/0xedb7`), keyboard, mouse and timing

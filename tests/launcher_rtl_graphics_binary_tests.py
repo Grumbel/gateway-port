@@ -200,6 +200,54 @@ class OriginalIntroGraphicsEvidence(unittest.TestCase):
                                               ds + 0x1302 + 4], 'little'),
                          349)
 
+    def test_original_caption_frame_and_line_services(self):
+        # 0cdc:0e50 is the complete original RTL ff99..1029f frame
+        # painter. Three style bits select its outline, inset bevel and
+        # outset shadow; all endpoints are sent through the resident
+        # 2621:000e (move) and 2621:003e (line-to) FAR entries.
+        self.assertEqual(self.rtl[0xff99:0xff9c], b'\x55\x8b\xec')
+        self.assertEqual(self.rtl[0x1029f], 0xcb)
+        for site, pattern in ((0xffbf, 'f6460e02'),
+                              (0x10036, 'f6460e04'),
+                              (0x10187, 'f6460e08')):
+            self.assertEqual(self.rtl[site:site + 4],
+                             bytes.fromhex(pattern))
+        snapshot = ROOT / 'build/intro-analysis/at-22000.bin'
+        if not snapshot.is_file():
+            self.skipTest('private guest RAM snapshot unavailable')
+        ram = snapshot.read_bytes()
+        base = (0x0cdc + 0x1000) * 16 + 0x0e50 - 0xff99
+        for site, expected in ((0xffa0, 0x0fce),
+                               (0xffa7, 0x4da6),
+                               (0xffb1, 0x4da0),
+                               (0x10041, 0x0fce),
+                               (0x10073, 0x4da4),
+                               (0x100a2, 0x4da6),
+                               (0x100f3, 0x0fce),
+                               (0x10107, 0x4da2),
+                               (0x1013c, 0x0fce),
+                               (0x10192, 0x0fce),
+                               (0x101b7, 0x4da2),
+                               (0x10206, 0x0fce),
+                               (0x10227, 0x4da6),
+                               (0x10258, 0x0fce)):
+            with self.subTest(global_site=site):
+                self.assertEqual(int.from_bytes(ram[base + site:
+                                                     base + site + 2],
+                                                'little'), expected)
+        painter = ram[base + 0xff99:base + 0x102a0]
+        self.assertEqual(painter.count(bytes.fromhex('9a0e002126')), 18)
+        self.assertEqual(painter.count(bytes.fromhex('9a3e002126')), 21)
+        # The resident move-to stores current pen X/Y directly. The
+        # line-to first saves old X/Y, updates the current position and
+        # calls the general 2621:0079 clipped line renderer.
+        self.assertEqual(ram[0x26230:0x2623c],
+                         bytes.fromhex('8b46088944128b4606894414'))
+        self.assertEqual(ram[0x26266:0x26274],
+                         bytes.fromhex('8b4608508944128b460650894414'))
+        self.assertEqual(ram[0x26274:0x26279],
+                         bytes.fromhex('9a79002126'))
+
     def test_palette_uploader_calls_original_retrace_wait(self):
         # GATE.RTL:f62d uses PUSH CS / near CALL with a negative displacement,
         # preserving the original bounded wait at GATE.RTL:f473.

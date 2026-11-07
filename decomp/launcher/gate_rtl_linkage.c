@@ -39,6 +39,11 @@ void gate_far_0cdc_0aee(uint16_t style, uint16_t left, uint16_t top,
 {
     gate_rtl_fc37(style, left, top, right, bottom);
 }
+void gate_far_0cdc_0e50(uint16_t left, uint16_t top, uint16_t right,
+                         uint16_t bottom, uint16_t style)
+{
+    gate_rtl_ff99(left, top, right, bottom, style);
+}
 
 /* The original graphics code passes SS:offset of its local palette array,
  * while host C represents that stack storage as a native pointer. Keep

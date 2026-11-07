@@ -13,8 +13,12 @@ uint16_t gate_rtl_fbf5(uint16_t color);
 void gate_rtl_fc23(uint16_t pattern);
 void gate_rtl_fc37(uint16_t style, uint16_t left, uint16_t top,
                    uint16_t right, uint16_t bottom);
+void gate_rtl_ff99(uint16_t left, uint16_t top, uint16_t right,
+                   uint16_t bottom, uint16_t style);
 
-/* Linked resident 25a3:011e, outside the original RTL C image. */
+/* Linked resident calls, outside the original RTL C image. */
 void gate_rtl_resident_set_pen_color(uint16_t color);
+void gate_rtl_resident_move_to(uint16_t x, uint16_t y); /* 2621:000e */
+void gate_rtl_resident_line_to(uint16_t x, uint16_t y); /* 2621:003e */
 
 #endif

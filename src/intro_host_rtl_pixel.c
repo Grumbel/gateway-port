@@ -75,6 +75,49 @@ void gate_rtl_resident_set_pen_color(uint16_t color)
     gate_ds_set_word(0x29de + 0x0c, color);
 }
 
+/* Resident 2621:000e stores the current pen at DS:29de+12/+14.
+ * The 2621:003e variant first reads the old position, writes the new one,
+ * and sends both to 2621:0079. For the intro's axis-aligned frame edges,
+ * use the existing native pixel host with signed clipping; the original
+ * general diagonal/width/mask line rasterizer is not modeled here. */
+void gate_rtl_resident_move_to(uint16_t x, uint16_t y)
+{
+    gate_ds_set_word(0x29de + 0x12, x);
+    gate_ds_set_word(0x29de + 0x14, y);
+}
+
+void gate_rtl_resident_line_to(uint16_t x, uint16_t y)
+{
+    int32_t old_x = (int16_t)gate_ds_word(0x29de + 0x12);
+    int32_t old_y = (int16_t)gate_ds_word(0x29de + 0x14);
+    int32_t next_x = (int16_t)x;
+    int32_t next_y = (int16_t)y;
+    int32_t cursor;
+    int32_t step;
+    const uint16_t color = gate_ds_word(0x29de + 0x0c);
+    gate_rtl_resident_move_to(x, y);
+    if (gate_ds_word(0x29de + 0x2a) != 1 ||
+        gate_ds_word(0x29de + 0x28) != 0xffffu)
+        abort();
+    if (old_x == next_x) {
+        step = old_y <= next_y ? 1 : -1;
+        for (cursor = old_y;; cursor += step) {
+            gate_rtl_plot_pixel(color, (uint16_t)cursor, x);
+            if (cursor == next_y)
+                break;
+        }
+    } else if (old_y == next_y) {
+        step = old_x <= next_x ? 1 : -1;
+        for (cursor = old_x;; cursor += step) {
+            gate_rtl_plot_pixel(color, y, (uint16_t)cursor);
+            if (cursor == next_x)
+                break;
+        }
+    } else {
+        abort(); /* general Bresenham path remains a separate boundary */
+    }
+}
+
 void gate_rtl_background_setup(uint16_t pattern, uint16_t color,
                                uint16_t transparent)
 {
@@ -96,9 +139,27 @@ void gate_rtl_background_rect(uint16_t style, uint16_t bottom,
     uint16_t previous_width;
     uint16_t y;
 
-    if (style != 2 || gate_ds_word(0x29de + 0x22) != 0 ||
+    if ((style != 1 && style != 2) || gate_ds_word(0x29de + 0x22) != 0 ||
         gate_ds_word(0x29de + 0x26) != 0)
         abort();
+    if (style == 1) {
+        /* Resident 2698:0006's style-1 path draws the four outline
+         * edges with 2621:0079; unlike 2621:003e, that direct call does
+         * not change the remembered cursor position at +12/+14. */
+        uint16_t saved_x = gate_ds_word(0x29de + 0x12);
+        uint16_t saved_y = gate_ds_word(0x29de + 0x14);
+        if (gate_ds_word(0x29de + 0x2a) != 1)
+            abort();
+        gate_ds_set_word(0x29de + 0x10, 0);
+        gate_rtl_resident_move_to(left, bottom);
+        gate_rtl_resident_line_to(left, top);
+        gate_rtl_resident_line_to(right, top);
+        gate_rtl_resident_line_to(right, bottom);
+        gate_rtl_resident_line_to(left, bottom);
+        gate_rtl_resident_move_to(saved_x, saved_y);
+        gate_ds_set_word(0x29de + 0x10, 1);
+        return;
+    }
     /* 2698:0018 uses signed JG after subtracting top from bottom. */
     if ((int16_t)(uint16_t)(bottom - top) <= 0)
         return;
