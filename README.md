@@ -297,8 +297,20 @@ only C syntax and types for the 16-bit Microsoft compiler: it replaces
 `<stdint.h>`, converts potentially overflowing 16-bit `enum` constants to
 preprocessor definitions, removes `_Noreturn` from generated declarations,
 and translates C99 `GateFarPtr` compound literals to a C89 constructor.
+Microsoft C 5.1 also recognizes only the first **31 characters** of an
+identifier. Rather than silently truncate distinct original names into
+collisions, staging creates unique 31-character aliases for the longer ones
+and records both spellings in `SYMBOL.MAP`.
 The original `decomp/launcher/` files retain their documented addresses and
 names. A strict host GCC C89 syntax check passes for all 28 staged modules.
+
+The first real Microsoft C 5.1 run on 2026-11-07 reached `M00.C` and reported
+`C2073`/`C2074` for automatic array/structure initializers, plus many `C4011`
+identifier-truncation warnings and `C4005` macro collisions. The recovered
+source now uses explicit structure assignments and runtime zeroing for
+automatic buffers; the identifier aliases resolve the 31-character collision
+problem in generated files. **The revised build still needs a DOSBox rerun**;
+the initial run did not produce any `.OBJ` files.
 
 `msc51-compile-launcher` uses the same pinned Microsoft C 5.1 installation and
 read-only DOSBox mount as `msc51-probe`; `COMPILE.BAT` attempts `CL /AL /Od /c`

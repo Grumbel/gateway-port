@@ -39,6 +39,15 @@ class MSC51Tests(unittest.TestCase):
                 self.assertNotIn("enum {", content)
                 self.assertNotIn("_Noreturn", content)
                 self.assertNotIn("#include <stdint.h>", content)
+            aliases = (output / "SYMBOL.MAP").read_text()
+            self.assertIn("GATE_DS_STARTUP_ALLOCATED_SEGMENT", aliases)
+            self.assertIn("GATE_RESIDENT_MODE_DESCRIPTOR_BYTES", aliases)
+            for path in (*output.glob("M*.C"), *output.glob("H*.H")):
+                self.assertTrue(all(len(identifier) <= 31 for identifier in
+                                    msc51.msc51_identifiers(path.read_text())), path.name)
+            clock = (output / "M00.C").read_text()
+            self.assertIn("GateFarPtr value;", clock)
+            self.assertIn("memset(sample, 0, sizeof sample);", clock)
             self.assertIn("typedef unsigned long uint32_t;", (output / "STDINT.H").read_text())
             batch = (output / "COMPILE.BAT").read_text()
             self.assertEqual(batch.count("CL /AL /Od /c M"), len(expected))
@@ -60,6 +69,22 @@ class MSC51Tests(unittest.TestCase):
                          "(uint16_t)(next(3, 4) + 5));")
         with self.assertRaisesRegex(ValueError, "more than two"):
             msc51.msc51_far_compounds_to_calls("(GateFarPtr){1,2,3}")
+
+    def test_long_identifier_aliases_do_not_collide_or_change_address_comments(self):
+        first = "GATE_RESIDENT_MODE_DESCRIPTOR_BASE"
+        second = "GATE_RESIDENT_MODE_DESCRIPTOR_BYTES"
+        original = (f"/* {first} at GATE.RTL:0x12abc */\n"
+                    f"#define {first} (1)\n#define {second} (2)\n"
+                    f"const char *name = \"{second}\";\n")
+        names = msc51.msc51_short_names([original])
+        self.assertNotEqual(names[first], names[second])
+        self.assertTrue(all(len(short) <= 31 for short in names.values()))
+        rewritten = msc51.msc51_rename_identifiers(original, names)
+        self.assertIn(f"/* {first} at GATE.RTL:0x12abc */", rewritten)
+        self.assertIn(f'"{second}"', rewritten)
+        self.assertIn(f"#define {names[first]} (1)", rewritten)
+        self.assertIn(f"#define {names[second]} (2)", rewritten)
+        self.assertEqual(msc51.msc51_short_names([original]), names)
 
     def test_launcher_success_requires_fresh_compiler_objects(self):
         with tempfile.TemporaryDirectory() as scratch:

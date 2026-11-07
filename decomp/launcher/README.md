@@ -881,11 +881,16 @@ original Microsoft C ABI or segmented data layout.
 For a real Microsoft C 5.1 **object-compilation** experiment, use
 `nix run -L .#msc51-compile-launcher` instead. It stages the 28 recovered C
 units under DOS 8.3 names with a source-address-preserving mapping in
-`build/msc51-launcher/SOURCE.MAP`, then tries to compile them all as `/AL`
+`build/msc51-launcher/SOURCE.MAP` and a long-name mapping in `SYMBOL.MAP`,
+then tries to compile them all as `/AL`
 modules in DOSBox. That command is not yet a linker or a playable DOS game;
 see the toolchain instructions in the top-level README. The staging passes
 strict host C89 syntax checks, but has not yet been exercised with the real
-Microsoft compiler in the current environment.
+Microsoft compiler in the current environment. The user's first actual run
+found 31-character name collisions and C5.1's rejection of automatic
+aggregate initializers; both are addressed in the next source/staging pass,
+pending a new original-compiler run. Original file offsets in the source
+comments are retained exactly, not replaced by the shortened identifiers.
 
 ## Immediate next functions
 

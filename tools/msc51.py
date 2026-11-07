@@ -9,6 +9,7 @@ and executable outputs stay in a writable directory outside the Nix store.
 """
 
 import argparse
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -191,6 +192,42 @@ def msc51_far_compounds_to_calls(source: str) -> tuple[str, bool]:
     return "".join(pieces), found
 
 
+MSC51_TOKEN = re.compile(
+    r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|'
+    r'(?P<identifier>[A-Za-z_][A-Za-z_0-9]*)', re.DOTALL)
+
+
+def msc51_identifiers(source: str) -> set[str]:
+    """Identify C tokens, excluding comments, strings and character literals."""
+    return {match.group("identifier") for match in MSC51_TOKEN.finditer(source)
+            if match.group("identifier") is not None}
+
+
+def msc51_short_names(sources: list[str]) -> dict[str, str]:
+    """Provide distinct, deterministic identifiers within MSC 5.1's 31-char limit.
+
+    Plain truncation produces real collisions among the original address and
+    field names; retain the full reverse mapping in generated SYMBOL.MAP.
+    """
+    identifiers = set().union(*(msc51_identifiers(source) for source in sources))
+    used = set(identifiers)
+    names = {}
+    for original in sorted(name for name in identifiers if len(name) > 31):
+        alias = original[:22] + "_" + hashlib.sha1(original.encode("ascii")).hexdigest()[:8]
+        if alias in used:
+            raise ValueError(f"MSC 5.1 identifier collision: {original} -> {alias}")
+        names[original] = alias
+        used.add(alias)
+    return names
+
+
+def msc51_rename_identifiers(source: str, names: dict[str, str]) -> str:
+    """Rename compiler-facing tokens without touching address-bearing comments."""
+    return MSC51_TOKEN.sub(
+        lambda match: names.get(match.group("identifier"), match.group(0))
+        if match.group("identifier") is not None else match.group(0), source)
+
+
 def stage_launcher(output: Path) -> list[str]:
     """Stage all recovered launcher C translation units as DOS 8.3 C89 files.
 
@@ -214,7 +251,7 @@ def stage_launcher(output: Path) -> list[str]:
             raise ValueError(f"Unmapped launcher include: {match.group(2)}")
         return match.group(1) + '"' + aliases[filename] + '"'
 
-    mapping = []
+    rewritten = []
     for path in [*headers, *sources]:
         content = path.read_text()
         content = include_pattern.sub(rewrite_includes, content)
@@ -234,8 +271,13 @@ def stage_launcher(output: Path) -> list[str]:
                           "{\n    GateFarPtr result;\n    result.segment = segment;\n"
                           "    result.offset = offset;\n    return result;\n}\n")
                 content = content[:at] + helper + content[at:]
+        rewritten.append((path, content))
+
+    shortened = msc51_short_names([content for _path, content in rewritten])
+    mapping = []
+    for path, content in rewritten:
         alias = aliases[path.name]
-        (output / alias).write_text(content)
+        (output / alias).write_text(msc51_rename_identifiers(content, shortened))
         mapping.append(f"{alias}  {path.relative_to(REPO).as_posix()}")
 
     (output / "STDINT.H").write_text(
@@ -250,6 +292,9 @@ def stage_launcher(output: Path) -> list[str]:
         "#endif\n"
     )
     (output / "SOURCE.MAP").write_text("\n".join(mapping) + "\n")
+    (output / "SYMBOL.MAP").write_text(
+        "# DOS compiler identifier -> original identifier (original addresses remain in source comments)\n"
+        + "".join(f"{alias}  {name}\n" for name, alias in shortened.items()))
     lines = [
         "@ECHO OFF", "ECHO Gateway MSC 5.1 launcher objects > START.LOG",
         "SET PATH=C:\\BIN;C:\\", "SET INCLUDE=C:\\INCLUDE;C:\\",
