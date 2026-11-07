@@ -17,6 +17,7 @@ static int16_t tab_limit, newline_pitch, background_color;
 static uint16_t ink_color;
 static uint16_t background_setup_args[3], background_rect_args[5];
 static unsigned background_setups, background_rects, pixel_count;
+static unsigned video_clears;
 struct Pixel { uint16_t color, y, x; };
 static struct Pixel pixels[1024];
 
@@ -34,6 +35,7 @@ static void initialize(void)
     memset(text, 0, sizeof text);
     memset(bitmap, 0, sizeof bitmap);
     video_print_count = 0;
+    video_clears = 0;
     background_setups = background_rects = pixel_count = 0;
     tab_advance = 6;
     tab_limit = 99;
@@ -126,6 +128,15 @@ void gate_rtl_video_command(uint16_t function, uint8_t *input, uint8_t *output)
     }
 }
 uint16_t gate_rtl_video_block_mode(void) { return 0; }
+/* Original resident video clear is a hardware boundary. This mock verifies
+ * the source-C RTL wrapper's page/color arguments without linking the
+ * full native VGA host, which requires segmented RAM and video mode state. */
+uint16_t gate_far_2488_000a(uint16_t page, uint16_t color)
+{
+    assert(page == 0 && color == 0);
+    ++video_clears;
+    return 0;
+}
 void gate_rtl_video_set_block_mode(uint16_t mode) { assert(mode == 0); }
 uint16_t gate_rtl_video_inversion(void) { return 0; }
 uint8_t gate_rtl_video_attribute(void) { return 0x07; }
@@ -396,6 +407,9 @@ static void test_original_intro_font(const char *directory)
 
 int main(int argc, char **argv)
 {
+    initialize();
+    gate_rtl_f921();
+    assert(video_clears == 1);
     test_font_advances();
     test_original_color_and_cursor_accessors();
     test_string_width_and_offset_wrap();
