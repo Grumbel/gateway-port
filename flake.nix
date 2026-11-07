@@ -125,6 +125,14 @@
                 --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
             '';
           };
+          # Read existing LINK.LOG without launching DOSBox or fetching MSC.
+          msc51-link-report = pkgs.writeShellApplication {
+            name = "gateway-msc51-link-report";
+            runtimeInputs = [ pkgs.python3 ];
+            text = ''
+              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51_link_report.py "$@"
+            '';
+          };
           msc51-install = pkgs.writeShellApplication {
             name = "gateway-msc51-install";
             runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
@@ -293,6 +301,11 @@
           program = "${self.packages.${system}.msc51-link-launcher}/bin/gateway-msc51-link-launcher";
           meta.description = "Attempt Microsoft LINK on the 28 launcher objects and report unresolved original DOS services";
         };
+        msc51-link-report = {
+          type = "app";
+          program = "${self.packages.${system}.msc51-link-report}/bin/gateway-msc51-link-report";
+          meta.description = "Classify Microsoft LINK unresolved symbols using original Gateway source names and addresses; no DOSBox required";
+        };
         msc51-install = {
           type = "app";
           program = "${self.packages.${system}.msc51-install}/bin/gateway-msc51-install";
@@ -341,6 +354,7 @@
           } ''
             cd "$src"
             python3 tests/test_msc51.py
+            python3 tests/test_msc51_link_report.py
             python3 tests/test_msc51_compare.py
             python3 tests/test_msc51_unpack.py
             touch "$out"
@@ -447,6 +461,7 @@ except Exception:
                          self.packages.${system}.msc51-prepare-launcher
                          self.packages.${system}.msc51-compile-launcher
                          self.packages.${system}.msc51-link-launcher
+                         self.packages.${system}.msc51-link-report
                          self.packages.${system}.msc51-install
                          self.packages.${system}.msc51-compare
                          self.packages.${system}.msc51-unpack ];

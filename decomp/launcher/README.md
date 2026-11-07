@@ -890,11 +890,27 @@ shortened identifiers.
 
 `nix run -L .#msc51-link-launcher` is a **separate diagnostic** for the original
 Microsoft linker. It reuses the successful `.OBJ` files, writes a response
-file and saves `LINK.LOG` for an unresolved-service inventory. No original
-resident, memory, video, file or input adapter is assumed to exist merely
-because object compilation succeeds. This link attempt is not yet verified
-on the user host, and any produced EXE must not be treated as a playable
-game; see the top-level toolchain instructions.
+file and saves `LINK.LOG` for an unresolved-service inventory. The first
+working Microsoft LINK 3.65 invocation on the user host listed 28 inputs and
+reported **108 unresolved externals** (`L2029`); the original DOS program is
+not yet linkable. Among these are the startup `_main`, the `gate_ds_*` and
+`gate_far_*` segmented-memory boundary, `gate_dos_file_*` services and
+original linked FAR calls. For example, `gate_linked_intro_mouse_flags` is
+associated with observed linked `0e48:07fe`, while
+`gate_linked_format_resource_filename` uses observed linked `12a5:3366`;
+neither address is an original stable source-file offset. RTL state accessors
+such as `gate_rtl_video_columns` retain their annotated **RTL DS:0x0004**
+location, also distinct from original RTL file offsets.
+
+`nix run .#msc51-link-report -- --details --json build/msc51-link-report.json`
+summarizes an existing `LINK.LOG`, restores all shortened identifiers, shows
+the referring original C modules and preserves provenance types:
+`original_file_offset` (for `rtl:0x...` or `exe:0x...`) versus
+`observed_linked_far` (only valid for the recorded DOS layout). This runs
+without a compiler or DOSBox. No resident, memory, video, file or input
+adapter is assumed to exist merely because object compilation succeeds, and
+the current linker errors should not be silenced with unverified no-op
+functions. See the top-level toolchain instructions.
 
 ## Immediate next functions
 

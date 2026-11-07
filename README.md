@@ -214,6 +214,7 @@ nix run .#msc51-prepare                       # prepare C89 source only (no down
 nix run .#msc51-prepare-launcher              # stage all 28 recovered launcher modules
 nix run -L .#msc51-compile-launcher            # compile all 28 with Microsoft C 5.1
 nix run -L .#msc51-link-launcher               # try LINK with the resulting objects
+nix run .#msc51-link-report                    # classify saved LINK.LOG without DOSBox
 nix build .#msc51                             # optional: inspect assembled DOS tree
 nix develop .#msc51                           # optional DOSBox toolchain shell
 ```
@@ -349,13 +350,30 @@ recursively restarts it. The startup marker is `LNKSTART.LOG` (a valid DOS
 8.3 filename); the earlier `LINKSTART.LOG` was truncated to `LINKSTAR.LOG`
 by DOSBox. Both legacy and current markers are cleared before a new link.
 
-**Actual linking has not yet been attempted with Microsoft LINK.** Original
-resident functions and guest memory/graphics/file/input services still lack
-real-mode implementations, so unresolved symbols are expected. Even if LINK
-produces an EXE, that is not evidence of a playable or correct Gateway build.
-The historical compiler and DOSBox are unavailable in this workspace; the
-linker invocation must be verified on the user host. Host-side Python and
-strict C89 checks, including `msc51-tooling`, do not fetch Microsoft binaries.
+The user's subsequent actual Microsoft **Overlay Linker 3.65** run passed all
+28 object names to LINK and reported **108 `L2029` unresolved externals**.
+They include the CRT's `_main`, the generic segmented-memory accessors,
+DOS file services, linked resident FAR calls and RTL-state/hardware adapters.
+No runnable EXE was produced; this is an expected source-coverage/host-adapter
+boundary, not a new compiler incompatibility. To inventory the saved log
+without invoking DOSBox or downloading the proprietary compiler again:
+
+```sh
+nix run .#msc51-link-report -- --details --json build/msc51-link-report.json
+```
+
+The report resolves shortened Microsoft identifiers using `SYMBOL.MAP`,
+associates object references with original source files through `SOURCE.MAP`,
+and attaches historical names from `decomp/launcher/symbol-names.tsv`.
+It explicitly distinguishes **original RTL/EXE file offsets** from
+**layout-dependent observed FAR addresses**, which are not stable source
+identities. Group counts help prioritize real adapter work; they do not
+prove any function implementation or assume that every unresolved reference
+is a routine rather than state. Even a future linked EXE will require DOS
+execution and behavior validation before it can be called playable. The
+historical linker is not available in this workspace; only source-only
+Python, C89 and CTest checks can run here. The `msc51-tooling` check runs
+without fetching Microsoft binaries.
 
 The `msc51-compare` app reads the SHA-256-pinned original `GATE.RTL` and the
 assembled `LLIBCR.LIB`. It searches the raw library for
