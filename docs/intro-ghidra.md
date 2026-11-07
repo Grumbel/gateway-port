@@ -118,6 +118,12 @@ Six separate source/linked instruction windows verify that base, including
 the call entry at `c3bd`; the span stops at relative `0a80` because a later
 image overwrites the following region. Importing this function is **not**
 the same as recovering its source semantics or making the C intro playable.
+The original entry checks relocated `DS:0662 & 6` and `DS:0660 != 0`
+before starting music. The original 10-second probe reaches the routine,
+opens `GATE_004.MUS`, and installs an IRQ 8 handler. The first two checks
+are independently recovered in `gate_rtl_audio_startup.c`, allowing the
+silent/unconfigured fast exit to be decided in source C. **The music-loader
+branch, interrupt lifecycle, and actual intro startup call remain unported.**
 
 The fourth bank correlates the following *original file offsets*, not just
 runtime addresses:
