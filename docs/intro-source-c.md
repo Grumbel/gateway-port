@@ -16,6 +16,16 @@ DOS music IRQ driver and independent startup C are pending. A separate hybrid
 launcher can now enter the original game after this source-C intro, but does
 not yet carry the reconstructed guest state across that boundary.
 
+The complete intro now executes the recovered original `GATE.RTL:f14d`
+display-mode C routine at its original linked FAR call. The native BIOS/VGA
+adapter supplies detected VGA type 5, a capable default monitor subtype,
+and initial mode `13h` to `f14d`, which establishes the renderer descriptor, selects
+mode `13h`, and configures the four clipping edges and clipping enable.
+Those clipping writes were removed from the source-C host's initial setup.
+The existing 816-frame replay and final guest-RAM checks remain byte-exact;
+this still does not reconstruct the earlier DOS startup responsible for
+building the linked tables and relocating the C runtime.
+
 The first executable C-only milestone is the complete set of eighteen
 `GATE.EXE:117e` caption calls with their original arguments, font loading,
 word wrapping, bevel frames, pixels, and wait-duration calculation. The

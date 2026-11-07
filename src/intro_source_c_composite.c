@@ -9,6 +9,7 @@
 #include "gate_intro_host_memory.h"
 #include "gate_intro_host_input.h"
 #include "gate_intro_host_vga_ports.h"
+#include "gate_intro_host_video_mode.h"
 #include "gate_rtl.h"
 #include "gate_rtl_graphics.h"
 #include "gate_rtl_audio_startup.h"
@@ -151,11 +152,6 @@ uint16_t gate_far_2488_000a(uint16_t a, uint16_t b)
     return 1;
 }
 void gate_rtl_f921(void) { gate_far_2488_000a(0, 0); }
-uint16_t gate_rtl_f14d(int16_t mode)
-{
-    if (mode != 3) abort();
-    return 1; /* already configured in the pinned DOS guest RAM */
-}
 uint16_t gate_far_1000_0008(void)
 {
     return active_clock && active_clock->hooks &&
@@ -203,11 +199,7 @@ static int configure(GateIntroMemory *memory)
         gate_far_set_byte(memory->ds_segment, (uint16_t)(slot + 3u), 0xff);
     }
     gate_ds_set_word(0x29de + 0x16, 0);
-    gate_ds_set_word(0x29de + 0x18, 1);
-    gate_ds_set_word(0x29de + 0x1a, 0);
-    gate_ds_set_word(0x29de + 0x1c, 0);
-    gate_ds_set_word(0x29de + 0x1e, 319);
-    gate_ds_set_word(0x29de + 0x20, 199);
+    /* Source-C RTL:f14d configures +18..+20 itself before drawing. */
     gate_ds_set_word(0x29de + 0x28, 0xffffu);
     gate_ds_set_word(0x29de + 0x2a, 1);
     gate_ds_set_word(0x12de, 0);
@@ -227,6 +219,7 @@ static int run_intro(const char *snapshot, const char *dos_dir,
     GateIntroMemory *memory;
     GateDosHostFiles files = {0};
     GateIntroVgaPorts ports = {0};
+    GateIntroVideoModeHardware video = {0};
     Clock clock = {0};
     Recording recording = {0};
     GateIntroHostInput input = {&clock, sample_time, key_pending, read_key, no_mouse};
@@ -259,6 +252,14 @@ static int run_intro(const char *snapshot, const char *dos_dir,
     gate_dos_host_files_attach(&files);
     gate_intro_input_attach(&input);
     gate_intro_vga_ports_attach(&ports);
+    /* Adapter type 5 and active mode 13h are present in the captured RAM.
+     * Monitor subtype 5 models the default VGA capability required by
+     * RTL:f14d's mode-3 path; it is a host setting, not guest data. */
+    video.adapter_type = 5;
+    video.monitor_subtype = 5;
+    video.bios_mode = 0x13;
+    video.bios_mode_valid = 1;
+    gate_intro_video_mode_attach(&video);
     if (!configure(memory))
         abort();
 
@@ -280,6 +281,13 @@ static int run_intro(const char *snapshot, const char *dos_dir,
         frame_update(&clock);
         gate_exe_1302();
         frame_update(&clock);
+        /* The real EXE:1302 must invoke the relocated RTL:f14d C routine
+         * once through its linked FAR alias, rather than silently relying
+         * on a preselected host display mode. */
+        if (video.mode_changes != 1 || video.start_calls != 1 ||
+            video.clip_calls != 1 || video.requested_bios_mode != 3 ||
+            video.bios_mode != 0x13 || !video.clipping_enabled)
+            abort();
     } else {
         if (gate_rtl_12b19(0x3105, 0) != 1)
             abort();
@@ -332,6 +340,7 @@ static int run_intro(const char *snapshot, const char *dos_dir,
         abort();
     active_recording = 0;
     active_clock = 0;
+    gate_intro_video_mode_detach();
     gate_intro_vga_ports_detach();
     gate_intro_input_detach();
     gate_dos_host_files_close_all(&files);

@@ -58,10 +58,12 @@ set(GATEWAY_INTRO_SOURCE_C_COMPOSITE_SOURCES
   decomp/launcher/gate_input.c
   decomp/launcher/gate_c_runtime_random.c
   decomp/launcher/gate_rtl_audio_startup.c
+  decomp/launcher/gate_rtl_mode.c
   decomp/launcher/gate_rtl_graphics.c
   decomp/launcher/gate_rtl_intro_animation.c
   decomp/launcher/gate_rtl_intro_sequence.c
   src/intro_host_rtl_graphics_globals.c
+  src/intro_host_video_mode.c
   src/intro_source_c_composite.c)
 list(REMOVE_ITEM GATEWAY_INTRO_SOURCE_C_COMPOSITE_SOURCES
   src/intro_source_c_captions.c src/intro_source_c_picture_dump.c)
