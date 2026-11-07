@@ -435,11 +435,13 @@ def omf_relocation_masks(data: bytes, module: OMFModule) -> dict[int, bytes | No
 def scan_exact_crt_prefixes(original: bytes, library: bytes,
                             modules: list[OMFModule], min_size: int = 16,
                             relocations: bool = False) -> list[dict]:
-    """Find unambiguous exact first bytes of OMF publics in original RTL.
+    """Find unambiguous OMF public prefixes in the original RTL.
 
     Relocation-aware mode masks only FIXUPP locations and lengthens the
     comparison to 512 bytes per LEDATA/public boundary, but still requires
-    at least 12 fixed bytes of the initial 16 to yield a unique match.
+    at least 12 fixed bytes of the initial 16. If several RTL locations
+    match the masked opening, select a location only when the additional
+    *fixed* bytes establish a unique longest match.
     Neither mode establishes that a public is a callable function.
     """
     hits = []
@@ -453,23 +455,37 @@ def scan_exact_crt_prefixes(original: bytes, library: bytes,
             if relocations and len(code_mask) != len(code):
                 continue
             prefix = code[:min_size]
+
+            def matching_length(rtl_offset: int) -> int:
+                matched = min_size
+                while matched < len(code) and rtl_offset + matched < len(original):
+                    if ((not relocations or code_mask[matched])
+                            and original[rtl_offset + matched] != code[matched]):
+                        break
+                    matched += 1
+                return matched
+
             if relocations:
                 if sum(code_mask[:min_size]) < 12:
                     continue
                 locations = search_code(original, prefix, code_mask[:min_size])
-                if len(locations) != 1:
+                if not locations:
                     continue
-                rtl_offset = locations[0]
+                scored = []
+                for location in locations:
+                    length = matching_length(location)
+                    scored.append((sum(code_mask[:length]), location, length))
+                best_fixed = max(fixed for fixed, _, _ in scored)
+                best = [(location, length) for fixed, location, length in scored
+                        if fixed == best_fixed]
+                if len(best) != 1:
+                    continue
+                rtl_offset, matched = best[0]
             else:
                 rtl_offset = original.find(prefix)
                 if rtl_offset < 0 or original.find(prefix, rtl_offset + 1) >= 0:
                     continue
-            matched = min_size
-            while matched < len(code) and rtl_offset + matched < len(original):
-                if ((not relocations or code_mask[matched])
-                        and original[rtl_offset + matched] != code[matched]):
-                    break
-                matched += 1
+                matched = matching_length(rtl_offset)
             info = segments.get(segment, {})
             hits.append({
                 "symbol": symbol,
@@ -515,6 +531,23 @@ def summarize_public_prefixes(hits: list[dict]) -> dict:
         result["code_class_entry_span"] = [
             f"0x{min(code_locations):05x}", f"0x{max(code_locations):05x}"]
     return result
+
+
+def compare_public_scans(exact: list[dict], relocated: list[dict]) -> dict:
+    """Report changes in attributed symbol/RTL pairs without merging evidence."""
+    def key(hit: dict) -> tuple[str, str, str]:
+        return hit["rtl_offset"], hit["module"], hit["symbol"]
+
+    exact_keys = {key(hit) for hit in exact}
+    relocated_keys = {key(hit) for hit in relocated}
+    return {
+        "exact_candidates": len(exact),
+        "relocation_aware_candidates": len(relocated),
+        "exact_only": [dict(rtl_offset=rtl, module=module, symbol=symbol)
+                       for rtl, module, symbol in sorted(exact_keys - relocated_keys)],
+        "relocation_only": [dict(rtl_offset=rtl, module=module, symbol=symbol)
+                            for rtl, module, symbol in sorted(relocated_keys - exact_keys)],
+    }
 
 
 def resolve_library(compiler_root: Path) -> Path:
@@ -573,6 +606,8 @@ def main(argv: list[str] | None = None) -> int:
             scan_exact_crt_prefixes(original, library_bytes, modules,
                                     relocations=args.scan_relocations)
             if args.scan_public_prefixes or args.scan_relocations else None)
+        exact_baseline = (scan_exact_crt_prefixes(original, library_bytes, modules)
+                          if args.scan_relocations else None)
     except (ValueError, OSError) as error:
         parser.error(str(error))
     for entry in matches:
@@ -617,6 +652,16 @@ def main(argv: list[str] | None = None) -> int:
         if args.scan_relocations:
             print("FIXUPP masking is restricted to each LEDATA/public boundary; "
                   "malformed or unsupported fixups are excluded.")
+            differences = compare_public_scans(exact_baseline, public_candidates)
+            print(f'Exact-prefix baseline: {differences["exact_candidates"]} candidates; '
+                  f'{len(differences["exact_only"])} exact-only, '
+                  f'{len(differences["relocation_only"])} relocation-only.')
+            for name, label in (("exact_only", "Exact-only"),
+                                ("relocation_only", "Relocation-only")):
+                if differences[name]:
+                    print(f'{label} entries: ' + ", ".join(
+                        f'{hit["module"]}:{hit["symbol"]}@{hit["rtl_offset"]}'
+                        for hit in differences[name]))
     print(f"Compared against {library} ({len(library_bytes)} bytes)")
     print("A match supports identical CRT code; a miss is inconclusive for OMF modules.")
     if args.json is not None:
@@ -631,6 +676,9 @@ def main(argv: list[str] | None = None) -> int:
             report["public_prefix_summary"] = summary
             report["public_prefix_scan_mode"] = (
                 "omf-fixupp" if args.scan_relocations else "exact")
+            if exact_baseline is not None:
+                report["public_prefix_exact_baseline"] = exact_baseline
+                report["public_prefix_scan_comparison"] = differences
         args.json.write_text(json.dumps(report, indent=2) + "\n")
         print(f"Saved {args.json}")
     return 0

@@ -73,6 +73,22 @@ class MSC51CompareTests(unittest.TestCase):
         self.assertEqual(hits[0]["masked_relocation_bytes"], 6)
         self.assertEqual(hits[0]["fixed_compared_bytes"], 154)
 
+        # Both copies match the masked first 16 bytes, but a fixed byte at
+        # offset 20 disambiguates the full 160-byte entry.
+        almost = bytearray(rtl_code)
+        almost[20] ^= 0x01
+        extra = msc.scan_exact_crt_prefixes(
+            original + b"separator" + almost, library, modules,
+            relocations=True)
+        self.assertEqual(len(extra), 1)
+        self.assertEqual(extra[0]["rtl_offset"], "0x00007")
+
+        # Two complete masked matches remain ambiguous despite the extra
+        # comparison length; arbitrary original addresses are never chosen.
+        self.assertEqual(msc.scan_exact_crt_prefixes(
+            original + b"separator" + rtl_code, library, modules,
+            relocations=True), [])
+
         # One unmasked byte beyond the previous 64-byte limit stops the match.
         rtl_code[110] ^= 1
         shorter = msc.scan_exact_crt_prefixes(
@@ -218,6 +234,16 @@ class MSC51CompareTests(unittest.TestCase):
         })
         self.assertEqual(msc.summarize_public_prefixes([]), {
             "total": 0, "segment_classes": {},
+        })
+        self.assertEqual(msc.compare_public_scans(candidates, both), {
+            "exact_candidates": 1,
+            "relocation_aware_candidates": 2,
+            "exact_only": [],
+            "relocation_only": [{
+                "rtl_offset": both[1]["rtl_offset"],
+                "module": "RAND.C",
+                "symbol": "_month",
+            }],
         })
         self.assertEqual(msc.scan_exact_crt_prefixes(
             signature + b"padding" + signature, bytes(lib), modules), [])

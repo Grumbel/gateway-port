@@ -362,6 +362,11 @@ records exact-leading, fixed-compared and masked-relocation byte counts in
 the output and JSON (`public_prefix_scan_mode: omf-fixupp`). It requires at
 least 12 unmasked bytes among the initial 16 and exactly one matching RTL
 position; malformed/unsupported fixups exclude that record from this mode.
+If the initial masked 16-byte signature occurs more than once, the scanner
+continues comparing later **fixed** bytes and accepts a location only if
+exactly one candidate has the longest fixed-byte match. The command also
+prints the original exact-prefix baseline and which symbol/RTL pairs appear
+in only one mode; JSON retains both candidate sets in separate fields.
 
 This is deliberately an *opt-in candidate search*, not function recovery:
 comparison stops at a new public symbol or OMF record boundary, does not
@@ -370,6 +375,16 @@ whole function bodies. An OMF `CODE` class can also contain non-callable
 data. The exact-prefix scan above remains the conservative baseline for
 side-by-side comparison. The relocation encoding follows the
 [TIS OMF 1.1 specification](https://openwatcom.org/ftp/devel/docs/omf.pdf).
+
+The first real-library `--scan-relocations` run reported **67 unique
+candidates** (62 `CODE`, five `DATA`): **35** compared beyond 64 bytes,
+**nine** beyond 256 bytes, and `_fread`, `_fseek` and `_ftell` each reached
+the 512-byte limit. It also discovered `_amlink` and `_memmove`, which did
+not occur in the earlier exact-prefix set. Conversely, a few of the earlier
+70 exact-prefix hits disappeared, because masking the first 16 bytes can
+create ambiguities that the original exact bytes distinguished. The extended
+fixed-byte disambiguation and side-by-side baseline reporting were added
+*after* that user-side run and still require verification with `LLIBCR.LIB`.
 
 ### In-game Gateway debugger (F10)
 
