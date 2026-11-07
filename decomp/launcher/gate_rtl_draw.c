@@ -10,11 +10,11 @@
  * from the original C's DS:0004 write (relocated to DS:5512). */
 uint16_t gate_rtl_set_pen_color(uint16_t color)
 {
-    uint16_t previous = gate_ds_word(0x5512);
-    uint16_t maximum = gate_far_word(gate_ds_word(0x4da8), 0x0054);
+    uint16_t previous = gate_ds_word(GATE_DS_PEN_COLOR);
+    uint16_t maximum = gate_far_word(gate_ds_word(GATE_DS_MAX_PEN_COLOR_SEGMENT), GATE_MODE_DESC_MAX_PEN_COLOR);
     if ((int16_t)color > (int16_t)maximum)
         color = maximum;
-    gate_ds_set_word(0x5512, color);
+    gate_ds_set_word(GATE_DS_PEN_COLOR, color);
     gate_rtl_resident_set_pen_color(color);
     return previous;
 }
@@ -23,8 +23,8 @@ uint16_t gate_rtl_set_pen_color(uint16_t color)
  * CMP AX,1, producing one for every nonzero 16-bit pattern (even ffff). */
 void gate_rtl_set_fill_pattern(uint16_t pattern)
 {
-    gate_ds_set_word(0x12de, pattern);
-    gate_ds_set_word(0x12e0, pattern != 0 ? 1u : 0u);
+    gate_ds_set_word(GATE_DS_FILL_PATTERN, pattern);
+    gate_ds_set_word(GATE_DS_FILL_PATTERN_ACTIVE, pattern != 0 ? 1u : 0u);
 }
 
 /* GATE.RTL:fc37..fc80. This builds the original resident 25a3:0002
@@ -35,11 +35,11 @@ void gate_rtl_fill_rectangle(uint16_t style, uint16_t left, uint16_t top,
                    uint16_t right, uint16_t bottom)
 {
     if ((style & 0x0080u) != 0)
-        gate_rtl_background_setup(10, gate_ds_word(0x5512), 1);
+        gate_rtl_background_setup(10, gate_ds_word(GATE_DS_PEN_COLOR), 1);
     else
-        gate_rtl_background_setup(gate_ds_word(0x12de),
-                                  gate_ds_word(0x5512),
-                                  gate_ds_word(0x12e0));
+        gate_rtl_background_setup(gate_ds_word(GATE_DS_FILL_PATTERN),
+                                  gate_ds_word(GATE_DS_PEN_COLOR),
+                                  gate_ds_word(GATE_DS_FILL_PATTERN_ACTIVE));
 
     if ((int16_t)top < -1)
         top = 0xffffu;
@@ -58,7 +58,7 @@ static uint16_t frame_color(uint16_t segment_word, uint16_t field)
 void gate_rtl_draw_caption_frame(uint16_t left, uint16_t top, uint16_t right,
                    uint16_t bottom, uint16_t style)
 {
-    const uint16_t mode = gate_ds_word(0x0fce);
+    const uint16_t mode = gate_ds_word(GATE_DS_GRAPHICS_MODE);
     uint16_t x, y;
 
     (void)gate_rtl_set_pen_color(mode == 0

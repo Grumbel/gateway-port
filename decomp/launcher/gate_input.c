@@ -14,7 +14,7 @@ uint16_t gate_linked_read_buffered_key(void)
     if (gate_linked_keyboard_pending() != 0) {
         key = gate_linked_read_keyboard_key();
         if (key != 0x20 && key != 0x0d)
-            gate_ds_set_word(0x1340, key);
+            gate_ds_set_word(GATE_DS_INPUT_BUFFERED_KEY, key);
     }
     return key;
 }

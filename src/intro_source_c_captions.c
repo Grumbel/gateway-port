@@ -78,7 +78,7 @@ _Noreturn void gate_rtl_file_divide_fault(void) { abort(); }
 static int configure(GateIntroMemory *memory)
 {
     unsigned i;
-    if (gate_ds_word(0x0fce) != 3 || gate_ds_word(0x15cc) != 3)
+    if (gate_ds_word(GATE_DS_GRAPHICS_MODE) != 3 || gate_ds_word(GATE_DS_RENDERER_MODE) != 3)
         return 0;
     for (i = 0; i < 2; ++i) {
         uint16_t slot = (uint16_t)(0x54ce + i * 30u);
@@ -87,16 +87,16 @@ static int configure(GateIntroMemory *memory)
         gate_far_set_byte(memory->ds_segment, (uint16_t)(slot + 3u), 0xff);
     }
     memset(memory->bytes + 0xa0000, 0, 320u * 200u);
-    gate_ds_set_word(0x29de + 0x16, 0);
-    gate_ds_set_word(0x29de + 0x18, 1);
-    gate_ds_set_word(0x29de + 0x1a, 0);
-    gate_ds_set_word(0x29de + 0x1c, 0);
-    gate_ds_set_word(0x29de + 0x1e, 319);
-    gate_ds_set_word(0x29de + 0x20, 199);
-    gate_ds_set_word(0x29de + 0x28, 0xffffu);
-    gate_ds_set_word(0x29de + 0x2a, 1);
-    gate_ds_set_word(0x12de, 0);
-    gate_ds_set_word(0x12e0, 0);
+    gate_ds_set_word(GATE_DS_DRAW_OPERATION, 0);
+    gate_ds_set_word(GATE_DS_DRAW_CLIPPING_ENABLED, 1);
+    gate_ds_set_word(GATE_DS_DRAW_CLIP_LEFT, 0);
+    gate_ds_set_word(GATE_DS_DRAW_CLIP_TOP, 0);
+    gate_ds_set_word(GATE_DS_DRAW_CLIP_RIGHT, 319);
+    gate_ds_set_word(GATE_DS_DRAW_CLIP_BOTTOM, 199);
+    gate_ds_set_word(GATE_DS_DRAW_LINE_MASK, 0xffffu);
+    gate_ds_set_word(GATE_DS_DRAW_LINE_WIDTH, 1);
+    gate_ds_set_word(GATE_DS_FILL_PATTERN, 0);
+    gate_ds_set_word(GATE_DS_FILL_PATTERN_ACTIVE, 0);
     return 1;
 }
 

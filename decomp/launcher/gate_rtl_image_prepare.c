@@ -24,36 +24,36 @@ void gate_rtl_prepare_picture_display(void)
         return;
 
     status_segment = gate_rtl_preparer_status_segment();
-    gate_far_set_word(status_segment, 0x70, 0);
+    gate_far_set_word(status_segment, GATE_PREPARE_STATUS_WORD, 0);
 
-    if (gate_rtl_resource_ds_word(6) != 0) {
+    if (gate_rtl_resource_ds_word(GATE_RESOURCE_PALETTE_PENDING) != 0) {
         GateFarPtr palette = gate_rtl_image_palette_source();
-        gate_rtl_resource_ds_set_word(6, 0);
+        gate_rtl_resource_ds_set_word(GATE_RESOURCE_PALETTE_PENDING, 0);
         gate_linked_upload_intro_palette(palette);
         original_data_segment = gate_rtl_image_data_segment();
-        for (i = 0; i < 0x300; ++i)
-            gate_far_set_byte(original_data_segment, (uint16_t)(0x56ceu + i),
+        for (i = 0; i < GATE_INTRO_PALETTE_RGB_BYTES; ++i)
+            gate_far_set_byte(original_data_segment, (uint16_t)(GATE_RTL_PREPARED_PALETTE_COPY_OFFSET + i),
                 gate_far_byte(palette.segment, (uint16_t)(palette.offset + i)));
     }
 
     original_data_segment = gate_rtl_image_data_segment();
     for (i = 0; i < 8; ++i)
-        gate_far_set_byte(original_data_segment, (uint16_t)(0x72u + i), 0);
+        gate_far_set_byte(original_data_segment, (uint16_t)(GATE_PREPARE_SCRATCH_BYTES + i), 0);
     for (i = 0; i < 4; ++i)
-        gate_far_set_byte(original_data_segment, (uint16_t)(0x7eu + i),
-            gate_far_byte(original_data_segment, (uint16_t)(0x86u + i)));
+        gate_far_set_byte(original_data_segment, (uint16_t)(GATE_PREPARE_SCRATCH_COPY_DEST + i),
+            gate_far_byte(original_data_segment, (uint16_t)(GATE_PREPARE_SCRATCH_COPY_SOURCE + i)));
 
-    gate_far_set_word(gate_rtl_preparer_word_dest_segment(), 0x7c,
-                      gate_far_word(original_data_segment, 0x84));
+    gate_far_set_word(gate_rtl_preparer_word_dest_segment(), GATE_PREPARE_WORD_DEST,
+                      gate_far_word(original_data_segment, GATE_PREPARE_WORD_SOURCE));
 
     palette_segment = gate_rtl_image_palette_segment();
     flag_source_segment = gate_rtl_preparer_flag_source_segment();
     for (i = 0; i < 2; ++i) {
-        uint8_t value = gate_far_byte(flag_source_segment, (uint16_t)(0x82u + i));
-        gate_far_set_byte(palette_segment, (uint16_t)(0x7au + i), value);
-        gate_far_set_byte(flag_source_segment, (uint16_t)(0x82u + i), 0);
+        uint8_t value = gate_far_byte(flag_source_segment, (uint16_t)(GATE_PREPARE_FLAG_SOURCE + i));
+        gate_far_set_byte(palette_segment, (uint16_t)(GATE_PREPARE_PEN_STATE_DEST + i), value);
+        gate_far_set_byte(flag_source_segment, (uint16_t)(GATE_PREPARE_FLAG_SOURCE + i), 0);
         if (value != 0)
             active = 1;
     }
-    gate_far_set_word(status_segment, 0x70, active);
+    gate_far_set_word(status_segment, GATE_PREPARE_STATUS_WORD, active);
 }

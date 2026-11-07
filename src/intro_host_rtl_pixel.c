@@ -22,11 +22,11 @@ void gate_rtl_plot_pixel(uint16_t color, uint16_t y, uint16_t x)
     uint8_t incoming;
     uint8_t output;
 
-    if (gate_ds_word(0x29de + 0x18) == 1) {
-        if ((int16_t)x < (int16_t)gate_ds_word(0x29de + 0x1a) ||
-            (int16_t)y < (int16_t)gate_ds_word(0x29de + 0x1c) ||
-            (int16_t)x > (int16_t)gate_ds_word(0x29de + 0x1e) ||
-            (int16_t)y > (int16_t)gate_ds_word(0x29de + 0x20))
+    if (gate_ds_word(GATE_DS_DRAW_CLIPPING_ENABLED) == 1) {
+        if ((int16_t)x < (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_LEFT) ||
+            (int16_t)y < (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_TOP) ||
+            (int16_t)x > (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_RIGHT) ||
+            (int16_t)y > (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_BOTTOM))
             return;
     }
 
@@ -34,7 +34,7 @@ void gate_rtl_plot_pixel(uint16_t color, uint16_t y, uint16_t x)
      * 25d7:00d6 planar pixel callback. Mode 1 has a shorter 640x350
      * viewport; the source-mode switch supplies its clip rectangle.
      * Modes 0/4 still use separate, unmodeled callbacks. */
-    mode = gate_ds_word(0x15cc);
+    mode = gate_ds_word(GATE_DS_RENDERER_MODE);
     if (mode != 1 && mode != 2 && mode != 3)
         abort();
     if (((mode == 1 || mode == 2) &&
@@ -42,7 +42,7 @@ void gate_rtl_plot_pixel(uint16_t color, uint16_t y, uint16_t x)
         (mode == 3 && (x >= 320 || y >= 200)))
         return; /* outside the modeled video aperture */
 
-    operation = gate_ds_word(0x29de + 0x16) & 0xffu;
+    operation = gate_ds_word(GATE_DS_DRAW_OPERATION) & 0xffu;
     incoming = (uint8_t)color;
     if (mode == 1 || mode == 2) {
         incoming &= 15u;
@@ -72,7 +72,7 @@ void gate_rtl_plot_pixel(uint16_t color, uint16_t y, uint16_t x)
 void gate_rtl_resident_set_pen_color(uint16_t color)
 {
     /* The actual 25a3:011e resident body stores the low WORD at +0c. */
-    gate_ds_set_word(0x29de + 0x0c, color);
+    gate_ds_set_word(GATE_DS_DRAW_COLOR, color);
 }
 
 /* Resident 2621:000e stores the current pen at DS:29de+12/+14.
@@ -82,22 +82,22 @@ void gate_rtl_resident_set_pen_color(uint16_t color)
  * general diagonal/width/mask line rasterizer is not modeled here. */
 void gate_rtl_resident_move_to(uint16_t x, uint16_t y)
 {
-    gate_ds_set_word(0x29de + 0x12, x);
-    gate_ds_set_word(0x29de + 0x14, y);
+    gate_ds_set_word(GATE_DS_DRAW_X, x);
+    gate_ds_set_word(GATE_DS_DRAW_Y, y);
 }
 
 void gate_rtl_resident_line_to(uint16_t x, uint16_t y)
 {
-    int32_t old_x = (int16_t)gate_ds_word(0x29de + 0x12);
-    int32_t old_y = (int16_t)gate_ds_word(0x29de + 0x14);
+    int32_t old_x = (int16_t)gate_ds_word(GATE_DS_DRAW_X);
+    int32_t old_y = (int16_t)gate_ds_word(GATE_DS_DRAW_Y);
     int32_t next_x = (int16_t)x;
     int32_t next_y = (int16_t)y;
     int32_t cursor;
     int32_t step;
-    const uint16_t color = gate_ds_word(0x29de + 0x0c);
+    const uint16_t color = gate_ds_word(GATE_DS_DRAW_COLOR);
     gate_rtl_resident_move_to(x, y);
-    if (gate_ds_word(0x29de + 0x2a) != 1 ||
-        gate_ds_word(0x29de + 0x28) != 0xffffu)
+    if (gate_ds_word(GATE_DS_DRAW_LINE_WIDTH) != 1 ||
+        gate_ds_word(GATE_DS_DRAW_LINE_MASK) != 0xffffu)
         abort();
     if (old_x == next_x) {
         step = old_y <= next_y ? 1 : -1;
@@ -126,9 +126,9 @@ void gate_rtl_background_setup(uint16_t pattern, uint16_t color,
      * still rejects unverified patterned drawing. */
     if ((int16_t)pattern < 0 || (int16_t)pattern > 11)
         abort();
-    gate_ds_set_word(0x29de + 0x22, pattern);
-    gate_ds_set_word(0x29de + 0x24, color);
-    gate_ds_set_word(0x29de + 0x26, transparent == 1 ? 1u : 0u);
+    gate_ds_set_word(GATE_DS_DRAW_FILL_PATTERN, pattern);
+    gate_ds_set_word(GATE_DS_DRAW_FILL_COLOR, color);
+    gate_ds_set_word(GATE_DS_DRAW_FILL_TRANSPARENT, transparent == 1 ? 1u : 0u);
 }
 
 void gate_rtl_background_rect(uint16_t style, uint16_t bottom,
@@ -139,25 +139,25 @@ void gate_rtl_background_rect(uint16_t style, uint16_t bottom,
     uint16_t previous_width;
     uint16_t y;
 
-    if ((style != 1 && style != 2) || gate_ds_word(0x29de + 0x22) != 0 ||
-        gate_ds_word(0x29de + 0x26) != 0)
+    if ((style != 1 && style != 2) || gate_ds_word(GATE_DS_DRAW_FILL_PATTERN) != 0 ||
+        gate_ds_word(GATE_DS_DRAW_FILL_TRANSPARENT) != 0)
         abort();
     if (style == 1) {
         /* Resident 2698:0006's style-1 path draws the four outline
          * edges with 2621:0079; unlike 2621:003e, that direct call does
          * not change the remembered cursor position at +12/+14. */
-        uint16_t saved_x = gate_ds_word(0x29de + 0x12);
-        uint16_t saved_y = gate_ds_word(0x29de + 0x14);
-        if (gate_ds_word(0x29de + 0x2a) != 1)
+        uint16_t saved_x = gate_ds_word(GATE_DS_DRAW_X);
+        uint16_t saved_y = gate_ds_word(GATE_DS_DRAW_Y);
+        if (gate_ds_word(GATE_DS_DRAW_LINE_WIDTH) != 1)
             abort();
-        gate_ds_set_word(0x29de + 0x10, 0);
+        gate_ds_set_word(GATE_DS_DRAW_RECT_STATE, 0);
         gate_rtl_resident_move_to(left, bottom);
         gate_rtl_resident_line_to(left, top);
         gate_rtl_resident_line_to(right, top);
         gate_rtl_resident_line_to(right, bottom);
         gate_rtl_resident_line_to(left, bottom);
         gate_rtl_resident_move_to(saved_x, saved_y);
-        gate_ds_set_word(0x29de + 0x10, 1);
+        gate_ds_set_word(GATE_DS_DRAW_RECT_STATE, 1);
         return;
     }
     /* 2698:0018 uses signed JG after subtracting top from bottom. */
@@ -166,24 +166,24 @@ void gate_rtl_background_rect(uint16_t style, uint16_t bottom,
     if ((int16_t)right < (int16_t)left)
         abort(); /* reversed endpoints still need the 2621 line service */
 
-    previous_color = gate_ds_word(0x29de + 0x0c);
-    previous_mask = gate_ds_word(0x29de + 0x28);
-    previous_width = gate_ds_word(0x29de + 0x2a);
-    gate_ds_set_word(0x29de + 0x0c, gate_ds_word(0x29de + 0x24));
-    gate_ds_set_word(0x29de + 0x28, 0xffffu);
-    gate_ds_set_word(0x29de + 0x2a, 1);
+    previous_color = gate_ds_word(GATE_DS_DRAW_COLOR);
+    previous_mask = gate_ds_word(GATE_DS_DRAW_LINE_MASK);
+    previous_width = gate_ds_word(GATE_DS_DRAW_LINE_WIDTH);
+    gate_ds_set_word(GATE_DS_DRAW_COLOR, gate_ds_word(GATE_DS_DRAW_FILL_COLOR));
+    gate_ds_set_word(GATE_DS_DRAW_LINE_MASK, 0xffffu);
+    gate_ds_set_word(GATE_DS_DRAW_LINE_WIDTH, 1);
 
     for (y = top;; ++y) {
         uint16_t x;
         for (x = left;; ++x) {
-            gate_rtl_plot_pixel(gate_ds_word(0x29de + 0x0c), y, x);
+            gate_rtl_plot_pixel(gate_ds_word(GATE_DS_DRAW_COLOR), y, x);
             if (x == right)
                 break;
         }
         if (y == bottom)
             break;
     }
-    gate_ds_set_word(0x29de + 0x0c, previous_color);
-    gate_ds_set_word(0x29de + 0x28, previous_mask);
-    gate_ds_set_word(0x29de + 0x2a, previous_width);
+    gate_ds_set_word(GATE_DS_DRAW_COLOR, previous_color);
+    gate_ds_set_word(GATE_DS_DRAW_LINE_MASK, previous_mask);
+    gate_ds_set_word(GATE_DS_DRAW_LINE_WIDTH, previous_width);
 }

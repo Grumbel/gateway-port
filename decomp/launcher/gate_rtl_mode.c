@@ -12,11 +12,11 @@
 void gate_rtl_configure_vga_palette(void)
 {
     uint16_t i;
-    uint16_t mode = gate_ds_word(0x0fce);
-    if (gate_ds_word(0x5516) != 5 || mode == 0 || mode == 3)
+    uint16_t mode = gate_ds_word(GATE_DS_GRAPHICS_MODE);
+    if (gate_ds_word(GATE_DS_VIDEO_ADAPTER_TYPE) != 5 || mode == 0 || mode == 3)
         return;
     gate_rtl_wait_vertical_retrace();
-    (void)gate_rtl_palette_in(gate_ds_word(0x5514));
+    (void)gate_rtl_palette_in(gate_ds_word(GATE_DS_VGA_STATUS_PORT));
     for (i = 0; i < 16; ++i) {
         gate_rtl_palette_out(0x3c0, (uint8_t)i);
         gate_rtl_palette_out(0x3c0, (uint8_t)i);
@@ -43,14 +43,14 @@ uint16_t gate_rtl_set_video_mode(int16_t requested_mode)
     uint16_t final_mask;
     int16_t rows;
 
-    gate_ds_set_word(0x0fce, 0xffffu);
+    gate_ds_set_word(GATE_DS_GRAPHICS_MODE, 0xffffu);
     if (requested_mode < 0 || requested_mode > 4)
         return 0;
 
     gate_rtl_mode_query_adapter(adapter);
     video_type = adapter[0];
     monitor = adapter[1];
-    gate_ds_set_word(0x5516, video_type);
+    gate_ds_set_word(GATE_DS_VIDEO_ADAPTER_TYPE, video_type);
     bios_mode = (uint16_t)requested_mode;
 
     if (requested_mode == 4 && video_type == 5 && monitor >= 4) {
@@ -65,69 +65,69 @@ uint16_t gate_rtl_set_video_mode(int16_t requested_mode)
 
     svga = ((video_type == 4 || video_type == 5) && monitor >= 4)
         ? 1u : 0u;
-    gate_ds_set_word(0x0fd0, svga);
+    gate_ds_set_word(GATE_DS_SVGA_ENABLED, svga);
     if (requested_mode == 3) {
         if (svga == 0)
             return 0;
     } else {
-        if ((int16_t)gate_ds_word((uint16_t)(0x12e2 + 2u * video_type)) <
+        if ((int16_t)gate_ds_word((uint16_t)(GATE_DS_MODE_ADAPTER_LIMIT_TABLE + 2u * video_type)) <
               requested_mode ||
-            (int16_t)gate_ds_word((uint16_t)(0x12ee + 2u * monitor)) <
+            (int16_t)gate_ds_word((uint16_t)(GATE_DS_MODE_MONITOR_LIMIT_TABLE + 2u * monitor)) <
               requested_mode)
             return 0;
     }
 
-    gate_ds_set_word(0x5514, monitor == 4 ? 0x3bau : 0x3dau);
+    gate_ds_set_word(GATE_DS_VGA_STATUS_PORT, monitor == 4 ? 0x3bau : 0x3dau);
     if (gate_rtl_mode_set_bios(bios_mode) != 0 ||
         gate_rtl_mode_start(1) != 0)
         return 0;
 
-    gate_ds_set_word(0x0fce, (uint16_t)requested_mode);
+    gate_ds_set_word(GATE_DS_GRAPHICS_MODE, (uint16_t)requested_mode);
     gate_rtl_configure_vga_palette();
     index = (uint16_t)(2u * (uint16_t)requested_mode);
-    width = gate_ds_word((uint16_t)(0x12f8 + index));
-    height = gate_ds_word((uint16_t)(0x1302 + index));
-    pitch = gate_ds_word((uint16_t)(0x1316 + index));
+    width = gate_ds_word((uint16_t)(GATE_DS_MODE_WIDTH_TABLE + index));
+    height = gate_ds_word((uint16_t)(GATE_DS_MODE_HEIGHT_TABLE + index));
+    pitch = gate_ds_word((uint16_t)(GATE_DS_MODE_GROUPING_TABLE + index));
 
-    gate_far_set_word(gate_ds_word(0x4d92), 0x003e, width);
-    gate_far_set_word(gate_ds_word(0x4d94), 0x0042, height);
-    gate_far_set_word(gate_ds_word(0x4d96), 0x0044,
-        gate_ds_word((uint16_t)(0x130c + index)));
-    gate_far_set_word(gate_ds_word(0x4d98), 0x0046, pitch);
+    gate_far_set_word(gate_ds_word(GATE_DS_VIDEO_WIDTH_SEGMENT), GATE_MODE_DESC_SCREEN_WIDTH, width);
+    gate_far_set_word(gate_ds_word(GATE_DS_VIDEO_HEIGHT_SEGMENT), GATE_MODE_DESC_SCREEN_HEIGHT, height);
+    gate_far_set_word(gate_ds_word(GATE_DS_VIDEO_STRIDE_SEGMENT), GATE_MODE_DESC_SCREEN_STRIDE,
+        gate_ds_word((uint16_t)(GATE_DS_MODE_STRIDE_TABLE + index)));
+    gate_far_set_word(gate_ds_word(GATE_DS_VIDEO_GROUPING_SEGMENT), GATE_MODE_DESC_LINE_GROUPING, pitch);
 
     /* CWD / IDIV, then CWD / SUB / SAR: signed quotient with original
      * rounding. A zero pitch would have faulted the 8086 division. */
     if (pitch == 0)
         abort();
     rows = (int16_t)((int16_t)(uint16_t)(height + 1u) / (int16_t)pitch);
-    gate_far_set_word(gate_ds_word(0x4d9a), 0x003c, (uint16_t)rows);
-    gate_far_set_word(gate_ds_word(0x4d9c), 0x0048, (uint16_t)(rows / 2));
-    gate_far_set_word(gate_ds_word(0x4d9e), 0x004a,
-        gate_ds_word((uint16_t)(0x1320 + index)));
+    gate_far_set_word(gate_ds_word(GATE_DS_VIDEO_ROW_COUNT_SEGMENT), GATE_MODE_DESC_SCREEN_ROW_COUNT, (uint16_t)rows);
+    gate_far_set_word(gate_ds_word(GATE_DS_VIDEO_HALF_ROW_COUNT_SEGMENT), GATE_MODE_DESC_HALF_ROW_COUNT, (uint16_t)(rows / 2));
+    gate_far_set_word(gate_ds_word(GATE_DS_VIDEO_COLOR_LAYOUT_SEGMENT), GATE_MODE_DESC_COLOR_LAYOUT,
+        gate_ds_word((uint16_t)(GATE_DS_MODE_COLOR_LAYOUT_TABLE + index)));
 
     /* Exactly the five far WORD writes selected by the original three
      * branch targets f2d0/f311/f38b, including the unusual 00ff mask. */
     if (requested_mode == 0) {
         static const uint16_t values[5] = {0, 0, 1, 1, 1};
         for (index = 0; index < 5; ++index)
-            gate_far_set_word(gate_ds_word((uint16_t)(0x4da0 + 2u * index)),
-                              (uint16_t)(0x4c + 2u * index), values[index]);
+            gate_far_set_word(gate_ds_word((uint16_t)(GATE_DS_FRAME_COLOR_SEGMENTS_BASE + 2u * index)),
+                              (uint16_t)(GATE_MODE_DESC_FRAME_COLOR_PRIMARY + 2u * index), values[index]);
     } else if (requested_mode == 3) {
         static const uint16_t values[5] = {0, 2, 1, 255, 255};
         for (index = 0; index < 5; ++index)
-            gate_far_set_word(gate_ds_word((uint16_t)(0x4da0 + 2u * index)),
-                              (uint16_t)(0x4c + 2u * index), values[index]);
+            gate_far_set_word(gate_ds_word((uint16_t)(GATE_DS_FRAME_COLOR_SEGMENTS_BASE + 2u * index)),
+                              (uint16_t)(GATE_MODE_DESC_FRAME_COLOR_PRIMARY + 2u * index), values[index]);
     } else {
         static const uint16_t values[5] = {15, 2, 1, 0, 15};
         for (index = 0; index < 5; ++index)
-            gate_far_set_word(gate_ds_word((uint16_t)(0x4da0 + 2u * index)),
-                              (uint16_t)(0x4c + 2u * index), values[index]);
+            gate_far_set_word(gate_ds_word((uint16_t)(GATE_DS_FRAME_COLOR_SEGMENTS_BASE + 2u * index)),
+                              (uint16_t)(GATE_MODE_DESC_FRAME_COLOR_PRIMARY + 2u * index), values[index]);
     }
-    final_mask = gate_far_word(gate_ds_word(0x4da8), 0x0054);
-    gate_ds_set_word(0x5512, final_mask);
-    gate_ds_set_word(0x5510, final_mask);
-    gate_ds_set_word(0x550e, 0);
-    gate_ds_set_word(0x12dc, 0);
+    final_mask = gate_far_word(gate_ds_word(GATE_DS_MAX_PEN_COLOR_SEGMENT), GATE_MODE_DESC_MAX_PEN_COLOR);
+    gate_ds_set_word(GATE_DS_PEN_COLOR, final_mask);
+    gate_ds_set_word(GATE_DS_PEN_MASK, final_mask);
+    gate_ds_set_word(GATE_DS_PEN_AUX_STATE, 0);
+    gate_ds_set_word(GATE_DS_FILL_AUX_STATE, 0);
     gate_rtl_mode_clip(height, width, 0, 0);
     gate_rtl_mode_pen(1);
     result = 1;

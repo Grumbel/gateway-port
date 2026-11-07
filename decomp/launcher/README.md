@@ -22,6 +22,36 @@ conventions, control flow, or instruction-offset evidence.
 The historical progress log in `docs/decompilation-plan.md` retains the
 old names as recorded at the time; use the index to translate them.
 
+## Named original memory layouts
+
+Original hexadecimal memory locations remain in the definitions, not at
+individual call sites. [`gate_memory_layout.h`](gate_memory_layout.h) records
+the **absolute linked DS byte offsets** (for example
+`GATE_DS_FILL_PATTERN = 0x12de`), the separate video-descriptor relative
+offsets, and the resident descriptor table at `DS:27ee` with its `0x3e`-byte
+stride. [`gate_rtl_image.h`](gate_rtl_image.h) records the distinct
+**relative** layouts of the 12-byte resource header, the resource-loader
+scalars at `DS:1416`, the 136-byte picture record and its embedded VFX image
+at record `+0x08`. For example, the picture's pixel FAR pointer is at record
+`+0x08 + 0x18` (offset WORD) and `+0x08 + 0x1a` (segment WORD). Animation
+delays are picture-record bytes `+0x06` and `+0x07`.
+
+The eighteen sequential `GATE_DS_INTRO_CAPTION_01` through `_18` names
+also pin their original `DS:363b` through `DS:4820` string pointers in the
+same header. Title/palette stages use separately named channel offsets;
+asset resource IDs and elapsed-time values in the presentation remain the
+literal original call arguments.
+
+These names are labels for **observed memory usage**, not proven original
+compiler symbols. Ambiguous startup words and reserved descriptor fields
+have deliberately neutral labels. The `*_SEGMENT` DS slots hold relocated
+segment values: callers still read those WORDs dynamically and then access
+their named *relative* descriptor offsets. A named constant must never be
+treated as a flat native pointer, nor should the mode descriptor's `+0x3e`
+be confused with the unrelated DS absolute offsets or resource record fields.
+Static and guest-memory tests retain raw addresses where they serve as
+independent oracles for this mapping.
+
 The executable is compiled native 8086 code, **not** a small interpreted
 script. Its original C source, compiler version, and library headers have not
 been recovered. These `.c` files are a manual decompilation of the disassembly;

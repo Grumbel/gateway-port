@@ -9,8 +9,8 @@
  * WORD: high half of the retained 32-bit state is cleared. */
 void gate_linked_seed_runtime_random(uint16_t seed)
 {
-    gate_ds_set_word(0x358e, seed);
-    gate_ds_set_word(0x3590, 0);
+    gate_ds_set_word(GATE_DS_RANDOM_STATE_LOW, seed);
+    gate_ds_set_word(GATE_DS_RANDOM_STATE_HIGH, 0);
 }
 
 /* Linked Microsoft C 5.1 CRT rand.c:_rand (OMF PUBDEF verified against
@@ -21,10 +21,10 @@ void gate_linked_seed_runtime_random(uint16_t seed)
  * variable intro animation frame delays. */
 uint16_t gate_linked_runtime_random(void)
 {
-    uint32_t state = (uint32_t)gate_ds_word(0x358e) |
-                     ((uint32_t)gate_ds_word(0x3590) << 16);
+    uint32_t state = (uint32_t)gate_ds_word(GATE_DS_RANDOM_STATE_LOW) |
+                     ((uint32_t)gate_ds_word(GATE_DS_RANDOM_STATE_HIGH) << 16);
     state = state * 0x000343fdu + 0x00269ec3u;
-    gate_ds_set_word(0x358e, (uint16_t)state);
-    gate_ds_set_word(0x3590, (uint16_t)(state >> 16));
+    gate_ds_set_word(GATE_DS_RANDOM_STATE_LOW, (uint16_t)state);
+    gate_ds_set_word(GATE_DS_RANDOM_STATE_HIGH, (uint16_t)(state >> 16));
     return (uint16_t)((state >> 16) & 0x7fffu);
 }

@@ -5,6 +5,7 @@
 #define GATE_LAUNCHER_EXE_DECOMP_H
 
 #include <stdint.h>
+#include "gate_memory_layout.h"
 
 /*
  * Manual C decompilation of GATE.EXE, not the original lost C source.

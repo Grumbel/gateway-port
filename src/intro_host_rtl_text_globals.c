@@ -8,39 +8,39 @@
  * fixed DOS segments or fonts are embedded in the native adapter. */
 GateFarPtr gate_rtl_active_font(void)
 {
-    return (GateFarPtr){gate_ds_word(0x54cc), gate_ds_word(0x54ca)};
+    return (GateFarPtr){gate_ds_word(GATE_DS_ACTIVE_FONT_SEGMENT), gate_ds_word(GATE_DS_ACTIVE_FONT_OFFSET)};
 }
 
 int16_t gate_rtl_cursor_x(void)
 {
-    return (int16_t)gate_ds_word(0x550a);
+    return (int16_t)gate_ds_word(GATE_DS_TEXT_CURSOR_X);
 }
 
 int16_t gate_rtl_cursor_y(void)
 {
-    return (int16_t)gate_ds_word(0x550c);
+    return (int16_t)gate_ds_word(GATE_DS_TEXT_CURSOR_Y);
 }
 
 void gate_rtl_set_cursor(int16_t x, int16_t y)
 {
-    gate_ds_set_word(0x550a, (uint16_t)x);
-    gate_ds_set_word(0x550c, (uint16_t)y);
+    gate_ds_set_word(GATE_DS_TEXT_CURSOR_X, (uint16_t)x);
+    gate_ds_set_word(GATE_DS_TEXT_CURSOR_Y, (uint16_t)y);
 }
 
 uint16_t gate_rtl_ink_color(void)
 {
-    return gate_ds_word(0x54c8);
+    return gate_ds_word(GATE_DS_TEXT_INK_COLOR);
 }
 
 int16_t gate_rtl_background_color(void)
 {
-    return (int16_t)gate_ds_word(0x54c6);
+    return (int16_t)gate_ds_word(GATE_DS_TEXT_BACKGROUND_COLOR);
 }
 
 void gate_rtl_set_colors(uint16_t ink, int16_t background)
 {
-    gate_ds_set_word(0x54c8, ink);
-    gate_ds_set_word(0x54c6, (uint16_t)background);
+    gate_ds_set_word(GATE_DS_TEXT_INK_COLOR, ink);
+    gate_ds_set_word(GATE_DS_TEXT_BACKGROUND_COLOR, (uint16_t)background);
 }
 
 /* The linked RTL text routines read these mode-dependent words through
@@ -51,12 +51,12 @@ void gate_rtl_set_colors(uint16_t ink, int16_t background)
  * cached or hardcoded to the 320x200 caption path. */
 uint16_t gate_rtl_tab_advance(void)
 {
-    return gate_far_word(gate_ds_word(0x4d82), 0x003a);
+    return gate_far_word(gate_ds_word(GATE_DS_FONT_TAB_ADVANCE_SEGMENT), GATE_MODE_DESC_TAB_ADVANCE);
 }
 
 int16_t gate_rtl_text_mode_pitch(void)
 {
-    return (int16_t)gate_far_word(gate_ds_word(0x4d86), 0x003c);
+    return (int16_t)gate_far_word(gate_ds_word(GATE_DS_FONT_LINE_PITCH_SEGMENT), GATE_MODE_DESC_TEXT_LINE_PITCH);
 }
 
 int16_t gate_rtl_tab_pitch(void)
@@ -66,10 +66,10 @@ int16_t gate_rtl_tab_pitch(void)
 
 int16_t gate_rtl_tab_limit(void)
 {
-    return (int16_t)gate_far_word(gate_ds_word(0x4d90), 0x003e);
+    return (int16_t)gate_far_word(gate_ds_word(GATE_DS_FONT_TAB_LIMIT_SEGMENT), GATE_MODE_DESC_SCREEN_WIDTH);
 }
 
 int16_t gate_rtl_newline_pitch(void)
 {
-    return (int16_t)gate_far_word(gate_ds_word(0x4d8a), 0x0034);
+    return (int16_t)gate_far_word(gate_ds_word(GATE_DS_FONT_HEIGHT_SEGMENT), GATE_MODE_DESC_FONT_HEIGHT);
 }

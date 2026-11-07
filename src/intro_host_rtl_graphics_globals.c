@@ -16,7 +16,7 @@ uint16_t gate_rtl_graphics_mode(void)
 
 void gate_rtl_graphics_set_index(uint16_t value)
 {
-    gate_far_set_word(gate_rtl_preparer_status_segment(), 0x70, value);
+    gate_far_set_word(gate_rtl_preparer_status_segment(), GATE_PREPARE_STATUS_WORD, value);
 }
 
 int16_t gate_rtl_graphics_byte_count(uint16_t index)

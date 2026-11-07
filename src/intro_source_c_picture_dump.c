@@ -33,7 +33,7 @@ void gate_rtl_release_picture_record(GateFarPtr work)
 {
     if (gate_far_byte(work.segment, work.offset) != 0) {
         gate_rtl_graphics_release((GateFarPtr){work.segment,
-            (uint16_t)(work.offset + 8u)});
+            (uint16_t)(work.offset + GATE_PICTURE_RECORD_VFX_IMAGE)});
         gate_far_set_byte(work.segment, work.offset, 0);
     }
 }
@@ -139,7 +139,7 @@ int main(int argc, char **argv)
     gate_intro_memory_attach(memory);
     gate_dos_host_files_attach(&files);
     gate_intro_vga_ports_attach(&ports);
-    if (gate_ds_word(0x15cc) != 3) {
+    if (gate_ds_word(GATE_DS_RENDERER_MODE) != 3) {
         fputs("expected original VGA mode-13h snapshot\n", stderr);
         gate_dos_host_files_close_all(&files);
         gate_intro_vga_ports_detach();
@@ -147,9 +147,9 @@ int main(int argc, char **argv)
         free(memory);
         return 1;
     }
-    gate_rtl_resource_ds_set_word(0, 0);
-    gate_rtl_resource_ds_set_word(6, 0); /* discard prior snapshot image's pending DAC */
-    gate_rtl_resource_ds_set_word(8, 0xffffu);
+    gate_rtl_resource_ds_set_word(GATE_RESOURCE_ERROR_LATCH, 0);
+    gate_rtl_resource_ds_set_word(GATE_RESOURCE_PALETTE_PENDING, 0); /* discard prior snapshot image's pending DAC */
+    gate_rtl_resource_ds_set_word(GATE_RESOURCE_CACHED_FILE_ID, 0xffffu);
     memset(memory->bytes + 0xa0000, 0, 320u * 200u);
     if (sequence) {
         unsigned step;

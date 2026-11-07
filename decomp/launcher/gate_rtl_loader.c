@@ -23,19 +23,19 @@ uint16_t gate_rtl_load_picture_record(GateFarPtr work, uint16_t resource, uint16
     if (gate_far_byte(work.segment, work.offset) != 0)
         return 0;
 
-    gate_far_set_byte(work.segment, (uint16_t)(work.offset + 6u), 0);
-    gate_far_set_byte(work.segment, (uint16_t)(work.offset + 7u), 0);
+    gate_far_set_byte(work.segment, (uint16_t)(work.offset + GATE_PICTURE_RECORD_DELAY_BASE), 0);
+    gate_far_set_byte(work.segment, (uint16_t)(work.offset + GATE_PICTURE_RECORD_DELAY_SPREAD), 0);
 
     if (gate_rtl_select_picture_resource(resource, mode) == 0)
         return 0;
 
     destination.segment = work.segment;
-    destination.offset = (uint16_t)(work.offset + 8u);
+    destination.offset = (uint16_t)(work.offset + GATE_PICTURE_RECORD_VFX_IMAGE);
     mode_segment = gate_rtl_image_mode_segment();
     header_segment = gate_rtl_image_header_segment();
     video_mode = gate_far_word(mode_segment, GATE_RTL_VIDEO_MODE_OFFSET);
-    if (gate_linked_allocate_vfx_image(gate_far_word(header_segment, GATE_RTL_HEADER_OFFSET + 8),
-                           gate_far_word(header_segment, GATE_RTL_HEADER_OFFSET + 6),
+    if (gate_linked_allocate_vfx_image(gate_far_word(header_segment, GATE_RTL_HEADER_OFFSET + GATE_PICTURE_HEADER_HEIGHT),
+                           gate_far_word(header_segment, GATE_RTL_HEADER_OFFSET + GATE_PICTURE_HEADER_WIDTH),
                            video_mode, destination, 0) != 0)
         return 0;
 
@@ -45,19 +45,20 @@ uint16_t gate_rtl_load_picture_record(GateFarPtr work, uint16_t resource, uint16
      * scalar values* (RTL DS:000a/000c -> linked DS:1420/1422): picture
      * x/y from the resource selector. They are NOT segment selectors.
      * Confusing them with DS:4dce/4dd0 put pictures far off-screen. */
-    gate_far_set_word(work.segment, (uint16_t)(work.offset + 2u),
-                      gate_rtl_resource_ds_word(0x0au));
-    gate_far_set_word(work.segment, (uint16_t)(work.offset + 4u),
-                      gate_rtl_resource_ds_word(0x0cu));
-    gate_far_set_byte(work.segment, (uint16_t)(work.offset + 6u),
-                      gate_far_byte(header_segment, GATE_RTL_HEADER_OFFSET + 10));
-    gate_far_set_byte(work.segment, (uint16_t)(work.offset + 7u),
-                      gate_far_byte(header_segment, GATE_RTL_HEADER_OFFSET + 11));
-    gate_far_set_byte(work.segment, (uint16_t)(work.offset + 1u),
-                      (gate_far_byte(header_segment, GATE_RTL_HEADER_OFFSET + 5) & 0x40u) != 0 ? 3 : 0);
+    gate_far_set_word(work.segment, (uint16_t)(work.offset + GATE_PICTURE_RECORD_X),
+                      gate_rtl_resource_ds_word(GATE_RESOURCE_PICTURE_X));
+    gate_far_set_word(work.segment, (uint16_t)(work.offset + GATE_PICTURE_RECORD_Y),
+                      gate_rtl_resource_ds_word(GATE_RESOURCE_PICTURE_Y));
+    gate_far_set_byte(work.segment, (uint16_t)(work.offset + GATE_PICTURE_RECORD_DELAY_BASE),
+                      gate_far_byte(header_segment, GATE_RTL_HEADER_OFFSET + GATE_PICTURE_HEADER_DELAY_BASE));
+    gate_far_set_byte(work.segment, (uint16_t)(work.offset + GATE_PICTURE_RECORD_DELAY_SPREAD),
+                      gate_far_byte(header_segment, GATE_RTL_HEADER_OFFSET + GATE_PICTURE_HEADER_DELAY_SPREAD));
+    gate_far_set_byte(work.segment, (uint16_t)(work.offset + GATE_PICTURE_RECORD_BLIT_MODE),
+                      (gate_far_byte(header_segment, GATE_RTL_HEADER_OFFSET + GATE_PICTURE_HEADER_FLAGS) &
+                       GATE_PICTURE_HEADER_SPECIAL_BLIT) != 0 ? 3 : 0);
     gate_far_set_byte(work.segment, work.offset, 1);
 
-    width = gate_far_word(header_segment, GATE_RTL_HEADER_OFFSET + 6);
+    width = gate_far_word(header_segment, GATE_RTL_HEADER_OFFSET + GATE_PICTURE_HEADER_WIDTH);
     if (gate_far_word(mode_segment, GATE_RTL_VIDEO_MODE_OFFSET) != 3) {
         /* Match ADD/CWD/XOR/SUB/SAR/XOR/SUB as WORD operations. Ordinarily
          * this means signed division by eight toward zero. The original
@@ -71,11 +72,11 @@ uint16_t gate_rtl_load_picture_record(GateFarPtr work, uint16_t resource, uint16
             shifted |= 0xe000u; /* original signed SAR by 3 */
         width = (uint16_t)((shifted ^ sign) - sign);
     }
-    gate_far_set_word(work.segment, (uint16_t)(work.offset + 0x1cu), width);
+    gate_far_set_word(work.segment, (uint16_t)(work.offset + GATE_PICTURE_RECORD_VFX_IMAGE + GATE_VFX_IMAGE_ROW_STRIDE), width);
 
     if (gate_linked_decompress_picture_pixels(
-            gate_far_word(work.segment, (uint16_t)(work.offset + 0x20u)),
-            gate_far_word(work.segment, (uint16_t)(work.offset + 0x22u))) != 0) {
+            gate_far_word(work.segment, (uint16_t)(work.offset + GATE_PICTURE_RECORD_VFX_IMAGE + GATE_VFX_IMAGE_PIXELS_OFFSET)),
+            gate_far_word(work.segment, (uint16_t)(work.offset + GATE_PICTURE_RECORD_VFX_IMAGE + GATE_VFX_IMAGE_PIXELS_SEGMENT))) != 0) {
         gate_rtl_release_picture_record(work);
         return 0;
     }

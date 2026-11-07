@@ -23,17 +23,17 @@ static uint16_t rtl_deadline_reached(uint32_t now, uint32_t deadline)
  * Its peripheral routines and original RTLink globals remain explicit. */
 void gate_rtl_play_picture_delta_sequence(uint16_t first, uint16_t next, int16_t count)
 {
-    uint8_t record[0x88];
+    uint8_t record[GATE_PICTURE_RECORD_BYTES];
     GateFarPtr work = gate_stack_pointer(record);
     uint32_t deadline = 0;
 
     gate_rtl_fade_palette_out();
-    gate_linked_set_intro_pen_color(gate_far_word(gate_rtl_anim_segment_22(), 0x4c));
+    gate_linked_set_intro_pen_color(gate_far_word(gate_rtl_anim_segment_22(), GATE_MODE_DESC_FRAME_COLOR_PRIMARY));
     gate_linked_fill_intro_rectangle(2, 0, 0,
-        gate_far_word(gate_rtl_anim_segment_26(), 0x3e),
-        gate_far_word(gate_rtl_anim_segment_24(), 0x42));
+        gate_far_word(gate_rtl_anim_segment_26(), GATE_MODE_DESC_SCREEN_WIDTH),
+        gate_far_word(gate_rtl_anim_segment_24(), GATE_MODE_DESC_SCREEN_HEIGHT));
 
-    record[0] = 0;
+    record[GATE_PICTURE_RECORD_ACTIVE] = 0;
     if ((int16_t)first >= 0) {
         (void)gate_rtl_load_picture_record(work, first, 0);
         gate_rtl_draw_picture_record(work);
@@ -65,10 +65,10 @@ void gate_rtl_play_picture_delta_sequence(uint16_t first, uint16_t next, int16_t
         now = gate_linked_animation_elapsed_milliseconds();
         random_low = gate_linked_runtime_random();
         divisor = (uint16_t)(50u * (uint16_t)gate_far_byte(work.segment,
-            (uint16_t)(work.offset + 7u)) + 1u);
+            (uint16_t)(work.offset + GATE_PICTURE_RECORD_DELAY_SPREAD)) + 1u);
         delay = (uint16_t)((random_low % divisor) + 50u *
             (uint16_t)gate_far_byte(work.segment,
-            (uint16_t)(work.offset + 6u)));
+            (uint16_t)(work.offset + GATE_PICTURE_RECORD_DELAY_BASE)));
         deadline = (uint32_t)(now + delay);
     }
 

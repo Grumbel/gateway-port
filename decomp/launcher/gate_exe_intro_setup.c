@@ -10,10 +10,11 @@
  * possible while the remaining startup services are reconstructed. */
 void gate_exe_prepare_intro_globals(void)
 {
-    gate_far_set_word(gate_ds_word(0x4e46), 0x0660, 0x0401);
-    gate_far_set_word(gate_ds_word(0x4e48), 0x065c, 0x007f);
-    gate_far_set_word(gate_ds_word(0x4e4a), 0x065e, 1);
-    gate_far_set_word(gate_ds_word(0x4e4c), 0x064e, 0);
-    gate_far_set_word(gate_ds_word(0x4e4e), 0x0658,
-                      (uint16_t)(gate_linked_allocate_intro_memory(0x1000) - 0x12b2));
+    gate_far_set_word(gate_ds_word(GATE_DS_STARTUP_CONFIG_FIRST_SEGMENT), GATE_DS_MUSIC_STARTUP_CONFIG, 0x0401);
+    gate_far_set_word(gate_ds_word(GATE_DS_STARTUP_CONFIG_SECOND_SEGMENT), GATE_DS_STARTUP_PARAMETER_TWO, 0x007f);
+    gate_far_set_word(gate_ds_word(GATE_DS_STARTUP_CONFIG_THIRD_SEGMENT), GATE_DS_STARTUP_PARAMETER_THREE, 1);
+    gate_far_set_word(gate_ds_word(GATE_DS_STARTUP_CONFIG_FOURTH_SEGMENT), GATE_DS_STARTUP_PARAMETER_FOUR, 0);
+    gate_far_set_word(gate_ds_word(GATE_DS_STARTUP_CONFIG_FIFTH_SEGMENT), GATE_DS_STARTUP_ALLOCATED_SEGMENT,
+                      (uint16_t)(gate_linked_allocate_intro_memory(GATE_STARTUP_MEMORY_PARAGRAPHS) -
+                                 GATE_STARTUP_MEMORY_SEGMENT_BIAS));
 }

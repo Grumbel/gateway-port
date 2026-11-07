@@ -7,7 +7,7 @@
 /* Original GATE.RTL:e771..ebcf, linked at 0c4d:018d in the observed intro.
  * The original stores two 30-byte slots in its own DS and accesses the
  * current video/font type through relocated segment-selector words. */
-enum { FONT_SLOTS = 2, FONT_SIZE = 30, FONT_BASE = 0x54ce };
+enum { FONT_SLOTS = 2, FONT_SIZE = 30, FONT_BASE = GATE_DS_FONT_CACHE_BASE };
 
 static GateFarPtr font_slot(uint16_t index)
 {
@@ -49,8 +49,8 @@ static void font_set_pointer(GateFarPtr font, uint16_t field, GateFarPtr value)
 
 static void font_set_active(GateFarPtr font)
 {
-    gate_ds_set_word(0x54ca, font.offset);
-    gate_ds_set_word(0x54cc, font.segment);
+    gate_ds_set_word(GATE_DS_ACTIVE_FONT_OFFSET, font.offset);
+    gate_ds_set_word(GATE_DS_ACTIVE_FONT_SEGMENT, font.segment);
 }
 
 /* The live RTL linkage uses DS:4d84 -> [ES:0fce] and DS:4d86 ->
@@ -58,12 +58,12 @@ static void font_set_active(GateFarPtr font)
  * type (multiplied by 100), the latter is the fallback character height. */
 static uint16_t font_resource_type(void)
 {
-    return gate_far_word(gate_ds_word(0x4d84), 0x0fce);
+    return gate_far_word(gate_ds_word(GATE_DS_FONT_RESOURCE_MODE_SEGMENT), GATE_DS_GRAPHICS_MODE);
 }
 
 static uint8_t font_fallback_height(void)
 {
-    return gate_far_byte(gate_ds_word(0x4d86), 0x003c);
+    return gate_far_byte(gate_ds_word(GATE_DS_FONT_LINE_PITCH_SEGMENT), GATE_MODE_DESC_TEXT_LINE_PITCH);
 }
 
 /* RTL:e79b..e800: release one slot if its reference counter is nonzero.
@@ -127,12 +127,12 @@ static void font_update_metrics(void)
 {
     uint16_t width = gate_rtl_font_character_advance('M');
     uint16_t height = gate_rtl_font_line_advance();
-    uint16_t width_segment = gate_ds_word(0x4d88);
-    uint16_t height_segment = gate_ds_word(0x4d8a);
-    gate_far_set_word(width_segment, 0x0032, width);
-    gate_far_set_word(height_segment, 0x0034, height);
-    gate_far_set_word(gate_ds_word(0x4d8c), 0x0036, font_half(width));
-    gate_far_set_word(gate_ds_word(0x4d8e), 0x0038, font_half(height));
+    uint16_t width_segment = gate_ds_word(GATE_DS_FONT_WIDTH_SEGMENT);
+    uint16_t height_segment = gate_ds_word(GATE_DS_FONT_HEIGHT_SEGMENT);
+    gate_far_set_word(width_segment, GATE_MODE_DESC_FONT_WIDTH, width);
+    gate_far_set_word(height_segment, GATE_MODE_DESC_FONT_HEIGHT, height);
+    gate_far_set_word(gate_ds_word(GATE_DS_FONT_HALF_WIDTH_SEGMENT), GATE_MODE_DESC_FONT_HALF_WIDTH, font_half(width));
+    gate_far_set_word(gate_ds_word(GATE_DS_FONT_HALF_HEIGHT_SEGMENT), GATE_MODE_DESC_FONT_HALF_HEIGHT, font_half(height));
 }
 
 /* RTL:e873..ebcf, linked FAR 0c4d:018d. Only the low byte of the request

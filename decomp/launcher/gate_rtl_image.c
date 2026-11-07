@@ -10,10 +10,10 @@
  * is the 16-bit 0/1 status, not a host success/exception abstraction. */
 uint16_t gate_rtl_show_picture(uint16_t resource, uint16_t mode)
 {
-    uint8_t work[0x88];
+    uint8_t work[GATE_PICTURE_RECORD_BYTES];
     GateFarPtr pointer;
 
-    work[0] = 0;
+    work[GATE_PICTURE_RECORD_ACTIVE] = 0;
     pointer = gate_stack_pointer(work);
     if (gate_rtl_load_picture_record(pointer, resource, mode) != 0) {
         gate_rtl_prepare_picture_display();

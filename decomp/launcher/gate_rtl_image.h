@@ -21,6 +21,102 @@ enum {
     GATE_RTL_MESSAGE_OFFSET = 0x148b,
 };
 
+/* GATE.RTL resource selector's 12-byte on-disk picture-index entry.
+ * These are byte displacements from GATE_RTL_HEADER_OFFSET (DS:005c in
+ * the relocated header segment), not absolute resident DS offsets. */
+enum {
+    GATE_PICTURE_HEADER_FILE_OFFSET_LOW = 0x00,
+    GATE_PICTURE_HEADER_FILE_OFFSET_HIGH = 0x02,
+    GATE_PICTURE_HEADER_MODE_COUNT = 0x04,
+    GATE_PICTURE_HEADER_FLAGS = 0x05,
+    GATE_PICTURE_HEADER_WIDTH = 0x06,
+    GATE_PICTURE_HEADER_HEIGHT = 0x08,
+    GATE_PICTURE_HEADER_DELAY_BASE = 0x0a,
+    GATE_PICTURE_HEADER_DELAY_SPREAD = 0x0b,
+    GATE_PICTURE_HEADER_BYTES = 0x0c,
+    GATE_PICTURE_HEADER_FORMAT_MASK = 0x0f,
+    GATE_PICTURE_HEADER_HAS_PALETTE = 0x10,
+    GATE_PICTURE_HEADER_SPECIAL_BLIT = 0x40,
+};
+
+/* The RTL uses DS:1416+field to access a separate block of resident
+ * resource-loader WORDs. Keep these displacements separate from the
+ * absolute GATE_DS_RESOURCE_SCALARS_BASE and live segment selectors. */
+enum {
+    GATE_RESOURCE_ERROR_LATCH = 0x00,
+    GATE_RESOURCE_DRAW_ORIGIN_X = 0x02,
+    GATE_RESOURCE_DRAW_ORIGIN_Y = 0x04,
+    GATE_RESOURCE_PALETTE_PENDING = 0x06,
+    GATE_RESOURCE_CACHED_FILE_ID = 0x08,
+    GATE_RESOURCE_PICTURE_X = 0x0a,
+    GATE_RESOURCE_PICTURE_Y = 0x0c,
+    GATE_RESOURCE_SEQUENCE_FILTER = 0x0e,
+    GATE_RESOURCE_SKIP_PICTURE_PAYLOAD = 0x10,
+};
+
+/* Original 136-byte picture work record. Its VFX image starts at +08 and
+ * has a distinct structure (the offsets below are relative to that image,
+ * not to the beginning of the work record). */
+enum {
+    GATE_PICTURE_RECORD_BYTES = 0x88,
+    GATE_PICTURE_RECORD_ACTIVE = 0x00,
+    GATE_PICTURE_RECORD_BLIT_MODE = 0x01,
+    GATE_PICTURE_RECORD_X = 0x02,
+    GATE_PICTURE_RECORD_Y = 0x04,
+    GATE_PICTURE_RECORD_DELAY_BASE = 0x06,
+    GATE_PICTURE_RECORD_DELAY_SPREAD = 0x07,
+    GATE_PICTURE_RECORD_VFX_IMAGE = 0x08,
+    GATE_PICTURE_SEQUENCE_CAPACITY = 32,
+};
+
+/* Resident VFX image header, beginning at work+08 (or at a FAR pointer
+ * supplied directly by the 245d:0006 allocator). These are original
+ * offsets observed in the 245d/24a7 services; reserved fields retain
+ * neutral names until their purpose can be proven. */
+enum {
+    GATE_VFX_IMAGE_SIGNATURE = 0x00,
+    GATE_VFX_IMAGE_KIND = 0x02,
+    GATE_VFX_IMAGE_RESERVED_03 = 0x03,
+    GATE_VFX_IMAGE_VIDEO_MODE = 0x04,
+    GATE_VFX_IMAGE_LEFT = 0x06,
+    GATE_VFX_IMAGE_TOP = 0x08,
+    GATE_VFX_IMAGE_RIGHT = 0x0a,
+    GATE_VFX_IMAGE_BOTTOM = 0x0c,
+    GATE_VFX_IMAGE_MODE_WIDTH = 0x0e,
+    GATE_VFX_IMAGE_MODE_HEIGHT = 0x10,
+    GATE_VFX_IMAGE_PLANES = 0x12,
+    GATE_VFX_IMAGE_BITS_PER_PLANE = 0x13,
+    GATE_VFX_IMAGE_ROW_STRIDE = 0x14,
+    GATE_VFX_IMAGE_FLAGS = 0x16,
+    GATE_VFX_IMAGE_PIXELS_OFFSET = 0x18,
+    GATE_VFX_IMAGE_PIXELS_SEGMENT = 0x1a,
+    GATE_VFX_IMAGE_LINE_LAYOUT = 0x1c,
+    GATE_VFX_IMAGE_RESERVED_1E = 0x1e,
+    GATE_VFX_IMAGE_RESERVED_20 = 0x20,
+    GATE_VFX_IMAGE_WIDTH = 0x2c,
+    GATE_VFX_IMAGE_HEIGHT = 0x2e,
+    GATE_VFX_IMAGE_ROW_BYTES = 0x30,
+    GATE_VFX_IMAGE_PIXEL_MASK = 0x32,
+    GATE_VFX_IMAGE_PLANE_ROWS = 0x34,
+    GATE_VFX_IMAGE_HEADER_BYTES = 0x80,
+    GATE_VFX_IMAGE_SIGNATURE_VALUE = 0xca00,
+};
+
+/* Relocated FAR fields read during RTL:1266f before a picture is shown.
+ * Numeric values are offsets within their respective linked FAR segments,
+ * not positions inside the picture/VFX records. */
+enum {
+    GATE_PREPARE_STATUS_WORD = 0x70,
+    GATE_PREPARE_SCRATCH_BYTES = 0x72,
+    GATE_PREPARE_PEN_STATE_DEST = 0x7a,
+    GATE_PREPARE_WORD_DEST = 0x7c,
+    GATE_PREPARE_SCRATCH_COPY_DEST = 0x7e,
+    GATE_PREPARE_FLAG_SOURCE = 0x82,
+    GATE_PREPARE_WORD_SOURCE = 0x84,
+    GATE_PREPARE_SCRATCH_COPY_SOURCE = 0x86,
+    GATE_RTL_PREPARED_PALETTE_COPY_OFFSET = 0x56ce,
+};
+
 /* First original image-display entry, called at GATE.EXE 0f10:1014.
  * Return value is original AX=0 or 1, ignored by the launcher caller. */
 uint16_t gate_rtl_show_picture(uint16_t resource, uint16_t mode);

@@ -48,29 +48,29 @@ static void draw_mode2(uint16_t y, uint16_t x, uint16_t signed_mode,
     /* Resident descriptor #2 is 640x480 with four 1-bit planes, arranged
      * as plane 0,1,2,3 for each source scanline. GC register 3 chooses
      * copy/AND/OR/XOR; the VGA sequencer selects the current plane. */
-    planes = gate_far_byte(image.segment, (uint16_t)(image.offset + 0x12u));
+    planes = gate_far_byte(image.segment, (uint16_t)(image.offset + GATE_VFX_IMAGE_PLANES));
     if (planes != 4 ||
-        gate_far_byte(image.segment, (uint16_t)(image.offset + 0x13u)) != 1)
+        gate_far_byte(image.segment, (uint16_t)(image.offset + GATE_VFX_IMAGE_BITS_PER_PLANE)) != 1)
         abort();
 
     available = (int16_t)(uint16_t)(640u - x);
     if (available <= 0)
         return;
-    width = gate_far_word(image.segment, (uint16_t)(image.offset + 0x2cu));
+    width = gate_far_word(image.segment, (uint16_t)(image.offset + GATE_VFX_IMAGE_WIDTH));
     if ((int16_t)width > available)
         width = (uint16_t)available;
     available = (int16_t)(uint16_t)(480u - y);
     if (available <= 0)
         return;
-    height = gate_far_word(image.segment, (uint16_t)(image.offset + 0x2eu));
+    height = gate_far_word(image.segment, (uint16_t)(image.offset + GATE_VFX_IMAGE_HEIGHT));
     if ((int16_t)height > available)
         height = (uint16_t)available;
     if (width == 0 || height == 0)
         return;
 
-    stride = gate_far_word(image.segment, (uint16_t)(image.offset + 0x14u));
-    source_offset = gate_far_word(image.segment, (uint16_t)(image.offset + 0x18u));
-    source_segment = gate_far_word(image.segment, (uint16_t)(image.offset + 0x1au));
+    stride = gate_far_word(image.segment, (uint16_t)(image.offset + GATE_VFX_IMAGE_ROW_STRIDE));
+    source_offset = gate_far_word(image.segment, (uint16_t)(image.offset + GATE_VFX_IMAGE_PIXELS_OFFSET));
+    source_segment = gate_far_word(image.segment, (uint16_t)(image.offset + GATE_VFX_IMAGE_PIXELS_SEGMENT));
     for (row = 0; row < height; ++row) {
         for (col = 0; col < width; ++col) {
             uint8_t pixel = 0;
@@ -112,14 +112,14 @@ void gate_linked_blit_vfx_picture(uint16_t unused, uint16_t y, uint16_t x,
 
     (void)unused; /* original caller supplies the image origin (0,0) */
 
-    if (gate_ds_word(0x15cc) != 2 && gate_ds_word(0x15cc) != 3)
+    if (gate_ds_word(GATE_DS_RENDERER_MODE) != 2 && gate_ds_word(GATE_DS_RENDERER_MODE) != 3)
         abort(); /* other original VFX mode handlers remain unresolved */
 
     /* Original 244c:0025 validates the CA00 signature before drawing. */
-    if (gate_far_word(image.segment, image.offset) != 0xca00)
+    if (gate_far_word(image.segment, image.offset) != GATE_VFX_IMAGE_SIGNATURE_VALUE)
         return;
 
-    if (gate_ds_word(0x15cc) == 2) {
+    if (gate_ds_word(GATE_DS_RENDERER_MODE) == 2) {
         draw_mode2(y, x, signed_mode, image);
         gate_intro_memory_notify_frame();
         return;
@@ -128,8 +128,8 @@ void gate_linked_blit_vfx_picture(uint16_t unused, uint16_t y, uint16_t x,
     /* In mode 3 the original descriptor is 320x200, eight bits per pixel,
      * with one image plane. Reject a malformed/cross-mode object rather than
      * interpreting its packed data as an eight-bit bitmap. */
-    if (gate_far_byte(image.segment, (uint16_t)(image.offset + 0x12u)) != 1 ||
-        gate_far_byte(image.segment, (uint16_t)(image.offset + 0x13u)) != 8)
+    if (gate_far_byte(image.segment, (uint16_t)(image.offset + GATE_VFX_IMAGE_PLANES)) != 1 ||
+        gate_far_byte(image.segment, (uint16_t)(image.offset + GATE_VFX_IMAGE_BITS_PER_PLANE)) != 8)
         abort();
 
     /* Original signed JG/JGE horizontal/vertical clipping at 24a7:009c
@@ -138,23 +138,23 @@ void gate_linked_blit_vfx_picture(uint16_t unused, uint16_t y, uint16_t x,
     available = (int16_t)(uint16_t)(320u - x);
     if (available <= 0)
         return;
-    count = gate_far_word(image.segment, (uint16_t)(image.offset + 0x30u));
+    count = gate_far_word(image.segment, (uint16_t)(image.offset + GATE_VFX_IMAGE_ROW_BYTES));
     if (available < (int16_t)gate_far_word(image.segment,
-                                          (uint16_t)(image.offset + 0x2cu)))
+                                          (uint16_t)(image.offset + GATE_VFX_IMAGE_WIDTH)))
         count = (uint16_t)available; /* 8-bit pixels = one byte each */
 
     available = (int16_t)(uint16_t)(200u - y);
     if (available <= 0)
         return;
-    rows = gate_far_word(image.segment, (uint16_t)(image.offset + 0x2eu));
+    rows = gate_far_word(image.segment, (uint16_t)(image.offset + GATE_VFX_IMAGE_HEIGHT));
     if (available < (int16_t)rows)
         rows = (uint16_t)available;
     if (count == 0 || rows == 0)
         return;
 
-    stride = gate_far_word(image.segment, (uint16_t)(image.offset + 0x14u));
-    source_offset = gate_far_word(image.segment, (uint16_t)(image.offset + 0x18u));
-    source_segment = gate_far_word(image.segment, (uint16_t)(image.offset + 0x1au));
+    stride = gate_far_word(image.segment, (uint16_t)(image.offset + GATE_VFX_IMAGE_ROW_STRIDE));
+    source_offset = gate_far_word(image.segment, (uint16_t)(image.offset + GATE_VFX_IMAGE_PIXELS_OFFSET));
+    source_segment = gate_far_word(image.segment, (uint16_t)(image.offset + GATE_VFX_IMAGE_PIXELS_SEGMENT));
 
     /* 252c:0053 maps VGA mode 13h (x,y) to A000:(320*y+x). */
     destination = (uint16_t)(320u * y + x);

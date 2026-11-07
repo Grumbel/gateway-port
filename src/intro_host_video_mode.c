@@ -57,7 +57,7 @@ uint16_t gate_rtl_mode_set_bios(uint16_t mode)
      * writes the live renderer selector DS:15cc and returns zero. */
     if (mode > 7)
         return 0xfffau;
-    gate_ds_set_word(0x15cc, mode);
+    gate_ds_set_word(GATE_DS_RENDERER_MODE, mode);
     return 0;
 }
 
@@ -75,20 +75,20 @@ uint16_t gate_rtl_mode_start(uint16_t enabled)
      * needed; disabling always invokes INT 10h/AX=0003h. */
     if (enabled != 0 && enabled != 1)
         return 0xfff9u;
-    gate_ds_set_word(0x15ce, enabled);
-    gate_ds_set_word(0x15d0, 0);
+    gate_ds_set_word(GATE_DS_RENDERER_ENABLED, enabled);
+    gate_ds_set_word(GATE_DS_RENDERER_STATUS, 0);
     if (enabled == 0) {
         active_hardware->bios_mode = 3;
         active_hardware->bios_mode_valid = 1;
         ++active_hardware->bios_mode_sets;
     } else {
-        uint16_t mode = gate_ds_word(0x15cc);
+        uint16_t mode = gate_ds_word(GATE_DS_RENDERER_MODE);
         uint16_t entry;
         uint8_t expected;
         if (mode > 7)
             abort(); /* original selector service must reject invalid mode */
-        entry = (uint16_t)(0x27eeu + mode * 0x3eu);
-        expected = gate_far_byte(gate_ds_segment(), (uint16_t)(entry + 0x16));
+        entry = (uint16_t)(GATE_RESIDENT_MODE_DESCRIPTOR_BASE + mode * GATE_RESIDENT_MODE_DESCRIPTOR_BYTES);
+        expected = gate_far_byte(gate_ds_segment(), (uint16_t)(entry + GATE_RESIDENT_MODE_BIOS_NUMBER));
         if (!active_hardware->bios_mode_valid ||
             active_hardware->bios_mode != expected) {
             active_hardware->bios_mode = expected;
@@ -112,10 +112,10 @@ void gate_rtl_mode_clip(uint16_t bottom, uint16_t right,
     active_hardware->clip_right = right;
     active_hardware->clip_bottom = bottom;
     ++active_hardware->clip_calls;
-    gate_ds_set_word(0x29de + 0x1a, left);
-    gate_ds_set_word(0x29de + 0x1c, top);
-    gate_ds_set_word(0x29de + 0x1e, right);
-    gate_ds_set_word(0x29de + 0x20, bottom);
+    gate_ds_set_word(GATE_DS_DRAW_CLIP_LEFT, left);
+    gate_ds_set_word(GATE_DS_DRAW_CLIP_TOP, top);
+    gate_ds_set_word(GATE_DS_DRAW_CLIP_RIGHT, right);
+    gate_ds_set_word(GATE_DS_DRAW_CLIP_BOTTOM, bottom);
 }
 
 void gate_rtl_mode_pen(uint16_t enabled)
@@ -123,5 +123,5 @@ void gate_rtl_mode_pen(uint16_t enabled)
     if (!active_hardware)
         abort();
     active_hardware->clipping_enabled = enabled == 1;
-    gate_ds_set_word(0x29de + 0x18, enabled == 1 ? 1 : 0);
+    gate_ds_set_word(GATE_DS_DRAW_CLIPPING_ENABLED, enabled == 1 ? 1 : 0);
 }

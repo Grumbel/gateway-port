@@ -7,8 +7,8 @@
  * DS global writes.  The matching original caller may set this base once. */
 void gate_rtl_set_resource_path_base(GateFarPtr base)
 {
-    gate_ds_set_word(0x54c2, base.offset);
-    gate_ds_set_word(0x54c4, base.segment);
+    gate_ds_set_word(GATE_DS_RESOURCE_PATH_BASE_OFFSET, base.offset);
+    gate_ds_set_word(GATE_DS_RESOURCE_PATH_BASE_SEGMENT, base.segment);
 }
 
 /* GATE.RTL:0xe511..0xe530, 0c33:0020.  This is specifically an unsigned
@@ -25,12 +25,12 @@ uint16_t gate_rtl_check_resource_path(GateFarPtr path)
 uint16_t gate_rtl_open_resource_file(uint16_t type, uint16_t resource)
 {
     uint8_t path[80];
-    uint16_t entry = (uint16_t)(0x0fb6u + (uint16_t)(type << 2));
+    uint16_t entry = (uint16_t)(GATE_DS_RESOURCE_PATH_TABLE + (uint16_t)(type << 2));
     uint16_t ds = gate_ds_segment();
     GateFarPtr table = {gate_ds_word((uint16_t)(entry + 2u)),
                         gate_ds_word(entry)};
-    GateFarPtr base = {gate_ds_word(0x54c4), gate_ds_word(0x54c2)};
-    GateFarPtr format = {ds, 0x0faau};
+    GateFarPtr base = {gate_ds_word(GATE_DS_RESOURCE_PATH_BASE_SEGMENT), gate_ds_word(GATE_DS_RESOURCE_PATH_BASE_OFFSET)};
+    GateFarPtr format = {ds, GATE_DS_RESOURCE_PATH_FORMAT};
     GateFarPtr pathname = gate_stack_pointer(path);
 
     gate_linked_format_resource_filename(pathname, format, base, resource, table);

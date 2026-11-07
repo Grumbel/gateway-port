@@ -10,62 +10,62 @@
  * segment 2a70/2a7a, which differ across a DOS loading environment. */
 uint16_t gate_rtl_image_mode_segment(void)
 {
-    return gate_ds_word(0x4dce);
+    return gate_ds_word(GATE_DS_IMAGE_MODE_SEGMENT);
 }
 
 uint16_t gate_rtl_image_palette_segment(void)
 {
-    return gate_ds_word(0x4dd0);
+    return gate_ds_word(GATE_DS_IMAGE_PALETTE_SEGMENT);
 }
 
 uint16_t gate_rtl_preparer_flag_source_segment(void)
 {
-    return gate_ds_word(0x4dd2);
+    return gate_ds_word(GATE_DS_IMAGE_FLAGS_SEGMENT);
 }
 
 uint16_t gate_rtl_preparer_status_segment(void)
 {
-    return gate_ds_word(0x4dd4);
+    return gate_ds_word(GATE_DS_IMAGE_STATUS_SEGMENT);
 }
 
 uint16_t gate_rtl_resource_handle_segment(void)
 {
-    return gate_ds_word(0x4dd6);
+    return gate_ds_word(GATE_DS_RESOURCE_HANDLE_SEGMENT);
 }
 
 uint16_t gate_rtl_image_header_segment(void)
 {
-    return gate_ds_word(0x4dd8);
+    return gate_ds_word(GATE_DS_IMAGE_HEADER_SEGMENT);
 }
 
 uint16_t gate_rtl_resource_size_table_segment(void)
 {
-    return gate_ds_word(0x4dda);
+    return gate_ds_word(GATE_DS_RESOURCE_SIZE_TABLE_SEGMENT);
 }
 
 uint16_t gate_rtl_image_transform_segment(void)
 {
-    return gate_ds_word(0x4ddc);
+    return gate_ds_word(GATE_DS_IMAGE_TRANSFORM_SEGMENT);
 }
 
 uint16_t gate_rtl_preparer_word_dest_segment(void)
 {
-    return gate_ds_word(0x4de2);
+    return gate_ds_word(GATE_DS_IMAGE_PREPARE_DEST_SEGMENT);
 }
 
 uint16_t gate_rtl_anim_segment_22(void)
 {
-    return gate_ds_word(0x4de6);
+    return gate_ds_word(GATE_DS_ANIMATION_FIELD_22_SEGMENT);
 }
 
 uint16_t gate_rtl_anim_segment_24(void)
 {
-    return gate_ds_word(0x4de8);
+    return gate_ds_word(GATE_DS_ANIMATION_FIELD_24_SEGMENT);
 }
 
 uint16_t gate_rtl_anim_segment_26(void)
 {
-    return gate_ds_word(0x4dea);
+    return gate_ds_word(GATE_DS_ANIMATION_FIELD_26_SEGMENT);
 }
 
 /* Unlike the relocatable FAR references above, RTL's own data and
@@ -82,12 +82,12 @@ uint8_t gate_rtl_image_data_byte(uint16_t offset)
 
 uint16_t gate_rtl_resource_ds_word(uint16_t offset)
 {
-    return gate_ds_word((uint16_t)(0x1416u + offset));
+    return gate_ds_word((uint16_t)(GATE_DS_RESOURCE_SCALARS_BASE + offset));
 }
 
 void gate_rtl_resource_ds_set_word(uint16_t offset, uint16_t value)
 {
-    gate_ds_set_word((uint16_t)(0x1416u + offset), value);
+    gate_ds_set_word((uint16_t)(GATE_DS_RESOURCE_SCALARS_BASE + offset), value);
 }
 
 GateFarPtr gate_rtl_image_palette_source(void)

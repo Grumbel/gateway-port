@@ -15,7 +15,7 @@ uint16_t gate_rtl_load_picture_sequence(GateFarPtr work, int16_t count,
     int16_t loaded = 0;
 
     if (count < 1) {
-        gate_rtl_resource_ds_set_word(0x0e, 1);
+        gate_rtl_resource_ds_set_word(GATE_RESOURCE_SEQUENCE_FILTER, 1);
         count = 256;
     }
 
@@ -23,11 +23,11 @@ uint16_t gate_rtl_load_picture_sequence(GateFarPtr work, int16_t count,
         if (gate_rtl_load_picture_record(work, first_resource, mode) == 0)
             break;
         first_resource = (uint16_t)(first_resource + 1u);
-        work.offset = (uint16_t)(work.offset + 0x88u);
+        work.offset = (uint16_t)(work.offset + GATE_PICTURE_RECORD_BYTES);
         ++loaded;
     }
 
-    gate_rtl_resource_ds_set_word(0x0e, 0);
+    gate_rtl_resource_ds_set_word(GATE_RESOURCE_SEQUENCE_FILTER, 0);
     return (uint16_t)loaded;
 }
 
@@ -40,11 +40,11 @@ uint16_t gate_rtl_load_picture_sequence(GateFarPtr work, int16_t count,
  * fallback, even though that can exceed the local stack allocation. */
 void gate_rtl_play_preloaded_picture_sequence(uint16_t first_resource, int16_t count)
 {
-    uint8_t records[0x1100];
+    uint8_t records[GATE_PICTURE_SEQUENCE_CAPACITY * GATE_PICTURE_RECORD_BYTES];
     GateFarPtr work;
     uint16_t loaded;
 
-    if (count > 32) {
+    if (count > GATE_PICTURE_SEQUENCE_CAPACITY) {
         gate_linked_print_intro_diagnostic((GateFarPtr){gate_rtl_image_data_segment(),
                                        0x14b2});
         return;

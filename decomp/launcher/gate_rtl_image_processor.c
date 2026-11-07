@@ -22,13 +22,13 @@ void gate_rtl_draw_picture_record(GateFarPtr work)
 
     saved = gate_linked_save_vfx_draw_state();
     image = work;
-    image.offset = (uint16_t)(image.offset + 8u);
+    image.offset = (uint16_t)(image.offset + GATE_PICTURE_RECORD_VFX_IMAGE);
     mode = (uint16_t)(int16_t)(int8_t)gate_far_byte(
-        work.segment, (uint16_t)(work.offset + 1u));
+        work.segment, (uint16_t)(work.offset + GATE_PICTURE_RECORD_BLIT_MODE));
     x = (uint16_t)(gate_far_word(work.segment,
-        (uint16_t)(work.offset + 2u)) + gate_rtl_resource_ds_word(2));
+        (uint16_t)(work.offset + GATE_PICTURE_RECORD_X)) + gate_rtl_resource_ds_word(GATE_RESOURCE_DRAW_ORIGIN_X));
     y = (uint16_t)(gate_far_word(work.segment,
-        (uint16_t)(work.offset + 4u)) + gate_rtl_resource_ds_word(4));
+        (uint16_t)(work.offset + GATE_PICTURE_RECORD_Y)) + gate_rtl_resource_ds_word(GATE_RESOURCE_DRAW_ORIGIN_Y));
     gate_linked_blit_vfx_picture(0, y, x, mode, image);
     gate_linked_restore_vfx_draw_state(saved);
 }
@@ -43,7 +43,7 @@ void gate_rtl_draw_picture_record_sequence(GateFarPtr work, int16_t count)
         return;
     for (i = 0; i < (uint16_t)count; ++i) {
         gate_rtl_draw_picture_record(work);
-        work.offset = (uint16_t)(work.offset + 0x88u);
+        work.offset = (uint16_t)(work.offset + GATE_PICTURE_RECORD_BYTES);
     }
 }
 
@@ -64,12 +64,12 @@ void gate_rtl_play_timed_picture_records(GateFarPtr work, int16_t count)
         gate_rtl_draw_picture_record(work);
         clock_low = gate_linked_runtime_random();
         divisor = (uint16_t)(50u * (uint16_t)gate_far_byte(
-            work.segment, (uint16_t)(work.offset + 7u)) + 1u);
+            work.segment, (uint16_t)(work.offset + GATE_PICTURE_RECORD_DELAY_SPREAD)) + 1u);
         delay = (uint16_t)((clock_low % divisor) + 50u *
             (uint16_t)gate_far_byte(work.segment,
-            (uint16_t)(work.offset + 6u)));
+            (uint16_t)(work.offset + GATE_PICTURE_RECORD_DELAY_BASE)));
         gate_linked_wait_animation_delay((uint32_t)delay);
-        work.offset = (uint16_t)(work.offset + 0x88u);
+        work.offset = (uint16_t)(work.offset + GATE_PICTURE_RECORD_BYTES);
     }
 }
 
@@ -82,7 +82,7 @@ void gate_rtl_initialize_picture_record_array(GateFarPtr work, int16_t count)
         return;
     for (i = 0; i < (uint16_t)count; ++i) {
         gate_far_set_byte(work.segment, work.offset, 0);
-        work.offset = (uint16_t)(work.offset + 0x88u);
+        work.offset = (uint16_t)(work.offset + GATE_PICTURE_RECORD_BYTES);
     }
 }
 
@@ -95,6 +95,6 @@ void gate_rtl_release_picture_record_array(GateFarPtr work, int16_t count)
         return;
     for (i = 0; i < (uint16_t)count; ++i) {
         gate_rtl_release_picture_record(work);
-        work.offset = (uint16_t)(work.offset + 0x88u);
+        work.offset = (uint16_t)(work.offset + GATE_PICTURE_RECORD_BYTES);
     }
 }

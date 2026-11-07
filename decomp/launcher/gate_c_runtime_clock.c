@@ -27,20 +27,20 @@ uint32_t gate_linked_parse_runtime_integer(GateFarPtr number);
  * Those are original behaviors, retained deliberately. */
 void gate_rtl_parse_timezone_environment(void)
 {
-    GateFarPtr value = gate_linked_get_runtime_environment((GateFarPtr){gate_ds_segment(), 0x352c});
+    GateFarPtr value = gate_linked_get_runtime_environment((GateFarPtr){gate_ds_segment(), GATE_DS_TIMEZONE_ENV_NAME});
     uint16_t skip = 0;
 
     if ((value.offset | value.segment) == 0 ||
         gate_far_byte(value.segment, value.offset) == 0)
         return;
 
-    gate_linked_copy_runtime_string((GateFarPtr){gate_ds_segment(), 0x353e}, value, 3);
+    gate_linked_copy_runtime_string((GateFarPtr){gate_ds_segment(), GATE_DS_TIMEZONE_STANDARD_NAME}, value, 3);
     value.offset = (uint16_t)(value.offset + 3u);
     /* The MUL return is DX:AX, both words must be retained. */
     {
         uint32_t seconds = gate_rtl_multiply_32(gate_linked_parse_runtime_integer(value), 3600u);
-        gate_ds_set_word(0x3538, (uint16_t)seconds);
-        gate_ds_set_word(0x353a, (uint16_t)(seconds >> 16));
+        gate_ds_set_word(GATE_DS_TIMEZONE_OFFSET_LOW, (uint16_t)seconds);
+        gate_ds_set_word(GATE_DS_TIMEZONE_OFFSET_HIGH, (uint16_t)(seconds >> 16));
     }
 
     while (skip < 3u) {
@@ -48,19 +48,20 @@ void gate_rtl_parse_timezone_environment(void)
                                    (uint16_t)(value.offset + skip));
         int16_t signed_ch = (int8_t)ch;
         if (ch == 0 || ((gate_far_byte(gate_ds_segment(),
-            (uint16_t)(0x33f7 + signed_ch)) & 4u) == 0 && ch != '-'))
+            (uint16_t)(GATE_DS_CRT_CHAR_CLASS_TABLE + signed_ch)) & 4u) == 0 && ch != '-'))
             break;
         ++skip;
     }
 
     if (gate_far_byte(value.segment, (uint16_t)(value.offset + skip)) != 0) {
-        gate_linked_copy_runtime_string((GateFarPtr){gate_ds_segment(), 0x3542},
+        gate_linked_copy_runtime_string((GateFarPtr){gate_ds_segment(), GATE_DS_TIMEZONE_DAYLIGHT_NAME},
                             (GateFarPtr){value.segment,
                                          (uint16_t)(value.offset + skip)}, 3);
     } else {
-        gate_far_set_byte(gate_ds_segment(), 0x3542, 0);
+        gate_far_set_byte(gate_ds_segment(), GATE_DS_TIMEZONE_DAYLIGHT_NAME, 0);
     }
-    gate_ds_set_word(0x353c, gate_far_byte(gate_ds_segment(), 0x3542) >= 1u);
+    gate_ds_set_word(GATE_DS_TIMEZONE_HAS_DAYLIGHT_NAME,
+                     gate_far_byte(gate_ds_segment(), GATE_DS_TIMEZONE_DAYLIGHT_NAME) >= 1u);
 }
 
 /* GATE.RTL:8cb8..8cc7, linked 12a5:35da. The original startup flag is
@@ -69,9 +70,9 @@ void gate_rtl_parse_timezone_environment(void)
  * actual post-call value rather than blindly setting it to one. */
 void gate_rtl_initialize_timezone_once(void)
 {
-    if (gate_ds_word(0x6470) == 0) {
+    if (gate_ds_word(GATE_DS_TIMEZONE_INITIALIZED) == 0) {
         gate_rtl_parse_timezone_environment();
-        gate_ds_set_word(0x6470, (uint16_t)(gate_ds_word(0x6470) + 1u));
+        gate_ds_set_word(GATE_DS_TIMEZONE_INITIALIZED, (uint16_t)(gate_ds_word(GATE_DS_TIMEZONE_INITIALIZED) + 1u));
     }
 }
 
@@ -115,16 +116,17 @@ uint32_t gate_rtl_elapsed_milliseconds(void)
     uint32_t baseline;
     int16_t fraction;
 
-    gate_far_set_word(gate_ds_word(0x4e24), 0x3582, 0);
+    gate_far_set_word(gate_ds_word(GATE_DS_CLOCK_SAMPLE_STATUS_SEGMENT),
+                      GATE_DS_CLOCK_SAMPLE_STATUS, 0);
     gate_linked_read_runtime_time_sample(destination);
     current = (uint32_t)gate_far_word(destination.segment, destination.offset) |
               ((uint32_t)gate_far_word(destination.segment,
                                       (uint16_t)(destination.offset + 2)) << 16);
-    baseline = (uint32_t)gate_ds_word(0x3584) |
-               ((uint32_t)gate_ds_word(0x3586) << 16);
+    baseline = (uint32_t)gate_ds_word(GATE_DS_CLOCK_BASELINE_LOW) |
+               ((uint32_t)gate_ds_word(GATE_DS_CLOCK_BASELINE_HIGH) << 16);
     fraction = (int16_t)(gate_far_word(destination.segment,
                                      (uint16_t)(destination.offset + 4)) -
-                         gate_ds_word(0x3588));
+                         gate_ds_word(GATE_DS_CLOCK_BASELINE_FRACTION));
     return gate_rtl_multiply_32(current - baseline, 1000u) +
            (uint32_t)(int32_t)fraction;
 }

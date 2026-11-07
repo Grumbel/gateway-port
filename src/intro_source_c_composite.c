@@ -76,7 +76,7 @@ static void record_changed(void *userdata)
 static void frame_update(void *userdata)
 {
     Clock *clock = userdata;
-    if (gate_ds_word(0x0fce) == 2) {
+    if (gate_ds_word(GATE_DS_GRAPHICS_MODE) == 2) {
         if (clock->hooks && clock->hooks->frame_ready_vga16)
             clock->hooks->frame_ready_vga16(clock->hooks->userdata,
                                             (const uint8_t (*)[0x10000])clock->memory->vga_planes,
@@ -115,7 +115,7 @@ static void full_palette_ready(void *userdata)
      * Legacy 22s GVR1 replay retains its 16ms deterministic pacing.
      * These are host approximations, not source-C timer constants. */
     uint32_t pace_ms = clock->hooks && clock->hooks->original_video_start
-                       ? (gate_ds_word(0x0fce) == 2 ? 3u :
+                       ? (gate_ds_word(GATE_DS_GRAPHICS_MODE) == 2 ? 3u :
                           modified_colors >= 32 ? 16u : 1u) : 16u;
     if (clock->hooks && clock->hooks->delay_ms) {
         clock->hooks->delay_ms(clock->hooks->userdata, pace_ms);
@@ -176,7 +176,7 @@ void gate_linked_reset_intro_mouse(void) { /* mouse cursor setup: headless */ }
 uint16_t gate_linked_clear_resident_display(uint16_t a, uint16_t b)
 {
     (void)a;
-    if (gate_ds_word(0x15cc) == 2) {
+    if (gate_ds_word(GATE_DS_RENDERER_MODE) == 2) {
         gate_intro_vga16_fill_bytes(0, 640u * 480u / 8u, (uint8_t)(b & 15));
         gate_intro_memory_notify_frame();
         return 1;
@@ -226,7 +226,7 @@ void gate_linked_print_intro_diagnostic(GateFarPtr message) { (void)message; abo
 static int configure(GateIntroMemory *memory)
 {
     unsigned i;
-    if (gate_ds_word(0x0fce) != 3 || gate_ds_word(0x15cc) != 3)
+    if (gate_ds_word(GATE_DS_GRAPHICS_MODE) != 3 || gate_ds_word(GATE_DS_RENDERER_MODE) != 3)
         return 0;
     for (i = 0; i < 2; ++i) {
         uint16_t slot = (uint16_t)(0x54ce + i * 30u);
@@ -234,15 +234,15 @@ static int configure(GateIntroMemory *memory)
         gate_far_set_byte(memory->ds_segment, (uint16_t)(slot + 2u), 0xff);
         gate_far_set_byte(memory->ds_segment, (uint16_t)(slot + 3u), 0xff);
     }
-    gate_ds_set_word(0x29de + 0x16, 0);
+    gate_ds_set_word(GATE_DS_DRAW_OPERATION, 0);
     /* Source-C RTL:f14d configures +18..+20 itself before drawing. */
-    gate_ds_set_word(0x29de + 0x28, 0xffffu);
-    gate_ds_set_word(0x29de + 0x2a, 1);
-    gate_ds_set_word(0x12de, 0);
-    gate_ds_set_word(0x12e0, 0);
-    gate_rtl_resource_ds_set_word(0, 0);
-    gate_rtl_resource_ds_set_word(6, 0);
-    gate_rtl_resource_ds_set_word(8, 0xffffu);
+    gate_ds_set_word(GATE_DS_DRAW_LINE_MASK, 0xffffu);
+    gate_ds_set_word(GATE_DS_DRAW_LINE_WIDTH, 1);
+    gate_ds_set_word(GATE_DS_FILL_PATTERN, 0);
+    gate_ds_set_word(GATE_DS_FILL_PATTERN_ACTIVE, 0);
+    gate_rtl_resource_ds_set_word(GATE_RESOURCE_ERROR_LATCH, 0);
+    gate_rtl_resource_ds_set_word(GATE_RESOURCE_PALETTE_PENDING, 0);
+    gate_rtl_resource_ds_set_word(GATE_RESOURCE_CACHED_FILE_ID, 0xffffu);
     memset(memory->bytes + 0xa0000, 0, 320u * 200u);
     /* Direct host bulk writes bypass the FAR accessor; the dependency
      * profiler must not treat subsequent pixel reads as snapshot inputs. */
@@ -438,7 +438,7 @@ static int run_intro(const char *snapshot, const char *dos_dir,
         uint16_t setup_result = gate_rtl_set_video_mode(2);
         if (setup_result != 1) {
             fprintf(stderr, "original mode-12h init failed: result=%u mode=%u renderer=%u\n",
-                    setup_result, gate_ds_word(0x0fce), gate_ds_word(0x15cc));
+                    setup_result, gate_ds_word(GATE_DS_GRAPHICS_MODE), gate_ds_word(GATE_DS_RENDERER_MODE));
             abort();
         }
     }

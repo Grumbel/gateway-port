@@ -9,7 +9,7 @@
 uint16_t gate_rtl_detect_picture_format(void)
 {
     uint16_t header = gate_rtl_image_header_segment();
-    uint16_t index = gate_far_byte(header, GATE_RTL_HEADER_OFFSET + 5) & 0x0fu;
+    uint16_t index = gate_far_byte(header, GATE_RTL_HEADER_OFFSET + GATE_PICTURE_HEADER_FLAGS) & GATE_PICTURE_HEADER_FORMAT_MASK;
     uint16_t mode = gate_far_word(gate_rtl_image_mode_segment(), GATE_RTL_VIDEO_MODE_OFFSET);
     uint8_t tag = gate_rtl_image_data_byte((uint16_t)(GATE_RTL_FORMAT_TAGS_OFFSET + index));
     if (gate_rtl_image_data_byte((uint16_t)(GATE_RTL_FORMAT_MODES_OFFSET + mode)) == tag)
@@ -26,7 +26,8 @@ void gate_rtl_prepare_picture_palette_translation(uint16_t format)
     GateFarPtr source;
     uint16_t count;
     uint16_t i;
-    if ((gate_far_byte(header, GATE_RTL_HEADER_OFFSET + 5) & 0x10u) == 0)
+    if ((gate_far_byte(header, GATE_RTL_HEADER_OFFSET + GATE_PICTURE_HEADER_FLAGS) &
+         GATE_PICTURE_HEADER_HAS_PALETTE) == 0)
         return;
     if (format == 0xffffu) {
         source = gate_linked_transform_picture_palette_indexed(gate_rtl_image_palette_source());
@@ -125,14 +126,15 @@ void gate_rtl_postprocess_picture(GateFarPtr work)
         return;
     gate_rtl_prepare_picture_palette_translation(format);
 
-    span = (uint16_t)(work_word(work, 0x12) -
-                      work_word(work, 0x0e) + 1u);
-    starting = work_word(work, 4);
-    ending = (uint16_t)(starting + work_word(work, 0x14) -
-                        work_word(work, 0x10));
-    work_set_word(work, 4, gate_rtl_transform_picture_coordinate(format, starting));
+    span = (uint16_t)(work_word(work, GATE_PICTURE_RECORD_VFX_IMAGE + GATE_VFX_IMAGE_RIGHT) -
+                      work_word(work, GATE_PICTURE_RECORD_VFX_IMAGE + GATE_VFX_IMAGE_LEFT) + 1u);
+    starting = work_word(work, GATE_PICTURE_RECORD_Y);
+    ending = (uint16_t)(starting + work_word(work, GATE_PICTURE_RECORD_VFX_IMAGE + GATE_VFX_IMAGE_BOTTOM) -
+                        work_word(work, GATE_PICTURE_RECORD_VFX_IMAGE + GATE_VFX_IMAGE_TOP));
+    work_set_word(work, GATE_PICTURE_RECORD_Y,
+                  gate_rtl_transform_picture_coordinate(format, starting));
     adjusted_span = (uint16_t)(gate_rtl_transform_picture_coordinate(format, ending) -
-                               work_word(work, 4) + 1u);
+                               work_word(work, GATE_PICTURE_RECORD_Y) + 1u);
 
     if ((int16_t)format < 0 && (int16_t)ending % 4 == 3) {
         adjusted_span = (uint16_t)(adjusted_span - 1u);
@@ -146,15 +148,16 @@ void gate_rtl_postprocess_picture(GateFarPtr work)
         return;
     }
 
-    data = (GateFarPtr){work.segment, (uint16_t)(work.offset + 8u)};
+    data = (GateFarPtr){work.segment, (uint16_t)(work.offset + GATE_PICTURE_RECORD_VFX_IMAGE)};
     {
-        GateFarPtr pixels = {work_word(data, 0x1a), work_word(data, 0x18)};
-        uint16_t row_bytes = (uint16_t)(work_word(data, 0x14) << 2);
+        GateFarPtr pixels = {work_word(data, GATE_VFX_IMAGE_PIXELS_SEGMENT),
+                             work_word(data, GATE_VFX_IMAGE_PIXELS_OFFSET)};
+        uint16_t row_bytes = (uint16_t)(work_word(data, GATE_VFX_IMAGE_ROW_STRIDE) << 2);
         gate_rtl_compact_picture_rows(pixels, pixels, (int16_t)starting,
                        (int16_t)ending, row_bytes);
     }
-    work_set_word(data, 0x0c, (uint16_t)(adjusted_span - 1u));
-    work_set_word(data, 0x2e, adjusted_span);
-    work_set_word(data, 0x34, (uint16_t)(adjusted_span << 2));
+    work_set_word(data, GATE_VFX_IMAGE_BOTTOM, (uint16_t)(adjusted_span - 1u));
+    work_set_word(data, GATE_VFX_IMAGE_HEIGHT, adjusted_span);
+    work_set_word(data, GATE_VFX_IMAGE_PLANE_ROWS, (uint16_t)(adjusted_span << 2));
     (void)span; /* original BP-2 local is assigned but never subsequently read */
 }

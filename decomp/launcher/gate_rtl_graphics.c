@@ -2,6 +2,7 @@
 /* SPDX-License-Identifier: LicenseRef-Gateway-Derived */
 
 #include "gate_rtl_graphics.h"
+#include "gate_rtl_image.h"
 
 /* GATE.RTL:0x12773..0x12821. Both signed IMUL and the SAR/XOR/SUB
  * rounding idiom operate on the LOW 16 product bits. The latter is
@@ -109,7 +110,7 @@ void gate_rtl_release_picture_record(GateFarPtr work)
 {
     if ((work.offset | work.segment) != 0 &&
         gate_far_byte(work.segment, work.offset) != 0) {
-        GateFarPtr data = {work.segment, (uint16_t)(work.offset + 8u)};
+        GateFarPtr data = {work.segment, (uint16_t)(work.offset + GATE_PICTURE_RECORD_VFX_IMAGE)};
         gate_rtl_graphics_release(data);
         gate_far_set_byte(work.segment, work.offset, 0);
     }

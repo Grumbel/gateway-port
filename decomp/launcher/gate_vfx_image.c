@@ -67,11 +67,11 @@ uint16_t gate_linked_allocate_vfx_image(uint16_t height, uint16_t width,
         return 0xffe6u;
 
     /* Resident mode descriptors: 2409:00e8 -> DS:27ee+mode*0x3e. */
-    descriptor = (uint16_t)(0x27eeu + mode * 0x3eu);
-    mode_width = gate_ds_word((uint16_t)(descriptor + 0x18u));
-    mode_height = gate_ds_word((uint16_t)(descriptor + 0x1au));
-    bpp = gate_far_byte(gate_ds_segment(), (uint16_t)(descriptor + 0x17u));
-    planes = gate_far_byte(gate_ds_segment(), (uint16_t)(descriptor + 0x1eu));
+    descriptor = (uint16_t)(GATE_RESIDENT_MODE_DESCRIPTOR_BASE + mode * GATE_RESIDENT_MODE_DESCRIPTOR_BYTES);
+    mode_width = gate_ds_word((uint16_t)(descriptor + GATE_RESIDENT_MODE_WIDTH));
+    mode_height = gate_ds_word((uint16_t)(descriptor + GATE_RESIDENT_MODE_HEIGHT));
+    bpp = gate_far_byte(gate_ds_segment(), (uint16_t)(descriptor + GATE_RESIDENT_MODE_BITS_PER_PLANE));
+    planes = gate_far_byte(gate_ds_segment(), (uint16_t)(descriptor + GATE_RESIDENT_MODE_PLANE_COUNT));
     if (!((mode == 2 && mode_width == 640 && mode_height == 480 &&
            bpp == 1 && planes == 4) ||
           (mode == 3 && mode_width == 320 && mode_height == 200 &&
@@ -92,33 +92,33 @@ uint16_t gate_linked_allocate_vfx_image(uint16_t height, uint16_t width,
     /* Exact resident 245d:0006 header fields, including reserved words.
      * The caller owns the 0x80-byte record at image; the allocator owns
      * only its separate pixel region, released by 245d:016c. */
-    set_image_word(image, 0x00, 0xca00u);
-    set_image_byte(image, 0x02, 0x65);
-    set_image_byte(image, 0x03, 0);
-    set_image_word(image, 0x04, mode);
-    set_image_word(image, 0x06, 0);
-    set_image_word(image, 0x08, 0);
-    set_image_word(image, 0x0a, (uint16_t)(width - 1u));
-    set_image_word(image, 0x0c, (uint16_t)(height - 1u));
-    set_image_word(image, 0x0e, mode_width);
-    set_image_word(image, 0x10, mode_height);
-    set_image_byte(image, 0x12, (uint8_t)planes);
-    set_image_byte(image, 0x13, (uint8_t)bpp);
-    set_image_word(image, 0x14, stride);
-    set_image_word(image, 0x16, zero_flag);
-    set_image_word(image, 0x18, pixels.offset);
-    set_image_word(image, 0x1a, pixels.segment);
-    set_image_word(image, 0x1c, gate_ds_word((uint16_t)(descriptor + 0x24u)));
-    set_image_word(image, 0x1e, 0);
-    set_image_word(image, 0x20, 0);
-    set_image_word(image, 0x2c, width);
-    set_image_word(image, 0x2e, height);
-    set_image_word(image, 0x30, row_bytes);
+    set_image_word(image, GATE_VFX_IMAGE_SIGNATURE, GATE_VFX_IMAGE_SIGNATURE_VALUE);
+    set_image_byte(image, GATE_VFX_IMAGE_KIND, 0x65);
+    set_image_byte(image, GATE_VFX_IMAGE_RESERVED_03, 0);
+    set_image_word(image, GATE_VFX_IMAGE_VIDEO_MODE, mode);
+    set_image_word(image, GATE_VFX_IMAGE_LEFT, 0);
+    set_image_word(image, GATE_VFX_IMAGE_TOP, 0);
+    set_image_word(image, GATE_VFX_IMAGE_RIGHT, (uint16_t)(width - 1u));
+    set_image_word(image, GATE_VFX_IMAGE_BOTTOM, (uint16_t)(height - 1u));
+    set_image_word(image, GATE_VFX_IMAGE_MODE_WIDTH, mode_width);
+    set_image_word(image, GATE_VFX_IMAGE_MODE_HEIGHT, mode_height);
+    set_image_byte(image, GATE_VFX_IMAGE_PLANES, (uint8_t)planes);
+    set_image_byte(image, GATE_VFX_IMAGE_BITS_PER_PLANE, (uint8_t)bpp);
+    set_image_word(image, GATE_VFX_IMAGE_ROW_STRIDE, stride);
+    set_image_word(image, GATE_VFX_IMAGE_FLAGS, zero_flag);
+    set_image_word(image, GATE_VFX_IMAGE_PIXELS_OFFSET, pixels.offset);
+    set_image_word(image, GATE_VFX_IMAGE_PIXELS_SEGMENT, pixels.segment);
+    set_image_word(image, GATE_VFX_IMAGE_LINE_LAYOUT, gate_ds_word((uint16_t)(descriptor + GATE_RESIDENT_MODE_LINE_LAYOUT)));
+    set_image_word(image, GATE_VFX_IMAGE_RESERVED_1E, 0);
+    set_image_word(image, GATE_VFX_IMAGE_RESERVED_20, 0);
+    set_image_word(image, GATE_VFX_IMAGE_WIDTH, width);
+    set_image_word(image, GATE_VFX_IMAGE_HEIGHT, height);
+    set_image_word(image, GATE_VFX_IMAGE_ROW_BYTES, row_bytes);
     remainder = (uint16_t)(((uint32_t)width * bpp) & 7u);
     high_mask = (uint8_t)(0xffu << ((8u - remainder) & 7u));
-    set_image_word(image, 0x32, (uint16_t)((uint16_t)(uint8_t)~high_mask << 8 |
+    set_image_word(image, GATE_VFX_IMAGE_PIXEL_MASK, (uint16_t)((uint16_t)(uint8_t)~high_mask << 8 |
                                            high_mask));
-    set_image_word(image, 0x34, (uint16_t)(height * planes));
+    set_image_word(image, GATE_VFX_IMAGE_PLANE_ROWS, (uint16_t)(height * planes));
     return 0;
 }
 
@@ -136,16 +136,16 @@ void gate_linked_initialize_vfx_image(uint16_t pattern, GateFarPtr image)
     uint8_t planes;
     uint8_t bpp;
     GateFarPtr data;
-    if (image_word(image, 0x00) != 0xca00u)
+    if (image_word(image, GATE_VFX_IMAGE_SIGNATURE) != GATE_VFX_IMAGE_SIGNATURE_VALUE)
         return;
-    planes = gate_far_byte(image.segment, (uint16_t)(image.offset + 0x12u));
-    bpp = gate_far_byte(image.segment, (uint16_t)(image.offset + 0x13u));
+    planes = gate_far_byte(image.segment, (uint16_t)(image.offset + GATE_VFX_IMAGE_PLANES));
+    bpp = gate_far_byte(image.segment, (uint16_t)(image.offset + GATE_VFX_IMAGE_BITS_PER_PLANE));
     if (!((planes == 1 && bpp == 8) || (planes == 4 && bpp == 1)))
         abort();
-    stride = image_word(image, 0x14);
-    height = image_word(image, 0x34);
-    data.offset = image_word(image, 0x18);
-    data.segment = image_word(image, 0x1a);
+    stride = image_word(image, GATE_VFX_IMAGE_ROW_STRIDE);
+    height = image_word(image, GATE_VFX_IMAGE_PLANE_ROWS);
+    data.offset = image_word(image, GATE_VFX_IMAGE_PIXELS_OFFSET);
+    data.segment = image_word(image, GATE_VFX_IMAGE_PIXELS_SEGMENT);
     /* +34 is already height * plane_count (245d:0006), rather than the
      * logical height in +2e. Original 2479:0002 uses it directly. */
     for (row = 0; row < height; ++row) {
@@ -163,10 +163,10 @@ void gate_rtl_graphics_release(GateFarPtr image)
 {
     GateFarPtr data;
     uint16_t i;
-    if (image_word(image, 0x00) != 0xca00u)
+    if (image_word(image, GATE_VFX_IMAGE_SIGNATURE) != GATE_VFX_IMAGE_SIGNATURE_VALUE)
         return;
-    data.offset = image_word(image, 0x18);
-    data.segment = image_word(image, 0x1a);
+    data.offset = image_word(image, GATE_VFX_IMAGE_PIXELS_OFFSET);
+    data.segment = image_word(image, GATE_VFX_IMAGE_PIXELS_SEGMENT);
     if (gate_linked_release_vfx_pixels(data) != 0)
         return;
     for (i = 0; i < 0x80u; ++i)

@@ -40,7 +40,7 @@ uint16_t gate_linked_keyboard_pending(void)
      * by DS:1340 (one ungotten key) and DS:133e (Ctrl-Break count). */
     if (active_input->key_pending(active_input->userdata) != 0)
         return 1;
-    return gate_ds_word(0x1340) != 0xffff || gate_ds_word(0x133e) != 0;
+    return gate_ds_word(GATE_DS_INPUT_BUFFERED_KEY) != 0xffff || gate_ds_word(GATE_DS_INPUT_PENDING_COUNT) != 0;
 }
 
 uint16_t gate_linked_read_keyboard_key(void)
@@ -50,13 +50,13 @@ uint16_t gate_linked_read_keyboard_key(void)
     /* The original 0df2:0030 consumes a pending DOS Ctrl-Break before
      * buffered/BIOS keys. The special INT 21h 0x0c00 branch is not yet
      * independently modeled by the host; forward to the same key source. */
-    if (gate_ds_word(0x133e) != 0) {
-        gate_ds_set_word(0x133e, (uint16_t)(gate_ds_word(0x133e) - 1u));
+    if (gate_ds_word(GATE_DS_INPUT_PENDING_COUNT) != 0) {
+        gate_ds_set_word(GATE_DS_INPUT_PENDING_COUNT, (uint16_t)(gate_ds_word(GATE_DS_INPUT_PENDING_COUNT) - 1u));
         return active_input->read_key(active_input->userdata);
     }
-    if (gate_ds_word(0x1340) != 0xffff) {
-        uint16_t key = gate_ds_word(0x1340);
-        gate_ds_set_word(0x1340, 0xffff);
+    if (gate_ds_word(GATE_DS_INPUT_BUFFERED_KEY) != 0xffff) {
+        uint16_t key = gate_ds_word(GATE_DS_INPUT_BUFFERED_KEY);
+        gate_ds_set_word(GATE_DS_INPUT_BUFFERED_KEY, 0xffff);
         return key;
     }
     return active_input->read_key(active_input->userdata);

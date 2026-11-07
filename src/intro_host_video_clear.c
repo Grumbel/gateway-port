@@ -22,34 +22,35 @@ uint16_t gate_linked_clear_resident_display(uint16_t page, uint16_t color)
     unsigned i;
 
     ds = gate_ds_segment();
-    if (gate_far_byte(ds, 0x27ed) != 1) {
+    if (gate_far_byte(ds, GATE_DS_RESIDENT_MODE_INITIALIZED) != 1) {
         for (i = 0; i < 8; ++i) {
-            uint16_t entry = (uint16_t)(0x27eeu + i * 0x3eu);
-            gate_far_set_word(ds, (uint16_t)(entry + 0x3a),
+            uint16_t entry = (uint16_t)(GATE_RESIDENT_MODE_DESCRIPTOR_BASE + i * GATE_RESIDENT_MODE_DESCRIPTOR_BYTES);
+            gate_far_set_word(ds, (uint16_t)(entry + GATE_RESIDENT_MODE_CLEAR_CALLBACK_OFFSET),
                               i == 0 ? 0x011a : i == 3 ? 0x01d7 : 0x0169);
-            gate_far_set_word(ds, (uint16_t)(entry + 0x3c), 0x2488);
+            gate_far_set_word(ds, (uint16_t)(entry + GATE_RESIDENT_MODE_CLEAR_CALLBACK_SEGMENT),
+                              GATE_RESIDENT_VIDEO_CALLBACK_SEGMENT_VALUE);
         }
-        gate_far_set_byte(ds, 0x27ed, 1);
+        gate_far_set_byte(ds, GATE_DS_RESIDENT_MODE_INITIALIZED, 1);
     }
 
-    mode = gate_ds_word(0x15cc);
+    mode = gate_ds_word(GATE_DS_RENDERER_MODE);
     if (mode > 7)
         return 0xfffau; /* original 2409:00b9 invalid mode */
-    descriptor = (uint16_t)(0x27eeu + mode * 0x3eu);
+    descriptor = (uint16_t)(GATE_RESIDENT_MODE_DESCRIPTOR_BASE + mode * GATE_RESIDENT_MODE_DESCRIPTOR_BYTES);
     if (gate_far_byte(ds, descriptor) != mode)
         return 0xfc19u; /* original 2409:00e8 descriptor mismatch */
 
     /* 2488:000a reads BIOS INT 10h/AH=0fh when DS:15d2 is exactly one.
      * An unmatched AL returns -7 without modifying the video aperture. */
-    if (gate_ds_word(0x15d2) == 1 &&
+    if (gate_ds_word(GATE_DS_RENDERER_CHECK_BIOS_MODE) == 1 &&
         gate_intro_video_mode_current_bios() !=
-            gate_far_byte(ds, (uint16_t)(descriptor + 0x16)))
+            gate_far_byte(ds, (uint16_t)(descriptor + GATE_RESIDENT_MODE_BIOS_NUMBER)))
         return 0xfff9u;
-    height = gate_far_word(ds, (uint16_t)(descriptor + 0x1a));
-    pitch = gate_far_word(ds, (uint16_t)(descriptor + 0x1c));
-    aperture = gate_far_word(ds, (uint16_t)(descriptor + 0x20));
+    height = gate_far_word(ds, (uint16_t)(descriptor + GATE_RESIDENT_MODE_HEIGHT));
+    pitch = gate_far_word(ds, (uint16_t)(descriptor + GATE_RESIDENT_MODE_ROW_PITCH));
+    aperture = gate_far_word(ds, (uint16_t)(descriptor + GATE_RESIDENT_MODE_APERTURE_SEGMENT));
     page_offset = (uint16_t)(page * (uint32_t)gate_far_word(
-        ds, (uint16_t)(descriptor + 0x22)));
+        ds, (uint16_t)(descriptor + GATE_RESIDENT_MODE_PAGE_STRIDE)));
 
     if (mode == 0) {
         /* 2488:011a writes two 4096-word blocks to B800 (16 KiB).
@@ -77,7 +78,7 @@ uint16_t gate_linked_clear_resident_display(uint16_t page, uint16_t color)
     /* 2488:01d7: REP STOSW, count=(height*(bpp*pitch) mod 65536)/2.
      * AH is copied from AL; an odd byte at the end is never written. */
     size = (uint16_t)((uint16_t)(height * (uint32_t)gate_far_byte(
-        ds, (uint16_t)(descriptor + 0x1e))) * (uint32_t)pitch);
+        ds, (uint16_t)(descriptor + GATE_RESIDENT_MODE_PLANE_COUNT))) * (uint32_t)pitch);
     size &= ~1u;
     if (aperture != 0xa000 || (uint32_t)page_offset + size > 65536u)
         abort();
