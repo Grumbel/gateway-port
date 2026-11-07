@@ -489,7 +489,17 @@ image-path diagnostic, **not the original animation schedule**.
 - Original DOS frames at 1, 4, 5, 8 and 18 seconds match the new live
   cold-start RGB output pixel-for-pixel in a deterministic headless probe.
   The 14-second original frame also occurs pixel-for-pixel at source-C
-  14.141 seconds (previously at 15.039 seconds); the 14.000-second
-  comparison has 61,669/64,000 matching pixels. A complete frame-by-frame
-  comparison at equal game time remains open. The 3ms planar/1ms indexed
-  live pacing and 16ms replay pacing remain provisional host approximations.
+  14.156 seconds (previously at 15.039 seconds); the 14.000-second
+  comparison has 61,038/64,000 matching pixels. The cold-start live host now
+  differentiates a single changed DAC entry (the title's colored bars,
+  1ms) from multi-entry palette fades (16ms per completed upload). The
+  recovered C fade colors were correct, but its earlier 1ms host pacing
+  condensed a fade-out and fade-in into roughly 60ms, causing a visible
+  flash in the live SDL presenter. Private original DOS probes at 19.0,
+  19.5, 20.0 and 20.5 seconds now match recovered source-C RGB frames at
+  18.921, 19.195, 19.195 and 20.197 seconds respectively, all at
+  64,000/64,000 pixels; the 20.0/20.5s scene-to-caption transition also
+  has a deterministic C regression. A complete frame-by-frame comparison
+  at equal game time remains open. All these pacing intervals remain
+  provisional host approximations, not recovered original timer constants;
+  the older snapshot-based GVR1 replay retains its 16ms behavior.

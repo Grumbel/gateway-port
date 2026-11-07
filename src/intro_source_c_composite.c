@@ -27,6 +27,7 @@ typedef struct Clock {
     const GateSourceCFullHooks *hooks;
     GateIntroMemory *memory;
     GateIntroVgaPorts *ports;
+    uint8_t previous_dac[256u * 3u];
 } Clock;
 
 /* Private replay format: "GVR1" followed by timestamp (little-endian
@@ -94,14 +95,28 @@ static void frame_update(void *userdata)
 static void full_palette_ready(void *userdata)
 {
     Clock *clock = userdata;
+    const uint8_t *dac = &clock->ports->dac[0][0];
+    unsigned modified_colors = 0;
+    unsigned color;
+    for (color = 0; color < 256; ++color) {
+        if (memcmp(dac + 3u * color,
+                   clock->previous_dac + 3u * color, 3) != 0)
+            ++modified_colors;
+    }
+    memcpy(clock->previous_dac, dac, sizeof clock->previous_dac);
     /* Both mode-12h's 16-color upload and mode-13h's 256-color upload
      * follow the original VGA retrace wait. The cold-start live path
      * uses 3ms for the planar interlude and 1ms for the indexed title
      * reveal, calibrated against original DOS captures at 4/5/8/14/18s.
+     * A multi-color palette fade is visible for several retraces in the
+     * original DOS intro. Give those uploads a display interval while
+     * retaining the fast single-entry updates of the seven title bars;
+     * otherwise the entire fade-out/in collapses into one SDL refresh.
      * Legacy 22s GVR1 replay retains its 16ms deterministic pacing.
      * These are host approximations, not source-C timer constants. */
     uint32_t pace_ms = clock->hooks && clock->hooks->original_video_start
-                       ? (gate_ds_word(0x0fce) == 2 ? 3u : 1u) : 16u;
+                       ? (gate_ds_word(0x0fce) == 2 ? 3u :
+                          modified_colors >= 32 ? 16u : 1u) : 16u;
     if (clock->hooks && clock->hooks->delay_ms) {
         clock->hooks->delay_ms(clock->hooks->userdata, pace_ms);
         if (clock->hooks->clock_ms)

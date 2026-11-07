@@ -19,6 +19,8 @@ typedef struct TestInput {
     unsigned logo_checked;
     unsigned title_reveal_checked;
     unsigned title_credit_checked;
+    unsigned first_venus_checked;
+    unsigned first_caption_checked;
     unsigned original_start;
     uint8_t logo_fade_levels[64];
     unsigned music_starts;
@@ -87,6 +89,23 @@ static void frame_ready(void *userdata, const uint8_t *pixels,
         }
         assert(white == 1382); /* original Fred Pohl credit pixels */
         ++input->title_credit_checked;
+    }
+    if (input->original_start && input->now >= 20000 &&
+        !input->first_venus_checked) {
+        /* The original DOS 20-second probe still shows the unobscured
+         * Venus landscape. A zero-duration fade makes the first text
+         * box appear early, even though its pixels are otherwise exact. */
+        const uint8_t *rgb = dac[pixels[100u * 320u + 15u]];
+        assert(rgb[0] == 8 && rgb[1] == 4 && rgb[2] == 2);
+        ++input->first_venus_checked;
+    }
+    if (input->original_start && input->now >= 20500 &&
+        !input->first_caption_checked) {
+        /* At 20.5 seconds the first caption's gray frame covers the
+         * same pixel, matching the original DOS capture. */
+        const uint8_t *rgb = dac[pixels[100u * 320u + 15u]];
+        assert(rgb[0] == 40 && rgb[1] == 40 && rgb[2] == 40);
+        ++input->first_caption_checked;
     }
 }
 
@@ -158,6 +177,8 @@ int main(int argc, char **argv)
         assert(input.logo_checked == 1);
         assert(input.title_reveal_checked == 1);
         assert(input.title_credit_checked == 1);
+        assert(input.first_venus_checked == 1);
+        assert(input.first_caption_checked == 1);
         assert(input.planar_published > 10);
         assert(input.published > 10);
         assert(input.escape_consumed == 1);
