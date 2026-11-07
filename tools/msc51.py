@@ -19,6 +19,25 @@ import sys
 REPO = Path(__file__).resolve().parent.parent
 
 
+def executable_format(data: bytes) -> str:
+    """Distinguish real-mode MZ from PE/NE/LE/LX programs with DOS stubs."""
+    if data[:2] != b"MZ":
+        return "unknown"
+    if len(data) >= 0x40:
+        new_header = int.from_bytes(data[0x3c:0x40], "little")
+        if 0 < new_header <= len(data) - 4 and data[new_header:new_header + 4] == b"PE\0\0":
+            return "Windows PE"
+        if 0 < new_header <= len(data) - 2:
+            signature = data[new_header:new_header + 2]
+            if signature == b"NE":
+                return "Windows/OS2 NE"
+            if signature == b"LE":
+                return "LE executable"
+            if signature == b"LX":
+                return "OS2 LX"
+    return "DOS MZ"
+
+
 def locate_case_insensitive(directory: Path, name: str) -> Path | None:
     if not directory.is_dir():
         return None
@@ -34,7 +53,7 @@ def validate_compiler(directory: Path) -> Path:
     include_dir = locate_case_insensitive(directory, "INCLUDE")
     bin_dirs = [directory] + ([bin_dir] if bin_dir is not None else [])
     lib_dirs = [directory] + ([lib_dir] if lib_dir is not None else [])
-    missing = [name for name in ("CL.EXE", "C1.EXE", "C2.EXE", "C3.EXE", "LINK.EXE")
+    missing = [name for name in ("CL.EXE", "C1.EXE", "C1L.EXE", "C2.EXE", "C3.EXE", "LINK.EXE")
                if not any(locate_case_insensitive(base, name) for base in bin_dirs)]
     missing += [name for name in ("LLIBCR.LIB",)
                 if not any(locate_case_insensitive(base, name) for base in lib_dirs)]
@@ -53,6 +72,15 @@ def validate_compiler(directory: Path) -> Path:
             f"Incomplete Microsoft C installation at {directory}: missing {', '.join(missing)}. "
             "Install the complete Microsoft C 5.1 disk set first."
         )
+    for name in ("CL.EXE", "C1.EXE", "C1L.EXE", "C2.EXE", "C3.EXE", "LINK.EXE"):
+        path = next(path for base in bin_dirs
+                    if (path := locate_case_insensitive(base, name)) is not None)
+        kind = executable_format(path.read_bytes())
+        if kind not in ("DOS MZ", "unknown"):
+            raise ValueError(
+                f"{name} is a {kind} program ({path}), not a real-mode DOS tool. "
+                "Select a DOS variant from the original Microsoft C 5.1 disks."
+            )
     return directory
 
 
@@ -90,6 +118,7 @@ def stage_probe(output: Path) -> None:
         "CL /AL /Od PROBE.C RANDOM.C /FeINTROCHK.EXE > BUILD.LOG\r\n"
         "IF ERRORLEVEL 1 ECHO Microsoft CL returned an error > CLFAIL.LOG\r\n"
         "IF EXIST INTROCHK.EXE INTROCHK.EXE > TEST.LOG\r\n"
+        "EXIT\r\n"
     )
 
 

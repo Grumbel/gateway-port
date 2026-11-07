@@ -22,6 +22,7 @@ import msc51_unpack as unpacker
 FILES = {
     "setup/CL.EXE": b"cl",
     "setup/C1.EXE": b"c1",
+    "setup/C1L.EXE": b"c1l",
     "compiler/C2.EXE": b"c2",
     "compiler/C3.EXE": b"c3",
     "utility/LINK.EXE": b"link",
@@ -47,7 +48,7 @@ class MSC51UnpackTests(unittest.TestCase):
             source.mkdir()
             make_tree(source)
             counts = unpacker.unpack(source, root / "output")
-            self.assertEqual(counts, {"BIN": 5, "LIB": 1, "INCLUDE": 2})
+            self.assertEqual(counts, {"BIN": 6, "LIB": 1, "INCLUDE": 2})
             self.assertEqual((root / "output/BIN/CL.EXE").read_bytes(), b"cl")
             self.assertEqual((root / "output/LIB/LLIBCR.LIB").read_bytes(), b"library")
             self.assertEqual((root / "output/INCLUDE/SYS/STAT.H").read_bytes(), b"nested header")
@@ -57,6 +58,7 @@ class MSC51UnpackTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as scratch:
             root = Path(scratch)
             make_tree(root / "disks")
+            (root / "disks/setup/C1L.EXE").unlink()
             first = root / "disks/compiler/C1L.EXE"
             first.write_bytes(b"first C1L")
             duplicate = root / "disks/disk-06/C1L.EXE"
@@ -65,7 +67,8 @@ class MSC51UnpackTests(unittest.TestCase):
             unpacker.assemble_files(root / "disks", root / "output")
             self.assertEqual((root / "output/BIN/C1L.EXE").read_bytes(), b"first C1L")
             manifest = json.loads((root / "output/compiler-manifest.json").read_text())
-            self.assertEqual(manifest["selection_policy"], "first source in sorted disk/path order wins")
+            self.assertEqual(manifest["selection_policy"],
+                             "prefer real-mode DOS MZ over protected-mode EXE, otherwise first sorted source")
             self.assertEqual(manifest["conflicts"], [{
                 "path": "BIN/C1L.EXE",
                 "selected": {
@@ -91,6 +94,35 @@ class MSC51UnpackTests(unittest.TestCase):
             (root / "output/stale").touch()
             with self.assertRaisesRegex(ValueError, "Output directory is not empty"):
                 unpacker.unpack(root / "source", root / "output")
+
+    def test_real_mode_compiler_variant_replaces_protected_mode_one(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            source = root / "disks"
+            (source / "disk-00").mkdir(parents=True)
+            (source / "disk-01").mkdir()
+            protected = bytearray(b"MZ" + bytes(126))
+            protected[0x3c:0x40] = (0x40).to_bytes(4, "little")
+            protected[0x40:0x42] = b"NE"
+            (source / "disk-00/CL.EXE").write_bytes(protected)
+            dos = b"MZ" + bytes(126)
+            (source / "disk-01/CL.EXE").write_bytes(dos)
+            # After finding the real-mode DOS tool, a later PE alternative
+            # must not replace it merely because it is the last copy.
+            (source / "disk-02").mkdir()
+            win32 = bytearray(protected)
+            win32[0x40:0x44] = b"PE\0\0"
+            (source / "disk-02/CL.EXE").write_bytes(win32)
+
+            unpacker.assemble_files(source, root / "out")
+            self.assertEqual((root / "out/BIN/CL.EXE").read_bytes(), dos)
+            manifest = json.loads((root / "out/compiler-manifest.json").read_text())
+            self.assertEqual(manifest["files"]["BIN/CL.EXE"]["disk_file"], "disk-01/CL.EXE")
+            self.assertEqual(len(manifest["conflicts"]), 2)
+            self.assertEqual(manifest["conflicts"][0]["ignored"]["disk_file"],
+                             "disk-00/CL.EXE")
+            self.assertEqual(manifest["conflicts"][1]["ignored"]["disk_file"],
+                             "disk-02/CL.EXE")
 
     def test_output_must_not_overlap_source(self):
         with tempfile.TemporaryDirectory() as scratch:

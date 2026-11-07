@@ -225,12 +225,19 @@ mtools, automatically assembling `BIN/CL.EXE`, `C1.EXE`, `C2.EXE`, `C3.EXE`,
 `nix flake check` itself does not download the proprietary compiler.
 
 Some distribution disks contain **different copies of the same executable**
-(observed: `C1L.EXE`). The assembler keeps the first copy in sorted disk order,
-prints a diagnostic for each conflict, and writes `compiler-manifest.json` with
-the selected file, skipped alternatives and their SHA-256 hashes. For forensic
-comparison, `msc51-unpack --strict-duplicates` instead rejects conflicts. The
-default selection is deterministic; it does not prove which variant matches
-the game or that the original compiler can successfully rebuild the probe.
+(observed: `CL.EXE`, `C1L.EXE`, `C2.EXE`, `C3.EXE` and `LINK.EXE`). The 5.1
+distribution includes real-mode DOS and protected-mode OS/2 variants, which
+cannot be mixed indiscriminately. The assembler recognizes MZ/NE/PE/LE/LX
+headers and prefers a real-mode DOS MZ executable over an incompatible
+protected-mode copy. Other duplicates still use the first sorted source.
+Every choice and rejected conflicting file is recorded in
+`compiler-manifest.json` with the original disk and SHA-256; the tool emits
+diagnostics when choosing. For forensic comparison,
+`msc51-unpack --strict-duplicates` instead rejects any conflicting bytes.
+The assembled toolchain must contain real-mode `CL`, `C1`, `C1L`, `C2`, `C3`
+and `LINK`; tools known to be protected-mode are rejected before DOSBox runs.
+This is not a complete executable compatibility audit, nor proof that the
+historical compiler can rebuild the probe.
 
 For an existing download containing raw floppy `.img`/`.ima` images, you can
 import it offline instead of fetching it again:
@@ -260,7 +267,8 @@ actually reports all 32 original `rand()` states correct. To customize the
 toolchain directory or the staging output directory, pass `--compiler DIR`
 or `--output DIR` after `--` in the `nix run` commands.
 
-If DOSBox starts but the compilation fails, `msc51-probe` now prints the
+`BUILD.BAT` explicitly runs `EXIT` at the end so DOSBox closes on its own.
+If DOSBox starts but the compilation fails, `msc51-probe` prints the
 compiler's `BUILD.LOG` and, when present, `TEST.LOG` automatically. `START.LOG`
 confirms that DOSBox actually reached the batch file; `CLFAIL.LOG` flags a
 nonzero Microsoft compiler exit status. The wrapper clears these files and

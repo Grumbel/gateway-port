@@ -17,7 +17,7 @@ import subprocess
 import sys
 import tempfile
 
-from msc51 import validate_compiler
+from msc51 import executable_format, validate_compiler
 
 
 IMAGE_SUFFIXES = frozenset((".img", ".ima", ".dsk", ".vfd"))
@@ -94,22 +94,38 @@ def assemble_files(source: Path, destination: Path, strict_duplicates: bool = Fa
         if output.exists():
             if key not in selected:
                 raise ValueError(f"Pre-existing compiler output must be cleaned first: {output}")
-            if output.read_bytes() != data:
+            installed = output.read_bytes()
+            if installed != data:
                 if strict_duplicates:
                     raise ValueError(f"Conflicting floppy contents for {relative}: {file}")
-                # Some original compiler disks include different variants of
-                # the same tool (e.g. C1L.EXE). Preserve the first in sorted
-                # disk order and record *both* hashes so the choice is auditable.
-                conflicts.append({"path": key, "selected": selected[key], "ignored": candidate})
-                print(f"msc51: keeping {selected[key]['disk_file']} over "
-                      f"{candidate['disk_file']} for {key}", flush=True)
+                # The 5.1 disks contain both real-mode DOS and protected-mode
+                # OS/2 compiler passes under the same names. An NE/PE program
+                # starts with an MZ DOS *stub*, which may just print
+                # 'This program cannot be run in DOS mode' under DOSBox.
+                # Prefer a genuine real-mode DOS MZ executable; for equal or
+                # unknown formats, the original first-copy rule still applies.
+                installed_format = executable_format(installed)
+                candidate_format = executable_format(data)
+                use_candidate = (relative.suffix.upper() == ".EXE"
+                                 and candidate_format == "DOS MZ"
+                                 and installed_format != "DOS MZ")
+                if use_candidate:
+                    conflicts.append({"path": key, "selected": candidate, "ignored": selected[key]})
+                    print(f"msc51: selecting {candidate['disk_file']} ({candidate_format}) over "
+                          f"{selected[key]['disk_file']} ({installed_format}) for {key}", flush=True)
+                    output.write_bytes(data)
+                    selected[key] = candidate
+                else:
+                    conflicts.append({"path": key, "selected": selected[key], "ignored": candidate})
+                    print(f"msc51: keeping {selected[key]['disk_file']} ({installed_format}) over "
+                          f"{candidate['disk_file']} ({candidate_format}) for {key}", flush=True)
             continue
         shutil.copyfile(file, output)
         selected[key] = candidate
         counts[relative.parts[0]] += 1
     destination.mkdir(parents=True, exist_ok=True)
     (destination / "compiler-manifest.json").write_text(json.dumps({
-        "selection_policy": "first source in sorted disk/path order wins",
+        "selection_policy": "prefer real-mode DOS MZ over protected-mode EXE, otherwise first sorted source",
         "source_images": source_images or [],
         "files": selected,
         "conflicts": conflicts,

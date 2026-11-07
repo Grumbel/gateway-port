@@ -39,13 +39,14 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("ECHO Gateway MSC 5.1 batch started > START.LOG", batch)
             self.assertIn("SET TMP=D:\\", batch)
             self.assertIn("IF ERRORLEVEL 1 ECHO Microsoft CL returned an error > CLFAIL.LOG", batch)
+            self.assertTrue(batch.endswith("EXIT\n"))
 
     def test_installation_is_looked_up_case_insensitively(self):
         with tempfile.TemporaryDirectory() as scratch:
             root = Path(scratch)
             for sub in ("bin", "lib", "include"):
                 (root / sub).mkdir()
-            for name in ("cl.exe", "c1.exe", "c2.exe", "c3.exe", "link.exe"):
+            for name in ("cl.exe", "c1.exe", "c1l.exe", "c2.exe", "c3.exe", "link.exe"):
                 (root / "bin" / name).touch()
             (root / "lib" / "llibcr.lib").touch()
             (root / "include" / "stdio.h").touch()
@@ -95,7 +96,7 @@ class MSC51Tests(unittest.TestCase):
             (compiler / "BIN").mkdir(parents=True)
             (compiler / "LIB").mkdir()
             (compiler / "INCLUDE").mkdir()
-            for name in ("CL.EXE", "C1.EXE", "C2.EXE", "C3.EXE", "LINK.EXE"):
+            for name in ("CL.EXE", "C1.EXE", "C1L.EXE", "C2.EXE", "C3.EXE", "LINK.EXE"):
                 (compiler / "BIN" / name).touch()
             (compiler / "LIB" / "LLIBCR.LIB").touch()
             (compiler / "INCLUDE" / "STDIO.H").touch()
@@ -144,7 +145,7 @@ class MSC51Tests(unittest.TestCase):
             (compiler / "BIN").mkdir(parents=True)
             (compiler / "LIB").mkdir()
             (compiler / "INCLUDE").mkdir()
-            for name in ("CL.EXE", "C1.EXE", "C2.EXE", "C3.EXE", "LINK.EXE"):
+            for name in ("CL.EXE", "C1.EXE", "C1L.EXE", "C2.EXE", "C3.EXE", "LINK.EXE"):
                 (compiler / "BIN" / name).touch()
             (compiler / "LIB" / "LLIBCR.LIB").touch()
             (compiler / "INCLUDE" / "STDIO.H").touch()
@@ -161,6 +162,28 @@ class MSC51Tests(unittest.TestCase):
                  mock.patch.object(msc51.subprocess, "run", side_effect=create_lowercase_outputs):
                 self.assertEqual(msc51.main(["probe", "--compiler", str(compiler),
                                              "--output", str(output)]), 0)
+
+    def test_rejects_protected_mode_compiler_driver(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            (root / "BIN").mkdir()
+            (root / "LIB").mkdir()
+            (root / "INCLUDE").mkdir()
+            for name in ("CL.EXE", "C1.EXE", "C1L.EXE", "C2.EXE", "C3.EXE", "LINK.EXE"):
+                (root / "BIN" / name).write_bytes(b"MZ" + bytes(126))
+            (root / "LIB" / "LLIBCR.LIB").touch()
+            (root / "INCLUDE" / "STDIO.H").touch()
+
+            protected = bytearray(b"MZ" + bytes(126))
+            protected[0x3c:0x40] = (0x40).to_bytes(4, "little")
+            protected[0x40:0x42] = b"NE"
+            (root / "BIN" / "CL.EXE").write_bytes(protected)
+            self.assertEqual(msc51.executable_format(protected), "Windows/OS2 NE")
+            self.assertEqual(msc51.executable_format(b"MZ" + bytes(126)), "DOS MZ")
+            with self.assertRaisesRegex(ValueError, "CL.EXE is a Windows/OS2 NE program"):
+                msc51.validate_compiler(root)
+            protected[0x40:0x44] = b"PE\0\0"
+            self.assertEqual(msc51.executable_format(protected), "Windows PE")
 
 
 if __name__ == "__main__":
