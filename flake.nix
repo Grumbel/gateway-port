@@ -88,6 +88,13 @@
                 --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
             '';
           };
+          msc51-compare = pkgs.writeShellApplication {
+            name = "gateway-msc51-compare";
+            runtimeInputs = [ pkgs.python3 ];
+            text = ''
+              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51_compare.py "$@"
+            '';
+          };
         });
       apps = eachSystem (system:
         let
@@ -223,6 +230,11 @@
           program = "${self.packages.${system}.msc51-install}/bin/gateway-msc51-install";
           meta.description = "Install user-provided Microsoft C 5.1 floppy images into a local directory using DOSBox";
         };
+        msc51-compare = {
+          type = "app";
+          program = "${self.packages.${system}.msc51-compare}/bin/gateway-msc51-compare";
+          meta.description = "Compare original Gateway C runtime routines with a local Microsoft C 5.1 LLIBCR.LIB code fingerprint";
+        };
       });
       checks = eachSystem (system:
         let pkgs = import nixpkgs { inherit system; }; in {
@@ -256,6 +268,7 @@
           } ''
             cd "$src"
             python3 tests/test_msc51.py
+            python3 tests/test_msc51_compare.py
             touch "$out"
           '';
         });
@@ -357,7 +370,8 @@ except Exception:
                          self.packages.${system}.msc51-probe
                          self.packages.${system}.msc51-shell
                          self.packages.${system}.msc51-prepare
-                         self.packages.${system}.msc51-install ];
+                         self.packages.${system}.msc51-install
+                         self.packages.${system}.msc51-compare ];
           };
         });
     };

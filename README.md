@@ -230,6 +230,7 @@ export GATEWAY_MSC51_DIR="$HOME/opt/msc51-drive/MSC51"  # your installed copy
 nix run .#msc51-prepare                         # prepare C89 source only
 nix run .#msc51-shell                           # interactive DOSBox compiler
 nix run .#msc51-probe                           # compile and run 32 rand steps
+nix run .#msc51-compare -- --json build/intro-msc51/crt-compare.json
 nix develop .#msc51                             # optional DOSBox toolchain shell
 ```
 
@@ -245,6 +246,16 @@ or `--output DIR` after `--` in the `nix run` commands.
 These tools do **not** build a playable Gateway DOS executable; they are a
 compiler comparison/probe environment. A source-only test runs as the
 `msc51-tooling` flake check even when the historical compiler is absent.
+
+The `msc51-compare` app reads the SHA-256-pinned original `GATE.RTL` and the
+installed `LLIBCR.LIB` directly on the host. It searches the raw library for
+the original `srand` (`rtl:0x91d8`) and `rand` (`rtl:0x91ea`) instruction
+sequences while ignoring only the mutable address/call operands. The optional
+JSON report contains locations, lengths, and file hashes, **not binary data**.
+Matching both code sequences would be strong evidence of an identical CRT
+implementation; a miss is inconclusive when code is split into OMF records
+or generated with different options. This compares the historical *runtime*,
+not the compiler's code generation for Gateway's game logic.
 
 ### In-game Gateway debugger (F10)
 
