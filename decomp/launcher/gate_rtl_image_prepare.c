@@ -27,7 +27,8 @@ void gate_rtl_prepare_picture_display(void)
     gate_far_set_word(status_segment, GATE_PREPARE_STATUS_WORD, 0);
 
     if (gate_rtl_resource_ds_word(GATE_RESOURCE_PALETTE_PENDING) != 0) {
-        GateFarPtr palette = gate_rtl_image_palette_source();
+        GateFarPtr palette;
+        palette = gate_rtl_image_palette_source();
         gate_rtl_resource_ds_set_word(GATE_RESOURCE_PALETTE_PENDING, 0);
         gate_linked_upload_intro_palette(palette);
         original_data_segment = gate_rtl_image_data_segment();

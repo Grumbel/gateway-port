@@ -25,8 +25,10 @@ static uint16_t rtl_deadline_reached(uint32_t now, uint32_t deadline)
 void gate_rtl_play_picture_delta_sequence(uint16_t first, uint16_t next, int16_t count)
 {
     uint8_t record[GATE_PICTURE_RECORD_BYTES];
-    GateFarPtr work = gate_stack_pointer(record);
+    GateFarPtr work;
     uint32_t deadline = 0;
+
+    work = gate_stack_pointer(record);
 
     gate_rtl_fade_palette_out();
     gate_linked_set_intro_pen_color(gate_far_word(gate_rtl_anim_segment_22(), GATE_MODE_DESC_FRAME_COLOR_PRIMARY));

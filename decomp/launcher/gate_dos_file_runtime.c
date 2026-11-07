@@ -13,7 +13,8 @@
  * otherwise AH=3d and AL=the low byte of flags. Any carry sets AX=0. */
 uint16_t gate_linked_dos_file_open(GateFarPtr filename, uint16_t flags)
 {
-    GateDosFileResult result = gate_dos_file_open(filename,
+    GateDosFileResult result;
+    result = gate_dos_file_open(filename,
         (uint8_t)flags, (flags & GATE_DOS_FILE_CREATE_FLAG) != 0);
     return result.carry ? 0 : result.ax;
 }
@@ -30,7 +31,8 @@ uint16_t gate_linked_dos_file_close(uint16_t handle)
 uint16_t gate_linked_dos_file_read(uint16_t handle, GateFarPtr destination,
                              uint16_t count)
 {
-    GateDosFileResult result = gate_dos_file_read(handle, destination, count);
+    GateDosFileResult result;
+    result = gate_dos_file_read(handle, destination, count);
     return result.carry ? 0 : result.ax;
 }
 
@@ -38,7 +40,8 @@ uint16_t gate_linked_dos_file_read(uint16_t handle, GateFarPtr destination,
 uint16_t gate_linked_dos_file_write(uint16_t handle, GateFarPtr source,
                              uint16_t count)
 {
-    GateDosFileResult result = gate_dos_file_write(handle, source, count);
+    GateDosFileResult result;
+    result = gate_dos_file_write(handle, source, count);
     return result.carry ? 0 : result.ax;
 }
 
@@ -47,6 +50,7 @@ uint16_t gate_linked_dos_file_write(uint16_t handle, GateFarPtr source,
  * zero, or 0xffff on carry. */
 uint16_t gate_linked_dos_file_seek(uint16_t handle, uint16_t origin, uint32_t offset)
 {
-    GateDosFileResult result = gate_dos_file_seek(handle, (uint8_t)origin, offset);
+    GateDosFileResult result;
+    result = gate_dos_file_seek(handle, (uint8_t)origin, offset);
     return result.carry ? GATE_DOS_FILE_SEEK_FAILURE : 0;
 }

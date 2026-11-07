@@ -56,7 +56,8 @@ void gate_linked_draw_intro_caption_frame(uint16_t left, uint16_t top, uint16_t 
  * this source-level FAR-pointer translation at the link boundary. */
 void gate_rtl_graphics_palette_upload(const uint8_t *palette)
 {
-    GateFarPtr original_pointer = palette != 0
+    GateFarPtr original_pointer;
+    original_pointer = palette != 0
         ? gate_stack_pointer((void *)palette)
         : (GateFarPtr){0, 0};
     gate_rtl_upload_vga_palette(original_pointer);

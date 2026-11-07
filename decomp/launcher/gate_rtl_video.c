@@ -3,6 +3,8 @@
 
 #include "gate_rtl_video.h"
 
+#include <string.h>
+
 /* Stack buffer of the original calls is 14 bytes, addressed from BP-0x0e.
  * Only the bytes initialized by each compiled path are meaningful:
  * +1 command (2 move, 3 query, 9 character), +2 attribute, +3 subcommand,
@@ -18,7 +20,8 @@ static void video_call(uint8_t packet[GATE_VIDEO_PACKET_BYTES])
  * block-cursor mode. It writes character 0xdb with attribute | 0x80. */
 void gate_rtl_draw_block_cursor(void)
 {
-    uint8_t packet[GATE_VIDEO_PACKET_BYTES] = {0};
+    uint8_t packet[GATE_VIDEO_PACKET_BYTES];
+    memset(packet, 0, sizeof packet);
     packet[GATE_VIDEO_PACKET_COMMAND] = GATE_VIDEO_COMMAND_WRITE_CHARACTER;
     packet[GATE_VIDEO_PACKET_CHARACTER] = GATE_VIDEO_BLOCK_CURSOR_CHARACTER;
     packet[GATE_VIDEO_PACKET_SUBCOMMAND] = 0;
@@ -54,7 +57,8 @@ uint16_t gate_rtl_set_block_cursor_mode(uint16_t new_mode)
  * either for NULL). */
 void gate_rtl_get_text_cell_cursor(uint16_t *x, uint16_t *y)
 {
-    uint8_t packet[GATE_VIDEO_PACKET_BYTES] = {0};
+    uint8_t packet[GATE_VIDEO_PACKET_BYTES];
+    memset(packet, 0, sizeof packet);
     packet[GATE_VIDEO_PACKET_COMMAND] = GATE_VIDEO_COMMAND_GET_CURSOR;
     packet[GATE_VIDEO_PACKET_SUBCOMMAND] = 0;
     video_call(packet);
@@ -68,7 +72,8 @@ void gate_rtl_get_text_cell_cursor(uint16_t *x, uint16_t *y)
  * Nonzero DS:030e draws a block before and after a real change. */
 void gate_rtl_set_text_cell_cursor(uint16_t x, uint16_t y)
 {
-    uint8_t packet[GATE_VIDEO_PACKET_BYTES] = {0};
+    uint8_t packet[GATE_VIDEO_PACKET_BYTES];
+    memset(packet, 0, sizeof packet);
     packet[GATE_VIDEO_PACKET_COMMAND] = GATE_VIDEO_COMMAND_GET_CURSOR;
     packet[GATE_VIDEO_PACKET_SUBCOMMAND] = 0;
     video_call(packet);
@@ -107,9 +112,11 @@ static int16_t tab_pitch(void)
  * command packet itself may have sent a different 8-bit column. */
 void gate_rtl_print_text_mode_string(GateFarPtr text)
 {
-    uint8_t packet[GATE_VIDEO_PACKET_BYTES] = {0};
+    uint8_t packet[GATE_VIDEO_PACKET_BYTES];
     int16_t row, column;
     uint8_t attribute;
+
+    memset(packet, 0, sizeof packet);
 
     text = gate_exe_identity_text_pointer(text);
     if (gate_rtl_video_block_mode() != 0)

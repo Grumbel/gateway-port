@@ -5,6 +5,7 @@
 #include "gate_c_runtime_constants.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 /* Linked 12a5:34d8 (RTL:8bb6) fills a time sample through an SS:offset
  * pointer. Its calendar conversion is not reconstructed here. */
@@ -28,8 +29,10 @@ uint32_t gate_linked_parse_runtime_integer(GateFarPtr number);
  * Those are original behaviors, retained deliberately. */
 void gate_rtl_parse_timezone_environment(void)
 {
-    GateFarPtr value = gate_linked_get_runtime_environment((GateFarPtr){gate_ds_segment(), GATE_DS_TIMEZONE_ENV_NAME});
+    GateFarPtr value;
     uint16_t skip = 0;
+
+    value = gate_linked_get_runtime_environment((GateFarPtr){gate_ds_segment(), GATE_DS_TIMEZONE_ENV_NAME});
 
     if ((value.offset | value.segment) == 0 ||
         gate_far_byte(value.segment, value.offset) == 0)
@@ -128,11 +131,14 @@ uint32_t gate_rtl_multiply_32(uint32_t lhs, uint32_t rhs)
  * the host still supplies the elapsed clock directly for playback. */
 uint32_t gate_rtl_elapsed_milliseconds(void)
 {
-    uint8_t sample[GATE_CRT_TIME_SAMPLE_BYTES] = {0};
-    GateFarPtr destination = gate_stack_pointer(sample);
+    uint8_t sample[GATE_CRT_TIME_SAMPLE_BYTES];
+    GateFarPtr destination;
     uint32_t current;
     uint32_t baseline;
     int16_t fraction;
+
+    memset(sample, 0, sizeof sample);
+    destination = gate_stack_pointer(sample);
 
     gate_far_set_word(gate_ds_word(GATE_DS_CLOCK_SAMPLE_STATUS_SEGMENT),
                       GATE_DS_CLOCK_SAMPLE_STATUS, 0);

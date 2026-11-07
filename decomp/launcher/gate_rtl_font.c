@@ -93,9 +93,11 @@ void gate_rtl_clear_font_cache(void)
  * is preserved. The chosen slot is released before returning. */
 GateFarPtr gate_rtl_choose_font_slot(void)
 {
-    GateFarPtr candidate = font_slot(0);
-    int16_t smallest = (int16_t)font_word(candidate, GATE_FONT_SLOT_REFCOUNT);
+    GateFarPtr candidate;
+    int16_t smallest;
     uint16_t i = 1;
+    candidate = font_slot(0);
+    smallest = (int16_t)font_word(candidate, GATE_FONT_SLOT_REFCOUNT);
     while (smallest > 0) {
         GateFarPtr other;
         int16_t count;
@@ -191,14 +193,16 @@ retry:
         font_set_byte(font, i, (uint8_t)gate_rtl_read_resource_byte(handle));
 
     if ((int8_t)font_byte(font, GATE_FONT_SLOT_WIDTH_MODE) < 0) {
-        GateFarPtr widths = gate_linked_allocate_far_heap(GATE_FONT_SLOT_LOOKUP_TABLE_BYTES);
+        GateFarPtr widths;
+        widths = gate_linked_allocate_far_heap(GATE_FONT_SLOT_LOOKUP_TABLE_BYTES);
         font_set_pointer(font, GATE_FONT_SLOT_WIDTH_TABLE_OFFSET, widths);
         if ((uint16_t)(widths.segment | widths.offset) == 0)
             goto allocation_failed;
         (void)gate_rtl_read_resource_bytes(handle, widths, GATE_FONT_SLOT_LOOKUP_TABLE_BYTES);
     }
     if ((int8_t)font_byte(font, GATE_FONT_SLOT_SPACING_MODE) < 0) {
-        GateFarPtr spacing = gate_linked_allocate_far_heap(GATE_FONT_SLOT_LOOKUP_TABLE_BYTES);
+        GateFarPtr spacing;
+        spacing = gate_linked_allocate_far_heap(GATE_FONT_SLOT_LOOKUP_TABLE_BYTES);
         font_set_pointer(font, GATE_FONT_SLOT_SPACING_TABLE_OFFSET, spacing);
         if ((uint16_t)(spacing.segment | spacing.offset) == 0)
             goto allocation_failed;
@@ -210,7 +214,8 @@ retry:
                        (int16_t)(int8_t)font_byte(font, GATE_FONT_SLOT_FIRST_CHARACTER) + 1) *
             (uint16_t)(int16_t)(int8_t)font_byte(font, GATE_FONT_SLOT_GLYPH_ROW_BYTES) *
             (uint16_t)(int16_t)(int8_t)font_byte(font, GATE_FONT_SLOT_GLYPH_HEIGHT));
-        GateFarPtr bitmap = gate_linked_allocate_far_heap(bytes);
+        GateFarPtr bitmap;
+        bitmap = gate_linked_allocate_far_heap(bytes);
         font_set_pointer(font, GATE_FONT_SLOT_BITMAP_OFFSET, bitmap);
         if ((uint16_t)(bitmap.segment | bitmap.offset) == 0)
             goto allocation_failed;

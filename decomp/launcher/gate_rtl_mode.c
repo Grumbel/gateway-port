@@ -5,6 +5,7 @@
 #include "gate_rtl_palette.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 /* GATE.RTL:f49b..f4de. This is a near-called C function rather than a
  * generated 8086 thunk. Only VGA adapters (type 5) and modes 1, 2, 4
@@ -34,7 +35,7 @@ void gate_rtl_configure_vga_palette(void)
  * even a rejected request deliberately destroys the preceding mode. */
 uint16_t gate_rtl_set_video_mode(int16_t requested_mode)
 {
-    uint8_t adapter[GATE_RTL_ADAPTER_QUERY_BYTES] = {0};
+    uint8_t adapter[GATE_RTL_ADAPTER_QUERY_BYTES];
     uint16_t video_type;
     uint16_t monitor;
     uint16_t bios_mode;
@@ -43,6 +44,8 @@ uint16_t gate_rtl_set_video_mode(int16_t requested_mode)
     uint16_t index;
     uint16_t final_mask;
     int16_t rows;
+
+    memset(adapter, 0, sizeof adapter);
 
     gate_ds_set_word(GATE_DS_GRAPHICS_MODE, GATE_RTL_VIDEO_INVALID_MODE);
     if (requested_mode < 0 || requested_mode > GATE_RTL_VIDEO_MAX_MODE)
