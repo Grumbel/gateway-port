@@ -51,7 +51,8 @@ add_library(gateway_intro_memory_host STATIC
   src/intro_host_memory.c src/intro_host_rtl_font.c
   src/intro_host_rtl_globals.c
   src/intro_host_rtl_text_globals.c src/intro_host_rtl_graphics_globals.c
-  src/intro_host_rtl_pixel.c src/intro_host_rtl_palette_globals.c)
+  src/intro_host_rtl_pixel.c src/intro_host_rtl_palette_globals.c
+  src/intro_host_video_clear.c)
 target_include_directories(gateway_intro_memory_host PUBLIC decomp/launcher)
 target_compile_features(gateway_intro_memory_host PUBLIC c_std_11)
 target_compile_options(gateway_intro_memory_host PRIVATE -Wall -Wextra -Wpedantic)
@@ -159,6 +160,18 @@ if(BUILD_TESTING)
     tests/launcher_rtl_video_decompile_tests.c)
   target_include_directories(launcher-rtl-video-decompile-tests PRIVATE decomp/launcher)
   add_test(NAME launcher-rtl-video-decompile COMMAND launcher-rtl-video-decompile-tests)
+  add_executable(launcher-intro-native-video-clear-tests
+    decomp/launcher/gate_rtl_video.c src/intro_host_memory.c
+    src/intro_host_video_clear.c tests/launcher_intro_native_video_clear_tests.c)
+  target_include_directories(launcher-intro-native-video-clear-tests PRIVATE decomp/launcher)
+  target_compile_options(launcher-intro-native-video-clear-tests PRIVATE -ffunction-sections -fdata-sections)
+  target_link_options(launcher-intro-native-video-clear-tests PRIVATE -Wl,--gc-sections)
+  add_test(NAME launcher-intro-native-video-clear COMMAND launcher-intro-native-video-clear-tests)
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin")
+    add_test(NAME launcher-intro-original-video-clear
+      COMMAND launcher-intro-native-video-clear-tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin)
+  endif()
   add_executable(launcher-intro-keyboard-decompile-tests
     decomp/launcher/gate_input.c
     tests/launcher_intro_keyboard_decompile_tests.c)

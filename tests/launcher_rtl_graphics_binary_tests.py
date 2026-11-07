@@ -111,6 +111,72 @@ class OriginalIntroGraphicsEvidence(unittest.TestCase):
         self.assertEqual(int.from_bytes(ram[base + 0xf92c:base + 0xf92e],
                                         'little'), 0x12dc)
 
+    def test_original_resident_video_clear_dispatch_and_vga_handlers(self):
+        snapshot = ROOT / 'build/intro-analysis/at-22000.bin'
+        if not snapshot.is_file():
+            self.skipTest('private guest RAM snapshot unavailable')
+        ram = snapshot.read_bytes()
+        ds = 0x2a7a * 16
+
+        # The captured FAR body starts at 2488:000a. It reads the active
+        # selector from 2409:00b9 and retrieves its 3eh-byte descriptor
+        # from 2409:00e8; mode-to-callback setup is 2488:00a2.
+        self.assertEqual(ram[0x2488a:0x2488d], bytes.fromhex('558bec'))
+        self.assertEqual(ram[0x248ab:0x248b0],
+                         bytes.fromhex('9ab9000924'))
+        self.assertEqual(ram[0x248bd:0x248c2],
+                         bytes.fromhex('9ae8000924'))
+        self.assertEqual(ram[0x24912:0x24915],
+                         bytes.fromhex('ff6c3a'))  # JMP FAR [SI+3ah]
+
+        self.assertEqual(ram[ds + 0x15cc:ds + 0x15ce], b'\x03\x00')
+        self.assertEqual(ram[ds + 0x27ed], 1)  # initialized callback table
+        callbacks = (0x011a, 0x0169, 0x0169, 0x01d7,
+                     0x0169, 0x0169, 0x0169, 0x0169)
+        for mode, callback in enumerate(callbacks):
+            entry = ds + 0x27ee + mode * 0x3e
+            with self.subTest(mode=mode):
+                self.assertEqual(ram[entry], mode)
+                self.assertEqual(int.from_bytes(ram[entry + 0x3a:
+                                                     entry + 0x3c], 'little'),
+                                 callback)
+                self.assertEqual(int.from_bytes(ram[entry + 0x3c:
+                                                     entry + 0x3e], 'little'),
+                                 0x2488)
+
+        for mode, height, pitch, planes, segment, stride in (
+                (0, 200, 80, 1, 0xb800, 0),
+                (1, 350, 80, 4, 0xa000, 0x8000),
+                (2, 480, 80, 4, 0xa000, 0),
+                (3, 200, 320, 1, 0xa000, 0),
+                (7, 600, 100, 4, 0xa000, 0)):
+            entry = ds + 0x27ee + mode * 0x3e
+            with self.subTest(descriptor=mode):
+                self.assertEqual(int.from_bytes(ram[entry + 0x1a:
+                                                     entry + 0x1c], 'little'),
+                                 height)
+                self.assertEqual(int.from_bytes(ram[entry + 0x1c:
+                                                     entry + 0x1e], 'little'),
+                                 pitch)
+                self.assertEqual(ram[entry + 0x1e], planes)
+                self.assertEqual(int.from_bytes(ram[entry + 0x20:
+                                                     entry + 0x22], 'little'),
+                                 segment)
+                self.assertEqual(int.from_bytes(ram[entry + 0x22:
+                                                     entry + 0x24], 'little'),
+                                 stride)
+
+        # Mode 1/2/4..7: sequencer all planes, GC mode2 seed + mode1
+        # latched-byte replication for height*pitch bytes.
+        self.assertEqual(ram[0x249e9:0x249f3],
+                         bytes.fromhex('b002bac403ee42b00fee'))
+        self.assertEqual(ram[0x24a22:0x24a31],
+                         bytes.fromhex('8b46f48b5ef8f7e38bc8268a05f3aa'))
+        # Mode 3: 16-bit REP STOSW over (height * pitch) / 2 words;
+        # AH receives AL, giving identical bytes for the whole VGA page.
+        self.assertEqual(ram[0x24a57:0x24a6a],
+                         bytes.fromhex('8b46f48b5ef6f7e3d1e88bc88b46088ae0f3ab'))
+
     def test_original_video_mode_switch_and_resident_services(self):
         # The large f14d C routine has multiple FAR returns, and calls
         # f49b through PUSH CS/near CALL after successful BIOS setup.

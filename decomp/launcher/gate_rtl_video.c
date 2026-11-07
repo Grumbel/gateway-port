@@ -29,10 +29,8 @@ void gate_rtl_f8eb(void)
 }
 
 /* GATE.RTL:0xf921..0xf935, linked from the original intro as 0cdc:07d8.
- * The FAR target is resident 2488:000a in the 22-second guest snapshot.
- * Do not infer its graphics/page semantics from the two zero arguments:
- * keep it as an unresolved hardware boundary until the resident source is
- * recovered. The RTL cursor restoration is conditional on DS:030e. */
+ * Resident 2488:000a clears the display page with color zero. The RTL
+ * cursor restoration is conditional on DS:030e. */
 void gate_rtl_f921(void)
 {
     gate_far_2488_000a(0, 0);

@@ -32,11 +32,12 @@ int16_t gate_rtl_video_columns(void) { return columns; }
 int16_t gate_rtl_video_rows(void) { return rows; }
 int16_t gate_rtl_video_tab_base(void) { return tab_base; }
 
-void gate_far_2488_000a(uint16_t first, uint16_t second)
+uint16_t gate_far_2488_000a(uint16_t first, uint16_t second)
 {
     assert(first == 0 && second == 0);
     ++resident_calls;
     resident_sequence = ++callback_sequence;
+    return 0;
 }
 
 void gate_rtl_video_command(uint16_t function, uint8_t *input, uint8_t *output)

@@ -60,5 +60,8 @@ uint16_t gate_intro_memory_free(GateFarPtr pointer);
  * operate on palette indices; palette programming is a separate service. */
 uint8_t gate_intro_vga16_pixel(uint16_t x, uint16_t y);
 void gate_intro_vga16_set_pixel(uint16_t x, uint16_t y, uint8_t index);
+/* Fill a physical byte interval in all four VGA planes, including mode-1
+ * page offsets and 800x600 modes outside the 640x480 pixel-view bounds. */
+void gate_intro_vga16_fill_bytes(uint16_t offset, uint16_t count, uint8_t index);
 
 #endif

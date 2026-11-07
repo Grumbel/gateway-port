@@ -5,6 +5,7 @@
 #include "gate_intro_host_memory.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 /* This is a host implementation of the original segmented-memory boundary,
  * not an attempt to translate all 8086 hardware into portable C. The
@@ -224,4 +225,15 @@ void gate_intro_vga16_set_pixel(uint16_t x, uint16_t y, uint8_t index)
         else
             *value &= (uint8_t)~bit;
     }
+}
+
+void gate_intro_vga16_fill_bytes(uint16_t offset, uint16_t count, uint8_t index)
+{
+    unsigned plane;
+    if (active_memory == 0 || index > 15u ||
+        (uint32_t)offset + count > 0x10000u)
+        abort();
+    for (plane = 0; plane < 4; ++plane)
+        memset(&active_memory->vga_planes[plane][offset],
+               (index & (1u << plane)) ? 0xff : 0, count);
 }
