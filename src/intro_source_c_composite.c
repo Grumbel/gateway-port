@@ -1,9 +1,9 @@
 /* SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com> */
 /* SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception */
 
-/* Original C image + original C caption in ONE DOS RAM/VGA context.
- * This is an integration harness, not yet a translation of EXE:1302's
- * intervening palette fade/animation/timer and input operations. */
+/* Host for the original source-C EXE:1302 sequence, with native DOS/VGA
+ * boundaries. The composite CLI also retains its single-image diagnostic. */
+#include "intro_source_c_full.h"
 #include "gate_exe.h"
 #include "gate_dos_host_files.h"
 #include "gate_intro_host_memory.h"
@@ -20,6 +20,9 @@
 
 typedef struct Clock {
     uint32_t milliseconds;
+    const GateSourceCFullHooks *hooks;
+    GateIntroMemory *memory;
+    GateIntroVgaPorts *ports;
 } Clock;
 
 /* Private replay format: "GVR1" followed by timestamp (little-endian
@@ -65,25 +68,57 @@ static void record_changed(void *userdata)
     ++record->frames;
 }
 
+static void frame_update(void *userdata)
+{
+    Clock *clock = userdata;
+    if (active_recording)
+        record_changed(active_recording);
+    if (clock->hooks && clock->hooks->frame_ready)
+        clock->hooks->frame_ready(clock->hooks->userdata,
+                                 clock->memory->bytes + 0xa0000,
+                                 (const uint8_t (*)[3])clock->ports->dac);
+}
+
 static void full_palette_ready(void *userdata)
 {
     Clock *clock = userdata;
-    /* Each 256-color upload waits for one simulated VGA retrace. */
-    clock->milliseconds += 16;
-    if (active_recording)
-        record_changed(active_recording);
+    /* Each 256-color upload follows the original VGA retrace wait. The
+     * 16ms pacing is host-side, not part of the recovered source-C logic. */
+    if (clock->hooks && clock->hooks->delay_ms) {
+        clock->hooks->delay_ms(clock->hooks->userdata, 16);
+        if (clock->hooks->clock_ms)
+            clock->milliseconds = clock->hooks->clock_ms(clock->hooks->userdata);
+    } else {
+        clock->milliseconds += 16;
+    }
+    frame_update(clock);
 }
 
 static uint32_t sample_time(void *context)
 {
     Clock *clock = context;
-    clock->milliseconds += 50;
-    if (active_recording)
-        record_changed(active_recording);
+    if (clock->hooks && clock->hooks->clock_ms)
+        clock->milliseconds = clock->hooks->clock_ms(clock->hooks->userdata);
+    else
+        clock->milliseconds += 50;
+    frame_update(clock);
     return clock->milliseconds;
 }
-static uint16_t no_key(void *context) { (void)context; return 0; }
-static uint16_t read_key(void *context) { (void)context; abort(); }
+static uint16_t key_pending(void *context)
+{
+    Clock *clock = context;
+    if (clock->hooks && clock->hooks->key_pending)
+        return clock->hooks->key_pending(clock->hooks->userdata);
+    return 0;
+}
+static uint16_t read_key(void *context)
+{
+    Clock *clock = context;
+    if (clock->hooks && clock->hooks->read_key)
+        return clock->hooks->read_key(clock->hooks->userdata);
+    abort();
+}
+static uint16_t no_mouse(void *context) { (void)context; return 0; }
 
 /* Host boundaries for services not yet represented by recovered C. The
  * source-C original sequence remains in gate_exe_1302; no scene schedule is
@@ -111,13 +146,26 @@ uint16_t gate_rtl_f14d(int16_t mode)
     if (mode != 3) abort();
     return 1; /* already configured in the pinned DOS guest RAM */
 }
-uint16_t gate_far_1000_0008(void) { return 1; }
+uint16_t gate_far_1000_0008(void)
+{
+    return active_clock && active_clock->hooks &&
+           active_clock->hooks->key_pending &&
+           active_clock->hooks->key_pending(active_clock->hooks->userdata)
+        ? 0 : 1;
+}
 void gate_far_223f_00b6(uint32_t delay)
 {
-    if (active_recording)
-        record_changed(active_recording);
-    if (active_clock)
+    if (!active_clock)
+        return;
+    frame_update(active_clock);
+    if (active_clock->hooks && active_clock->hooks->delay_ms) {
+        active_clock->hooks->delay_ms(active_clock->hooks->userdata, delay);
+        if (active_clock->hooks->clock_ms)
+            active_clock->milliseconds = active_clock->hooks->clock_ms(
+                active_clock->hooks->userdata);
+    } else {
         active_clock->milliseconds += delay;
+    }
 }
 void gate_rtl_graphics_delay(uint32_t delay) { gate_far_223f_00b6(delay); }
 
@@ -161,43 +209,41 @@ static int configure(GateIntroMemory *memory)
     return 1;
 }
 
-int main(int argc, char **argv)
+static int run_intro(const char *snapshot, const char *dos_dir,
+                     const char *ppm_output, int full,
+                     const char *record_output, const GateSourceCFullHooks *hooks)
 {
     GateIntroMemory *memory;
     GateDosHostFiles files = {0};
     GateIntroVgaPorts ports = {0};
     Clock clock = {0};
     Recording recording = {0};
-    GateIntroHostInput input = {&clock, sample_time, no_key, read_key, no_key};
+    GateIntroHostInput input = {&clock, sample_time, key_pending, read_key, no_mouse};
     FILE *in, *out;
     unsigned i, text_pixels = 0, background_pixels = 0, final_pixels = 0;
     uint8_t background[320u * 200u] = {0};
-    if (argc != 4 && !(argc == 5 && strcmp(argv[4], "--full") == 0) &&
-        !(argc == 7 && strcmp(argv[4], "--full") == 0 &&
-          strcmp(argv[5], "--record") == 0)) {
-        fputs("usage: gateway-intro-source-c-composite guest-22s.bin DOS-DIR OUTPUT.ppm [--full [--record FILE.gvr]]\n",
-              stderr);
-        return 2;
-    }
+    clock.hooks = hooks;
+    clock.ports = &ports;
     memory = calloc(1, sizeof *memory);
     if (!memory)
         return 1;
-    in = fopen(argv[1], "rb");
+    clock.memory = memory;
+    in = fopen(snapshot, "rb");
     if (!in) {
-        perror(argv[1]);
+        perror(snapshot);
         free(memory);
         return 1;
     }
     if (fread(memory->bytes, 1, GATE_INTRO_RAM_BYTES, in) !=
         GATE_INTRO_RAM_BYTES) {
-        fprintf(stderr, "invalid 1 MiB DOS RAM snapshot: %s\n", argv[1]);
+        fprintf(stderr, "invalid 1 MiB DOS RAM snapshot: %s\n", snapshot);
         fclose(in);
         free(memory);
         return 1;
     }
     fclose(in);
     memory->ds_segment = 0x2a7a;
-    files.directory = argv[2];
+    files.directory = dos_dir;
     gate_intro_memory_attach(memory);
     gate_dos_host_files_attach(&files);
     gate_intro_input_attach(&input);
@@ -205,27 +251,24 @@ int main(int argc, char **argv)
     if (!configure(memory))
         abort();
 
-    /* This is the real source-C display call from EXE:1302. The earlier
-     * fade into resource 3105 and the intervening animation are pending. */
-    if (argc >= 5) {
+    if (full) {
         active_clock = &clock;
         ports.palette_ready = full_palette_ready;
         ports.palette_userdata = &clock;
-        if (argc == 7) {
-            recording.file = fopen(argv[6], "wb");
+        memory->frame_ready = frame_update;
+        memory->frame_userdata = &clock;
+        if (record_output) {
+            recording.file = fopen(record_output, "wb");
             if (!recording.file || fwrite("GVR1", 1, 4, recording.file) != 4)
                 abort();
             recording.memory = memory;
             recording.ports = &ports;
             recording.clock = &clock;
             active_recording = &recording;
-            memory->frame_ready = record_changed;
-            memory->frame_userdata = &recording;
-            record_changed(&recording);
         }
+        frame_update(&clock);
         gate_exe_1302();
-        if (active_recording)
-            record_changed(active_recording);
+        frame_update(&clock);
     } else {
         if (gate_rtl_12b19(0x3105, 0) != 1)
             abort();
@@ -236,27 +279,27 @@ int main(int argc, char **argv)
                       (GateFarPtr){memory->ds_segment, 0x363b});
     }
 
-    out = fopen(argv[3], "wb");
-    if (!out)
-        abort();
-    if (fprintf(out, "P6\n320 200\n255\n") < 0)
-        abort();
-    for (i = 0; i < 320u * 200u; ++i) {
-        uint8_t pixel = memory->bytes[0xa0000 + i];
-        uint8_t rgb[3];
-        unsigned channel;
-        background_pixels += background[i] != 0;
-        text_pixels += pixel != background[i];
-        final_pixels += pixel != 0;
-        for (channel = 0; channel < 3; ++channel) {
-            uint8_t value = ports.dac[pixel][channel];
-            rgb[channel] = (uint8_t)((value << 2) | (value >> 4));
+    if (ppm_output) {
+        out = fopen(ppm_output, "wb");
+        if (!out || fprintf(out, "P6\n320 200\n255\n") < 0)
+            abort();
+        for (i = 0; i < 320u * 200u; ++i) {
+            uint8_t pixel = memory->bytes[0xa0000 + i];
+            uint8_t rgb[3];
+            unsigned channel;
+            background_pixels += background[i] != 0;
+            text_pixels += pixel != background[i];
+            final_pixels += pixel != 0;
+            for (channel = 0; channel < 3; ++channel) {
+                uint8_t value = ports.dac[pixel][channel];
+                rgb[channel] = (uint8_t)((value << 2) | (value >> 4));
+            }
+            if (fwrite(rgb, 1, 3, out) != 3)
+                abort();
         }
-        if (fwrite(rgb, 1, 3, out) != 3)
+        if (fclose(out) != 0)
             abort();
     }
-    if (fclose(out) != 0)
-        abort();
     gate_rtl_e771();
     if (recording.file && fclose(recording.file) != 0)
         abort();
@@ -267,14 +310,39 @@ int main(int argc, char **argv)
     gate_dos_host_files_close_all(&files);
     gate_intro_memory_detach();
     free(memory);
-    if (argc >= 5) {
-        printf("original source-C EXE:1302 completed: %u nonzero pixels, %u virtual ms\n",
-               final_pixels, clock.milliseconds);
-        if (argc == 7)
-            printf("original EXE:1302 captured %u replay frames\n", recording.frames);
-    } else {
-        printf("source-C shared image+caption: background=%u changed=%u, clock=%u ms\n",
-               background_pixels, text_pixels, clock.milliseconds);
+    if (ppm_output) {
+        if (full) {
+            printf("original source-C EXE:1302 completed: %u nonzero pixels, %u virtual ms\n",
+                   final_pixels, clock.milliseconds);
+            if (record_output)
+                printf("original EXE:1302 captured %u replay frames\n", recording.frames);
+        } else {
+            printf("source-C shared image+caption: background=%u changed=%u, clock=%u ms\n",
+                   background_pixels, text_pixels, clock.milliseconds);
+        }
     }
-    return (argc >= 5 || text_pixels > 100) ? 0 : 1;
+    return (full || text_pixels > 100) ? 0 : 1;
 }
+
+int gate_source_c_full_run(const char *snapshot, const char *dos_directory,
+                           const GateSourceCFullHooks *hooks)
+{
+    if (!snapshot || !dos_directory)
+        return 2;
+    return run_intro(snapshot, dos_directory, NULL, 1, NULL, hooks);
+}
+
+#ifndef GATE_SOURCE_C_LIBRARY
+int main(int argc, char **argv)
+{
+    if (argc != 4 && !(argc == 5 && strcmp(argv[4], "--full") == 0) &&
+        !(argc == 7 && strcmp(argv[4], "--full") == 0 &&
+          strcmp(argv[5], "--record") == 0)) {
+        fputs("usage: gateway-intro-source-c-composite guest-22s.bin DOS-DIR OUTPUT.ppm [--full [--record FILE.gvr]]\n",
+              stderr);
+        return 2;
+    }
+    return run_intro(argv[1], argv[2], argv[3], argc >= 5,
+                     argc == 7 ? argv[6] : NULL, NULL);
+}
+#endif

@@ -1,4 +1,4 @@
-# Source-C intro: full silent sequence and frame replay
+# Source-C intro: full silent sequence, live playback and frame replay
 
 The original `GATE.EXE:1302` is translated in `decomp/launcher/`, along with
 its caption layout and font/drawing RTL callees. This chapter concerns the
@@ -6,8 +6,10 @@ its caption layout and font/drawing RTL callees. This chapter concerns the
 The recovered original `GATE.EXE:1302` C entry now runs from start through
 its final caption, with source-C image loading, original animation control
 flow, source-C font/drawing, palette operations and time delays. An SDL3
-replayer displays the output. **This is a silent, captured-state replay**:
-music startup, live original key interrupts and the game handoff are pending.
+live runner displays the in-progress VGA framebuffer and forwards Escape to
+the original C input check; a separate deterministic recording/replayer
+remains available for frame inspection. **Both are silent and start from a
+captured DOS memory state**: music startup and the game handoff are pending.
 
 The first executable C-only milestone is the complete set of eighteen
 `GATE.EXE:117e` caption calls with their original arguments, font loading,
@@ -61,7 +63,35 @@ compares occupied-pixel totals against the established integration oracle:
 separate original caption wait durations too. Test screenshots are ignored
 under `build/`; no narrative text or original assets enter the Git history.
 
-## Play the complete source-C intro (silent)
+## Play the original source-C intro live (silent)
+
+```sh
+nix run .#intro-source-c-live -- ../gateway-dos
+```
+
+This executes `GATE.EXE:1302` on a worker thread while an SDL3 window
+displays the actual source-C VGA output at its 320×200 resolution and
+the original 4:3 display aspect. The clock and delays follow host time.
+Escape is injected as an original DOS key event: the recovered C code
+takes its own interruption and cleanup branches. Space, Return, Backspace
+and printable keys are also forwarded to the recovered C handler, including
+its non-Escape prompt branch. P pauses the host clock and F9 toggles
+filtering. Mouse input and extended DOS scan codes are not forwarded yet.
+
+As in the recording mode below, the one-argument Nix app first uses the
+Unicorn DOS runner to generate a private 22-second memory snapshot. An
+existing snapshot may instead be given as a second argument (or before
+`DOS-DIR`) to skip the initial emulation. The temporary snapshot is removed
+on exit. The original C intro itself does not execute any x86 instructions.
+
+The headless live-input regression injects Escape at 65 seconds of
+simulated time, verifies it is consumed exactly once by the original C
+sequence, and checks a clean return at about 69.7 seconds. It also injects
+an ordinary key at 50 seconds and later Escape at 100 seconds, verifying
+both are consumed by original C. There is no automated SDL window test in
+this environment.
+
+## Play the deterministic source-C recording (silent)
 
 ```sh
 nix run .#intro-source-c-full -- \
@@ -171,8 +201,10 @@ image-path diagnostic, **not the original animation schedule**.
   The Nix wrapper generates it automatically, but independent source-C
   startup without a Unicorn bootstrap is not yet reconstructed.
 - Original `RTL:c3bd` music setup is a silent host stub; no audio is replayed.
-- SDL keys control the replay, not the source-C game's original Escape/skip
-  checks. These require a live execution/presentation loop.
+- The live SDL runner forwards Escape to the original source-C input check.
+  Printable keys also reach the original C handler, though extended DOS
+  scan codes and mouse services still need reconstruction. The offline `GVR1`
+  replayer remains read-only and its keys are host controls.
 - `GATE.EXE:1302` completes, but the game is not started afterward.
 - The 816 frames are pinned in source-C regression tests. They have **not**
   been compared frame-by-frame against the original DOS run at matching

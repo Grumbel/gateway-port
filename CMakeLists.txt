@@ -165,6 +165,23 @@ target_compile_options(gateway-intro-source-c-composite PRIVATE
 target_link_options(gateway-intro-source-c-composite PRIVATE -Wl,--gc-sections)
 target_link_libraries(gateway-intro-source-c-composite PRIVATE gateway_intro_pic_host)
 install(TARGETS gateway-intro-source-c-composite RUNTIME DESTINATION bin)
+add_executable(launcher-intro-source-c-live-tests
+  ${GATEWAY_INTRO_SOURCE_C_COMPOSITE_SOURCES}
+  tests/launcher_intro_source_c_live_tests.c)
+target_include_directories(launcher-intro-source-c-live-tests PRIVATE decomp/launcher src)
+target_compile_definitions(launcher-intro-source-c-live-tests PRIVATE
+  GATE_SOURCE_C_LIBRARY)
+target_compile_options(launcher-intro-source-c-live-tests PRIVATE
+  -ffunction-sections -fdata-sections)
+target_link_options(launcher-intro-source-c-live-tests PRIVATE -Wl,--gc-sections)
+target_link_libraries(launcher-intro-source-c-live-tests PRIVATE gateway_intro_pic_host)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin" AND
+   EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos/GATE_300.PIC")
+  add_test(NAME launcher-intro-source-c-live COMMAND
+    launcher-intro-source-c-live-tests
+    ${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin
+    ${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos)
+endif()
 install(FILES decomp/launcher/gate_exe.h decomp/launcher/gate_rtl.h
               decomp/launcher/gate_rtl_audio_startup.h
               decomp/launcher/gate_rtl_video.h
@@ -558,6 +575,19 @@ add_executable(gateway-story-check tools/check_action_matrix.cpp)
 target_link_libraries(gateway-story-check PRIVATE gateway_core)
 if(GATEWAY_WITH_SDL)
   find_package(SDL3 CONFIG REQUIRED)
+  find_package(Threads REQUIRED)
+  add_executable(gateway-intro-source-c-live
+    ${GATEWAY_INTRO_SOURCE_C_COMPOSITE_SOURCES}
+    src/intro_source_c_live.cpp)
+  target_include_directories(gateway-intro-source-c-live PRIVATE decomp/launcher src)
+  target_compile_definitions(gateway-intro-source-c-live PRIVATE
+    GATE_SOURCE_C_LIBRARY)
+  target_compile_options(gateway-intro-source-c-live PRIVATE
+    -ffunction-sections -fdata-sections)
+  target_link_options(gateway-intro-source-c-live PRIVATE -Wl,--gc-sections)
+  target_link_libraries(gateway-intro-source-c-live PRIVATE
+    gateway_intro_pic_host SDL3::SDL3 Threads::Threads)
+  install(TARGETS gateway-intro-source-c-live RUNTIME DESTINATION bin)
   add_executable(gateway-intro-source-c-replay src/intro_source_c_replay.cpp)
   target_link_libraries(gateway-intro-source-c-replay PRIVATE SDL3::SDL3)
   install(TARGETS gateway-intro-source-c-replay RUNTIME DESTINATION bin)

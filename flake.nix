@@ -57,13 +57,10 @@
       apps = eachSystem (system:
         let
           pkgs = import nixpkgs { inherit system; };
-          sourceCFull = pkgs.writeShellApplication {
-            name = "gateway-intro-source-c-full";
-            runtimeInputs = [ pkgs.coreutils ];
-            text = ''
+          sourceCSetup = ''
               if [ "$#" -ne 1 ] && [ "$#" -ne 2 ]; then
-                echo "usage: gateway-intro-source-c-full DOS-DIR [guest-22s.bin]" >&2
-                echo "   or: gateway-intro-source-c-full guest-22s.bin DOS-DIR" >&2
+                echo "usage: $0 DOS-DIR [guest-22s.bin]" >&2
+                echo "   or: $0 guest-22s.bin DOS-DIR" >&2
                 exit 2
               fi
               replay_dir="$(mktemp -d)"
@@ -90,10 +87,23 @@
               elif [ -z "''${snapshot:-}" ]; then
                 snapshot="$2"
               fi
+          '';
+          sourceCFull = pkgs.writeShellApplication {
+            name = "gateway-intro-source-c-full";
+            runtimeInputs = [ pkgs.coreutils ];
+            text = sourceCSetup + ''
               ${self.packages.${system}.intro-decompile}/bin/gateway-intro-source-c-composite \
                 "$snapshot" "$dos_dir" "$replay_dir/final.ppm" --full --record "$replay_dir/replay.gvr"
               ${self.packages.${system}.default}/bin/gateway-intro-source-c-replay \
                 "$replay_dir/replay.gvr"
+            '';
+          };
+          sourceCLive = pkgs.writeShellApplication {
+            name = "gateway-intro-source-c-live";
+            runtimeInputs = [ pkgs.coreutils ];
+            text = sourceCSetup + ''
+              ${self.packages.${system}.default}/bin/gateway-intro-source-c-live \
+                "$snapshot" "$dos_dir"
             '';
           };
         in {
@@ -126,6 +136,11 @@
           type = "app";
           program = "${sourceCFull}/bin/gateway-intro-source-c-full";
           meta.description = "Play the original source-C Gateway intro with PIC images, palette fades, animations and all captions (silent)";
+        };
+        intro-source-c-live = {
+          type = "app";
+          program = "${sourceCLive}/bin/gateway-intro-source-c-live";
+          meta.description = "Play the original source-C Gateway intro live through SDL3, with input and clock hooks (silent)";
         };
         intro-dump = {
           type = "app";
