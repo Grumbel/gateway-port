@@ -36,9 +36,9 @@ uint16_t gate_rtl_font_character_advance(uint16_t character)
     GateFarPtr font;
     uint16_t width;
 
-    if (character == 9)
+    if (character == GATE_TEXT_CHARACTER_TAB)
         return gate_rtl_tab_advance();
-    if (character == 10)
+    if (character == GATE_TEXT_CHARACTER_NEWLINE)
         return 0;
 
     font = gate_rtl_active_font();
@@ -49,8 +49,8 @@ uint16_t gate_rtl_font_character_advance(uint16_t character)
                                                 (uint16_t)(spacing.offset + character));
         width = (uint16_t)(int16_t)(int8_t)gate_far_byte(
             widths.segment, (uint16_t)(widths.offset + character));
-        width = (uint16_t)(width + (((uint16_t)(packed >> 4)) & 15));
-        width = (uint16_t)(width + (packed & 15));
+        width = (uint16_t)(width + (((uint16_t)(packed >> GATE_TEXT_FONT_SPACING_NIBBLE_SHIFT)) & GATE_TEXT_FONT_SPACING_NIBBLE_MASK));
+        width = (uint16_t)(width + (packed & GATE_TEXT_FONT_SPACING_NIBBLE_MASK));
     } else if ((int8_t)font_byte(font, GATE_FONT_SLOT_WIDTH_MODE) < 0) {
         GateFarPtr widths = font_pointer(font, GATE_FONT_SLOT_WIDTH_TABLE_OFFSET);
         width = (uint16_t)((int16_t)(int8_t)font_byte(font, GATE_FONT_SLOT_SPACING_MODE) +
@@ -119,8 +119,8 @@ void gate_rtl_set_text_cursor(int16_t x, int16_t y)
         int16_t pitch = gate_rtl_text_mode_pitch();
         uint16_t abs_x = (uint16_t)(x < 0 ? -(int32_t)x : x);
         /* Arithmetic SAR 3, including the original INT16_MIN wrap case. */
-        uint16_t shifted = (uint16_t)((abs_x >> 3) |
-                                       ((abs_x & 0x8000) ? 0xe000 : 0));
+        uint16_t shifted = (uint16_t)((abs_x >> GATE_TEXT_CELL_WIDTH_SHIFT) |
+                                       ((abs_x & GATE_TEXT_SIGNED_WORD_SIGN_BIT) ? GATE_TEXT_CELL_SAR_SIGN_FILL : 0));
         if (x < 0)
             shifted = (uint16_t)(-shifted);
         gate_rtl_set_text_cell_cursor((uint16_t)(shifted + 1),
@@ -141,7 +141,7 @@ void gate_rtl_draw_text_string(GateFarPtr text)
         uint16_t x, y;
         gate_rtl_print_text_mode_string(text);
         gate_rtl_get_text_cell_cursor(&x, &y);
-        gate_rtl_set_cursor((int16_t)(uint16_t)(x * 8u - 8u),
+        gate_rtl_set_cursor((int16_t)(uint16_t)(x * GATE_TEXT_CELL_WIDTH_PIXELS - GATE_TEXT_CELL_WIDTH_PIXELS),
                             (int16_t)(uint16_t)((uint16_t)(y - 1) *
                                                  (uint16_t)gate_rtl_text_mode_pitch()));
     } else {
@@ -171,7 +171,7 @@ void gate_rtl_draw_font_glyph(uint16_t character)
     int16_t glyph_width;
     uint16_t advance;
 
-    if (character == 9) {
+    if (character == GATE_TEXT_CHARACTER_TAB) {
         int16_t pitch = gate_rtl_tab_pitch();
         int16_t quotient = (int16_t)(gate_rtl_cursor_x() / pitch);
         int16_t next = (int16_t)(uint16_t)((uint32_t)(uint16_t)quotient *
@@ -181,7 +181,7 @@ void gate_rtl_draw_font_glyph(uint16_t character)
             goto newline;
         return;
     }
-    if (character == 10) {
+    if (character == GATE_TEXT_CHARACTER_NEWLINE) {
     newline:
         gate_rtl_set_cursor(0, (int16_t)(uint16_t)(
             (uint16_t)gate_rtl_cursor_y() + (uint16_t)gate_rtl_newline_pitch()));
@@ -201,7 +201,9 @@ void gate_rtl_draw_font_glyph(uint16_t character)
         GateFarPtr spacing = font_pointer(font, GATE_FONT_SLOT_SPACING_TABLE_OFFSET);
         uint16_t packed = (uint16_t)(int16_t)(int8_t)gate_far_byte(
             spacing.segment, (uint16_t)(spacing.offset + character));
-        advance = (uint16_t)(glyph_width + ((packed >> 4) & 15) + (packed & 15));
+        advance = (uint16_t)(glyph_width +
+                             ((packed >> GATE_TEXT_FONT_SPACING_NIBBLE_SHIFT) & GATE_TEXT_FONT_SPACING_NIBBLE_MASK) +
+                             (packed & GATE_TEXT_FONT_SPACING_NIBBLE_MASK));
     } else {
         advance = (uint16_t)(glyph_width + (int16_t)(int8_t)font_byte(font, GATE_FONT_SLOT_SPACING_MODE));
     }
@@ -210,7 +212,7 @@ void gate_rtl_draw_font_glyph(uint16_t character)
         uint16_t x = (uint16_t)gate_rtl_cursor_x();
         uint16_t y = (uint16_t)gate_rtl_cursor_y();
         gate_rtl_background_setup(0, (uint16_t)gate_rtl_background_color(), 0);
-        gate_rtl_background_rect(2,
+        gate_rtl_background_rect(GATE_TEXT_GLYPH_BACKGROUND_RECT_STYLE,
             (uint16_t)(y + (uint16_t)gate_rtl_newline_pitch() - 1),
             (uint16_t)(x + advance - 1), y, x);
     }
@@ -219,7 +221,7 @@ void gate_rtl_draw_font_glyph(uint16_t character)
         GateFarPtr spacing = font_pointer(font, GATE_FONT_SLOT_SPACING_TABLE_OFFSET);
         uint16_t packed = (uint16_t)(int16_t)(int8_t)gate_far_byte(
             spacing.segment, (uint16_t)(spacing.offset + character));
-        uint16_t bearing = (packed >> 4) & 15;
+        uint16_t bearing = (packed >> GATE_TEXT_FONT_SPACING_NIBBLE_SHIFT) & GATE_TEXT_FONT_SPACING_NIBBLE_MASK;
         gate_rtl_set_cursor((int16_t)(uint16_t)((uint16_t)gate_rtl_cursor_x() + bearing),
                             gate_rtl_cursor_y());
         advance = (uint16_t)(advance - bearing);
@@ -248,7 +250,7 @@ void gate_rtl_draw_font_glyph(uint16_t character)
             remaining_columns = (uint16_t)glyph_width;
             x = (uint16_t)gate_rtl_cursor_x();
             byte_offset = 0;
-            mask = 0x80;
+            mask = GATE_TEXT_GLYPH_HIGH_BIT_MASK;
             for (;;) {
                 remaining_columns = (uint16_t)(remaining_columns - 1);
                 if ((int16_t)remaining_columns < 0)
@@ -258,7 +260,7 @@ void gate_rtl_draw_font_glyph(uint16_t character)
                     gate_rtl_plot_pixel(gate_rtl_ink_color(), y, x);
                 mask >>= 1;
                 if (mask == 0) {
-                    mask = 0x80;
+                    mask = GATE_TEXT_GLYPH_HIGH_BIT_MASK;
                     byte_offset = (uint16_t)(byte_offset + 1);
                 }
                 x = (uint16_t)(x + 1);

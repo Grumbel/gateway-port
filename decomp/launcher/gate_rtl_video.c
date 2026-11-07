@@ -92,11 +92,11 @@ void gate_rtl_set_text_cell_cursor(uint16_t x, uint16_t y)
  * and the low-16-bit add of four before shifting by three. */
 static int16_t tab_pitch(void)
 {
-    uint16_t value = (uint16_t)((uint16_t)gate_rtl_video_tab_base() + 4u);
-    int negative = (value & 0x8000u) != 0;
+    uint16_t value = (uint16_t)((uint16_t)gate_rtl_video_tab_base() + GATE_TEXT_TAB_PITCH_BIAS_PIXELS);
+    int negative = (value & GATE_TEXT_SIGNED_WORD_SIGN_BIT) != 0;
     uint16_t magnitude = negative ? (uint16_t)(-value) : value;
-    uint16_t shifted = (uint16_t)((magnitude >> 3) |
-                                   ((magnitude & 0x8000u) ? 0xe000u : 0));
+    uint16_t shifted = (uint16_t)((magnitude >> GATE_TEXT_CELL_WIDTH_SHIFT) |
+                                   ((magnitude & GATE_TEXT_SIGNED_WORD_SIGN_BIT) ? GATE_TEXT_CELL_SAR_SIGN_FILL : 0));
     return (int16_t)(negative ? (uint16_t)(-shifted) : shifted);
 }
 
@@ -131,7 +131,7 @@ void gate_rtl_print_text_mode_string(GateFarPtr text)
 
         while (gate_far_byte(text.segment, text.offset) != 0) {
             uint8_t ch = gate_far_byte(text.segment, text.offset);
-            if (ch == 9) {
+            if (ch == GATE_TEXT_CHARACTER_TAB) {
                 int16_t pitch = tab_pitch();
                 int16_t quotient = (int16_t)(column / pitch);
                 column = (int16_t)(uint16_t)((uint16_t)(quotient * (int32_t)pitch) +
@@ -141,7 +141,7 @@ void gate_rtl_print_text_mode_string(GateFarPtr text)
                 packet[GATE_VIDEO_PACKET_ROW] = (uint8_t)row;
                 packet[GATE_VIDEO_PACKET_COLUMN] = (uint8_t)column;
                 video_call(packet);
-            } else if (ch == 10) {
+            } else if (ch == GATE_TEXT_CHARACTER_NEWLINE) {
                 column = 0;
                 row = (int16_t)(uint16_t)((uint16_t)row + 1u);
                 packet[GATE_VIDEO_PACKET_COMMAND] = GATE_VIDEO_COMMAND_SET_CURSOR;

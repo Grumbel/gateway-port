@@ -120,6 +120,25 @@ wrapping, the original `0xffe6` allocation failure, `0xca00` signature,
 `gate_rtl_draw.h` for `RTL:fc37` and `RTL:ff99`, including the fixed
 background setup code **10**, whose broader meaning is not established.
 
+The next naming pass covers text-mode and resource-file operands.
+`gate_rtl_video.h` identifies TAB `9`, newline `10`, the eight-pixel text
+cell, two four-bit glyph-spacing fields, glyph MSB mask `0x80`, and the
+signed WORD masks used by `RTL:ed39` and `RTL:fa17` text-position/tab
+rounding. `gate_memory_layout.h` keeps the original font pointer-half
+offset, font resource file type `2`, group multiplier `100`, invalid-cache
+byte `0xff`, and fallback character and width values used by
+`RTL:e771..ebcf`. These are distinct from the relocated font memory
+offsets and 30-byte slot layout already recorded there.
+
+The original resource-file wrapper at `RTL:e511..e5c4` uses an 80-byte
+stack filename, a four-byte path-table entry, path probe argument `4`,
+and file type `5` to select create bit `0x80`; the same bit is tested by
+the resident DOS `1c29:0000` open routine. A failed one-byte read
+returns `0xffff` whether EOF or I/O failure, while failed resident DOS
+seek returns its separate `0xffff` sentinel. The source retains distinct
+names for those equal values. All independent mock expectations remain
+numeric to continue checking the original operands.
+
 Palette and display immediates are defined near their original services:
 `gate_rtl_graphics.h` names the `64`-denominator/`4`-step signed fades and
 the mode-1 three-pass, 16-byte transform with 100ms waits

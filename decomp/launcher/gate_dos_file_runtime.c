@@ -14,7 +14,7 @@
 uint16_t gate_linked_dos_file_open(GateFarPtr filename, uint16_t flags)
 {
     GateDosFileResult result = gate_dos_file_open(filename,
-        (uint8_t)flags, (flags & 0x80u) != 0);
+        (uint8_t)flags, (flags & GATE_DOS_FILE_CREATE_FLAG) != 0);
     return result.carry ? 0 : result.ax;
 }
 
@@ -48,5 +48,5 @@ uint16_t gate_linked_dos_file_write(uint16_t handle, GateFarPtr source,
 uint16_t gate_linked_dos_file_seek(uint16_t handle, uint16_t origin, uint32_t offset)
 {
     GateDosFileResult result = gate_dos_file_seek(handle, (uint8_t)origin, offset);
-    return result.carry ? 0xffffu : 0;
+    return result.carry ? GATE_DOS_FILE_SEEK_FAILURE : 0;
 }

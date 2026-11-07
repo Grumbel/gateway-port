@@ -15,7 +15,7 @@ void gate_rtl_set_resource_path_base(GateFarPtr base)
  * AX < 1 test, i.e. one only when the lower-level result is zero. */
 uint16_t gate_rtl_check_resource_path(GateFarPtr path)
 {
-    return gate_linked_open_runtime_path(path, 4) == 0 ? 1u : 0u;
+    return gate_linked_open_runtime_path(path, GATE_RESOURCE_PATH_PROBE_CODE) == 0 ? 1u : 0u;
 }
 
 /* GATE.RTL:0xe531..0xe581, 0c33:0040.  Original stack layout is an
@@ -24,17 +24,17 @@ uint16_t gate_rtl_check_resource_path(GateFarPtr path)
  * by four with 16-bit truncation before indexing the original DS table. */
 uint16_t gate_rtl_open_resource_file(uint16_t type, uint16_t resource)
 {
-    uint8_t path[80];
-    uint16_t entry = (uint16_t)(GATE_DS_RESOURCE_PATH_TABLE + (uint16_t)(type << 2));
+    uint8_t path[GATE_RESOURCE_PATH_STACK_BYTES];
+    uint16_t entry = (uint16_t)(GATE_DS_RESOURCE_PATH_TABLE + (uint16_t)(type << GATE_RESOURCE_PATH_TABLE_ENTRY_SHIFT));
     uint16_t ds = gate_ds_segment();
-    GateFarPtr table = {gate_ds_word((uint16_t)(entry + 2u)),
+    GateFarPtr table = {gate_ds_word((uint16_t)(entry + GATE_RESOURCE_PATH_TABLE_SEGMENT_WORD_OFFSET)),
                         gate_ds_word(entry)};
     GateFarPtr base = {gate_ds_word(GATE_DS_RESOURCE_PATH_BASE_SEGMENT), gate_ds_word(GATE_DS_RESOURCE_PATH_BASE_OFFSET)};
     GateFarPtr format = {ds, GATE_DS_RESOURCE_PATH_FORMAT};
     GateFarPtr pathname = gate_stack_pointer(path);
 
     gate_linked_format_resource_filename(pathname, format, base, resource, table);
-    return gate_linked_dos_file_open(pathname, type == 5 ? 0x80u : 0u);
+    return gate_linked_dos_file_open(pathname, type == GATE_RESOURCE_FILE_CREATE_TYPE ? GATE_DOS_FILE_CREATE_FLAG : 0u);
 }
 
 /* GATE.RTL:0xe582..0xe59a, 0c33:0091.  The guest pushes the offset's high
@@ -52,7 +52,7 @@ uint16_t gate_rtl_read_resource_byte(uint16_t handle)
     uint16_t value = gate_rtl_file_stack_word();
     if (gate_linked_dos_file_read(handle, gate_stack_pointer(&value), 1) != 0)
         return value;
-    return 0xffffu;
+    return GATE_RESOURCE_FILE_BYTE_READ_FAILURE;
 }
 
 /* GATE.RTL:0xe5c5..0xe5e2, 0c33:00d4.  Unlike the byte reader above this

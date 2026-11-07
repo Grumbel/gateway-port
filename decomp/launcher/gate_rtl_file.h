@@ -6,6 +6,21 @@
 
 #include "gate_exe.h"
 
+/* Original resource path and DOS file selector operands, RTL:e511..e5c4
+ * (linked 0c33:0020..00d4). The type=5 branch requests DOS create by
+ * setting bit 7 in the lower-level open flags. The returned all-ones
+ * WORD means a byte could not be read, whether because of EOF or error. */
+enum {
+    GATE_RESOURCE_PATH_PROBE_CODE = 4,
+    GATE_RESOURCE_PATH_STACK_BYTES = 80,
+    GATE_RESOURCE_PATH_TABLE_ENTRY_SHIFT = 2,
+    GATE_RESOURCE_PATH_TABLE_SEGMENT_WORD_OFFSET = 2,
+    GATE_RESOURCE_FILE_CREATE_TYPE = 5,
+    GATE_DOS_FILE_CREATE_FLAG = 0x80,
+    GATE_RESOURCE_FILE_BYTE_READ_FAILURE = 0xffff,
+    GATE_DOS_FILE_SEEK_FAILURE = 0xffff,
+};
+
 /* Source identities are ORIGINAL GATE.RTL file offsets.  These functions
  * were linked into the 0c33 bank in the captured intro, but no runtime
  * segment number is a stable function identity. */

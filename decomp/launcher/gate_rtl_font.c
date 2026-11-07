@@ -35,14 +35,14 @@ static void font_set_word(GateFarPtr font, uint16_t field, uint16_t value)
 
 static GateFarPtr font_pointer(GateFarPtr font, uint16_t field)
 {
-    return (GateFarPtr){font_word(font, (uint16_t)(field + 2)),
+    return (GateFarPtr){font_word(font, (uint16_t)(field + GATE_FONT_POINTER_SEGMENT_WORD_OFFSET)),
                         font_word(font, field)};
 }
 
 static void font_set_pointer(GateFarPtr font, uint16_t field, GateFarPtr value)
 {
     font_set_word(font, field, value.offset);
-    font_set_word(font, (uint16_t)(field + 2), value.segment);
+    font_set_word(font, (uint16_t)(field + GATE_FONT_POINTER_SEGMENT_WORD_OFFSET), value.segment);
 }
 
 static void font_set_active(GateFarPtr font)
@@ -72,8 +72,8 @@ void gate_rtl_release_font_slot(GateFarPtr font)
     if (font_word(font, GATE_FONT_SLOT_REFCOUNT) == 0)
         return;
     font_set_word(font, GATE_FONT_SLOT_REFCOUNT, 0);
-    font_set_byte(font, GATE_FONT_SLOT_RESOURCE_MODE, 0xff);
-    font_set_byte(font, GATE_FONT_SLOT_RESOURCE_ID, 0xff);
+    font_set_byte(font, GATE_FONT_SLOT_RESOURCE_MODE, GATE_FONT_INVALID_RESOURCE_BYTE);
+    font_set_byte(font, GATE_FONT_SLOT_RESOURCE_ID, GATE_FONT_INVALID_RESOURCE_BYTE);
     gate_linked_free_far_heap(font_pointer(font, GATE_FONT_SLOT_WIDTH_TABLE_OFFSET));
     gate_linked_free_far_heap(font_pointer(font, GATE_FONT_SLOT_SPACING_TABLE_OFFSET));
     gate_linked_free_far_heap(font_pointer(font, GATE_FONT_SLOT_BITMAP_OFFSET));
@@ -94,7 +94,7 @@ void gate_rtl_clear_font_cache(void)
 GateFarPtr gate_rtl_choose_font_slot(void)
 {
     GateFarPtr candidate = font_slot(0);
-    int16_t smallest = (int16_t)font_word(candidate, 0);
+    int16_t smallest = (int16_t)font_word(candidate, GATE_FONT_SLOT_REFCOUNT);
     uint16_t i = 1;
     while (smallest > 0) {
         GateFarPtr other;
@@ -102,7 +102,7 @@ GateFarPtr gate_rtl_choose_font_slot(void)
         if (i >= GATE_FONT_SLOT_COUNT)
             break;
         other = font_slot(i);
-        count = (int16_t)font_word(other, 0);
+        count = (int16_t)font_word(other, GATE_FONT_SLOT_REFCOUNT);
         if (count == 0 || smallest >= count) {
             candidate = other;
             smallest = count;
@@ -117,8 +117,8 @@ GateFarPtr gate_rtl_choose_font_slot(void)
  * toward zero, unlike a plain arithmetic right shift. */
 static uint16_t font_half(uint16_t value)
 {
-    value = (uint16_t)(value - ((value & 0x8000u) ? 0xffffu : 0u));
-    return (uint16_t)((value >> 1) | (value & 0x8000u));
+    value = (uint16_t)(value - ((value & GATE_TEXT_SIGNED_WORD_SIGN_BIT) ? GATE_TEXT_NEGATION_SIGN_MASK : 0u));
+    return (uint16_t)((value >> GATE_TEXT_FONT_HALF_SIZE_SHIFT) | (value & GATE_TEXT_SIGNED_WORD_SIGN_BIT));
 }
 
 static void font_update_metrics(void)
@@ -166,7 +166,8 @@ GateFarPtr gate_rtl_select_font(uint16_t request)
 
 retry:
     handle = request != 0
-        ? gate_rtl_open_resource_file(2, (uint16_t)(font_resource_type() * 100u + request))
+        ? gate_rtl_open_resource_file(GATE_FONT_RESOURCE_FILE_TYPE,
+                                     (uint16_t)(font_resource_type() * GATE_FONT_RESOURCE_FILENAME_MULTIPLIER + request))
         : 0;
     font_set_word(font, GATE_FONT_SLOT_REFCOUNT, 1);
     font_set_byte(font, GATE_FONT_SLOT_RESOURCE_MODE, (uint8_t)font_resource_type());
@@ -177,10 +178,10 @@ retry:
         font_set_byte(font, GATE_FONT_SLOT_HEADER_UNKNOWN_05, 0);
         font_set_byte(font, GATE_FONT_SLOT_GLYPH_ROW_BYTES, 0);
         font_set_byte(font, GATE_FONT_SLOT_FIRST_CHARACTER, 0);
-        font_set_byte(font, GATE_FONT_SLOT_LAST_CHARACTER, 0xff);
+        font_set_byte(font, GATE_FONT_SLOT_LAST_CHARACTER, GATE_FONT_FALLBACK_LAST_CHARACTER);
         font_set_byte(font, GATE_FONT_SLOT_LINE_GAP, 0);
         font_set_byte(font, GATE_FONT_SLOT_GLYPH_HEIGHT, font_fallback_height());
-        font_set_byte(font, GATE_FONT_SLOT_WIDTH_MODE, 8);
+        font_set_byte(font, GATE_FONT_SLOT_WIDTH_MODE, GATE_TEXT_CELL_WIDTH_PIXELS);
         font_set_byte(font, GATE_FONT_SLOT_SPACING_MODE, 0);
         font_set_byte(font, GATE_FONT_SLOT_HEADER_UNKNOWN_0D, 0);
         goto update_metrics;

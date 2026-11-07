@@ -28,6 +28,27 @@ enum {
     GATE_VIDEO_INVERT_ATTRIBUTE_BIT = 0x80,
 };
 
+/* Original text/glyph operands shared by RTL:ec0a..efd8 and
+ * RTL:f997..fbf3. The two control characters are literal byte codes;
+ * the packed spacing field contains two four-bit nibbles. The SAR sign
+ * fill and tab bias deliberately preserve the original 16-bit arithmetic,
+ * including the INT16_MIN intermediate-negation behavior. */
+enum {
+    GATE_TEXT_CHARACTER_TAB = 9,
+    GATE_TEXT_CHARACTER_NEWLINE = 10,
+    GATE_TEXT_CELL_WIDTH_PIXELS = 8,
+    GATE_TEXT_CELL_WIDTH_SHIFT = 3,
+    GATE_TEXT_TAB_PITCH_BIAS_PIXELS = 4,
+    GATE_TEXT_FONT_SPACING_NIBBLE_SHIFT = 4,
+    GATE_TEXT_FONT_SPACING_NIBBLE_MASK = 0x0f,
+    GATE_TEXT_GLYPH_HIGH_BIT_MASK = 0x80,
+    GATE_TEXT_SIGNED_WORD_SIGN_BIT = 0x8000,
+    GATE_TEXT_NEGATION_SIGN_MASK = 0xffff,
+    GATE_TEXT_CELL_SAR_SIGN_FILL = 0xe000,
+    GATE_TEXT_FONT_HALF_SIZE_SHIFT = 1,
+    GATE_TEXT_GLYPH_BACKGROUND_RECT_STYLE = 2,
+};
+
 /* Original 16-bit RTL file-offset identities. These are the text-mode
  * counterparts to the graphics font's RTL:0xedff rasterizer. */
 void gate_rtl_draw_block_cursor(void);                       /* draw inverse block */
