@@ -2,6 +2,7 @@
 /* SPDX-License-Identifier: LicenseRef-Gateway-Derived */
 
 #include "gate_rtl_image.h"
+#include "gate_c_runtime_constants.h"
 
 /* Linked Microsoft C 5.1 CRT rand.c:_srand (OMF PUBDEF verified against
  * GATE.RTL:091d8) at 12a5:3afa (physical 1654a in the 22-second original
@@ -22,9 +23,9 @@ void gate_linked_seed_runtime_random(uint16_t seed)
 uint16_t gate_linked_runtime_random(void)
 {
     uint32_t state = (uint32_t)gate_ds_word(GATE_DS_RANDOM_STATE_LOW) |
-                     ((uint32_t)gate_ds_word(GATE_DS_RANDOM_STATE_HIGH) << 16);
-    state = state * 0x000343fdu + 0x00269ec3u;
+                     ((uint32_t)gate_ds_word(GATE_DS_RANDOM_STATE_HIGH) << GATE_CRT_WORD_BITS);
+    state = state * GATE_CRT_RANDOM_MULTIPLIER + GATE_CRT_RANDOM_INCREMENT;
     gate_ds_set_word(GATE_DS_RANDOM_STATE_LOW, (uint16_t)state);
-    gate_ds_set_word(GATE_DS_RANDOM_STATE_HIGH, (uint16_t)(state >> 16));
-    return (uint16_t)((state >> 16) & 0x7fffu);
+    gate_ds_set_word(GATE_DS_RANDOM_STATE_HIGH, (uint16_t)(state >> GATE_CRT_WORD_BITS));
+    return (uint16_t)((state >> GATE_CRT_WORD_BITS) & GATE_CRT_RANDOM_RESULT_MASK);
 }

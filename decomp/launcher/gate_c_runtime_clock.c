@@ -2,6 +2,7 @@
 /* SPDX-License-Identifier: LicenseRef-Gateway-Derived */
 
 #include "gate_rtl.h"
+#include "gate_c_runtime_constants.h"
 
 #include <stdlib.h>
 
@@ -34,21 +35,22 @@ void gate_rtl_parse_timezone_environment(void)
         gate_far_byte(value.segment, value.offset) == 0)
         return;
 
-    gate_linked_copy_runtime_string((GateFarPtr){gate_ds_segment(), GATE_DS_TIMEZONE_STANDARD_NAME}, value, 3);
-    value.offset = (uint16_t)(value.offset + 3u);
+    gate_linked_copy_runtime_string((GateFarPtr){gate_ds_segment(), GATE_DS_TIMEZONE_STANDARD_NAME},
+                                    value, GATE_CRT_TIMEZONE_ABBREVIATION_BYTES);
+    value.offset = (uint16_t)(value.offset + GATE_CRT_TIMEZONE_ABBREVIATION_BYTES);
     /* The MUL return is DX:AX, both words must be retained. */
     {
-        uint32_t seconds = gate_rtl_multiply_32(gate_linked_parse_runtime_integer(value), 3600u);
+        uint32_t seconds = gate_rtl_multiply_32(gate_linked_parse_runtime_integer(value), GATE_CRT_SECONDS_PER_HOUR);
         gate_ds_set_word(GATE_DS_TIMEZONE_OFFSET_LOW, (uint16_t)seconds);
-        gate_ds_set_word(GATE_DS_TIMEZONE_OFFSET_HIGH, (uint16_t)(seconds >> 16));
+        gate_ds_set_word(GATE_DS_TIMEZONE_OFFSET_HIGH, (uint16_t)(seconds >> GATE_CRT_WORD_BITS));
     }
 
-    while (skip < 3u) {
+    while (skip < GATE_CRT_TIMEZONE_ABBREVIATION_BYTES) {
         uint8_t ch = gate_far_byte(value.segment,
                                    (uint16_t)(value.offset + skip));
         int16_t signed_ch = (int8_t)ch;
         if (ch == 0 || ((gate_far_byte(gate_ds_segment(),
-            (uint16_t)(GATE_DS_CRT_CHAR_CLASS_TABLE + signed_ch)) & 4u) == 0 && ch != '-'))
+            (uint16_t)(GATE_DS_CRT_CHAR_CLASS_TABLE + signed_ch)) & GATE_CRT_TIMEZONE_DIGIT_CLASS_BIT) == 0 && ch != '-'))
             break;
         ++skip;
     }
@@ -56,7 +58,7 @@ void gate_rtl_parse_timezone_environment(void)
     if (gate_far_byte(value.segment, (uint16_t)(value.offset + skip)) != 0) {
         gate_linked_copy_runtime_string((GateFarPtr){gate_ds_segment(), GATE_DS_TIMEZONE_DAYLIGHT_NAME},
                             (GateFarPtr){value.segment,
-                                         (uint16_t)(value.offset + skip)}, 3);
+                                         (uint16_t)(value.offset + skip)}, GATE_CRT_TIMEZONE_ABBREVIATION_BYTES);
     } else {
         gate_far_set_byte(gate_ds_segment(), GATE_DS_TIMEZONE_DAYLIGHT_NAME, 0);
     }
@@ -110,7 +112,7 @@ uint32_t gate_rtl_multiply_32(uint32_t lhs, uint32_t rhs)
  * the host still supplies the elapsed clock directly for playback. */
 uint32_t gate_rtl_elapsed_milliseconds(void)
 {
-    uint8_t sample[10] = {0};
+    uint8_t sample[GATE_CRT_TIME_SAMPLE_BYTES] = {0};
     GateFarPtr destination = gate_stack_pointer(sample);
     uint32_t current;
     uint32_t baseline;
@@ -121,12 +123,12 @@ uint32_t gate_rtl_elapsed_milliseconds(void)
     gate_linked_read_runtime_time_sample(destination);
     current = (uint32_t)gate_far_word(destination.segment, destination.offset) |
               ((uint32_t)gate_far_word(destination.segment,
-                                      (uint16_t)(destination.offset + 2)) << 16);
+                                      (uint16_t)(destination.offset + GATE_CRT_TIME_SAMPLE_HIGH_WORD_OFFSET)) << GATE_CRT_WORD_BITS);
     baseline = (uint32_t)gate_ds_word(GATE_DS_CLOCK_BASELINE_LOW) |
-               ((uint32_t)gate_ds_word(GATE_DS_CLOCK_BASELINE_HIGH) << 16);
+               ((uint32_t)gate_ds_word(GATE_DS_CLOCK_BASELINE_HIGH) << GATE_CRT_WORD_BITS);
     fraction = (int16_t)(gate_far_word(destination.segment,
-                                     (uint16_t)(destination.offset + 4)) -
+                                     (uint16_t)(destination.offset + GATE_CRT_TIME_SAMPLE_FRACTION_WORD_OFFSET)) -
                          gate_ds_word(GATE_DS_CLOCK_BASELINE_FRACTION));
-    return gate_rtl_multiply_32(current - baseline, 1000u) +
+    return gate_rtl_multiply_32(current - baseline, GATE_CRT_MILLISECONDS_PER_SECOND) +
            (uint32_t)(int32_t)fraction;
 }

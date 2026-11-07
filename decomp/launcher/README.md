@@ -149,6 +149,26 @@ names VGA adapter type `5` and the 16 attribute-palette entries
 not new hardware emulation settings. Original mode-to-BIOS mapping and
 unidentified adapter/monitor classifications are still provisional.
 
+`gate_rtl_palette.h` also names the original source's low-level color
+conversion arithmetic at `RTL:f61b..f826`: packed two-bit RGB channel
+locations, the six lookup bit weights (`2,2,2,1,1,1`), the DAC step
+of `21` (producing component intensities `0,21,42,63`), signed
+sample divisor `31`, RGB triple width `3`, and mode-indexed color-count
+table arguments. Mode `1` is the packed branch; mode `3` skips the
+attribute-controller overscan tail. These are source-verified operands,
+not inferred descriptions of a new palette format.
+
+`gate_c_runtime_constants.h` documents original Microsoft C 5.1
+`rand.c` parameters at `RTL:91d8/91ea`, linked `12a5:3afa/3b0c`:
+LCG multiplier `0x343fd`, increment `0x269ec3`, 32-bit wrap, and
+15-bit result mask `0x7fff`. The linked clock/timezone code separately
+names the three-byte zone abbreviations, `_DIGIT` classification bit
+`4`, `3600`-second timezone conversion, and `1000`-millisecond clock
+conversion at `RTL:8cc8..8d9a` / `RTL:8fa2..8ff8`. Ten-byte time
+sample field positions are *relative stack offsets*, not DS addresses.
+As before, the incomplete original time sampler is not treated as a
+verified replacement for the native intro's host clock.
+
 The executable is compiled native 8086 code, **not** a small interpreted
 script. Its original C source, compiler version, and library headers have not
 been recovered. These `.c` files are a manual decompilation of the disassembly;

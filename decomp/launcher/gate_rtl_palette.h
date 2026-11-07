@@ -27,6 +27,36 @@ enum {
     GATE_VGA_ATTRIBUTE_PALETTE_COLORS = 16,
 };
 
+/* Original RTL:f61b..f826 DAC conversion operands, distinct from port
+ * addresses above. Packed palette samples encode two-bit red/green/blue
+ * levels across nonadjacent source bits; DAC output uses 0,21,42,63.
+ * Lookup conversion instead assigns weights 2,2,2,1,1,1 to bits 0..5. */
+enum {
+    GATE_PALETTE_MODE_PACKED = 1,
+    GATE_PALETTE_MODE_SKIP_OVERSCAN_WRITE = 3,
+    GATE_PALETTE_COLOR_COUNT_TABLE_BASE = 4,
+    GATE_PALETTE_COLOR_COUNT_TABLE_MODE_SHIFT = 1,
+    GATE_PALETTE_RGB_COMPONENTS = 3,
+    GATE_PALETTE_INITIAL_OVERSCAN_NONZERO = 15,
+    GATE_PALETTE_TWO_BIT_DAC_STEP = 21,
+    GATE_PALETTE_PACKED_HIGH_LEVEL_BIT = 2,
+    GATE_PALETTE_PACKED_LOW_LEVEL_BIT = 1,
+    GATE_PALETTE_PACKED_RED_HIGH_SHIFT = 1,
+    GATE_PALETTE_PACKED_RED_LOW_SHIFT = 5,
+    GATE_PALETTE_PACKED_GREEN_LOW_SHIFT = 4,
+    GATE_PALETTE_PACKED_BLUE_HIGH_LEFT_SHIFT = 1,
+    GATE_PALETTE_PACKED_BLUE_LOW_SHIFT = 3,
+    GATE_PALETTE_LOOKUP_BIT_0 = 0x01,
+    GATE_PALETTE_LOOKUP_BIT_1 = 0x02,
+    GATE_PALETTE_LOOKUP_BIT_2 = 0x04,
+    GATE_PALETTE_LOOKUP_BIT_3 = 0x08,
+    GATE_PALETTE_LOOKUP_BIT_4 = 0x10,
+    GATE_PALETTE_LOOKUP_BIT_5 = 0x20,
+    GATE_PALETTE_LOOKUP_FIRST_THREE_WEIGHT = 2,
+    GATE_PALETTE_LOOKUP_LAST_THREE_WEIGHT = 1,
+    GATE_PALETTE_SIGNED_SAMPLE_DIVISOR = 31,
+};
+
 /* Original GATE.RTL file offsets. Unlike the reconstructed C++ preview,
  * these routines retain the original VGA port I/O and mode branching. */
 void gate_rtl_wait_vertical_retrace(void); /* wait for vertical retrace transition */
