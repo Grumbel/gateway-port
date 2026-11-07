@@ -96,3 +96,24 @@ Pull requests should describe behavior, evidence, validation, and remaining limi
   archive or its contents.
 - Generated Ghidra output stays under `build/`; see `docs/ghidra.md` to
   regenerate it with or without Nix.
+
+## ChatGPT Web chat only: persistent research inputs
+
+**This section applies exclusively to ChatGPT Web chat sessions. It does not
+apply to Codex CLI, Claude Code, or other local coding-agent sessions.**
+
+- In ChatGPT Web chat, the user's ChatGPT Library has a `Gateway` folder with
+  two persistent uploads:
+  - `games(3).zip`: original Gateway DOS distribution and related Legend
+    game files.
+  - `unicorn(1).zip`: Unicorn runtime build.
+- When these inputs are needed in Web chat, retrieve the existing files from
+  the `Gateway` Library folder instead of asking the user to upload them again.
+  The ChatGPT Gateway Project provides conversation context; it does not
+  replace the Library as persistent file storage.
+- Keep extracted original games and runtime binaries outside the Git tree.
+  Verify the original executables against `docs/executable.md`, and never
+  commit game archives, executable bytes, or proprietary assets.
+- In **Codex CLI sessions**, ignore these Library retrieval instructions and
+  use the local sibling directories, configured dependencies, and normal
+  repository workflow. Do not assume ChatGPT Library access is available.
