@@ -9,7 +9,7 @@
 
 /* The recovered functions are named for ORIGINAL GATE.RTL file offsets.
  * They use the same segmented-memory intrinsics as gate_exe.c. */
-uint16_t gate_rtl_8298(GateFarPtr text);     /* unlinked FAR strlen */
+uint16_t gate_rtl_8298(GateFarPtr text);     /* 12a5:2bba FAR strlen */
 void gate_rtl_e771(void);                   /* free both font slots */
 void gate_rtl_e79b(GateFarPtr font);         /* free one font slot */
 GateFarPtr gate_rtl_e801(void);              /* evict/select font slot */

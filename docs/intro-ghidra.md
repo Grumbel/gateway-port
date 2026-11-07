@@ -9,7 +9,7 @@ original recovered source nor a playable native executable.
 The raw `GATE.RTL` has unresolved relocation placeholders. **Do not import it
 as if its on-disk bytes were linked machine code.** This pipeline uses a
 specific 22-second 1 MiB guest-memory snapshot and verifies its segment/file
-identities against both SHA-256-pinned DOS binaries. It imports four
+identities against both SHA-256-pinned DOS binaries. It imports five
 independently established resident RTL segments, not the complete RTL file,
 and preserves their potentially overlapping addresses using Ghidra overlay
 spaces. The newly added `0c33` file-service bank has four independent entry
@@ -86,19 +86,25 @@ for another batch, or open the existing `project/GatewayIntro.gpr` manually.
 | `intro-ghidra-unresolved.tsv` | Unmapped calls ranked by target and frequency, with original caller identities |
 | `intro-ghidra-report.json` | Coverage, decompile failures, missing entries and unresolved call count |
 
-Known C recovery seeds include 10 `GATE.EXE` functions, 49 reconstructed
-`GATE.RTL` routines, and nine additional linked-entry candidates, including
+Known C recovery seeds include 10 `GATE.EXE` functions, reconstructed
+`GATE.RTL` routines, and additional linked-entry candidates, including
 the not-yet-reconstructed `rtl:0x130ab` animation entry. The original
-`rtl:0x8298` `strlen` remains explicitly outside these four imported banks.
+`rtl:0x8298` `strlen` is now verified at runtime `12a5:2bba` (physical
+`0x1560a`, exact 23-byte match) and is imported in the fifth RTL bank.
 The post-analysis script additionally follows statically discovered direct
 calls where the callee belongs to the verified linked blocks, including signed
 near calls whose original targets are inside the same verified RTL overlay,
 and enumerates all functions Ghidra finds in those blocks. This is intended to produce large
 batches for inspection instead of manually translating six functions per turn.
 
-**Current coverage limitation:** the four verified RTL spans are
+**Current coverage limitation:** the five verified RTL spans are
 `0c33:0000..01a9`, `0c4d:0000..08ff`, `0cdc:0000..10ff`, and
-`0f10:0000..1aff` in the captured load layout. They deliberately exclude unknown sections and external service
+`0f10:0000..1aff`, plus EXE-relative `02a5:0000..3cff` (resident
+`12a5:0000..3cff`) in the captured load layout. The latter maps
+`GATE.RTL:56de..93dd`, including linked `strlen` and the C runtime random
+generator. Its verified start is based on the on-disk/linked byte correlation;
+its end deliberately stops before the next region overwrites memory near
+`RTL:9480`. They deliberately exclude unknown sections and external service
 segments. All missing calls must be mapped/verified before the intro is
 complete. An imported label or successful pseudocode export is not evidence
 that the original calling convention, signedness, data structure or guest

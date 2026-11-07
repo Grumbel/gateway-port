@@ -91,7 +91,11 @@ class RealGatewayIntroEvidence(unittest.TestCase):
                     for entry in section['entries']:
                         self.assertEqual(entry['offset'],
                                          entry['file_offset'] - section['file_base'])
-            self.assertIn(0x8298, plan['unmapped_rtl_entries'])
+            linked_strlen = next(s for s in plan['sections']
+                                 if s['segment'] == 0x02a5)
+            self.assertEqual(linked_strlen['file_base'], 0x56de)
+            self.assertIn(0x8298, [e['file_offset']
+                                   for e in linked_strlen['entries']])
             self.assertEqual(plan['unlinked_staging_candidates'][0]['segment'],
                              RAW_COPY_CANDIDATE['segment'])
             self.assertNotIn(RAW_COPY_CANDIDATE['segment'],

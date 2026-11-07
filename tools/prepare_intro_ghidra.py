@@ -34,6 +34,13 @@ RTL_BANKS = (
          witnesses=(0xf473, 0xf61b, 0xf937, 0xf997)),
     dict(segment=0x0f10, file_base=0x11b05, size=0x1b00,
          witnesses=(0x11ecb, 0x1266f, 0x12b19, 0x12f6b, 0x131f7)),
+    # Original EXE-relative 02a5 loads at resident 12a5 with the default
+    # 1000h load segment. The raw RTL file offset 8298 appears verbatim at
+    # resident 12a5:2bba; 91d8/91ea contain the recovered srand/rand code.
+    # Stop at file 93de, before the resident block is overwritten by the
+    # next RTL region near file 9480 in the 22-second snapshot.
+    dict(segment=0x02a5, file_base=0x56de, size=0x3d00,
+         witnesses=(0x8298, 0x91d8, 0x91ea)),
 )
 
 EXE_ENTRIES = (0x0bb8, 0x0e37, 0x0f18, 0x0f61, 0x103a, 0x117e,
@@ -41,10 +48,10 @@ EXE_ENTRIES = (0x0bb8, 0x0e37, 0x0f18, 0x0f61, 0x103a, 0x117e,
 
 # The first five 0cdc entries and the 0c4d helper are independently mapped
 # from original far-call operands, but their function bounds are NOT proved.
-# Ghidra may have to merge/reject them.  0x8298 belongs to a not-yet-linked
-# bank and must remain explicitly out of coverage.
+# Ghidra may have to merge/reject them.  0x8298 is now part of the verified
+# 02a5 bank; retain it as a named source reconstruction seed.
 RTL_CANDIDATES = {
-    0x8298: 'unmapped-strlen-candidate',
+    0x8298: 'verified-linked-strlen',
     0xe531: 'file-open-entry-candidate',
     0xe582: 'file-seek-entry-candidate',
     0xe5c5: 'file-word-read-entry-candidate',

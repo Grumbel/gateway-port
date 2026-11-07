@@ -32,6 +32,19 @@ class OriginalRtlStringLength(unittest.TestCase):
         self.assertEqual(code[15:18], bytes.fromhex('f7 d1 49'))  # ~CX-1
         self.assertEqual(code[18:], bytes.fromhex('91 8b fa 5d cb'))
 
+    def test_exact_linked_runtime_identity(self):
+        snapshot = (Path(__file__).resolve().parents[1] /
+                    'build/intro-analysis/at-22000.bin')
+        if not snapshot.is_file():
+            self.skipTest('private 22-second linked RAM capture absent')
+        memory = snapshot.read_bytes()
+        self.assertEqual(len(memory), 1024 * 1024)
+        # The original relative EXE far segment 02a5 loads at 12a5,
+        # giving physical 12a5:2bba = 0x1560a.
+        original = self.rtl[0x8298:0x82af]
+        self.assertEqual(memory[0x1560a:0x1560a + len(original)], original)
+        self.assertEqual(memory.count(original), 1)
+
 
 if __name__ == '__main__':
     unittest.main()

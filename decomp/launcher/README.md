@@ -667,11 +667,12 @@ so full source-C intro playback is **not independently playable**.
 
 ## Experimental 16-bit DOS compiler probe
 
-The newly supplied original `GATE.RTL` also confirms the previously unmapped
-`rtl:0x8298..0x82ae` is a separate FAR `strlen` entry. Its identical
-bounded scanning semantics are now exposed as `gate_rtl_8298`, with original
-byte evidence and source tests. The original linked bank/segment is still
-unknown; no address alias to the captured `12a5:2bba` is assumed.
+The supplied original `GATE.RTL` confirms `rtl:0x8298..0x82ae` is a FAR
+`strlen` entry. The newly regenerated 22-second linked RAM capture verifies
+that **all 23 bytes** occur at physical `0x1560a`, the address of runtime
+`12a5:2bba` (EXE-relative `02a5:2bba`), exactly once in the 1 MiB image.
+The source-C linked wrapper now delegates to `gate_rtl_8298`; 16-bit FAR
+offset wrapping and the missing-terminator scan bound remain tested.
 
 With OpenWatcom v2's **16-bit** `wcl` on `PATH`, run
 `sh tools/build_intro_dos_probe.sh` from the repository root. The intended
