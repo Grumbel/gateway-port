@@ -141,7 +141,8 @@ To capture the full sequence without SDL3:
 nix build .#intro-decompile
 result/bin/gateway-intro-source-c-composite \
   build/intro-analysis/at-22000.bin ../gateway-dos \
-  build/intro-final.ppm --full --record build/intro-full.gvr
+  build/intro-final.ppm --full --record build/intro-full.gvr \
+  --dump-memory build/intro-post-ram.bin
 ```
 
 The private `GVR1` format consists of four signature bytes followed by
@@ -149,7 +150,16 @@ records of: 32-bit little-endian virtual timestamp (ms), 64,000 VGA mode-13h
 pixel indices, and 768 six-bit DAC components. Its 816 frames span 342,026
 simulated milliseconds on the pinned RAM capture; two consecutive headless
 runs produced byte-identical recordings. The source-only Nix package does
-not require SDL3 or Unicorn. Keep `.gvr` files private like screenshots.
+not require SDL3 or Unicorn. `--dump-memory` saves the complete **1 MiB RAM
+at the return of original C `EXE:1302`**, *before* the host shuts down its
+file/video services. The output must not already exist; this prevents an
+accidental overwrite of the input snapshot or DOS assets. Its SHA-256 for the
+pinned guest state is
+`91703bb67fd1f07cf54aa9797e8d41700f68aa7aa4cebbb100e4c0424ee93c79`;
+only that hash is tracked. The new RAM output is a **data snapshot**, not a
+resumable CPU savestate: it lacks the original live 8086 registers/stack and
+the launcher-to-game overlay loader's continuation. Keep `.gvr` and `.bin`
+files private like screenshots.
 
 ### Check against actual DOS frames
 
@@ -248,7 +258,10 @@ image-path diagnostic, **not the original animation schedule**.
 - The original C entry uses an already relocated 22-second DOS RAM capture.
   The Nix wrapper generates it automatically, but independent source-C
   startup without a Unicorn bootstrap is not yet reconstructed.
-- Original `RTL:c3bd` music setup is a silent host stub; no audio is replayed.
+- Original `RTL:c3bd` IRQ8 music setup remains a native host boundary, but
+  live SDL3 playback now uses the original MIDIPlay/MDI stream and Nuked OPL3.
+  The separate deterministic `GVR1` replayer is still silent, and output/timing
+  accuracy has not been checked against real DOS audio.
 - The live SDL runner forwards Escape to the original source-C input check.
   Printable keys also reach the original C handler, though extended DOS
   scan codes and mouse services still need reconstruction. The offline `GVR1`

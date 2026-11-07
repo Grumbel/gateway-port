@@ -221,7 +221,8 @@ static int configure(GateIntroMemory *memory)
 
 static int run_intro(const char *snapshot, const char *dos_dir,
                      const char *ppm_output, int full,
-                     const char *record_output, const GateSourceCFullHooks *hooks)
+                     const char *record_output, const char *memory_output,
+                     const GateSourceCFullHooks *hooks)
 {
     GateIntroMemory *memory;
     GateDosHostFiles files = {0};
@@ -289,6 +290,22 @@ static int run_intro(const char *snapshot, const char *dos_dir,
                       (GateFarPtr){memory->ds_segment, 0x363b});
     }
 
+    if (memory_output) {
+        /* x: do not replace the input snapshot or any existing DOS file. */
+        FILE *dump = fopen(memory_output, "wbx");
+        int ok = dump != NULL;
+        if (dump) {
+            ok = fwrite(memory->bytes, 1, GATE_INTRO_RAM_BYTES, dump) ==
+                 GATE_INTRO_RAM_BYTES;
+            if (fclose(dump) != 0)
+                ok = 0;
+        }
+        if (!ok) {
+            fprintf(stderr, "cannot write private source-C RAM dump: %s\n", memory_output);
+            abort();
+        }
+    }
+
     if (ppm_output) {
         out = fopen(ppm_output, "wb");
         if (!out || fprintf(out, "P6\n320 200\n255\n") < 0)
@@ -339,20 +356,33 @@ int gate_source_c_full_run(const char *snapshot, const char *dos_directory,
 {
     if (!snapshot || !dos_directory)
         return 2;
-    return run_intro(snapshot, dos_directory, NULL, 1, NULL, hooks);
+    return run_intro(snapshot, dos_directory, NULL, 1, NULL, NULL, hooks);
 }
 
 #ifndef GATE_SOURCE_C_LIBRARY
 int main(int argc, char **argv)
 {
-    if (argc != 4 && !(argc == 5 && strcmp(argv[4], "--full") == 0) &&
-        !(argc == 7 && strcmp(argv[4], "--full") == 0 &&
-          strcmp(argv[5], "--record") == 0)) {
-        fputs("usage: gateway-intro-source-c-composite guest-22s.bin DOS-DIR OUTPUT.ppm [--full [--record FILE.gvr]]\n",
-              stderr);
-        return 2;
+    const char *record_output = NULL;
+    const char *memory_output = NULL;
+    int full = argc >= 5 && strcmp(argv[4], "--full") == 0;
+    int i;
+    if (argc < 4 || (argc > 4 && !full))
+        goto usage;
+    for (i = 5; i < argc; i += 2) {
+        if (i + 1 >= argc)
+            goto usage;
+        if (strcmp(argv[i], "--record") == 0 && !record_output)
+            record_output = argv[i + 1];
+        else if (strcmp(argv[i], "--dump-memory") == 0 && !memory_output)
+            memory_output = argv[i + 1];
+        else
+            goto usage;
     }
-    return run_intro(argv[1], argv[2], argv[3], argc >= 5,
-                     argc == 7 ? argv[6] : NULL, NULL);
+    return run_intro(argv[1], argv[2], argv[3], full, record_output,
+                     memory_output, NULL);
+usage:
+    fputs("usage: gateway-intro-source-c-composite guest-22s.bin DOS-DIR OUTPUT.ppm [--full [--record FILE.gvr] [--dump-memory FILE.bin]]\n",
+          stderr);
+    return 2;
 }
 #endif

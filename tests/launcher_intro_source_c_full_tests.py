@@ -52,8 +52,10 @@ class IntroFull(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             final = Path(directory) / 'final.ppm'
             replay = Path(directory) / 'replay.gvr'
+            final_ram = Path(directory) / 'final-guest-memory.bin'
             report = subprocess.run([executable, snapshot, assets, str(final),
-                                     '--full', '--record', str(replay)],
+                                     '--full', '--record', str(replay),
+                                     '--dump-memory', str(final_ram)],
                                     check=True, capture_output=True, text=True)
             self.assertIn('original source-C EXE:1302 completed:', report.stdout)
             self.assertIn('342026 virtual ms', report.stdout)
@@ -63,6 +65,9 @@ class IntroFull(unittest.TestCase):
             self.assertEqual(replay.stat().st_size, 4 + 816 * (4 + 64000 + 768))
             self.assertEqual(digest(replay),
                              '67cd026bf79e2425a9d41faac57439a7d49dca8559b127e7630319e43e112eb2')
+            self.assertEqual(final_ram.stat().st_size, 1024 * 1024)
+            self.assertEqual(digest(final_ram),
+                             '91703bb67fd1f07cf54aa9797e8d41700f68aa7aa4cebbb100e4c0424ee93c79')
 
 
 if __name__ == '__main__':
