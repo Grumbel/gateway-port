@@ -9,6 +9,15 @@ static GateFarPtr far_pointer(uint16_t segment, uint16_t offset)
     return result;
 }
 
+/* The on-disk EXE encodes segment 1a7a in eleven palette-upload operands.
+ * The DOS-linked code actually executes with segment 2a7a in those same
+ * operands. Resolve this loader relocation through the linked palette-bank
+ * selector instead of reading the unrelocated code bank at 1b77c. */
+static GateFarPtr runtime_palette_pointer(void)
+{
+    return far_pointer(gate_ds_word(0x4e42), 0x0fdc);
+}
+
 /* GATE.EXE file 0x0e37..0x0f17. Key handling and intro interruption.
  *
  * The RTL calls are still named by their original linked segment:offset.
@@ -113,7 +122,7 @@ void gate_exe_0f61(uint16_t image)
         }
         gate_far_0cdc_04d2(gate_stack_pointer(faded));
     }
-    gate_far_0cdc_04d2(far_pointer(0x1a7a, 0x0fdc));
+    gate_far_0cdc_04d2(runtime_palette_pointer());
 }
 
 /* GATE.EXE file 0x103a..0x117d. Measure an intro text box before drawing.
@@ -259,7 +268,7 @@ void gate_exe_1c11(int16_t bar)
     index = (uint16_t)(45 + 3 * (int32_t)bar);
     for (value = 0; value <= 63; ++value) {
         gate_far_set_byte(gate_ds_word(0x4e42), (uint16_t)(0x0fdc + index), value);
-        gate_far_0cdc_04d2(far_pointer(0x1a7a, 0x0fdc));
+        gate_far_0cdc_04d2(runtime_palette_pointer());
     }
     gate_exe_0f18(500);
 }
@@ -277,7 +286,7 @@ void gate_exe_1c6c(void)
         gate_far_set_byte(segment, 0x1021, value);
         gate_far_set_byte(segment, 0x1022, value);
         gate_far_set_byte(segment, 0x1023, value);
-        gate_far_0cdc_04d2(far_pointer(0x1a7a, 0x0fdc));
+        gate_far_0cdc_04d2(runtime_palette_pointer());
     }
 }
 
@@ -513,13 +522,13 @@ void gate_exe_1a14(void)
 
     if ((int16_t)gate_far_word(gate_ds_word(0x4e2a), 0x0fce) < 2) {
         gate_far_set_byte(gate_ds_word(0x4e42), 0x0fdd, 0);
-        gate_far_0cdc_04d2(far_pointer(0x1a7a, 0x0fdc));
+        gate_far_0cdc_04d2(runtime_palette_pointer());
     } else {
         for (i = 63; i >= 0; --i) {
             gate_far_set_byte(gate_ds_word(0x4e42), 0x0fdf, (uint8_t)i);
             gate_far_set_byte(gate_ds_word(0x4e42), 0x0fe0, (uint8_t)i);
             gate_far_set_byte(gate_ds_word(0x4e42), 0x0fe1, (uint8_t)i);
-            gate_far_0cdc_04d2(far_pointer(0x1a7a, 0x0fdc));
+            gate_far_0cdc_04d2(runtime_palette_pointer());
         }
     }
     gate_exe_0f18(2000);
@@ -528,13 +537,13 @@ void gate_exe_1a14(void)
 
     if ((int16_t)gate_far_word(gate_ds_word(0x4e2a), 0x0fce) < 2) {
         gate_far_set_byte(gate_ds_word(0x4e42), 0x0fdd, 63);
-        gate_far_0cdc_04d2(far_pointer(0x1a7a, 0x0fdc));
+        gate_far_0cdc_04d2(runtime_palette_pointer());
     } else {
         for (i = 0; i <= 63; ++i) {
             gate_far_set_byte(gate_ds_word(0x4e42), 0x0fdf, (uint8_t)i);
             gate_far_set_byte(gate_ds_word(0x4e42), 0x0fe0, (uint8_t)i);
             gate_far_set_byte(gate_ds_word(0x4e42), 0x0fe1, (uint8_t)i);
-            gate_far_0cdc_04d2(far_pointer(0x1a7a, 0x0fdc));
+            gate_far_0cdc_04d2(runtime_palette_pointer());
         }
     }
     gate_exe_0f18(500);
@@ -544,13 +553,13 @@ void gate_exe_1a14(void)
     gate_far_0f10_1014(0x8100, 1);
     if ((int16_t)gate_far_word(gate_ds_word(0x4e2a), 0x0fce) < 2) {
         gate_far_set_byte(gate_ds_word(0x4e42), 0x0fde, 0);
-        gate_far_0cdc_04d2(far_pointer(0x1a7a, 0x0fdc));
+        gate_far_0cdc_04d2(runtime_palette_pointer());
     } else {
         for (i = 63; i >= 0; --i) {
             gate_far_set_byte(gate_ds_word(0x4e42), 0x0fe2, (uint8_t)i);
             gate_far_set_byte(gate_ds_word(0x4e42), 0x0fe3, (uint8_t)i);
             gate_far_set_byte(gate_ds_word(0x4e42), 0x0fe4, (uint8_t)i);
-            gate_far_0cdc_04d2(far_pointer(0x1a7a, 0x0fdc));
+            gate_far_0cdc_04d2(runtime_palette_pointer());
         }
     }
     gate_exe_0f18(2000);
@@ -559,13 +568,13 @@ void gate_exe_1a14(void)
 
     if ((int16_t)gate_far_word(gate_ds_word(0x4e2a), 0x0fce) < 2) {
         gate_far_set_byte(gate_ds_word(0x4e42), 0x0fdf, 0);
-        gate_far_0cdc_04d2(far_pointer(0x1a7a, 0x0fdc));
+        gate_far_0cdc_04d2(runtime_palette_pointer());
     } else {
         for (i = 63; i >= 0; --i) {
             gate_far_set_byte(gate_ds_word(0x4e42), 0x0fe5, (uint8_t)i);
             gate_far_set_byte(gate_ds_word(0x4e42), 0x0fe6, (uint8_t)i);
             gate_far_set_byte(gate_ds_word(0x4e42), 0x0fe7, (uint8_t)i);
-            gate_far_0cdc_04d2(far_pointer(0x1a7a, 0x0fdc));
+            gate_far_0cdc_04d2(runtime_palette_pointer());
         }
     }
     gate_exe_0f18(2000);

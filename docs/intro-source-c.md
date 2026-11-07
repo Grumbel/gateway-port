@@ -22,7 +22,7 @@ adapter supplies detected VGA type 5, a capable default monitor subtype,
 and initial mode `13h` to `f14d`, which establishes the renderer descriptor, selects
 mode `13h`, and configures the four clipping edges and clipping enable.
 Those clipping writes were removed from the source-C host's initial setup.
-The existing 816-frame replay and final guest-RAM checks remain byte-exact;
+The corrected 1,561-frame replay and final guest-RAM checks remain byte-exact;
 this still does not reconstruct the earlier DOS startup responsible for
 building the linked tables and relocating the C runtime.
 
@@ -64,16 +64,16 @@ nix build .#intro-decompile
 ```
 
 `initial-reads.txt` records physical 4 KiB page addresses, byte counts, and
-**41 exact first-read byte ranges**, never the proprietary RAM values. Ranges
+**40 exact first-read byte ranges**, never the proprietary RAM values. Ranges
 use hexadecimal physical offsets with exclusive ends; the output refuses to overwrite an
-existing file. The default 22-second snapshot produces **7,429 first-read
-bytes across seven pages** (physical page bases `00000`, `1b000`, `2a000`,
-`2b000`, `2d000`, `2e000`, `2f000`). The original full intro's 816-frame
+existing file. The default 22-second snapshot produces **6,661 first-read
+bytes across six pages** (physical page bases `00000`, `2a000`,
+`2b000`, `2d000`, `2e000`, `2f000`). The original full intro's 1,561-frame
 recording and output hashes are unchanged. A regression additionally zeroes
 all other 249 pages of the original 1 MiB RAM image in a private temporary
-copy, reruns the source-C intro, and obtains the **same complete 816-frame
+copy, reruns the source-C intro, and obtains the **same complete 1,561-frame
 recording byte-for-byte**. Thus the current observed path only requires
-28 KiB of observed *page-granularity* startup state. Further ablation of
+24 KiB of observed *page-granularity* startup state. Further ablation of
 those seven pages established that zeroing the `2a000` page as well still
 preserves the entire recorded replay, leaving just **six pages (24 KiB)**
 necessary to reproduce this pinned visual run. That does not prove the
@@ -101,18 +101,24 @@ The adapter reads the verified 5,869-byte region from the user's original
 `GATE.EXE` and restores it in guest RAM after loading the snapshot, before
 executing source C. In the integration test, **that entire RAM region and
 all other unobserved memory are first zeroed** in a private snapshot. Native
-restoration still reproduces every one of the 816 frame/palette/timing
+restoration still reproduces every one of the 1,561 frame/palette/timing
 records and the final picture byte-for-byte. Missing, truncated, or
 non-MZ executable inputs are rejected. This code only eliminates one
 static-data dependency on the capture; it is not a complete initializer and
 does not yet change the default SDL live launcher.
 
-The other 768-byte run at RAM `1b77c:1ba7c` maps to original `GATE.RTL`
+An earlier *spurious* 768-byte palette read at RAM `1b77c:1ba7c` maps to original `GATE.RTL`
 file bytes `0d7bf:0dabf`: **722 of the 768 bytes match exactly**, and the
 remaining 46 bytes are **23 paired 16-bit loader fixups**, each replacing two
 zeros in the RTL file. This mapping is also verified in the test. It
 identifies the raw code's source but does not yet recover the relocator that
-must generate those words during a cold C startup.
+must generate those words during a cold C startup. However, the initial
+source-C transcript erroneously used the **unrelocated** raw EXE segment
+`1a7a` in eleven palette-upload calls. Every original executable callsite
+is relocated by DOS to `2a7a`; using the linked selector at `DS:4e42`
+instead produces a more faithful 1,561-frame replay. The corresponding
+RTL code region is no longer read by this pinned source-C intro, so its
+23 relocated words are no longer needed to reproduce that replay.
 
 Additional unchanged RTL resident data maps through a *second* file-to-RAM
 base: `RAM = original GATE.RTL file offset + 2a777`. Seven verified read-only
@@ -156,12 +162,12 @@ in the pinned default replay (excluding the ablated `2a000` page), and
 then removes all disk-reconstructible regions and both natively initialized
 runtime groups. Eight remaining first-read nonzero values were separately
 ablated as immaterial to the pinned replay (not necessarily every path).
-Only **68 nonzero bytes of captured RAM** remain, precisely **22 nonzero DOS
-interrupt-vector bytes** and **46 bytes in 23 RTL loader-fixup words**.
+Only **22 nonzero bytes of captured RAM** remain, all in seven DOS
+interrupt-vector entries.
 Combining all five restoration options still reproduces the complete
-816-frame recording and final PPM, byte for byte. This counts
+1,561-frame recording and final PPM, byte for byte. This counts
 the remaining *nonzero values*, not a self-contained serialized bootstrap:
-the DOS interrupt-hook values and RTL code relocations need principled
+the DOS interrupt-hook values still need principled
 initialization before the original Unicorn snapshot can be removed. The
 captured data is neither committed nor copied into the output bundle.
 
