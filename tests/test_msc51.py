@@ -56,13 +56,13 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("ECHO All reconstructed launcher objects compiled > SUCCESS.LOG", batch)
             self.assertNotIn("/Fe", batch)  # No complete DOS executable yet.
             response = (output / "LINK.RSP").read_text().splitlines()
-            self.assertEqual(response[:40],
+            self.assertEqual(response[:41],
                              [f"M{index:02d}.OBJ+" for index in range(28)] +
                              ["MEMORY.OBJ+", "DOSFILE.OBJ+", "RTLIMG.OBJ+",
                               "RTLTEXT.OBJ+", "RTLPAL.OBJ+", "RTLGR.OBJ+",
                               "RTLHW.OBJ+", "RTFILE.OBJ+", "RESSTATE.OBJ+",
-                              "HEAP.OBJ+", "INP.OBJ+", "CLOCK.OBJ"])
-            self.assertEqual(response[40:], ["GATEWAY.EXE", "GATEWAY.MAP",
+                              "HEAP.OBJ+", "INP.OBJ+", "CLOCK.OBJ+", "CRTENV.OBJ"])
+            self.assertEqual(response[41:], ["GATEWAY.EXE", "GATEWAY.MAP",
                                              "LLIBCR.LIB LIBH.LIB /NOD", ";"])
             memory_batch = (output / "MEMORY.BAT").read_text()
             self.assertIn("CL /AL /Od /c MEMORY.C", memory_batch)
@@ -190,6 +190,17 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("gate_rtl_graphics_delay(20ul)",
                           (output / "CLKCHK.C").read_text())
             for name in ("CLOCK.C", "CLKCHK.C"):
+                self.assertTrue(all(len(identifier) <= 31 for identifier in
+                                    msc51.msc51_identifiers((output / name).read_text())), name)
+            crt_batch = (output / "CRT.BAT").read_text()
+            self.assertIn("CL /AL /Od /c CRTENV.C", crt_batch)
+            self.assertIn("CRTCHK.C CRTENV.OBJ MEMORY.OBJ", crt_batch)
+            self.assertIn("CRTCHK.EXE > CRTTEST.LOG", crt_batch)
+            self.assertIn("CRTSIG.LOG", crt_batch)
+            self.assertIn("CRTOK.LOG", crt_batch)
+            self.assertIn("FP_SEG(value)", (output / "CRTENV.C").read_text())
+            self.assertIn("atol(digits)", (output / "CRTENV.C").read_text())
+            for name in ("CRTENV.C", "CRTCHK.C"):
                 self.assertTrue(all(len(identifier) <= 31 for identifier in
                                     msc51.msc51_identifiers((output / name).read_text())), name)
             link_batch = (output / "LINK.BAT").read_text()
@@ -406,6 +417,17 @@ class MSC51Tests(unittest.TestCase):
             (output / "clkstart.log").write_text("tested")
             (output / "clkok.log").write_text("passed")
             (output / "clksig.log").write_text(msc51.clock_source_signature(output))
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run") as run, \
+                 redirect_stderr(io.StringIO()) as error:
+                with self.assertRaises(SystemExit):
+                    msc51.main(args)
+                run.assert_not_called()
+            self.assertIn("msc51-compile-crt first", error.getvalue())
+            (output / "crtenv.obj").write_bytes(b"Microsoft CRT")
+            (output / "crtstart.log").write_text("tested")
+            (output / "crtok.log").write_text("passed")
+            (output / "crtsig.log").write_text(msc51.crt_source_signature(output))
             for name in ("LINKSTAR.LOG", "LNKSTART.LOG", "LINKDONE.LOG", "LINKFAIL.LOG",
                          "LINK.LOG", "GATEWAY.EXE", "GATEWAY.MAP"):
                 (output / name.lower()).write_bytes(b"stale result")
@@ -994,6 +1016,68 @@ class MSC51Tests(unittest.TestCase):
             (output / "CLOCK.C").write_text((output / "CLOCK.C").read_text() + "/* changed */\n")
             with self.assertRaisesRegex(ValueError, "source has changed"):
                 msc51.validate_clock_adapter(output)
+
+    def test_compile_crt_requires_verified_original_dos_library(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            compiler = root / "compiler"
+            for directory in ("BIN", "LIB", "INCLUDE"):
+                (compiler / directory).mkdir(parents=True)
+            for name in ("CL.EXE", "C1.EXE", "C1L.EXE", "C2.EXE", "C3.EXE", "LINK.EXE"):
+                (compiler / "BIN" / name).touch()
+            for name in ("LLIBCR.LIB", "LIBH.LIB"):
+                (compiler / "LIB" / name).touch()
+            (compiler / "INCLUDE" / "STDIO.H").touch()
+            output = root / "launcher"
+            msc51.stage_launcher(output)
+            args = ["compile-crt", "--compiler", str(compiler), "--output", str(output)]
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run") as run, \
+                 redirect_stderr(io.StringIO()) as error:
+                with self.assertRaises(SystemExit):
+                    msc51.main(args)
+                run.assert_not_called()
+            self.assertIn("msc51-compile-memory first", error.getvalue())
+
+            (output / "memory.obj").write_bytes(b"memory")
+            (output / "memstart.log").write_text("tested")
+            (output / "memok.log").write_text("passed")
+            (output / "memsig.log").write_text(msc51.memory_source_signature(output))
+            for name in ("CRTENV.OBJ", "CRTSTART.LOG", "CRTOK.LOG", "CRTSIG.LOG"):
+                (output / name).write_text("stale")
+
+            def failed_probe(command, check):
+                self.assertIn("CRT.BAT", command)
+                self.assertFalse(check)
+                self.assertFalse((output / "CRTENV.OBJ").exists())
+                (output / "CRTSTART.LOG").write_text("started")
+                (output / "CRTENV.OBJ").write_bytes(b"compiled")
+                (output / "CRTFAIL.LOG").write_text("getenv failed")
+                return mock.Mock(returncode=0)
+
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run", side_effect=failed_probe), \
+                 redirect_stderr(io.StringIO()) as error:
+                self.assertEqual(msc51.main(args), 1)
+            self.assertIn("getenv failed", error.getvalue())
+
+            def successful_probe(command, check):
+                self.assertIn("CRT.BAT", command)
+                self.assertFalse((output / "CRTFAIL.LOG").exists())
+                self.assertFalse((output / "CRTENV.OBJ").exists())
+                (output / "CRTSTART.LOG").write_text("started")
+                (output / "CRTENV.OBJ").write_bytes(b"compiled")
+                (output / "CRTOK.LOG").write_text("passed")
+                (output / "CRTTEST.LOG").write_text("CRT probe: PASS")
+                (output / "CRTSIG.LOG").write_text(msc51.crt_source_signature(output))
+                return mock.Mock(returncode=0)
+
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run", side_effect=successful_probe):
+                self.assertEqual(msc51.main(args), 0)
+            (output / "CRTENV.C").write_text((output / "CRTENV.C").read_text() + "/* changed */\n")
+            with self.assertRaisesRegex(ValueError, "source has changed"):
+                msc51.validate_crt_adapter(output)
 
     def test_stages_only_recovered_source_with_c89_headers(self):
         with tempfile.TemporaryDirectory() as scratch:

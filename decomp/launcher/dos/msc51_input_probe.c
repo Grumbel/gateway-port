@@ -10,6 +10,7 @@ uint16_t gate_linked_keyboard_pending(void);
 uint16_t gate_linked_read_keyboard_key(void);
 uint16_t gate_linked_intro_mouse_flags(void);
 void gate_linked_reset_intro_mouse(void);
+uint16_t gate_linked_poll_animation_input(void);
 
 static int check(uint16_t actual, uint16_t expected, const char *label)
 {
@@ -34,6 +35,7 @@ int main(void)
     gate_ds_set_word(GATE_DS_INPUT_BUFFERED_KEY, 0x005au);
     gate_ds_set_word(GATE_DS_INPUT_PENDING_COUNT, 0u);
     valid &= check(gate_linked_keyboard_pending(), 1u, "unget key pending");
+    valid &= check(gate_linked_poll_animation_input(), 0u, "interrupt animation on key");
     valid &= check(gate_linked_read_keyboard_key(), 0x005au, "unget key consumed");
     valid &= check(gate_ds_word(GATE_DS_INPUT_BUFFERED_KEY), 0xffffu,
                    "unget slot reset");

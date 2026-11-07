@@ -58,3 +58,11 @@ void gate_linked_reset_intro_mouse(void)
     input.x.ax = 0u;
     int86(0x33, &input, &output);
 }
+
+/* Image-advance poll: zero means interrupt playback; positive result
+ * permits the animation to continue. The native recovered
+ * source-C host also uses this inverse-of-pending convention. */
+uint16_t gate_linked_poll_animation_input(void)
+{
+    return gate_linked_keyboard_pending() != 0u ? 0u : 1u;
+}
