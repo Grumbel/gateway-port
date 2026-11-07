@@ -56,12 +56,13 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("ECHO All reconstructed launcher objects compiled > SUCCESS.LOG", batch)
             self.assertNotIn("/Fe", batch)  # No complete DOS executable yet.
             response = (output / "LINK.RSP").read_text().splitlines()
-            self.assertEqual(response[:38],
+            self.assertEqual(response[:39],
                              [f"M{index:02d}.OBJ+" for index in range(28)] +
                              ["MEMORY.OBJ+", "DOSFILE.OBJ+", "RTLIMG.OBJ+",
                               "RTLTEXT.OBJ+", "RTLPAL.OBJ+", "RTLGR.OBJ+",
-                              "RTLHW.OBJ+", "RTFILE.OBJ+", "RESSTATE.OBJ+", "HEAP.OBJ"])
-            self.assertEqual(response[38:], ["GATEWAY.EXE", "GATEWAY.MAP",
+                              "RTLHW.OBJ+", "RTFILE.OBJ+", "RESSTATE.OBJ+",
+                              "HEAP.OBJ+", "INP.OBJ"])
+            self.assertEqual(response[39:], ["GATEWAY.EXE", "GATEWAY.MAP",
                                              "LLIBCR.LIB LIBH.LIB /NOD", ";"])
             memory_batch = (output / "MEMORY.BAT").read_text()
             self.assertIn("CL /AL /Od /c MEMORY.C", memory_batch)
@@ -163,6 +164,19 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("_dos_freemem", (output / "HEAP.C").read_text())
             self.assertIn("0x10010ul", (output / "HEAPCHK.C").read_text())
             for name in ("HEAP.C", "HEAPCHK.C"):
+                self.assertTrue(all(len(identifier) <= 31 for identifier in
+                                    msc51.msc51_identifiers((output / name).read_text())), name)
+            input_batch = (output / "INPUT.BAT").read_text()
+            self.assertIn("CL /AL /Od /c INP.C", input_batch)
+            self.assertIn("INPCHK.C INP.OBJ MEMORY.OBJ", input_batch)
+            self.assertIn("INPCHK.EXE > INPTEST.LOG", input_batch)
+            self.assertIn("INPSIG.LOG", input_batch)
+            self.assertIn("INPOK.LOG", input_batch)
+            self.assertNotIn("IF ERRORLEVEL 1 ECHO", input_batch)
+            self.assertIn("int86(0x16, &input, &output)", (output / "INP.C").read_text())
+            self.assertIn("int86(0x33, &input, &output)", (output / "INP.C").read_text())
+            self.assertIn("unget slot reset", (output / "INPCHK.C").read_text())
+            for name in ("INP.C", "INPCHK.C"):
                 self.assertTrue(all(len(identifier) <= 31 for identifier in
                                     msc51.msc51_identifiers((output / name).read_text())), name)
             link_batch = (output / "LINK.BAT").read_text()
@@ -357,6 +371,17 @@ class MSC51Tests(unittest.TestCase):
             (output / "heapstrt.log").write_text("tested")
             (output / "heapok.log").write_text("passed")
             (output / "heapsig.log").write_text(msc51.heap_source_signature(output))
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run") as run, \
+                 redirect_stderr(io.StringIO()) as error:
+                with self.assertRaises(SystemExit):
+                    msc51.main(args)
+                run.assert_not_called()
+            self.assertIn("msc51-compile-input first", error.getvalue())
+            (output / "inp.obj").write_bytes(b"BIOS input")
+            (output / "inpstart.log").write_text("tested")
+            (output / "inpok.log").write_text("passed")
+            (output / "inpsig.log").write_text(msc51.input_source_signature(output))
             for name in ("LINKSTAR.LOG", "LNKSTART.LOG", "LINKDONE.LOG", "LINKFAIL.LOG",
                          "LINK.LOG", "GATEWAY.EXE", "GATEWAY.MAP"):
                 (output / name.lower()).write_bytes(b"stale result")
@@ -820,6 +845,69 @@ class MSC51Tests(unittest.TestCase):
             (output / "HEAP.C").write_text((output / "HEAP.C").read_text() + "/* changed */\n")
             with self.assertRaisesRegex(ValueError, "source has changed"):
                 msc51.validate_heap_adapter(output)
+
+    def test_compile_input_guards_real_dos_keyboard_probe(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            compiler = root / "compiler"
+            for directory in ("BIN", "LIB", "INCLUDE"):
+                (compiler / directory).mkdir(parents=True)
+            for name in ("CL.EXE", "C1.EXE", "C1L.EXE", "C2.EXE", "C3.EXE", "LINK.EXE"):
+                (compiler / "BIN" / name).touch()
+            for name in ("LLIBCR.LIB", "LIBH.LIB"):
+                (compiler / "LIB" / name).touch()
+            (compiler / "INCLUDE" / "STDIO.H").touch()
+            output = root / "launcher"
+            msc51.stage_launcher(output)
+            args = ["compile-input", "--compiler", str(compiler), "--output", str(output)]
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run") as run, \
+                 redirect_stderr(io.StringIO()) as error:
+                with self.assertRaises(SystemExit):
+                    msc51.main(args)
+                run.assert_not_called()
+            self.assertIn("msc51-compile-memory first", error.getvalue())
+
+            (output / "memory.obj").write_bytes(b"memory")
+            (output / "memstart.log").write_text("tested")
+            (output / "memok.log").write_text("passed")
+            (output / "memsig.log").write_text(msc51.memory_source_signature(output))
+            for name in ("INP.OBJ", "INPSTART.LOG", "INPOK.LOG", "INPSIG.LOG"):
+                (output / name).write_text("stale")
+
+            def failed_probe(command, check):
+                self.assertIn("INPUT.BAT", command)
+                self.assertFalse(check)
+                self.assertFalse((output / "INP.OBJ").exists())
+                (output / "INPSTART.LOG").write_text("started")
+                (output / "INP.OBJ").write_bytes(b"compiled")
+                (output / "INPFAIL.LOG").write_text("unget key mismatch")
+                return mock.Mock(returncode=0)
+
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run", side_effect=failed_probe), \
+                 redirect_stderr(io.StringIO()) as error:
+                self.assertEqual(msc51.main(args), 1)
+            self.assertIn("unget key mismatch", error.getvalue())
+
+            def successful_probe(command, check):
+                self.assertIn("INPUT.BAT", command)
+                self.assertFalse((output / "INPFAIL.LOG").exists())
+                self.assertFalse((output / "INP.OBJ").exists())
+                (output / "INPSTART.LOG").write_text("started")
+                (output / "INP.OBJ").write_bytes(b"compiled")
+                (output / "INPOK.LOG").write_text("passed")
+                (output / "INPTEST.LOG").write_text("Input probe: PASS")
+                (output / "INPSIG.LOG").write_text(msc51.input_source_signature(output))
+                return mock.Mock(returncode=0)
+
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run", side_effect=successful_probe):
+                self.assertEqual(msc51.main(args), 0)
+
+            (output / "INP.C").write_text((output / "INP.C").read_text() + "/* changed */\n")
+            with self.assertRaisesRegex(ValueError, "source has changed"):
+                msc51.validate_input_adapter(output)
 
     def test_stages_only_recovered_source_with_c89_headers(self):
         with tempfile.TemporaryDirectory() as scratch:

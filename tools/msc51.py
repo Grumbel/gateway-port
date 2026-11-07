@@ -240,6 +240,8 @@ RUNTIME_FILE_SOURCES = ("GATEMEM.H", "STDINT.H", "RTFILE.C", "RTFCHK.C", "MEMORY
 RESIDENT_STATE_SOURCES = ("GATEMEM.H", "STDINT.H", "RTLLAY.H", "RESSTATE.C",
                           "RESCHK.C", "MEMORY.C")
 HEAP_SOURCES = ("GATEMEM.H", "STDINT.H", "HEAP.C", "HEAPCHK.C", "MEMORY.C")
+INPUT_SOURCES = ("GATEMEM.H", "STDINT.H", "RTLLAY.H", "INP.C", "INPCHK.C",
+                 "MEMORY.C")
 
 
 def memory_source_signature(output: Path) -> str:
@@ -290,6 +292,13 @@ def resident_state_source_signature(output: Path) -> str:
 def heap_source_signature(output: Path) -> str:
     digest = hashlib.sha256(b"MS C 5.1 /AL /Od DOS heap services v1\n")
     for name in HEAP_SOURCES:
+        digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
+    return digest.hexdigest()[:16]
+
+
+def input_source_signature(output: Path) -> str:
+    digest = hashlib.sha256(b"MS C 5.1 /AL /Od BIOS keyboard and mouse services v1\n")
+    for name in INPUT_SOURCES:
         digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
     return digest.hexdigest()[:16]
 
@@ -588,6 +597,26 @@ def stage_launcher(output: Path) -> list[str]:
         ":DONE", "EXIT",
     ]
     (output / "HEAP.BAT").write_text("\r\n".join(heap_batch) + "\r\n")
+    for original, staged in (("msc51_input.c", "INP.C"),
+                             ("msc51_input_probe.c", "INPCHK.C")):
+        (output / staged).write_text(msc51_rename_identifiers(
+            (source_dir / "dos" / original).read_text(), shortened))
+    input_signature = input_source_signature(output)
+    input_batch = [
+        "@ECHO OFF", "ECHO MS C 5.1 BIOS keyboard and mouse > INPSTART.LOG",
+        "SET PATH=C:\\BIN;C:\\", "SET INCLUDE=C:\\INCLUDE;C:\\",
+        "SET LIB=C:\\LIB;C:\\", "SET TEMP=D:\\", "SET TMP=D:\\",
+        "CL /AL /Od /c INP.C > INPBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        "IF NOT EXIST INP.OBJ GOTO FAILED",
+        "CL /AL /Od INPCHK.C INP.OBJ MEMORY.OBJ /FeINPCHK.EXE /link LLIBCR.LIB LIBH.LIB/NOD >> INPBUILD.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST INPCHK.EXE GOTO FAILED",
+        "INPCHK.EXE > INPTEST.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        f"ECHO {input_signature} > INPSIG.LOG",
+        "ECHO Real-mode BIOS input probe passed > INPOK.LOG",
+        "GOTO DONE", ":FAILED", "ECHO Real-mode BIOS input probe failed > INPFAIL.LOG",
+        ":DONE", "EXIT",
+    ]
+    (output / "INPUT.BAT").write_text("\r\n".join(input_batch) + "\r\n")
     lines = [
         "@ECHO OFF", "ECHO Gateway MSC 5.1 launcher objects > START.LOG",
         "SET PATH=C:\\BIN;C:\\", "SET INCLUDE=C:\\INCLUDE;C:\\",
@@ -611,7 +640,8 @@ def stage_launcher(output: Path) -> list[str]:
     # Each trailing + extends the SAME response across CRLFs (MS KB Q40429).
     response = ([f"{name}+" for name in objects] + ["MEMORY.OBJ+", "DOSFILE.OBJ+",
                 "RTLIMG.OBJ+", "RTLTEXT.OBJ+", "RTLPAL.OBJ+", "RTLGR.OBJ+",
-                "RTLHW.OBJ+", "RTFILE.OBJ+", "RESSTATE.OBJ+", "HEAP.OBJ",
+                "RTLHW.OBJ+", "RTFILE.OBJ+", "RESSTATE.OBJ+", "HEAP.OBJ+",
+                "INP.OBJ",
                 "GATEWAY.EXE", "GATEWAY.MAP", "LLIBCR.LIB LIBH.LIB /NOD", ";"])
     (output / "LINK.RSP").write_text("\r\n".join(response) + "\r\n")
     link_batch = [
@@ -871,6 +901,35 @@ def print_heap_diagnostics(output: Path) -> None:
     print(f"DOS heap workspace: {output}", file=sys.stderr)
 
 
+def validate_input_adapter(output: Path) -> None:
+    if (any(locate_case_insensitive(output, name) is None
+            for name in ("INP.OBJ", "INPSTART.LOG", "INPOK.LOG")) or
+            locate_case_insensitive(output, "INPFAIL.LOG") is not None):
+        raise ValueError("Cannot link launcher: BIOS keyboard and mouse services "
+                         "are unverified. Run msc51-compile-input first.")
+    signature = locate_case_insensitive(output, "INPSIG.LOG")
+    if signature is None or signature.read_text().strip() != input_source_signature(output):
+        raise ValueError("Cannot link launcher: input adapter source has changed "
+                         "since its test. Run msc51-compile-input again.")
+
+
+def remove_input_outputs(output: Path) -> None:
+    names = {"INPSTART.LOG", "INPOK.LOG", "INPFAIL.LOG", "INPBUILD.LOG",
+             "INPSIG.LOG", "INPTEST.LOG", "INP.OBJ", "INPCHK.EXE", "INPCHK.OBJ"}
+    if output.is_dir():
+        for entry in output.iterdir():
+            if entry.is_file() and entry.name.upper() in names:
+                entry.unlink()
+
+
+def print_input_diagnostics(output: Path) -> None:
+    for name in ("INPFAIL.LOG", "INPBUILD.LOG", "INPTEST.LOG", "INPOK.LOG"):
+        path = locate_case_insensitive(output, name)
+        content = path.read_text(errors="replace") if path else "(not created)"
+        print(f"--- {name} ---\n{content[-8_000:].rstrip()}", file=sys.stderr)
+    print(f"BIOS input workspace: {output}", file=sys.stderr)
+
+
 def remove_launcher_link_outputs(output: Path) -> None:
     """Never accept a previous link's EXE, map or success marker."""
     names = {"LNKSTART.LOG", "LINKSTAR.LOG", "LINKSTART.LOG", "LINK.LOG",
@@ -958,6 +1017,7 @@ def main(argv: list[str] | None = None) -> int:
                                             "compile-runtime-files",
                                             "compile-resident-state",
                                             "compile-heap",
+                                            "compile-input",
                                             "link-launcher"))
     parser.add_argument("--compiler", default=os.environ.get("GATEWAY_MSC51_DIR"),
                         help="installed Microsoft C 5.1 directory (or GATEWAY_MSC51_DIR)")
@@ -974,6 +1034,7 @@ def main(argv: list[str] | None = None) -> int:
                                 "compile-rtl-state", "compile-hardware",
                                 "compile-runtime-files", "compile-resident-state",
                                 "compile-heap",
+                                "compile-input",
                                 "link-launcher")
     output = (args.output or Path("build/msc51-launcher" if launcher else "build/intro-msc51")).expanduser().resolve()
     objects = []
@@ -999,6 +1060,7 @@ def main(argv: list[str] | None = None) -> int:
                                 "compile-hardware", "compile-runtime-files",
                                 "compile-resident-state",
                                 "compile-heap",
+                                "compile-input",
                                 "link-launcher"):
                 validate_memory_adapter(output)
             if args.command == "link-launcher":
@@ -1008,6 +1070,7 @@ def main(argv: list[str] | None = None) -> int:
                 validate_runtime_file_adapter(output)
                 validate_resident_state_adapter(output)
                 validate_heap_adapter(output)
+                validate_input_adapter(output)
             if not args.compiler:
                 parser.error("set GATEWAY_MSC51_DIR or pass --compiler /path/to/installed/MSC51")
             compiler = validate_compiler(Path(args.compiler))
@@ -1018,6 +1081,7 @@ def main(argv: list[str] | None = None) -> int:
                                  "compile-hardware", "compile-runtime-files",
                                  "compile-resident-state",
                                  "compile-heap",
+                                 "compile-input",
                                  "link-launcher"),
                 ("LINK.BAT" if args.command == "link-launcher" else
                  "DOSFILE.BAT" if args.command == "compile-dos-files" else
@@ -1026,6 +1090,7 @@ def main(argv: list[str] | None = None) -> int:
                  "RTFILE.BAT" if args.command == "compile-runtime-files" else
                  "RESST.BAT" if args.command == "compile-resident-state" else
                  "HEAP.BAT" if args.command == "compile-heap" else
+                 "INPUT.BAT" if args.command == "compile-input" else
                  "MEMORY.BAT" if args.command == "compile-memory" else
                  "COMPILE.BAT" if launcher else "BUILD.BAT"))
             output.mkdir(parents=True, exist_ok=True)
@@ -1071,6 +1136,10 @@ def main(argv: list[str] | None = None) -> int:
         remove_heap_outputs(output)
         remove_launcher_link_outputs(output)
         command.append("--exit")
+    elif args.command == "compile-input":
+        remove_input_outputs(output)
+        remove_launcher_link_outputs(output)
+        command.append("--exit")
     elif args.command == "link-launcher":
         remove_launcher_link_outputs(output)
         command.append("--exit")
@@ -1095,6 +1164,8 @@ def main(argv: list[str] | None = None) -> int:
             print_resident_state_diagnostics(output)
         elif args.command == "compile-heap":
             print_heap_diagnostics(output)
+        elif args.command == "compile-input":
+            print_input_diagnostics(output)
         elif args.command == "link-launcher":
             print_launcher_link_diagnostics(output)
         return result.returncode
@@ -1172,6 +1243,17 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print("Microsoft C 5.1 verified DOS heap allocations including >64KiB VFX buffers; "
               "HEAP.OBJ is ready for the launcher link.")
+        return 0
+    if args.command == "compile-input":
+        try:
+            validate_input_adapter(output)
+        except ValueError:
+            print("Microsoft C did not compile and verify BIOS keyboard/mouse input.",
+                  file=sys.stderr)
+            print_input_diagnostics(output)
+            return 1
+        print("Microsoft C 5.1 verified the BIOS keyboard buffer and DS unget slot; "
+              "INP.OBJ is ready for the launcher link.")
         return 0
     if args.command == "link-launcher":
         started = locate_case_insensitive(output, "LNKSTART.LOG")

@@ -1003,6 +1003,16 @@ fingerprint guard the LINK input. The original heap's private free-list
 has not been reconstructed; the adapter uses DOS allocation explicitly.
 The predicted missing names become **39** if all stages pass on DOSBox.
 
+`msc51-compile-input` adds a real DOS BIOS keyboard/mouse adapter for
+linked `0df2:000a/0030` and `0e48:011b/07fe`. It checks original input
+state at linked DS:133e/1340, queries INT 16h/AH=01h without consuming
+the keyboard queue, reads INT 16h/AH=00h when needed, and calls INT 33h
+for mouse reset/buttons. Its DOS probe checks the original unget slot and
+non-destructive BIOS status polling. The special Ctrl-Break flushing path
+has not been independently validated and is specifically not claimed as
+bit-identical. `INP.OBJ` is LINK-eligible only after the source-fingerprinted
+DOS test. A **35**-symbol remainder is predicted, not yet verified.
+
 ## Immediate next functions
 
 1. Connect the existing verified native video, font, picture and caption
