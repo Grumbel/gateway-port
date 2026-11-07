@@ -9,6 +9,26 @@
  * pointer. Its calendar conversion is not reconstructed here. */
 void gate_far_12a5_34d8(GateFarPtr destination);
 
+/* GATE.RTL:8cc8 is the still-unrecovered timezone initializer. */
+void gate_rtl_8cc8(void);
+
+/* GATE.RTL:8cb8..8cc7, linked 12a5:35da. The original startup flag is
+ * relocated to DS:6470. Repeated calls skip initialization; the one-time
+ * initializer may update the same flag, so the caller increments its
+ * actual post-call value rather than blindly setting it to one. */
+void gate_rtl_8cb8(void)
+{
+    if (gate_ds_word(0x6470) == 0) {
+        gate_rtl_8cc8();
+        gate_ds_set_word(0x6470, (uint16_t)(gate_ds_word(0x6470) + 1u));
+    }
+}
+
+void gate_far_12a5_35da(void)
+{
+    gate_rtl_8cb8();
+}
+
 /* GATE.RTL:929e..9339, linked 12a5:3bc0: signed 32-bit quotient.
  * The 8086 routine tests both sign words, divides magnitudes and restores
  * the sign; the returned DX:AX wraps to 32 bits. Zero divisor faults in

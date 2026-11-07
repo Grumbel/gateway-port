@@ -44,6 +44,9 @@ class ClockSamplerOriginalEvidence(unittest.TestCase):
         self.assertEqual(data[0x8bc2:0x8bc5], bytes.fromhex('b8 3c 00'))
         self.assertEqual(data[0x8bd5:0x8bd8], bytes.fromhex('c4 5e 06'))
         self.assertEqual(data[0x8c58:0x8c5b], bytes.fromhex('c4 5e 06'))
+        self.assertEqual(data[0x8cb8:0x8cbb], bytes.fromhex('83 3e 00'))
+        self.assertEqual(data[0x8cbf:0x8cc3], bytes.fromhex('0e e8 05 00'))
+        self.assertEqual(data[0x8cc7], 0xcb)
         self.assertEqual(data[0x929e:0x92a1], bytes.fromhex('55 8b ec'))
         self.assertEqual(data[0x9337:0x933a], bytes.fromhex('ca 08 00'))
         self.assertEqual(data[0x92e2:0x92e4], bytes.fromhex('f7 f1'))
@@ -62,6 +65,11 @@ class ClockSamplerOriginalEvidence(unittest.TestCase):
             self.assertEqual(memory[physical], 0x9a)
             self.assertEqual(struct.unpack_from('<HH', memory, physical + 1),
                              (target_offset, 0x12a5))
+        initializer = 0x12a50 + 0x35da
+        self.assertEqual(struct.unpack_from('<H', memory, initializer + 2)[0],
+                         0x6470)
+        self.assertEqual(struct.unpack_from('<H', memory, initializer + 13)[0],
+                         0x6470)
 
 
 if __name__ == '__main__':

@@ -12,6 +12,7 @@
 uint16_t gate_rtl_8298(GateFarPtr text);     /* 12a5:2bba FAR strlen */
 uint32_t gate_rtl_8fa2(void);                /* 12a5:38c4 elapsed clock */
 uint32_t gate_rtl_929e(int32_t dividend, int32_t divisor); /* signed divide */
+void gate_rtl_8cb8(void);                  /* one-time clock/timezone init */
 uint32_t gate_rtl_933a(uint32_t lhs, uint32_t rhs); /* 12a5:3c5c multiply */
 void gate_rtl_e771(void);                   /* free both font slots */
 void gate_rtl_e79b(GateFarPtr font);         /* free one font slot */

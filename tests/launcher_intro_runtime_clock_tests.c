@@ -14,6 +14,8 @@
 uint32_t gate_rtl_8fa2(void);
 uint32_t gate_rtl_933a(uint32_t lhs, uint32_t rhs);
 uint32_t gate_rtl_929e(int32_t dividend, int32_t divisor);
+void gate_rtl_8cb8(void);
+void gate_far_12a5_35da(void);
 
 static uint8_t stack_bytes[65536];
 static uint16_t ds[32768];
@@ -21,8 +23,17 @@ static uint16_t cursor_reset;
 static uint32_t seconds;
 static uint16_t fraction;
 static unsigned calls;
+static unsigned timezone_init_calls;
+static uint16_t timezone_init_flag;
 
 uint16_t gate_ds_word(uint16_t offset) { return ds[offset / 2]; }
+void gate_ds_set_word(uint16_t offset, uint16_t value) { ds[offset / 2] = value; }
+
+void gate_rtl_8cc8(void)
+{
+    ++timezone_init_calls;
+    gate_ds_set_word(0x6470, timezone_init_flag);
+}
 
 GateFarPtr gate_stack_pointer(void *unused)
 {
@@ -62,6 +73,17 @@ void gate_far_12a5_34d8(GateFarPtr destination)
 
 int main(void)
 {
+    gate_far_12a5_35da();
+    assert(timezone_init_calls == 1);
+    assert(gate_ds_word(0x6470) == 1);
+    gate_rtl_8cb8();
+    assert(timezone_init_calls == 1);
+    gate_ds_set_word(0x6470, 0);
+    timezone_init_flag = 7;
+    gate_rtl_8cb8();
+    assert(timezone_init_calls == 2);
+    assert(gate_ds_word(0x6470) == 8);
+
     memset(stack_bytes, 0xcc, sizeof stack_bytes);
     ds[0x4e24 / 2] = 0x5555;
     ds[0x3584 / 2] = 0x2340;
