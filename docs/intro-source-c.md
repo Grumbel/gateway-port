@@ -328,11 +328,28 @@ at the return of original C `EXE:1302`**, *before* the host shuts down its
 file/video services. The output must not already exist; this prevents an
 accidental overwrite of the input snapshot or DOS assets. Its SHA-256 for the
 pinned guest state is
-`91703bb67fd1f07cf54aa9797e8d41700f68aa7aa4cebbb100e4c0424ee93c79`;
+`92a31e93f16900c797ea528fdfbd31ed613a7fe7eda51700c47131ea1542d79a`;
 only that hash is tracked. The new RAM output is a **data snapshot**, not a
 resumable CPU savestate: it lacks the original live 8086 registers/stack and
 the launcher-to-game overlay loader's continuation. Keep `.gvr` and `.bin`
 files private like screenshots.
+
+Odd-width animated PIC payloads require special care: `RTL:12c33` replaces
+the `CA00` allocator's even-aligned stride with the tightly packed source
+row length at `work+1ch`. The DCL adapter now honors that overwrite in both
+mode 13h (one byte per pixel) and mode 12h (one byte per eight pixels per
+plane). Previously, `GATE_302.PIC` #3 (21×12) had **182/252 displaced pixels**,
+slipping one pixel right on each successive row. Seven odd-width resources
+now match the independent PIC decoder at every sprite pixel. Three of these
+(`GATE_303` #3/#7/#35) also contain full 768-byte VGA DAC palettes, and their
+source-C RGB renders match independent decoded colors pixel-for-pixel. These
+tests verify isolated image palettes, not every live SDL palette transition.
+
+The corrected full C recording retains **1,561 frames**, **342,026ms** of
+virtual duration, and the same final RGB screenshot, with GVR1 SHA-256
+`1bfb16e5687ab30e80387d3faeadb0e498146f2308ff15c1fa4c6a8baa8b946c`.
+The RAM SHA above changed because released image buffers retain the corrected
+packed pixel layout.
 
 ### Check against actual DOS frames
 
@@ -412,6 +429,8 @@ exercised against the private 22-second snapshot, each from a fresh copy
 of that state. The regression suite pins every complete 320×200 pixel-index
 frame by SHA-256, as well as the 0x3105 RGB PPM output. Calls with different
 resource IDs can legitimately share pixels (e.g. `0x8100`/`0x3100`).
+Seven additional odd-width animated entries have indexed-frame SHA tests;
+three palette-bearing `GATE_303` entries also have full RGB SHA tests.
 
 It runs the full recovered original `RTL:12b19` one-picture caller, including
 `RTL:12c33` for resource selection/loading, `RTL:1266f` for pre-display state,

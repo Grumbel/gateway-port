@@ -88,6 +88,49 @@ class IntroPicture(unittest.TestCase):
             self.assertEqual(hashlib.sha256(frame).hexdigest(),
                              'ea177bdef50098ced01d716c9e14d3e7c2987ece312bda44312c22a91a67ff43')
 
+    def test_odd_width_animation_rows_and_palette(self):
+        executable, snapshot, assets = self.original_inputs()
+        # Original GATE_301/302/303 animated frames, independently decoded
+        # through the PIC parser, have tightly packed rows. In RTL:12c33,
+        # work+1ch overwrites the allocator's even-aligned CA00 row stride
+        # with this packed byte count. An extra padding byte visibly shears
+        # each successive row on odd-width frames.
+        frames = {
+            0x3108: (729, 0, '7293fe4955f742ac90ad3e2325dc1a52ccd474a6e927d9805b87ae38430c15b9'),
+            0x3203: (252, 0, '74218579bf89fcd9187029b03860ae4c7c56b1418d473025826f0c69d11313a8'),
+            0x3216: (2996, 0, '9730afe85d323ec1164b7d44f6642c319ad58c357eb8332ef64a10a35c2cbe9c'),
+            0x3236: (2842, 0, '45350a5a036b74e7acbab3b0eeec08ec250fc1c2171af3d2730cbf540b17cbf0'),
+            0x3303: (1705, 768, '0386bc377f54926cbbe442c313a16a280a3d778bab5e05d746b7a6ce8debe6fe'),
+            0x3307: (9785, 768, '559de1ec13f261eb73d3502b2d2d6c7acb544fdd6e986db4ac3bf6649e4bc662'),
+            0x3323: (525, 768, '0491bf704d65654152ce4f336b55f8c2054c0e1610a05a2f49b51a2fd2f1032b'),
+        }
+        # The GATE_303 animated frames each supply a complete, unchanged
+        # 256-color palette. Check DAC expansion independently of index-only
+        # rendering, guarding incorrect source offsets as well as row stride.
+        rgb = {
+            0x3303: '3f8df62810e25c26156cae58e98d34a00bc81b424dcd37573e5185ea6da9648e',
+            0x3307: '8303e1018a8b51eea96939ad56c16e8bf42eec5244941cddc2c0f8cdf3c80b81',
+            0x3323: '45d17bc4c608d4272197e9203f6d5264485d43137c42d83af16cb9f54fc12b10',
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'sprite.ppm'
+            for resource, (nonzero, dac_writes, expected) in frames.items():
+                with self.subTest(resource=hex(resource)):
+                    report = subprocess.run([executable, snapshot, assets,
+                                             str(output), '--resource',
+                                             hex(resource), '1'], check=True,
+                                            capture_output=True, text=True).stdout
+                    self.assertIn(f'{nonzero} nonzero VGA pixels', report)
+                    self.assertIn(f'{dac_writes} DAC component writes', report)
+                    actual = hashlib.sha256(output.read_bytes()).hexdigest()
+                    self.assertEqual(actual, expected, 'wrong packed sprite rows')
+                    if resource in rgb:
+                        subprocess.run([executable, snapshot, assets,
+                                        str(output), '--resource', hex(resource),
+                                        '1', '--rgb'], check=True, capture_output=True)
+                        self.assertEqual(hashlib.sha256(output.read_bytes()).hexdigest(),
+                                         rgb[resource])
+
     def test_persistent_image_call_sequence(self):
         executable, snapshot, assets = self.original_inputs()
         with tempfile.TemporaryDirectory() as directory:

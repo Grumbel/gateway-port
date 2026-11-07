@@ -81,10 +81,10 @@ class IntroFull(unittest.TestCase):
                              '6a3f6394fbaac476700dbb54d30a8dd0f9028183493cfa3f416d9e4a7c87a777')
             self.assertEqual(replay.stat().st_size, 4 + 1561 * (4 + 64000 + 768))
             self.assertEqual(digest(replay),
-                             '856737f003f9af3a1ce4fdd3f7e494ee22b4cb7b9db36c728a6c9d57ad088ccf')
+                             '1bfb16e5687ab30e80387d3faeadb0e498146f2308ff15c1fa4c6a8baa8b946c')
             self.assertEqual(final_ram.stat().st_size, 1024 * 1024)
             self.assertEqual(digest(final_ram),
-                             '91703bb67fd1f07cf54aa9797e8d41700f68aa7aa4cebbb100e4c0424ee93c79')
+                             '92a31e93f16900c797ea528fdfbd31ed613a7fe7eda51700c47131ea1542d79a')
             self.assertIn('first-read profile: 6661 guest bytes in 6 pages',
                           report.stdout)
             rows = read_deps.read_text().splitlines()
@@ -139,7 +139,7 @@ class IntroFull(unittest.TestCase):
                              '6a3f6394fbaac476700dbb54d30a8dd0f9028183493cfa3f416d9e4a7c87a777')
             self.assertEqual(digest(sparse_record), digest(baseline_record))
             self.assertEqual(digest(sparse_record),
-                             '856737f003f9af3a1ce4fdd3f7e494ee22b4cb7b9db36c728a6c9d57ad088ccf')
+                             '1bfb16e5687ab30e80387d3faeadb0e498146f2308ff15c1fa4c6a8baa8b946c')
 
             # Prove that the largest guest input block can be restored
             # from the user's original EXE rather than a Unicorn capture.
@@ -321,7 +321,7 @@ class IntroFull(unittest.TestCase):
             self.assertEqual(digest(restored_final),
                              '6a3f6394fbaac476700dbb54d30a8dd0f9028183493cfa3f416d9e4a7c87a777')
             self.assertEqual(digest(restored_record),
-                             '856737f003f9af3a1ce4fdd3f7e494ee22b4cb7b9db36c728a6c9d57ad088ccf')
+                             '1bfb16e5687ab30e80387d3faeadb0e498146f2308ff15c1fa4c6a8baa8b946c')
 
             # Rebuild the last 22 nonzero guest bytes as linked DOS vectors.
             # A completely zero 1 MiB source (with the original files beside
@@ -354,7 +354,7 @@ class IntroFull(unittest.TestCase):
             self.assertEqual(digest(final),
                              '6a3f6394fbaac476700dbb54d30a8dd0f9028183493cfa3f416d9e4a7c87a777')
             self.assertEqual(digest(replay),
-                             '856737f003f9af3a1ce4fdd3f7e494ee22b4cb7b9db36c728a6c9d57ad088ccf')
+                             '1bfb16e5687ab30e80387d3faeadb0e498146f2308ff15c1fa4c6a8baa8b946c')
 
             # An actual cold start must read the original assets, not
             # silently fall back to any previous 1 MiB Unicorn capture.

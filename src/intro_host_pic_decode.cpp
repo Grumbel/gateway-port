@@ -20,7 +20,7 @@ extern "C" {
 // pixel buffer. We reuse the repository's independently tested PKWARE DCL
 // decoder. In mode 12h the stream stores packed low-nibble-first 4-bit
 // indices; the native codec packs these into the original VFX image's
-// interleaved four 1-bit plane-rows, even-padded per plane-row. This is
+// interleaved four 1-bit plane-rows, tightly packed per plane-row. This is
 // explicitly a host-level codec replacement, NOT a C translation of the
 // DOS 1af5 decompression driver.
 
@@ -70,17 +70,19 @@ extern "C" std::uint16_t gate_far_0eec_018a(std::uint16_t pixel_offset,
             return 0xfffau;
 
         if (mode == 3) {
-            // Original 245d:0006 pads each 8bpp row to an even byte count.
-            const std::uint32_t stride = (width + 1u) & ~1u;
-            for (std::uint32_t row = 0; row < height; ++row)
-                for (std::uint32_t x = 0; x < width; ++x)
-                    set_extended_byte(pixel_segment, pixel_offset,
-                        row * stride + x, pixels[row * width + x]);
+            // RTL:12c33 overwrites CA00 +14h (the allocator's aligned
+            // stride) with the *packed* source byte width at work +1ch.
+            // Consequently the decoder must not insert allocator padding:
+            // odd-width animated frames otherwise skew one pixel per row.
+            for (std::uint32_t i = 0; i < pixels.size(); ++i)
+                set_extended_byte(pixel_segment, pixel_offset, i, pixels[i]);
         } else {
             // VGA mode 12h: scanline 0 consists of plane 0/1/2/3,
             // scanline 1 repeats them, etc. Each bit is MSB-first,
             // although the DCL color indices are low-nibble-first.
-            const std::uint32_t stride = ((width + 7u) / 8u + 1u) & ~1u;
+            // The same RTL stride overwrite applies to mode 12h, where
+            // the source byte width is ceil(width / 8) per plane.
+            const std::uint32_t stride = (width + 7u) / 8u;
             std::vector<std::uint8_t> planar(stride * height * 4u);
             for (std::uint32_t y = 0; y < height; ++y) {
                 for (std::uint32_t x = 0; x < width; ++x) {
