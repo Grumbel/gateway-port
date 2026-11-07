@@ -14,6 +14,7 @@
 #include "gate_rtl_graphics.h"
 #include "gate_rtl_audio_startup.h"
 #include "gate_rtl_image.h"
+#include "gate_rtl_mode.h"
 #include "intro_source_c_bootstrap.h"
 
 #include <stdint.h>
@@ -74,6 +75,14 @@ static void record_changed(void *userdata)
 static void frame_update(void *userdata)
 {
     Clock *clock = userdata;
+    if (gate_ds_word(0x0fce) == 2) {
+        if (clock->hooks && clock->hooks->frame_ready_vga16)
+            clock->hooks->frame_ready_vga16(clock->hooks->userdata,
+                                            (const uint8_t (*)[0x10000])clock->memory->vga_planes,
+                                            (const uint8_t (*)[3])clock->ports->dac,
+                                            clock->ports->attributes);
+        return;
+    }
     if (active_recording)
         record_changed(active_recording);
     if (clock->hooks && clock->hooks->frame_ready)
@@ -85,14 +94,19 @@ static void frame_update(void *userdata)
 static void full_palette_ready(void *userdata)
 {
     Clock *clock = userdata;
-    /* Each 256-color upload follows the original VGA retrace wait. The
-     * 16ms pacing is host-side, not part of the recovered source-C logic. */
+    /* Both mode-12h's 16-color upload and mode-13h's 256-color upload
+     * follow the original VGA retrace wait. The cold-start live path
+     * uses a 3ms approximation (matched against original DOS captures
+     * at 4/5/8/18s), while legacy 22s GVR1 replay retains its 16ms
+     * deterministic pacing. Neither is a source-C timer constant. */
+    uint32_t pace_ms = clock->hooks && clock->hooks->original_video_start
+                       ? 3u : 16u;
     if (clock->hooks && clock->hooks->delay_ms) {
-        clock->hooks->delay_ms(clock->hooks->userdata, 16);
+        clock->hooks->delay_ms(clock->hooks->userdata, pace_ms);
         if (clock->hooks->clock_ms)
             clock->milliseconds = clock->hooks->clock_ms(clock->hooks->userdata);
     } else {
-        clock->milliseconds += 16;
+        clock->milliseconds += pace_ms;
     }
     frame_update(clock);
 }
@@ -145,7 +159,12 @@ void gate_far_123f_0004(void) { abort(); /* unimplemented key-3 branch */ }
 void gate_far_0e48_011b(void) { /* mouse cursor setup: headless */ }
 uint16_t gate_far_2488_000a(uint16_t a, uint16_t b)
 {
-    (void)a; (void)b;
+    (void)a;
+    if (gate_ds_word(0x15cc) == 2) {
+        gate_intro_vga16_fill_bytes(0, 640u * 480u / 8u, (uint8_t)(b & 15));
+        gate_intro_memory_notify_frame();
+        return 1;
+    }
     /* Clear mode 13h's active video page. */
     unsigned i;
     for (i = 0; i < 320u * 200u; ++i)
@@ -395,6 +414,19 @@ static int run_intro(const char *snapshot, const char *dos_dir,
     if (!configure(memory))
         abort();
 
+    if (full && hooks && hooks->original_video_start) {
+        /* At the original 1/4/5-second DOS checkpoints DS:0fce and
+         * DS:15cc are 2 (BIOS mode 12h). GATE.EXE:13a7 changes to mode 3
+         * after the opening interlude; the earlier 22-second capture used
+         * by the legacy deterministic replay was already in mode 3. */
+        uint16_t setup_result = gate_rtl_f14d(2);
+        if (setup_result != 1) {
+            fprintf(stderr, "original mode-12h init failed: result=%u mode=%u renderer=%u\n",
+                    setup_result, gate_ds_word(0x0fce), gate_ds_word(0x15cc));
+            abort();
+        }
+    }
+
     if (full) {
         active_clock = &clock;
         ports.palette_ready = full_palette_ready;
@@ -416,8 +448,10 @@ static int run_intro(const char *snapshot, const char *dos_dir,
         /* The real EXE:1302 must invoke the relocated RTL:f14d C routine
          * once through its linked FAR alias, rather than silently relying
          * on a preselected host display mode. */
-        if (video.mode_changes != 1 || video.start_calls != 1 ||
-            video.clip_calls != 1 || video.requested_bios_mode != 3 ||
+        if (video.mode_changes != (hooks && hooks->original_video_start ? 2u : 1u) ||
+            video.start_calls != (hooks && hooks->original_video_start ? 2u : 1u) ||
+            video.clip_calls != (hooks && hooks->original_video_start ? 2u : 1u) ||
+            video.requested_bios_mode != 3 ||
             video.bios_mode != 0x13 || !video.clipping_enabled)
             abort();
     } else {

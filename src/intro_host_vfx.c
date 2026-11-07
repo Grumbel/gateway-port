@@ -121,6 +121,7 @@ void gate_far_24a7_000c(uint16_t unused, uint16_t y, uint16_t x,
 
     if (gate_ds_word(0x15cc) == 2) {
         draw_mode2(y, x, signed_mode, image);
+        gate_intro_memory_notify_frame();
         return;
     }
 

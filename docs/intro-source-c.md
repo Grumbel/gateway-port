@@ -120,9 +120,10 @@ RTL code region is no longer read by this pinned source-C intro, so its
 23 relocated words are no longer needed to reproduce that replay.
 
 Additional unchanged RTL resident data maps through a *second* file-to-RAM
-base: `RAM = original GATE.RTL file offset + 2a777`. Seven verified read-only
-spans totaling 140 bytes cover the resident resource-extension strings,
-graphics tables and resource metadata. `--restore-rtl-data` now restores
+base: `RAM = original GATE.RTL file offset + 2a777`. Eleven verified read-only
+spans totaling 248 bytes cover the resident resource-extension strings,
+graphics tables, mode-12h/mode-13h descriptors and palette component counts,
+and resource metadata. `--restore-rtl-data` now restores
 these spans from the original RTL file as well. The gaps are intentionally
 excluded: they include runtime-modified pointers, mode fields and code.
 
@@ -216,15 +217,27 @@ nix run .#intro-source-c-live -- ../gateway-dos
 ```
 
 This executes `GATE.EXE:1302` on a worker thread while an SDL3 window
-displays the actual source-C VGA output at its 320×200 resolution and
-the original 4:3 display aspect. The clock and delays follow host time.
+displays the source-C VGA output at the original 4:3 display aspect. The
+opening logo uses BIOS mode 12h's 640×480 four-plane 16-color framebuffer;
+the original C then switches to BIOS mode 13h's 320×200 256-color framebuffer.
+The live presenter switches texture dimensions at that transition. Previously,
+starting from the already-mode-13h 22-second capture caused the opening two
+images and their palette fades to be rendered in the wrong display mode.
+The clock and delays follow host time.
 The source-C worker publishes every changed complete VGA index/DAC snapshot
 to a latest-frame mailbox; SDL samples that mailbox at its normal display
 rate. Unlike the previous wall-clock 16ms callback filter, rapid successive
 DAC writes cannot cause the *final* palette state to be dropped when the
 source-C routine becomes idle. A host-only regression checks a 63-step
 palette ramp, palette-only updates, duplicate suppression, and complete
-index/DAC pairs without requiring SDL3.
+index/DAC pairs without requiring SDL3. Mode-12h palette uploads terminate
+after 16 RGB triples, not 256; recognizing their actual completion allows
+the opening fades to be presented incrementally. The live cold-start path
+paces uploads at 3ms, calibrated from original DOS frame checkpoints;
+the legacy 22-second headless recorder retains its 16ms model and GVR1
+fingerprints. A separate asset-backed integration test checks the 4-second
+640×480 logo against the original capture's 3,046 black pixels, then checks
+that the 320×200 callback is reached after the BIOS mode transition.
 Escape is injected as an original DOS key event: the recovered C code
 takes its own interruption and cleanup branches. Space, Return, Backspace
 and printable keys are also forwarded to the recovered C handler, including
@@ -470,6 +483,8 @@ image-path diagnostic, **not the original animation schedule**.
   replayer remains read-only and its keys are host controls.
 - `intro-source-c-play` enters the original game via a fresh Unicorn process;
   it does not preserve the DOS overlay's process memory or CPU state.
-- Seven selected original DOS frames match source-C RGB output exactly,
-  but a complete frame-by-frame comparison at equal game time remains open;
-  the 16ms retrace model and other host delays are provisional.
+- Original DOS frames at 1, 4, 5, 8 and 18 seconds match the new live
+  cold-start RGB output pixel-for-pixel in a deterministic headless probe.
+  The 14-second checkpoint remains an intermediate animation mismatch,
+  and a complete frame-by-frame comparison at equal game time remains open;
+  the 3ms live/16ms replay retrace models and other host delays are provisional.

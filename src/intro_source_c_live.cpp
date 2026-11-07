@@ -16,6 +16,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <deque>
 #include <iostream>
 #include <memory>
@@ -34,6 +35,13 @@ using namespace std::chrono_literals;
 
 struct LiveState {
     gateway::IntroLiveFrameMailbox frames;
+    /* Only the source-C worker touches this mode-12h unpack buffer. */
+    std::array<std::uint8_t, 640u * 480u> planar_indices{};
+    static constexpr std::size_t mode12h_plane_bytes = 80u * 480u;
+    std::array<std::uint8_t, 4u * mode12h_plane_bytes> previous_planes{};
+    std::array<std::uint8_t, 32> previous_attributes{};
+    std::array<std::uint8_t, 256u * 3u> previous_dac{};
+    bool previous_mode12h_valid = false;
 
     std::mutex time_mutex;
     Clock::time_point origin = Clock::now();
@@ -114,22 +122,64 @@ void frame_ready(void *userdata, const std::uint8_t *indices,
     state.frames.publish(indices, dac);
 }
 
+void frame_ready_vga16(void *userdata,
+                       const std::uint8_t planes[4][0x10000],
+                       const std::uint8_t dac[256][3],
+                       const std::uint8_t attributes[32]) {
+    auto &state = *static_cast<LiveState *>(userdata);
+    // A000 is four independent 80-byte-pitch bitplanes in BIOS mode 12h.
+    // The attribute controller maps the resulting 4-bit index to a VGA
+    // DAC slot, so the same RGB conversion works after the mode switch.
+    bool geometry_changed = !state.previous_mode12h_valid ||
+        std::memcmp(attributes, state.previous_attributes.data(), 32) != 0;
+    for (unsigned plane = 0; plane < 4; ++plane) {
+        auto *previous = state.previous_planes.data() +
+                         plane * LiveState::mode12h_plane_bytes;
+        if (!state.previous_mode12h_valid ||
+            std::memcmp(planes[plane], previous,
+                        LiveState::mode12h_plane_bytes) != 0) {
+            geometry_changed = true;
+            std::memcpy(previous, planes[plane], LiveState::mode12h_plane_bytes);
+        }
+    }
+    const bool palette_changed = !state.previous_mode12h_valid ||
+        std::memcmp(dac, state.previous_dac.data(),
+                    state.previous_dac.size()) != 0;
+    if (!geometry_changed && !palette_changed)
+        return;
+    if (geometry_changed) {
+        for (std::size_t y = 0; y < 480; ++y)
+            for (std::size_t x = 0; x < 640; ++x) {
+                const auto offset = y * 80u + x / 8u;
+                const auto bit = static_cast<std::uint8_t>(0x80u >> (x & 7u));
+                std::uint8_t index = 0;
+                for (unsigned plane = 0; plane < 4; ++plane)
+                    if (planes[plane][offset] & bit)
+                        index |= static_cast<std::uint8_t>(1u << plane);
+                state.planar_indices[y * 640u + x] = attributes[index];
+            }
+        std::memcpy(state.previous_attributes.data(), attributes, 32);
+    }
+    std::memcpy(state.previous_dac.data(), dac, state.previous_dac.size());
+    state.previous_mode12h_valid = true;
+    state.frames.publish(state.planar_indices.data(), dac, 640, 480);
+}
+
 void require(bool ok) {
     if (!ok) throw std::runtime_error(SDL_GetError());
 }
 
-void copy_to_argb(const std::array<std::uint8_t, 320u * 200u> &indices,
-                  const std::array<std::uint8_t, 256u * 3u> &palette,
+void copy_to_argb(const gateway::IntroLiveFrame &frame,
                   std::vector<std::uint32_t> &argb) {
     for (std::size_t i = 0; i < argb.size(); ++i) {
-        const std::size_t palette_index = 3u * indices[i];
+        const std::size_t palette_index = 3u * frame.indices[i];
         const auto rgb8 = [](std::uint8_t s) {
             return static_cast<std::uint8_t>((s << 2) | (s >> 4));
         };
         argb[i] = 0xff000000u |
-            (std::uint32_t(rgb8(palette[palette_index])) << 16) |
-            (std::uint32_t(rgb8(palette[palette_index + 1])) << 8) |
-            rgb8(palette[palette_index + 2]);
+            (std::uint32_t(rgb8(frame.palette[palette_index])) << 16) |
+            (std::uint32_t(rgb8(frame.palette[palette_index + 1])) << 8) |
+            rgb8(frame.palette[palette_index + 2]);
     }
 }
 
@@ -186,6 +236,8 @@ int main(int argc, char **argv) try {
         hooks.key_pending = key_pending;
         hooks.read_key = read_key;
         hooks.frame_ready = frame_ready;
+        hooks.frame_ready_vga16 = frame_ready_vga16;
+        hooks.original_video_start = std::string_view(argv[1]) == "--from-original";
         hooks.music_start = music_start;
         std::thread worker([&] {
             state.result.store(gate_source_c_full_run(argv[1], argv[2], &hooks));
@@ -199,6 +251,7 @@ int main(int argc, char **argv) try {
         bool previous_paused = false, previous_completed = false;
         gateway::IntroLiveFrame frame;
         std::vector<std::uint32_t> argb(320u * 200u, 0xff000000u);
+        int texture_width = 320, texture_height = 200;
         try {
             while (running) {
                 SDL_Event event{};
@@ -232,8 +285,20 @@ int main(int argc, char **argv) try {
                     }
                 }
                 if (state.frames.read_after(previous_generation, frame)) {
-                    copy_to_argb(frame.indices, frame.palette, argb);
-                    require(SDL_UpdateTexture(texture, nullptr, argb.data(), 320 * 4));
+                    if (frame.width != texture_width || frame.height != texture_height) {
+                        SDL_DestroyTexture(texture);
+                        texture_width = frame.width;
+                        texture_height = frame.height;
+                        texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
+                                                    SDL_TEXTUREACCESS_STREAMING,
+                                                    texture_width, texture_height);
+                        require(texture != nullptr);
+                        require(SDL_SetTextureScaleMode(texture,
+                            nearest ? SDL_SCALEMODE_NEAREST : SDL_SCALEMODE_LINEAR));
+                        argb.resize(std::size_t(texture_width) * texture_height);
+                    }
+                    copy_to_argb(frame, argb);
+                    require(SDL_UpdateTexture(texture, nullptr, argb.data(), texture_width * 4));
                 }
                 if (audio && state.music_started.load() &&
                     !state.completed.load()) {

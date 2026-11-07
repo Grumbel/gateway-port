@@ -191,6 +191,9 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos/GATE.EXE" AND
   add_test(NAME launcher-intro-source-c-live-native COMMAND
     launcher-intro-source-c-live-tests --from-original
     ${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos)
+  add_test(NAME launcher-intro-source-c-live-original-logo COMMAND
+    launcher-intro-source-c-live-tests --from-original
+    ${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos --original-video-start)
 endif()
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin" AND
    EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos/GATE_300.PIC")

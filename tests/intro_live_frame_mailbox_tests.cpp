@@ -43,5 +43,17 @@ int main() {
     assert(frame.palette[23 * 3 + 1] == 41);
     assert(!mailbox.read_after(generation, frame));
 
+    // The original logo uses the larger planar screen before switching
+    // to 320x200; a mode change must invalidate an otherwise equal image.
+    std::array<std::uint8_t, 640u * 480u> planar_indices{};
+    planar_indices[479u * 640u + 639u] = 15;
+    mailbox.publish(planar_indices.data(), dac, 640, 480);
+    assert(mailbox.read_after(generation, frame));
+    assert(frame.width == 640 && frame.height == 480);
+    assert(frame.indices[479u * 640u + 639u] == 15);
+    mailbox.publish(indices.data(), dac);
+    assert(mailbox.read_after(generation, frame));
+    assert(frame.width == 320 && frame.height == 200);
+
     std::cout << "source-C live VGA snapshots retain rapid final DAC updates\n";
 }

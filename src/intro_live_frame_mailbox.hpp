@@ -16,19 +16,28 @@ namespace gateway {
 // long period without another source-C video callback. The SDL event loop
 // already limits presentation to one snapshot per display frame.
 struct IntroLiveFrame {
-    std::array<std::uint8_t, 320u * 200u> indices{};
+    std::uint16_t width = 320;
+    std::uint16_t height = 200;
+    std::array<std::uint8_t, 640u * 480u> indices{};
     std::array<std::uint8_t, 256u * 3u> palette{};
 };
 
 class IntroLiveFrameMailbox {
 public:
-    void publish(const std::uint8_t *indices, const std::uint8_t dac[256][3]) {
+    void publish(const std::uint8_t *indices, const std::uint8_t dac[256][3],
+                 std::uint16_t width = 320, std::uint16_t height = 200) {
+        if ((width != 320 || height != 200) && (width != 640 || height != 480))
+            return;
+        const std::size_t bytes = std::size_t(width) * height;
         std::lock_guard lock(mutex_);
         if (generation_ != 0 &&
-            std::memcmp(indices, frame_.indices.data(), frame_.indices.size()) == 0 &&
+            frame_.width == width && frame_.height == height &&
+            std::memcmp(indices, frame_.indices.data(), bytes) == 0 &&
             std::memcmp(dac, frame_.palette.data(), frame_.palette.size()) == 0)
             return;
-        std::memcpy(frame_.indices.data(), indices, frame_.indices.size());
+        frame_.width = width;
+        frame_.height = height;
+        std::memcpy(frame_.indices.data(), indices, bytes);
         std::memcpy(frame_.palette.data(), dac, frame_.palette.size());
         ++generation_;
     }

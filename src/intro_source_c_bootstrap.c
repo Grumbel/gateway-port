@@ -21,7 +21,7 @@ enum {
     GATE_RTL_RAM_OFFSET = 0x1b77c,
     GATE_RTL_STATIC_BYTES = 768,
     GATE_RTL_RESIDENT_RAM_BASE = 0x2a777,
-    GATE_RTL_RESIDENT_STATIC_BYTES = 140
+    GATE_RTL_RESIDENT_STATIC_BYTES = 248
 };
 
 enum {
@@ -89,7 +89,7 @@ int gate_intro_restore_static_exe_data(GateIntroMemory *memory,
 int gate_intro_restore_static_rtl_data(GateIntroMemory *memory,
                                        const char *dos_directory)
 {
-    /* These seven source-C read windows were independently compared with
+    /* These source-C read windows were independently compared with
      * their on-disk RTL counterparts. Intermediate runtime globals and
      * pointers are deliberately NOT copied; several are mutable. */
     static const struct {
@@ -97,11 +97,15 @@ int gate_intro_restore_static_rtl_data(GateIntroMemory *memory,
         uint16_t bytes;
     } regions[] = {
         {0x2b730, 37}, /* Resource extensions and filename format. */
+        {0x2ba82, 28}, /* Mode/monitor capability + display width tables. */
         {0x2ba9e, 68}, /* Mode/graphics size constants. */
+        {0x2d00a, 38}, /* Unmodified VGA 640x480 mode-12h descriptor. */
+        {0x2d048, 38}, /* Unmodified VGA 320x200 mode-13h descriptor. */
         {0x2bbb8, 4},
         {0x2bbc4, 4},
         {0x2bc23, 7},
         {0x2d05e, 16}, /* Static image resource metadata. */
+        {0x2b774, 4}, /* EGA mode-12h 16-color palette component count. */
         {0x2b778, 4}
     };
     FILE *file;

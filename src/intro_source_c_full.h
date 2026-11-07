@@ -26,6 +26,13 @@ typedef struct GateSourceCFullHooks {
     /* Called only if the recovered RTL:c3bd predicates enable music at
      * the original EXE:134c common-init call. Audio synthesis is native. */
     void (*music_start)(void *userdata);
+    /* Optional original opening: mode 12h's 640x480/16-color logo before
+     * GATE.EXE:1302 switches to mode 13h. Legacy 22s replay uses mode 13h. */
+    uint8_t original_video_start;
+    void (*frame_ready_vga16)(void *userdata,
+                              const uint8_t planes[4][0x10000],
+                              const uint8_t dac[256][3],
+                              const uint8_t attributes[32]);
 } GateSourceCFullHooks;
 
 /* Pass a 1 MiB original DOS guest RAM snapshot, or "--from-original" to

@@ -16,6 +16,11 @@
 
 static const GateFarPtr palette = {0x4000, 0x0100};
 
+static void palette_complete(void *userdata)
+{
+    ++*(unsigned *)userdata;
+}
+
 static void install_palette(uint16_t count)
 {
     uint16_t i;
@@ -28,12 +33,16 @@ static void check_direct_dac(GateIntroVgaPorts *ports, uint16_t mode)
 {
     uint16_t colors = mode == 3 ? 256 : 16;
     uint16_t i;
+    unsigned complete = 0;
     memset(ports, 0, sizeof *ports);
+    ports->palette_ready = palette_complete;
+    ports->palette_userdata = &complete;
     gate_ds_set_word(0x0fce, mode);
     install_palette((uint16_t)(colors * 3));
     gate_rtl_f61b(palette); /* original source-C palette uploader */
     assert(ports->status_reads >= 2);
     assert(ports->dac_writes == colors * 3);
+    assert(complete == 1); /* 16 triples in mode 12h, 256 in mode 13h */
     for (i = 0; i < colors; ++i) {
         unsigned c;
         for (c = 0; c < 3; ++c) {

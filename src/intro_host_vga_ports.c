@@ -49,7 +49,12 @@ void gate_rtl_palette_out(uint16_t port, uint8_t value)
         if (++active_ports->dac_component == 3) {
             active_ports->dac_component = 0;
             ++active_ports->dac_index;
-            if (active_ports->dac_index == 0 && active_ports->palette_ready)
+            /* Mode 12h uploads just 16 DAC triples (48 bytes). Waiting
+             * for the 256-entry wrap dropped every intermediate logo
+             * fade frame. Mode 13h still completes at the DAC wrap. */
+            if (active_ports->palette_ready &&
+                ((gate_rtl_palette_mode() == 2 && active_ports->dac_index == 16) ||
+                 (gate_rtl_palette_mode() != 2 && active_ports->dac_index == 0)))
                 active_ports->palette_ready(active_ports->palette_userdata);
         }
         return;
