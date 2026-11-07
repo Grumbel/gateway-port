@@ -117,7 +117,7 @@ uint16_t gate_linked_allocate_vfx_image(uint16_t height, uint16_t width,
     set_image_word(image, GATE_VFX_IMAGE_HEIGHT, height);
     set_image_word(image, GATE_VFX_IMAGE_ROW_BYTES, row_bytes);
     remainder = (uint16_t)(((uint32_t)width * bpp) & GATE_VFX_LAST_BIT_INDEX);
-    high_mask = (uint8_t)(0xffu << ((GATE_VFX_BITS_PER_BYTE - remainder) & GATE_VFX_LAST_BIT_INDEX));
+    high_mask = (uint8_t)(GATE_VFX_PIXEL_BYTE_ALL_BITS << ((GATE_VFX_BITS_PER_BYTE - remainder) & GATE_VFX_LAST_BIT_INDEX));
     set_image_word(image, GATE_VFX_IMAGE_PIXEL_MASK, (uint16_t)((uint16_t)(uint8_t)~high_mask << 8 |
                                            high_mask));
     set_image_word(image, GATE_VFX_IMAGE_PLANE_ROWS, (uint16_t)(height * planes));
@@ -153,7 +153,7 @@ void gate_linked_initialize_vfx_image(uint16_t pattern, GateFarPtr image)
      * logical height in +2e. Original 2479:0002 uses it directly. */
     for (row = 0; row < height; ++row) {
         uint8_t fill = planes == GATE_VFX_CHUNKY_PLANES ? (uint8_t)pattern :
-            (pattern & (1u << (row % planes))) != 0 ? 0xffu : 0;
+            (pattern & (1u << (row % planes))) != 0 ? GATE_VFX_PIXEL_BYTE_ALL_BITS : 0;
         for (index = 0; index < stride; ++index)
             set_pixel_byte(data, row * stride + index, fill);
     }
@@ -173,5 +173,5 @@ void gate_rtl_graphics_release(GateFarPtr image)
     if (gate_linked_release_vfx_pixels(data) != 0)
         return;
     for (i = 0; i < GATE_VFX_IMAGE_HEADER_BYTES; ++i)
-        set_image_byte(image, i, 0xffu);
+        set_image_byte(image, i, GATE_VFX_RELEASED_IMAGE_FILL_BYTE);
 }

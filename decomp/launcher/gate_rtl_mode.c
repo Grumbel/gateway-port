@@ -34,7 +34,7 @@ void gate_rtl_configure_vga_palette(void)
  * even a rejected request deliberately destroys the preceding mode. */
 uint16_t gate_rtl_set_video_mode(int16_t requested_mode)
 {
-    uint8_t adapter[8] = {0};
+    uint8_t adapter[GATE_RTL_ADAPTER_QUERY_BYTES] = {0};
     uint16_t video_type;
     uint16_t monitor;
     uint16_t bios_mode;
@@ -49,8 +49,8 @@ uint16_t gate_rtl_set_video_mode(int16_t requested_mode)
         return 0;
 
     gate_rtl_mode_query_adapter(adapter);
-    video_type = adapter[0];
-    monitor = adapter[1];
+    video_type = adapter[GATE_RTL_ADAPTER_QUERY_VIDEO_TYPE];
+    monitor = adapter[GATE_RTL_ADAPTER_QUERY_MONITOR_TYPE];
     gate_ds_set_word(GATE_DS_VIDEO_ADAPTER_TYPE, video_type);
     bios_mode = (uint16_t)requested_mode;
 

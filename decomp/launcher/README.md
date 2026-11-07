@@ -98,6 +98,15 @@ picture-sequence count remains **256** (including the original 32-record
 array overrun hazard). Both animation paths retain the original `50`-ms
 base/spread multiplier from picture record `+06/+07`.
 
+The `0`/`1` second argument of intro picture loads is a **picture-position
+selector**, not a boolean flag or VGA mode: at `RTL:11ecb..120f1`, zero
+uses `(x=0,y=0)`, while one requests the first 4-byte `(x,y)` pair at the
+picture-data offset stored in the header, subject to its signed count clamp.
+`GATE_PICTURE_POSITION_ORIGIN` and `GATE_PICTURE_POSITION_FIRST_PAIR` name
+these values in the `EXE:1302..1a13` intro, `RTL:12f6b..130aa` delta
+animations and `RTL:130ab..13114` preloaded sequences. Independent tests
+continue to check numeric arguments directly.
+
 The same header now names the low-level image post-load conversions at
 `RTL:12131..123d3`: the signed format tags `-1` (`0xffff`, compact rows)
 and `+1` (expand rows), their respective **16**- and **48**-byte palette
@@ -119,6 +128,9 @@ wrapping, the original `0xffe6` allocation failure, `0xca00` signature,
 `0x65` remains unknown. Rectangle/frame flags are separately named in
 `gate_rtl_draw.h` for `RTL:fc37` and `RTL:ff99`, including the fixed
 background setup code **10**, whose broader meaning is not established.
+The all-ones pixel fill byte `0xff` and the distinct `0xff` byte written
+throughout a released 128-byte image record are separately named. The
+rectangle signed-top clamp retains its original **-1** (`0xffff`) bound.
 
 The next naming pass covers text-mode and resource-file operands.
 `gate_rtl_video.h` identifies TAB `9`, newline `10`, the eight-pixel text
@@ -148,6 +160,10 @@ names VGA adapter type `5` and the 16 attribute-palette entries
 (`RTL:f49b..f4de`, `RTL:f61b..f826`). These are original C/RTL operands,
 not new hardware emulation settings. Original mode-to-BIOS mapping and
 unidentified adapter/monitor classifications are still provisional.
+The eight-byte resident adapter-query output at `242a:000a` now uses
+named offsets for its verified first two fields (video adapter type and
+monitor type). At `RTL:ff99`, graphics-mode index `1` selects the original
+special caption-edge branches; its hardware mode identity is not inferred.
 
 `gate_rtl_palette.h` also names the original source's low-level color
 conversion arithmetic at `RTL:f61b..f826`: packed two-bit RGB channel
@@ -177,7 +193,7 @@ Escape `27`, and mouse flag mask `0x0002`. The name of that mouse mask
 describes the observed skip branch, not an unverified physical button.
 The text background argument `0xffff` is signed -1, which suppresses
 glyph background painting at `RTL:edff`. The short-path pen `15`,
-rectangle style `2`, paint-mode index `1`, RGB-mode threshold `2`, and
+shared full-screen rectangle style `2`, paint-mode index `1`, RGB-mode threshold `2`, and
 green/blue palette component displacements `1/2` all retain their original
 values in the header; the four signed mode tests remain separate loads.
 At `GATE.RTL:8298` (linked `12a5:2bba`),

@@ -52,7 +52,7 @@ void gate_rtl_play_preloaded_picture_sequence(uint16_t first_resource, int16_t c
 
     work = gate_stack_pointer(records);
     gate_rtl_initialize_picture_record_array(work, count);
-    loaded = gate_rtl_load_picture_sequence(work, count, first_resource, 1);
+    loaded = gate_rtl_load_picture_sequence(work, count, first_resource, GATE_PICTURE_POSITION_FIRST_PAIR);
     gate_rtl_play_timed_picture_records(work, (int16_t)loaded);
     gate_rtl_release_picture_record_array(work, (int16_t)loaded);
 }

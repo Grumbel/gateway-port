@@ -3,6 +3,7 @@
 
 #include "gate_rtl_draw.h"
 #include "gate_rtl.h"
+#include "gate_rtl_mode.h"
 
 /* GATE.RTL:fbf5..fc22. The requested color is compared SIGNED against
  * the selected mode descriptor's maximum at ES:0054, but negative colors
@@ -43,8 +44,8 @@ void gate_rtl_fill_rectangle(uint16_t style, uint16_t left, uint16_t top,
                                   gate_ds_word(GATE_DS_PEN_COLOR),
                                   gate_ds_word(GATE_DS_FILL_PATTERN_ACTIVE));
 
-    if ((int16_t)top < -1)
-        top = 0xffffu;
+    if ((int16_t)top < GATE_RECTANGLE_MINIMUM_TOP)
+        top = (uint16_t)GATE_RECTANGLE_MINIMUM_TOP;
     gate_rtl_background_rect(style, bottom, right, top, left);
 }
 
@@ -63,7 +64,7 @@ void gate_rtl_draw_caption_frame(uint16_t left, uint16_t top, uint16_t right,
     const uint16_t mode = gate_ds_word(GATE_DS_GRAPHICS_MODE);
     uint16_t x, y;
 
-    (void)gate_rtl_set_pen_color(mode == 0
+    (void)gate_rtl_set_pen_color(mode == GATE_RTL_VIDEO_MODE_TEXT
         ? frame_color(GATE_DS_FRAME_COLOR_QUATERNARY_SEGMENT, GATE_MODE_DESC_FRAME_COLOR_QUATERNARY)
         : frame_color(GATE_DS_FRAME_COLOR_PRIMARY_SEGMENT, GATE_MODE_DESC_FRAME_COLOR_PRIMARY));
 
@@ -83,7 +84,7 @@ void gate_rtl_draw_caption_frame(uint16_t left, uint16_t top, uint16_t right,
     }
 
     if ((style & GATE_CAPTION_FRAME_DRAW_INSET_EDGE_BIT) != 0) {
-        if (mode == 0) {
+        if (mode == GATE_RTL_VIDEO_MODE_TEXT) {
             x = (uint16_t)(left + 1u);
             gate_rtl_resident_move_to(x, top);
             gate_rtl_resident_line_to(x, bottom);
@@ -108,7 +109,7 @@ void gate_rtl_draw_caption_frame(uint16_t left, uint16_t top, uint16_t right,
         gate_rtl_resident_move_to(x, (uint16_t)(bottom - 3u));
         y = (uint16_t)(top + 2u);
         gate_rtl_resident_line_to(x, y);
-        if (mode != 1)
+        if (mode != GATE_RTL_VIDEO_MODE_SPECIAL_FRAME_EDGES)
             gate_rtl_resident_line_to((uint16_t)(right - 3u), y);
 
         (void)gate_rtl_set_pen_color(frame_color(GATE_DS_FRAME_COLOR_SECONDARY_SEGMENT, GATE_MODE_DESC_FRAME_COLOR_SECONDARY));
@@ -117,7 +118,7 @@ void gate_rtl_draw_caption_frame(uint16_t left, uint16_t top, uint16_t right,
         x = (uint16_t)(right - 1u);
         gate_rtl_resident_line_to(x, y);
         gate_rtl_resident_line_to(x, (uint16_t)(top + 1u));
-        if (mode == 1) {
+        if (mode == GATE_RTL_VIDEO_MODE_SPECIAL_FRAME_EDGES) {
             gate_rtl_resident_line_to((uint16_t)(right - 2u),
                                       (uint16_t)(bottom - 2u));
         } else {
@@ -128,7 +129,7 @@ void gate_rtl_draw_caption_frame(uint16_t left, uint16_t top, uint16_t right,
         gate_rtl_resident_line_to((uint16_t)(right - 2u),
                                   (uint16_t)(top + 2u));
     } else if ((style & GATE_CAPTION_FRAME_DRAW_OUTSET_EDGE_BIT) != 0) {
-        if (mode == 0) {
+        if (mode == GATE_RTL_VIDEO_MODE_TEXT) {
             x = (uint16_t)(left - 1u);
             gate_rtl_resident_move_to(x, top);
             gate_rtl_resident_line_to(x, bottom);
@@ -148,7 +149,7 @@ void gate_rtl_draw_caption_frame(uint16_t left, uint16_t top, uint16_t right,
         y = (uint16_t)(bottom + 2u);
         gate_rtl_resident_move_to(x, y);
         gate_rtl_resident_line_to(x, (uint16_t)(top - 1u));
-        if (mode != 1) {
+        if (mode != GATE_RTL_VIDEO_MODE_SPECIAL_FRAME_EDGES) {
             gate_rtl_resident_move_to(x, (uint16_t)(top - 2u));
             gate_rtl_resident_line_to((uint16_t)(right + 2u),
                                       (uint16_t)(top - 2u));
@@ -160,7 +161,7 @@ void gate_rtl_draw_caption_frame(uint16_t left, uint16_t top, uint16_t right,
         x = (uint16_t)(right + 1u);
         gate_rtl_resident_line_to(x, y);
         gate_rtl_resident_line_to(x, top);
-        if (mode == 1) {
+        if (mode == GATE_RTL_VIDEO_MODE_SPECIAL_FRAME_EDGES) {
             gate_rtl_resident_line_to((uint16_t)(right + 2u),
                                       (uint16_t)(bottom + 1u));
         } else {

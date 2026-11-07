@@ -10,9 +10,11 @@
  * switches to a fixed background setup; caption frame bits select its
  * mutually exclusive inset/outset edge-painting branches. The setup code
  * 10 is retained as a numeric backend selector because its wider resident
- * meaning has not yet been established. */
+ * meaning has not yet been established. The original clamps signed top
+ * coordinates below -1 to -1 (0xffff as an unsigned WORD). */
 enum {
     GATE_RECTANGLE_USE_BACKGROUND_STYLE_BIT = 0x0080,
+    GATE_RECTANGLE_MINIMUM_TOP = -1,
     GATE_RECTANGLE_BACKGROUND_SETUP_CODE = 10,
     GATE_RECTANGLE_BACKGROUND_SETUP_ENABLED = 1,
     GATE_CAPTION_FRAME_DRAW_OUTLINE_BIT = 0x0002,

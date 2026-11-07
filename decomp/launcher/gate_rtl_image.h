@@ -55,6 +55,16 @@ enum {
     GATE_RESOURCE_NO_CACHED_FILE = 0xffff,
 };
 
+/* RTL:11ecb..120f1 resource position selector, passed through RTL:12b19
+ * and RTL:12c33. Position 0 writes origin (x=0, y=0); positive positions
+ * select a 4-byte x/y pair starting at the file offset encoded by the
+ * resource header, with the first pair selected by index 1.
+ * Values above the header's signed count are clamped by the original code. */
+enum {
+    GATE_PICTURE_POSITION_ORIGIN = 0,
+    GATE_PICTURE_POSITION_FIRST_PAIR = 1,
+};
+
 /* The RTL uses DS:1416+field to access a separate block of resident
  * resource-loader WORDs. Keep these displacements separate from the
  * absolute GATE_DS_RESOURCE_SCALARS_BASE and live segment selectors. */
@@ -154,8 +164,9 @@ enum {
 
 /* Resident 245d:00f7 / 2479:0002 / 245d:016c allocation conventions.
  * The 0x65 kind byte is verified, but its significance beyond the
- * constructor's descriptor field is not established. Mode indices here
- * describe the original resident VFX table, not BIOS INT 10h modes. */
+ * constructor's descriptor field is not established. A full 0xff pixel
+ * byte and a released-record 0xff fill serve different roles. Mode indices
+ * here describe the original resident VFX table, not BIOS INT 10h modes. */
 enum {
     GATE_VFX_PLANAR_MODE = 2,
     GATE_VFX_CHUNKY_MODE = 3,
@@ -172,6 +183,8 @@ enum {
     GATE_VFX_BITS_PER_BYTE = 8,
     GATE_VFX_LAST_BIT_INDEX = 7,
     GATE_VFX_ROW_ALIGNMENT_BYTES = 2,
+    GATE_VFX_PIXEL_BYTE_ALL_BITS = 0xff,
+    GATE_VFX_RELEASED_IMAGE_FILL_BYTE = 0xff,
     GATE_VFX_MAX_ALLOCATED_PIXEL_BYTES = 0xfffff,
     GATE_VFX_FAR_PIXEL_OFFSET_BITS = 16,
     GATE_VFX_FAR_PIXEL_SEGMENT_ADVANCE_BITS = 12,

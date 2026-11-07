@@ -93,7 +93,8 @@ enum {
  * buffered-key routine. The mouse mask identifies the branch that skips
  * the intro, without assuming which physical button supplied that bit.
  * Background ffff is passed as a signed -1, disabling glyph background
- * painting in the original RTL text renderer (RTL:edff). */
+ * painting in the original RTL text renderer (RTL:edff). The full-screen
+ * rectangle style is shared by EXE:1302..1a13 and RTL:12f6b..130aa. */
 enum {
     GATE_INTRO_INPUT_CARRIAGE_RETURN = 0x0d,
     GATE_INTRO_INPUT_SPACE = 0x20,
@@ -103,7 +104,7 @@ enum {
     GATE_INTRO_TEXT_TRANSPARENT_BACKGROUND = 0xffff,
     GATE_INTRO_SHORT_PATH_PEN_COLOR = 15,
     GATE_INTRO_SHORT_PATH_PAINT_MODE = 1,
-    GATE_INTRO_SHORT_PATH_RECTANGLE_STYLE = 2,
+    GATE_INTRO_FULL_SCREEN_FILL_STYLE = 2,
     GATE_INTRO_RGB_PALETTE_MODE_START = 2,
     GATE_INTRO_RGB_GREEN_COMPONENT = 1,
     GATE_INTRO_RGB_BLUE_COMPONENT = 2,

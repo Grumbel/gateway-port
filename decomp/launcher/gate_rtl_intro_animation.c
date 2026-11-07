@@ -3,6 +3,7 @@
 
 #include "gate_rtl_image.h"
 #include "gate_rtl_graphics.h"
+#include "gate_intro_schedule.h"
 
 /* The original compiler compares the upper clock WORD as signed and,
  * only when equal, compares the lower WORD as unsigned. This differs
@@ -29,13 +30,13 @@ void gate_rtl_play_picture_delta_sequence(uint16_t first, uint16_t next, int16_t
 
     gate_rtl_fade_palette_out();
     gate_linked_set_intro_pen_color(gate_far_word(gate_rtl_anim_segment_22(), GATE_MODE_DESC_FRAME_COLOR_PRIMARY));
-    gate_linked_fill_intro_rectangle(2, 0, 0,
+    gate_linked_fill_intro_rectangle(GATE_INTRO_FULL_SCREEN_FILL_STYLE, 0, 0,
         gate_far_word(gate_rtl_anim_segment_26(), GATE_MODE_DESC_SCREEN_WIDTH),
         gate_far_word(gate_rtl_anim_segment_24(), GATE_MODE_DESC_SCREEN_HEIGHT));
 
     record[GATE_PICTURE_RECORD_ACTIVE] = 0;
     if ((int16_t)first >= 0) {
-        (void)gate_rtl_load_picture_record(work, first, 0);
+        (void)gate_rtl_load_picture_record(work, first, GATE_PICTURE_POSITION_ORIGIN);
         gate_rtl_draw_picture_record(work);
         gate_rtl_fade_palette_in();
         gate_rtl_release_picture_record(work);
@@ -47,7 +48,7 @@ void gate_rtl_play_picture_delta_sequence(uint16_t first, uint16_t next, int16_t
         uint16_t divisor;
         uint16_t delay;
         --count;
-        if (gate_rtl_load_picture_record(work, next, 1) == 0)
+        if (gate_rtl_load_picture_record(work, next, GATE_PICTURE_POSITION_FIRST_PAIR) == 0)
             break;
         next = (uint16_t)(next + 1u);
 

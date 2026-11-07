@@ -12,6 +12,7 @@
  * The original stores ffff before validating, even on rejected requests. */
 enum {
     GATE_RTL_VIDEO_MODE_TEXT = 0,
+    GATE_RTL_VIDEO_MODE_SPECIAL_FRAME_EDGES = 1,
     GATE_RTL_VIDEO_MODE_VGA_256 = 3,
     GATE_RTL_VIDEO_MODE_SVGA = 4,
     GATE_RTL_VIDEO_MAX_MODE = GATE_RTL_VIDEO_MODE_SVGA,
@@ -21,6 +22,15 @@ enum {
     GATE_RTL_VIDEO_MONO_STATUS_MONITOR_TYPE = 4,
     GATE_RTL_VIDEO_4BIT_PEN_MASK = 0x0f,
     GATE_RTL_VIDEO_8BIT_PEN_MASK = 0xff,
+};
+
+/* The resident 242a:000a display query accepts an eight-byte caller buffer.
+ * Only the first two returned bytes are consumed by RTL:f25a..f49a;
+ * labels identify the observed fields without assigning an adapter brand. */
+enum {
+    GATE_RTL_ADAPTER_QUERY_BYTES = 8,
+    GATE_RTL_ADAPTER_QUERY_VIDEO_TYPE = 0,
+    GATE_RTL_ADAPTER_QUERY_MONITOR_TYPE = 1,
 };
 
 /* The original mode-switch entry in GATE.RTL, linked as 0cdc:0004.
@@ -34,7 +44,7 @@ void gate_rtl_configure_vga_palette(void);
  * The query writes at least two bytes (adapter type, monitor subtype).
  * The original clip stack order, closest argument first, is bottom,
  * right, top, left. Hardware implementations live outside decomp/. */
-void gate_rtl_mode_query_adapter(uint8_t adapter[8]); /* 242a:000a */
+void gate_rtl_mode_query_adapter(uint8_t adapter[GATE_RTL_ADAPTER_QUERY_BYTES]); /* 242a:000a */
 uint16_t gate_rtl_mode_svga_variant(void);             /* 241d:0004 */
 uint16_t gate_rtl_mode_set_bios(uint16_t mode);        /* 2409:0008 */
 uint16_t gate_rtl_mode_start(uint16_t enabled);       /* 2409:003e */
