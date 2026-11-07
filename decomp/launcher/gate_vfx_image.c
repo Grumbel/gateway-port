@@ -34,7 +34,7 @@ static void set_image_byte(GateFarPtr image, uint16_t at, uint8_t value)
 static void set_pixel_byte(GateFarPtr pixels, uint32_t at, uint8_t value)
 {
     uint32_t offset = (uint32_t)pixels.offset + at;
-    gate_far_set_byte((uint16_t)(pixels.segment + ((offset >> 16) << 12)),
+    gate_far_set_byte((uint16_t)(pixels.segment + ((offset >> GATE_VFX_FAR_PIXEL_OFFSET_BITS) << GATE_VFX_FAR_PIXEL_SEGMENT_ADVANCE_BITS)),
                       (uint16_t)offset, value);
 }
 
@@ -61,10 +61,10 @@ uint16_t gate_linked_allocate_vfx_image(uint16_t height, uint16_t width,
     uint8_t high_mask;
     GateFarPtr pixels;
 
-    if (mode != 2 && mode != 3)
+    if (mode != GATE_VFX_PLANAR_MODE && mode != GATE_VFX_CHUNKY_MODE)
         abort(); /* remaining original VFX formats are unresolved */
     if (width == 0 || height == 0)
-        return 0xffe6u;
+        return GATE_VFX_ALLOCATOR_FAILURE;
 
     /* Resident mode descriptors: 2409:00e8 -> DS:27ee+mode*0x3e. */
     descriptor = (uint16_t)(GATE_RESIDENT_MODE_DESCRIPTOR_BASE + mode * GATE_RESIDENT_MODE_DESCRIPTOR_BYTES);
@@ -72,28 +72,30 @@ uint16_t gate_linked_allocate_vfx_image(uint16_t height, uint16_t width,
     mode_height = gate_ds_word((uint16_t)(descriptor + GATE_RESIDENT_MODE_HEIGHT));
     bpp = gate_far_byte(gate_ds_segment(), (uint16_t)(descriptor + GATE_RESIDENT_MODE_BITS_PER_PLANE));
     planes = gate_far_byte(gate_ds_segment(), (uint16_t)(descriptor + GATE_RESIDENT_MODE_PLANE_COUNT));
-    if (!((mode == 2 && mode_width == 640 && mode_height == 480 &&
-           bpp == 1 && planes == 4) ||
-          (mode == 3 && mode_width == 320 && mode_height == 200 &&
-           bpp == 8 && planes == 1)))
+    if (!((mode == GATE_VFX_PLANAR_MODE &&
+           mode_width == GATE_VFX_PLANAR_WIDTH && mode_height == GATE_VFX_PLANAR_HEIGHT &&
+           bpp == GATE_VFX_PLANAR_BITS_PER_PLANE && planes == GATE_VFX_PLANAR_PLANES) ||
+          (mode == GATE_VFX_CHUNKY_MODE &&
+           mode_width == GATE_VFX_CHUNKY_WIDTH && mode_height == GATE_VFX_CHUNKY_HEIGHT &&
+           bpp == GATE_VFX_CHUNKY_BITS_PER_PLANE && planes == GATE_VFX_CHUNKY_PLANES)))
         abort(); /* original VFX mode table has not been initialized */
 
-    row_bytes = (uint16_t)(((uint32_t)width * bpp + 7u) / 8u);
-    stride = (uint16_t)((row_bytes + 1u) & ~1u);
+    row_bytes = (uint16_t)(((uint32_t)width * bpp + GATE_VFX_LAST_BIT_INDEX) / GATE_VFX_BITS_PER_BYTE);
+    stride = (uint16_t)((row_bytes + (GATE_VFX_ROW_ALIGNMENT_BYTES - 1u)) & ~(GATE_VFX_ROW_ALIGNMENT_BYTES - 1u));
     length = (uint32_t)stride * height * planes;
     /* The original size calculator allows up to a megabyte through DX<16;
      * our isolated conventional-memory heap is deliberately smaller. */
-    if (length > 0xfffffu)
-        return 0xffe6u;
+    if (length > GATE_VFX_MAX_ALLOCATED_PIXEL_BYTES)
+        return GATE_VFX_ALLOCATOR_FAILURE;
     pixels = gate_linked_allocate_vfx_pixels(length);
     if (pixels.segment == 0)
-        return 0xffe6u;
+        return GATE_VFX_ALLOCATOR_FAILURE;
 
     /* Exact resident 245d:0006 header fields, including reserved words.
      * The caller owns the 0x80-byte record at image; the allocator owns
      * only its separate pixel region, released by 245d:016c. */
     set_image_word(image, GATE_VFX_IMAGE_SIGNATURE, GATE_VFX_IMAGE_SIGNATURE_VALUE);
-    set_image_byte(image, GATE_VFX_IMAGE_KIND, 0x65);
+    set_image_byte(image, GATE_VFX_IMAGE_KIND, GATE_VFX_ALLOCATOR_KIND_BYTE);
     set_image_byte(image, GATE_VFX_IMAGE_RESERVED_03, 0);
     set_image_word(image, GATE_VFX_IMAGE_VIDEO_MODE, mode);
     set_image_word(image, GATE_VFX_IMAGE_LEFT, 0);
@@ -114,8 +116,8 @@ uint16_t gate_linked_allocate_vfx_image(uint16_t height, uint16_t width,
     set_image_word(image, GATE_VFX_IMAGE_WIDTH, width);
     set_image_word(image, GATE_VFX_IMAGE_HEIGHT, height);
     set_image_word(image, GATE_VFX_IMAGE_ROW_BYTES, row_bytes);
-    remainder = (uint16_t)(((uint32_t)width * bpp) & 7u);
-    high_mask = (uint8_t)(0xffu << ((8u - remainder) & 7u));
+    remainder = (uint16_t)(((uint32_t)width * bpp) & GATE_VFX_LAST_BIT_INDEX);
+    high_mask = (uint8_t)(0xffu << ((GATE_VFX_BITS_PER_BYTE - remainder) & GATE_VFX_LAST_BIT_INDEX));
     set_image_word(image, GATE_VFX_IMAGE_PIXEL_MASK, (uint16_t)((uint16_t)(uint8_t)~high_mask << 8 |
                                            high_mask));
     set_image_word(image, GATE_VFX_IMAGE_PLANE_ROWS, (uint16_t)(height * planes));
@@ -140,7 +142,8 @@ void gate_linked_initialize_vfx_image(uint16_t pattern, GateFarPtr image)
         return;
     planes = gate_far_byte(image.segment, (uint16_t)(image.offset + GATE_VFX_IMAGE_PLANES));
     bpp = gate_far_byte(image.segment, (uint16_t)(image.offset + GATE_VFX_IMAGE_BITS_PER_PLANE));
-    if (!((planes == 1 && bpp == 8) || (planes == 4 && bpp == 1)))
+    if (!((planes == GATE_VFX_CHUNKY_PLANES && bpp == GATE_VFX_CHUNKY_BITS_PER_PLANE) ||
+          (planes == GATE_VFX_PLANAR_PLANES && bpp == GATE_VFX_PLANAR_BITS_PER_PLANE)))
         abort();
     stride = image_word(image, GATE_VFX_IMAGE_ROW_STRIDE);
     height = image_word(image, GATE_VFX_IMAGE_PLANE_ROWS);
@@ -149,7 +152,7 @@ void gate_linked_initialize_vfx_image(uint16_t pattern, GateFarPtr image)
     /* +34 is already height * plane_count (245d:0006), rather than the
      * logical height in +2e. Original 2479:0002 uses it directly. */
     for (row = 0; row < height; ++row) {
-        uint8_t fill = planes == 1 ? (uint8_t)pattern :
+        uint8_t fill = planes == GATE_VFX_CHUNKY_PLANES ? (uint8_t)pattern :
             (pattern & (1u << (row % planes))) != 0 ? 0xffu : 0;
         for (index = 0; index < stride; ++index)
             set_pixel_byte(data, row * stride + index, fill);
@@ -169,6 +172,6 @@ void gate_rtl_graphics_release(GateFarPtr image)
     data.segment = image_word(image, GATE_VFX_IMAGE_PIXELS_SEGMENT);
     if (gate_linked_release_vfx_pixels(data) != 0)
         return;
-    for (i = 0; i < 0x80u; ++i)
+    for (i = 0; i < GATE_VFX_IMAGE_HEADER_BYTES; ++i)
         set_image_byte(image, i, 0xffu);
 }

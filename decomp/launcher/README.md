@@ -98,6 +98,28 @@ picture-sequence count remains **256** (including the original 32-record
 array overrun hazard). Both animation paths retain the original `50`-ms
 base/spread multiplier from picture record `+06/+07`.
 
+The same header now names the low-level image post-load conversions at
+`RTL:12131..123d3`: the signed format tags `-1` (`0xffff`, compact rows)
+and `+1` (expand rows), their respective **16**- and **48**-byte palette
+copies, the unusual WORD-sign/SAR masks used in the three-quarters
+coordinate calculation, and the reverse four-thirds calculation. Every
+fourth source row is dropped by signed remainder `row % 4 == 3`; the
+other format's end-row adjustment uses `row % 3 == 2`. The original
+VFX record's row-stride and plane-row multipliers remain **4**, and
+`RTL:12c33` retains the signed `(width + 7) / 8` emulation, including
+the 8086 `0x8000` intermediate-negation corner case. These names describe
+observed operations, **not** independently identified picture-file codecs.
+
+The resident VFX construction and clear paths (`245d:00f7`,
+`2479:0002`, `245d:016c`) now use explicit definitions for table mode
+indices **2** (640×480, four 1-bit planes) and **3** (320×200, one 8-bit
+plane), eight-bit/byte packing, even-byte row alignment, FAR 64KiB pixel
+wrapping, the original `0xffe6` allocation failure, `0xca00` signature,
+`0x65` kind byte and **128**-byte record length. The identity of kind
+`0x65` remains unknown. Rectangle/frame flags are separately named in
+`gate_rtl_draw.h` for `RTL:fc37` and `RTL:ff99`, including the fixed
+background setup code **10**, whose broader meaning is not established.
+
 Palette and display immediates are defined near their original services:
 `gate_rtl_graphics.h` names the `64`-denominator/`4`-step signed fades and
 the mode-1 three-pass, 16-byte transform with 100ms waits

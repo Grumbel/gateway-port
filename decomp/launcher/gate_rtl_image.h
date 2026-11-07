@@ -90,6 +90,35 @@ enum {
     GATE_PICTURE_ANIMATION_DELAY_QUANTUM_MS = 50,
 };
 
+/* Picture-format tag and 16-bit image conversion operands in RTL:12131,
+ * 121b5, 12205, 12383 and 12c33. The +/-1 tags are signed bytes from
+ * the relocated table at DS:1480, not image-header flag bits. Names for
+ * the coordinate transforms describe the observed arithmetic without
+ * claiming an unverified on-disk format identity. */
+enum {
+    GATE_PICTURE_FORMAT_TAG_COMPACT_ROWS = 0xffff,
+    GATE_PICTURE_FORMAT_TAG_EXPAND_ROWS = 1,
+    GATE_PICTURE_COMPACT_PALETTE_BYTES = 16,
+    GATE_PICTURE_EXPAND_PALETTE_BYTES = 48,
+    GATE_PICTURE_WORD_SIGN_BIT = 0x8000,
+    GATE_PICTURE_NEGATION_SIGN_MASK = 0xffff,
+    GATE_PICTURE_QUARTER_SHIFT = 2,
+    GATE_PICTURE_QUARTER_SAR_SIGN_FILL = 0xc000,
+    GATE_PICTURE_QUARTER_DIVISOR = 4,
+    GATE_PICTURE_THREE_QUARTERS_MULTIPLIER = 3,
+    GATE_PICTURE_FOUR_THIRDS_SHIFT = 2,
+    GATE_PICTURE_FOUR_THIRDS_DIVISOR = 3,
+    GATE_PICTURE_DISCARDED_ROW_REMAINDER = 3,
+    GATE_PICTURE_EXPANDED_LAST_ROW_REMAINDER = 2,
+    GATE_PICTURE_VFX_ROW_STRIDE_FACTOR = 4,
+    GATE_PICTURE_VFX_PLANE_ROWS_FACTOR = 4,
+    GATE_PICTURE_PACKED_WIDTH_ROUNDUP = 7,
+    GATE_PICTURE_PACKED_WIDTH_SHIFT = 3,
+    GATE_PICTURE_PACKED_WIDTH_SAR_SIGN_FILL = 0xe000,
+    GATE_PICTURE_SPECIAL_BLIT_MODE = 3,
+    GATE_PICTURE_DEFAULT_BLIT_MODE = 0,
+};
+
 /* Resident VFX image header, beginning at work+08 (or at a FAR pointer
  * supplied directly by the 245d:0006 allocator). These are original
  * offsets observed in the 245d/24a7 services; reserved fields retain
@@ -121,6 +150,31 @@ enum {
     GATE_VFX_IMAGE_PLANE_ROWS = 0x34,
     GATE_VFX_IMAGE_HEADER_BYTES = 0x80,
     GATE_VFX_IMAGE_SIGNATURE_VALUE = 0xca00,
+};
+
+/* Resident 245d:00f7 / 2479:0002 / 245d:016c allocation conventions.
+ * The 0x65 kind byte is verified, but its significance beyond the
+ * constructor's descriptor field is not established. Mode indices here
+ * describe the original resident VFX table, not BIOS INT 10h modes. */
+enum {
+    GATE_VFX_PLANAR_MODE = 2,
+    GATE_VFX_CHUNKY_MODE = 3,
+    GATE_VFX_PLANAR_WIDTH = 640,
+    GATE_VFX_PLANAR_HEIGHT = 480,
+    GATE_VFX_PLANAR_BITS_PER_PLANE = 1,
+    GATE_VFX_PLANAR_PLANES = 4,
+    GATE_VFX_CHUNKY_WIDTH = 320,
+    GATE_VFX_CHUNKY_HEIGHT = 200,
+    GATE_VFX_CHUNKY_BITS_PER_PLANE = 8,
+    GATE_VFX_CHUNKY_PLANES = 1,
+    GATE_VFX_ALLOCATOR_FAILURE = 0xffe6,
+    GATE_VFX_ALLOCATOR_KIND_BYTE = 0x65,
+    GATE_VFX_BITS_PER_BYTE = 8,
+    GATE_VFX_LAST_BIT_INDEX = 7,
+    GATE_VFX_ROW_ALIGNMENT_BYTES = 2,
+    GATE_VFX_MAX_ALLOCATED_PIXEL_BYTES = 0xfffff,
+    GATE_VFX_FAR_PIXEL_OFFSET_BITS = 16,
+    GATE_VFX_FAR_PIXEL_SEGMENT_ADVANCE_BITS = 12,
 };
 
 /* Relocated FAR fields read during RTL:1266f before a picture is shown.

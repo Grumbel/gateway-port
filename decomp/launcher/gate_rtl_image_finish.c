@@ -17,7 +17,7 @@ uint16_t gate_rtl_detect_picture_format(void)
     return 0;
 }
 
-/* GATE.RTL:0x12131..0x121b4. If header bit 0x10 is set, copy 16 or 48
+/* GATE.RTL:0x12131..0x121b4. If the header palette bit is set, copy 16 or 48
  * bytes from an original mode-specific source into the relocated FAR
  * global (RTL DS:4ddc segment, offset 0fdc). Other format values return. */
 void gate_rtl_prepare_picture_palette_translation(uint16_t format)
@@ -29,12 +29,12 @@ void gate_rtl_prepare_picture_palette_translation(uint16_t format)
     if ((gate_far_byte(header, GATE_RTL_HEADER_OFFSET + GATE_PICTURE_HEADER_FLAGS) &
          GATE_PICTURE_HEADER_HAS_PALETTE) == 0)
         return;
-    if (format == 0xffffu) {
+    if (format == GATE_PICTURE_FORMAT_TAG_COMPACT_ROWS) {
         source = gate_linked_transform_picture_palette_indexed(gate_rtl_image_palette_source());
-        count = 16;
-    } else if (format == 1) {
+        count = GATE_PICTURE_COMPACT_PALETTE_BYTES;
+    } else if (format == GATE_PICTURE_FORMAT_TAG_EXPAND_ROWS) {
         source = gate_linked_transform_picture_palette_rgb(gate_rtl_image_palette_source());
-        count = 48;
+        count = GATE_PICTURE_EXPAND_PALETTE_BYTES;
     } else {
         return;
     }
@@ -50,11 +50,11 @@ void gate_rtl_prepare_picture_palette_translation(uint16_t format)
  * negative when negated, so this is not always equivalent to C division. */
 static uint16_t rtl_signed_quarter(uint16_t value)
 {
-    uint16_t sign = (value & 0x8000u) ? 0xffffu : 0;
+    uint16_t sign = (value & GATE_PICTURE_WORD_SIGN_BIT) ? GATE_PICTURE_NEGATION_SIGN_MASK : 0;
     uint16_t magnitude = (uint16_t)((value ^ sign) - sign);
-    uint16_t quotient = (uint16_t)(magnitude >> 2);
-    if ((magnitude & 0x8000u) != 0)
-        quotient |= 0xc000u; /* original SAR by 2 */
+    uint16_t quotient = (uint16_t)(magnitude >> GATE_PICTURE_QUARTER_SHIFT);
+    if ((magnitude & GATE_PICTURE_WORD_SIGN_BIT) != 0)
+        quotient |= GATE_PICTURE_QUARTER_SAR_SIGN_FILL;
     return (uint16_t)((quotient ^ sign) - sign);
 }
 
@@ -62,14 +62,14 @@ static uint16_t rtl_signed_quarter(uint16_t value)
  * computed from the LOW 16 bits, with the original signed IDIV remainder. */
 uint16_t gate_rtl_transform_picture_coordinate(uint16_t format, uint16_t value)
 {
-    if (format == 0xffffu) {
-        int16_t remainder = (int16_t)value % 4;
+    if (format == GATE_PICTURE_FORMAT_TAG_COMPACT_ROWS) {
+        int16_t remainder = (int16_t)value % GATE_PICTURE_QUARTER_DIVISOR;
         uint16_t quotient = rtl_signed_quarter(value);
-        return (uint16_t)(quotient * 3u + (uint16_t)remainder);
+        return (uint16_t)(quotient * GATE_PICTURE_THREE_QUARTERS_MULTIPLIER + (uint16_t)remainder);
     }
-    if (format == 1) {
-        int16_t product = (int16_t)(uint16_t)(value << 2);
-        return (uint16_t)(product / 3);
+    if (format == GATE_PICTURE_FORMAT_TAG_EXPAND_ROWS) {
+        int16_t product = (int16_t)(uint16_t)(value << GATE_PICTURE_FOUR_THIRDS_SHIFT);
+        return (uint16_t)(product / GATE_PICTURE_FOUR_THIRDS_DIVISOR);
     }
     return value;
 }
@@ -84,7 +84,7 @@ void gate_rtl_compact_picture_rows(GateFarPtr source, GateFarPtr destination,
     uint16_t row = (uint16_t)first;
     while ((int16_t)row <= last) {
         uint16_t i;
-        if ((int16_t)row % 4 != 3) {
+        if ((int16_t)row % GATE_PICTURE_QUARTER_DIVISOR != GATE_PICTURE_DISCARDED_ROW_REMAINDER) {
             for (i = 0; i < bytes_per_row; ++i) {
                 uint8_t b = gate_far_byte(source.segment,
                     (uint16_t)(source.offset + i));
@@ -136,10 +136,12 @@ void gate_rtl_postprocess_picture(GateFarPtr work)
     adjusted_span = (uint16_t)(gate_rtl_transform_picture_coordinate(format, ending) -
                                work_word(work, GATE_PICTURE_RECORD_Y) + 1u);
 
-    if ((int16_t)format < 0 && (int16_t)ending % 4 == 3) {
+    if ((int16_t)format < 0 &&
+        (int16_t)ending % GATE_PICTURE_QUARTER_DIVISOR == GATE_PICTURE_DISCARDED_ROW_REMAINDER) {
         adjusted_span = (uint16_t)(adjusted_span - 1u);
         ending = (uint16_t)(ending - 1u);
-    } else if ((int16_t)format > 0 && (int16_t)ending % 3 == 2) {
+    } else if ((int16_t)format > 0 &&
+               (int16_t)ending % GATE_PICTURE_FOUR_THIRDS_DIVISOR == GATE_PICTURE_EXPANDED_LAST_ROW_REMAINDER) {
         adjusted_span = (uint16_t)(adjusted_span + 1u);
     }
 
@@ -152,12 +154,12 @@ void gate_rtl_postprocess_picture(GateFarPtr work)
     {
         GateFarPtr pixels = {work_word(data, GATE_VFX_IMAGE_PIXELS_SEGMENT),
                              work_word(data, GATE_VFX_IMAGE_PIXELS_OFFSET)};
-        uint16_t row_bytes = (uint16_t)(work_word(data, GATE_VFX_IMAGE_ROW_STRIDE) << 2);
+        uint16_t row_bytes = (uint16_t)(work_word(data, GATE_VFX_IMAGE_ROW_STRIDE) * GATE_PICTURE_VFX_ROW_STRIDE_FACTOR);
         gate_rtl_compact_picture_rows(pixels, pixels, (int16_t)starting,
                        (int16_t)ending, row_bytes);
     }
     work_set_word(data, GATE_VFX_IMAGE_BOTTOM, (uint16_t)(adjusted_span - 1u));
     work_set_word(data, GATE_VFX_IMAGE_HEIGHT, adjusted_span);
-    work_set_word(data, GATE_VFX_IMAGE_PLANE_ROWS, (uint16_t)(adjusted_span << 2));
+    work_set_word(data, GATE_VFX_IMAGE_PLANE_ROWS, (uint16_t)(adjusted_span * GATE_PICTURE_VFX_PLANE_ROWS_FACTOR));
     (void)span; /* original BP-2 local is assigned but never subsequently read */
 }

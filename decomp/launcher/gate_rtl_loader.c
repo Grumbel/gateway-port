@@ -3,6 +3,7 @@
 
 #include "gate_rtl_image.h"
 #include "gate_rtl_graphics.h"
+#include "gate_rtl_mode.h"
 
 /* GATE.RTL:0x12c33..0x12d66. The original BP+6 FAR work pointer addresses
  * the 136-byte local record created by 0x12b19. Preserve the exact read,
@@ -55,21 +56,21 @@ uint16_t gate_rtl_load_picture_record(GateFarPtr work, uint16_t resource, uint16
                       gate_far_byte(header_segment, GATE_RTL_HEADER_OFFSET + GATE_PICTURE_HEADER_DELAY_SPREAD));
     gate_far_set_byte(work.segment, (uint16_t)(work.offset + GATE_PICTURE_RECORD_BLIT_MODE),
                       (gate_far_byte(header_segment, GATE_RTL_HEADER_OFFSET + GATE_PICTURE_HEADER_FLAGS) &
-                       GATE_PICTURE_HEADER_SPECIAL_BLIT) != 0 ? 3 : 0);
+                       GATE_PICTURE_HEADER_SPECIAL_BLIT) != 0 ? GATE_PICTURE_SPECIAL_BLIT_MODE : GATE_PICTURE_DEFAULT_BLIT_MODE);
     gate_far_set_byte(work.segment, work.offset, 1);
 
     width = gate_far_word(header_segment, GATE_RTL_HEADER_OFFSET + GATE_PICTURE_HEADER_WIDTH);
-    if (gate_far_word(mode_segment, GATE_RTL_VIDEO_MODE_OFFSET) != 3) {
+    if (gate_far_word(mode_segment, GATE_RTL_VIDEO_MODE_OFFSET) != GATE_RTL_VIDEO_MODE_VGA_256) {
         /* Match ADD/CWD/XOR/SUB/SAR/XOR/SUB as WORD operations. Ordinarily
          * this means signed division by eight toward zero. The original
          * 8086 also retains the two's-complement -32768 overflow in its
          * intermediate negation, giving +4096 for the 0x8000 input. */
-        uint16_t sum = (uint16_t)(width + 7u);
-        uint16_t sign = (sum & 0x8000u) ? 0xffffu : 0;
+        uint16_t sum = (uint16_t)(width + GATE_PICTURE_PACKED_WIDTH_ROUNDUP);
+        uint16_t sign = (sum & GATE_PICTURE_WORD_SIGN_BIT) ? GATE_PICTURE_NEGATION_SIGN_MASK : 0;
         uint16_t magnitude = (uint16_t)((sum ^ sign) - sign);
-        uint16_t shifted = (uint16_t)(magnitude >> 3);
-        if ((magnitude & 0x8000u) != 0)
-            shifted |= 0xe000u; /* original signed SAR by 3 */
+        uint16_t shifted = (uint16_t)(magnitude >> GATE_PICTURE_PACKED_WIDTH_SHIFT);
+        if ((magnitude & GATE_PICTURE_WORD_SIGN_BIT) != 0)
+            shifted |= GATE_PICTURE_PACKED_WIDTH_SAR_SIGN_FILL;
         width = (uint16_t)((shifted ^ sign) - sign);
     }
     gate_far_set_word(work.segment, (uint16_t)(work.offset + GATE_PICTURE_RECORD_VFX_IMAGE + GATE_VFX_IMAGE_ROW_STRIDE), width);

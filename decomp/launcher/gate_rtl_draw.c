@@ -34,8 +34,10 @@ void gate_rtl_set_fill_pattern(uint16_t pattern)
 void gate_rtl_fill_rectangle(uint16_t style, uint16_t left, uint16_t top,
                    uint16_t right, uint16_t bottom)
 {
-    if ((style & 0x0080u) != 0)
-        gate_rtl_background_setup(10, gate_ds_word(GATE_DS_PEN_COLOR), 1);
+    if ((style & GATE_RECTANGLE_USE_BACKGROUND_STYLE_BIT) != 0)
+        gate_rtl_background_setup(GATE_RECTANGLE_BACKGROUND_SETUP_CODE,
+                                  gate_ds_word(GATE_DS_PEN_COLOR),
+                                  GATE_RECTANGLE_BACKGROUND_SETUP_ENABLED);
     else
         gate_rtl_background_setup(gate_ds_word(GATE_DS_FILL_PATTERN),
                                   gate_ds_word(GATE_DS_PEN_COLOR),
@@ -65,7 +67,7 @@ void gate_rtl_draw_caption_frame(uint16_t left, uint16_t top, uint16_t right,
         ? frame_color(GATE_DS_FRAME_COLOR_QUATERNARY_SEGMENT, GATE_MODE_DESC_FRAME_COLOR_QUATERNARY)
         : frame_color(GATE_DS_FRAME_COLOR_PRIMARY_SEGMENT, GATE_MODE_DESC_FRAME_COLOR_PRIMARY));
 
-    if ((style & 2u) != 0) {
+    if ((style & GATE_CAPTION_FRAME_DRAW_OUTLINE_BIT) != 0) {
         x = (uint16_t)(left + 1u);
         gate_rtl_resident_move_to(x, top);
         gate_rtl_resident_line_to((uint16_t)(right - 1u), top);
@@ -77,10 +79,10 @@ void gate_rtl_draw_caption_frame(uint16_t left, uint16_t top, uint16_t right,
         gate_rtl_resident_move_to(left, y);
         gate_rtl_resident_line_to(left, (uint16_t)(bottom - 1u));
     } else {
-        gate_rtl_fill_rectangle(1, left, top, right, bottom);
+        gate_rtl_fill_rectangle(GATE_CAPTION_FRAME_SOLID_FILL_STYLE, left, top, right, bottom);
     }
 
-    if ((style & 4u) != 0) {
+    if ((style & GATE_CAPTION_FRAME_DRAW_INSET_EDGE_BIT) != 0) {
         if (mode == 0) {
             x = (uint16_t)(left + 1u);
             gate_rtl_resident_move_to(x, top);
@@ -92,7 +94,7 @@ void gate_rtl_draw_caption_frame(uint16_t left, uint16_t top, uint16_t right,
         }
 
         (void)gate_rtl_set_pen_color(frame_color(GATE_DS_FRAME_COLOR_TERTIARY_SEGMENT, GATE_MODE_DESC_FRAME_COLOR_TERTIARY));
-        gate_rtl_fill_rectangle(2, (uint16_t)(left + 1u),
+        gate_rtl_fill_rectangle(GATE_CAPTION_FRAME_INSET_FILL_STYLE, (uint16_t)(left + 1u),
                        (uint16_t)(top + 1u), (uint16_t)(right - 1u),
                        (uint16_t)(bottom - 1u));
         (void)gate_rtl_set_pen_color(frame_color(GATE_DS_FRAME_COLOR_QUATERNARY_SEGMENT, GATE_MODE_DESC_FRAME_COLOR_QUATERNARY));
@@ -125,7 +127,7 @@ void gate_rtl_draw_caption_frame(uint16_t left, uint16_t top, uint16_t right,
         }
         gate_rtl_resident_line_to((uint16_t)(right - 2u),
                                   (uint16_t)(top + 2u));
-    } else if ((style & 8u) != 0) {
+    } else if ((style & GATE_CAPTION_FRAME_DRAW_OUTSET_EDGE_BIT) != 0) {
         if (mode == 0) {
             x = (uint16_t)(left - 1u);
             gate_rtl_resident_move_to(x, top);
