@@ -269,7 +269,7 @@ static int run_intro(const char *snapshot, const char *dos_dir,
                      const char *ppm_output, int full,
                      const char *record_output, const char *memory_output,
                      const char *dependency_output, int restore_exe_data,
-                     int restore_rtl_data,
+                     int restore_rtl_data, int restore_palette,
                      const GateSourceCFullHooks *hooks)
 {
     GateIntroMemory *memory;
@@ -325,6 +325,14 @@ static int run_intro(const char *snapshot, const char *dos_dir,
     if (restore_rtl_data &&
         !gate_intro_restore_static_rtl_data(memory, dos_dir)) {
         fprintf(stderr, "cannot restore verified GATE.RTL static data from %s\n",
+                dos_dir);
+        free(dependency_maps);
+        free(memory);
+        return 1;
+    }
+    if (restore_palette &&
+        !gate_intro_restore_initial_palette(memory, dos_dir)) {
+        fprintf(stderr, "cannot restore original GATE_301.PIC palette from %s\n",
                 dos_dir);
         free(dependency_maps);
         free(memory);
@@ -452,7 +460,7 @@ int gate_source_c_full_run(const char *snapshot, const char *dos_directory,
 {
     if (!snapshot || !dos_directory)
         return 2;
-    return run_intro(snapshot, dos_directory, NULL, 1, NULL, NULL, NULL, 0, 0,
+    return run_intro(snapshot, dos_directory, NULL, 1, NULL, NULL, NULL, 0, 0, 0,
                      hooks);
 }
 
@@ -464,6 +472,7 @@ int main(int argc, char **argv)
     const char *dependency_output = NULL;
     int restore_exe_data = 0;
     int restore_rtl_data = 0;
+    int restore_palette = 0;
     int full = argc >= 5 && strcmp(argv[4], "--full") == 0;
     int i;
     if (argc < 4 || (argc > 4 && !full))
@@ -476,6 +485,11 @@ int main(int argc, char **argv)
         }
         if (strcmp(argv[i], "--restore-rtl-data") == 0 && !restore_rtl_data) {
             restore_rtl_data = 1;
+            ++i;
+            continue;
+        }
+        if (strcmp(argv[i], "--restore-palette") == 0 && !restore_palette) {
+            restore_palette = 1;
             ++i;
             continue;
         }
@@ -493,9 +507,9 @@ int main(int argc, char **argv)
     }
     return run_intro(argv[1], argv[2], argv[3], full, record_output,
                      memory_output, dependency_output, restore_exe_data,
-                     restore_rtl_data, NULL);
+                     restore_rtl_data, restore_palette, NULL);
 usage:
-    fputs("usage: gateway-intro-source-c-composite guest-22s.bin DOS-DIR OUTPUT.ppm [--full [--record FILE.gvr] [--dump-memory FILE.bin] [--read-deps FILE.txt] [--restore-exe-data] [--restore-rtl-data]]\n",
+    fputs("usage: gateway-intro-source-c-composite guest-22s.bin DOS-DIR OUTPUT.ppm [--full [--record FILE.gvr] [--dump-memory FILE.bin] [--read-deps FILE.txt] [--restore-exe-data] [--restore-rtl-data] [--restore-palette]]\n",
           stderr);
     return 2;
 }

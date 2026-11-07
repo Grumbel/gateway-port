@@ -184,6 +184,14 @@ class IntroFull(unittest.TestCase):
         self.assertTrue(all(offsets[i + 1] == offsets[i] + 1
                             for i in range(0, len(offsets), 2)))
 
+        pic = (Path(assets) / 'GATE_301.PIC').read_bytes()
+        entry = pic[5 * 12:6 * 12]
+        palette_at = int.from_bytes(entry[:4], 'little') + 4 * entry[4]
+        self.assertEqual(entry[5] & 0x1f, 0x13)
+        self.assertEqual(palette_at, 0x25d27)
+        self.assertEqual(ram[0x2b77c:0x2ba7c],
+                         pic[palette_at:palette_at + 768])
+
     def test_byte_sparse_startup_with_original_file_restoration(self):
         executable, snapshot, assets = self.inputs()
         with tempfile.TemporaryDirectory() as directory:
@@ -213,12 +221,16 @@ class IntroFull(unittest.TestCase):
             for index, value in enumerate(rtl):
                 if value:
                     guest[0x1b77c + index] = 0
-            self.assertEqual(sum(value != 0 for value in guest), 894)
+            # Source the pinned 0x3105 palette from PIC entry #5 instead
+            # of retaining the DOS loader's previous 768-byte RGB buffer.
+            guest[0x2b77c:0x2ba7c] = bytes(768)
+            self.assertEqual(sum(value != 0 for value in guest), 206)
             minimal.write_bytes(guest)  # Private, never distributed.
 
             subprocess.run([executable, str(minimal), assets,
                             str(restored_final), '--full',
                             '--restore-exe-data', '--restore-rtl-data',
+                            '--restore-palette',
                             '--record', str(restored_record)],
                            check=True, capture_output=True, text=True)
             self.assertEqual(digest(restored_final),
@@ -262,6 +274,25 @@ class IntroFull(unittest.TestCase):
                     capture_output=True, text=True)
                 self.assertEqual(proc.returncode, 1)
                 self.assertIn('cannot restore verified GATE.RTL', proc.stderr)
+                self.assertFalse(ppm.exists())
+
+    def test_initial_palette_rejects_missing_and_invalid_picture(self):
+        executable, snapshot, _ = self.inputs()
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            ppm = directory / 'should-not-exist.ppm'
+            for file_data in (None, bytes(200)):
+                pic = directory / 'GATE_301.PIC'
+                if pic.exists():
+                    pic.unlink()
+                if file_data is not None:
+                    pic.write_bytes(file_data)  # Synthetic, no original data.
+                proc = subprocess.run(
+                    [executable, snapshot, str(directory), str(ppm),
+                     '--full', '--restore-palette'],
+                    capture_output=True, text=True)
+                self.assertEqual(proc.returncode, 1)
+                self.assertIn('cannot restore original GATE_301.PIC', proc.stderr)
                 self.assertFalse(ppm.exists())
 
 

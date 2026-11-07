@@ -120,15 +120,24 @@ placeholders (and hence the 23 already-linked words from the private guest
 capture) untouched. It rejects a missing or wrong-size original RTL file.
 This can be combined with `--restore-exe-data`.
 
+The initial 768-byte RGB palette in RAM `2b77c:2ba7c` is also an exact copy
+of the palette attached to **`GATE_301.PIC` directory entry 5** (resource
+`0x3105`, palette file offset `025d27`). The independent
+`--full --restore-palette` option reads that palette from the user's original
+PIC directory, validates the entry class and resource bounds, and restores
+the startup buffer. It can be combined with both original-file restorations;
+a missing or malformed PIC fails safely. The other startup variants and
+palette changes made during playback are not inferred from this one entry.
+
 Most importantly, a byte-level sparse-memory regression starts with **all
 1 MiB zero**, preserves only the 7,419 guest bytes first-read before writes
 in the pinned default replay (excluding the ablated `2a000` page), and
-then removes both disk-reconstructible regions. Only **894 nonzero bytes of
-captured RAM** remain. Both native restorations together still reproduce
+then removes all three disk-reconstructible regions. Only **206 nonzero bytes
+of captured RAM** remain. All three native restorations together reproduce
 the complete 816-frame recording and final PPM, byte for byte. This counts
 the remaining *nonzero values*, not a self-contained serialized bootstrap:
-DOS interrupt-vector state, 23 RTL fixups, the 768-byte palette buffer and
-some runtime descriptor pointers still need native initialization. The
+DOS interrupt-vector state, 23 RTL fixups and some runtime descriptor
+pointers still need native initialization. The
 captured data is neither committed nor copied into the output bundle.
 
 This is a narrow dependency oracle, **not proof that all memory accesses are

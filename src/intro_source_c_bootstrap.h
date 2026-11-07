@@ -18,4 +18,10 @@ int gate_intro_restore_static_exe_data(GateIntroMemory *memory,
 int gate_intro_restore_static_rtl_data(GateIntroMemory *memory,
                                        const char *dos_directory);
 
+/* The 22-second default intro has the 256-color palette from original
+ * GATE_301.PIC entry #5 in its DS buffer. Read it through the PIC directory;
+ * no palette bytes or captured guest state are embedded in the host. */
+int gate_intro_restore_initial_palette(GateIntroMemory *memory,
+                                       const char *dos_directory);
+
 #endif
