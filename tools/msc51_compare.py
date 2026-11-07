@@ -327,6 +327,7 @@ def public_code_prefixes(data: bytes, module: OMFModule,
 
 FIXUP_WIDTHS = {0: 1, 1: 2, 2: 2, 3: 4, 4: 1, 5: 2,
                 9: 4, 11: 6, 13: 4}
+MAX_MASKED_OPENING = 64
 
 
 def parse_omf_fixupp(data: bytes, record: OMFRecord,
@@ -441,16 +442,29 @@ def choose_relocated_prefix(original: bytes, code: bytes, mask: bytes,
     """
     if len(mask) != len(code):
         return {"status": "invalid_or_unsupported_fixups"}
-    fixed_opening = sum(mask[:min_size])
+    if len(code) < min_size:
+        return {"status": "too_short_for_opening", "available_bytes": len(code)}
+    opening = min_size
+    fixed_opening = sum(mask[:opening])
+    # FIXUPP may relocate much of the beginning of a procedure. Extend the
+    # masked anchor until it has the same 12 fixed bytes required previously;
+    # never weaken the threshold or scan across a public/LEDATA boundary.
+    while (fixed_opening < 12 and opening < len(code)
+           and opening < MAX_MASKED_OPENING):
+        fixed_opening += mask[opening]
+        opening += 1
     if fixed_opening < 12:
         return {"status": "too_few_fixed_opening_bytes",
-                "fixed_opening_bytes": fixed_opening}
-    positions = search_code(original, code[:min_size], mask[:min_size])
+                "fixed_opening_bytes": fixed_opening,
+                "opening_bytes": opening}
+    positions = search_code(original, code[:opening], mask[:opening])
     if not positions:
-        return {"status": "no_masked_opening_match"}
+        return {"status": "no_masked_opening_match",
+                "fixed_opening_bytes": fixed_opening,
+                "opening_bytes": opening}
     scores = []
     for rtl_offset in positions:
-        matched = min_size
+        matched = opening
         while matched < len(code) and rtl_offset + matched < len(original):
             if mask[matched] and original[rtl_offset + matched] != code[matched]:
                 break
@@ -462,12 +476,14 @@ def choose_relocated_prefix(original: bytes, code: bytes, mask: bytes,
     if len(best) != 1:
         return {"status": "ambiguous_best_fixed_match",
                 "masked_opening_matches": len(positions),
+                "opening_bytes": opening,
                 "best_fixed_bytes": best_fixed,
                 "tied_locations": [f"0x{location:05x}" for location, _ in best[:8]],
                 "ties_truncated": len(best) > 8}
     rtl_offset, matched = best[0]
     return {"status": "unique", "rtl_offset": rtl_offset,
             "matched_bytes": matched, "fixed_compared_bytes": best_fixed,
+            "opening_bytes": opening,
             "masked_opening_matches": len(positions)}
 
 
@@ -478,7 +494,7 @@ def scan_exact_crt_prefixes(original: bytes, library: bytes,
 
     Relocation-aware mode masks only FIXUPP locations and lengthens the
     comparison to 512 bytes per LEDATA/public boundary, but still requires
-    at least 12 fixed bytes of the initial 16. If several RTL locations
+    at least 12 fixed bytes in an opening of 16–64 bytes. If several RTL locations
     match the masked opening, select a location only when the additional
     *fixed* bytes establish a unique longest match.
     Neither mode establishes that a public is a callable function.
@@ -523,6 +539,7 @@ def scan_exact_crt_prefixes(original: bytes, library: bytes,
                 hits[-1]["relocation_aware_bytes"] = matched
                 hits[-1]["masked_relocation_bytes"] = matched - sum(code_mask[:matched])
                 hits[-1]["fixed_compared_bytes"] = sum(code_mask[:matched])
+                hits[-1]["opening_bytes"] = chosen["opening_bytes"]
                 # Retain the legacy exact-prefix metric, independent of the
                 # masked comparison, for easy side-by-side interpretation.
                 exact = 0
@@ -693,7 +710,8 @@ def main(argv: list[str] | None = None) -> int:
         for entry in public_candidates:
             length = (f'{entry["relocation_aware_bytes"]} compared bytes, '
                       f'{entry["masked_relocation_bytes"]} relocation bytes masked, '
-                      f'{entry["exact_prefix_bytes"]} exact leading bytes'
+                      f'{entry["exact_prefix_bytes"]} exact leading bytes, '
+                      f'{entry["opening_bytes"]}-byte opening'
                       if args.scan_relocations else
                       f'{entry["exact_prefix_bytes"]} exact leading bytes')
             print(f'  GATE.RTL:{entry["rtl_offset"]} {entry["module"]}:{entry["symbol"]} '

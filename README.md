@@ -359,10 +359,11 @@ nix run -L .#msc51-compare -- \
 threads) and masks **only** the specified linker-modified fields. It compares
 up to **512 bytes** per record/public-symbol boundary, instead of 64, and
 records exact-leading, fixed-compared and masked-relocation byte counts in
-the output and JSON (`public_prefix_scan_mode: omf-fixupp`). It requires at
-least 12 unmasked bytes among the initial 16 and exactly one matching RTL
-position; malformed/unsupported fixups exclude that record from this mode.
-If the initial masked 16-byte signature occurs more than once, the scanner
+the output and JSON (`public_prefix_scan_mode: omf-fixupp`). The masked
+opening starts at 16 bytes but can grow to **64 bytes** to collect at least
+**12 unmasked bytes**; it never crosses the current public/`LEDATA` boundary.
+Malformed/unsupported fixups exclude that record from this mode. If the
+masked opening occurs more than once, the scanner
 continues comparing later **fixed** bytes and accepts a location only if
 exactly one candidate has the longest fixed-byte match. The command also
 prints the original exact-prefix baseline and which symbol/RTL pairs appear
@@ -370,8 +371,9 @@ in only one mode; JSON retains both candidate sets in separate fields. For
 each exact-only entry it now reports a specific rejection reason: an invalid
 or unsupported fixup, fewer than 12 fixed bytes in the opening, multiple
 equally strong locations, a better match elsewhere, or an overlapping public
-claim. The JSON key `public_prefix_exact_only_explanations` records those
-reasons and match counts without including executable bytes.
+claim. Each relocated candidate also records its actual opening length. The
+JSON key `public_prefix_exact_only_explanations` records rejection reasons
+and match counts without including executable bytes.
 
 This is deliberately an *opt-in candidate search*, not function recovery:
 comparison stops at a new public symbol or OMF record boundary, does not
@@ -395,7 +397,11 @@ The second real-library run confirmed **69 relocation-aware candidates**
 side-by-side comparison found four exact-only entries (`__amsg_exit`,
 `__FF_MSGBANNER`, `__output`, `_tzset`) and three relocation-only entries
 (`_fopen`, `__amlink`, `_memmove`). The new per-entry exclusion diagnostics
-were added after this second run and still await host verification.
+subsequently confirmed that **all four** exact-only entries failed the
+fixed-16-byte rule: they had only 8, 10, 9 and 11 fixed bytes respectively.
+No invalid FIXUPP or remaining ambiguity was reported. The adaptive
+16–64-byte anchor now addresses this specific source of false negatives,
+but the revised scan has not yet been run against the real library.
 
 ### In-game Gateway debugger (F10)
 

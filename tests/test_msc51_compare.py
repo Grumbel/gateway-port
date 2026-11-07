@@ -20,18 +20,18 @@ SPEC.loader.exec_module(msc)
 
 class MSC51CompareTests(unittest.TestCase):
     @staticmethod
-    def fixture_with_fixups(fixup_records):
-        """Minimal OMF library with a 160-byte CODE public and FIXUPP records."""
+    def fixture_with_fixups(fixup_records, code_size=160):
+        """Minimal OMF library with one CODE public and FIXUPP records."""
         def record(kind, payload):
             header = bytes((kind, (len(payload) + 1) & 255,
                             (len(payload) + 1) >> 8))
             return header + payload + bytes(((-sum(header + payload)) & 255,))
 
-        code = bytes((i * 37 + 11) & 255 for i in range(160))
+        code = bytes((i * 37 + 11) & 255 for i in range(code_size))
         records = [
             record(0x82, b"\x06TEST.C"),
             record(0x96, b"\x05_TEXT\x04CODE\x00"),
-            record(0x98, b"\x28\xa0\x00\x01\x02\x03"),
+            record(0x98, b"\x28" + code_size.to_bytes(2, "little") + b"\x01\x02\x03"),
             record(0x90, b"\x00\x01\x03_fn\x00\x00\x00"),
             record(0xa0, b"\x01\x00\x00" + code),
             *(record(*item) if isinstance(item, tuple) else record(0x9c, item)
@@ -167,11 +167,11 @@ class MSC51CompareTests(unittest.TestCase):
         self.assertEqual(explanation[0]["status"],
                          "invalid_or_unsupported_fixups")
 
-        # Six two-byte fixups in the initial 16 bytes leave only four fixed
-        # bytes, deliberately below the independent 12-byte safety minimum.
+        # Thirty two-byte fixups through byte 59 leave only four fixed bytes
+        # inside the maximum 64-byte opening. Do not search by four bytes.
         dense_fixups = b"".join(
             b"\xc4" + bytes((2 * index,)) + b"\x44\x01"
-            for index in range(6))
+            for index in range(30))
         dense_lib, dense_modules, _ = self.fixture_with_fixups([dense_fixups])
         dense_reason = msc.explain_exact_only(
             b"padding" + code, dense_lib, dense_modules, [{
@@ -180,6 +180,27 @@ class MSC51CompareTests(unittest.TestCase):
         self.assertEqual(dense_reason[0]["status"],
                          "too_few_fixed_opening_bytes")
         self.assertEqual(dense_reason[0]["fixed_opening_bytes"], 4)
+        self.assertEqual(dense_reason[0]["opening_bytes"], 64)
+
+    def test_omf_adaptive_opening_recovers_heavily_relocated_prefix(self):
+        # Eight relocated bytes among the first 16 leave eight fixed. Four
+        # additional fixed bytes extend the anchor to 20 without relaxing the
+        # requirement for 12 fixed bytes in a unique anchored comparison.
+        fixups = b"".join(
+            b"\xc4" + bytes((2 * index,)) + b"\x44\x01"
+            for index in range(4))
+        library, modules, code = self.fixture_with_fixups([fixups], code_size=20)
+        rtl_code = bytearray(code)
+        for index in range(8):
+            rtl_code[index] ^= 0x43
+        original = b"prefix" + rtl_code
+        self.assertEqual(msc.scan_exact_crt_prefixes(original, library, modules), [])
+        hits = msc.scan_exact_crt_prefixes(
+            original, library, modules, relocations=True)
+        self.assertEqual(len(hits), 1)
+        self.assertEqual(hits[0]["opening_bytes"], 20)
+        self.assertEqual(hits[0]["relocation_aware_bytes"], len(code))
+        self.assertEqual(hits[0]["fixed_compared_bytes"], len(code) - 8)
 
     def test_omf_module_and_exact_public_symbol_attribution(self):
         def record(kind, payload):
