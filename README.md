@@ -261,7 +261,9 @@ available via `nix run .#msc51-install -- --install-dir DIR --floppy SETUP.img
 The probe's generated files are in `build/intro-msc51/`. `PROBE.C` and `RANDOM.C`
 are the recovered original-code functions, changed only to include a tiny
 generated C89 compatibility header (Microsoft C 5.1 predates `<stdint.h>`).
-`BUILD.BAT` compiles them using `/AL /Od` and writes `INTROCHK.EXE`,
+`BUILD.BAT` compiles them using `/AL /Od` and explicitly links the real-mode
+`LLIBCR.LIB` with `/link LLIBCR.LIB/NOD`, preventing compiler-emitted default
+library requests from selecting the absent `LLIBCE.LIB`. It writes `INTROCHK.EXE`,
 `BUILD.LOG`, and `TEST.LOG`. `msc51-probe` checks that the DOS executable
 actually reports all 32 original `rand()` states correct. To customize the
 toolchain directory or the staging output directory, pass `--compiler DIR`
@@ -271,7 +273,9 @@ or `--output DIR` after `--` in the `nix run` commands.
 If DOSBox starts but the compilation fails, `msc51-probe` prints the
 compiler's `BUILD.LOG` and, when present, `TEST.LOG` automatically. `START.LOG`
 confirms that DOSBox actually reached the batch file; `CLFAIL.LOG` flags a
-nonzero Microsoft compiler exit status. The wrapper clears these files and
+nonzero Microsoft compiler exit status, and `RUNFAIL.LOG` a failed DOS test
+program. A failed compiler/link step never attempts to execute a partial
+`INTROCHK.EXE`. The wrapper clears these files and
 the old executable before each run, and recognizes DOSBox-created filenames
 regardless of case on a case-sensitive host. The compiler's installation is
 still read-only, and its scratch files are directed to the writable D: drive.

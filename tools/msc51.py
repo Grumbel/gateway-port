@@ -115,16 +115,22 @@ def stage_probe(output: Path) -> None:
         "SET TEMP=D:\\\r\n"
         "SET TMP=D:\\\r\n"
         "IF EXIST INTROCHK.EXE DEL INTROCHK.EXE\r\n"
-        "CL /AL /Od PROBE.C RANDOM.C /FeINTROCHK.EXE > BUILD.LOG\r\n"
-        "IF ERRORLEVEL 1 ECHO Microsoft CL returned an error > CLFAIL.LOG\r\n"
-        "IF EXIST INTROCHK.EXE INTROCHK.EXE > TEST.LOG\r\n"
+        "CL /AL /Od PROBE.C RANDOM.C /FeINTROCHK.EXE /link LLIBCR.LIB/NOD > BUILD.LOG\r\n"
+        "IF ERRORLEVEL 1 GOTO BUILD_FAILED\r\n"
+        "IF NOT EXIST INTROCHK.EXE GOTO BUILD_FAILED\r\n"
+        "INTROCHK.EXE > TEST.LOG\r\n"
+        "IF ERRORLEVEL 1 ECHO DOS probe returned an error > RUNFAIL.LOG\r\n"
+        "GOTO DONE\r\n"
+        ":BUILD_FAILED\r\n"
+        "ECHO Microsoft CL returned an error > CLFAIL.LOG\r\n"
+        ":DONE\r\n"
         "EXIT\r\n"
     )
 
 
 def remove_probe_outputs(output: Path) -> None:
     """Ensure a previous DOS run cannot satisfy the next run's checks."""
-    names = {"START.LOG", "INTROCHK.EXE", "TEST.LOG", "BUILD.LOG", "CLFAIL.LOG"}
+    names = {"START.LOG", "INTROCHK.EXE", "TEST.LOG", "BUILD.LOG", "CLFAIL.LOG", "RUNFAIL.LOG"}
     if output.is_dir():
         for entry in output.iterdir():
             if entry.is_file() and entry.name.upper() in names:
@@ -137,7 +143,7 @@ def print_probe_diagnostics(output: Path) -> None:
     if started is None:
         print("BUILD.BAT did not create START.LOG; DOSBox may not have "
               "executed the batch file or could not write to drive D.", file=sys.stderr)
-    for name in ("CLFAIL.LOG", "BUILD.LOG", "TEST.LOG"):
+    for name in ("CLFAIL.LOG", "RUNFAIL.LOG", "BUILD.LOG", "TEST.LOG"):
         path = locate_case_insensitive(output, name)
         if path is None or not path.is_file():
             print(f"{name}: not created", file=sys.stderr)
@@ -230,9 +236,14 @@ def main(argv: list[str] | None = None) -> int:
         log = locate_case_insensitive(output, "TEST.LOG")
         started = locate_case_insensitive(output, "START.LOG")
         compiler_failed = locate_case_insensitive(output, "CLFAIL.LOG")
+        run_failed = locate_case_insensitive(output, "RUNFAIL.LOG")
         if compiler_failed is not None or started is None:
             print("DOSBox did not complete the Microsoft C compiler successfully.",
                   file=sys.stderr)
+            print_probe_diagnostics(output)
+            return 1
+        if run_failed is not None:
+            print("The DOS executable returned a failure status.", file=sys.stderr)
             print_probe_diagnostics(output)
             return 1
         if exe is None or not exe.is_file() or log is None or not log.is_file():

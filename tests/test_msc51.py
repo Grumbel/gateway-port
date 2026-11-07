@@ -34,11 +34,17 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("typedef unsigned long uint32_t;", header)
             self.assertIn("typedef unsigned short uint16_t;", header)
             batch = (output / "BUILD.BAT").read_text()
-            self.assertIn("CL /AL /Od PROBE.C RANDOM.C /FeINTROCHK.EXE", batch)
+            self.assertIn("CL /AL /Od PROBE.C RANDOM.C /FeINTROCHK.EXE /link LLIBCR.LIB/NOD", batch)
             self.assertIn("INTROCHK.EXE > TEST.LOG", batch)
             self.assertIn("ECHO Gateway MSC 5.1 batch started > START.LOG", batch)
             self.assertIn("SET TMP=D:\\", batch)
-            self.assertIn("IF ERRORLEVEL 1 ECHO Microsoft CL returned an error > CLFAIL.LOG", batch)
+            self.assertIn("IF ERRORLEVEL 1 GOTO BUILD_FAILED", batch)
+            self.assertIn("IF NOT EXIST INTROCHK.EXE GOTO BUILD_FAILED", batch)
+            self.assertIn(":BUILD_FAILED\nECHO Microsoft CL returned an error > CLFAIL.LOG", batch)
+            self.assertIn("IF ERRORLEVEL 1 ECHO DOS probe returned an error > RUNFAIL.LOG", batch)
+            # Never launch a partial EXE that LINK left behind on failure.
+            self.assertLess(batch.index("IF ERRORLEVEL 1 GOTO BUILD_FAILED"),
+                            batch.index("INTROCHK.EXE > TEST.LOG"))
             self.assertTrue(batch.endswith("EXIT\n"))
 
     def test_installation_is_looked_up_case_insensitively(self):
@@ -107,6 +113,7 @@ class MSC51Tests(unittest.TestCase):
             (output / "start.log").write_text("stale batch start")
             (output / "build.log").write_text("stale compiler output")
             (output / "clfail.log").write_text("stale failure")
+            (output / "runfail.log").write_text("stale runtime failure")
 
             with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
                  mock.patch.object(msc51.subprocess, "run") as run, \
@@ -120,6 +127,7 @@ class MSC51Tests(unittest.TestCase):
             self.assertFalse((output / "start.log").exists())
             self.assertFalse((output / "build.log").exists())
             self.assertFalse((output / "clfail.log").exists())
+            self.assertFalse((output / "runfail.log").exists())
             self.assertIn("BUILD.BAT did not create START.LOG", diagnostics.getvalue())
             self.assertIn("BUILD.LOG: not created", diagnostics.getvalue())
             self.assertIn('mount c "' + str(compiler) + '" -ro', run.call_args.args[0])
@@ -136,6 +144,7 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("fatal error C1000: incompatible compiler pass", message)
             self.assertIn("Microsoft CL returned an error", message)
             self.assertIn("TEST.LOG: not created", message)
+            self.assertIn("RUNFAIL.LOG: not created", message)
             self.assertNotIn("did not create START.LOG", message)
 
     def test_case_insensitive_dos_outputs_are_recognized(self):
@@ -162,6 +171,34 @@ class MSC51Tests(unittest.TestCase):
                  mock.patch.object(msc51.subprocess, "run", side_effect=create_lowercase_outputs):
                 self.assertEqual(msc51.main(["probe", "--compiler", str(compiler),
                                              "--output", str(output)]), 0)
+
+    def test_failed_dos_run_never_counts_as_a_pass(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            compiler = root / "compiler"
+            (compiler / "BIN").mkdir(parents=True)
+            (compiler / "LIB").mkdir()
+            (compiler / "INCLUDE").mkdir()
+            for name in ("CL.EXE", "C1.EXE", "C1L.EXE", "C2.EXE", "C3.EXE", "LINK.EXE"):
+                (compiler / "BIN" / name).touch()
+            (compiler / "LIB" / "LLIBCR.LIB").touch()
+            (compiler / "INCLUDE" / "STDIO.H").touch()
+            output = root / "output"
+
+            def create_failed_run(_command, check):
+                self.assertFalse(check)
+                (output / "START.LOG").write_text("Gateway MSC 5.1 batch started")
+                (output / "INTROCHK.EXE").write_bytes(b"partial output")
+                (output / "TEST.LOG").write_text("Intro C runtime: PASS (32 DOS rand steps)")
+                (output / "RUNFAIL.LOG").write_text("DOS probe returned an error")
+                return mock.Mock(returncode=0)
+
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run", side_effect=create_failed_run), \
+                 redirect_stderr(io.StringIO()) as diagnostics:
+                self.assertEqual(msc51.main(["probe", "--compiler", str(compiler),
+                                             "--output", str(output)]), 1)
+            self.assertIn("DOS executable returned a failure status", diagnostics.getvalue())
 
     def test_rejects_protected_mode_compiler_driver(self):
         with tempfile.TemporaryDirectory() as scratch:
