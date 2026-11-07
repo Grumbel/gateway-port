@@ -297,12 +297,7 @@ void gate_exe_1302(void)
 {
     uint16_t mode;
 
-    gate_far_set_word(gate_ds_word(0x4e46), 0x0660, 0x0401);
-    gate_far_set_word(gate_ds_word(0x4e48), 0x065c, 0x007f);
-    gate_far_set_word(gate_ds_word(0x4e4a), 0x065e, 1);
-    gate_far_set_word(gate_ds_word(0x4e4c), 0x064e, 0);
-    gate_far_set_word(gate_ds_word(0x4e4e), 0x0658,
-                      (uint16_t)(gate_far_0e2c_0094(0x1000) - 0x12b2));
+    gate_exe_1302_setup();
     gate_far_0a46_01ec();
 
     mode = gate_far_word(gate_ds_word(0x4e2a), 0x0fce);

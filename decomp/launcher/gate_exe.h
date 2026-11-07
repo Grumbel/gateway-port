@@ -82,6 +82,7 @@ void gate_exe_0f18(int16_t delay);
 void gate_exe_1c11(int16_t bar);
 void gate_exe_1c6c(void);
 void gate_exe_1302(void);
+void gate_exe_1302_setup(void); /* extracted source block, not original entry */
 void gate_exe_1a14(void);
 void gate_exe_0f61(uint16_t image);
 void gate_exe_117e(uint16_t left, uint16_t top, uint16_t right, GateFarPtr text);

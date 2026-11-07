@@ -13,6 +13,7 @@ option(GATEWAY_INTRO_DECOMPILE_ONLY "Build only the reconstructed original GATE 
 # services as unresolved externals in the archive until they are recovered.
 add_library(gateway_intro_decompiled STATIC
   decomp/launcher/gate_exe.c
+  decomp/launcher/gate_exe_intro_setup.c
   decomp/launcher/gate_exe_helpers.c
   decomp/launcher/gate_input.c
   decomp/launcher/gate_c_runtime_string.c
@@ -105,7 +106,8 @@ install(FILES decomp/launcher/gate_exe.h decomp/launcher/gate_rtl.h
 
 if(BUILD_TESTING)
   add_executable(launcher-decompile-tests
-    decomp/launcher/gate_exe.c decomp/launcher/gate_exe_helpers.c
+    decomp/launcher/gate_exe.c decomp/launcher/gate_exe_intro_setup.c
+    decomp/launcher/gate_exe_helpers.c
     tests/launcher_decompile_tests.c)
   target_include_directories(launcher-decompile-tests PRIVATE decomp/launcher)
   add_test(NAME launcher-decompile COMMAND launcher-decompile-tests)
@@ -138,7 +140,8 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos)
   endif()
   add_executable(launcher-intro-native-caption-tests
-    decomp/launcher/gate_exe.c decomp/launcher/gate_exe_helpers.c
+    decomp/launcher/gate_exe.c decomp/launcher/gate_exe_intro_setup.c
+    decomp/launcher/gate_exe_helpers.c
     decomp/launcher/gate_c_runtime_string.c
     decomp/launcher/gate_rtl_font.c decomp/launcher/gate_rtl.c
     decomp/launcher/gate_rtl_draw.c decomp/launcher/gate_rtl_linkage.c
@@ -246,6 +249,16 @@ if(BUILD_TESTING)
     tests/launcher_intro_runtime_clock_tests.c)
   target_include_directories(launcher-intro-runtime-clock-tests PRIVATE decomp/launcher)
   add_test(NAME launcher-intro-runtime-clock COMMAND launcher-intro-runtime-clock-tests)
+  add_executable(launcher-intro-original-entry-tests
+    decomp/launcher/gate_exe_intro_setup.c src/intro_host_memory.c
+    tests/launcher_intro_original_entry_tests.c)
+  target_include_directories(launcher-intro-original-entry-tests PRIVATE decomp/launcher)
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/intro-entry.bin" AND
+     EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/intro-setup-end.bin")
+    add_test(NAME launcher-intro-original-entry COMMAND launcher-intro-original-entry-tests
+      ${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/intro-entry.bin
+      ${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/intro-setup-end.bin)
+  endif()
   add_executable(launcher-intro-rtl-global-host-tests
     src/intro_host_memory.c src/intro_host_rtl_globals.c
     tests/launcher_intro_rtl_global_host_tests.c)
@@ -392,6 +405,8 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_intro_runtime_clock_binary_tests.py)
     add_test(NAME launcher-intro-clock-sampler-binary COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_intro_clock_sampler_binary_tests.py)
+    add_test(NAME launcher-intro-entry-binary COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_intro_entry_binary_tests.py)
     add_test(NAME launcher-intro-keyboard-binary COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_intro_keyboard_binary_tests.py)
     add_test(NAME launcher-rtl-graphics-binary COMMAND ${Python3_EXECUTABLE}
