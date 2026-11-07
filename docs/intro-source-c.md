@@ -12,7 +12,9 @@ remains available for frame inspection. The **live** SDL3 path now plays
 the original `GATE_004.MUS` song zero using a native AdLib MIDIPlay decoder
 and the repository's Nuked OPL3 synthesizer. The deterministic frame replay
 remains silent. **Both start from a captured DOS memory state**: the original
-DOS music IRQ driver, independent startup C, and game handoff are pending.
+DOS music IRQ driver and independent startup C are pending. A separate hybrid
+launcher can now enter the original game after this source-C intro, but does
+not yet carry the reconstructed guest state across that boundary.
 
 The first executable C-only milestone is the complete set of eighteen
 `GATE.EXE:117e` caption calls with their original arguments, font loading,
@@ -107,6 +109,36 @@ sequence, and checks a clean return at about 69.7 seconds. It also injects
 an ordinary key at 50 seconds and later Escape at 100 seconds, verifying
 both are consumed by original C. There is no automated SDL window test in
 this environment.
+
+## Continue from the source-C intro into the original game
+
+```sh
+nix run .#intro-source-c-play -- ../gateway-dos
+```
+
+This optional mode uses the same live, music-enabled source-C intro. When
+`EXE:1302` returns, it closes the SDL intro window and runs the original
+`GATEMAIN.EXE` through the existing Unicorn/SDL3 game runtime. Escape skips
+the remaining intro using the original source-C input logic and continues to
+the game; closing the window cancels both programs. The intro-only
+`intro-source-c-live` app above retains its inspection window after completion.
+
+The game command-line parameters `0 258 9 2 816 1 7 544` were checked against
+the original DOS launcher's `4b03` overlay transition and preserved child PSP
+command tail for the default VGA/AdLib setup. They allow the original main
+program to initialize its files and load the opening room without replaying
+the whole DOS intro in Unicorn. The main runtime creates game state such as
+`RESTART.DAT` under its configured writable state directory, not in the
+original DOS asset directory.
+
+**This is a hybrid transition, not a memory-identical overlay replacement.**
+The source-C host does not yet transfer its 1 MiB post-intro guest memory,
+the live CPU register/segment state, or DOS open handles to the main game.
+`GATEMAIN.EXE` instead starts in a fresh emulated process with the captured
+launcher arguments. Non-default original hardware/configuration choices
+have not been mapped to corresponding argument values. The SDL3 wrapper
+and its complete user-visible handoff cannot be exercised in this headless
+development environment; only the standalone game startup was tested.
 
 ## Play the deterministic source-C recording (silent)
 
@@ -266,7 +298,8 @@ image-path diagnostic, **not the original animation schedule**.
   Printable keys also reach the original C handler, though extended DOS
   scan codes and mouse services still need reconstruction. The offline `GVR1`
   replayer remains read-only and its keys are host controls.
-- `GATE.EXE:1302` completes, but the game is not started afterward.
+- `intro-source-c-play` enters the original game via a fresh Unicorn process;
+  it does not preserve the DOS overlay's process memory or CPU state.
 - Seven selected original DOS frames match source-C RGB output exactly,
   but a complete frame-by-frame comparison at equal game time remains open;
   the 16ms retrace model and other host delays are provisional.

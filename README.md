@@ -426,6 +426,19 @@ handler:
 nix run .#intro-source-c-live -- ../gateway-dos
 ```
 
+To play the recovered source-C intro and then enter the original game, use
+the opt-in hybrid launcher:
+
+```sh
+nix run .#intro-source-c-play -- ../gateway-dos
+```
+
+Escape skips the rest of the intro and continues into the original game;
+closing the intro window cancels it. This starts `GATEMAIN.EXE` independently
+with the verified original default numeric launcher arguments. It **does not**
+yet transfer source-C guest RAM or DOS process state to the game. The
+live runner and its transition have not been compiled/tested with SDL3 here.
+
 An independent original source-C caption-only diagnostic remains available,
 separate from the C++ renderer below. Given a captured 1 MiB
 original DOS memory image, `nix run .#intro-source-c --
@@ -434,8 +447,9 @@ through the recovered `GATE.EXE:117e` source-C functions. The headless
 `nix run .#intro-source-c-dump -- build/intro-analysis/at-22000.bin
 ../gateway-dos build/source-c-pages` exports the same frames (create the
 output directory first). The full intro still bootstraps a private 22-second
-DOS RAM capture with Unicorn and does not yet enter the game when finished;
-SDL audio and timing parity remain to be tested against original DOS. See
+DOS RAM capture with Unicorn; the hybrid game transition starts a fresh
+emulated main-program process. SDL audio and timing parity remain to be
+tested against original DOS. See
 [source-C intro status](docs/intro-source-c.md) for snapshot setup and tests.
 The independent original C image path is also runnable as
 `nix run .#intro-source-c-picture-dump -- build/intro-analysis/at-22000.bin

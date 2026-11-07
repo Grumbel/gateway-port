@@ -20,6 +20,7 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -160,8 +161,10 @@ void copy_to_argb(const std::array<std::uint8_t, 320u * 200u> &indices,
 } // namespace
 
 int main(int argc, char **argv) try {
-    if (argc != 3 || std::string_view(argv[1]) == "--help") {
-        std::cout << "usage: gateway-intro-source-c-live guest-22s.bin DOS-DIR\n"
+    const bool exit_on_complete = argc == 4 &&
+        std::string_view(argv[3]) == "--exit-on-complete";
+    if ((argc != 3 && !exit_on_complete) || std::string_view(argv[1]) == "--help") {
+        std::cout << "usage: gateway-intro-source-c-live guest-22s.bin DOS-DIR [--exit-on-complete]\n"
                      "Original live source-C intro, native AdLib MIDIPlay audio. "
                      "Space/Return/letters: "
                      "original C keys, P: pause, F9: filter, Escape: interrupt.\n";
@@ -214,7 +217,8 @@ int main(int argc, char **argv) try {
             state.completed.store(true);
         });
 
-        bool running = true, nearest = true;
+        bool running = true, nearest = true, window_closed = false;
+        std::optional<Clock::time_point> completion_time;
         std::uint64_t previous_generation = 0;
         std::uint32_t previous_second = UINT32_MAX;
         bool previous_paused = false, previous_completed = false;
@@ -225,7 +229,11 @@ int main(int argc, char **argv) try {
             while (running) {
                 SDL_Event event{};
                 while (SDL_PollEvent(&event)) {
-                    if (event.type == SDL_EVENT_QUIT) running = false;
+                    if (event.type == SDL_EVENT_QUIT ||
+                        event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
+                        window_closed = true;
+                        running = false;
+                    }
                     if (event.type != SDL_EVENT_KEY_DOWN || event.key.repeat) continue;
                     if (event.key.key == SDLK_ESCAPE) {
                         state.escape_pending.store(true);
@@ -278,6 +286,11 @@ int main(int argc, char **argv) try {
                 }
                 const auto second = elapsed_ms(state) / 1000;
                 const bool completed = state.completed.load();
+                if (completed && exit_on_complete) {
+                    if (!completion_time) completion_time = Clock::now();
+                    if (Clock::now() - *completion_time >= 250ms)
+                        running = false;
+                }
                 bool paused = false;
                 {
                     std::lock_guard lock(state.time_mutex);
@@ -313,6 +326,10 @@ int main(int argc, char **argv) try {
         worker.join();
         if (state.result.load() != 0)
             throw std::runtime_error("source-C intro failed to initialize");
+        if (window_closed) {
+            cleanup();
+            return 3; // Window close cancels the optional game handoff.
+        }
     } catch (...) {
         cleanup();
         throw;

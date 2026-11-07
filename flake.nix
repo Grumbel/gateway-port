@@ -106,6 +106,22 @@
                 "$snapshot" "$dos_dir"
             '';
           };
+          sourceCPlay = pkgs.writeShellApplication {
+            name = "gateway-intro-source-c-play";
+            runtimeInputs = [ pkgs.coreutils ];
+            text = sourceCSetup + ''
+              if [ ! -f "$dos_dir/GATEMAIN.EXE" ]; then
+                echo "missing $dos_dir/GATEMAIN.EXE" >&2
+                exit 1
+              fi
+              ${self.packages.${system}.default}/bin/gateway-intro-source-c-live \
+                "$snapshot" "$dos_dir" --exit-on-complete
+              # Captured at GATE.EXE's verified 4b03 overlay-load handoff.
+              # GATEMAIN.EXE can run independently with this DOS command tail.
+              ${self.packages.${system}.default}/bin/gateway \
+                "$dos_dir/GATEMAIN.EXE" --game-args "0 258 9 2 816 1 7 544"
+            '';
+          };
         in {
         default = {
           type = "app";
@@ -141,6 +157,11 @@
           type = "app";
           program = "${sourceCLive}/bin/gateway-intro-source-c-live";
           meta.description = "Play the source-C Gateway intro live through SDL3 with original MIDIPlay AdLib music and keyboard input";
+        };
+        intro-source-c-play = {
+          type = "app";
+          program = "${sourceCPlay}/bin/gateway-intro-source-c-play";
+          meta.description = "Play the source-C intro with AdLib audio, then enter the original Unicorn-powered Gateway game";
         };
         intro-dump = {
           type = "app";

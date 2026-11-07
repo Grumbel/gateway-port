@@ -530,6 +530,8 @@ if(BUILD_TESTING)
     add_test(NAME launcher-intro-source-c-full COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_intro_source_c_full_tests.py
       $<TARGET_FILE:gateway-intro-source-c-composite>)
+    add_test(NAME launcher-intro-handoff COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_intro_handoff_tests.py)
     add_test(NAME launcher-intro-audio-startup-binary COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_intro_audio_startup_binary_tests.py)
     add_test(NAME launcher-intro-audio-boundary COMMAND ${Python3_EXECUTABLE}
