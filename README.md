@@ -321,6 +321,8 @@ This checks initialization and submission, not audible output or visible pixels.
 The probe is limited to ten million instructions and two seconds of CPU execution.
 It reports unsupported services rather than silently returning fabricated success.
 
+For a room-art image-generation queue, see [the remaster pipeline](docs/remaster-pipeline.md).
+
 ## Extracting pictures
 
 `gateway-extract` writes `DIR/<file>/<entry>.png` and needs neither SDL3 nor Unicorn.
