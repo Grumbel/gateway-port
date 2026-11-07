@@ -215,6 +215,7 @@ nix run .#msc51-prepare-launcher              # stage all 28 recovered launcher 
 nix run -L .#msc51-compile-launcher            # compile all 28 with Microsoft C 5.1
 nix run -L .#msc51-compile-memory              # compile and test real DOS memory adapter
 nix run -L .#msc51-compile-dos-files           # compile and test real DOS file operations
+nix run -L .#msc51-compile-rtl-state           # compile and test 40 recovered RTL state functions
 nix run -L .#msc51-link-launcher               # try LINK with the resulting objects
 nix run .#msc51-link-report                    # classify saved LINK.LOG without DOSBox
 nix build .#msc51                             # optional: inspect assembled DOS tree
@@ -357,17 +358,42 @@ handle carry, and removes its test file. Its `FILOK.LOG` and source
 fingerprint are required before linking. Like the memory stage, this new
 test has not yet been executed under the user's DOS compiler.
 
-The separate link-only diagnostic reuses all 28 object files and the
-verified `MEMORY.OBJ` and `DOSFILE.OBJ`, without recompiling any of them:
+An additional `msc51-compile-rtl-state` stage reuses, rather than rewrites,
+the four existing native intro adapters in `src/intro_host_rtl_*_globals.c`.
+It compiles 40 original RTL state-access functions into `RTLIMG.OBJ`,
+`RTLTEXT.OBJ`, `RTLPAL.OBJ` and `RTLGR.OBJ`. Their DOS representations
+preserve live linked-DS selector reads, real-mode far pointers and the
+original mode-relative field offsets. The staging script derives the
+historical compiler's 31-character external-name aliases from the same
+table as the 28 original launcher modules. It converts only C99 FAR pointer
+literals to C89 and reads all memory-layout offsets from the existing
+recovered headers, so no separate guesswork about the original memory map
+is needed.
+
+`RTLCHK.EXE` is compiled and run under Microsoft C 5.1 before any of those
+four objects can be included in the launcher link. It allocates real DOS
+segments, tests each relocated segment selector, source pointer, text
+cursor, signed color, mode-dependent pitch, resource scalar, palette table
+and graphics scratch read/write. Its `RTLOK.LOG` and source fingerprint
+must be fresh. This stage does **not** implement video ports, keyboard,
+mouse, resident VFX, startup or original main. The 40-function reduction
+is an expectation for the next actual Microsoft linker run, not yet a
+measured result.
+
+The separate link-only diagnostic reuses all 28 original object files and
+the tested `MEMORY.OBJ`, `DOSFILE.OBJ` and four RTL objects, without
+recompiling any of them:
 
 ```sh
 nix run -L .#msc51-compile-dos-files
+nix run -L .#msc51-compile-rtl-state
 nix run -L .#msc51-link-launcher
 nix run .#msc51-link-report -- --json build/msc51-link-report.json
 ```
 
 It generates `build/msc51-launcher/LINK.RSP` and `LINK.BAT`, then invokes
 `C:\BIN\LINK.EXE` explicitly with all 28 `Mxx.OBJ` files, `MEMORY.OBJ`, `DOSFILE.OBJ`,
+`RTLIMG.OBJ`, `RTLTEXT.OBJ`, `RTLPAL.OBJ`, and `RTLGR.OBJ`,
 the large-model `LLIBCR.LIB` and `LIBH.LIB`. The historical LINK response file supplies the
 object list (continued using trailing `+`), EXE name, MAP name, libraries and
 an empty definitions-file answer, as documented by

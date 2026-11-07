@@ -56,10 +56,11 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("ECHO All reconstructed launcher objects compiled > SUCCESS.LOG", batch)
             self.assertNotIn("/Fe", batch)  # No complete DOS executable yet.
             response = (output / "LINK.RSP").read_text().splitlines()
-            self.assertEqual(response[:30],
+            self.assertEqual(response[:34],
                              [f"M{index:02d}.OBJ+" for index in range(28)] +
-                             ["MEMORY.OBJ+", "DOSFILE.OBJ"])
-            self.assertEqual(response[30:], ["GATEWAY.EXE", "GATEWAY.MAP",
+                             ["MEMORY.OBJ+", "DOSFILE.OBJ+", "RTLIMG.OBJ+",
+                              "RTLTEXT.OBJ+", "RTLPAL.OBJ+", "RTLGR.OBJ"])
+            self.assertEqual(response[34:], ["GATEWAY.EXE", "GATEWAY.MAP",
                                              "LLIBCR.LIB LIBH.LIB /NOD", ";"])
             memory_batch = (output / "MEMORY.BAT").read_text()
             self.assertIn("CL /AL /Od /c MEMORY.C", memory_batch)
@@ -85,6 +86,29 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("output.x.cflag", file_adapter)
             self.assertIn("input.h.ah = 0x42u", file_adapter)
             self.assertIn("remove(filename)", (output / "FILECHK.C").read_text())
+            rtl_batch = (output / "RTLST.BAT").read_text()
+            self.assertIn("CL /AL /Od /c RTLIMG.C", rtl_batch)
+            self.assertIn("CL /AL /Od /c RTLTEXT.C", rtl_batch)
+            self.assertIn("CL /AL /Od /c RTLPAL.C", rtl_batch)
+            self.assertIn("CL /AL /Od /c RTLGR.C", rtl_batch)
+            self.assertIn("RTLCHK.C RTLIMG.OBJ RTLTEXT.OBJ RTLPAL.OBJ RTLGR.OBJ MEMORY.OBJ", rtl_batch)
+            self.assertIn("RTLCHK.EXE > RTLTEST.LOG", rtl_batch)
+            self.assertIn("RTLSIG.LOG", rtl_batch)
+            self.assertIn("RTLOK.LOG", rtl_batch)
+            self.assertNotIn("IF ERRORLEVEL 1 ECHO", rtl_batch)
+            for name in ("RTLIMG.C", "RTLTEXT.C", "RTLPAL.C", "RTLGR.C",
+                         "RTLSTATE.H", "RTLLAY.H", "RTLIMAC.H", "RTLCHK.C"):
+                staged = (output / name).read_text()
+                self.assertTrue(all(len(identifier) <= 31 for identifier in
+                                    msc51.msc51_identifiers(staged)), name)
+                self.assertNotIn("(GateFarPtr){", staged)
+            self.assertIn("GATE_DS_IMAGE_MODE_SEGMENT", (output / "RTLLAY.H").read_text())
+            self.assertIn("gate_rtl_image_mode_segment", (output / "RTLIMG.C").read_text())
+            self.assertIn("gate_rtl_text_mode_pitch", (output / "RTLTEXT.C").read_text())
+            self.assertIn("gate_rtl_palette_mode", (output / "RTLPAL.C").read_text())
+            self.assertIn("gate_rtl_graphics_mode", (output / "RTLGR.C").read_text())
+            self.assertIn("mode field remains live", (output / "RTLCHK.C").read_text())
+            self.assertIn("_dos_allocmem", (output / "RTLCHK.C").read_text())
             link_batch = (output / "LINK.BAT").read_text()
             self.assertIn("C:\\BIN\\LINK.EXE @LINK.RSP > LINK.LOG", link_batch)
             self.assertNotIn("\nLINK @LINK.RSP", link_batch)
@@ -219,6 +243,20 @@ class MSC51Tests(unittest.TestCase):
             (output / "filstart.log").write_text("tested")
             (output / "filok.log").write_text("passed")
             (output / "filsig.log").write_text(msc51.dos_file_source_signature(output))
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run") as run, \
+                 redirect_stderr(io.StringIO()) as error:
+                with self.assertRaises(SystemExit):
+                    msc51.main(args)
+                run.assert_not_called()
+            self.assertIn("msc51-compile-rtl-state first", error.getvalue())
+            (output / "rtlimg.obj").write_bytes(b"original image state")
+            (output / "rtltext.obj").write_bytes(b"original text state")
+            (output / "rtlpal.obj").write_bytes(b"original palette state")
+            (output / "rtlgr.obj").write_bytes(b"original graphics state")
+            (output / "rtlstart.log").write_text("tested")
+            (output / "rtlok.log").write_text("passed")
+            (output / "rtlsig.log").write_text(msc51.rtl_state_source_signature(output))
             for name in ("LINKSTAR.LOG", "LNKSTART.LOG", "LINKDONE.LOG", "LINKFAIL.LOG",
                          "LINK.LOG", "GATEWAY.EXE", "GATEWAY.MAP"):
                 (output / name.lower()).write_bytes(b"stale result")
@@ -357,6 +395,79 @@ class MSC51Tests(unittest.TestCase):
             (output / "DOSFILE.C").write_text((output / "DOSFILE.C").read_text() + "/* changed */\n")
             with self.assertRaisesRegex(ValueError, "source has changed"):
                 msc51.validate_dos_file_adapter(output)
+
+    def test_rtl_state_reuses_native_sources_and_requires_fresh_dos_probe(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            compiler = root / "compiler"
+            for directory in ("BIN", "LIB", "INCLUDE"):
+                (compiler / directory).mkdir(parents=True)
+            for name in ("CL.EXE", "C1.EXE", "C1L.EXE", "C2.EXE", "C3.EXE", "LINK.EXE"):
+                (compiler / "BIN" / name).touch()
+            for name in ("LLIBCR.LIB", "LIBH.LIB"):
+                (compiler / "LIB" / name).touch()
+            (compiler / "INCLUDE" / "STDIO.H").touch()
+            output = root / "launcher"
+            msc51.stage_launcher(output)
+            self.assertIn("The original RTLink loader patches segment WORDs",
+                          (output / "RTLIMG.C").read_text())
+            self.assertIn("The linked RTL text routines read these mode-dependent words",
+                          (output / "RTLTEXT.C").read_text())
+            args = ["compile-rtl-state", "--compiler", str(compiler), "--output", str(output)]
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run") as run, \
+                 redirect_stderr(io.StringIO()) as error:
+                with self.assertRaises(SystemExit):
+                    msc51.main(args)
+                run.assert_not_called()
+            self.assertIn("msc51-compile-memory first", error.getvalue())
+
+            (output / "memory.obj").write_bytes(b"memory")
+            (output / "memstart.log").write_text("tested")
+            (output / "memok.log").write_text("passed")
+            (output / "memsig.log").write_text(msc51.memory_source_signature(output))
+
+            def failed_probe(command, check):
+                self.assertIn("RTLST.BAT", command)
+                self.assertFalse(check)
+                (output / "RTLSTART.LOG").write_text("started")
+                (output / "RTLIMG.OBJ").write_bytes(b"compiled")
+                (output / "RTLTEXT.OBJ").write_bytes(b"compiled")
+                (output / "RTLPAL.OBJ").write_bytes(b"compiled")
+                (output / "RTLGR.OBJ").write_bytes(b"compiled")
+                (output / "RTLFAIL.LOG").write_text("incorrect selector")
+                return mock.Mock(returncode=0)
+
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run", side_effect=failed_probe), \
+                 redirect_stderr(io.StringIO()) as error:
+                self.assertEqual(msc51.main(args), 1)
+            self.assertIn("incorrect selector", error.getvalue())
+
+            def successful_probe(command, check):
+                self.assertIn("RTLST.BAT", command)
+                self.assertFalse((output / "RTLFAIL.LOG").exists())
+                self.assertFalse((output / "RTLIMG.OBJ").exists())
+                self.assertFalse((output / "RTLTEXT.OBJ").exists())
+                self.assertFalse((output / "RTLPAL.OBJ").exists())
+                self.assertFalse((output / "RTLGR.OBJ").exists())
+                (output / "RTLSTART.LOG").write_text("started")
+                (output / "RTLIMG.OBJ").write_bytes(b"compiled")
+                (output / "RTLTEXT.OBJ").write_bytes(b"compiled")
+                (output / "RTLPAL.OBJ").write_bytes(b"compiled")
+                (output / "RTLGR.OBJ").write_bytes(b"compiled")
+                (output / "RTLOK.LOG").write_text("passed")
+                (output / "RTLTEST.LOG").write_text("RTL state probe: PASS")
+                (output / "RTLSIG.LOG").write_text(msc51.rtl_state_source_signature(output))
+                return mock.Mock(returncode=0)
+
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run", side_effect=successful_probe):
+                self.assertEqual(msc51.main(args), 0)
+
+            (output / "RTLIMG.C").write_text((output / "RTLIMG.C").read_text() + "/* changed */\n")
+            with self.assertRaisesRegex(ValueError, "source has changed"):
+                msc51.validate_rtl_state_adapter(output)
 
     def test_stages_only_recovered_source_with_c89_headers(self):
         with tempfile.TemporaryDirectory() as scratch:

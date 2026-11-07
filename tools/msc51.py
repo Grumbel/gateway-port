@@ -231,6 +231,9 @@ def msc51_rename_identifiers(source: str, names: dict[str, str]) -> str:
 MEMORY_SOURCES = ("GATEMEM.H", "STDINT.H", "MEMORY.C", "MEMCHK.C")
 DOS_FILE_SOURCES = ("GATEDOS.H", "GATEMEM.H", "STDINT.H", "DOSFILE.C", "FILECHK.C",
                     "MEMORY.C")
+RTL_STATE_SOURCES = ("RTLLAY.H", "RTLIMAC.H", "RTLSTATE.H", "GATEMEM.H", "STDINT.H",
+                     "RTLIMG.C", "RTLTEXT.C", "RTLPAL.C", "RTLGR.C", "RTLCHK.C",
+                     "MEMORY.C")
 
 
 def memory_source_signature(output: Path) -> str:
@@ -247,6 +250,38 @@ def dos_file_source_signature(output: Path) -> str:
     for name in DOS_FILE_SOURCES:
         digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
     return digest.hexdigest()[:16]
+
+
+def rtl_state_source_signature(output: Path) -> str:
+    """The probe must cover the exact same original adapters as the link."""
+    digest = hashlib.sha256(b"MS C 5.1 /AL /Od RTL state adapter v1\n")
+    for name in RTL_STATE_SOURCES:
+        digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
+    return digest.hexdigest()[:16]
+
+
+def stage_original_rtl_state(source: str, names: dict[str, str]) -> str:
+    """Stage an existing native source's original DS access, not a DOS stub.
+
+    The main launcher and these added adapters must share the exact same
+    Microsoft C 5.1 31-character aliases for all external symbols.
+    """
+    include_re = re.compile(r'(?m)^#include "(?:gate_rtl_image|gate_rtl|gate_rtl_palette|gate_rtl_graphics)\.h"\n')
+    includes = list(include_re.finditer(source))
+    if not includes:
+        raise ValueError("RTL state source is missing a recognized include")
+    content = include_re.sub("", source)
+    at = includes[0].start()
+    content = (content[:at] + '#include "RTLSTATE.H"\n#include "RTLLAY.H"\n'
+               '#include "RTLIMAC.H"\n' + content[at:])
+    content, compounds = msc51_far_compounds_to_calls(content)
+    if compounds:
+        anchor = '#include "RTLLAY.H"'
+        helper = ('\n\nstatic GateFarPtr gate_msc51_far_pointer(uint16_t segment, uint16_t offset)\n'
+                  '{\n    GateFarPtr result;\n    result.segment = segment;\n'
+                  '    result.offset = offset;\n    return result;\n}\n')
+        content = content.replace(anchor, anchor + helper, 1)
+    return msc51_rename_identifiers(content, names)
 
 
 def stage_launcher(output: Path) -> list[str]:
@@ -386,6 +421,56 @@ def stage_launcher(output: Path) -> list[str]:
         ":DONE", "EXIT",
     ]
     (output / "DOSFILE.BAT").write_text("\r\n".join(file_batch) + "\r\n")
+    # Keep the original/native accessor source as the single definition of
+    # these RTL operations. Only the includes, C89 compound literals and
+    # historical compiler symbol-length limit change for the DOS build.
+    layout = msc51_enums_to_macros((source_dir / "gate_memory_layout.h").read_text())
+    (output / "RTLLAY.H").write_text(msc51_rename_identifiers(layout, shortened))
+    image_constants = msc51_enums_to_macros((source_dir / "gate_rtl_image.h").read_text())
+    required_constants = ("GATE_RTL_VIDEO_MODE_OFFSET", "GATE_RTL_SIZE_TABLE_OFFSET",
+                          "GATE_RTL_TRANSFORM_OFFSET", "GATE_PREPARE_STATUS_WORD")
+    image_defines = []
+    for name in required_constants:
+        match = re.search(rf"(?m)^#define {name} \(([^\n]+)\)$", image_constants)
+        if match is None:
+            raise ValueError(f"Original image header is missing {name}")
+        image_defines.append(match.group(0))
+    (output / "RTLIMAC.H").write_text(
+        "/* Image constants extracted from the original recovered header. */\n" +
+        msc51_rename_identifiers("\n".join(image_defines) + "\n", shortened))
+    (output / "RTLSTATE.H").write_text(msc51_rename_identifiers(
+        (source_dir / "dos/msc51_rtl_state.h").read_text(), shortened))
+    (output / "RTLCHK.C").write_text(msc51_rename_identifiers(
+        (source_dir / "dos/msc51_rtl_state_probe.c").read_text(), shortened))
+    for source_name, staged_name in (("intro_host_rtl_globals.c", "RTLIMG.C"),
+                                     ("intro_host_rtl_text_globals.c", "RTLTEXT.C"),
+                                     ("intro_host_rtl_palette_globals.c", "RTLPAL.C"),
+                                     ("intro_host_rtl_graphics_globals.c", "RTLGR.C")):
+        (output / staged_name).write_text(stage_original_rtl_state(
+            (REPO / "src" / source_name).read_text(), shortened))
+    rtl_signature = rtl_state_source_signature(output)
+    rtl_batch = [
+        "@ECHO OFF", "ECHO MS C 5.1 native RTL state accessors > RTLSTART.LOG",
+        "SET PATH=C:\\BIN;C:\\", "SET INCLUDE=C:\\INCLUDE;C:\\",
+        "SET LIB=C:\\LIB;C:\\", "SET TEMP=D:\\", "SET TMP=D:\\",
+        "CL /AL /Od /c RTLIMG.C > RTLBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        "IF NOT EXIST RTLIMG.OBJ GOTO FAILED",
+        "CL /AL /Od /c RTLTEXT.C >> RTLBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        "IF NOT EXIST RTLTEXT.OBJ GOTO FAILED",
+        "CL /AL /Od /c RTLPAL.C >> RTLBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        "IF NOT EXIST RTLPAL.OBJ GOTO FAILED",
+        "CL /AL /Od /c RTLGR.C >> RTLBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        "IF NOT EXIST RTLGR.OBJ GOTO FAILED",
+        "CL /AL /Od RTLCHK.C RTLIMG.OBJ RTLTEXT.OBJ RTLPAL.OBJ RTLGR.OBJ MEMORY.OBJ /FeRTLCHK.EXE /link LLIBCR.LIB LIBH.LIB/NOD >> RTLBUILD.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST RTLCHK.EXE GOTO FAILED",
+        "RTLCHK.EXE > RTLTEST.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        f"ECHO {rtl_signature} > RTLSIG.LOG",
+        "ECHO Original RTL state probe passed > RTLOK.LOG",
+        "GOTO DONE", ":FAILED",
+        "ECHO Original RTL state probe failed > RTLFAIL.LOG",
+        ":DONE", "EXIT",
+    ]
+    (output / "RTLST.BAT").write_text("\r\n".join(rtl_batch) + "\r\n")
     lines = [
         "@ECHO OFF", "ECHO Gateway MSC 5.1 launcher objects > START.LOG",
         "SET PATH=C:\\BIN;C:\\", "SET INCLUDE=C:\\INCLUDE;C:\\",
@@ -407,7 +492,8 @@ def stage_launcher(output: Path) -> list[str]:
     # Microsoft's LINK response file is prompt-oriented: object modules,
     # output executable, map, libraries/options, and an empty DEF response.
     # Each trailing + extends the SAME response across CRLFs (MS KB Q40429).
-    response = ([f"{name}+" for name in objects] + ["MEMORY.OBJ+", "DOSFILE.OBJ",
+    response = ([f"{name}+" for name in objects] + ["MEMORY.OBJ+", "DOSFILE.OBJ+",
+                "RTLIMG.OBJ+", "RTLTEXT.OBJ+", "RTLPAL.OBJ+", "RTLGR.OBJ",
                 "GATEWAY.EXE", "GATEWAY.MAP", "LLIBCR.LIB LIBH.LIB /NOD", ";"])
     (output / "LINK.RSP").write_text("\r\n".join(response) + "\r\n")
     link_batch = [
@@ -518,6 +604,39 @@ def print_dos_file_diagnostics(output: Path) -> None:
     print(f"DOS file adapter workspace: {output}", file=sys.stderr)
 
 
+def validate_rtl_state_adapter(output: Path) -> None:
+    """Only link the RTL native-source accessors after a real DOS probe."""
+    if (any(locate_case_insensitive(output, name) is None
+            for name in ("RTLIMG.OBJ", "RTLTEXT.OBJ", "RTLPAL.OBJ", "RTLGR.OBJ",
+                         "RTLSTART.LOG", "RTLOK.LOG")) or
+            locate_case_insensitive(output, "RTLFAIL.LOG") is not None):
+        raise ValueError("Cannot link launcher: RTL state accessors are unverified. "
+                         "Run msc51-compile-rtl-state first.")
+    signature = locate_case_insensitive(output, "RTLSIG.LOG")
+    if signature is None or signature.read_text().strip() != rtl_state_source_signature(output):
+        raise ValueError("Cannot link launcher: RTL state source has changed "
+                         "since its test. Run msc51-compile-rtl-state again.")
+
+
+def remove_rtl_state_outputs(output: Path) -> None:
+    names = {"RTLSTART.LOG", "RTLOK.LOG", "RTLFAIL.LOG", "RTLBUILD.LOG",
+             "RTLSIG.LOG", "RTLTEST.LOG", "RTLIMG.OBJ", "RTLTEXT.OBJ",
+             "RTLPAL.OBJ", "RTLGR.OBJ",
+             "RTLCHK.EXE", "RTLCHK.OBJ"}
+    if output.is_dir():
+        for entry in output.iterdir():
+            if entry.is_file() and entry.name.upper() in names:
+                entry.unlink()
+
+
+def print_rtl_state_diagnostics(output: Path) -> None:
+    for name in ("RTLFAIL.LOG", "RTLBUILD.LOG", "RTLTEST.LOG", "RTLOK.LOG"):
+        path = locate_case_insensitive(output, name)
+        content = path.read_text(errors="replace") if path else "(not created)"
+        print(f"--- {name} ---\n{content[-8_000:].rstrip()}", file=sys.stderr)
+    print(f"RTL state adapter workspace: {output}", file=sys.stderr)
+
+
 def remove_launcher_link_outputs(output: Path) -> None:
     """Never accept a previous link's EXE, map or success marker."""
     names = {"LNKSTART.LOG", "LINKSTAR.LOG", "LINKSTART.LOG", "LINK.LOG",
@@ -601,6 +720,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("command", choices=("probe", "shell", "prepare", "install",
                                             "prepare-launcher", "compile-launcher",
                                             "compile-memory", "compile-dos-files",
+                                            "compile-rtl-state",
                                             "link-launcher"))
     parser.add_argument("--compiler", default=os.environ.get("GATEWAY_MSC51_DIR"),
                         help="installed Microsoft C 5.1 directory (or GATEWAY_MSC51_DIR)")
@@ -613,7 +733,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="one original floppy image, repeat in original disk order")
     args = parser.parse_args(argv)
     launcher = args.command in ("prepare-launcher", "compile-launcher",
-                                "compile-memory", "compile-dos-files", "link-launcher")
+                                "compile-memory", "compile-dos-files",
+                                "compile-rtl-state", "link-launcher")
     output = (args.output or Path("build/msc51-launcher" if launcher else "build/intro-msc51")).expanduser().resolve()
     objects = []
     if launcher:
@@ -634,19 +755,21 @@ def main(argv: list[str] | None = None) -> int:
         else:
             if args.command == "link-launcher":
                 validate_launcher_objects(output, objects)
-            if args.command in ("compile-dos-files", "link-launcher"):
+            if args.command in ("compile-dos-files", "compile-rtl-state", "link-launcher"):
                 validate_memory_adapter(output)
             if args.command == "link-launcher":
                 validate_dos_file_adapter(output)
+                validate_rtl_state_adapter(output)
             if not args.compiler:
                 parser.error("set GATEWAY_MSC51_DIR or pass --compiler /path/to/installed/MSC51")
             compiler = validate_compiler(Path(args.compiler))
             commands = dosbox_commands(
                 compiler, output,
                 args.command in ("probe", "compile-launcher", "compile-memory",
-                                 "compile-dos-files", "link-launcher"),
+                                 "compile-dos-files", "compile-rtl-state", "link-launcher"),
                 ("LINK.BAT" if args.command == "link-launcher" else
                  "DOSFILE.BAT" if args.command == "compile-dos-files" else
+                 "RTLST.BAT" if args.command == "compile-rtl-state" else
                  "MEMORY.BAT" if args.command == "compile-memory" else
                  "COMPILE.BAT" if launcher else "BUILD.BAT"))
             output.mkdir(parents=True, exist_ok=True)
@@ -672,6 +795,10 @@ def main(argv: list[str] | None = None) -> int:
         remove_dos_file_outputs(output)
         remove_launcher_link_outputs(output)
         command.append("--exit")
+    elif args.command == "compile-rtl-state":
+        remove_rtl_state_outputs(output)
+        remove_launcher_link_outputs(output)
+        command.append("--exit")
     elif args.command == "link-launcher":
         remove_launcher_link_outputs(output)
         command.append("--exit")
@@ -686,6 +813,8 @@ def main(argv: list[str] | None = None) -> int:
             print_memory_diagnostics(output)
         elif args.command == "compile-dos-files":
             print_dos_file_diagnostics(output)
+        elif args.command == "compile-rtl-state":
+            print_rtl_state_diagnostics(output)
         elif args.command == "link-launcher":
             print_launcher_link_diagnostics(output)
         return result.returncode
@@ -708,6 +837,17 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print("Microsoft C 5.1 verified DOS file create/open/read/write/seek/close; "
               "DOSFILE.OBJ can now be linked with the launcher objects.")
+        return 0
+    if args.command == "compile-rtl-state":
+        try:
+            validate_rtl_state_adapter(output)
+        except ValueError:
+            print("Microsoft C did not compile and verify the original RTL state accessors.",
+                  file=sys.stderr)
+            print_rtl_state_diagnostics(output)
+            return 1
+        print("Microsoft C 5.1 verified the original linked RTL state and mode selectors; "
+              "all four RTL accessor objects are ready for the launcher link.")
         return 0
     if args.command == "link-launcher":
         started = locate_case_insensitive(output, "LNKSTART.LOG")

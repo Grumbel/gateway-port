@@ -934,6 +934,24 @@ writable staging mount. A fresh `FILOK.LOG` and source fingerprint are
 required to include the adapter in the following `LINK.RSP`; this
 historical-DOS validation is awaiting the user's next run.
 
+The next 40 unresolved state accessors already have documented, tested
+native-host implementations: 17 image/resource selectors and accessors, 12
+text/cursor/mode properties, six palette properties, and five graphics
+scratch properties. `msc51-compile-rtl-state` stages their **exact existing
+native bodies** from `src/intro_host_rtl_*_globals.c`, adapting only DOS
+C89 includes, compound pointer initialization and compiler symbol length.
+`RTLLAY.H` derives its offsets from `gate_memory_layout.h`; `RTLIMAC.H`
+derives four graphics constants from `gate_rtl_image.h`. Under the 16-bit
+Microsoft compiler, the `RTLCHK.EXE` probe exercises actual allocated
+segments, including changing live selectors and mode-dependent values.
+Only after success does `LINK.RSP` include `RTLIMG.OBJ`, `RTLTEXT.OBJ`,
+`RTLPAL.OBJ` and `RTLGR.OBJ`. The predicted unresolved inventory, if both
+the pending DOS file adapter and these 40 functions link, is **55**:
+25 still-unimplemented RTL hardware functions, 29 original linked FAR
+services and the single C startup `_main`. Neither the 55 count nor the
+DOS probe is yet verified by the historical toolchain; no dummy startup
+or no-op hardware functions are being supplied.
+
 ## Immediate next functions
 
 1. Connect the existing verified native video, font, picture and caption
