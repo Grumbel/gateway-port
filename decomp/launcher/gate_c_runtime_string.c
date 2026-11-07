@@ -2,6 +2,7 @@
 /* SPDX-License-Identifier: LicenseRef-Gateway-Derived */
 
 #include "gate_exe.h"
+#include "gate_c_runtime_constants.h"
 #include "gate_rtl.h"
 
 /* Original GATE.RTL:8298, linked at 12a5:2bba (DOS physical 0x1560a in
@@ -13,12 +14,12 @@
 static uint16_t bounded_far_strlen(GateFarPtr text)
 {
     uint32_t length;
-    for (length = 0; length < 0xffffu; ++length) {
+    for (length = 0; length < GATE_CRT_FAR_STRING_SCAN_LIMIT; ++length) {
         if (gate_far_byte(text.segment,
                           (uint16_t)(text.offset + length)) == 0)
             return (uint16_t)length;
     }
-    return 0xfffeu;
+    return GATE_CRT_FAR_STRING_UNTERMINATED_LENGTH;
 }
 
 uint16_t gate_linked_exe_string_length(GateFarPtr text)

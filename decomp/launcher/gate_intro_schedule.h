@@ -89,4 +89,24 @@ enum {
     GATE_INTRO_RED_CREDIT_WAIT_MS = 3000,
 };
 
+/* Original EXE:0e37..0f17 input tests, and the linked 0df2:00f8
+ * buffered-key routine. The mouse mask identifies the branch that skips
+ * the intro, without assuming which physical button supplied that bit.
+ * Background ffff is passed as a signed -1, disabling glyph background
+ * painting in the original RTL text renderer (RTL:edff). */
+enum {
+    GATE_INTRO_INPUT_CARRIAGE_RETURN = 0x0d,
+    GATE_INTRO_INPUT_SPACE = 0x20,
+    GATE_INTRO_INPUT_CONTROL_KEY = 3,
+    GATE_INTRO_INPUT_ESCAPE = 27,
+    GATE_INTRO_INPUT_MOUSE_SKIP_MASK = 0x0002,
+    GATE_INTRO_TEXT_TRANSPARENT_BACKGROUND = 0xffff,
+    GATE_INTRO_SHORT_PATH_PEN_COLOR = 15,
+    GATE_INTRO_SHORT_PATH_PAINT_MODE = 1,
+    GATE_INTRO_SHORT_PATH_RECTANGLE_STYLE = 2,
+    GATE_INTRO_RGB_PALETTE_MODE_START = 2,
+    GATE_INTRO_RGB_GREEN_COMPONENT = 1,
+    GATE_INTRO_RGB_BLUE_COMPONENT = 2,
+};
+
 #endif

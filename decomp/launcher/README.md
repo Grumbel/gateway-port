@@ -169,6 +169,23 @@ sample field positions are *relative stack offsets*, not DS addresses.
 As before, the incomplete original time sampler is not treated as a
 verified replacement for the native intro's host clock.
 
+The remaining launcher input and title literals are collected in
+`gate_intro_schedule.h`: linked `0df2:00f8..0127` buffers any key other
+than ASCII space `0x20` or carriage return `0x0d`; original
+`GATE.EXE:0e37..0f17` tests key `3` (a special control-key handler),
+Escape `27`, and mouse flag mask `0x0002`. The name of that mouse mask
+describes the observed skip branch, not an unverified physical button.
+The text background argument `0xffff` is signed -1, which suppresses
+glyph background painting at `RTL:edff`. The short-path pen `15`,
+rectangle style `2`, paint-mode index `1`, RGB-mode threshold `2`, and
+green/blue palette component displacements `1/2` all retain their original
+values in the header; the four signed mode tests remain separate loads.
+At `GATE.RTL:8298` (linked `12a5:2bba`),
+`gate_c_runtime_constants.h` additionally names the Microsoft CRT
+`strlen` 65535-byte scan limit and 65534 result for unterminated input.
+These values are constants of the original linked behavior, not native
+buffer sizes or a general Unicode/keyboard abstraction.
+
 The executable is compiled native 8086 code, **not** a small interpreted
 script. Its original C source, compiler version, and library headers have not
 been recovered. These `.c` files are a manual decompilation of the disassembly;

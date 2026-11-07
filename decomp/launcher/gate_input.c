@@ -2,6 +2,7 @@
 /* SPDX-License-Identifier: LicenseRef-Gateway-Derived */
 
 #include "gate_exe.h"
+#include "gate_intro_schedule.h"
 
 /* Original linked 0df2:00f8..0127 in the relocated 22-second launcher.
  * The input buffer is DS:1340. Non-space/non-return keys are put back for
@@ -13,7 +14,7 @@ uint16_t gate_linked_read_buffered_key(void)
 
     if (gate_linked_keyboard_pending() != 0) {
         key = gate_linked_read_keyboard_key();
-        if (key != 0x20 && key != 0x0d)
+        if (key != GATE_INTRO_INPUT_SPACE && key != GATE_INTRO_INPUT_CARRIAGE_RETURN)
             gate_ds_set_word(GATE_DS_INPUT_BUFFERED_KEY, key);
     }
     return key;

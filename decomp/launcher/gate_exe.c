@@ -3,6 +3,7 @@
 
 #include "gate_exe.h"
 #include "gate_intro_schedule.h"
+#include "gate_rtl_mode.h"
 
 static GateFarPtr far_pointer(uint16_t segment, uint16_t offset)
 {
@@ -23,7 +24,7 @@ static GateFarPtr runtime_palette_pointer(void)
  *
  * The RTL calls are still named by their original linked segment:offset.
  * Stack-check far call 02a5:0c08 is compiler machinery, not source logic.
- * The `key == 3` branch is intentionally not treated as ordinary Escape.
+ * The control-key branch is intentionally not treated as ordinary Escape.
  */
 uint16_t gate_exe_handle_intro_input(void)
 {
@@ -32,31 +33,31 @@ uint16_t gate_exe_handle_intro_input(void)
     uint16_t height;
 
     if (gate_linked_keyboard_pending() == 0) {
-        if ((gate_linked_intro_mouse_flags() & 2) != 0)
+        if ((gate_linked_intro_mouse_flags() & GATE_INTRO_INPUT_MOUSE_SKIP_MASK) != 0)
             return 1;
         return 0;
     }
 
     key = gate_linked_read_keyboard_key();
-    if (key == 3) {
+    if (key == GATE_INTRO_INPUT_CONTROL_KEY) {
         gate_linked_handle_control_key();
         return 0;
     }
-    if (key == 27)
+    if (key == GATE_INTRO_INPUT_ESCAPE)
         return 1;
 
     if (gate_ds_word(GATE_DS_INTRO_KEY_SEEN) != 0)
         return 0;
     gate_ds_set_word(GATE_DS_INTRO_KEY_SEEN, 1);
     gate_linked_select_intro_font(GATE_INTRO_PROMPT_FONT);
-    gate_linked_set_intro_text_colors(gate_far_word(gate_ds_word(GATE_DS_INTRO_PROMPT_COLOR_SEGMENT), GATE_MODE_DESC_MAX_PEN_COLOR), 0xffff);
+    gate_linked_set_intro_text_colors(gate_far_word(gate_ds_word(GATE_DS_INTRO_PROMPT_COLOR_SEGMENT), GATE_MODE_DESC_MAX_PEN_COLOR), GATE_INTRO_TEXT_TRANSPARENT_BACKGROUND);
     width = gate_linked_measure_text_width(far_pointer(gate_ds_segment(), GATE_DS_INTRO_KEY_HINT_TEXT));
     height = gate_linked_font_line_advance();
     gate_linked_position_intro_text(
         (int16_t)((int16_t)(gate_far_word(gate_ds_word(GATE_DS_INTRO_SCREEN_WIDTH_SEGMENT), GATE_MODE_DESC_SCREEN_WIDTH) - width) / 2),
         (int16_t)(gate_far_word(gate_ds_word(GATE_DS_INTRO_SCREEN_HEIGHT_SEGMENT), GATE_MODE_DESC_SCREEN_HEIGHT) - height - 1));
     gate_linked_draw_intro_text(far_pointer(gate_ds_segment(), GATE_DS_INTRO_KEY_HINT_TEXT));
-    if (gate_far_word(gate_ds_word(GATE_DS_INTRO_MODE_SEGMENT), GATE_DS_GRAPHICS_MODE) != 3) {
+    if (gate_far_word(gate_ds_word(GATE_DS_INTRO_MODE_SEGMENT), GATE_DS_GRAPHICS_MODE) != GATE_RTL_VIDEO_MODE_VGA_256) {
         gate_exe_wait_interruptible(GATE_INTRO_KEY_HINT_WAIT_MS);
         gate_linked_read_buffered_key();
     }
@@ -209,7 +210,7 @@ void gate_exe_show_caption(uint16_t left, uint16_t top, uint16_t right, GateFarP
     uint16_t y;
 
     gate_linked_select_intro_font(GATE_INTRO_CAPTION_FONT);
-    gate_linked_set_intro_text_colors(gate_far_word(gate_ds_word(GATE_DS_INTRO_CAPTION_COLOR_SEGMENT), GATE_MODE_DESC_FRAME_COLOR_PRIMARY), 0xffff);
+    gate_linked_set_intro_text_colors(gate_far_word(gate_ds_word(GATE_DS_INTRO_CAPTION_COLOR_SEGMENT), GATE_MODE_DESC_FRAME_COLOR_PRIMARY), GATE_INTRO_TEXT_TRANSPARENT_BACKGROUND);
     gate_exe_measure_caption(&left, &top, &right, &bottom, text);
     gate_linked_draw_intro_caption_frame((uint16_t)(left - GATE_INTRO_CAPTION_TEXT_INSET),
                          (uint16_t)(top - GATE_INTRO_CAPTION_TEXT_INSET),
@@ -325,13 +326,13 @@ void gate_exe_play_intro(void)
     }
 
     mode = gate_far_word(gate_ds_word(GATE_DS_INTRO_MODE_SEGMENT), GATE_DS_GRAPHICS_MODE);
-    if ((int16_t)mode < 2) {
+    if ((int16_t)mode < GATE_INTRO_RGB_PALETTE_MODE_START) {
         gate_linked_clear_intro_palette();
         gate_linked_clear_intro_display();
-        if (gate_far_word(gate_ds_word(GATE_DS_INTRO_MODE_SEGMENT), GATE_DS_GRAPHICS_MODE) == 1) {
-            gate_linked_set_intro_pen_color(15);
+        if (gate_far_word(gate_ds_word(GATE_DS_INTRO_MODE_SEGMENT), GATE_DS_GRAPHICS_MODE) == GATE_INTRO_SHORT_PATH_PAINT_MODE) {
+            gate_linked_set_intro_pen_color(GATE_INTRO_SHORT_PATH_PEN_COLOR);
             gate_linked_fill_intro_rectangle(
-                2, 0, 0,
+                GATE_INTRO_SHORT_PATH_RECTANGLE_STYLE, 0, 0,
                 gate_far_word(gate_ds_word(GATE_DS_INTRO_SCREEN_WIDTH_SEGMENT), GATE_MODE_DESC_SCREEN_WIDTH),
                 gate_far_word(gate_ds_word(GATE_DS_INTRO_SCREEN_HEIGHT_SEGMENT), GATE_MODE_DESC_SCREEN_HEIGHT));
         }
@@ -343,7 +344,7 @@ void gate_exe_play_intro(void)
     if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
     gate_linked_fade_intro_palette_out();
-    gate_linked_set_intro_video_mode(3);
+    gate_linked_set_intro_video_mode(GATE_RTL_VIDEO_MODE_VGA_256);
     gate_linked_reset_intro_mouse();
     gate_linked_clear_intro_display();
     gate_linked_show_intro_picture(GATE_INTRO_PICTURE_RED_BAR_TITLE, 1);
@@ -538,14 +539,14 @@ void gate_exe_play_title_interlude(void)
     gate_exe_wait_interruptible(GATE_INTRO_TITLE_LEAD_IN_MS);
     gate_linked_show_intro_picture(GATE_INTRO_PICTURE_FIRST_SPLASH, 1);
 
-    if ((int16_t)gate_far_word(gate_ds_word(GATE_DS_INTRO_MODE_SEGMENT), GATE_DS_GRAPHICS_MODE) < 2) {
+    if ((int16_t)gate_far_word(gate_ds_word(GATE_DS_INTRO_MODE_SEGMENT), GATE_DS_GRAPHICS_MODE) < GATE_INTRO_RGB_PALETTE_MODE_START) {
         gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), GATE_INTRO_TITLE_FIRST_SINGLE_COMPONENT, 0);
         gate_linked_upload_intro_palette(runtime_palette_pointer());
     } else {
         for (i = GATE_INTRO_TITLE_MAX_DAC_LEVEL; i >= 0; --i) {
             gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), GATE_INTRO_TITLE_FIRST_RGB, (uint8_t)i);
-            gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), (GATE_INTRO_TITLE_FIRST_RGB + 1), (uint8_t)i);
-            gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), (GATE_INTRO_TITLE_FIRST_RGB + 2), (uint8_t)i);
+            gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), (GATE_INTRO_TITLE_FIRST_RGB + GATE_INTRO_RGB_GREEN_COMPONENT), (uint8_t)i);
+            gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), (GATE_INTRO_TITLE_FIRST_RGB + GATE_INTRO_RGB_BLUE_COMPONENT), (uint8_t)i);
             gate_linked_upload_intro_palette(runtime_palette_pointer());
         }
     }
@@ -553,15 +554,15 @@ void gate_exe_play_title_interlude(void)
     if (gate_linked_keyboard_pending() != 0)
         return;
 
-    if ((int16_t)gate_far_word(gate_ds_word(GATE_DS_INTRO_MODE_SEGMENT), GATE_DS_GRAPHICS_MODE) < 2) {
+    if ((int16_t)gate_far_word(gate_ds_word(GATE_DS_INTRO_MODE_SEGMENT), GATE_DS_GRAPHICS_MODE) < GATE_INTRO_RGB_PALETTE_MODE_START) {
         gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT),
                           GATE_INTRO_TITLE_FIRST_SINGLE_COMPONENT, GATE_INTRO_TITLE_MAX_DAC_LEVEL);
         gate_linked_upload_intro_palette(runtime_palette_pointer());
     } else {
         for (i = 0; i <= GATE_INTRO_TITLE_MAX_DAC_LEVEL; ++i) {
             gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), GATE_INTRO_TITLE_FIRST_RGB, (uint8_t)i);
-            gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), (GATE_INTRO_TITLE_FIRST_RGB + 1), (uint8_t)i);
-            gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), (GATE_INTRO_TITLE_FIRST_RGB + 2), (uint8_t)i);
+            gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), (GATE_INTRO_TITLE_FIRST_RGB + GATE_INTRO_RGB_GREEN_COMPONENT), (uint8_t)i);
+            gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), (GATE_INTRO_TITLE_FIRST_RGB + GATE_INTRO_RGB_BLUE_COMPONENT), (uint8_t)i);
             gate_linked_upload_intro_palette(runtime_palette_pointer());
         }
     }
@@ -570,14 +571,14 @@ void gate_exe_play_title_interlude(void)
         return;
 
     gate_linked_show_intro_picture(GATE_INTRO_PICTURE_SECOND_SPLASH, 1);
-    if ((int16_t)gate_far_word(gate_ds_word(GATE_DS_INTRO_MODE_SEGMENT), GATE_DS_GRAPHICS_MODE) < 2) {
+    if ((int16_t)gate_far_word(gate_ds_word(GATE_DS_INTRO_MODE_SEGMENT), GATE_DS_GRAPHICS_MODE) < GATE_INTRO_RGB_PALETTE_MODE_START) {
         gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), GATE_INTRO_TITLE_SECOND_SINGLE_COMPONENT, 0);
         gate_linked_upload_intro_palette(runtime_palette_pointer());
     } else {
         for (i = GATE_INTRO_TITLE_MAX_DAC_LEVEL; i >= 0; --i) {
             gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), GATE_INTRO_TITLE_SECOND_RGB, (uint8_t)i);
-            gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), (GATE_INTRO_TITLE_SECOND_RGB + 1), (uint8_t)i);
-            gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), (GATE_INTRO_TITLE_SECOND_RGB + 2), (uint8_t)i);
+            gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), (GATE_INTRO_TITLE_SECOND_RGB + GATE_INTRO_RGB_GREEN_COMPONENT), (uint8_t)i);
+            gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), (GATE_INTRO_TITLE_SECOND_RGB + GATE_INTRO_RGB_BLUE_COMPONENT), (uint8_t)i);
             gate_linked_upload_intro_palette(runtime_palette_pointer());
         }
     }
@@ -585,14 +586,14 @@ void gate_exe_play_title_interlude(void)
     if (gate_linked_keyboard_pending() != 0)
         return;
 
-    if ((int16_t)gate_far_word(gate_ds_word(GATE_DS_INTRO_MODE_SEGMENT), GATE_DS_GRAPHICS_MODE) < 2) {
+    if ((int16_t)gate_far_word(gate_ds_word(GATE_DS_INTRO_MODE_SEGMENT), GATE_DS_GRAPHICS_MODE) < GATE_INTRO_RGB_PALETTE_MODE_START) {
         gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), GATE_INTRO_TITLE_THIRD_SINGLE_COMPONENT, 0);
         gate_linked_upload_intro_palette(runtime_palette_pointer());
     } else {
         for (i = GATE_INTRO_TITLE_MAX_DAC_LEVEL; i >= 0; --i) {
             gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), GATE_INTRO_TITLE_THIRD_RGB, (uint8_t)i);
-            gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), (GATE_INTRO_TITLE_THIRD_RGB + 1), (uint8_t)i);
-            gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), (GATE_INTRO_TITLE_THIRD_RGB + 2), (uint8_t)i);
+            gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), (GATE_INTRO_TITLE_THIRD_RGB + GATE_INTRO_RGB_GREEN_COMPONENT), (uint8_t)i);
+            gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), (GATE_INTRO_TITLE_THIRD_RGB + GATE_INTRO_RGB_BLUE_COMPONENT), (uint8_t)i);
             gate_linked_upload_intro_palette(runtime_palette_pointer());
         }
     }
