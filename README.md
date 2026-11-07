@@ -221,6 +221,7 @@ nix run -L .#msc51-compile-runtime-files       # compile/probe FAR strings, reso
 nix run -L .#msc51-compile-resident-state       # compile/probe resident video mode and drawing DS words
 nix run -L .#msc51-compile-heap                 # DOS heap for font/VFX, including buffers >64KiB
 nix run -L .#msc51-compile-input                # BIOS keyboard and mouse services, buffered key state
+nix run -L .#msc51-compile-clock                # real DOS wall-clock and delay services
 nix run -L .#msc51-link-launcher               # try LINK with the resulting objects
 nix run .#msc51-link-report                    # classify saved LINK.LOG without DOSBox
 nix build .#msc51                             # optional: inspect assembled DOS tree
@@ -441,6 +442,15 @@ path is not yet independently recovered, so this stage is a functional
 DOS input adapter, not proof of identical behavior. Assuming it compiles
 and links, **35** missing symbols would remain.
 
+`msc51-compile-clock` stages four more timing services for the EXE and
+picture-animator call sites. It reads real MS-DOS time with INT 21h/AH=2Ch,
+shares an initial-process baseline, and waits for actual DOS time to advance.
+The probe requires at least 20 ms of clock progress. This is a functional
+10-ms-resolution substitute, **not** the recovered RTL 12a5:38c4 time
+sampler (which includes a ten-byte calendar sample and original DS baseline).
+Midnight/DST transitions and original animation wait side effects are not
+yet equivalent. With all stages linked, **31** unresolved symbols are predicted.
+
 The separate link-only diagnostic reuses all 28 original object files and
 the tested `MEMORY.OBJ`, `DOSFILE.OBJ` and four RTL objects, without
 recompiling any of them:
@@ -453,6 +463,7 @@ nix run -L .#msc51-compile-runtime-files
 nix run -L .#msc51-compile-resident-state
 nix run -L .#msc51-compile-heap
 nix run -L .#msc51-compile-input
+nix run -L .#msc51-compile-clock
 nix run -L .#msc51-link-launcher
 nix run .#msc51-link-report -- --json build/msc51-link-report.json
 ```
@@ -460,7 +471,7 @@ nix run .#msc51-link-report -- --json build/msc51-link-report.json
 It generates `build/msc51-launcher/LINK.RSP` and `LINK.BAT`, then invokes
 `C:\BIN\LINK.EXE` explicitly with all 28 `Mxx.OBJ` files, `MEMORY.OBJ`, `DOSFILE.OBJ`,
 `RTLIMG.OBJ`, `RTLTEXT.OBJ`, `RTLPAL.OBJ`, `RTLGR.OBJ`, `RTLHW.OBJ`, `RTFILE.OBJ`,
-`RESSTATE.OBJ`, `HEAP.OBJ`, and `INP.OBJ`,
+`RESSTATE.OBJ`, `HEAP.OBJ`, `INP.OBJ`, and `CLOCK.OBJ`,
 the large-model `LLIBCR.LIB` and `LIBH.LIB`. The historical LINK response file supplies the
 object list (continued using trailing `+`), EXE name, MAP name, libraries and
 an empty definitions-file answer, as documented by

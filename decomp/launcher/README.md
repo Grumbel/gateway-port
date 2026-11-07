@@ -1013,6 +1013,17 @@ has not been independently validated and is specifically not claimed as
 bit-identical. `INP.OBJ` is LINK-eligible only after the source-fingerprinted
 DOS test. A **35**-symbol remainder is predicted, not yet verified.
 
+`msc51-compile-clock` stages `CLOCK.OBJ` to resolve the two EXE/RTL
+elapsed-millisecond call sites and two delay functions. A genuine DOS
+INT 21h/AH=2Ch read supplies hundredths-of-a-second wall time with a shared
+first-read baseline; the probe checks both clock users and a real 20-ms
+wait. Source-fingerprinted `CLKOK.LOG` is required for LINK eligibility.
+This is **not** an original C runtime sampler: the recovered 12a5:38c4
+sample/baseline algorithm is more complex, and runtime execution, midnight,
+DST and animation-side-effect behavior still require differential testing.
+With all pending objects built and accepted, **31** unresolved symbols are
+predicted (historically confirmed count remains 55).
+
 ## Immediate next functions
 
 1. Connect the existing verified native video, font, picture and caption

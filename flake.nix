@@ -188,6 +188,15 @@
                 --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
             '';
           };
+          msc51-compile-clock = pkgs.writeShellApplication {
+            name = "gateway-msc51-compile-clock";
+            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
+            text = ''
+              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
+              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py compile-clock \
+                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
+            '';
+          };
           msc51-link-launcher = pkgs.writeShellApplication {
             name = "gateway-msc51-link-launcher";
             runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
@@ -408,6 +417,11 @@
           program = "${self.packages.${system}.msc51-compile-input}/bin/gateway-msc51-compile-input";
           meta.description = "Compile and probe BIOS keyboard queue, original unget state and DOS mouse button query";
         };
+        msc51-compile-clock = {
+          type = "app";
+          program = "${self.packages.${system}.msc51-compile-clock}/bin/gateway-msc51-compile-clock";
+          meta.description = "Compile and probe DOS elapsed-time and animation delay boundaries";
+        };
         msc51-link-launcher = {
           type = "app";
           program = "${self.packages.${system}.msc51-link-launcher}/bin/gateway-msc51-link-launcher";
@@ -580,6 +594,7 @@ except Exception:
                          self.packages.${system}.msc51-compile-resident-state
                          self.packages.${system}.msc51-compile-heap
                          self.packages.${system}.msc51-compile-input
+                         self.packages.${system}.msc51-compile-clock
                          self.packages.${system}.msc51-link-launcher
                          self.packages.${system}.msc51-link-report
                          self.packages.${system}.msc51-install

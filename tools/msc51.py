@@ -242,6 +242,7 @@ RESIDENT_STATE_SOURCES = ("GATEMEM.H", "STDINT.H", "RTLLAY.H", "RESSTATE.C",
 HEAP_SOURCES = ("GATEMEM.H", "STDINT.H", "HEAP.C", "HEAPCHK.C", "MEMORY.C")
 INPUT_SOURCES = ("GATEMEM.H", "STDINT.H", "RTLLAY.H", "INP.C", "INPCHK.C",
                  "MEMORY.C")
+CLOCK_SOURCES = ("STDINT.H", "CLOCK.C", "CLKCHK.C")
 
 
 def memory_source_signature(output: Path) -> str:
@@ -299,6 +300,13 @@ def heap_source_signature(output: Path) -> str:
 def input_source_signature(output: Path) -> str:
     digest = hashlib.sha256(b"MS C 5.1 /AL /Od BIOS keyboard and mouse services v1\n")
     for name in INPUT_SOURCES:
+        digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
+    return digest.hexdigest()[:16]
+
+
+def clock_source_signature(output: Path) -> str:
+    digest = hashlib.sha256(b"MS C 5.1 /AL /Od DOS clock and wait services v1\n")
+    for name in CLOCK_SOURCES:
         digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
     return digest.hexdigest()[:16]
 
@@ -617,6 +625,26 @@ def stage_launcher(output: Path) -> list[str]:
         ":DONE", "EXIT",
     ]
     (output / "INPUT.BAT").write_text("\r\n".join(input_batch) + "\r\n")
+    for original, staged in (("msc51_clock.c", "CLOCK.C"),
+                             ("msc51_clock_probe.c", "CLKCHK.C")):
+        (output / staged).write_text(msc51_rename_identifiers(
+            (source_dir / "dos" / original).read_text(), shortened))
+    clock_signature = clock_source_signature(output)
+    clock_batch = [
+        "@ECHO OFF", "ECHO MS C 5.1 real DOS clock and waits > CLKSTART.LOG",
+        "SET PATH=C:\\BIN;C:\\", "SET INCLUDE=C:\\INCLUDE;C:\\",
+        "SET LIB=C:\\LIB;C:\\", "SET TEMP=D:\\", "SET TMP=D:\\",
+        "CL /AL /Od /c CLOCK.C > CLKBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        "IF NOT EXIST CLOCK.OBJ GOTO FAILED",
+        "CL /AL /Od CLKCHK.C CLOCK.OBJ /FeCLKCHK.EXE /link LLIBCR.LIB LIBH.LIB/NOD >> CLKBUILD.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST CLKCHK.EXE GOTO FAILED",
+        "CLKCHK.EXE > CLKTEST.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        f"ECHO {clock_signature} > CLKSIG.LOG",
+        "ECHO Real-mode DOS clock probe passed > CLKOK.LOG",
+        "GOTO DONE", ":FAILED", "ECHO Real-mode DOS clock probe failed > CLKFAIL.LOG",
+        ":DONE", "EXIT",
+    ]
+    (output / "CLOCK.BAT").write_text("\r\n".join(clock_batch) + "\r\n")
     lines = [
         "@ECHO OFF", "ECHO Gateway MSC 5.1 launcher objects > START.LOG",
         "SET PATH=C:\\BIN;C:\\", "SET INCLUDE=C:\\INCLUDE;C:\\",
@@ -641,7 +669,7 @@ def stage_launcher(output: Path) -> list[str]:
     response = ([f"{name}+" for name in objects] + ["MEMORY.OBJ+", "DOSFILE.OBJ+",
                 "RTLIMG.OBJ+", "RTLTEXT.OBJ+", "RTLPAL.OBJ+", "RTLGR.OBJ+",
                 "RTLHW.OBJ+", "RTFILE.OBJ+", "RESSTATE.OBJ+", "HEAP.OBJ+",
-                "INP.OBJ",
+                "INP.OBJ+", "CLOCK.OBJ",
                 "GATEWAY.EXE", "GATEWAY.MAP", "LLIBCR.LIB LIBH.LIB /NOD", ";"])
     (output / "LINK.RSP").write_text("\r\n".join(response) + "\r\n")
     link_batch = [
@@ -930,6 +958,35 @@ def print_input_diagnostics(output: Path) -> None:
     print(f"BIOS input workspace: {output}", file=sys.stderr)
 
 
+def validate_clock_adapter(output: Path) -> None:
+    if (any(locate_case_insensitive(output, name) is None
+            for name in ("CLOCK.OBJ", "CLKSTART.LOG", "CLKOK.LOG")) or
+            locate_case_insensitive(output, "CLKFAIL.LOG") is not None):
+        raise ValueError("Cannot link launcher: DOS clock services are unverified. "
+                         "Run msc51-compile-clock first.")
+    signature = locate_case_insensitive(output, "CLKSIG.LOG")
+    if signature is None or signature.read_text().strip() != clock_source_signature(output):
+        raise ValueError("Cannot link launcher: clock adapter source has changed "
+                         "since its test. Run msc51-compile-clock again.")
+
+
+def remove_clock_outputs(output: Path) -> None:
+    names = {"CLKSTART.LOG", "CLKOK.LOG", "CLKFAIL.LOG", "CLKBUILD.LOG",
+             "CLKSIG.LOG", "CLKTEST.LOG", "CLOCK.OBJ", "CLKCHK.EXE", "CLKCHK.OBJ"}
+    if output.is_dir():
+        for entry in output.iterdir():
+            if entry.is_file() and entry.name.upper() in names:
+                entry.unlink()
+
+
+def print_clock_diagnostics(output: Path) -> None:
+    for name in ("CLKFAIL.LOG", "CLKBUILD.LOG", "CLKTEST.LOG", "CLKOK.LOG"):
+        path = locate_case_insensitive(output, name)
+        content = path.read_text(errors="replace") if path else "(not created)"
+        print(f"--- {name} ---\n{content[-8_000:].rstrip()}", file=sys.stderr)
+    print(f"DOS clock workspace: {output}", file=sys.stderr)
+
+
 def remove_launcher_link_outputs(output: Path) -> None:
     """Never accept a previous link's EXE, map or success marker."""
     names = {"LNKSTART.LOG", "LINKSTAR.LOG", "LINKSTART.LOG", "LINK.LOG",
@@ -1018,6 +1075,7 @@ def main(argv: list[str] | None = None) -> int:
                                             "compile-resident-state",
                                             "compile-heap",
                                             "compile-input",
+                                            "compile-clock",
                                             "link-launcher"))
     parser.add_argument("--compiler", default=os.environ.get("GATEWAY_MSC51_DIR"),
                         help="installed Microsoft C 5.1 directory (or GATEWAY_MSC51_DIR)")
@@ -1035,6 +1093,7 @@ def main(argv: list[str] | None = None) -> int:
                                 "compile-runtime-files", "compile-resident-state",
                                 "compile-heap",
                                 "compile-input",
+                                "compile-clock",
                                 "link-launcher")
     output = (args.output or Path("build/msc51-launcher" if launcher else "build/intro-msc51")).expanduser().resolve()
     objects = []
@@ -1061,6 +1120,7 @@ def main(argv: list[str] | None = None) -> int:
                                 "compile-resident-state",
                                 "compile-heap",
                                 "compile-input",
+                                "compile-clock",
                                 "link-launcher"):
                 validate_memory_adapter(output)
             if args.command == "link-launcher":
@@ -1071,6 +1131,7 @@ def main(argv: list[str] | None = None) -> int:
                 validate_resident_state_adapter(output)
                 validate_heap_adapter(output)
                 validate_input_adapter(output)
+                validate_clock_adapter(output)
             if not args.compiler:
                 parser.error("set GATEWAY_MSC51_DIR or pass --compiler /path/to/installed/MSC51")
             compiler = validate_compiler(Path(args.compiler))
@@ -1082,6 +1143,7 @@ def main(argv: list[str] | None = None) -> int:
                                  "compile-resident-state",
                                  "compile-heap",
                                  "compile-input",
+                                 "compile-clock",
                                  "link-launcher"),
                 ("LINK.BAT" if args.command == "link-launcher" else
                  "DOSFILE.BAT" if args.command == "compile-dos-files" else
@@ -1091,6 +1153,7 @@ def main(argv: list[str] | None = None) -> int:
                  "RESST.BAT" if args.command == "compile-resident-state" else
                  "HEAP.BAT" if args.command == "compile-heap" else
                  "INPUT.BAT" if args.command == "compile-input" else
+                 "CLOCK.BAT" if args.command == "compile-clock" else
                  "MEMORY.BAT" if args.command == "compile-memory" else
                  "COMPILE.BAT" if launcher else "BUILD.BAT"))
             output.mkdir(parents=True, exist_ok=True)
@@ -1140,6 +1203,10 @@ def main(argv: list[str] | None = None) -> int:
         remove_input_outputs(output)
         remove_launcher_link_outputs(output)
         command.append("--exit")
+    elif args.command == "compile-clock":
+        remove_clock_outputs(output)
+        remove_launcher_link_outputs(output)
+        command.append("--exit")
     elif args.command == "link-launcher":
         remove_launcher_link_outputs(output)
         command.append("--exit")
@@ -1166,6 +1233,8 @@ def main(argv: list[str] | None = None) -> int:
             print_heap_diagnostics(output)
         elif args.command == "compile-input":
             print_input_diagnostics(output)
+        elif args.command == "compile-clock":
+            print_clock_diagnostics(output)
         elif args.command == "link-launcher":
             print_launcher_link_diagnostics(output)
         return result.returncode
@@ -1254,6 +1323,17 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print("Microsoft C 5.1 verified the BIOS keyboard buffer and DS unget slot; "
               "INP.OBJ is ready for the launcher link.")
+        return 0
+    if args.command == "compile-clock":
+        try:
+            validate_clock_adapter(output)
+        except ValueError:
+            print("Microsoft C did not compile and verify DOS clock/wait services.",
+                  file=sys.stderr)
+            print_clock_diagnostics(output)
+            return 1
+        print("Microsoft C 5.1 verified DOS elapsed time and a bounded delay; "
+              "CLOCK.OBJ is ready for the launcher link.")
         return 0
     if args.command == "link-launcher":
         started = locate_case_insensitive(output, "LNKSTART.LOG")
