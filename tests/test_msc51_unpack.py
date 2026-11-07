@@ -3,6 +3,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 """Tests for assembling a DOS toolchain from historical disk images."""
 
+import hashlib
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -51,15 +53,44 @@ class MSC51UnpackTests(unittest.TestCase):
             self.assertEqual((root / "output/INCLUDE/SYS/STAT.H").read_bytes(), b"nested header")
             self.assertFalse((root / "output/PACKING.LST").exists())
 
-    def test_duplicate_different_executables_are_rejected(self):
+    def test_different_compiler_passes_keep_first_and_record_alternates(self):
         with tempfile.TemporaryDirectory() as scratch:
             root = Path(scratch)
             make_tree(root / "disks")
-            duplicate = root / "disks/another/cl.exe"
-            duplicate.parent.mkdir()
-            duplicate.write_bytes(b"wrong")
-            with self.assertRaisesRegex(ValueError, "Conflicting floppy contents for BIN/CL.EXE"):
-                unpacker.assemble_files(root / "disks", root / "output")
+            first = root / "disks/compiler/C1L.EXE"
+            first.write_bytes(b"first C1L")
+            duplicate = root / "disks/disk-06/C1L.EXE"
+            duplicate.parent.mkdir(parents=True)
+            duplicate.write_bytes(b"second C1L")
+            unpacker.assemble_files(root / "disks", root / "output")
+            self.assertEqual((root / "output/BIN/C1L.EXE").read_bytes(), b"first C1L")
+            manifest = json.loads((root / "output/compiler-manifest.json").read_text())
+            self.assertEqual(manifest["selection_policy"], "first source in sorted disk/path order wins")
+            self.assertEqual(manifest["conflicts"], [{
+                "path": "BIN/C1L.EXE",
+                "selected": {
+                    "disk_file": "compiler/C1L.EXE",
+                    "sha256": hashlib.sha256(b"first C1L").hexdigest(),
+                },
+                "ignored": {
+                    "disk_file": "disk-06/C1L.EXE",
+                    "sha256": hashlib.sha256(b"second C1L").hexdigest(),
+                },
+            }])
+            with self.assertRaisesRegex(ValueError, "Conflicting floppy contents for BIN/C1L.EXE"):
+                # Strict mode remains available to detect unexpectedly mixed
+                # compiler disk sets rather than silently accepting variants.
+                unpacker.assemble_files(root / "disks", root / "strict-output",
+                                        strict_duplicates=True)
+
+    def test_existing_output_is_not_merged_with_old_compiler(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            make_tree(root / "source")
+            (root / "output").mkdir()
+            (root / "output/stale").touch()
+            with self.assertRaisesRegex(ValueError, "Output directory is not empty"):
+                unpacker.unpack(root / "source", root / "output")
 
     def test_output_must_not_overlap_source(self):
         with tempfile.TemporaryDirectory() as scratch:
@@ -82,6 +113,24 @@ class MSC51UnpackTests(unittest.TestCase):
             self.assertEqual(run.call_count, 2)
             self.assertEqual(run.call_args_list[0].args[0],
                              ["mcopy", "-s", "-i", str(one), "::", str(root / "extracted/disk-00")])
+
+    def test_manifest_maps_extracted_volumes_to_original_images(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            source = root / "images"
+            source.mkdir()
+            (source / "Disk1.IMG").touch()
+
+            def fake_extract(images, target, mcopy="mcopy"):
+                self.assertEqual([image.name for image in images], ["Disk1.IMG"])
+                make_tree(target / "disk-00")
+
+            with mock.patch.object(unpacker, "extract_images", side_effect=fake_extract):
+                unpacker.unpack(source, root / "output")
+            manifest = json.loads((root / "output/compiler-manifest.json").read_text())
+            self.assertEqual(manifest["source_images"], ["Disk1.IMG"])
+            self.assertEqual(manifest["files"]["BIN/CL.EXE"]["disk_file"],
+                             "disk-00/setup/CL.EXE")
 
     @unittest.skipUnless(shutil.which("mformat") and shutil.which("mcopy"),
                          "mtools unavailable; the Nix tooling check runs this integration test")

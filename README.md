@@ -224,6 +224,14 @@ mtools, automatically assembling `BIN/CL.EXE`, `C1.EXE`, `C2.EXE`, `C3.EXE`,
 **read-only** as drive C and a writable local staging directory as drive D.
 `nix flake check` itself does not download the proprietary compiler.
 
+Some distribution disks contain **different copies of the same executable**
+(observed: `C1L.EXE`). The assembler keeps the first copy in sorted disk order,
+prints a diagnostic for each conflict, and writes `compiler-manifest.json` with
+the selected file, skipped alternatives and their SHA-256 hashes. For forensic
+comparison, `msc51-unpack --strict-duplicates` instead rejects conflicts. The
+default selection is deterministic; it does not prove which variant matches
+the game or that the original compiler can successfully rebuild the probe.
+
 For an existing download containing raw floppy `.img`/`.ima` images, you can
 import it offline instead of fetching it again:
 

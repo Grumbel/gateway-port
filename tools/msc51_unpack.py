@@ -9,6 +9,8 @@ Only tool, header, and library files are copied into BIN/LIB/INCLUDE.
 """
 
 import argparse
+import hashlib
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -70,40 +72,71 @@ def destination_for(file: Path, source: Path) -> Path | None:
     return None
 
 
-def assemble_files(source: Path, destination: Path) -> dict[str, int]:
+def assemble_files(source: Path, destination: Path, strict_duplicates: bool = False,
+                   source_images: list[str] | None = None) -> dict[str, int]:
     counts = {"BIN": 0, "LIB": 0, "INCLUDE": 0}
+    selected: dict[str, dict[str, str]] = {}
+    conflicts: list[dict[str, object]] = []
     for file in sorted(source.rglob("*")):
         if not file.is_file():
             continue
         relative = destination_for(file, source)
         if relative is None:
             continue
+        key = relative.as_posix()
+        data = file.read_bytes()
+        candidate = {
+            "disk_file": file.relative_to(source).as_posix(),
+            "sha256": hashlib.sha256(data).hexdigest(),
+        }
         output = destination / relative
         output.parent.mkdir(parents=True, exist_ok=True)
         if output.exists():
-            if output.read_bytes() != file.read_bytes():
-                raise ValueError(f"Conflicting floppy contents for {relative}: {file}")
+            if key not in selected:
+                raise ValueError(f"Pre-existing compiler output must be cleaned first: {output}")
+            if output.read_bytes() != data:
+                if strict_duplicates:
+                    raise ValueError(f"Conflicting floppy contents for {relative}: {file}")
+                # Some original compiler disks include different variants of
+                # the same tool (e.g. C1L.EXE). Preserve the first in sorted
+                # disk order and record *both* hashes so the choice is auditable.
+                conflicts.append({"path": key, "selected": selected[key], "ignored": candidate})
+                print(f"msc51: keeping {selected[key]['disk_file']} over "
+                      f"{candidate['disk_file']} for {key}", flush=True)
             continue
         shutil.copyfile(file, output)
+        selected[key] = candidate
         counts[relative.parts[0]] += 1
+    destination.mkdir(parents=True, exist_ok=True)
+    (destination / "compiler-manifest.json").write_text(json.dumps({
+        "selection_policy": "first source in sorted disk/path order wins",
+        "source_images": source_images or [],
+        "files": selected,
+        "conflicts": conflicts,
+    }, indent=2, sort_keys=True) + "\n")
     return counts
 
 
-def unpack(source: Path, destination: Path, mcopy: str = "mcopy") -> dict[str, int]:
+def unpack(source: Path, destination: Path, mcopy: str = "mcopy",
+           strict_duplicates: bool = False) -> dict[str, int]:
     source = source.resolve()
     destination = destination.resolve()
     if not source.is_dir():
         raise ValueError(f"No compiler disk directory: {source}")
     if source == destination or source in destination.parents or destination in source.parents:
         raise ValueError("Output must be outside the input directory")
+    if destination.is_dir() and any(destination.iterdir()):
+        raise ValueError(f"Output directory is not empty: {destination}")
     images = disk_images(source)
     if images:
         with tempfile.TemporaryDirectory(prefix="gateway-msc51-") as temp:
             raw = Path(temp)
             extract_images(images, raw, mcopy=mcopy)
-            counts = assemble_files(raw, destination)
+            counts = assemble_files(
+                raw, destination, strict_duplicates=strict_duplicates,
+                source_images=[image.relative_to(source).as_posix() for image in images])
     else:
-        counts = assemble_files(source, destination)
+        counts = assemble_files(source, destination, strict_duplicates=strict_duplicates)
     validate_compiler(destination)
     return counts
 
@@ -113,9 +146,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("source", type=Path, help="directory of raw floppy images or DOS files")
     parser.add_argument("output", type=Path, help="assembled compiler installation directory")
     parser.add_argument("--mcopy", default="mcopy", help="mtools mcopy executable")
+    parser.add_argument("--strict-duplicates", action="store_true",
+                        help="fail on different floppy files with the same installed DOS name")
     args = parser.parse_args(argv)
     try:
-        counts = unpack(args.source, args.output, mcopy=args.mcopy)
+        counts = unpack(args.source, args.output, mcopy=args.mcopy,
+                        strict_duplicates=args.strict_duplicates)
     except (ValueError, OSError) as error:
         parser.error(str(error))
     print("Microsoft C 5.1 ready in " + str(args.output))
