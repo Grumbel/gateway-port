@@ -357,12 +357,19 @@ nix run -L .#msc51-compare -- \
 `--scan-relocations` also enables the public-prefix scan. It decodes OMF
 `FIXUPP` subrecords attached to each `LEDATA` record (including frame/target
 threads) and masks **only** the specified linker-modified fields. It compares
-up to **512 bytes** per record/public-symbol boundary, instead of 64, and
+up to **4096 bytes** across contiguous `LEDATA` records in the same OMF module
+and segment, instead of the exact scan's 64-byte single-record limit, and
 records exact-leading, fixed-compared and masked-relocation byte counts in
-the output and JSON (`public_prefix_scan_mode: omf-fixupp`). The masked
+the output and JSON (`public_prefix_scan_mode: omf-fixupp`), including the
+number of `LEDATA` records traversed. Each record's relocation mask is
+applied at its own segment-relative offset. Missing or overlapping bytes,
+malformed/unsupported fixups and iterated `LIDATA` prevent stitching across
+the affected region; an intervening `PUBDEF` always ends the comparison.
+The masked
 opening starts at 16 bytes but can grow to **64 bytes** to collect at least
-**12 unmasked bytes**; it never crosses the current public/`LEDATA` boundary.
-Malformed/unsupported fixups exclude that record from this mode. If the
+**12 unmasked bytes**; it never crosses the current public or an untrusted
+data boundary. Malformed/unsupported fixups exclude the associated bytes
+from this mode. If the
 masked opening occurs more than once, the scanner
 continues comparing later **fixed** bytes and accepts a location only if
 exactly one candidate has the longest fixed-byte match. The command also
@@ -376,7 +383,7 @@ JSON key `public_prefix_exact_only_explanations` records rejection reasons
 and match counts without including executable bytes.
 
 This is deliberately an *opt-in candidate search*, not function recovery:
-comparison stops at a new public symbol or OMF record boundary, does not
+comparison stops at a new public symbol or an untrusted OMF data boundary, does not
 reconstruct linker segment placement, and does not verify control flow or
 whole function bodies. An OMF `CODE` class can also contain non-callable
 data. The exact-prefix scan above remains the conservative baseline for
@@ -422,6 +429,16 @@ span nor a gap is a verified function boundary or classification as CRT vs.
 game code**: there can be data inside CODE-class segments, different link
 layouts, and code split over OMF records. These are guides to further
 disassembly and boundary verification, not instructions to delete code.
+
+The host's first coverage report from that catalogue found **9209 matched
+bytes** across 70 CODE-class candidate entries, with **3608 bytes** in 30
+intervening unmatched gaps. The largest, `0x07146..0x079a0` (2138 bytes),
+starts exactly **512 bytes** after `output.c:__output` at `0x06f46`—strongly
+suggesting the previous per-record comparison ceiling created at least part
+of that gap. The new cross-record scan is intended to test that hypothesis;
+its real-library result has not yet been checked. These are coverage
+statistics for candidate matches, not proven source attribution for every
+byte in a span.
 
 ### In-game Gateway debugger (F10)
 

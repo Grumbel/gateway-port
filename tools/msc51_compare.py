@@ -328,6 +328,7 @@ def public_code_prefixes(data: bytes, module: OMFModule,
 FIXUP_WIDTHS = {0: 1, 1: 2, 2: 2, 3: 4, 4: 1, 5: 2,
                 9: 4, 11: 6, 13: 4}
 MAX_MASKED_OPENING = 64
+MAX_RELOCATED_SPAN = 4096
 
 
 def parse_omf_fixupp(data: bytes, record: OMFRecord,
@@ -433,6 +434,69 @@ def omf_relocation_masks(data: bytes, module: OMFModule) -> dict[int, bytes | No
     return masks
 
 
+def stitched_public_code(data: bytes, module: OMFModule,
+                         min_size: int = 16, max_size: int = MAX_RELOCATED_SPAN):
+    """Yield public code and FIXUPP masks across contiguous LEDATA fragments.
+
+    Segment-relative offsets, not OMF record order, define contiguity.
+    Duplicate/overlapping bytes, malformed masks and missing bytes become
+    barriers; LIDATA-bearing segments are excluded (not decoded). A public
+    boundary and the configured maximum always terminate the comparison.
+    """
+    masks = omf_relocation_masks(data, module)
+    segments: dict[int, dict[int, tuple[int, int, int] | None]] = {}
+    blocked_segments = set()
+    for record in module.records:
+        if record.kind not in (0xa0, 0xa1, 0xa2, 0xa3):
+            continue
+        limit = record.end - 1
+        try:
+            segment, cursor = omf_index(data, record.start + 3, limit)
+            width = 4 if record.kind in (0xa1, 0xa3) else 2
+            if cursor + width > limit:
+                raise ValueError("Truncated OMF data record offset")
+            offset = int.from_bytes(data[cursor:cursor + width], "little")
+            cursor += width
+        except ValueError:
+            # A malformed segment identifier cannot be safely stitched.
+            return
+        if record.kind in (0xa2, 0xa3):
+            blocked_segments.add(segment)
+            continue
+        payload = data[cursor:limit]
+        mask = masks.get(record.start)
+        segment_bytes = segments.setdefault(segment, {})
+        for i, value in enumerate(payload):
+            address = offset + i
+            if address in segment_bytes:
+                segment_bytes[address] = None  # Overlapping LEDATA is ambiguous.
+            else:
+                segment_bytes[address] = (
+                    (value, mask[i], record.start)
+                    if mask is not None and len(mask) == len(payload) else None)
+
+    publics = omf_publics(data, module)
+    for segment, offset, symbol in publics:
+        if segment in blocked_segments:
+            continue
+        segment_bytes = segments.get(segment, {})
+        following = [other for seg, other, _ in publics
+                     if seg == segment and other > offset]
+        stop = min(min(following) if following else offset + max_size,
+                   offset + max_size)
+        content, fixed, records = bytearray(), bytearray(), []
+        for address in range(offset, stop):
+            payload = segment_bytes.get(address)
+            if payload is None:
+                break
+            value, required, source_record = payload
+            content.append(value)
+            fixed.append(required)
+            records.append(source_record)
+        if len(content) >= min_size:
+            yield symbol, segment, offset, bytes(content), bytes(fixed), records
+
+
 def choose_relocated_prefix(original: bytes, code: bytes, mask: bytes,
                             min_size: int = 16) -> dict:
     """Resolve a masked public to one RTL offset or explain why we cannot.
@@ -448,7 +512,7 @@ def choose_relocated_prefix(original: bytes, code: bytes, mask: bytes,
     fixed_opening = sum(mask[:opening])
     # FIXUPP may relocate much of the beginning of a procedure. Extend the
     # masked anchor until it has the same 12 fixed bytes required previously;
-    # never weaken the threshold or scan across a public/LEDATA boundary.
+    # never weaken the threshold or scan across a public/invalid-data boundary.
     while (fixed_opening < 12 and opening < len(code)
            and opening < MAX_MASKED_OPENING):
         fixed_opening += mask[opening]
@@ -492,8 +556,8 @@ def scan_exact_crt_prefixes(original: bytes, library: bytes,
                             relocations: bool = False) -> list[dict]:
     """Find unambiguous OMF public prefixes in the original RTL.
 
-    Relocation-aware mode masks only FIXUPP locations and lengthens the
-    comparison to 512 bytes per LEDATA/public boundary, but still requires
+    Relocation-aware mode masks only FIXUPP locations and joins contiguous
+    LEDATA fragments in the same module/segment, but still requires
     at least 12 fixed bytes in an opening of 16–64 bytes. If several RTL locations
     match the masked opening, select a location only when the additional
     *fixed* bytes establish a unique longest match.
@@ -502,13 +566,13 @@ def scan_exact_crt_prefixes(original: bytes, library: bytes,
     hits = []
     for module in modules:
         segments = omf_segments(library, module)
-        masks = omf_relocation_masks(library, module) if relocations else {}
-        for symbol, segment, offset, code, record_start, data_offset in public_code_prefixes(
-                library, module, min_size=min_size,
-                max_size=512 if relocations else 64):
-            code_mask = (masks.get(record_start) or b"")[data_offset:data_offset + len(code)]
-            if relocations and len(code_mask) != len(code):
-                continue
+        if relocations:
+            candidates = stitched_public_code(library, module, min_size=min_size)
+        else:
+            candidates = ((symbol, segment, offset, code, b"", [])
+                          for symbol, segment, offset, code, _, _ in
+                          public_code_prefixes(library, module, min_size=min_size))
+        for symbol, segment, offset, code, code_mask, record_sources in candidates:
             if relocations:
                 chosen = choose_relocated_prefix(original, code, code_mask, min_size)
                 if chosen["status"] != "unique":
@@ -540,6 +604,7 @@ def scan_exact_crt_prefixes(original: bytes, library: bytes,
                 hits[-1]["masked_relocation_bytes"] = matched - sum(code_mask[:matched])
                 hits[-1]["fixed_compared_bytes"] = sum(code_mask[:matched])
                 hits[-1]["opening_bytes"] = chosen["opening_bytes"]
+                hits[-1]["ledata_records_compared"] = len(set(record_sources[:matched]))
                 # Retain the legacy exact-prefix metric, independent of the
                 # masked comparison, for easy side-by-side interpretation.
                 exact = 0
@@ -667,14 +732,23 @@ def explain_exact_only(original: bytes, library: bytes,
         for module in modules:
             if module.name != hit["module"]:
                 continue
-            masks = omf_relocation_masks(library, module)
-            for symbol, segment, offset, code, record_start, data_offset in public_code_prefixes(
-                    library, module, max_size=512):
+            module_sources = []
+            for symbol, _, _, code, code_mask, _ in stitched_public_code(library, module):
                 if symbol != hit["symbol"]:
                     continue
-                mask = masks.get(record_start)
-                code_mask = (mask or b"")[data_offset:data_offset + len(code)]
-                sources.append(choose_relocated_prefix(original, code, code_mask))
+                module_sources.append(choose_relocated_prefix(original, code, code_mask))
+            if not module_sources:
+                # A broken fixup at the first record can make the stitched
+                # span unavailable altogether; recover the rejection reason
+                # from the original single-record public entry.
+                masks = omf_relocation_masks(library, module)
+                for symbol, _, _, code, record_start, data_offset in public_code_prefixes(
+                        library, module, max_size=512):
+                    if symbol == hit["symbol"]:
+                        mask = masks.get(record_start)
+                        code_mask = (mask or b"")[data_offset:data_offset + len(code)]
+                        module_sources.append(choose_relocated_prefix(original, code, code_mask))
+            sources.extend(module_sources)
         result = {"rtl_offset": hit["rtl_offset"], "module": hit["module"],
                   "symbol": hit["symbol"]}
         if len(sources) != 1:
@@ -731,7 +805,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="find unique 16-byte exact CRT public prefixes in GATE.RTL (candidates only)")
     parser.add_argument("--scan-relocations", action="store_true",
                         help="scan OMF public prefixes with FIXUPP relocations masked, "
-                             "up to 512 bytes per LEDATA record (candidates only)")
+                             "up to 4096 bytes across contiguous LEDATA records "
+                             "(candidates only)")
     args = parser.parse_args(argv)
     if args.library is None and args.compiler is None:
         parser.error("provide --library FILE or GATEWAY_MSC51_DIR/--compiler DIR")
@@ -781,7 +856,8 @@ def main(argv: list[str] | None = None) -> int:
             length = (f'{entry["relocation_aware_bytes"]} compared bytes, '
                       f'{entry["masked_relocation_bytes"]} relocation bytes masked, '
                       f'{entry["exact_prefix_bytes"]} exact leading bytes, '
-                      f'{entry["opening_bytes"]}-byte opening'
+                      f'{entry["opening_bytes"]}-byte opening, '
+                      f'{entry["ledata_records_compared"]} LEDATA records'
                       if args.scan_relocations else
                       f'{entry["exact_prefix_bytes"]} exact leading bytes')
             print(f'  GATE.RTL:{entry["rtl_offset"]} {entry["module"]}:{entry["symbol"]} '
@@ -796,8 +872,9 @@ def main(argv: list[str] | None = None) -> int:
               "not necessarily callable functions.")
         print("Candidates need separate code/boundary validation; absent matches prove nothing.")
         if args.scan_relocations:
-            print("FIXUPP masking is restricted to each LEDATA/public boundary; "
-                  "malformed or unsupported fixups are excluded.")
+            print("FIXUPP masking is per LEDATA record; comparison crosses only "
+                  "contiguous valid same-segment LEDATA, never a public boundary, "
+                  "gap, overlap or unsupported fixup.")
             differences = compare_public_scans(exact_baseline, public_candidates)
             explanations = explain_exact_only(
                 original, library_bytes, modules, differences["exact_only"])

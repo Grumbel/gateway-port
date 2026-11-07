@@ -249,6 +249,78 @@ class MSC51CompareTests(unittest.TestCase):
         self.assertEqual(summary["candidate_spanned_bytes"], 48)
         self.assertEqual(summary["unmatched_gap_count"], 0)
 
+    def test_omf_stitches_only_contiguous_valid_ledata(self):
+        def record(kind, payload):
+            header = bytes((kind, (len(payload) + 1) & 255,
+                            (len(payload) + 1) >> 8))
+            return header + payload + bytes(((-sum(header + payload)) & 255,))
+
+        # Deliberately longer than the former 512-byte single-record ceiling.
+        code = (b"MSC51STITCHMARK!" +
+                bytes((i * 37 + 11) & 255 for i in range(634)))
+
+        def library_and_module(second_offset=24, second_fixup=b"\xc4\x2e\x44\x01",
+                               extra_public=False, lidata=False):
+            raw_records = [
+                (0x82, b"\x06TEST.C"),
+                (0x96, b"\x05_TEXT\x04CODE\x00"),
+                (0x98, b"\x28\x78\x00\x01\x02\x03"),
+                (0x90, b"\x00\x01\x03_fn\x00\x00\x00"),
+                (0xa0, b"\x01\x00\x00" + code[:24]),
+                (0x9c, b"\xc4\x04\x44\x01"),
+                (0xa0, b"\x01" + second_offset.to_bytes(2, "little") + code[24:]),
+                (0x9c, second_fixup),
+            ]
+            if extra_public:
+                raw_records.append((0x90, b"\x00\x01\x05_next\x3c\x00\x00"))
+            if lidata:
+                raw_records.append((0xa2, b"\x01\x00\x00\x00"))
+            raw_records.append((0x8a, b"\x00"))
+            raw = bytearray()
+            records = []
+            for kind, payload in raw_records:
+                start = len(raw)
+                raw.extend(record(kind, payload))
+                records.append(msc.OMFRecord(kind, start, len(raw)))
+            return bytes(raw), [msc.OMFModule(
+                "TEST.C", 0, len(raw), tuple(records))]
+
+        rtl_code = bytearray(code)
+        for index in (4, 5, 70, 71):
+            rtl_code[index] ^= 0xa5
+        original = b"padding" + rtl_code
+
+        library, modules = library_and_module()
+        hits = msc.scan_exact_crt_prefixes(
+            original, library, modules, relocations=True)
+        self.assertEqual(len(hits), 1)
+        self.assertEqual(hits[0]["relocation_aware_bytes"], len(code))
+        self.assertEqual(hits[0]["masked_relocation_bytes"], 4)
+        self.assertEqual(hits[0]["ledata_records_compared"], 2)
+
+        # Segment gaps/overlaps and a malformed second FIXUPP stop the
+        # comparison at the end of the trusted first fragment.
+        for second_offset, second_fixup, expected in (
+                (25, b"\xc4\x2e\x44\x01", 24),
+                (23, b"\xc4\x2e\x44\x01", 23),
+                (24, b"\xd8\x2e\x44\x01", 24)):
+            with self.subTest(second_offset=second_offset,
+                              second_fixup=second_fixup):
+                library, modules = library_and_module(second_offset, second_fixup)
+                hits = msc.scan_exact_crt_prefixes(
+                    original, library, modules, relocations=True)
+                self.assertEqual(hits[0]["relocation_aware_bytes"], expected)
+                self.assertEqual(hits[0]["ledata_records_compared"], 1)
+
+        library, modules = library_and_module(extra_public=True)
+        hits = msc.scan_exact_crt_prefixes(
+            original, library, modules, relocations=True)
+        self.assertEqual(next(hit for hit in hits if hit["symbol"] == "_fn")
+                         ["relocation_aware_bytes"], 60)
+        library, modules = library_and_module(lidata=True)
+        self.assertEqual(msc.scan_exact_crt_prefixes(
+            original, library, modules, relocations=True), [])
+
     def test_omf_module_and_exact_public_symbol_attribution(self):
         def record(kind, payload):
             header = bytes((kind, (len(payload) + 1) & 255,
