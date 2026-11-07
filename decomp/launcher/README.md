@@ -28,8 +28,8 @@ they are **not** a claim to possess byte-for-byte original source text.
 | `exe:0x1302–0x1a13` | `gate_exe_1302()` | Entire enclosing original intro: initial settings, signed mode fork, short startup branch, 18 explicit caption calls, seven palette-bar calls, five animated sequences, repeated input checks, and distinct cleanup/final paths | Linked graphics services and original mode meaning remain unresolved |
 | `exe:0x1a14–0x1c10` | `gate_exe_1a14()` | Four mode-dependent title palette stages: single-byte change for signed mode below 2, or 64-step three-component fade otherwise, with three early key exits | RTL 0f10:0c6e service not yet decompiled |
 | `exe:0x0f61–0x1039` | `gate_exe_0f61(uint16_t)` | Prepares image in a 140-byte stack work area; uploads a blank 768-byte RGB palette, then 16 palettes scaled by signed `component * factor / 64` for factors `0,4,…,60`, then the complete original palette | Linked image preparation functions remain opaque; stack far-pointer host substitute is not a recovered compiler ABI |
-| `exe:0x103a–0x117d` | `gate_exe_103a()` | Original text-measurement pass, with far pointers to caller's left/top/right/bottom words, signed line-wrap decisions, an 80-byte word buffer, and a signed bottom clamp at 185 that shifts the caller's top coordinate | Font width/line-height service bodies not yet recovered; unchecked word buffer is original behavior |
-| `exe:0x117e–0x1301` | `gate_exe_117e()` | Select intro font, call `0x103a` with pointers to its own arguments, draw expanded border, emit words/position and advance through whitespace/newlines, then wait `uint16_t(2000+45*strlen(text))` | Frame and text RTL service semantics still unresolved; no guest-entry differential check |
+| `exe:0x103a–0x117d` | `gate_exe_103a()` | Original text-measurement pass, with far pointers to caller's left/top/right/bottom words, signed line-wrap decisions, an 80-byte word buffer, and a signed bottom clamp at 185 that shifts the caller's top coordinate | Now exercised with the real recovered font; unchecked word buffer is original behavior |
+| `exe:0x117e–0x1301` | `gate_exe_117e()` | Select intro font, call `0x103a` with pointers to its own arguments, draw expanded border, emit words/position and advance through whitespace/newlines, then wait `uint16_t(2000+45*strlen(text))` | Native integration tests exercise all eighteen captions, but not through guest-entry differential execution or an SDL loop |
 
 The long introductory sequence at **`exe:0x13fc` is not a separate
 function**. Its entry is a `JGE` branch target inside `exe:0x1302`, whose
@@ -139,7 +139,25 @@ RTL file selector and captured 22-second DS tables, verifies *every byte*
 of its three allocated arrays, then checks the original advance functions
 and metric globals. It requires a private guest-memory snapshot and game
 data and is omitted if these are unavailable. This is a verified isolated
-font path, **not** an independently runnable source-C intro.
+font path, also used by the native caption integration below, **not** an
+independently runnable source-C intro.
+
+`launcher-intro-native-caption-tests` connects the original `GATE.EXE:117e`
+caption renderer directly to the reconstructed source-C word measurement,
+font selection, glyph rasterizer, caption-frame painter, DOS file operations,
+native FAR heap, VGA pixels and deterministic input/clock adapters. Its
+optional private-data CTest `launcher-intro-native-original-caption` reads
+the 22-second DOS RAM snapshot and actual `GATE_305.FNT`, then renders all
+**eighteen original captions** using their arguments from `EXE:1302`.
+No text or font assets are embedded in the test sources. Every call verifies
+font selection, file-handle cleanup, original duration, a nonempty frame,
+and the first glyph's ink/background pixels against independently decoded
+font bitmap bits. With the available snapshot, all 18 pass (323,066
+nonzero pixels in total, 268 verified first-glyph ink pixels). An optional
+PGM output argument exports the first caption with a *diagnostic* contrast
+map, not the DOS VGA DAC palette. These are independently run original C
+**caption calls**, not the enclosing `gate_exe_1302` presentation, which
+still needs its graphics, event loop and startup dependencies wired together.
 
 `launcher-rtl-decompile` runs the reconstructed C with instrumented far
 memory and the original font (when available), checking all printable glyph
@@ -611,15 +629,16 @@ move/line and color calls for styles 2/4/8 and the mode-0/mode-1 control
 branches; native tests draw real-color bevel pixels, including the
 captured original mode-13h descriptor's black/white/grey shading.
 The resident diagonal-line, pen-width, patterned and text-mode raster
-paths remain unimplemented. The font-selector `RTL:e873`, video startup
-and SDL3 presentation are still outstanding, so full source-C intro
-playback remains **unverified and not independently playable**.
+paths remain unimplemented. The font selector now works natively with the
+original font, and all captions can draw through the original C chain.
+Video startup, picture/animation presentation and SDL3 remain outstanding,
+so full source-C intro playback is **not independently playable**.
 
 ## Immediate next functions
 
-1. Decompile the remaining mapped graphics/video entry points, especially
-   the `GATE.RTL:e873` font selector and the resident `2621` line raster,
-   preserving their original ABI and data globals.
+1. Connect the existing verified native video, font, picture and caption
+   services to the source-C `gate_exe_1302` startup and SDL3 event/render
+   loop, preserving the original sequence and its interruptibility.
 2. Recover the remaining patterned/background and text-mode video
    dependencies (`rtl:0xed74/0xeda5/0xedb7`), keyboard, mouse and timing
    services on the intro's actual call graph. The far call at `rtl:0xef83`

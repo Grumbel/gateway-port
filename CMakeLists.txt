@@ -132,6 +132,27 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin
         ${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos)
   endif()
+  add_executable(launcher-intro-native-caption-tests
+    decomp/launcher/gate_exe.c decomp/launcher/gate_exe_helpers.c
+    decomp/launcher/gate_c_runtime_string.c
+    decomp/launcher/gate_rtl_font.c decomp/launcher/gate_rtl.c
+    decomp/launcher/gate_rtl_draw.c decomp/launcher/gate_rtl_linkage.c
+    decomp/launcher/gate_rtl_file.c
+    decomp/launcher/gate_dos_file_runtime.c
+    src/intro_dos_host_files.c src/intro_host_memory.c
+    src/intro_host_rtl_font.c src/intro_host_rtl_text_globals.c
+    src/intro_host_rtl_pixel.c src/intro_host_input.c
+    tests/launcher_intro_native_caption_tests.c)
+  target_include_directories(launcher-intro-native-caption-tests PRIVATE decomp/launcher)
+  target_compile_options(launcher-intro-native-caption-tests PRIVATE -ffunction-sections -fdata-sections)
+  target_link_options(launcher-intro-native-caption-tests PRIVATE -Wl,--gc-sections)
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin" AND
+     EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos/GATE_305.FNT")
+    add_test(NAME launcher-intro-native-original-caption
+      COMMAND launcher-intro-native-caption-tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin
+        ${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos)
+  endif()
   add_executable(launcher-rtl-video-decompile-tests
     decomp/launcher/gate_rtl_video.c decomp/launcher/gate_exe_helpers.c
     tests/launcher_rtl_video_decompile_tests.c)
