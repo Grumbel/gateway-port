@@ -89,9 +89,25 @@ void gate_linked_initialize_runtime_timezone(void)
  * the original DIV and is never silently replaced by a result. */
 uint32_t gate_rtl_signed_divide_32(int32_t dividend, int32_t divisor)
 {
+    uint32_t numerator;
+    uint32_t denominator;
+    uint32_t quotient;
+    int negate;
+
     if (divisor == 0)
         abort(); /* original divide trap; no recovery value */
-    return (uint32_t)((int64_t)dividend / (int64_t)divisor);
+    /* Unsigned magnitudes match the original 8086 helper and avoid a
+     * non-16-bit Microsoft C 5.1 int64_t dependency. In particular,
+     * INT32_MIN/-1 must produce 0x80000000, not signed C overflow. */
+    numerator = (uint32_t)dividend;
+    denominator = (uint32_t)divisor;
+    negate = (dividend < 0) != (divisor < 0);
+    if (dividend < 0)
+        numerator = 0ul - numerator;
+    if (divisor < 0)
+        denominator = 0ul - denominator;
+    quotient = numerator / denominator;
+    return negate ? (0ul - quotient) : quotient;
 }
 
 /* GATE.RTL:933a..936b, linked 12a5:3c5c. The 8086 MUL sequence returns

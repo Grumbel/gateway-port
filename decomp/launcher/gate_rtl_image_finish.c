@@ -152,9 +152,11 @@ void gate_rtl_postprocess_picture(GateFarPtr work)
 
     data = (GateFarPtr){work.segment, (uint16_t)(work.offset + GATE_PICTURE_RECORD_VFX_IMAGE)};
     {
-        GateFarPtr pixels = {work_word(data, GATE_VFX_IMAGE_PIXELS_SEGMENT),
-                             work_word(data, GATE_VFX_IMAGE_PIXELS_OFFSET)};
-        uint16_t row_bytes = (uint16_t)(work_word(data, GATE_VFX_IMAGE_ROW_STRIDE) * GATE_PICTURE_VFX_ROW_STRIDE_FACTOR);
+        GateFarPtr pixels;
+        uint16_t row_bytes;
+        pixels.segment = work_word(data, GATE_VFX_IMAGE_PIXELS_SEGMENT);
+        pixels.offset = work_word(data, GATE_VFX_IMAGE_PIXELS_OFFSET);
+        row_bytes = (uint16_t)(work_word(data, GATE_VFX_IMAGE_ROW_STRIDE) * GATE_PICTURE_VFX_ROW_STRIDE_FACTOR);
         gate_rtl_compact_picture_rows(pixels, pixels, (int16_t)starting,
                        (int16_t)ending, row_bytes);
     }

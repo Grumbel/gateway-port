@@ -114,7 +114,9 @@ void gate_rtl_release_picture_record(GateFarPtr work)
 {
     if ((work.offset | work.segment) != 0 &&
         gate_far_byte(work.segment, work.offset) != 0) {
-        GateFarPtr data = {work.segment, (uint16_t)(work.offset + GATE_PICTURE_RECORD_VFX_IMAGE)};
+        GateFarPtr data;
+        data.segment = work.segment;
+        data.offset = (uint16_t)(work.offset + GATE_PICTURE_RECORD_VFX_IMAGE);
         gate_rtl_graphics_release(data);
         gate_far_set_byte(work.segment, work.offset, 0);
     }

@@ -8,7 +8,9 @@
 
 static GateFarPtr far_pointer(uint16_t segment, uint16_t offset)
 {
-    GateFarPtr result = {segment, offset};
+    GateFarPtr result;
+    result.segment = segment;
+    result.offset = offset;
     return result;
 }
 

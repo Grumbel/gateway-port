@@ -27,11 +27,18 @@ uint16_t gate_rtl_open_resource_file(uint16_t type, uint16_t resource)
     uint8_t path[GATE_RESOURCE_PATH_STACK_BYTES];
     uint16_t entry = (uint16_t)(GATE_DS_RESOURCE_PATH_TABLE + (uint16_t)(type << GATE_RESOURCE_PATH_TABLE_ENTRY_SHIFT));
     uint16_t ds = gate_ds_segment();
-    GateFarPtr table = {gate_ds_word((uint16_t)(entry + GATE_RESOURCE_PATH_TABLE_SEGMENT_WORD_OFFSET)),
-                        gate_ds_word(entry)};
-    GateFarPtr base = {gate_ds_word(GATE_DS_RESOURCE_PATH_BASE_SEGMENT), gate_ds_word(GATE_DS_RESOURCE_PATH_BASE_OFFSET)};
-    GateFarPtr format = {ds, GATE_DS_RESOURCE_PATH_FORMAT};
-    GateFarPtr pathname = gate_stack_pointer(path);
+    GateFarPtr table;
+    GateFarPtr base;
+    GateFarPtr format;
+    GateFarPtr pathname;
+
+    table.segment = gate_ds_word((uint16_t)(entry + GATE_RESOURCE_PATH_TABLE_SEGMENT_WORD_OFFSET));
+    table.offset = gate_ds_word(entry);
+    base.segment = gate_ds_word(GATE_DS_RESOURCE_PATH_BASE_SEGMENT);
+    base.offset = gate_ds_word(GATE_DS_RESOURCE_PATH_BASE_OFFSET);
+    format.segment = ds;
+    format.offset = GATE_DS_RESOURCE_PATH_FORMAT;
+    pathname = gate_stack_pointer(path);
 
     gate_linked_format_resource_filename(pathname, format, base, resource, table);
     return gate_linked_dos_file_open(pathname, type == GATE_RESOURCE_FILE_CREATE_TYPE ? GATE_DOS_FILE_CREATE_FLAG : 0u);

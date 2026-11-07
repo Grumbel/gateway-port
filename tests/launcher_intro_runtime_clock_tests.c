@@ -225,6 +225,9 @@ int main(void)
     assert((int32_t)gate_rtl_signed_divide_32(3600, -60) == -60);
     assert((int32_t)gate_rtl_signed_divide_32(-3600, -60) == 60);
     assert((int32_t)gate_rtl_signed_divide_32(-100, 60) == -1);
+    assert(gate_rtl_signed_divide_32((int32_t)0x80000000u, 1) == 0x80000000u);
+    assert(gate_rtl_signed_divide_32((int32_t)0x80000000u, (int32_t)0x80000000u) == 1u);
+    assert((int32_t)gate_rtl_signed_divide_32(0x7fffffff, -1) == -0x7fffffff);
     assert(gate_rtl_signed_divide_32((int32_t)0x80000000u, -1) == 0x80000000u);
     puts("RTL:8fa2 clock and RTL:933a multiply: OK");
     return 0;
