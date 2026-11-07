@@ -3,9 +3,22 @@
 
 #include "gate_rtl.h"
 
+#include <stdlib.h>
+
 /* Linked 12a5:34d8 (RTL:8bb6) fills a time sample through an SS:offset
  * pointer. Its calendar conversion is not reconstructed here. */
 void gate_far_12a5_34d8(GateFarPtr destination);
+
+/* GATE.RTL:929e..9339, linked 12a5:3bc0: signed 32-bit quotient.
+ * The 8086 routine tests both sign words, divides magnitudes and restores
+ * the sign; the returned DX:AX wraps to 32 bits. Zero divisor faults in
+ * the original DIV and is never silently replaced by a result. */
+uint32_t gate_rtl_929e(int32_t dividend, int32_t divisor)
+{
+    if (divisor == 0)
+        abort(); /* original divide trap; no recovery value */
+    return (uint32_t)((int64_t)dividend / (int64_t)divisor);
+}
 
 /* GATE.RTL:933a..936b, linked 12a5:3c5c. The 8086 MUL sequence returns
  * only DX:AX; carries above 32 bits are discarded. */

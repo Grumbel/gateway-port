@@ -13,6 +13,7 @@
 
 uint32_t gate_rtl_8fa2(void);
 uint32_t gate_rtl_933a(uint32_t lhs, uint32_t rhs);
+uint32_t gate_rtl_929e(int32_t dividend, int32_t divisor);
 
 static uint8_t stack_bytes[65536];
 static uint16_t ds[32768];
@@ -84,6 +85,12 @@ int main(void)
     assert(gate_rtl_933a(0xffffffffu, 1000u) == 0xfffffc18u);
     assert(gate_rtl_933a(0x12345678u, 0x87654321u) ==
            (uint32_t)(0x12345678u * 0x87654321u));
+    assert((int32_t)gate_rtl_929e(3600, 60) == 60);
+    assert((int32_t)gate_rtl_929e(-3600, 60) == -60);
+    assert((int32_t)gate_rtl_929e(3600, -60) == -60);
+    assert((int32_t)gate_rtl_929e(-3600, -60) == 60);
+    assert((int32_t)gate_rtl_929e(-100, 60) == -1);
+    assert(gate_rtl_929e((int32_t)0x80000000u, -1) == 0x80000000u);
     puts("RTL:8fa2 clock and RTL:933a multiply: OK");
     return 0;
 }

@@ -390,6 +390,8 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_intro_runtime_string_binary_tests.py)
     add_test(NAME launcher-intro-runtime-clock-binary COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_intro_runtime_clock_binary_tests.py)
+    add_test(NAME launcher-intro-clock-sampler-binary COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_intro_clock_sampler_binary_tests.py)
     add_test(NAME launcher-intro-keyboard-binary COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_intro_keyboard_binary_tests.py)
     add_test(NAME launcher-rtl-graphics-binary COMMAND ${Python3_EXECUTABLE}
