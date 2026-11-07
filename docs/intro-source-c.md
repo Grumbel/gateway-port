@@ -1,9 +1,13 @@
-# Source-C intro: executable caption milestone
+# Source-C intro: full silent sequence and frame replay
 
 The original `GATE.EXE:1302` is translated in `decomp/launcher/`, along with
 its caption layout and font/drawing RTL callees. This chapter concerns the
-**source-C path**, separate from the already playable `gateway-intro` native
-C++ reconstruction. The source-C path is **not yet a complete playable intro**.
+**source-C path**, separate from the native `gateway-intro` C++ reconstruction.
+The recovered original `GATE.EXE:1302` C entry now runs from start through
+its final caption, with source-C image loading, original animation control
+flow, source-C font/drawing, palette operations and time delays. An SDL3
+replayer displays the output. **This is a silent, captured-state replay**:
+music startup, live original key interrupts and the game handoff are pending.
 
 The first executable C-only milestone is the complete set of eighteen
 `GATE.EXE:117e` caption calls with their original arguments, font loading,
@@ -56,6 +60,43 @@ compares occupied-pixel totals against the established integration oracle:
 **323,066 total nonzero pixels** over eighteen screens. It checks the
 separate original caption wait durations too. Test screenshots are ignored
 under `build/`; no narrative text or original assets enter the Git history.
+
+## Play the complete source-C intro (silent)
+
+```sh
+nix run .#intro-source-c-full -- \
+  build/intro-analysis/at-22000.bin ../gateway-dos
+```
+
+This app executes the **actual recovered C `GATE.EXE:1302` function**,
+including its original image, fade, caption and animation entry points.
+Narrow native bridges supply VFX/DCL, RAM, VGA mode 13h, files, deterministic
+clock and silent audio initialization. It first creates a private temporary
+framebuffer/DAC recording, then replays those frames in SDL3 at their
+simulated timestamps. The temporary recording is removed on exit; no game
+assets are packaged in the Nix derivation.
+
+Controls: Space/P pauses, Left/Right seeks five seconds, Home/End seeks to
+the beginning/end, F9 toggles image filtering and Escape exits. These are
+**replayer controls**, not original-game key interrupts; Space does not
+execute the original skip branch. This replay is silent and does not launch
+the game afterward.
+
+To capture the full sequence without SDL3:
+
+```sh
+nix build .#intro-decompile
+result/bin/gateway-intro-source-c-composite \
+  build/intro-analysis/at-22000.bin ../gateway-dos \
+  build/intro-final.ppm --full --record build/intro-full.gvr
+```
+
+The private `GVR1` format consists of four signature bytes followed by
+records of: 32-bit little-endian virtual timestamp (ms), 64,000 VGA mode-13h
+pixel indices, and 768 six-bit DAC components. Its 816 frames span 342,026
+simulated milliseconds on the pinned RAM capture; two consecutive headless
+runs produced byte-identical recordings. The source-only Nix package does
+not require SDL3 or Unicorn. Keep `.gvr` files private like screenshots.
 
 ## Original source-C image loader milestone
 
@@ -118,16 +159,14 @@ pixels**, strictly within x=24..293 and y=81..118. A regression test checks
 the entire 320×200 output fingerprint with private game data. This is an
 image-path diagnostic, **not the original animation schedule**.
 
-## What remains before `GATE.EXE:1302` is playable
+## Remaining limitations
 
-- Integrate the complete real startup sequence, including video and audio
-  configuration. `RTL:c3bd` has only been partly recovered; silent music HLE
-  needs an explicit service boundary.
-- Connect the existing source-C resource image loader, palette effects,
-  animations and original 18-caption ordering through `gate_exe_1302`, rather
-  than rendering caption calls independently.
-- Implement wall-clock and SDL input callbacks that preserve the original
-  Escape/skip conditions, and correctly handle the full intro/game handoff.
-- Validate each sequence boundary and rendered frame against the original
-  deterministic DOS snapshots. Only then rename this milestone to a playable
-  source-C intro.
+- The original C entry uses an already relocated 22-second DOS RAM capture.
+  Clean startup without a snapshot is not yet reconstructed.
+- Original `RTL:c3bd` music setup is a silent host stub; no audio is replayed.
+- SDL keys control the replay, not the source-C game's original Escape/skip
+  checks. These require a live execution/presentation loop.
+- `GATE.EXE:1302` completes, but the game is not started afterward.
+- The 816 frames are pinned in source-C regression tests. They have **not**
+  been compared frame-by-frame against the original DOS run at matching
+  guest times; the 16ms retrace model is provisional.

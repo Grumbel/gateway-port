@@ -52,6 +52,20 @@ set(GATEWAY_INTRO_SOURCE_C_PICTURE_SOURCES
   src/intro_host_rtl_palette_globals.c src/intro_host_vga_ports.c
   src/intro_source_c_picture_dump.c)
 
+set(GATEWAY_INTRO_SOURCE_C_COMPOSITE_SOURCES
+  ${GATEWAY_INTRO_SOURCE_C_CAPTION_SOURCES}
+  ${GATEWAY_INTRO_SOURCE_C_PICTURE_SOURCES}
+  decomp/launcher/gate_input.c
+  decomp/launcher/gate_c_runtime_random.c
+  decomp/launcher/gate_rtl_graphics.c
+  decomp/launcher/gate_rtl_intro_animation.c
+  decomp/launcher/gate_rtl_intro_sequence.c
+  src/intro_host_rtl_graphics_globals.c
+  src/intro_source_c_composite.c)
+list(REMOVE_ITEM GATEWAY_INTRO_SOURCE_C_COMPOSITE_SOURCES
+  src/intro_source_c_captions.c src/intro_source_c_picture_dump.c)
+list(REMOVE_DUPLICATES GATEWAY_INTRO_SOURCE_C_COMPOSITE_SOURCES)
+
 # This is reconstructed original C, not the separate SDL/C++ approximation
 # in src/intro_player.cpp. It deliberately keeps undefined original runtime
 # services as unresolved externals in the archive until they are recovered.
@@ -137,9 +151,20 @@ add_executable(gateway-intro-source-c-picture-dump
   ${GATEWAY_INTRO_SOURCE_C_PICTURE_SOURCES})
 target_include_directories(gateway-intro-source-c-picture-dump PRIVATE
   decomp/launcher src)
+target_compile_options(gateway-intro-source-c-picture-dump PRIVATE
+  -ffunction-sections -fdata-sections)
+target_link_options(gateway-intro-source-c-picture-dump PRIVATE -Wl,--gc-sections)
 target_link_libraries(gateway-intro-source-c-picture-dump PRIVATE
   gateway_intro_pic_host)
 install(TARGETS gateway-intro-source-c-picture-dump RUNTIME DESTINATION bin)
+add_executable(gateway-intro-source-c-composite
+  ${GATEWAY_INTRO_SOURCE_C_COMPOSITE_SOURCES})
+target_include_directories(gateway-intro-source-c-composite PRIVATE decomp/launcher src)
+target_compile_options(gateway-intro-source-c-composite PRIVATE
+  -ffunction-sections -fdata-sections)
+target_link_options(gateway-intro-source-c-composite PRIVATE -Wl,--gc-sections)
+target_link_libraries(gateway-intro-source-c-composite PRIVATE gateway_intro_pic_host)
+install(TARGETS gateway-intro-source-c-composite RUNTIME DESTINATION bin)
 install(FILES decomp/launcher/gate_exe.h decomp/launcher/gate_rtl.h
               decomp/launcher/gate_rtl_audio_startup.h
               decomp/launcher/gate_rtl_video.h
@@ -484,6 +509,9 @@ if(BUILD_TESTING)
     add_test(NAME launcher-intro-source-c-picture COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_intro_source_c_picture_tests.py
       $<TARGET_FILE:gateway-intro-source-c-picture-dump>)
+    add_test(NAME launcher-intro-source-c-full COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_intro_source_c_full_tests.py
+      $<TARGET_FILE:gateway-intro-source-c-composite>)
     add_test(NAME launcher-intro-audio-startup-binary COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_intro_audio_startup_binary_tests.py)
     add_test(NAME launcher-intro-audio-boundary COMMAND ${Python3_EXECUTABLE}
@@ -530,6 +558,9 @@ add_executable(gateway-story-check tools/check_action_matrix.cpp)
 target_link_libraries(gateway-story-check PRIVATE gateway_core)
 if(GATEWAY_WITH_SDL)
   find_package(SDL3 CONFIG REQUIRED)
+  add_executable(gateway-intro-source-c-replay src/intro_source_c_replay.cpp)
+  target_link_libraries(gateway-intro-source-c-replay PRIVATE SDL3::SDL3)
+  install(TARGETS gateway-intro-source-c-replay RUNTIME DESTINATION bin)
   add_executable(gateway-intro-source-c-captions
     ${GATEWAY_INTRO_SOURCE_C_CAPTION_SOURCES}
     src/intro_source_c_player.cpp)

@@ -21,6 +21,9 @@ typedef struct GateIntroVgaPorts {
     uint8_t retrace_phase;
     uint32_t status_reads;
     uint32_t dac_writes;
+    /* Optional host-only tap after a full 256-color DAC upload. */
+    void (*palette_ready)(void *userdata);
+    void *palette_userdata;
 } GateIntroVgaPorts;
 
 void gate_intro_vga_ports_attach(GateIntroVgaPorts *ports);

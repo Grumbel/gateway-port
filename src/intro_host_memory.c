@@ -27,6 +27,12 @@ void gate_intro_memory_detach(void)
     active_memory = 0;
 }
 
+void gate_intro_memory_notify_frame(void)
+{
+    if (active_memory && active_memory->frame_ready)
+        active_memory->frame_ready(active_memory->frame_userdata);
+}
+
 static uint8_t *location(uint16_t segment, uint16_t offset)
 {
     unsigned i;

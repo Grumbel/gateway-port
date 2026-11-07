@@ -49,6 +49,8 @@ void gate_rtl_palette_out(uint16_t port, uint8_t value)
         if (++active_ports->dac_component == 3) {
             active_ports->dac_component = 0;
             ++active_ports->dac_index;
+            if (active_ports->dac_index == 0 && active_ports->palette_ready)
+                active_ports->palette_ready(active_ports->palette_userdata);
         }
         return;
     case 0x3c0:

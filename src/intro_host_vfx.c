@@ -178,4 +178,5 @@ void gate_far_24a7_000c(uint16_t unused, uint16_t y, uint16_t x,
         source_offset = (uint16_t)(source_offset + stride);
         destination = (uint16_t)(destination + 320u);
     }
+    gate_intro_memory_notify_frame();
 }

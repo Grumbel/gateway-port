@@ -39,12 +39,17 @@ typedef struct GateIntroMemory {
     uint16_t stack_view_count;
     GateIntroStackView stack_views[GATE_INTRO_MAX_STACK];
     GateIntroAllocation allocations[GATE_INTRO_MAX_ALLOCATIONS];
+    /* Optional host-only tap after a complete native VFX image draw.
+     * The original source-C renderer does not know about frame export. */
+    void (*frame_ready)(void *userdata);
+    void *frame_userdata;
 } GateIntroMemory;
 
 /* Caller owns storage and controls its lifetime. The bound context must
  * remain attached until all reconstructed intro functions return. */
 void gate_intro_memory_attach(GateIntroMemory *memory);
 void gate_intro_memory_detach(void);
+void gate_intro_memory_notify_frame(void);
 
 /* Native 16-byte-aligned conventional-RAM arena for original VFX pixel
  * allocations. Only the standalone C intro uses the reserved 60000..9efff

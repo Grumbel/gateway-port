@@ -54,7 +54,26 @@
               '';
             };
         });
-      apps = eachSystem (system: {
+      apps = eachSystem (system:
+        let
+          pkgs = import nixpkgs { inherit system; };
+          sourceCFull = pkgs.writeShellApplication {
+            name = "gateway-intro-source-c-full";
+            runtimeInputs = [ pkgs.coreutils ];
+            text = ''
+              if [ "$#" -ne 2 ]; then
+                echo "usage: gateway-intro-source-c-full guest-22s.bin DOS-DIR" >&2
+                exit 2
+              fi
+              replay_dir="$(mktemp -d)"
+              trap 'rm -f "$replay_dir/replay.gvr" "$replay_dir/final.ppm"; rmdir "$replay_dir"' EXIT
+              ${self.packages.${system}.intro-decompile}/bin/gateway-intro-source-c-composite \
+                "$1" "$2" "$replay_dir/final.ppm" --full --record "$replay_dir/replay.gvr"
+              ${self.packages.${system}.default}/bin/gateway-intro-source-c-replay \
+                "$replay_dir/replay.gvr"
+            '';
+          };
+        in {
         default = {
           type = "app";
           program = "${self.packages.${system}.default}/bin/gateway";
@@ -79,6 +98,11 @@
           type = "app";
           program = "${self.packages.${system}.intro-decompile}/bin/gateway-intro-source-c-picture-dump";
           meta.description = "Render one real Gateway PIC through the reconstructed C loader and VGA path";
+        };
+        intro-source-c-full = {
+          type = "app";
+          program = "${sourceCFull}/bin/gateway-intro-source-c-full";
+          meta.description = "Play the original source-C Gateway intro with PIC images, palette fades, animations and all captions (silent)";
         };
         intro-dump = {
           type = "app";
