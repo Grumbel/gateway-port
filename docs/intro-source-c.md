@@ -65,7 +65,7 @@ under `build/`; no narrative text or original assets enter the Git history.
 
 ```sh
 nix run .#intro-source-c-full -- \
-  build/intro-analysis/at-22000.bin ../gateway-dos
+  ../gateway-dos
 ```
 
 This app executes the **actual recovered C `GATE.EXE:1302` function**,
@@ -73,8 +73,14 @@ including its original image, fade, caption and animation entry points.
 Narrow native bridges supply VFX/DCL, RAM, VGA mode 13h, files, deterministic
 clock and silent audio initialization. It first creates a private temporary
 framebuffer/DAC recording, then replays those frames in SDL3 at their
-simulated timestamps. The temporary recording is removed on exit; no game
-assets are packaged in the Nix derivation.
+simulated timestamps. With only the DOS directory argument, the Nix app
+first uses the existing `gateway-probe` with deterministic Unicorn execution
+to regenerate the same 22-second RAM snapshot. Only the *preparation* uses
+8086 emulation; `EXE:1302` and its scene sequencing execute as source C.
+The RAM image and recording are removed on exit. No game assets are packaged
+in the Nix derivation. For subsequent quick runs, an existing private snapshot
+can be passed as a second argument, or in the earlier `snapshot DOS-DIR`
+order, to skip the probe.
 
 Controls: Space/P pauses, Left/Right seeks five seconds, Home/End seeks to
 the beginning/end, F9 toggles image filtering and Escape exits. These are
@@ -162,7 +168,8 @@ image-path diagnostic, **not the original animation schedule**.
 ## Remaining limitations
 
 - The original C entry uses an already relocated 22-second DOS RAM capture.
-  Clean startup without a snapshot is not yet reconstructed.
+  The Nix wrapper generates it automatically, but independent source-C
+  startup without a Unicorn bootstrap is not yet reconstructed.
 - Original `RTL:c3bd` music setup is a silent host stub; no audio is replayed.
 - SDL keys control the replay, not the source-C game's original Escape/skip
   checks. These require a live execution/presentation loop.

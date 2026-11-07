@@ -61,14 +61,37 @@
             name = "gateway-intro-source-c-full";
             runtimeInputs = [ pkgs.coreutils ];
             text = ''
-              if [ "$#" -ne 2 ]; then
-                echo "usage: gateway-intro-source-c-full guest-22s.bin DOS-DIR" >&2
+              if [ "$#" -ne 1 ] && [ "$#" -ne 2 ]; then
+                echo "usage: gateway-intro-source-c-full DOS-DIR [guest-22s.bin]" >&2
+                echo "   or: gateway-intro-source-c-full guest-22s.bin DOS-DIR" >&2
                 exit 2
               fi
               replay_dir="$(mktemp -d)"
-              trap 'rm -f "$replay_dir/replay.gvr" "$replay_dir/final.ppm"; rmdir "$replay_dir"' EXIT
+              trap 'rm -f "$replay_dir/replay.gvr" "$replay_dir/final.ppm" "$replay_dir/guest-22s.bin" "$replay_dir/guest-22s.ppm" "$replay_dir/guest-22s.regs" "$replay_dir/probe.log"; rmdir "$replay_dir"' EXIT
+              dos_dir="$1"
+              if [ "$#" -eq 2 ] && [ -f "$1" ] && [ -d "$2" ]; then
+                dos_dir="$2"
+                snapshot="$1"
+              fi
+              if [ "$#" -eq 1 ]; then
+                if [ ! -f "$dos_dir/GATE.EXE" ]; then
+                  echo "missing $dos_dir/GATE.EXE" >&2
+                  exit 1
+                fi
+                echo "Preparing source-C intro state from original DOS executable..." >&2
+                if ! ${self.packages.${system}.default}/bin/gateway-probe \
+                    "$dos_dir/GATE.EXE" --headless --read-only --deterministic-clock \
+                    --milliseconds 24000 --dump-at "22000:$replay_dir/guest-22s" \
+                    >"$replay_dir/probe.log" 2>&1; then
+                  tail -n 50 "$replay_dir/probe.log" >&2
+                  exit 1
+                fi
+                snapshot="$replay_dir/guest-22s.bin"
+              elif [ -z "''${snapshot:-}" ]; then
+                snapshot="$2"
+              fi
               ${self.packages.${system}.intro-decompile}/bin/gateway-intro-source-c-composite \
-                "$1" "$2" "$replay_dir/final.ppm" --full --record "$replay_dir/replay.gvr"
+                "$snapshot" "$dos_dir" "$replay_dir/final.ppm" --full --record "$replay_dir/replay.gvr"
               ${self.packages.${system}.default}/bin/gateway-intro-source-c-replay \
                 "$replay_dir/replay.gvr"
             '';
