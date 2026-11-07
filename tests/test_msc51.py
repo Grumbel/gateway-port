@@ -56,10 +56,23 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("ECHO All reconstructed launcher objects compiled > SUCCESS.LOG", batch)
             self.assertNotIn("/Fe", batch)  # No complete DOS executable yet.
             response = (output / "LINK.RSP").read_text().splitlines()
-            self.assertEqual(response[:28],
-                             [f"M{index:02d}.OBJ+" for index in range(27)] + ["M27.OBJ"])
-            self.assertEqual(response[28:], ["GATEWAY.EXE", "GATEWAY.MAP",
+            self.assertEqual(response[:29],
+                             [f"M{index:02d}.OBJ+" for index in range(28)] + ["MEMORY.OBJ"])
+            self.assertEqual(response[29:], ["GATEWAY.EXE", "GATEWAY.MAP",
                                              "LLIBCR.LIB LIBH.LIB /NOD", ";"])
+            memory_batch = (output / "MEMORY.BAT").read_text()
+            self.assertIn("CL /AL /Od /c MEMORY.C", memory_batch)
+            self.assertIn("CL /AL /Od MEMCHK.C MEMORY.OBJ", memory_batch)
+            self.assertIn("MEMCHK.EXE > MEMTEST.LOG", memory_batch)
+            self.assertIn("IF ERRORLEVEL 1 GOTO FAILED", memory_batch)
+            self.assertIn("MEMOK.LOG", memory_batch)
+            self.assertIn("MEMSIG.LOG", memory_batch)
+            self.assertNotIn("MEMOK.LOG >", memory_batch)
+            adapter = (output / "MEMORY.C").read_text()
+            self.assertIn("FP_SEG(address) = segment", adapter)
+            self.assertIn("FP_OFF(address) = offset", adapter)
+            self.assertIn("gate_dos_bind_ds", adapter)
+            self.assertIn("_dos_allocmem", (output / "MEMCHK.C").read_text())
             link_batch = (output / "LINK.BAT").read_text()
             self.assertIn("C:\\BIN\\LINK.EXE @LINK.RSP > LINK.LOG", link_batch)
             self.assertNotIn("\nLINK @LINK.RSP", link_batch)
@@ -172,6 +185,17 @@ class MSC51Tests(unittest.TestCase):
             (output / "success.log").write_text("compiled")
             for name in objects:
                 (output / name.lower()).write_bytes(b"compiled object")
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run") as run, \
+                 redirect_stderr(io.StringIO()) as error:
+                with self.assertRaises(SystemExit):
+                    msc51.main(args)
+                run.assert_not_called()
+            self.assertIn("msc51-compile-memory first", error.getvalue())
+            (output / "memory.obj").write_bytes(b"DOS memory adapter")
+            (output / "memstart.log").write_text("tested")
+            (output / "memok.log").write_text("passed")
+            (output / "memsig.log").write_text(msc51.memory_source_signature(output))
             for name in ("LINKSTAR.LOG", "LNKSTART.LOG", "LINKDONE.LOG", "LINKFAIL.LOG",
                          "LINK.LOG", "GATEWAY.EXE", "GATEWAY.MAP"):
                 (output / name.lower()).write_bytes(b"stale result")
@@ -204,6 +228,53 @@ class MSC51Tests(unittest.TestCase):
             with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
                  mock.patch.object(msc51.subprocess, "run", side_effect=simulate_success):
                 self.assertEqual(msc51.main(args), 0)
+
+    def test_compile_memory_runs_separately_and_checks_dos_probe_result(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            compiler = root / "compiler"
+            for directory in ("BIN", "LIB", "INCLUDE"):
+                (compiler / directory).mkdir(parents=True)
+            for name in ("CL.EXE", "C1.EXE", "C1L.EXE", "C2.EXE", "C3.EXE", "LINK.EXE"):
+                (compiler / "BIN" / name).touch()
+            for name in ("LLIBCR.LIB", "LIBH.LIB"):
+                (compiler / "LIB" / name).touch()
+            (compiler / "INCLUDE" / "STDIO.H").touch()
+            output = root / "launcher"
+            args = ["compile-memory", "--compiler", str(compiler), "--output", str(output)]
+
+            def failed_probe(command, check):
+                self.assertIn("MEMORY.BAT", command)
+                self.assertFalse(check)
+                (output / "MEMSTART.LOG").write_text("started")
+                (output / "MEMORY.OBJ").write_bytes(b"compiled")
+                (output / "MEMFAIL.LOG").write_text("incorrect stack segment")
+                return mock.Mock(returncode=0)
+
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run", side_effect=failed_probe), \
+                 redirect_stderr(io.StringIO()) as error:
+                self.assertEqual(msc51.main(args), 1)
+            self.assertIn("incorrect stack segment", error.getvalue())
+
+            def successful_probe(command, check):
+                self.assertIn("MEMORY.BAT", command)
+                self.assertFalse((output / "MEMFAIL.LOG").exists())
+                self.assertFalse((output / "MEMORY.OBJ").exists())
+                (output / "MEMSTART.LOG").write_text("started")
+                (output / "MEMORY.OBJ").write_bytes(b"compiled")
+                (output / "MEMOK.LOG").write_text("passed")
+                (output / "MEMTEST.LOG").write_text("Memory probe: PASS")
+                (output / "MEMSIG.LOG").write_text(msc51.memory_source_signature(output))
+                return mock.Mock(returncode=0)
+
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run", side_effect=successful_probe):
+                self.assertEqual(msc51.main(args), 0)
+
+            (output / "MEMORY.C").write_text((output / "MEMORY.C").read_text() + "/* changed */\n")
+            with self.assertRaisesRegex(ValueError, "source has changed"):
+                msc51.validate_memory_adapter(output)
 
     def test_stages_only_recovered_source_with_c89_headers(self):
         with tempfile.TemporaryDirectory() as scratch:

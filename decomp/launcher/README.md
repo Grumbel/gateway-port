@@ -912,6 +912,17 @@ adapter is assumed to exist merely because object compilation succeeds, and
 the current linker errors should not be silenced with unverified no-op
 functions. See the top-level toolchain instructions.
 
+The eight guest-memory symbols now have a separate **DOS-specific**
+implementation in `dos/msc51_memory.c`, using Microsoft C 5.1 `FP_SEG`/
+`FP_OFF` far pointers and an explicitly bound guest DS. The optional
+`nix run -L .#msc51-compile-memory` builds `MEMORY.OBJ` and runs an actual
+Microsoft C DOS `MEMCHK.EXE` before permitting the next link attempt.
+The probe checks DS words, 8086 offset wrapping, and SS:offset access to a
+stack variable. A recorded source fingerprint also prevents reusing an older
+`MEMORY.OBJ` after an adapter change. A new `LINK.LOG` will show whether these eight symbols have
+been resolved; the user-host probe has not yet run. No original launcher DS
+setup, CRT entry or resident services are claimed to exist yet.
+
 ## Immediate next functions
 
 1. Connect the existing verified native video, font, picture and caption

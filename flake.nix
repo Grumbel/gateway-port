@@ -116,6 +116,15 @@
                 --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
             '';
           };
+          msc51-compile-memory = pkgs.writeShellApplication {
+            name = "gateway-msc51-compile-memory";
+            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
+            text = ''
+              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
+              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py compile-memory \
+                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
+            '';
+          };
           msc51-link-launcher = pkgs.writeShellApplication {
             name = "gateway-msc51-link-launcher";
             runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
@@ -296,6 +305,11 @@
           program = "${self.packages.${system}.msc51-compile-launcher}/bin/gateway-msc51-compile-launcher";
           meta.description = "Attempt to compile all 28 reconstructed launcher modules to DOS objects with Microsoft C 5.1";
         };
+        msc51-compile-memory = {
+          type = "app";
+          program = "${self.packages.${system}.msc51-compile-memory}/bin/gateway-msc51-compile-memory";
+          meta.description = "Compile and verify the Gateway DOS segmented-memory adapter with Microsoft C 5.1";
+        };
         msc51-link-launcher = {
           type = "app";
           program = "${self.packages.${system}.msc51-link-launcher}/bin/gateway-msc51-link-launcher";
@@ -460,6 +474,7 @@ except Exception:
                          self.packages.${system}.msc51-prepare
                          self.packages.${system}.msc51-prepare-launcher
                          self.packages.${system}.msc51-compile-launcher
+                         self.packages.${system}.msc51-compile-memory
                          self.packages.${system}.msc51-link-launcher
                          self.packages.${system}.msc51-link-report
                          self.packages.${system}.msc51-install

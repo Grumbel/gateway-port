@@ -213,6 +213,7 @@ nix run .#msc51-shell                         # interactive DOSBox compiler
 nix run .#msc51-prepare                       # prepare C89 source only (no download)
 nix run .#msc51-prepare-launcher              # stage all 28 recovered launcher modules
 nix run -L .#msc51-compile-launcher            # compile all 28 with Microsoft C 5.1
+nix run -L .#msc51-compile-memory              # compile and test real DOS memory adapter
 nix run -L .#msc51-link-launcher               # try LINK with the resulting objects
 nix run .#msc51-link-report                    # classify saved LINK.LOG without DOSBox
 nix build .#msc51                             # optional: inspect assembled DOS tree
@@ -327,16 +328,31 @@ all expected object files. To use another compiler installation:
 nix run -L .#msc51-compile-launcher -- --compiler build/msc51-local
 ```
 
-The separate link-only diagnostic reuses those object files; it **does not
-recompile** the 28 modules:
+The initial real-link report found 108 unresolved names, including eight
+segmented-memory operations. `msc51-compile-memory` stages a separate
+`MEMORY.C` that implements those operations using real DOS far pointers and
+Microsoft C 5.1's `FP_SEG`/`FP_OFF` macros (not Borland's `MK_FP`). Its
+`MEMCHK.EXE` allocates a 64 KiB DOS guest segment, checks DS reads and
+writes, little-endian words, 16-bit offset wrapping, and an SS:offset
+stack-local write, then frees the block. It accepts `MEMORY.OBJ` only when
+the DOS executable returns successfully and records `MEMOK.LOG` plus a
+source fingerprint in `MEMSIG.LOG`, rejecting outdated adapter objects; errors
+are reported from `MEMBUILD.LOG` and `MEMTEST.LOG`. The adapter requires an
+explicit `gate_dos_bind_ds(segment)` before game DS access. It does not
+reconstruct the original game's data-segment allocation/initialization.
+
+The separate link-only diagnostic reuses all 28 object files **and** the
+verified `MEMORY.OBJ`, without recompiling any of them:
 
 ```sh
+nix run -L .#msc51-compile-memory
 nix run -L .#msc51-link-launcher
+nix run .#msc51-link-report -- --json build/msc51-link-report.json
 ```
 
 It generates `build/msc51-launcher/LINK.RSP` and `LINK.BAT`, then invokes
-`C:\BIN\LINK.EXE` explicitly with all 28 `Mxx.OBJ` files, the large-model
-`LLIBCR.LIB` and `LIBH.LIB`. The historical LINK response file supplies the
+`C:\BIN\LINK.EXE` explicitly with all 28 `Mxx.OBJ` files, `MEMORY.OBJ`,
+the large-model `LLIBCR.LIB` and `LIBH.LIB`. The historical LINK response file supplies the
 object list (continued using trailing `+`), EXE name, MAP name, libraries and
 an empty definitions-file answer, as documented by
 [Microsoft KB Q40429](https://www.infania.net/misc/kbarchive/kb/040/Q40429/index.html).
@@ -350,13 +366,17 @@ recursively restarts it. The startup marker is `LNKSTART.LOG` (a valid DOS
 8.3 filename); the earlier `LINKSTART.LOG` was truncated to `LINKSTAR.LOG`
 by DOSBox. Both legacy and current markers are cleared before a new link.
 
-The user's subsequent actual Microsoft **Overlay Linker 3.65** run passed all
+The user's initial Microsoft **Overlay Linker 3.65** run passed all
 28 object names to LINK and reported **108 `L2029` unresolved externals**.
-They include the CRT's `_main`, the generic segmented-memory accessors,
+They include the CRT's `_main`, eight generic segmented-memory accessors,
 DOS file services, linked resident FAR calls and RTL-state/hardware adapters.
-No runnable EXE was produced; this is an expected source-coverage/host-adapter
-boundary, not a new compiler incompatibility. To inventory the saved log
-without invoking DOSBox or downloading the proprietary compiler again:
+The new adapter is intended to remove the eight memory symbols only after
+its *real Microsoft C 5.1 test* passes; it has not yet been executed in this
+environment. The remaining CRT entry, DOS/resident and RTL services must
+still be implemented to produce a working executable. This is a
+source-coverage/host-adapter boundary, not a new compiler incompatibility.
+To inventory the saved log without invoking DOSBox or downloading the
+proprietary compiler again:
 
 ```sh
 nix run .#msc51-link-report -- --details --json build/msc51-link-report.json

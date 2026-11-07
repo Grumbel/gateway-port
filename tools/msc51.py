@@ -228,11 +228,23 @@ def msc51_rename_identifiers(source: str, names: dict[str, str]) -> str:
         if match.group("identifier") is not None else match.group(0), source)
 
 
+MEMORY_SOURCES = ("GATEMEM.H", "STDINT.H", "MEMORY.C", "MEMCHK.C")
+
+
+def memory_source_signature(output: Path) -> str:
+    """Reject a stale DOS memory object after an adapter/staging change."""
+    digest = hashlib.sha256(b"MS C 5.1 /AL /Od memory adapter v1\n")
+    for name in MEMORY_SOURCES:
+        digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
+    return digest.hexdigest()[:16]
+
+
 def stage_launcher(output: Path) -> list[str]:
     """Stage recovered launcher C and a diagnostic DOS link attempt.
 
-    The original resident services and guest memory/graphics adapters are
-    unavailable as DOS objects; LINK is expected to report missing symbols.
+    The original resident services and graphics adapters are not yet DOS
+    objects. The optional, separately verified memory adapter is real DOS
+    code; LINK is still expected to report unresolved original services.
     """
     output.mkdir(parents=True, exist_ok=True)
     source_dir = REPO / "decomp/launcher"
@@ -295,6 +307,43 @@ def stage_launcher(output: Path) -> list[str]:
     (output / "SYMBOL.MAP").write_text(
         "# DOS compiler identifier -> original identifier (original addresses remain in source comments)\n"
         + "".join(f"{alias}  {name}\n" for name, alias in shortened.items()))
+    # These files are hand-written DOS host code, not recovered game modules.
+    # Compile and exercise them separately so the 28 existing game objects
+    # need not be rebuilt for each adapter iteration.
+    (output / "GATEMEM.H").write_text(
+        "/* Microsoft C 5.1 DOS host adapter; not original game code. */\n"
+        '#include "STDINT.H"\n'
+        "typedef struct GateFarPtr { uint16_t segment; uint16_t offset; } GateFarPtr;\n"
+        "void gate_dos_bind_ds(uint16_t segment);\n"
+        "uint16_t gate_ds_segment(void);\n"
+        "uint16_t gate_ds_word(uint16_t offset);\n"
+        "void gate_ds_set_word(uint16_t offset, uint16_t value);\n"
+        "uint8_t gate_far_byte(uint16_t segment, uint16_t offset);\n"
+        "void gate_far_set_byte(uint16_t segment, uint16_t offset, uint8_t value);\n"
+        "uint16_t gate_far_word(uint16_t segment, uint16_t offset);\n"
+        "void gate_far_set_word(uint16_t segment, uint16_t offset, uint16_t value);\n"
+        "GateFarPtr gate_stack_pointer(void *buffer);\n"
+    )
+    for dos_name, staged_name in (("msc51_memory.c", "MEMORY.C"),
+                                  ("msc51_memory_probe.c", "MEMCHK.C")):
+        (output / staged_name).write_text((source_dir / "dos" / dos_name).read_text())
+    memory_signature = memory_source_signature(output)
+    memory_batch = [
+        "@ECHO OFF", "ECHO MS C 5.1 DOS memory adapter > MEMSTART.LOG",
+        "SET PATH=C:\\BIN;C:\\", "SET INCLUDE=C:\\INCLUDE;C:\\",
+        "SET LIB=C:\\LIB;C:\\", "SET TEMP=D:\\", "SET TMP=D:\\",
+        "CL /AL /Od /c MEMORY.C > MEMBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        "IF NOT EXIST MEMORY.OBJ GOTO FAILED",
+        "CL /AL /Od MEMCHK.C MEMORY.OBJ /FeMEMCHK.EXE /link LLIBCR.LIB LIBH.LIB/NOD >> MEMBUILD.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST MEMCHK.EXE GOTO FAILED",
+        "MEMCHK.EXE > MEMTEST.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        f"ECHO {memory_signature} > MEMSIG.LOG",
+        "ECHO Microsoft C DOS memory probe passed > MEMOK.LOG",
+        "GOTO DONE", ":FAILED",
+        "ECHO Microsoft C DOS memory probe failed > MEMFAIL.LOG",
+        ":DONE", "EXIT",
+    ]
+    (output / "MEMORY.BAT").write_text("\r\n".join(memory_batch) + "\r\n")
     lines = [
         "@ECHO OFF", "ECHO Gateway MSC 5.1 launcher objects > START.LOG",
         "SET PATH=C:\\BIN;C:\\", "SET INCLUDE=C:\\INCLUDE;C:\\",
@@ -316,7 +365,7 @@ def stage_launcher(output: Path) -> list[str]:
     # Microsoft's LINK response file is prompt-oriented: object modules,
     # output executable, map, libraries/options, and an empty DEF response.
     # Each trailing + extends the SAME response across CRLFs (MS KB Q40429).
-    response = ([f"{name}+" for name in objects[:-1]] + [objects[-1],
+    response = ([f"{name}+" for name in objects] + ["MEMORY.OBJ",
                 "GATEWAY.EXE", "GATEWAY.MAP", "LLIBCR.LIB LIBH.LIB /NOD", ";"])
     (output / "LINK.RSP").write_text("\r\n".join(response) + "\r\n")
     link_batch = [
@@ -363,6 +412,37 @@ def validate_launcher_objects(output: Path, objects: list[str]) -> None:
         raise ValueError(f"Cannot link launcher: {len(missing)} of {len(objects)} "
                          "objects missing or compiler success marker absent. "
                          "Run msc51-compile-launcher first.")
+
+
+def validate_memory_adapter(output: Path) -> None:
+    """Require a successful real-DOS probe, not a link-satisfying stub."""
+    if (locate_case_insensitive(output, "MEMORY.OBJ") is None or
+            locate_case_insensitive(output, "MEMSTART.LOG") is None or
+            locate_case_insensitive(output, "MEMOK.LOG") is None or
+            locate_case_insensitive(output, "MEMFAIL.LOG") is not None):
+        raise ValueError("Cannot link launcher: DOS memory adapter is unverified. "
+                         "Run msc51-compile-memory first.")
+    signature = locate_case_insensitive(output, "MEMSIG.LOG")
+    if signature is None or signature.read_text().strip() != memory_source_signature(output):
+        raise ValueError("Cannot link launcher: DOS memory adapter source has changed "
+                         "since its test. Run msc51-compile-memory again.")
+
+
+def remove_memory_outputs(output: Path) -> None:
+    names = {"MEMSTART.LOG", "MEMOK.LOG", "MEMFAIL.LOG", "MEMBUILD.LOG", "MEMSIG.LOG",
+             "MEMTEST.LOG", "MEMORY.OBJ", "MEMCHK.EXE", "MEMCHK.OBJ"}
+    if output.is_dir():
+        for entry in output.iterdir():
+            if entry.is_file() and entry.name.upper() in names:
+                entry.unlink()
+
+
+def print_memory_diagnostics(output: Path) -> None:
+    for name in ("MEMFAIL.LOG", "MEMBUILD.LOG", "MEMTEST.LOG", "MEMOK.LOG"):
+        path = locate_case_insensitive(output, name)
+        content = path.read_text(errors="replace") if path else "(not created)"
+        print(f"--- {name} ---\n{content[-8_000:].rstrip()}", file=sys.stderr)
+    print(f"Memory adapter workspace: {output}", file=sys.stderr)
 
 
 def remove_launcher_link_outputs(output: Path) -> None:
@@ -447,7 +527,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("probe", "shell", "prepare", "install",
                                             "prepare-launcher", "compile-launcher",
-                                            "link-launcher"))
+                                            "compile-memory", "link-launcher"))
     parser.add_argument("--compiler", default=os.environ.get("GATEWAY_MSC51_DIR"),
                         help="installed Microsoft C 5.1 directory (or GATEWAY_MSC51_DIR)")
     parser.add_argument("--output", type=Path,
@@ -458,7 +538,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--floppy", type=Path, action="append", default=[],
                         help="one original floppy image, repeat in original disk order")
     args = parser.parse_args(argv)
-    launcher = args.command in ("prepare-launcher", "compile-launcher", "link-launcher")
+    launcher = args.command in ("prepare-launcher", "compile-launcher",
+                                "compile-memory", "link-launcher")
     output = (args.output or Path("build/msc51-launcher" if launcher else "build/intro-msc51")).expanduser().resolve()
     objects = []
     if launcher:
@@ -479,13 +560,16 @@ def main(argv: list[str] | None = None) -> int:
         else:
             if args.command == "link-launcher":
                 validate_launcher_objects(output, objects)
+                validate_memory_adapter(output)
             if not args.compiler:
                 parser.error("set GATEWAY_MSC51_DIR or pass --compiler /path/to/installed/MSC51")
             compiler = validate_compiler(Path(args.compiler))
-            commands = dosbox_commands(compiler, output,
-                                       args.command in ("probe", "compile-launcher", "link-launcher"),
-                                       ("LINK.BAT" if args.command == "link-launcher" else
-                                        "COMPILE.BAT" if launcher else "BUILD.BAT"))
+            commands = dosbox_commands(
+                compiler, output,
+                args.command in ("probe", "compile-launcher", "compile-memory", "link-launcher"),
+                ("LINK.BAT" if args.command == "link-launcher" else
+                 "MEMORY.BAT" if args.command == "compile-memory" else
+                 "COMPILE.BAT" if launcher else "BUILD.BAT"))
             output.mkdir(parents=True, exist_ok=True)
     except ValueError as error:
         parser.error(str(error))
@@ -501,6 +585,10 @@ def main(argv: list[str] | None = None) -> int:
         remove_launcher_outputs(output, objects)
         remove_launcher_link_outputs(output)
         command.append("--exit")
+    elif args.command == "compile-memory":
+        remove_memory_outputs(output)
+        remove_launcher_link_outputs(output)
+        command.append("--exit")
     elif args.command == "link-launcher":
         remove_launcher_link_outputs(output)
         command.append("--exit")
@@ -511,9 +599,21 @@ def main(argv: list[str] | None = None) -> int:
             print_probe_diagnostics(output)
         elif args.command == "compile-launcher":
             print_launcher_diagnostics(output)
+        elif args.command == "compile-memory":
+            print_memory_diagnostics(output)
         elif args.command == "link-launcher":
             print_launcher_link_diagnostics(output)
         return result.returncode
+    if args.command == "compile-memory":
+        try:
+            validate_memory_adapter(output)
+        except ValueError:
+            print("Microsoft C did not compile and verify the DOS memory adapter.", file=sys.stderr)
+            print_memory_diagnostics(output)
+            return 1
+        print("Microsoft C 5.1 verified DOS memory access, DS binding and stack pointers; "
+              "MEMORY.OBJ can now be linked with the 28 launcher objects.")
+        return 0
     if args.command == "link-launcher":
         started = locate_case_insensitive(output, "LNKSTART.LOG")
         success = locate_case_insensitive(output, "LINKDONE.LOG")
