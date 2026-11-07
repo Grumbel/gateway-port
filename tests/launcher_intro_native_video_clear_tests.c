@@ -6,6 +6,7 @@
 #endif
 
 #include "gate_intro_host_memory.h"
+#include "gate_intro_host_video_mode.h"
 #include "gate_rtl_video.h"
 
 #include <assert.h>
@@ -26,11 +27,13 @@ void gate_rtl_video_command(uint16_t function, uint8_t *input, uint8_t *output)
 }
 
 static void descriptor(unsigned mode, unsigned height, unsigned pitch,
-                       unsigned planes, uint16_t aperture, uint16_t stride)
+                       unsigned planes, uint16_t aperture, uint16_t stride,
+                       uint8_t bios_mode)
 {
     uint16_t ds = gate_ds_segment();
     uint16_t at = (uint16_t)(0x27eeu + mode * 0x3eu);
     gate_far_set_byte(ds, at, (uint8_t)mode);
+    gate_far_set_byte(ds, (uint16_t)(at + 0x16), bios_mode);
     gate_far_set_word(ds, (uint16_t)(at + 0x1a), (uint16_t)height);
     gate_far_set_word(ds, (uint16_t)(at + 0x1c), (uint16_t)pitch);
     gate_far_set_byte(ds, (uint16_t)(at + 0x1e), (uint8_t)planes);
@@ -46,18 +49,22 @@ static void assert_aperture(const uint8_t *bytes, size_t first, size_t length,
         assert(bytes[i] == expected);
 }
 
-static void test_synthetic(GateIntroMemory *memory)
+static void test_synthetic(GateIntroMemory *memory,
+                           GateIntroVideoModeHardware *hardware)
 {
     unsigned p;
     memset(memory, 0, sizeof *memory);
     memory->ds_segment = 0x2a7a;
-    descriptor(0, 200, 80, 1, 0xb800, 0);
-    descriptor(1, 350, 80, 4, 0xa000, 0x8000);
-    descriptor(2, 480, 80, 4, 0xa000, 0);
-    descriptor(3, 200, 320, 1, 0xa000, 0);
-    descriptor(7, 600, 100, 4, 0xa000, 0);
+    descriptor(0, 200, 80, 1, 0xb800, 0, 3);
+    descriptor(1, 350, 80, 4, 0xa000, 0x8000, 0x10);
+    descriptor(2, 480, 80, 4, 0xa000, 0, 0x12);
+    descriptor(3, 200, 320, 1, 0xa000, 0, 0x13);
+    descriptor(7, 600, 100, 4, 0xa000, 0, 0x54);
 
     gate_ds_set_word(0x15cc, 3);
+    gate_ds_set_word(0x15d2, 1);
+    hardware->bios_mode = 0x13;
+    hardware->bios_mode_valid = 1;
     memset(memory->bytes + 0xa0000, 0xaa, 65536);
     assert(gate_far_2488_000a(0, 0x1234) == 0);
     assert_aperture(memory->bytes, 0xa0000, 64000, 0x34);
@@ -66,6 +73,17 @@ static void test_synthetic(GateIntroMemory *memory)
     assert(gate_far_word(0x2a7a, 0x27ee + 3 * 0x3e + 0x3a) == 0x01d7);
     assert(gate_far_word(0x2a7a, 0x27ee + 2 * 0x3e + 0x3a) == 0x0169);
     assert(gate_far_word(0x2a7a, 0x27ee + 0 * 0x3e + 0x3a) == 0x011a);
+
+    /* Original resident 2488:000a compares INT 10h/AH=0fh AL against
+     * descriptor +16h only when the DS:15d2 check flag is exactly one. */
+    hardware->bios_mode = 0x12;
+    assert(gate_far_2488_000a(0, 0x9876) == 0xfff9);
+    assert_aperture(memory->bytes, 0xa0000, 64000, 0x34);
+    gate_ds_set_word(0x15d2, 2); /* no BIOS check for non-one flag */
+    assert(gate_far_2488_000a(0, 0x009a) == 0);
+    assert_aperture(memory->bytes, 0xa0000, 64000, 0x9a);
+    gate_ds_set_word(0x15d2, 1);
+    hardware->bios_mode = 0x13;
 
     block_mode = 0;
     gate_rtl_f921(); /* actual GATE.RTL source C -> resident native host */
@@ -80,6 +98,7 @@ static void test_synthetic(GateIntroMemory *memory)
     for (p = 0; p < 4; ++p)
         memset(memory->vga_planes[p], 0xa5, 65536);
     gate_ds_set_word(0x15cc, 2);
+    hardware->bios_mode = 0x12;
     assert(gate_far_2488_000a(0, 0x000d) == 0);
     for (p = 0; p < 4; ++p) {
         assert_aperture(memory->vga_planes[p], 0, 38400,
@@ -91,6 +110,7 @@ static void test_synthetic(GateIntroMemory *memory)
 
     /* Mode 1 has a second display page at physical planar offset 8000h. */
     gate_ds_set_word(0x15cc, 1);
+    hardware->bios_mode = 0x10;
     assert(gate_far_2488_000a(1, 0x0002) == 0);
     for (p = 0; p < 4; ++p) {
         assert_aperture(memory->vga_planes[p], 0, 32768,
@@ -101,6 +121,7 @@ static void test_synthetic(GateIntroMemory *memory)
 
     /* Modes 4..7 dispatch to the same planar callback, including 800x600. */
     gate_ds_set_word(0x15cc, 7);
+    hardware->bios_mode = 0x54;
     assert(gate_far_2488_000a(0, 0x0009) == 0);
     for (p = 0; p < 4; ++p) {
         assert_aperture(memory->vga_planes[p], 0, 60000,
@@ -110,6 +131,7 @@ static void test_synthetic(GateIntroMemory *memory)
     }
 
     gate_ds_set_word(0x15cc, 0);
+    hardware->bios_mode = 3;
     memset(memory->bytes + 0xb8000, 0xaa, 16385);
     assert(gate_far_2488_000a(0, 1) == 0);
     assert_aperture(memory->bytes, 0xb8000, 16384, 0xff);
@@ -124,7 +146,9 @@ static void test_synthetic(GateIntroMemory *memory)
     assert(gate_far_2488_000a(0, 0) == 0xfc19);
 }
 
-static void test_original_snapshot(GateIntroMemory *memory, const char *path)
+static void test_original_snapshot(GateIntroMemory *memory,
+                                   GateIntroVideoModeHardware *hardware,
+                                   const char *path)
 {
     FILE *file = fopen(path, "rb");
     uint8_t *original = malloc(GATE_INTRO_RAM_BYTES);
@@ -135,7 +159,10 @@ static void test_original_snapshot(GateIntroMemory *memory, const char *path)
     fclose(file);
     memory->ds_segment = 0x2a7a;
     assert(gate_ds_word(0x15cc) == 3);
+    assert(gate_ds_word(0x15d2) == 1);
     assert(gate_far_byte(0x2a7a, 0x27ed) == 1);
+    hardware->bios_mode = 0x13;
+    hardware->bios_mode_valid = 1;
     memcpy(original, memory->bytes, GATE_INTRO_RAM_BYTES);
     memset(memory->bytes + 0xa0000, 0x55, 65536);
     block_mode = 0;
@@ -152,12 +179,16 @@ static void test_original_snapshot(GateIntroMemory *memory, const char *path)
 int main(int argc, char **argv)
 {
     GateIntroMemory *memory = calloc(1, sizeof *memory);
-    assert(memory);
+    GateIntroVideoModeHardware *hardware = calloc(1, sizeof *hardware);
+    assert(memory && hardware);
     gate_intro_memory_attach(memory);
-    test_synthetic(memory);
+    gate_intro_video_mode_attach(hardware);
+    test_synthetic(memory, hardware);
     if (argc > 1)
-        test_original_snapshot(memory, argv[1]);
+        test_original_snapshot(memory, hardware, argv[1]);
+    gate_intro_video_mode_detach();
     gate_intro_memory_detach();
+    free(hardware);
     free(memory);
     puts("resident display clear: text, linear, planar, page stride, RTL: OK");
     return 0;

@@ -51,8 +51,7 @@ add_library(gateway_intro_memory_host STATIC
   src/intro_host_memory.c src/intro_host_rtl_font.c
   src/intro_host_rtl_globals.c
   src/intro_host_rtl_text_globals.c src/intro_host_rtl_graphics_globals.c
-  src/intro_host_rtl_pixel.c src/intro_host_rtl_palette_globals.c
-  src/intro_host_video_clear.c)
+  src/intro_host_rtl_pixel.c src/intro_host_rtl_palette_globals.c)
 target_include_directories(gateway_intro_memory_host PUBLIC decomp/launcher)
 target_compile_features(gateway_intro_memory_host PUBLIC c_std_11)
 target_compile_options(gateway_intro_memory_host PRIVATE -Wall -Wextra -Wpedantic)
@@ -62,10 +61,12 @@ target_include_directories(gateway_intro_vga_ports_host PUBLIC decomp/launcher)
 target_compile_features(gateway_intro_vga_ports_host PUBLIC c_std_11)
 target_compile_options(gateway_intro_vga_ports_host PRIVATE -Wall -Wextra -Wpedantic)
 install(TARGETS gateway_intro_vga_ports_host ARCHIVE DESTINATION lib)
-add_library(gateway_intro_video_mode_host STATIC src/intro_host_video_mode.c)
+add_library(gateway_intro_video_mode_host STATIC
+  src/intro_host_video_mode.c src/intro_host_video_clear.c)
 target_include_directories(gateway_intro_video_mode_host PUBLIC decomp/launcher)
 target_compile_features(gateway_intro_video_mode_host PUBLIC c_std_11)
 target_compile_options(gateway_intro_video_mode_host PRIVATE -Wall -Wextra -Wpedantic)
+target_link_libraries(gateway_intro_video_mode_host PUBLIC gateway_intro_memory_host)
 install(TARGETS gateway_intro_video_mode_host ARCHIVE DESTINATION lib)
 add_library(gateway_intro_input_host STATIC src/intro_host_input.c)
 target_include_directories(gateway_intro_input_host PUBLIC decomp/launcher)
@@ -162,7 +163,8 @@ if(BUILD_TESTING)
   add_test(NAME launcher-rtl-video-decompile COMMAND launcher-rtl-video-decompile-tests)
   add_executable(launcher-intro-native-video-clear-tests
     decomp/launcher/gate_rtl_video.c src/intro_host_memory.c
-    src/intro_host_video_clear.c tests/launcher_intro_native_video_clear_tests.c)
+    src/intro_host_video_mode.c src/intro_host_video_clear.c
+    tests/launcher_intro_native_video_clear_tests.c)
   target_include_directories(launcher-intro-native-video-clear-tests PRIVATE decomp/launcher)
   target_compile_options(launcher-intro-native-video-clear-tests PRIVATE -ffunction-sections -fdata-sections)
   target_link_options(launcher-intro-native-video-clear-tests PRIVATE -Wl,--gc-sections)

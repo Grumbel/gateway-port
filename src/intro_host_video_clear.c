@@ -2,6 +2,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception */
 
 #include "gate_intro_host_memory.h"
+#include "gate_intro_host_video_mode.h"
 #include "gate_rtl_video.h"
 
 #include <stdlib.h>
@@ -38,9 +39,12 @@ uint16_t gate_far_2488_000a(uint16_t page, uint16_t color)
     if (gate_far_byte(ds, descriptor) != mode)
         return 0xfc19u; /* original 2409:00e8 descriptor mismatch */
 
-    /* The original also compares INT 10h/AH=0fh against descriptor +16h
-     * when DS:15d2 == 1. That BIOS state is not exposed in this host;
-     * the video-mode host owns mode selection. */
+    /* 2488:000a reads BIOS INT 10h/AH=0fh when DS:15d2 is exactly one.
+     * An unmatched AL returns -7 without modifying the video aperture. */
+    if (gate_ds_word(0x15d2) == 1 &&
+        gate_intro_video_mode_current_bios() !=
+            gate_far_byte(ds, (uint16_t)(descriptor + 0x16)))
+        return 0xfff9u;
     height = gate_far_word(ds, (uint16_t)(descriptor + 0x1a));
     pitch = gate_far_word(ds, (uint16_t)(descriptor + 0x1c));
     aperture = gate_far_word(ds, (uint16_t)(descriptor + 0x20));

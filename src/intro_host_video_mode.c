@@ -19,6 +19,13 @@ void gate_intro_video_mode_detach(void)
     active_hardware = 0;
 }
 
+uint8_t gate_intro_video_mode_current_bios(void)
+{
+    if (!active_hardware || !active_hardware->bios_mode_valid)
+        abort(); /* missing simulated INT 10h/AH=0fh hardware state */
+    return active_hardware->bios_mode;
+}
+
 /* Resident 242a:000a provides the BIOS-detected adapter type and monitor.
  * The remaining packet bytes are not read by the original f14d. */
 void gate_rtl_mode_query_adapter(uint8_t adapter[8])
@@ -64,11 +71,31 @@ uint16_t gate_rtl_mode_start(uint16_t enabled)
         return active_hardware->fail_start;
     /* Resident 2409:003e records the enabled state and resets its BIOS
      * status word before performing an actual INT 10h mode transition.
-     * The future SDL host will consume the selector and present video. */
+     * Enabling queries AH=0fh and switches to descriptor +16h only if
+     * needed; disabling always invokes INT 10h/AX=0003h. */
     if (enabled != 0 && enabled != 1)
         return 0xfff9u;
     gate_ds_set_word(0x15ce, enabled);
     gate_ds_set_word(0x15d0, 0);
+    if (enabled == 0) {
+        active_hardware->bios_mode = 3;
+        active_hardware->bios_mode_valid = 1;
+        ++active_hardware->bios_mode_sets;
+    } else {
+        uint16_t mode = gate_ds_word(0x15cc);
+        uint16_t entry;
+        uint8_t expected;
+        if (mode > 7)
+            abort(); /* original selector service must reject invalid mode */
+        entry = (uint16_t)(0x27eeu + mode * 0x3eu);
+        expected = gate_far_byte(gate_ds_segment(), (uint16_t)(entry + 0x16));
+        if (!active_hardware->bios_mode_valid ||
+            active_hardware->bios_mode != expected) {
+            active_hardware->bios_mode = expected;
+            active_hardware->bios_mode_valid = 1;
+            ++active_hardware->bios_mode_sets;
+        }
+    }
     return 0;
 }
 

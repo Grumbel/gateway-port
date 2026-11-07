@@ -128,6 +128,16 @@ class OriginalIntroGraphicsEvidence(unittest.TestCase):
                          bytes.fromhex('9ae8000924'))
         self.assertEqual(ram[0x24912:0x24915],
                          bytes.fromhex('ff6c3a'))  # JMP FAR [SI+3ah]
+        self.assertEqual(ram[0x248cf:0x248d5],
+                         bytes.fromhex('837efc017512'))
+        self.assertEqual(ram[0x248d5:0x248db],
+                         bytes.fromhex('55b40fcd105d'))  # INT 10h/AH=0fh
+        self.assertEqual(ram[0x248db:0x248e5],
+                         bytes.fromhex('3a44167407c746fef9ff'))  # -7
+        self.assertEqual(ram[0x24107:0x24111],
+                         bytes.fromhex('55b40fcd105d263a4516'))
+        self.assertEqual(ram[0x24113:0x2411c],
+                         bytes.fromhex('268a451655b400cd10'))  # BIOS set
 
         self.assertEqual(ram[ds + 0x15cc:ds + 0x15ce], b'\x03\x00')
         self.assertEqual(ram[ds + 0x27ed], 1)  # initialized callback table

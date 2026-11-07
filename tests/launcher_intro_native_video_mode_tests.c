@@ -20,6 +20,15 @@ static void setup_synthetic(void)
 {
     uint16_t i;
     const uint16_t segments = 0x3100;
+    static const uint8_t bios_modes[8] = {
+        0x03, 0x10, 0x12, 0x13, 0x29, 0x58, 0x16, 0x54
+    };
+    for (i = 0; i < 8; ++i) {
+        uint16_t at = (uint16_t)(0x27eeu + i * 0x3eu);
+        gate_far_set_byte(gate_ds_segment(), at, (uint8_t)i);
+        gate_far_set_byte(gate_ds_segment(), (uint16_t)(at + 0x16),
+                          bios_modes[i]);
+    }
     for (i = 0; i < 12; ++i)
         gate_ds_set_word((uint16_t)(0x4d92 + i * 2), segments);
     for (i = 0; i < 6; ++i) {
@@ -95,6 +104,8 @@ static void check_synthetic(GateIntroVideoModeHardware *video,
 
     assert(gate_rtl_f14d(3) == 1);
     assert(video->requested_bios_mode == 3 && video->start_value == 1);
+    assert(video->bios_mode_valid && video->bios_mode == 0x13);
+    assert(video->bios_mode_sets == 1);
     assert(ports->dac_writes == 0 && ports->status_reads == 0);
     check_state(3, video, ports);
     gate_rtl_plot_pixel(23, 4, 7);
@@ -102,6 +113,7 @@ static void check_synthetic(GateIntroVideoModeHardware *video,
 
     assert(gate_rtl_f14d(2) == 1);
     assert(video->requested_bios_mode == 2 && ports->status_reads >= 3);
+    assert(video->bios_mode == 0x12 && video->bios_mode_sets == 2);
     check_state(2, video, ports);
     gate_rtl_plot_pixel(13, 22, 15);
     assert(gate_intro_vga16_pixel(15, 22) == 13);
@@ -155,6 +167,16 @@ static void check_synthetic(GateIntroVideoModeHardware *video,
     assert(gate_far_word(0x3100, 0x0048) == 0xffff); /* -3/2 = -1 */
     gate_ds_set_word(0x1308, 202);
     gate_ds_set_word(0x131c, 10);
+
+    /* INT 10h/AH=0fh tracks the active BIOS mode, independently of the
+     * selector. A repeated enable skips INT 10h/AH=00h; disable doesn't. */
+    i = (uint16_t)video->bios_mode_sets;
+    assert(gate_rtl_mode_start(1) == 0);
+    assert(video->bios_mode == 0x13 && video->bios_mode_sets == i);
+    assert(gate_rtl_mode_start(0) == 0);
+    assert(video->bios_mode == 3 && video->bios_mode_sets == i + 1u);
+    assert(gate_rtl_mode_start(1) == 0);
+    assert(video->bios_mode == 0x13 && video->bios_mode_sets == i + 2u);
 }
 
 static void check_original_snapshot(const char *path)
@@ -181,6 +203,7 @@ static void check_original_snapshot(const char *path)
     video->adapter_type = 5;
     video->monitor_subtype = 5;
     assert(gate_rtl_f14d(3) == 1);
+    assert(video->bios_mode_valid && video->bios_mode == 0x13);
     assert(gate_far_word(gate_ds_word(0x4d92), 0x3e) == 319);
     assert(gate_far_word(gate_ds_word(0x4d94), 0x42) == 199);
     assert(gate_far_word(gate_ds_word(0x4d9a), 0x3c) == 8);
