@@ -367,6 +367,22 @@ def scan_exact_crt_prefixes(original: bytes, library: bytes,
                   key=lambda hit: (int(hit["rtl_offset"], 16), hit["symbol"]))
 
 
+def summarize_public_prefixes(hits: list[dict]) -> dict:
+    """Summarize original segment classes, not inferred function identities."""
+    classes: dict[str, int] = {}
+    code_locations = []
+    for hit in hits:
+        cls = hit["segment_class"] or "(unknown)"
+        classes[cls] = classes.get(cls, 0) + 1
+        if hit["segment_kind"] == "code":
+            code_locations.append(int(hit["rtl_offset"], 16))
+    result = {"total": len(hits), "segment_classes": dict(sorted(classes.items()))}
+    if code_locations:
+        result["code_class_entry_span"] = [
+            f"0x{min(code_locations):05x}", f"0x{max(code_locations):05x}"]
+    return result
+
+
 def resolve_library(compiler_root: Path) -> Path:
     for candidate in (compiler_root / "LIB", compiler_root / "lib", compiler_root):
         if candidate.is_dir():
@@ -435,6 +451,7 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print("  hit is not entirely within a single OMF LEDATA record")
     if public_candidates is not None:
+        summary = summarize_public_prefixes(public_candidates)
         counts = {kind: sum(hit["segment_kind"] == kind for hit in public_candidates)
                   for kind in ("code", "other", "unknown")}
         print(f"Unique exact CRT public-prefix candidates (at least 16 bytes): "
@@ -445,11 +462,12 @@ def main(argv: list[str] | None = None) -> int:
                   f'#{entry["segment_index"]}:{entry["segment_offset"]} '
                   f'class={entry["segment_class"] or "?"} '
                   f'({entry["exact_prefix_bytes"]} exact leading bytes)')
-        code_locations = [int(hit["rtl_offset"], 16) for hit in public_candidates
-                          if hit["segment_kind"] == "code"]
-        if code_locations:
-            print(f"CODE-class entry span: GATE.RTL:0x{min(code_locations):05x}"
-                  f"..0x{max(code_locations):05x} (entry points only; gaps unverified)")
+        if "code_class_entry_span" in summary:
+            first, last = summary["code_class_entry_span"]
+            print(f"CODE-class entry span: GATE.RTL:{first}..{last} "
+                  "(entry points only; gaps unverified)")
+        print("OMF class CODE may contain data (e.g. string literals), "
+              "not necessarily callable functions.")
         print("Candidates need separate code/boundary validation; absent matches prove nothing.")
     print(f"Compared against {library} ({len(library_bytes)} bytes)")
     print("A match supports identical CRT code; a miss is inconclusive for OMF modules.")
@@ -462,6 +480,7 @@ def main(argv: list[str] | None = None) -> int:
         }
         if public_candidates is not None:
             report["public_prefix_candidates"] = public_candidates
+            report["public_prefix_summary"] = summary
         args.json.write_text(json.dumps(report, indent=2) + "\n")
         print(f"Saved {args.json}")
     return 0

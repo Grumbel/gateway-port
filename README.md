@@ -319,6 +319,8 @@ library `PUBDEF` locations inside a single `LEDATA` record, without masking
 relocations; locations claimed by more than one library symbol are omitted.
 It reads `LNAMES` and `SEGDEF` to show the original OMF segment class and
 separate `CODE`-class entries from other classes (such as initialized data).
+The JSON also contains a `public_prefix_summary` with per-class counts and the
+first/last matching CODE-class entry offsets.
 It reports **candidates**, not identified Gateway routines: a
 public symbol may be data, a coincidentally equal byte sequence may not be a
 function, and relocated or noncontiguous code will not match. The JSON report
@@ -336,9 +338,13 @@ helpers (`__chkstk`) and the known RNG. Several hits are data symbols,
 including `days.c:__lpdays`/`__days` around `0x03521` and
 `dos\crt0msg.asm:__FF_MSGBANNER` at `0x062bc`. The code candidates cluster
 from `0x0608c` through `0x09288`, but neither the intervals between entries
-nor the complete function bodies have yet been verified. Run the scan again
-with the segment-class output to establish the code/data counts directly from
-the original OMF metadata.
+nor the complete function bodies have yet been verified. The subsequent
+user-side segment-class run confirmed **65 `CODE`-class, five `DATA`-class,
+zero unknown** among these 70 matched publics. `__FF_MSGBANNER` is classified
+`CODE` by its original OMF segment despite apparently representing a banner
+constant; therefore **65 CODE-class public symbols does not mean 65 verified
+functions**. The code/data split is an OMF linker classification, not a
+disassembly-based verification of callable boundaries.
 
 ### In-game Gateway debugger (F10)
 

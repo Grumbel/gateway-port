@@ -108,6 +108,14 @@ class MSC51CompareTests(unittest.TestCase):
             b"padding" + signature + b"end" + data_signature, bytes(lib), modules)
         self.assertEqual([entry["segment_kind"] for entry in both], ["code", "other"])
         self.assertEqual(both[1]["symbol"], "_month")
+        self.assertEqual(msc.summarize_public_prefixes(both), {
+            "total": 2,
+            "segment_classes": {"CODE": 1, "DATA": 1},
+            "code_class_entry_span": ["0x00007", "0x00007"],
+        })
+        self.assertEqual(msc.summarize_public_prefixes([]), {
+            "total": 0, "segment_classes": {},
+        })
         self.assertEqual(msc.scan_exact_crt_prefixes(
             signature + b"padding" + signature, bytes(lib), modules), [])
         self.assertEqual(msc.scan_exact_crt_prefixes(
