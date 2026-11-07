@@ -14,6 +14,7 @@
 #include "gate_rtl_graphics.h"
 #include "gate_rtl_audio_startup.h"
 #include "gate_rtl_image.h"
+#include "intro_source_c_bootstrap.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -267,7 +268,7 @@ static void write_input_dependencies(const char *path, const uint8_t *reads)
 static int run_intro(const char *snapshot, const char *dos_dir,
                      const char *ppm_output, int full,
                      const char *record_output, const char *memory_output,
-                     const char *dependency_output,
+                     const char *dependency_output, int restore_exe_data,
                      const GateSourceCFullHooks *hooks)
 {
     GateIntroMemory *memory;
@@ -312,6 +313,14 @@ static int run_intro(const char *snapshot, const char *dos_dir,
         return 1;
     }
     fclose(in);
+    if (restore_exe_data &&
+        !gate_intro_restore_static_exe_data(memory, dos_dir)) {
+        fprintf(stderr, "cannot restore verified GATE.EXE static data from %s\n",
+                dos_dir);
+        free(dependency_maps);
+        free(memory);
+        return 1;
+    }
     memory->ds_segment = 0x2a7a;
     files.directory = dos_dir;
     gate_intro_memory_attach(memory);
@@ -434,7 +443,8 @@ int gate_source_c_full_run(const char *snapshot, const char *dos_directory,
 {
     if (!snapshot || !dos_directory)
         return 2;
-    return run_intro(snapshot, dos_directory, NULL, 1, NULL, NULL, NULL, hooks);
+    return run_intro(snapshot, dos_directory, NULL, 1, NULL, NULL, NULL, 0,
+                     hooks);
 }
 
 #ifndef GATE_SOURCE_C_LIBRARY
@@ -443,11 +453,17 @@ int main(int argc, char **argv)
     const char *record_output = NULL;
     const char *memory_output = NULL;
     const char *dependency_output = NULL;
+    int restore_exe_data = 0;
     int full = argc >= 5 && strcmp(argv[4], "--full") == 0;
     int i;
     if (argc < 4 || (argc > 4 && !full))
         goto usage;
-    for (i = 5; i < argc; i += 2) {
+    for (i = 5; i < argc;) {
+        if (strcmp(argv[i], "--restore-exe-data") == 0 && !restore_exe_data) {
+            restore_exe_data = 1;
+            ++i;
+            continue;
+        }
         if (i + 1 >= argc)
             goto usage;
         if (strcmp(argv[i], "--record") == 0 && !record_output)
@@ -458,11 +474,12 @@ int main(int argc, char **argv)
             dependency_output = argv[i + 1];
         else
             goto usage;
+        i += 2;
     }
     return run_intro(argv[1], argv[2], argv[3], full, record_output,
-                     memory_output, dependency_output, NULL);
+                     memory_output, dependency_output, restore_exe_data, NULL);
 usage:
-    fputs("usage: gateway-intro-source-c-composite guest-22s.bin DOS-DIR OUTPUT.ppm [--full [--record FILE.gvr] [--dump-memory FILE.bin] [--read-deps FILE.txt]]\n",
+    fputs("usage: gateway-intro-source-c-composite guest-22s.bin DOS-DIR OUTPUT.ppm [--full [--record FILE.gvr] [--dump-memory FILE.bin] [--read-deps FILE.txt] [--restore-exe-data]]\n",
           stderr);
     return 2;
 }

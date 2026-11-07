@@ -64,6 +64,7 @@ set(GATEWAY_INTRO_SOURCE_C_COMPOSITE_SOURCES
   decomp/launcher/gate_rtl_intro_sequence.c
   src/intro_host_rtl_graphics_globals.c
   src/intro_host_video_mode.c
+  src/intro_source_c_bootstrap.c
   src/intro_source_c_composite.c)
 list(REMOVE_ITEM GATEWAY_INTRO_SOURCE_C_COMPOSITE_SOURCES
   src/intro_source_c_captions.c src/intro_source_c_picture_dump.c)

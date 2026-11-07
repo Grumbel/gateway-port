@@ -126,6 +126,21 @@ class IntroFull(unittest.TestCase):
             self.assertEqual(digest(sparse_record),
                              '67cd026bf79e2425a9d41faac57439a7d49dca8559b127e7630319e43e112eb2')
 
+            # Prove that the largest guest input block can be restored
+            # from the user's original EXE rather than a Unicorn capture.
+            stripped = directory / 'stripped-exe-data.bin'
+            stripped_final = directory / 'restored.ppm'
+            stripped_record = directory / 'restored.gvr'
+            ram[0x2dd9d:0x2f48a] = bytes(5869)
+            stripped.write_bytes(ram)
+            subprocess.run([executable, str(stripped), assets,
+                            str(stripped_final), '--full',
+                            '--restore-exe-data', '--record',
+                            str(stripped_record)],
+                           check=True, capture_output=True, text=True)
+            self.assertEqual(digest(stripped_final), digest(baseline))
+            self.assertEqual(digest(stripped_record), digest(baseline_record))
+
     def test_original_exe_contains_the_static_intro_text_data(self):
         _, snapshot, assets = self.inputs()
         ram = Path(snapshot).read_bytes()
@@ -147,6 +162,25 @@ class IntroFull(unittest.TestCase):
         self.assertTrue(all(raw[i] == 0 for i in offsets))
         self.assertTrue(all(offsets[i + 1] == offsets[i] + 1
                             for i in range(0, len(offsets), 2)))
+
+    def test_static_bootstrap_rejects_missing_and_incompatible_exe(self):
+        executable, snapshot, _ = self.inputs()
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            ppm = directory / 'should-not-exist.ppm'
+            for file_data in (None, b'NZ' + bytes(22966), b'MZ'):
+                exe = directory / 'GATE.EXE'
+                if exe.exists():
+                    exe.unlink()
+                if file_data is not None:
+                    exe.write_bytes(file_data)  # Synthetic, no original data.
+                proc = subprocess.run(
+                    [executable, snapshot, str(directory), str(ppm),
+                     '--full', '--restore-exe-data'],
+                    capture_output=True, text=True)
+                self.assertEqual(proc.returncode, 1)
+                self.assertIn('cannot restore verified GATE.EXE', proc.stderr)
+                self.assertFalse(ppm.exists())
 
 
 if __name__ == '__main__':

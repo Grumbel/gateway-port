@@ -89,6 +89,24 @@ original EXE instead of capturing it through Unicorn; other observed reads
 (including DOS vectors, relocated code and runtime globals) still require
 reconstruction.
 
+The standalone composite now offers an opt-in native restoration step:
+
+```sh
+./result/bin/gateway-intro-source-c-composite \
+  build/intro-analysis/at-22000.bin ../gateway-dos \
+  build/intro-analysis/from-exe.ppm --full --restore-exe-data
+```
+
+The adapter reads the verified 5,869-byte region from the user's original
+`GATE.EXE` and restores it in guest RAM after loading the snapshot, before
+executing source C. In the integration test, **that entire RAM region and
+all other unobserved memory are first zeroed** in a private snapshot. Native
+restoration still reproduces every one of the 816 frame/palette/timing
+records and the final picture byte-for-byte. Missing, truncated, or
+non-MZ executable inputs are rejected. This code only eliminates one
+static-data dependency on the capture; it is not a complete initializer and
+does not yet change the default SDL live launcher.
+
 The other 768-byte run at RAM `1b77c:1ba7c` maps to original `GATE.RTL`
 file bytes `0d7bf:0dabf`: **722 of the 768 bytes match exactly**, and the
 remaining 46 bytes are **23 paired 16-bit loader fixups**, each replacing two
