@@ -134,6 +134,37 @@ simulated milliseconds on the pinned RAM capture; two consecutive headless
 runs produced byte-identical recordings. The source-only Nix package does
 not require SDL3 or Unicorn. Keep `.gvr` files private like screenshots.
 
+### Check against actual DOS frames
+
+The image comparator searches the private source-C recording for the closest
+color-accurate RGB match to a screenshot taken from the original Unicorn/DOS
+guest. It reports the nearest **clock** frame separately from the best
+**pixel** match, so large timing errors are visible:
+
+```sh
+python3 tools/compare_intro_frames.py --window-ms 400000 \
+  build/intro-analysis/intro-full.gvr \
+  40000:build/intro-analysis/original-40s.ppm \
+  120000:build/intro-analysis/original-120s.ppm
+```
+
+An original probe snapshot can be obtained with `--headless --read-only
+--deterministic-clock --milliseconds 80000 --dump-at
+40000:build/intro-analysis/original-40s` (alongside the original `GATE.EXE`
+argument). For snapshots past 180 seconds, the probe requires a key script
+with its first event strictly **after** all capture times; no key was sent
+before these reference frames.
+
+In the local private-asset audit, **all seven** original 320×200 DOS
+screenshots at 40, 60, 78, 120, 180, 240 and 300 guest seconds were
+matched by a source-C frame at **64,000/64,000 identical RGB pixels**.
+The matching C timestamps were 51.188, 77.730, 77.780, 123.248, 175.742,
+267.018 and 321.088 seconds. The apparent offsets are not constant,
+so these are image-equality oracles, **not** timing proof. At guest second
+340 the original has already entered the 640×480 game loading screen and
+displays a missing `RESTART.DAT` warning in this read-only test setup;
+that is beyond the 320×200 source-C intro and cannot be compared here.
+
 ## Original source-C image loader milestone
 
 The source-C image-load/draw boundary can also render the original
@@ -206,6 +237,6 @@ image-path diagnostic, **not the original animation schedule**.
   scan codes and mouse services still need reconstruction. The offline `GVR1`
   replayer remains read-only and its keys are host controls.
 - `GATE.EXE:1302` completes, but the game is not started afterward.
-- The 816 frames are pinned in source-C regression tests. They have **not**
-  been compared frame-by-frame against the original DOS run at matching
-  guest times; the 16ms retrace model is provisional.
+- Seven selected original DOS frames match source-C RGB output exactly,
+  but a complete frame-by-frame comparison at equal game time remains open;
+  the 16ms retrace model and other host delays are provisional.
