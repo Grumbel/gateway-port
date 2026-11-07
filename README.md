@@ -218,6 +218,7 @@ nix run -L .#msc51-compile-dos-files           # compile and test real DOS file 
 nix run -L .#msc51-compile-rtl-state           # compile and test 40 recovered RTL state functions
 nix run -L .#msc51-compile-hardware            # compile/probe real DOS port I/O and clipping state
 nix run -L .#msc51-compile-runtime-files       # compile/probe FAR strings, resource paths, DOS access()
+nix run -L .#msc51-compile-resident-state       # compile/probe resident video mode and drawing DS words
 nix run -L .#msc51-link-launcher               # try LINK with the resulting objects
 nix run .#msc51-link-report                    # classify saved LINK.LOG without DOSBox
 nix build .#msc51                             # optional: inspect assembled DOS tree
@@ -410,6 +411,16 @@ FAR copies. A fresh source-fingerprinted `RTFOK.LOG` is required before
 LINK can consume `RTFILE.OBJ`. These three services would reduce the
 post-hardware count from 51 to **48**, pending user-side validation.
 
+`msc51-compile-resident-state` adds five more original resident functions
+using the observed linked DS locations: pen color, pen position, fill
+pattern/transparency, descriptor selection, and INT 10h mode activation.
+The DOS probe uses the *current* BIOS mode as its expected descriptor and
+checks that no unexpected video mode transition occurs. It does not attempt
+the original line rasterizer, pixel dispatcher, video memory clears or
+renderer initialization. If this object also links, the predicted missing
+symbol count falls from 48 to **43**; the historical DOS compiler test is
+still required before claiming this reduction.
+
 The separate link-only diagnostic reuses all 28 original object files and
 the tested `MEMORY.OBJ`, `DOSFILE.OBJ` and four RTL objects, without
 recompiling any of them:
@@ -419,13 +430,15 @@ nix run -L .#msc51-compile-dos-files
 nix run -L .#msc51-compile-rtl-state
 nix run -L .#msc51-compile-hardware
 nix run -L .#msc51-compile-runtime-files
+nix run -L .#msc51-compile-resident-state
 nix run -L .#msc51-link-launcher
 nix run .#msc51-link-report -- --json build/msc51-link-report.json
 ```
 
 It generates `build/msc51-launcher/LINK.RSP` and `LINK.BAT`, then invokes
 `C:\BIN\LINK.EXE` explicitly with all 28 `Mxx.OBJ` files, `MEMORY.OBJ`, `DOSFILE.OBJ`,
-`RTLIMG.OBJ`, `RTLTEXT.OBJ`, `RTLPAL.OBJ`, `RTLGR.OBJ`, `RTLHW.OBJ`, and `RTFILE.OBJ`,
+`RTLIMG.OBJ`, `RTLTEXT.OBJ`, `RTLPAL.OBJ`, `RTLGR.OBJ`, `RTLHW.OBJ`, `RTFILE.OBJ`,
+and `RESSTATE.OBJ`,
 the large-model `LLIBCR.LIB` and `LIBH.LIB`. The historical LINK response file supplies the
 object list (continued using trailing `+`), EXE name, MAP name, libraries and
 an empty definitions-file answer, as documented by

@@ -982,6 +982,17 @@ After hardware and this stage both pass the user's real compiler and LINK,
 21 RTL state/hardware functions and the CRT `_main`. Neither the resulting
 symbol count nor a runnable original launcher is yet verified.
 
+`msc51-compile-resident-state` builds an independent `RESSTATE.OBJ`
+containing five resident entry points anchored to original 2409:0008/003e,
+25a3:0002/011e, and 2621:000e. It retains the live linked-DS coordinates
+for pen color, pen position and fill arguments, the descriptor selection
+limit of seven, and the original enabled-mode transition using BIOS INT 10h.
+The DOS probe checks the DS words and selects its already-current BIOS
+mode rather than disturbing the console. Passing `RESCHK.EXE`, fresh
+`RESOK.LOG`, and a matching fingerprint are required before LINK consumes
+the new object. The expected remainder becomes **43** if all previous
+pending objects link. There is still no original program initialization.
+
 ## Immediate next functions
 
 1. Connect the existing verified native video, font, picture and caption

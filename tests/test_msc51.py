@@ -56,12 +56,12 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("ECHO All reconstructed launcher objects compiled > SUCCESS.LOG", batch)
             self.assertNotIn("/Fe", batch)  # No complete DOS executable yet.
             response = (output / "LINK.RSP").read_text().splitlines()
-            self.assertEqual(response[:36],
+            self.assertEqual(response[:37],
                              [f"M{index:02d}.OBJ+" for index in range(28)] +
                              ["MEMORY.OBJ+", "DOSFILE.OBJ+", "RTLIMG.OBJ+",
                               "RTLTEXT.OBJ+", "RTLPAL.OBJ+", "RTLGR.OBJ+",
-                              "RTLHW.OBJ+", "RTFILE.OBJ"])
-            self.assertEqual(response[36:], ["GATEWAY.EXE", "GATEWAY.MAP",
+                              "RTLHW.OBJ+", "RTFILE.OBJ+", "RESSTATE.OBJ"])
+            self.assertEqual(response[37:], ["GATEWAY.EXE", "GATEWAY.MAP",
                                              "LLIBCR.LIB LIBH.LIB /NOD", ";"])
             memory_batch = (output / "MEMORY.BAT").read_text()
             self.assertIn("CL /AL /Od /c MEMORY.C", memory_batch)
@@ -137,6 +137,19 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("access(pathname, 4)", (output / "RTFILE.C").read_text())
             self.assertIn("strncpy padding", (output / "RTFCHK.C").read_text())
             for name in ("RTFILE.C", "RTFCHK.C"):
+                self.assertTrue(all(len(identifier) <= 31 for identifier in
+                                    msc51.msc51_identifiers((output / name).read_text())), name)
+            resident_batch = (output / "RESST.BAT").read_text()
+            self.assertIn("CL /AL /Od /c RESSTATE.C", resident_batch)
+            self.assertIn("RESCHK.C RESSTATE.OBJ MEMORY.OBJ", resident_batch)
+            self.assertIn("RESCHK.EXE > RESTEST.LOG", resident_batch)
+            self.assertIn("RESSIG.LOG", resident_batch)
+            self.assertIn("RESOK.LOG", resident_batch)
+            self.assertNotIn("IF ERRORLEVEL 1 ECHO", resident_batch)
+            self.assertIn("gate_ds_set_word(GATE_DS_DRAW_COLOR, color)",
+                          (output / "RESSTATE.C").read_text())
+            self.assertIn("int86(0x10, &in, &out)", (output / "RESSTATE.C").read_text())
+            for name in ("RESSTATE.C", "RESCHK.C"):
                 self.assertTrue(all(len(identifier) <= 31 for identifier in
                                     msc51.msc51_identifiers((output / name).read_text())), name)
             link_batch = (output / "LINK.BAT").read_text()
@@ -309,6 +322,17 @@ class MSC51Tests(unittest.TestCase):
             (output / "rtfstart.log").write_text("tested")
             (output / "rtfok.log").write_text("passed")
             (output / "rtfsig.log").write_text(msc51.runtime_file_source_signature(output))
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run") as run, \
+                 redirect_stderr(io.StringIO()) as error:
+                with self.assertRaises(SystemExit):
+                    msc51.main(args)
+                run.assert_not_called()
+            self.assertIn("msc51-compile-resident-state first", error.getvalue())
+            (output / "resstate.obj").write_bytes(b"real resident state")
+            (output / "resstart.log").write_text("tested")
+            (output / "resok.log").write_text("passed")
+            (output / "ressig.log").write_text(msc51.resident_state_source_signature(output))
             for name in ("LINKSTAR.LOG", "LNKSTART.LOG", "LINKDONE.LOG", "LINKFAIL.LOG",
                          "LINK.LOG", "GATEWAY.EXE", "GATEWAY.MAP"):
                 (output / name.lower()).write_bytes(b"stale result")
@@ -644,6 +668,71 @@ class MSC51Tests(unittest.TestCase):
             (output / "RTFILE.C").write_text((output / "RTFILE.C").read_text() + "/* changed */\n")
             with self.assertRaisesRegex(ValueError, "source has changed"):
                 msc51.validate_runtime_file_adapter(output)
+
+    def test_compile_resident_state_guards_fresh_bios_and_memory_probe(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            compiler = root / "compiler"
+            for directory in ("BIN", "LIB", "INCLUDE"):
+                (compiler / directory).mkdir(parents=True)
+            for name in ("CL.EXE", "C1.EXE", "C1L.EXE", "C2.EXE", "C3.EXE", "LINK.EXE"):
+                (compiler / "BIN" / name).touch()
+            for name in ("LLIBCR.LIB", "LIBH.LIB"):
+                (compiler / "LIB" / name).touch()
+            (compiler / "INCLUDE" / "STDIO.H").touch()
+            output = root / "launcher"
+            msc51.stage_launcher(output)
+            args = ["compile-resident-state", "--compiler", str(compiler),
+                    "--output", str(output)]
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run") as run, \
+                 redirect_stderr(io.StringIO()) as error:
+                with self.assertRaises(SystemExit):
+                    msc51.main(args)
+                run.assert_not_called()
+            self.assertIn("msc51-compile-memory first", error.getvalue())
+
+            (output / "memory.obj").write_bytes(b"memory")
+            (output / "memstart.log").write_text("tested")
+            (output / "memok.log").write_text("passed")
+            (output / "memsig.log").write_text(msc51.memory_source_signature(output))
+            for name in ("RESSTATE.OBJ", "RESSTART.LOG", "RESOK.LOG", "RESSIG.LOG"):
+                (output / name).write_text("stale")
+
+            def failed_probe(command, check):
+                self.assertIn("RESST.BAT", command)
+                self.assertFalse(check)
+                self.assertFalse((output / "RESSTATE.OBJ").exists())
+                self.assertFalse((output / "RESOK.LOG").exists())
+                (output / "RESSTART.LOG").write_text("started")
+                (output / "RESSTATE.OBJ").write_bytes(b"compiled")
+                (output / "RESFAIL.LOG").write_text("BIOS video mismatch")
+                return mock.Mock(returncode=0)
+
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run", side_effect=failed_probe), \
+                 redirect_stderr(io.StringIO()) as error:
+                self.assertEqual(msc51.main(args), 1)
+            self.assertIn("BIOS video mismatch", error.getvalue())
+
+            def successful_probe(command, check):
+                self.assertIn("RESST.BAT", command)
+                self.assertFalse((output / "RESFAIL.LOG").exists())
+                self.assertFalse((output / "RESSTATE.OBJ").exists())
+                (output / "RESSTART.LOG").write_text("started")
+                (output / "RESSTATE.OBJ").write_bytes(b"compiled")
+                (output / "RESOK.LOG").write_text("passed")
+                (output / "RESTEST.LOG").write_text("Resident state probe: PASS")
+                (output / "RESSIG.LOG").write_text(msc51.resident_state_source_signature(output))
+                return mock.Mock(returncode=0)
+
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run", side_effect=successful_probe):
+                self.assertEqual(msc51.main(args), 0)
+
+            (output / "RESSTATE.C").write_text((output / "RESSTATE.C").read_text() + "/* changed */\n")
+            with self.assertRaisesRegex(ValueError, "source has changed"):
+                msc51.validate_resident_state_adapter(output)
 
     def test_stages_only_recovered_source_with_c89_headers(self):
         with tempfile.TemporaryDirectory() as scratch:
