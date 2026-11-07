@@ -1,4 +1,4 @@
-# Source-C intro: full silent sequence, live playback and frame replay
+# Source-C intro: live AdLib playback and deterministic frame replay
 
 The original `GATE.EXE:1302` is translated in `decomp/launcher/`, along with
 its caption layout and font/drawing RTL callees. This chapter concerns the
@@ -8,8 +8,11 @@ its final caption, with source-C image loading, original animation control
 flow, source-C font/drawing, palette operations and time delays. An SDL3
 live runner displays the in-progress VGA framebuffer and forwards Escape to
 the original C input check; a separate deterministic recording/replayer
-remains available for frame inspection. **Both are silent and start from a
-captured DOS memory state**: music startup and the game handoff are pending.
+remains available for frame inspection. The **live** SDL3 path now plays
+the original `GATE_004.MUS` song zero using a native AdLib MIDIPlay decoder
+and the repository's Nuked OPL3 synthesizer. The deterministic frame replay
+remains silent. **Both start from a captured DOS memory state**: the original
+DOS music IRQ driver, independent startup C, and game handoff are pending.
 
 The first executable C-only milestone is the complete set of eighteen
 `GATE.EXE:117e` caption calls with their original arguments, font loading,
@@ -63,7 +66,7 @@ compares occupied-pixel totals against the established integration oracle:
 separate original caption wait durations too. Test screenshots are ignored
 under `build/`; no narrative text or original assets enter the Git history.
 
-## Play the original source-C intro live (silent)
+## Play the original source-C intro live (with AdLib music)
 
 ```sh
 nix run .#intro-source-c-live -- ../gateway-dos
@@ -83,6 +86,16 @@ Unicorn DOS runner to generate a private 22-second memory snapshot. An
 existing snapshot may instead be given as a second argument (or before
 `DOS-DIR`) to skip the initial emulation. The temporary snapshot is removed
 on exit. The original C intro itself does not execute any x86 instructions.
+
+The original AdLib song is read directly from `GATE_004.MUS` in the same DOS
+directory, so no extraction step or proprietary files in the Nix store are
+needed. The native host parses the MIDIPlay instrument events, note timing,
+channel pressure and rhythm-mode controls and sends the resulting PCM audio
+to SDL3. P pauses both the source-C clock and the audio device. The source-C
+intro sequencing is unchanged; its original `RTL:c3bd` IRQ8 music loader is
+not reproduced by this host bridge. Note and patch parsing is tested, but
+**audible SDL3 playback and precise synchronization against original DOS
+recordings have not been checked in this environment**.
 
 The headless live-input regression injects Escape at 65 seconds of
 simulated time, verifies it is consumed exactly once by the original C

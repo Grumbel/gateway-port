@@ -140,7 +140,7 @@
         intro-source-c-live = {
           type = "app";
           program = "${sourceCLive}/bin/gateway-intro-source-c-live";
-          meta.description = "Play the original source-C Gateway intro live through SDL3, with input and clock hooks (silent)";
+          meta.description = "Play the source-C Gateway intro live through SDL3 with original MIDIPlay AdLib music and keyboard input";
         };
         intro-dump = {
           type = "app";

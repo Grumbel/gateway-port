@@ -291,11 +291,13 @@ data from offset 1441. Each 24-byte record holds two descriptors of the form
 | Second | 0 | 0 | 420 | One track with sequencer-specific events |
 
 One zero byte separates the two files of every song. `a` and `b` are small values (1–7)
-in the first descriptor and always 0 in the second; their meaning is unknown. The
-second descriptor's size was 4 bytes longer than the MIDI data in the two songs
-parsed event by event.
+in the first descriptor and always 0 in the second; their meaning is unknown.
+**All 37 AdLib streams include four more bytes than their declared `MTrk`
+length: `00 FF 2F 00`, the MIDI end-of-track event.** The 37 MT-32 streams
+include their end-of-track inside the track length. Preserve those four bytes
+when extracting `.mdi` files; they are part of the original playback format.
 
-**Hypothesis:** the first file is for the Roland MT-32 and the second for AdLib.
+**Confirmed:** the first file is for the Roland MT-32 and the second for AdLib.
 First-file track names such as `ELEC ORG 4`, `TAIKO RIM`, and `STR SECT 1` are
 MT-32 patches, and program 11 accompanies `ELEC ORG 4`. Second files contain
 meta `0x7f` events with manufacturer bytes `00 00 3f`, believed to be Ad Lib's:
@@ -306,9 +308,30 @@ meta `0x7f` events with manufacturer bytes `00 00 3f`, believed to be Ad Lib's:
 | `00 02` | 6 | 37 | Melodic or percussive mode |
 | `00 03` | 6 | 37 | Pitch-bend range |
 
-If this holds, music can be played by an OPL3 emulator such as the vendored
-Nuked OPL3 without a separate instrument bank. How `BLASTER` chooses between the
-two has not been established.
+The second stream is an Ad Lib MIDIPlay/MDI type-0 track. Its manufacturer
+events carry the 28-byte OPL patch layout from the AdLib instrument bank,
+allowing the vendored Nuked OPL3 to synthesize the stream without a separate
+instrument bank. This is now implemented as a separate native audio adapter
+for the **source-C intro live** player; the original DOS IRQ8 music driver is
+not decompiled. How `BLASTER` chooses between the two has not been established.
+
+`tools/extract_gateway_mus.py` validates the 60-record directory, descriptor
+bounds, the track headers and their end markers without modifying the source
+archive. It can list songs, inspect AdLib MIDI events, or export a private
+`.mdi` file. For the original `GATE_004.MUS` intro, song 0 contains **3,193
+note-ons, 30 instrument definitions, 4 tempo changes, and 254.872 seconds**
+of scheduled music. The source-C host starts this song at its intro entry
+(not yet timed against the actual DOS audio-device initialization).
+
+```sh
+python3 tools/extract_gateway_mus.py ../gateway-dos/GATE_004.MUS --list
+python3 tools/extract_gateway_mus.py ../gateway-dos/GATE_004.MUS --inspect
+python3 tools/extract_gateway_mus.py ../gateway-dos/GATE_004.MUS \
+  --song 0 --device adlib --output build/intro-analysis/original-intro-adlib.mdi
+python3 tests/extract_gateway_mus_tests.py
+```
+
+No extracted MIDI files are committed or included in the Nix package.
 
 ## RS
 

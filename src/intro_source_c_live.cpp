@@ -5,6 +5,7 @@
 // Only the host clock, keyboard and video boundaries are native; the scene
 // order, caption layout, animation and palette C remain in decomp/launcher.
 #include "intro_source_c_full.h"
+#include "intro_mdi_player.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -17,8 +18,10 @@
 #include <cstring>
 #include <deque>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <thread>
 #include <vector>
@@ -154,15 +157,23 @@ void copy_to_argb(const std::array<std::uint8_t, 320u * 200u> &indices,
 int main(int argc, char **argv) try {
     if (argc != 3 || std::string_view(argv[1]) == "--help") {
         std::cout << "usage: gateway-intro-source-c-live guest-22s.bin DOS-DIR\n"
-                     "Original live source-C intro (silent). Space/Return/letters: "
+                     "Original live source-C intro, native AdLib MIDIPlay audio. "
+                     "Space/Return/letters: "
                      "original C keys, P: pause, F9: filter, Escape: interrupt.\n";
         return argc == 2 ? 0 : 2;
     }
-    require(SDL_Init(SDL_INIT_VIDEO));
+    // The reconstructed intro entry already assumes the DOS loader has
+    // selected AdLib. Its first song lives in GATE_004.MUS, whose FM patches
+    // and note timings are driven by the separate native MIDIPlay adapter.
+    auto song = gateway::read_intro_mdi(std::string(argv[2]) + "/GATE_004.MUS");
+    auto music = std::make_unique<gateway::IntroMdiPlayer>(song);
+    require(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO));
     SDL_Window *window = nullptr;
     SDL_Renderer *renderer = nullptr;
     SDL_Texture *texture = nullptr;
+    SDL_AudioStream *audio = nullptr;
     const auto cleanup = [&] {
+        if (audio) SDL_DestroyAudioStream(audio);
         if (texture) SDL_DestroyTexture(texture);
         if (renderer) SDL_DestroyRenderer(renderer);
         if (window) SDL_DestroyWindow(window);
@@ -177,6 +188,12 @@ int main(int argc, char **argv) try {
                                     SDL_TEXTUREACCESS_STREAMING, 320, 200);
         require(texture != nullptr);
         require(SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST));
+        const SDL_AudioSpec spec{SDL_AUDIO_S16, 2, gateway::Opl::sample_rate};
+        audio = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,
+                                          &spec, nullptr, nullptr);
+        if (audio) require(SDL_ResumeAudioStreamDevice(audio));
+        else std::cerr << "intro: audio device unavailable (running silently): "
+                       << SDL_GetError() << '\n';
 
         LiveState state;
         GateSourceCFullHooks hooks{};
@@ -209,6 +226,11 @@ int main(int argc, char **argv) try {
                         running = false;
                     } else if (event.key.key == SDLK_P) {
                         toggle_pause(state);
+                        if (audio) {
+                            std::lock_guard lock(state.time_mutex);
+                            require(state.paused ? SDL_PauseAudioStreamDevice(audio)
+                                                 : SDL_ResumeAudioStreamDevice(audio));
+                        }
                     } else if (event.key.key == SDLK_F9) {
                         nearest = !nearest;
                         require(SDL_SetTextureScaleMode(texture,
@@ -235,19 +257,36 @@ int main(int argc, char **argv) try {
                     copy_to_argb(indices, palette, argb);
                     require(SDL_UpdateTexture(texture, nullptr, argb.data(), 320 * 4));
                 }
+                if (audio && !state.completed.load()) {
+                    const auto queued = SDL_GetAudioStreamQueued(audio);
+                    require(queued >= 0);
+                    // Keep at most ~200ms of native PCM queued so Escape
+                    // and pause remain responsive. Render advances MIDI
+                    // and OPL in sample time, not the SDL video frame rate.
+                    if (queued < int(gateway::Opl::sample_rate * 4 / 8)) {
+                        auto samples = music->render(4096);
+                        require(SDL_PutAudioStreamData(audio, samples.data(),
+                            int(samples.size() * sizeof(samples[0]))));
+                    }
+                }
                 const auto second = elapsed_ms(state) / 1000;
                 const bool completed = state.completed.load();
-                if (second != previous_second || state.paused != previous_paused ||
+                bool paused = false;
+                {
+                    std::lock_guard lock(state.time_mutex);
+                    paused = state.paused;
+                }
+                if (second != previous_second || paused != previous_paused ||
                     completed != previous_completed) {
                     char title[140];
                     std::snprintf(title, sizeof title,
                         "Gateway live source-C intro %02u:%02u%s%s",
                         second / 60, second % 60,
                         completed ? " [finished]" : "",
-                        state.paused ? " [paused]" : "");
+                        paused ? " [paused]" : "");
                     require(SDL_SetWindowTitle(window, title));
                     previous_second = second;
-                    previous_paused = state.paused;
+                    previous_paused = paused;
                     previous_completed = completed;
                 }
                 require(SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255));
