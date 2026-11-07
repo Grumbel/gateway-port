@@ -8,6 +8,29 @@ option(GATEWAY_WITH_SDL "Build the SDL3 host diagnostic" ON)
 option(GATEWAY_WITH_UNICORN "Build the real-mode startup probe" ON)
 option(GATEWAY_INTRO_DECOMPILE_ONLY "Build only the reconstructed original GATE intro C library and tests" OFF)
 
+# Playable caption-only component from original source-shaped C. Keeping
+# these translation units separate allows dead original service branches to
+# be discarded without a fake implementation of their ABI.
+set(GATEWAY_INTRO_SOURCE_C_CAPTION_SOURCES
+  decomp/launcher/gate_exe.c decomp/launcher/gate_exe_intro_setup.c
+  decomp/launcher/gate_exe_helpers.c decomp/launcher/gate_c_runtime_string.c
+  decomp/launcher/gate_rtl_font.c decomp/launcher/gate_rtl.c
+  decomp/launcher/gate_rtl_draw.c decomp/launcher/gate_rtl_linkage.c
+  decomp/launcher/gate_rtl_file.c decomp/launcher/gate_dos_file_runtime.c
+  src/intro_dos_host_files.c src/intro_host_memory.c
+  src/intro_host_rtl_font.c src/intro_host_rtl_text_globals.c
+  src/intro_host_rtl_pixel.c src/intro_host_input.c
+  src/intro_source_c_captions.c)
+
+add_executable(gateway-intro-source-c-dump
+  ${GATEWAY_INTRO_SOURCE_C_CAPTION_SOURCES}
+  src/intro_source_c_dump.c)
+target_include_directories(gateway-intro-source-c-dump PRIVATE decomp/launcher src)
+target_compile_options(gateway-intro-source-c-dump PRIVATE
+  -ffunction-sections -fdata-sections)
+target_link_options(gateway-intro-source-c-dump PRIVATE -Wl,--gc-sections)
+install(TARGETS gateway-intro-source-c-dump RUNTIME DESTINATION bin)
+
 # This is reconstructed original C, not the separate SDL/C++ approximation
 # in src/intro_player.cpp. It deliberately keeps undefined original runtime
 # services as unresolved externals in the archive until they are recovered.
@@ -107,6 +130,22 @@ install(FILES decomp/launcher/gate_exe.h decomp/launcher/gate_rtl.h
         DESTINATION include/gateway/intro)
 
 if(BUILD_TESTING)
+  add_executable(launcher-intro-source-c-captions-tests
+    ${GATEWAY_INTRO_SOURCE_C_CAPTION_SOURCES}
+    tests/launcher_intro_source_c_captions_tests.c)
+  target_include_directories(launcher-intro-source-c-captions-tests PRIVATE
+    decomp/launcher src)
+  target_compile_options(launcher-intro-source-c-captions-tests PRIVATE
+    -ffunction-sections -fdata-sections)
+  target_link_options(launcher-intro-source-c-captions-tests PRIVATE
+    -Wl,--gc-sections)
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin" AND
+     EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos/GATE_305.FNT")
+    add_test(NAME launcher-intro-source-c-captions COMMAND
+      launcher-intro-source-c-captions-tests
+      ${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin
+      ${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos)
+  endif()
   add_executable(launcher-intro-audio-startup-tests
     decomp/launcher/gate_rtl_audio_startup.c
     tests/launcher_intro_audio_startup_tests.c)
@@ -460,6 +499,16 @@ add_executable(gateway-story-check tools/check_action_matrix.cpp)
 target_link_libraries(gateway-story-check PRIVATE gateway_core)
 if(GATEWAY_WITH_SDL)
   find_package(SDL3 CONFIG REQUIRED)
+  add_executable(gateway-intro-source-c-captions
+    ${GATEWAY_INTRO_SOURCE_C_CAPTION_SOURCES}
+    src/intro_source_c_player.cpp)
+  target_include_directories(gateway-intro-source-c-captions PRIVATE
+    decomp/launcher src)
+  target_compile_options(gateway-intro-source-c-captions PRIVATE
+    -ffunction-sections -fdata-sections)
+  target_link_options(gateway-intro-source-c-captions PRIVATE -Wl,--gc-sections)
+  target_link_libraries(gateway-intro-source-c-captions PRIVATE SDL3::SDL3)
+  install(TARGETS gateway-intro-source-c-captions RUNTIME DESTINATION bin)
   add_executable(gateway-intro src/intro_player.cpp)
   target_link_libraries(gateway-intro PRIVATE gateway_core SDL3::SDL3)
   add_executable(gateway-host src/host.cpp)

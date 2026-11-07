@@ -65,6 +65,16 @@
           program = "${self.packages.${system}.default}/bin/gateway-intro";
           meta.description = "Preview the Gateway intro with the native C++ renderer";
         };
+        intro-source-c = {
+          type = "app";
+          program = "${self.packages.${system}.default}/bin/gateway-intro-source-c-captions";
+          meta.description = "Play all eighteen original source-C caption pages (requires a DOS RAM snapshot)";
+        };
+        intro-source-c-dump = {
+          type = "app";
+          program = "${self.packages.${system}.intro-decompile}/bin/gateway-intro-source-c-dump";
+          meta.description = "Export all eighteen original source-C caption frames without SDL3";
+        };
         intro-dump = {
           type = "app";
           program = "${self.packages.${system}.default}/bin/gateway-intro-dump";

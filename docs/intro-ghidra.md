@@ -9,7 +9,7 @@ original recovered source nor a playable native executable.
 The raw `GATE.RTL` has unresolved relocation placeholders. **Do not import it
 as if its on-disk bytes were linked machine code.** This pipeline uses a
 specific 22-second 1 MiB guest-memory snapshot and verifies its segment/file
-identities against both SHA-256-pinned DOS binaries. It imports five
+identities against both SHA-256-pinned DOS binaries. It imports six
 independently established resident RTL segments, not the complete RTL file,
 and preserves their potentially overlapping addresses using Ghidra overlay
 spaces. The newly added `0c33` file-service bank has four independent entry

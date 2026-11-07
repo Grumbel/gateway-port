@@ -416,6 +416,18 @@ far calls, data offsets and control flow before making a modern translation.
 The first translated routines and their remaining uncertainties are in
 [`decomp/launcher/README.md`](decomp/launcher/README.md).
 
+The original source-C caption renderer now also has its own runnable
+component, separate from the C++ renderer below. Given a captured 1 MiB
+original DOS memory image, `nix run .#intro-source-c --
+build/intro-analysis/at-22000.bin ../gateway-dos` displays eighteen pages
+through the recovered `GATE.EXE:117e` source-C functions. The headless
+`nix run .#intro-source-c-dump -- build/intro-analysis/at-22000.bin
+../gateway-dos build/source-c-pages` exports the same frames (create the
+output directory first). This is a **caption-only diagnostic**, not yet the
+complete source-C intro: image/animation sequencing, original palette,
+startup and handoff remain missing. See
+[source-C intro status](docs/intro-source-c.md) for snapshot setup and tests.
+
 A separate native C++ intro prototype renders the initial Legend splash,
 logo sequence, all eighteen narrative pages, and several background/sprite
 animations directly from `GATE.EXE`, the original PIC archives, and its
