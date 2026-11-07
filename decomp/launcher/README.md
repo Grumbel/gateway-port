@@ -993,6 +993,16 @@ mode rather than disturbing the console. Passing `RESCHK.EXE`, fresh
 the new object. The expected remainder becomes **43** if all previous
 pending objects link. There is still no original program initialization.
 
+`msc51-compile-heap` compiles `HEAP.OBJ`, implementing real DOS allocation
+and release for original font heap (`1e2c:0008/0138`) and VFX pixel heap
+(`253a:0004/0048`). It maps byte counts to DOS memory paragraphs,
+including buffers larger than 64KiB, and rejects invalid null releases.
+`HEAPCHK.EXE` verifies word roundtrips, access beyond the first segment,
+normal release and null rejection; fresh `HEAPOK.LOG` and a source
+fingerprint guard the LINK input. The original heap's private free-list
+has not been reconstructed; the adapter uses DOS allocation explicitly.
+The predicted missing names become **39** if all stages pass on DOSBox.
+
 ## Immediate next functions
 
 1. Connect the existing verified native video, font, picture and caption

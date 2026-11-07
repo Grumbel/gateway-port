@@ -239,6 +239,7 @@ HARDWARE_SOURCES = ("RTLLAY.H", "GATEMEM.H", "STDINT.H", "RTLHW.C", "HWCHK.C",
 RUNTIME_FILE_SOURCES = ("GATEMEM.H", "STDINT.H", "RTFILE.C", "RTFCHK.C", "MEMORY.C")
 RESIDENT_STATE_SOURCES = ("GATEMEM.H", "STDINT.H", "RTLLAY.H", "RESSTATE.C",
                           "RESCHK.C", "MEMORY.C")
+HEAP_SOURCES = ("GATEMEM.H", "STDINT.H", "HEAP.C", "HEAPCHK.C", "MEMORY.C")
 
 
 def memory_source_signature(output: Path) -> str:
@@ -282,6 +283,13 @@ def runtime_file_source_signature(output: Path) -> str:
 def resident_state_source_signature(output: Path) -> str:
     digest = hashlib.sha256(b"MS C 5.1 /AL /Od resident state services v1\n")
     for name in RESIDENT_STATE_SOURCES:
+        digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
+    return digest.hexdigest()[:16]
+
+
+def heap_source_signature(output: Path) -> str:
+    digest = hashlib.sha256(b"MS C 5.1 /AL /Od DOS heap services v1\n")
+    for name in HEAP_SOURCES:
         digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
     return digest.hexdigest()[:16]
 
@@ -560,6 +568,26 @@ def stage_launcher(output: Path) -> list[str]:
         ":DONE", "EXIT",
     ]
     (output / "RESST.BAT").write_text("\r\n".join(resident_state_batch) + "\r\n")
+    for original, staged in (("msc51_heap.c", "HEAP.C"),
+                             ("msc51_heap_probe.c", "HEAPCHK.C")):
+        (output / staged).write_text(msc51_rename_identifiers(
+            (source_dir / "dos" / original).read_text(), shortened))
+    heap_signature = heap_source_signature(output)
+    heap_batch = [
+        "@ECHO OFF", "ECHO MS C 5.1 real DOS conventional heap > HEAPSTRT.LOG",
+        "SET PATH=C:\\BIN;C:\\", "SET INCLUDE=C:\\INCLUDE;C:\\",
+        "SET LIB=C:\\LIB;C:\\", "SET TEMP=D:\\", "SET TMP=D:\\",
+        "CL /AL /Od /c HEAP.C > HEAPBLD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        "IF NOT EXIST HEAP.OBJ GOTO FAILED",
+        "CL /AL /Od HEAPCHK.C HEAP.OBJ MEMORY.OBJ /FeHEAPCHK.EXE /link LLIBCR.LIB LIBH.LIB/NOD >> HEAPBLD.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST HEAPCHK.EXE GOTO FAILED",
+        "HEAPCHK.EXE > HEAPTST.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        f"ECHO {heap_signature} > HEAPSIG.LOG",
+        "ECHO Real-mode DOS heap probe passed > HEAPOK.LOG",
+        "GOTO DONE", ":FAILED", "ECHO Real-mode DOS heap probe failed > HEAPFAIL.LOG",
+        ":DONE", "EXIT",
+    ]
+    (output / "HEAP.BAT").write_text("\r\n".join(heap_batch) + "\r\n")
     lines = [
         "@ECHO OFF", "ECHO Gateway MSC 5.1 launcher objects > START.LOG",
         "SET PATH=C:\\BIN;C:\\", "SET INCLUDE=C:\\INCLUDE;C:\\",
@@ -583,7 +611,7 @@ def stage_launcher(output: Path) -> list[str]:
     # Each trailing + extends the SAME response across CRLFs (MS KB Q40429).
     response = ([f"{name}+" for name in objects] + ["MEMORY.OBJ+", "DOSFILE.OBJ+",
                 "RTLIMG.OBJ+", "RTLTEXT.OBJ+", "RTLPAL.OBJ+", "RTLGR.OBJ+",
-                "RTLHW.OBJ+", "RTFILE.OBJ+", "RESSTATE.OBJ",
+                "RTLHW.OBJ+", "RTFILE.OBJ+", "RESSTATE.OBJ+", "HEAP.OBJ",
                 "GATEWAY.EXE", "GATEWAY.MAP", "LLIBCR.LIB LIBH.LIB /NOD", ";"])
     (output / "LINK.RSP").write_text("\r\n".join(response) + "\r\n")
     link_batch = [
@@ -814,6 +842,35 @@ def print_resident_state_diagnostics(output: Path) -> None:
     print(f"Resident state workspace: {output}", file=sys.stderr)
 
 
+def validate_heap_adapter(output: Path) -> None:
+    if (any(locate_case_insensitive(output, name) is None
+            for name in ("HEAP.OBJ", "HEAPSTRT.LOG", "HEAPOK.LOG")) or
+            locate_case_insensitive(output, "HEAPFAIL.LOG") is not None):
+        raise ValueError("Cannot link launcher: DOS heap services are unverified. "
+                         "Run msc51-compile-heap first.")
+    signature = locate_case_insensitive(output, "HEAPSIG.LOG")
+    if signature is None or signature.read_text().strip() != heap_source_signature(output):
+        raise ValueError("Cannot link launcher: heap adapter source has changed "
+                         "since its test. Run msc51-compile-heap again.")
+
+
+def remove_heap_outputs(output: Path) -> None:
+    names = {"HEAPSTRT.LOG", "HEAPOK.LOG", "HEAPFAIL.LOG", "HEAPBLD.LOG",
+             "HEAPSIG.LOG", "HEAPTST.LOG", "HEAP.OBJ", "HEAPCHK.EXE", "HEAPCHK.OBJ"}
+    if output.is_dir():
+        for entry in output.iterdir():
+            if entry.is_file() and entry.name.upper() in names:
+                entry.unlink()
+
+
+def print_heap_diagnostics(output: Path) -> None:
+    for name in ("HEAPFAIL.LOG", "HEAPBLD.LOG", "HEAPTST.LOG", "HEAPOK.LOG"):
+        path = locate_case_insensitive(output, name)
+        content = path.read_text(errors="replace") if path else "(not created)"
+        print(f"--- {name} ---\n{content[-8_000:].rstrip()}", file=sys.stderr)
+    print(f"DOS heap workspace: {output}", file=sys.stderr)
+
+
 def remove_launcher_link_outputs(output: Path) -> None:
     """Never accept a previous link's EXE, map or success marker."""
     names = {"LNKSTART.LOG", "LINKSTAR.LOG", "LINKSTART.LOG", "LINK.LOG",
@@ -900,6 +957,7 @@ def main(argv: list[str] | None = None) -> int:
                                             "compile-rtl-state", "compile-hardware",
                                             "compile-runtime-files",
                                             "compile-resident-state",
+                                            "compile-heap",
                                             "link-launcher"))
     parser.add_argument("--compiler", default=os.environ.get("GATEWAY_MSC51_DIR"),
                         help="installed Microsoft C 5.1 directory (or GATEWAY_MSC51_DIR)")
@@ -915,6 +973,7 @@ def main(argv: list[str] | None = None) -> int:
                                 "compile-memory", "compile-dos-files",
                                 "compile-rtl-state", "compile-hardware",
                                 "compile-runtime-files", "compile-resident-state",
+                                "compile-heap",
                                 "link-launcher")
     output = (args.output or Path("build/msc51-launcher" if launcher else "build/intro-msc51")).expanduser().resolve()
     objects = []
@@ -939,6 +998,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.command in ("compile-dos-files", "compile-rtl-state",
                                 "compile-hardware", "compile-runtime-files",
                                 "compile-resident-state",
+                                "compile-heap",
                                 "link-launcher"):
                 validate_memory_adapter(output)
             if args.command == "link-launcher":
@@ -947,6 +1007,7 @@ def main(argv: list[str] | None = None) -> int:
                 validate_hardware_adapter(output)
                 validate_runtime_file_adapter(output)
                 validate_resident_state_adapter(output)
+                validate_heap_adapter(output)
             if not args.compiler:
                 parser.error("set GATEWAY_MSC51_DIR or pass --compiler /path/to/installed/MSC51")
             compiler = validate_compiler(Path(args.compiler))
@@ -956,6 +1017,7 @@ def main(argv: list[str] | None = None) -> int:
                                  "compile-dos-files", "compile-rtl-state",
                                  "compile-hardware", "compile-runtime-files",
                                  "compile-resident-state",
+                                 "compile-heap",
                                  "link-launcher"),
                 ("LINK.BAT" if args.command == "link-launcher" else
                  "DOSFILE.BAT" if args.command == "compile-dos-files" else
@@ -963,6 +1025,7 @@ def main(argv: list[str] | None = None) -> int:
                  "RTLHW.BAT" if args.command == "compile-hardware" else
                  "RTFILE.BAT" if args.command == "compile-runtime-files" else
                  "RESST.BAT" if args.command == "compile-resident-state" else
+                 "HEAP.BAT" if args.command == "compile-heap" else
                  "MEMORY.BAT" if args.command == "compile-memory" else
                  "COMPILE.BAT" if launcher else "BUILD.BAT"))
             output.mkdir(parents=True, exist_ok=True)
@@ -1004,6 +1067,10 @@ def main(argv: list[str] | None = None) -> int:
         remove_resident_state_outputs(output)
         remove_launcher_link_outputs(output)
         command.append("--exit")
+    elif args.command == "compile-heap":
+        remove_heap_outputs(output)
+        remove_launcher_link_outputs(output)
+        command.append("--exit")
     elif args.command == "link-launcher":
         remove_launcher_link_outputs(output)
         command.append("--exit")
@@ -1026,6 +1093,8 @@ def main(argv: list[str] | None = None) -> int:
             print_runtime_file_diagnostics(output)
         elif args.command == "compile-resident-state":
             print_resident_state_diagnostics(output)
+        elif args.command == "compile-heap":
+            print_heap_diagnostics(output)
         elif args.command == "link-launcher":
             print_launcher_link_diagnostics(output)
         return result.returncode
@@ -1092,6 +1161,17 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print("Microsoft C 5.1 verified resident drawing words and BIOS mode selection; "
               "RESSTATE.OBJ is ready for the launcher link.")
+        return 0
+    if args.command == "compile-heap":
+        try:
+            validate_heap_adapter(output)
+        except ValueError:
+            print("Microsoft C did not compile and verify DOS heap operations.",
+                  file=sys.stderr)
+            print_heap_diagnostics(output)
+            return 1
+        print("Microsoft C 5.1 verified DOS heap allocations including >64KiB VFX buffers; "
+              "HEAP.OBJ is ready for the launcher link.")
         return 0
     if args.command == "link-launcher":
         started = locate_case_insensitive(output, "LNKSTART.LOG")
