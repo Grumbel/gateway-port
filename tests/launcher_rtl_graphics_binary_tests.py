@@ -82,6 +82,35 @@ class OriginalIntroGraphicsEvidence(unittest.TestCase):
                 self.assertEqual(self.rtl[start + 2], 0xec)
                 self.assertEqual(self.rtl[end], 0xcb)
 
+    def test_original_intro_video_reset_wrapper(self):
+        # RTL:f921 is a distinct 21-byte FAR-returning routine linked as
+        # 0cdc:07d8, not part of the following f937 cursor-mode setter.
+        self.assertEqual(self.rtl[0xf921], 0x2b)  # SUB AX, AX
+        self.assertEqual(self.rtl[0xf923], 0x50)  # PUSH AX twice
+        self.assertEqual(self.rtl[0xf924], 0x50)
+        self.assertEqual(self.rtl[0xf925], 0x9a)  # FAR call
+        self.assertEqual(int.from_bytes(self.rtl[0xf92c:0xf92e], 'little'),
+                         0x030e)  # original cursor block-mode WORD
+        self.assertEqual(self.rtl[0xf931], 0x0e)  # PUSH CS
+        self.assertEqual(self.rtl[0xf932], 0xe8)  # near-call f8eb
+        displacement = int.from_bytes(self.rtl[0xf933:0xf935],
+                                      'little', signed=True)
+        self.assertEqual(0xf935 + displacement, 0xf8eb)
+        self.assertEqual(self.rtl[0xf935], 0xcb)  # RETF
+
+        snapshot = ROOT / 'build/intro-analysis/at-22000.bin'
+        if not snapshot.is_file():
+            self.skipTest('private guest RAM snapshot unavailable')
+        ram = snapshot.read_bytes()
+        base = (0x0cdc + 0x1000) * 16 + 4 - 0xf14d
+        call = ram[base + 0xf925:base + 0xf92a]
+        self.assertEqual(call[0], 0x9a)
+        self.assertEqual((int.from_bytes(call[1:3], 'little'),
+                          int.from_bytes(call[3:5], 'little')),
+                         (0x000a, 0x2488))
+        self.assertEqual(int.from_bytes(ram[base + 0xf92c:base + 0xf92e],
+                                        'little'), 0x12dc)
+
     def test_original_video_mode_switch_and_resident_services(self):
         # The large f14d C routine has multiple FAR returns, and calls
         # f49b through PUSH CS/near CALL after successful BIOS setup.

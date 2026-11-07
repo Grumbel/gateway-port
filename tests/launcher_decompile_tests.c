@@ -114,7 +114,7 @@ void gate_far_set_word(uint16_t segment, uint16_t offset, uint16_t value)
 }
 uint16_t gate_far_0df2_000a(void) { return keyboard_pending; }
 uint16_t gate_far_0df2_0030(void) { ++key_reads; return keyboard_key; }
-void gate_far_0df2_00f8(void) { ++keyboard_flushes; }
+uint16_t gate_far_0df2_00f8(void) { ++keyboard_flushes; return 0; }
 uint16_t gate_far_0e48_07fe(void) { return mouse_flags; }
 uint32_t gate_far_02a5_38c4(void) { clock_now += clock_step; return clock_now; }
 uint16_t gate_far_02a5_2bba(GateFarPtr text)

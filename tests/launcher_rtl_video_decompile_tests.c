@@ -15,6 +15,8 @@ static int16_t columns, rows, tab_base;
 struct Command { uint8_t op, ch, attr, row, col; uint16_t length; };
 static struct Command commands[80];
 static unsigned count;
+static unsigned resident_calls, callback_sequence, resident_sequence;
+static unsigned video_sequence;
 
 uint8_t gate_far_byte(uint16_t segment, uint16_t offset)
 {
@@ -30,10 +32,18 @@ int16_t gate_rtl_video_columns(void) { return columns; }
 int16_t gate_rtl_video_rows(void) { return rows; }
 int16_t gate_rtl_video_tab_base(void) { return tab_base; }
 
+void gate_far_2488_000a(uint16_t first, uint16_t second)
+{
+    assert(first == 0 && second == 0);
+    ++resident_calls;
+    resident_sequence = ++callback_sequence;
+}
+
 void gate_rtl_video_command(uint16_t function, uint8_t *input, uint8_t *output)
 {
     struct Command *command;
     assert(function == 0x10 && input == output);
+    video_sequence = ++callback_sequence;
     assert(count < sizeof commands / sizeof commands[0]);
     command = &commands[count++];
     command->op = input[1];
@@ -63,11 +73,29 @@ static void reset(void)
     memset(text, 0, sizeof text);
     memset(commands, 0, sizeof commands);
     count = 0;
+    resident_calls = callback_sequence = resident_sequence = video_sequence = 0;
     mode = invert = cursor_x = cursor_y = 0;
     ink = 7;
     columns = 80;
     rows = 25;
     tab_base = 60; /* original ADD 4 / SAR 3 => 8-cell tabs */
+}
+
+static void test_original_intro_video_reset_wrapper(void)
+{
+    reset();
+    gate_rtl_f921();
+    assert(resident_calls == 1 && count == 0);
+    assert(resident_sequence == 1 && video_sequence == 0);
+
+    reset();
+    mode = 1;
+    ink = 0x12;
+    gate_rtl_f921();
+    assert(resident_calls == 1 && count == 1);
+    assert(resident_sequence == 1 && video_sequence == 2);
+    assert(commands[0].op == 9 && commands[0].ch == 0xdb);
+    assert(commands[0].attr == 0x92 && commands[0].length == 1);
 }
 
 static void test_cursor_queries_and_mode_changes(void)
@@ -178,6 +206,7 @@ static void test_print_with_block_cursor(void)
 
 int main(void)
 {
+    test_original_intro_video_reset_wrapper();
     test_cursor_queries_and_mode_changes();
     test_original_text_control_flow();
     test_clipping_and_cursor_wrap();

@@ -36,13 +36,29 @@ uint16_t gate_far_0df2_000a(void)
 {
     if (active_input == 0 || active_input->key_pending == 0)
         abort();
-    return active_input->key_pending(active_input->userdata);
+    /* Original linked 0df2:000a checks the host/BIOS queue first, followed
+     * by DS:1340 (one ungotten key) and DS:133e (Ctrl-Break count). */
+    if (active_input->key_pending(active_input->userdata) != 0)
+        return 1;
+    return gate_ds_word(0x1340) != 0xffff || gate_ds_word(0x133e) != 0;
 }
 
 uint16_t gate_far_0df2_0030(void)
 {
     if (active_input == 0 || active_input->read_key == 0)
         abort();
+    /* The original 0df2:0030 consumes a pending DOS Ctrl-Break before
+     * buffered/BIOS keys. The special INT 21h 0x0c00 branch is not yet
+     * independently modeled by the host; forward to the same key source. */
+    if (gate_ds_word(0x133e) != 0) {
+        gate_ds_set_word(0x133e, (uint16_t)(gate_ds_word(0x133e) - 1u));
+        return active_input->read_key(active_input->userdata);
+    }
+    if (gate_ds_word(0x1340) != 0xffff) {
+        uint16_t key = gate_ds_word(0x1340);
+        gate_ds_set_word(0x1340, 0xffff);
+        return key;
+    }
     return active_input->read_key(active_input->userdata);
 }
 

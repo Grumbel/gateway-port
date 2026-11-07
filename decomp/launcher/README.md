@@ -84,6 +84,37 @@ recompiled DOS binary. A routine is only considered
 fully verified once original-entry guest registers and memory effects can be
 compared at the same routine boundary.
 
+## Linked startup keyboard and video wrappers
+
+The 22-second linked DOS RAM snapshot contains two adjacent keyboard
+functions in the `0df2` bank that are directly called by `GATE.EXE`:
+
+| Linked entry | Reconstructed C | Original behavior |
+| --- | --- | --- |
+| `0df2:00f8..0127` | `gate_far_0df2_00f8()` | If a key is pending, read it; return that key and store it back to `DS:1340` unless it is Space (`0x20`) or CR (`0x0d`). Return zero without a read when none is pending. |
+| `0df2:0128..0136` | `gate_far_0df2_0128()` | Repeatedly read and discard keys while the pending-key service returns nonzero. |
+
+`gate_input.c` preserves their original conditional calls, 16-bit key
+values and memory effects. A strict C11/UBSan test exercises absent keys,
+Space/CR, Escape, Ctrl-C, replay of buffered keys and the flush loop;
+original linked-byte checks pin both branch/call targets and the relocated
+`DS:1340` operand. The existing `intro_host_input.c` adapters for linked
+`0df2:000a/0030` now consult that guest DS slot after the injected host
+queue, so a native integration test verifies the full **key read → unget →
+pending → reread → flush** path without a second fake buffer. The special
+`DS:133e` Ctrl-Break counter and DOS `INT 21h:0c00` reset path remain an
+HLE approximation using the host key callback, not source-C guest-entry
+equivalence. SDL keyboard delivery itself is still pending.
+
+The previously unresolved `0cdc:07d8` video call from `EXE:1302` is
+now resolved to original `GATE.RTL:f921..f935`: invoke linked resident
+`2488:000a` with two zero words, then draw the inverse block through
+`rtl:f8eb` only when the cursor-block mode is nonzero. Source-C and
+linked-snapshot tests verify the order, operands, conditional branch,
+relocated `DS:030e` word and resident target. The resident service's
+actual video/page side effects are **not yet modeled**; the C boundary
+remains explicit instead of guessing a clear-screen or page-switch API.
+
 ## Decompiled linked text RTL (GATE.RTL)
 
 The intro's text services have now been mapped to original `GATE.RTL`

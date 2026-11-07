@@ -28,7 +28,19 @@ void gate_rtl_f8eb(void)
     video_call(packet);
 }
 
-/* GATE.RTL:0xf937..0xf958. The preceding 0xf921 wrapper is separate. */
+/* GATE.RTL:0xf921..0xf935, linked from the original intro as 0cdc:07d8.
+ * The FAR target is resident 2488:000a in the 22-second guest snapshot.
+ * Do not infer its graphics/page semantics from the two zero arguments:
+ * keep it as an unresolved hardware boundary until the resident source is
+ * recovered. The RTL cursor restoration is conditional on DS:030e. */
+void gate_rtl_f921(void)
+{
+    gate_far_2488_000a(0, 0);
+    if (gate_rtl_video_block_mode() != 0)
+        gate_rtl_f8eb();
+}
+
+/* GATE.RTL:0xf937..0xf958. */
 uint16_t gate_rtl_f937(uint16_t new_mode)
 {
     uint16_t previous = gate_rtl_video_block_mode();

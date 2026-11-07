@@ -31,7 +31,7 @@ void gate_far_set_word(uint16_t segment, uint16_t offset, uint16_t value);
 /* Linked 16-bit far calls; conventions inferred from caller instructions. */
 uint16_t gate_far_0df2_000a(void); /* keyboard pending */
 uint16_t gate_far_0df2_0030(void); /* consume key */
-void gate_far_0df2_00f8(void);     /* keyboard cleanup */
+uint16_t gate_far_0df2_00f8(void); /* read one pending key, buffer except Space/CR */
 uint16_t gate_far_0e48_07fe(void); /* mouse flags in AL */
 uint32_t gate_far_02a5_38c4(void); /* clock returned in DX:AX */
 uint16_t gate_far_02a5_2bba(GateFarPtr text); /* string length, AX */

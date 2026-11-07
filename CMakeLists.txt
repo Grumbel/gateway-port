@@ -14,6 +14,7 @@ option(GATEWAY_INTRO_DECOMPILE_ONLY "Build only the reconstructed original GATE 
 add_library(gateway_intro_decompiled STATIC
   decomp/launcher/gate_exe.c
   decomp/launcher/gate_exe_helpers.c
+  decomp/launcher/gate_input.c
   decomp/launcher/gate_c_runtime_string.c
   decomp/launcher/gate_rtl_font.c
   decomp/launcher/gate_rtl.c
@@ -158,6 +159,12 @@ if(BUILD_TESTING)
     tests/launcher_rtl_video_decompile_tests.c)
   target_include_directories(launcher-rtl-video-decompile-tests PRIVATE decomp/launcher)
   add_test(NAME launcher-rtl-video-decompile COMMAND launcher-rtl-video-decompile-tests)
+  add_executable(launcher-intro-keyboard-decompile-tests
+    decomp/launcher/gate_input.c
+    tests/launcher_intro_keyboard_decompile_tests.c)
+  target_include_directories(launcher-intro-keyboard-decompile-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-intro-keyboard-decompile
+    COMMAND launcher-intro-keyboard-decompile-tests)
   add_executable(launcher-rtl-graphics-decompile-tests
     decomp/launcher/gate_rtl_graphics.c
     tests/launcher_rtl_graphics_decompile_tests.c)
@@ -208,6 +215,7 @@ if(BUILD_TESTING)
   target_include_directories(launcher-intro-host-memory-tests PRIVATE decomp/launcher)
   add_test(NAME launcher-intro-host-memory COMMAND launcher-intro-host-memory-tests)
   add_executable(launcher-intro-host-input-tests
+    decomp/launcher/gate_input.c src/intro_host_memory.c
     src/intro_host_input.c tests/launcher_intro_host_input_tests.c)
   target_include_directories(launcher-intro-host-input-tests PRIVATE decomp/launcher)
   add_test(NAME launcher-intro-host-input COMMAND launcher-intro-host-input-tests)
@@ -343,6 +351,8 @@ if(BUILD_TESTING)
   add_test(NAME launcher-rtl-intro-sequence-decompile COMMAND launcher-rtl-intro-sequence-decompile-tests)
   find_package(Python3 COMPONENTS Interpreter QUIET)
   if(Python3_Interpreter_FOUND)
+    add_test(NAME launcher-intro-keyboard-binary COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_intro_keyboard_binary_tests.py)
     add_test(NAME launcher-rtl-graphics-binary COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_rtl_graphics_binary_tests.py)
     add_test(NAME launcher-intro-vfx-binary COMMAND ${Python3_EXECUTABLE}
