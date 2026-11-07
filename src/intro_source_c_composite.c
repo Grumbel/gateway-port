@@ -208,12 +208,66 @@ static int configure(GateIntroMemory *memory)
     gate_rtl_resource_ds_set_word(6, 0);
     gate_rtl_resource_ds_set_word(8, 0xffffu);
     memset(memory->bytes + 0xa0000, 0, 320u * 200u);
+    /* Direct host bulk writes bypass the FAR accessor; the dependency
+     * profiler must not treat subsequent pixel reads as snapshot inputs. */
+    if (memory->written_bytes)
+        memset(memory->written_bytes + 0xa0000, 1, 320u * 200u);
     return 1;
+}
+
+/* This is a dependency-location oracle, not a memory dump: only physical
+ * page offsets and the number of bytes first read before a FAR write are
+ * exported. It never includes the original proprietary byte values. */
+static void write_input_dependencies(const char *path, const uint8_t *reads)
+{
+    FILE *out = fopen(path, "wbx");
+    unsigned page, count, pages = 0, ranges = 0;
+    uint32_t total = 0;
+    if (!out) {
+        perror(path);
+        abort();
+    }
+    if (fprintf(out, "# physical-page first-read-bytes (4096-byte pages)\n") < 0)
+        abort();
+    for (page = 0; page < GATE_INTRO_RAM_BYTES / 4096u; ++page) {
+        unsigned i;
+        count = 0;
+        for (i = 0; i < 4096u; ++i)
+            count += reads[page * 4096u + i] != 0;
+        if (!count)
+            continue;
+        if (fprintf(out, "%05x %u\n", page * 4096u, count) < 0)
+            abort();
+        total += count;
+        ++pages;
+    }
+    if (fprintf(out, "# first-read physical byte ranges (end exclusive)\n") < 0)
+        abort();
+    for (uint32_t offset = 0; offset < GATE_INTRO_RAM_BYTES;) {
+        uint32_t start;
+        if (!reads[offset]) {
+            ++offset;
+            continue;
+        }
+        start = offset;
+        do {
+            ++offset;
+        } while (offset < GATE_INTRO_RAM_BYTES && reads[offset]);
+        if (fprintf(out, "range %05x %05x\n", (unsigned)start,
+                    (unsigned)offset) < 0)
+            abort();
+        ++ranges;
+    }
+    if (fclose(out) != 0)
+        abort();
+    printf("original source-C first-read profile: %u guest bytes in %u pages, %u ranges\n",
+           (unsigned)total, pages, ranges);
 }
 
 static int run_intro(const char *snapshot, const char *dos_dir,
                      const char *ppm_output, int full,
                      const char *record_output, const char *memory_output,
+                     const char *dependency_output,
                      const GateSourceCFullHooks *hooks)
 {
     GateIntroMemory *memory;
@@ -222,6 +276,7 @@ static int run_intro(const char *snapshot, const char *dos_dir,
     GateIntroVideoModeHardware video = {0};
     Clock clock = {0};
     Recording recording = {0};
+    uint8_t *dependency_maps = NULL;
     GateIntroHostInput input = {&clock, sample_time, key_pending, read_key, no_mouse};
     FILE *in, *out;
     unsigned i, text_pixels = 0, background_pixels = 0, final_pixels = 0;
@@ -231,10 +286,20 @@ static int run_intro(const char *snapshot, const char *dos_dir,
     memory = calloc(1, sizeof *memory);
     if (!memory)
         return 1;
+    if (dependency_output) {
+        dependency_maps = calloc(2u * GATE_INTRO_RAM_BYTES, 1);
+        if (!dependency_maps) {
+            free(memory);
+            return 1;
+        }
+        memory->input_reads = dependency_maps;
+        memory->written_bytes = dependency_maps + GATE_INTRO_RAM_BYTES;
+    }
     clock.memory = memory;
     in = fopen(snapshot, "rb");
     if (!in) {
         perror(snapshot);
+        free(dependency_maps);
         free(memory);
         return 1;
     }
@@ -242,6 +307,7 @@ static int run_intro(const char *snapshot, const char *dos_dir,
         GATE_INTRO_RAM_BYTES) {
         fprintf(stderr, "invalid 1 MiB DOS RAM snapshot: %s\n", snapshot);
         fclose(in);
+        free(dependency_maps);
         free(memory);
         return 1;
     }
@@ -313,6 +379,8 @@ static int run_intro(const char *snapshot, const char *dos_dir,
             abort();
         }
     }
+    if (dependency_output)
+        write_input_dependencies(dependency_output, memory->input_reads);
 
     if (ppm_output) {
         out = fopen(ppm_output, "wb");
@@ -345,6 +413,7 @@ static int run_intro(const char *snapshot, const char *dos_dir,
     gate_intro_input_detach();
     gate_dos_host_files_close_all(&files);
     gate_intro_memory_detach();
+    free(dependency_maps);
     free(memory);
     if (ppm_output) {
         if (full) {
@@ -365,7 +434,7 @@ int gate_source_c_full_run(const char *snapshot, const char *dos_directory,
 {
     if (!snapshot || !dos_directory)
         return 2;
-    return run_intro(snapshot, dos_directory, NULL, 1, NULL, NULL, hooks);
+    return run_intro(snapshot, dos_directory, NULL, 1, NULL, NULL, NULL, hooks);
 }
 
 #ifndef GATE_SOURCE_C_LIBRARY
@@ -373,6 +442,7 @@ int main(int argc, char **argv)
 {
     const char *record_output = NULL;
     const char *memory_output = NULL;
+    const char *dependency_output = NULL;
     int full = argc >= 5 && strcmp(argv[4], "--full") == 0;
     int i;
     if (argc < 4 || (argc > 4 && !full))
@@ -384,13 +454,15 @@ int main(int argc, char **argv)
             record_output = argv[i + 1];
         else if (strcmp(argv[i], "--dump-memory") == 0 && !memory_output)
             memory_output = argv[i + 1];
+        else if (strcmp(argv[i], "--read-deps") == 0 && !dependency_output)
+            dependency_output = argv[i + 1];
         else
             goto usage;
     }
     return run_intro(argv[1], argv[2], argv[3], full, record_output,
-                     memory_output, NULL);
+                     memory_output, dependency_output, NULL);
 usage:
-    fputs("usage: gateway-intro-source-c-composite guest-22s.bin DOS-DIR OUTPUT.ppm [--full [--record FILE.gvr] [--dump-memory FILE.bin]]\n",
+    fputs("usage: gateway-intro-source-c-composite guest-22s.bin DOS-DIR OUTPUT.ppm [--full [--record FILE.gvr] [--dump-memory FILE.bin] [--read-deps FILE.txt]]\n",
           stderr);
     return 2;
 }

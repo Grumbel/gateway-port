@@ -43,6 +43,11 @@ typedef struct GateIntroMemory {
      * The original source-C renderer does not know about frame export. */
     void (*frame_ready)(void *userdata);
     void *frame_userdata;
+    /* Optional research-only byte masks, owned by the caller. A RAM byte
+     * is marked as an input dependency when read before any host FAR write.
+     * Reads via raw bytes[] or native video planes are not observed. */
+    uint8_t *input_reads;
+    uint8_t *written_bytes;
 } GateIntroMemory;
 
 /* Caller owns storage and controls its lifetime. The bound context must

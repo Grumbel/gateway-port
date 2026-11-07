@@ -50,6 +50,62 @@ Nix workflow first. `at-22000.bin` is a private 1 MiB guest-memory image,
 not a file to commit or package. The host currently expects DS `0x2a7a` and
 mode 3 from this capture; it will reject incompatible mode settings.
 
+### Profile the remaining startup-memory dependencies
+
+The source-C memory host can record guest FAR reads that happen **before**
+the corresponding RAM byte is written by its emulated FAR-memory interface:
+
+```sh
+nix build .#intro-decompile
+./result/bin/gateway-intro-source-c-composite \
+  build/intro-analysis/at-22000.bin ../gateway-dos \
+  build/intro-analysis/full-profile.ppm \
+  --full --read-deps build/intro-analysis/initial-reads.txt
+```
+
+`initial-reads.txt` records physical 4 KiB page addresses, byte counts, and
+**41 exact first-read byte ranges**, never the proprietary RAM values. Ranges
+use hexadecimal physical offsets with exclusive ends; the output refuses to overwrite an
+existing file. The default 22-second snapshot produces **7,429 first-read
+bytes across seven pages** (physical page bases `00000`, `1b000`, `2a000`,
+`2b000`, `2d000`, `2e000`, `2f000`). The original full intro's 816-frame
+recording and output hashes are unchanged. A regression additionally zeroes
+all other 249 pages of the original 1 MiB RAM image in a private temporary
+copy, reruns the source-C intro, and obtains the **same complete 816-frame
+recording byte-for-byte**. Thus the current observed path only requires
+28 KiB of observed *page-granularity* startup state. Further ablation of
+those seven pages established that zeroing the `2a000` page as well still
+preserves the entire recorded replay, leaving just **six pages (24 KiB)**
+necessary to reproduce this pinned visual run. That does not prove the
+removed page is irrelevant to every side effect or input path.
+
+One substantial dependency is already accounted for by the original files:
+the `2dddb:2f15e` first-read range (4,995 bytes) is part of a contiguous
+**5,869-byte exact copy of `GATE.EXE` data**. The captured RAM interval
+`2dd9d:2f48a` matches original file offsets `04251:0593e` byte for byte.
+The original-asset test verifies this mapping without including those bytes
+in the repository. A future native startup can load this region from the
+original EXE instead of capturing it through Unicorn; other observed reads
+(including DOS vectors, relocated code and runtime globals) still require
+reconstruction.
+
+The other 768-byte run at RAM `1b77c:1ba7c` maps to original `GATE.RTL`
+file bytes `0d7bf:0dabf`: **722 of the 768 bytes match exactly**, and the
+remaining 46 bytes are **23 paired 16-bit loader fixups**, each replacing two
+zeros in the RTL file. This mapping is also verified in the test. It
+identifies the raw code's source but does not yet recover the relocator that
+must generate those words during a cold C startup.
+
+This is a narrow dependency oracle, **not proof that all memory accesses are
+profiled**: the host tracks `gate_far_byte` and `gate_far_set_byte` (including
+WORD accessors), but not arbitrary direct native reads of the RAM array,
+external file resources, native stack views, or direct VGA planes. Host VGA
+initialization is explicitly marked as a write to avoid treating all 64,000
+cleared framebuffer bytes as original inputs. The 28 KiB subset is valid for
+the pinned full default intro replay; different settings, input sequences,
+or untracked direct accesses still need examination before replacing the
+Unicorn-generated startup snapshot.
+
 ## Run the source-C captions
 
 ```sh

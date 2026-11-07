@@ -121,6 +121,12 @@ target_include_directories(gateway_intro_memory_host PUBLIC decomp/launcher)
 target_compile_features(gateway_intro_memory_host PUBLIC c_std_11)
 target_compile_options(gateway_intro_memory_host PRIVATE -Wall -Wextra -Wpedantic)
 install(TARGETS gateway_intro_memory_host ARCHIVE DESTINATION lib)
+add_executable(launcher-intro-input-dependencies-tests
+  tests/launcher_intro_input_dependencies_tests.c)
+target_link_libraries(launcher-intro-input-dependencies-tests PRIVATE
+  gateway_intro_memory_host)
+add_test(NAME launcher-intro-input-dependencies
+  COMMAND launcher-intro-input-dependencies-tests)
 add_library(gateway_intro_vga_ports_host STATIC src/intro_host_vga_ports.c)
 target_include_directories(gateway_intro_vga_ports_host PUBLIC decomp/launcher)
 target_compile_features(gateway_intro_vga_ports_host PUBLIC c_std_11)

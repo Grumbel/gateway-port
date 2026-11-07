@@ -51,7 +51,14 @@ static uint8_t *location(uint16_t segment, uint16_t offset)
 
 uint8_t gate_far_byte(uint16_t segment, uint16_t offset)
 {
-    return *location(segment, offset);
+    uint8_t *address = location(segment, offset);
+    if (active_memory->input_reads &&
+        !(segment >= 0xe000 && segment <= 0xefff)) {
+        uint32_t linear = (((uint32_t)segment << 4) + offset) & 0xfffffu;
+        if (!active_memory->written_bytes[linear])
+            active_memory->input_reads[linear] = 1;
+    }
+    return *address;
 }
 
 uint16_t gate_far_word(uint16_t segment, uint16_t offset)
@@ -63,7 +70,13 @@ uint16_t gate_far_word(uint16_t segment, uint16_t offset)
 
 void gate_far_set_byte(uint16_t segment, uint16_t offset, uint8_t value)
 {
-    *location(segment, offset) = value;
+    uint8_t *address = location(segment, offset);
+    if (active_memory->written_bytes &&
+        !(segment >= 0xe000 && segment <= 0xefff)) {
+        uint32_t linear = (((uint32_t)segment << 4) + offset) & 0xfffffu;
+        active_memory->written_bytes[linear] = 1;
+    }
+    *address = value;
 }
 
 void gate_far_set_word(uint16_t segment, uint16_t offset, uint16_t value)
