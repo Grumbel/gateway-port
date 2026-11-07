@@ -427,6 +427,10 @@ output directory first). This is a **caption-only diagnostic**, not yet the
 complete source-C intro: image/animation sequencing, original palette,
 startup and handoff remain missing. See
 [source-C intro status](docs/intro-source-c.md) for snapshot setup and tests.
+The independent original C image path is also runnable as
+`nix run .#intro-source-c-picture-dump -- build/intro-analysis/at-22000.bin
+../gateway-dos build/source-c-picture.pgm`, using the original PIC decoder
+host boundary and the recovered C image-loader and drawing functions.
 
 A separate native C++ intro prototype renders the initial Legend splash,
 logo sequence, all eighteen narrative pages, and several background/sprite

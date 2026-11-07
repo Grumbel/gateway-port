@@ -75,6 +75,11 @@
           program = "${self.packages.${system}.intro-decompile}/bin/gateway-intro-source-c-dump";
           meta.description = "Export all eighteen original source-C caption frames without SDL3";
         };
+        intro-source-c-picture-dump = {
+          type = "app";
+          program = "${self.packages.${system}.intro-decompile}/bin/gateway-intro-source-c-picture-dump";
+          meta.description = "Render one real Gateway PIC through the reconstructed C loader and VGA path";
+        };
         intro-dump = {
           type = "app";
           program = "${self.packages.${system}.default}/bin/gateway-intro-dump";

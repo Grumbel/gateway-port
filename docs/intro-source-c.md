@@ -57,6 +57,30 @@ compares occupied-pixel totals against the established integration oracle:
 separate original caption wait durations too. Test screenshots are ignored
 under `build/`; no narrative text or original assets enter the Git history.
 
+## Original source-C image loader milestone
+
+The source-C image-load/draw boundary can also render the original
+`GATE_300.PIC` resource #1 (270×38, positioned at x=24, y=81) without
+running 8086 instructions:
+
+```sh
+nix run .#intro-source-c-picture-dump -- \
+  build/intro-analysis/at-22000.bin ../gateway-dos build/source-c-picture.pgm
+```
+
+It runs the full recovered original `RTL:12b19` one-picture caller, including
+`RTL:12c33` for resource selection/loading, `RTL:1266f` for pre-display state,
+`RTL:12ed7` for drawing and the original C image descriptor and memory
+allocation logic. The original snapshot carries an earlier pending DAC
+update, so the standalone diagnostic resets that pending bit before loading
+the isolated resource; this is a test-state normalization, not an original
+source-C initialization sequence. The compressed DCL payload decoder (`0eec:018a`)
+and the low-level VGA blitter (`24a7:000c`) are native host bridges, not
+claimed as decompiled C. The 22-second reference produces **2,589 nonzero
+pixels**, strictly within x=24..293 and y=81..118. A regression test checks
+the entire 320×200 output fingerprint with private game data. This is an
+image-path diagnostic, **not the original animation schedule**.
+
 ## What remains before `GATE.EXE:1302` is playable
 
 - Integrate the complete real startup sequence, including video and audio

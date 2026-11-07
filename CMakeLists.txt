@@ -31,6 +31,25 @@ target_compile_options(gateway-intro-source-c-dump PRIVATE
 target_link_options(gateway-intro-source-c-dump PRIVATE -Wl,--gc-sections)
 install(TARGETS gateway-intro-source-c-dump RUNTIME DESTINATION bin)
 
+# The original mode-13h source-C image loader and draw path, with only the
+# compressed DCL payload decoder and resident VGA memory operations in host
+# code. Kept separate from the caption player until EXE:1302 sequencing is
+# verified against the original game.
+set(GATEWAY_INTRO_SOURCE_C_PICTURE_SOURCES
+  decomp/launcher/gate_rtl_file.c
+  decomp/launcher/gate_rtl_file_linkage.c
+  decomp/launcher/gate_rtl_resource.c
+  decomp/launcher/gate_rtl_loader.c
+  decomp/launcher/gate_rtl_image.c
+  decomp/launcher/gate_rtl_image_prepare.c
+  decomp/launcher/gate_rtl_image_finish.c
+  decomp/launcher/gate_rtl_image_processor.c
+  decomp/launcher/gate_vfx_image.c
+  decomp/launcher/gate_dos_file_runtime.c
+  src/intro_dos_host_files.c src/intro_host_memory.c src/intro_host_vfx.c
+  src/intro_host_rtl_globals.c
+  src/intro_source_c_picture_dump.c)
+
 # This is reconstructed original C, not the separate SDL/C++ approximation
 # in src/intro_player.cpp. It deliberately keeps undefined original runtime
 # services as unresolved externals in the archive until they are recovered.
@@ -112,6 +131,13 @@ target_include_directories(gateway_intro_pic_host PUBLIC
 target_compile_features(gateway_intro_pic_host PUBLIC cxx_std_20)
 target_compile_options(gateway_intro_pic_host PRIVATE -Wall -Wextra -Wpedantic)
 install(TARGETS gateway_intro_pic_host ARCHIVE DESTINATION lib)
+add_executable(gateway-intro-source-c-picture-dump
+  ${GATEWAY_INTRO_SOURCE_C_PICTURE_SOURCES})
+target_include_directories(gateway-intro-source-c-picture-dump PRIVATE
+  decomp/launcher src)
+target_link_libraries(gateway-intro-source-c-picture-dump PRIVATE
+  gateway_intro_pic_host)
+install(TARGETS gateway-intro-source-c-picture-dump RUNTIME DESTINATION bin)
 install(FILES decomp/launcher/gate_exe.h decomp/launcher/gate_rtl.h
               decomp/launcher/gate_rtl_audio_startup.h
               decomp/launcher/gate_rtl_video.h
@@ -453,6 +479,9 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_intro_clock_sampler_binary_tests.py)
     add_test(NAME launcher-intro-entry-binary COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_intro_entry_binary_tests.py)
+    add_test(NAME launcher-intro-source-c-picture COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_intro_source_c_picture_tests.py
+      $<TARGET_FILE:gateway-intro-source-c-picture-dump>)
     add_test(NAME launcher-intro-audio-startup-binary COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_intro_audio_startup_binary_tests.py)
     add_test(NAME launcher-intro-audio-boundary COMMAND ${Python3_EXECUTABLE}
