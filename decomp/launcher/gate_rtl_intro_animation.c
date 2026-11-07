@@ -64,9 +64,9 @@ void gate_rtl_play_picture_delta_sequence(uint16_t first, uint16_t next, int16_t
         gate_rtl_release_picture_record(work);
         now = gate_linked_animation_elapsed_milliseconds();
         random_low = gate_linked_runtime_random();
-        divisor = (uint16_t)(50u * (uint16_t)gate_far_byte(work.segment,
+        divisor = (uint16_t)(GATE_PICTURE_ANIMATION_DELAY_QUANTUM_MS * (uint16_t)gate_far_byte(work.segment,
             (uint16_t)(work.offset + GATE_PICTURE_RECORD_DELAY_SPREAD)) + 1u);
-        delay = (uint16_t)((random_low % divisor) + 50u *
+        delay = (uint16_t)((random_low % divisor) + GATE_PICTURE_ANIMATION_DELAY_QUANTUM_MS *
             (uint16_t)gate_far_byte(work.segment,
             (uint16_t)(work.offset + GATE_PICTURE_RECORD_DELAY_BASE)));
         deadline = (uint32_t)(now + delay);

@@ -13,11 +13,12 @@ void gate_rtl_configure_vga_palette(void)
 {
     uint16_t i;
     uint16_t mode = gate_ds_word(GATE_DS_GRAPHICS_MODE);
-    if (gate_ds_word(GATE_DS_VIDEO_ADAPTER_TYPE) != 5 || mode == 0 || mode == 3)
+    if (gate_ds_word(GATE_DS_VIDEO_ADAPTER_TYPE) != GATE_VGA_ADAPTER_VIDEO_TYPE ||
+        mode == GATE_RTL_VIDEO_MODE_TEXT || mode == GATE_RTL_VIDEO_MODE_VGA_256)
         return;
     gate_rtl_wait_vertical_retrace();
     (void)gate_rtl_palette_in(gate_ds_word(GATE_DS_VGA_STATUS_PORT));
-    for (i = 0; i < 16; ++i) {
+    for (i = 0; i < GATE_VGA_ATTRIBUTE_PALETTE_COLORS; ++i) {
         gate_rtl_palette_out(GATE_VGA_PORT_ATTRIBUTE_CONTROLLER, (uint8_t)i);
         gate_rtl_palette_out(GATE_VGA_PORT_ATTRIBUTE_CONTROLLER, (uint8_t)i);
     }
@@ -43,8 +44,8 @@ uint16_t gate_rtl_set_video_mode(int16_t requested_mode)
     uint16_t final_mask;
     int16_t rows;
 
-    gate_ds_set_word(GATE_DS_GRAPHICS_MODE, 0xffffu);
-    if (requested_mode < 0 || requested_mode > 4)
+    gate_ds_set_word(GATE_DS_GRAPHICS_MODE, GATE_RTL_VIDEO_INVALID_MODE);
+    if (requested_mode < 0 || requested_mode > GATE_RTL_VIDEO_MAX_MODE)
         return 0;
 
     gate_rtl_mode_query_adapter(adapter);
@@ -53,7 +54,9 @@ uint16_t gate_rtl_set_video_mode(int16_t requested_mode)
     gate_ds_set_word(GATE_DS_VIDEO_ADAPTER_TYPE, video_type);
     bios_mode = (uint16_t)requested_mode;
 
-    if (requested_mode == 4 && video_type == 5 && monitor >= 4) {
+    if (requested_mode == GATE_RTL_VIDEO_MODE_SVGA &&
+        video_type == GATE_VGA_ADAPTER_VIDEO_TYPE &&
+        monitor >= GATE_RTL_VIDEO_SVGA_MONITOR_MINIMUM) {
         switch (gate_rtl_mode_svga_variant()) {
         case 1: case 5: bios_mode = 4; break;
         case 2: bios_mode = 5; break;
@@ -63,10 +66,12 @@ uint16_t gate_rtl_set_video_mode(int16_t requested_mode)
         }
     }
 
-    svga = ((video_type == 4 || video_type == 5) && monitor >= 4)
+    svga = ((video_type == GATE_RTL_VIDEO_OTHER_SVGA_ADAPTER_TYPE ||
+             video_type == GATE_VGA_ADAPTER_VIDEO_TYPE) &&
+            monitor >= GATE_RTL_VIDEO_SVGA_MONITOR_MINIMUM)
         ? 1u : 0u;
     gate_ds_set_word(GATE_DS_SVGA_ENABLED, svga);
-    if (requested_mode == 3) {
+    if (requested_mode == GATE_RTL_VIDEO_MODE_VGA_256) {
         if (svga == 0)
             return 0;
     } else {
@@ -78,7 +83,8 @@ uint16_t gate_rtl_set_video_mode(int16_t requested_mode)
     }
 
     gate_ds_set_word(GATE_DS_VGA_STATUS_PORT,
-                     monitor == 4 ? GATE_VGA_PORT_MONO_STATUS : GATE_VGA_PORT_COLOR_STATUS);
+                     monitor == GATE_RTL_VIDEO_MONO_STATUS_MONITOR_TYPE ?
+                     GATE_VGA_PORT_MONO_STATUS : GATE_VGA_PORT_COLOR_STATUS);
     if (gate_rtl_mode_set_bios(bios_mode) != 0 ||
         gate_rtl_mode_start(1) != 0)
         return 0;
@@ -108,19 +114,21 @@ uint16_t gate_rtl_set_video_mode(int16_t requested_mode)
 
     /* Exactly the five far WORD writes selected by the original three
      * branch targets f2d0/f311/f38b, including the unusual 00ff mask. */
-    if (requested_mode == 0) {
+    if (requested_mode == GATE_RTL_VIDEO_MODE_TEXT) {
         static const uint16_t values[5] = {0, 0, 1, 1, 1};
-        for (index = 0; index < 5; ++index)
+        for (index = 0; index < GATE_MODE_DESC_FRAME_COLOR_WORDS; ++index)
             gate_far_set_word(gate_ds_word((uint16_t)(GATE_DS_FRAME_COLOR_SEGMENTS_BASE + 2u * index)),
                               (uint16_t)(GATE_MODE_DESC_FRAME_COLOR_PRIMARY + 2u * index), values[index]);
-    } else if (requested_mode == 3) {
-        static const uint16_t values[5] = {0, 2, 1, 255, 255};
-        for (index = 0; index < 5; ++index)
+    } else if (requested_mode == GATE_RTL_VIDEO_MODE_VGA_256) {
+        static const uint16_t values[5] = {0, 2, 1, GATE_RTL_VIDEO_8BIT_PEN_MASK,
+                                           GATE_RTL_VIDEO_8BIT_PEN_MASK};
+        for (index = 0; index < GATE_MODE_DESC_FRAME_COLOR_WORDS; ++index)
             gate_far_set_word(gate_ds_word((uint16_t)(GATE_DS_FRAME_COLOR_SEGMENTS_BASE + 2u * index)),
                               (uint16_t)(GATE_MODE_DESC_FRAME_COLOR_PRIMARY + 2u * index), values[index]);
     } else {
-        static const uint16_t values[5] = {15, 2, 1, 0, 15};
-        for (index = 0; index < 5; ++index)
+        static const uint16_t values[5] = {GATE_RTL_VIDEO_4BIT_PEN_MASK, 2, 1, 0,
+                                           GATE_RTL_VIDEO_4BIT_PEN_MASK};
+        for (index = 0; index < GATE_MODE_DESC_FRAME_COLOR_WORDS; ++index)
             gate_far_set_word(gate_ds_word((uint16_t)(GATE_DS_FRAME_COLOR_SEGMENTS_BASE + 2u * index)),
                               (uint16_t)(GATE_MODE_DESC_FRAME_COLOR_PRIMARY + 2u * index), values[index]);
     }

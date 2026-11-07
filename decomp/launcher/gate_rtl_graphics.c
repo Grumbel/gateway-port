@@ -11,7 +11,7 @@
 static uint8_t scaled_byte(uint8_t sample, uint16_t factor)
 {
     uint16_t product = (uint16_t)((uint16_t)(int16_t)(int8_t)sample * factor);
-    return (uint8_t)((int16_t)product / 64);
+    return (uint8_t)((int16_t)product / GATE_RTL_PALETTE_SCALE_DENOMINATOR);
 }
 
 void gate_rtl_fade_palette_in(void)
@@ -30,7 +30,8 @@ void gate_rtl_fade_palette_in(void)
 
     count = gate_rtl_graphics_mode() == 3 ? GATE_INTRO_PALETTE_RGB_BYTES :
             GATE_INTRO_PALETTE_PLANAR_RGB_BYTES;
-    for (factor = 0; factor <= 64; factor = (uint16_t)(factor + 4u)) {
+    for (factor = 0; factor <= GATE_RTL_PALETTE_SCALE_DENOMINATOR;
+         factor = (uint16_t)(factor + GATE_RTL_PALETTE_FADE_STEP)) {
         int16_t i;
         for (i = 0; i < count; ++i)
             palette[i] = scaled_byte(gate_rtl_graphics_byte((uint16_t)i), factor);
@@ -70,23 +71,25 @@ void gate_rtl_fade_palette_out(void)
     gate_rtl_graphics_set_index(0);
     if (mode == 1) {
         int16_t passes;
-        for (passes = 3; passes > 0; --passes) {
+        for (passes = GATE_RTL_PALETTE_MODE1_PASSES; passes > 0; --passes) {
             uint16_t i;
-            for (i = 0; i < 16; ++i) {
+            for (i = 0; i < GATE_RTL_PALETTE_MODE1_BYTES; ++i) {
                 uint8_t sample = gate_rtl_graphics_byte(i);
-                int16_t shifted = (int16_t)((int16_t)(int8_t)sample >> 3);
+                int16_t shifted = (int16_t)((int16_t)(int8_t)sample >> GATE_RTL_PALETTE_MODE1_BIT_SHIFT);
                 uint8_t replacement = (uint8_t)
-                    (((uint8_t)(~shifted) & sample & 7u) << 3 |
-                     (sample & (uint8_t)shifted & 7u));
+                    (((uint8_t)(~shifted) & sample & GATE_RTL_PALETTE_MODE1_LOW_BITS_MASK)
+                     << GATE_RTL_PALETTE_MODE1_BIT_SHIFT |
+                     (sample & (uint8_t)shifted & GATE_RTL_PALETTE_MODE1_LOW_BITS_MASK));
                 gate_rtl_graphics_set_byte(i, replacement);
             }
             gate_rtl_graphics_palette_upload(0);
-            gate_rtl_graphics_delay(100);
+            gate_rtl_graphics_delay(GATE_RTL_PALETTE_MODE1_PASS_WAIT_MS);
         }
     } else {
         int16_t count = gate_rtl_graphics_byte_count((uint16_t)(mode << 1));
         int16_t factor;
-        for (factor = 64; factor >= 0; factor = (int16_t)(factor - 4)) {
+        for (factor = GATE_RTL_PALETTE_SCALE_DENOMINATOR; factor >= 0;
+             factor = (int16_t)(factor - GATE_RTL_PALETTE_FADE_STEP)) {
             int16_t i;
             for (i = 0; i < count; ++i)
                 palette[i] = scaled_byte(gate_rtl_graphics_byte((uint16_t)i),

@@ -16,7 +16,7 @@ uint16_t gate_rtl_load_picture_sequence(GateFarPtr work, int16_t count,
 
     if (count < 1) {
         gate_rtl_resource_ds_set_word(GATE_RESOURCE_SEQUENCE_FILTER, 1);
-        count = 256;
+        count = GATE_PICTURE_SEQUENCE_NONPOSITIVE_COUNT;
     }
 
     while (loaded < count) {

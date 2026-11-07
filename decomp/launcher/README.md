@@ -80,6 +80,34 @@ be confused with the unrelated DS absolute offsets or resource record fields.
 Static and guest-memory tests retain raw addresses where they serve as
 independent oracles for this mapping.
 
+Startup and RTL numeric operands are also grouped by their actual calling
+context. At `GATE.EXE:1309/1314/131f/132a`, the four original startup writes
+set `DS:0660=0x0401`, `DS:065c=0x007f`, `DS:065e=1`, and `DS:064e=0` via
+relocated segment selectors; `gate_memory_layout.h` names those defaults.
+`GATE.RTL:c3c5` separately tests music flags `DS:0662 & 0x06` and a nonzero
+`DS:0660` value. The second startup parameter's meaning is **unverified**, so
+its name describes position, not an invented sound or renderer option.
+
+At `GATE.RTL:11ecb..120f1`, `gate_rtl_image.h` names the 16-bit picture
+resource-ID encoding: high bit `0x8000` selects the current graphics-mode
+group; otherwise the group is the signed ID shifted right by 12. File number
+is `100*group + ((ID>>8)&0x0f)`, with directory entry `(ID&0xff)` and
+12-byte headers.
+The cached-file empty sentinel remains `0xffff`, and the nonpositive
+picture-sequence count remains **256** (including the original 32-record
+array overrun hazard). Both animation paths retain the original `50`-ms
+base/spread multiplier from picture record `+06/+07`.
+
+Palette and display immediates are defined near their original services:
+`gate_rtl_graphics.h` names the `64`-denominator/`4`-step signed fades and
+the mode-1 three-pass, 16-byte transform with 100ms waits
+(`RTL:12773..12995`). `gate_rtl_mode.h` names the text, VGA-256, SVGA,
+invalid-mode, adapter and monitor selector values; `gate_rtl_palette.h`
+names VGA adapter type `5` and the 16 attribute-palette entries
+(`RTL:f49b..f4de`, `RTL:f61b..f826`). These are original C/RTL operands,
+not new hardware emulation settings. Original mode-to-BIOS mapping and
+unidentified adapter/monitor classifications are still provisional.
+
 The executable is compiled native 8086 code, **not** a small interpreted
 script. Its original C source, compiler version, and library headers have not
 been recovered. These `.c` files are a manual decompilation of the disassembly;

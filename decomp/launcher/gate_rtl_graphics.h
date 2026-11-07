@@ -6,6 +6,19 @@
 
 #include "gate_exe.h"
 
+/* Original RTL:12773..12995 palette-fade immediates. The division is a
+ * SIGNED 16-bit product divided by 64, rounded toward zero. Mode 1 is a
+ * separate destructive 16-byte three-pass transform with 100ms waits. */
+enum {
+    GATE_RTL_PALETTE_SCALE_DENOMINATOR = 64,
+    GATE_RTL_PALETTE_FADE_STEP = 4,
+    GATE_RTL_PALETTE_MODE1_PASSES = 3,
+    GATE_RTL_PALETTE_MODE1_BYTES = 16,
+    GATE_RTL_PALETTE_MODE1_BIT_SHIFT = 3,
+    GATE_RTL_PALETTE_MODE1_LOW_BITS_MASK = 0x07,
+    GATE_RTL_PALETTE_MODE1_PASS_WAIT_MS = 100,
+};
+
 /* Original GATE.RTL file offsets, not DOS runtime addresses. */
 void gate_rtl_fade_palette_in(void); /* fade palette in, linked as 0f10:0c6e */
 void gate_rtl_clear_palette_buffer(void); /* clear palette and video buffer, 0f10:0d1e */

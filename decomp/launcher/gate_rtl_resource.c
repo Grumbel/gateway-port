@@ -26,10 +26,10 @@ uint16_t gate_rtl_select_picture_resource(uint16_t resource, uint16_t mode)
     if (gate_rtl_resource_ds_word(GATE_RESOURCE_ERROR_LATCH) != 0)
         return 0;
 
-    if ((resource & 0x8000u) != 0) {
+    if ((resource & GATE_RESOURCE_USE_GRAPHICS_MODE_BIT) != 0) {
         file_group = gate_far_word(gate_rtl_image_mode_segment(), GATE_RTL_VIDEO_MODE_OFFSET);
     } else {
-        file_group = (uint16_t)((int16_t)resource >> 12);
+        file_group = (uint16_t)((int16_t)resource >> GATE_RESOURCE_GROUP_SHIFT);
         if (file_group == 0 &&
             gate_far_word(gate_rtl_image_mode_segment(), GATE_RTL_VIDEO_MODE_OFFSET) != 0)
             file_group = 1;
@@ -37,17 +37,17 @@ uint16_t gate_rtl_select_picture_resource(uint16_t resource, uint16_t mode)
 
     /* IMUL 100 uses only AX; the original signed SAR and AND select one of
      * sixteen resource IDs within each group. All sums wrap at 16 bits. */
-    resource_file = (uint16_t)(file_group * 100u +
-                               ((resource >> 8) & 0x0fu));
+    resource_file = (uint16_t)(file_group * GATE_RESOURCE_FILENAME_GROUP_MULTIPLIER +
+                               ((resource >> 8) & GATE_RESOURCE_FILENAME_SUFFIX_MASK));
     handle_segment = gate_rtl_resource_handle_segment();
     if (resource_file != gate_rtl_resource_ds_word(GATE_RESOURCE_CACHED_FILE_ID)) {
-        if (gate_rtl_resource_ds_word(GATE_RESOURCE_CACHED_FILE_ID) != 0xffffu)
+        if (gate_rtl_resource_ds_word(GATE_RESOURCE_CACHED_FILE_ID) != GATE_RESOURCE_NO_CACHED_FILE)
             gate_linked_close_resource_file(gate_far_word(handle_segment, GATE_RTL_FILE_HANDLE_OFFSET));
         gate_rtl_resource_ds_set_word(GATE_RESOURCE_CACHED_FILE_ID, resource_file);
         file_handle = gate_linked_open_resource_file(0, resource_file);
         gate_far_set_word(handle_segment, GATE_RTL_FILE_HANDLE_OFFSET, file_handle);
         if (file_handle == 0) {
-            gate_rtl_resource_ds_set_word(GATE_RESOURCE_CACHED_FILE_ID, 0xffffu);
+            gate_rtl_resource_ds_set_word(GATE_RESOURCE_CACHED_FILE_ID, GATE_RESOURCE_NO_CACHED_FILE);
             gate_rtl_resource_ds_set_word(GATE_RESOURCE_ERROR_LATCH, 1);
             return 0;
         }
@@ -55,7 +55,8 @@ uint16_t gate_rtl_select_picture_resource(uint16_t resource, uint16_t mode)
 
     file_handle = gate_far_word(handle_segment, GATE_RTL_FILE_HANDLE_OFFSET);
     /* The original byte-index * 12 is promoted by CWD before the seek. */
-    gate_linked_seek_resource_file(file_handle, (uint32_t)(resource & 0xffu) * 12u);
+    gate_linked_seek_resource_file(file_handle,
+        (uint32_t)(resource & GATE_RESOURCE_DIRECTORY_ENTRY_MASK) * GATE_PICTURE_HEADER_BYTES);
     if (gate_linked_read_resource_bytes(file_handle,
             (GateFarPtr){gate_rtl_image_header_segment(), GATE_RTL_HEADER_OFFSET},
             GATE_PICTURE_HEADER_BYTES) == 0)
@@ -79,7 +80,8 @@ uint16_t gate_rtl_select_picture_resource(uint16_t resource, uint16_t mode)
         selected_mode = max_mode;
     if (selected_mode > 0) {
         uint32_t location = (uint32_t)(header_offset +
-                                        (uint32_t)((int32_t)selected_mode * 4 - 4));
+                                        (uint32_t)((int32_t)selected_mode * GATE_RESOURCE_POSITION_PAIR_BYTES -
+                                                   GATE_RESOURCE_POSITION_PAIR_BYTES));
         gate_linked_seek_resource_file(file_handle, location);
         gate_rtl_resource_ds_set_word(GATE_RESOURCE_PICTURE_X, gate_linked_read_resource_word(file_handle));
         gate_rtl_resource_ds_set_word(GATE_RESOURCE_PICTURE_Y, gate_linked_read_resource_word(file_handle));
@@ -94,7 +96,8 @@ uint16_t gate_rtl_select_picture_resource(uint16_t resource, uint16_t mode)
     /* The original header's count at +4 is SIGN-extended, even though
      * ordinary game descriptors have a small positive count. */
     gate_linked_seek_resource_file(file_handle, (uint32_t)(header_offset +
-        (uint32_t)((int32_t)(int8_t)gate_far_byte(header_segment, GATE_RTL_HEADER_OFFSET + GATE_PICTURE_HEADER_MODE_COUNT) * 4)));
+        (uint32_t)((int32_t)(int8_t)gate_far_byte(header_segment, GATE_RTL_HEADER_OFFSET + GATE_PICTURE_HEADER_MODE_COUNT) *
+                   GATE_RESOURCE_POSITION_PAIR_BYTES)));
     if ((gate_far_byte(header_segment, GATE_RTL_HEADER_OFFSET + GATE_PICTURE_HEADER_FLAGS) &
          GATE_PICTURE_HEADER_HAS_PALETTE) != 0) {
         uint16_t table_word = gate_far_word(gate_rtl_resource_size_table_segment(),

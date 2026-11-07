@@ -63,9 +63,9 @@ void gate_rtl_play_timed_picture_records(GateFarPtr work, int16_t count)
         uint16_t delay;
         gate_rtl_draw_picture_record(work);
         clock_low = gate_linked_runtime_random();
-        divisor = (uint16_t)(50u * (uint16_t)gate_far_byte(
+        divisor = (uint16_t)(GATE_PICTURE_ANIMATION_DELAY_QUANTUM_MS * (uint16_t)gate_far_byte(
             work.segment, (uint16_t)(work.offset + GATE_PICTURE_RECORD_DELAY_SPREAD)) + 1u);
-        delay = (uint16_t)((clock_low % divisor) + 50u *
+        delay = (uint16_t)((clock_low % divisor) + GATE_PICTURE_ANIMATION_DELAY_QUANTUM_MS *
             (uint16_t)gate_far_byte(work.segment,
             (uint16_t)(work.offset + GATE_PICTURE_RECORD_DELAY_BASE)));
         gate_linked_wait_animation_delay((uint32_t)delay);

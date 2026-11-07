@@ -40,6 +40,21 @@ enum {
     GATE_PICTURE_HEADER_SPECIAL_BLIT = 0x40,
 };
 
+/* Resource-ID bit layout in RTL:11ecb..120f1. The original WORD argument
+ * is decoded into a three-digit GATE_###.PIC filename and a directory
+ * entry number. Its high bit selects the live graphics-mode file group;
+ * non-special IDs use a signed arithmetic right shift by 12. These are
+ * ID masks/strides, not relocated memory offsets. */
+enum {
+    GATE_RESOURCE_USE_GRAPHICS_MODE_BIT = 0x8000,
+    GATE_RESOURCE_GROUP_SHIFT = 12,
+    GATE_RESOURCE_FILENAME_GROUP_MULTIPLIER = 100,
+    GATE_RESOURCE_FILENAME_SUFFIX_MASK = 0x0f,
+    GATE_RESOURCE_DIRECTORY_ENTRY_MASK = 0x00ff,
+    GATE_RESOURCE_POSITION_PAIR_BYTES = 4,
+    GATE_RESOURCE_NO_CACHED_FILE = 0xffff,
+};
+
 /* The RTL uses DS:1416+field to access a separate block of resident
  * resource-loader WORDs. Keep these displacements separate from the
  * absolute GATE_DS_RESOURCE_SCALARS_BASE and live segment selectors. */
@@ -68,6 +83,11 @@ enum {
     GATE_PICTURE_RECORD_DELAY_SPREAD = 0x07,
     GATE_PICTURE_RECORD_VFX_IMAGE = 0x08,
     GATE_PICTURE_SEQUENCE_CAPACITY = 32,
+    /* RTL:12d67 loads 256 records when the signed count is nonpositive;
+     * this intentionally exceeds the preloaded player's 32-record array. */
+    GATE_PICTURE_SEQUENCE_NONPOSITIVE_COUNT = 256,
+    /* RTL:13115 and RTL:12f6b both scale picture header delay bytes by 50. */
+    GATE_PICTURE_ANIMATION_DELAY_QUANTUM_MS = 50,
 };
 
 /* Resident VFX image header, beginning at work+08 (or at a FAR pointer

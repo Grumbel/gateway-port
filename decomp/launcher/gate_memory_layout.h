@@ -224,6 +224,15 @@ enum {
 enum {
     GATE_STARTUP_MEMORY_PARAGRAPHS = 0x1000,
     GATE_STARTUP_MEMORY_SEGMENT_BIAS = 0x12b2,
+    /* Four original immediate writes at GATE.EXE:1309/1314/131f/132a.
+     * The first word gates music-loader initialization at RTL:c3c5;
+     * the role of the second parameter is still not identified. */
+    GATE_STARTUP_MUSIC_CONFIG_INITIAL_WORD = 0x0401,
+    GATE_STARTUP_SECOND_PARAMETER_INITIAL_WORD = 0x007f,
+    GATE_STARTUP_THIRD_PARAMETER_INITIAL_WORD = 1,
+    GATE_STARTUP_FOURTH_PARAMETER_INITIAL_WORD = 0,
+    /* RTL:c3c5's only observed audio-flags predicate is (DS:0662 & 6). */
+    GATE_STARTUP_MUSIC_TRIGGER_FLAGS_MASK = 0x06,
 };
 
 /* Original two-entry font cache at linked DS:54ce. Each entry occupies

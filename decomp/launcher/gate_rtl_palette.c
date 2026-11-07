@@ -43,7 +43,7 @@ void gate_rtl_upload_vga_palette(GateFarPtr palette)
         return;
     gate_rtl_wait_vertical_retrace();
 
-    if (gate_rtl_palette_video_type() == 5) {
+    if (gate_rtl_palette_video_type() == GATE_VGA_ADAPTER_VIDEO_TYPE) {
         uint16_t initial = palette_byte(palette) != 0 ? 15u : 0u;
         int16_t count;
         int16_t color;
@@ -113,7 +113,7 @@ void gate_rtl_upload_vga_palette(GateFarPtr palette)
     } else {
         uint16_t i;
         (void)gate_rtl_palette_in(gate_rtl_palette_status_port());
-        for (i = 0; i < 16; ++i) {
+        for (i = 0; i < GATE_VGA_ATTRIBUTE_PALETTE_COLORS; ++i) {
             gate_rtl_palette_out(GATE_VGA_PORT_ATTRIBUTE_CONTROLLER, (uint8_t)i);
             gate_rtl_palette_out(GATE_VGA_PORT_ATTRIBUTE_CONTROLLER,
                 gate_far_byte(palette.segment,

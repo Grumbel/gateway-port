@@ -17,11 +17,14 @@ enum {
     GATE_VGA_PORT_DAC_DATA = 0x03c9,
     GATE_VGA_PORT_MONO_STATUS = 0x03ba,
     GATE_VGA_PORT_COLOR_STATUS = 0x03da,
+    /* Original video-adapter class, not a VGA port or BIOS mode. */
+    GATE_VGA_ADAPTER_VIDEO_TYPE = 5,
     GATE_VGA_RETRACE_STATUS_BIT = 0x08,
     GATE_VGA_ATTRIBUTE_OVERSCAN_REGISTER = 0x11,
     GATE_VGA_ATTRIBUTE_DISPLAY_ENABLE = 0x20,
     GATE_VGA_ATTRIBUTE_INDEX_MASK = 0x1f,
     GATE_VGA_DAC_COMPONENT_MASK = 0x3f,
+    GATE_VGA_ATTRIBUTE_PALETTE_COLORS = 16,
 };
 
 /* Original GATE.RTL file offsets. Unlike the reconstructed C++ preview,
