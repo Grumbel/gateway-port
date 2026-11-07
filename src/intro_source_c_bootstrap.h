@@ -12,4 +12,10 @@
 int gate_intro_restore_static_exe_data(GateIntroMemory *memory,
                                        const char *dos_directory);
 
+/* Restore unchanged, nonzero GATE.RTL bytes in a linked resident bank while
+ * leaving zero placeholders (and their runtime relocation words) untouched.
+ * This still needs those relocated words from a separate startup source. */
+int gate_intro_restore_static_rtl_data(GateIntroMemory *memory,
+                                       const char *dos_directory);
+
 #endif

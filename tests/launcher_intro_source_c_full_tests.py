@@ -141,6 +141,27 @@ class IntroFull(unittest.TestCase):
             self.assertEqual(digest(stripped_final), digest(baseline))
             self.assertEqual(digest(stripped_record), digest(baseline_record))
 
+            # The RTL's linked bank also comes from the original file,
+            # except the 23 16-bit operands written by the DOS relocator.
+            # Keep only those fixups from the RAM image; restore all other
+            # nonzero bytes directly from the user's original RTL file.
+            rtl_bytes = (Path(assets) / 'GATE.RTL').read_bytes()[0xd7bf:0xdabf]
+            self.assertEqual(len(rtl_bytes), 768)
+            for offset, value in enumerate(rtl_bytes):
+                if value:
+                    ram[0x1b77c + offset] = 0
+            stripped_rtl = directory / 'stripped-rtl-data.bin'
+            restored_rtl_final = directory / 'restored-rtl.ppm'
+            restored_rtl_record = directory / 'restored-rtl.gvr'
+            stripped_rtl.write_bytes(ram)
+            subprocess.run([executable, str(stripped_rtl), assets,
+                            str(restored_rtl_final), '--full',
+                            '--restore-exe-data', '--restore-rtl-data',
+                            '--record', str(restored_rtl_record)],
+                           check=True, capture_output=True, text=True)
+            self.assertEqual(digest(restored_rtl_final), digest(baseline))
+            self.assertEqual(digest(restored_rtl_record), digest(baseline_record))
+
     def test_original_exe_contains_the_static_intro_text_data(self):
         _, snapshot, assets = self.inputs()
         ram = Path(snapshot).read_bytes()
@@ -163,6 +184,48 @@ class IntroFull(unittest.TestCase):
         self.assertTrue(all(offsets[i + 1] == offsets[i] + 1
                             for i in range(0, len(offsets), 2)))
 
+    def test_byte_sparse_startup_with_original_file_restoration(self):
+        executable, snapshot, assets = self.inputs()
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            profile = directory / 'byte-reads.txt'
+            original = directory / 'original.ppm'
+            minimal = directory / 'remaining-guest-state.bin'
+            restored_final = directory / 'restored.ppm'
+            restored_record = directory / 'restored.gvr'
+            subprocess.run([executable, snapshot, assets, str(original),
+                            '--full', '--read-deps', str(profile)],
+                           check=True, capture_output=True, text=True)
+
+            captured = Path(snapshot).read_bytes()
+            guest = bytearray(len(captured))
+            for row in profile.read_text().splitlines():
+                if not row.startswith('range '):
+                    continue
+                _, a, b = row.split()
+                start, end = int(a, 16), int(b, 16)
+                if 0x2a000 <= start < 0x2b000:
+                    continue  # The previously proven irrelevant page.
+                guest[start:end] = captured[start:end]
+
+            guest[0x2dd9d:0x2f48a] = bytes(5869)
+            rtl = (Path(assets) / 'GATE.RTL').read_bytes()[0xd7bf:0xdabf]
+            for index, value in enumerate(rtl):
+                if value:
+                    guest[0x1b77c + index] = 0
+            self.assertEqual(sum(value != 0 for value in guest), 894)
+            minimal.write_bytes(guest)  # Private, never distributed.
+
+            subprocess.run([executable, str(minimal), assets,
+                            str(restored_final), '--full',
+                            '--restore-exe-data', '--restore-rtl-data',
+                            '--record', str(restored_record)],
+                           check=True, capture_output=True, text=True)
+            self.assertEqual(digest(restored_final),
+                             '6a3f6394fbaac476700dbb54d30a8dd0f9028183493cfa3f416d9e4a7c87a777')
+            self.assertEqual(digest(restored_record),
+                             '67cd026bf79e2425a9d41faac57439a7d49dca8559b127e7630319e43e112eb2')
+
     def test_static_bootstrap_rejects_missing_and_incompatible_exe(self):
         executable, snapshot, _ = self.inputs()
         with tempfile.TemporaryDirectory() as directory:
@@ -180,6 +243,25 @@ class IntroFull(unittest.TestCase):
                     capture_output=True, text=True)
                 self.assertEqual(proc.returncode, 1)
                 self.assertIn('cannot restore verified GATE.EXE', proc.stderr)
+                self.assertFalse(ppm.exists())
+
+    def test_static_bootstrap_rejects_missing_and_wrong_size_rtl(self):
+        executable, snapshot, _ = self.inputs()
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            ppm = directory / 'should-not-exist.ppm'
+            for file_data in (None, bytes(1024)):
+                rtl = directory / 'GATE.RTL'
+                if rtl.exists():
+                    rtl.unlink()
+                if file_data is not None:
+                    rtl.write_bytes(file_data)  # Synthetic, no original data.
+                proc = subprocess.run(
+                    [executable, snapshot, str(directory), str(ppm),
+                     '--full', '--restore-rtl-data'],
+                    capture_output=True, text=True)
+                self.assertEqual(proc.returncode, 1)
+                self.assertIn('cannot restore verified GATE.RTL', proc.stderr)
                 self.assertFalse(ppm.exists())
 
 

@@ -114,6 +114,23 @@ zeros in the RTL file. This mapping is also verified in the test. It
 identifies the raw code's source but does not yet recover the relocator that
 must generate those words during a cold C startup.
 
+The independent `--full --restore-rtl-data` option now copies nonzero bytes
+from that original RTL region into the guest image, leaving zero relocation
+placeholders (and hence the 23 already-linked words from the private guest
+capture) untouched. It rejects a missing or wrong-size original RTL file.
+This can be combined with `--restore-exe-data`.
+
+Most importantly, a byte-level sparse-memory regression starts with **all
+1 MiB zero**, preserves only the 7,419 guest bytes first-read before writes
+in the pinned default replay (excluding the ablated `2a000` page), and
+then removes both disk-reconstructible regions. Only **894 nonzero bytes of
+captured RAM** remain. Both native restorations together still reproduce
+the complete 816-frame recording and final PPM, byte for byte. This counts
+the remaining *nonzero values*, not a self-contained serialized bootstrap:
+DOS interrupt-vector state, 23 RTL fixups, the 768-byte palette buffer and
+some runtime descriptor pointers still need native initialization. The
+captured data is neither committed nor copied into the output bundle.
+
 This is a narrow dependency oracle, **not proof that all memory accesses are
 profiled**: the host tracks `gate_far_byte` and `gate_far_set_byte` (including
 WORD accessors), but not arbitrary direct native reads of the RAM array,
