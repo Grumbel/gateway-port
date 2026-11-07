@@ -285,7 +285,9 @@ This optional mode uses the same live, music-enabled source-C intro. When
 `EXE:1302` returns, it closes the SDL intro window and runs the original
 `GATEMAIN.EXE` through the existing Unicorn/SDL3 game runtime. Escape skips
 the remaining intro using the original source-C input logic and continues to
-the game; closing the window cancels both programs. The intro-only
+the game; closing the window cancels both programs. Ctrl-C in the terminal
+uses the OS signal disposition, so it can terminate a stalled worker without
+waiting for another SDL event; it does not enter the game. The intro-only
 `intro-source-c-live` app above retains its inspection window after completion.
 
 The game command-line parameters `0 258 9 2 816 1 7 544` were checked against

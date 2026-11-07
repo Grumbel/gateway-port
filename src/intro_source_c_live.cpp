@@ -200,6 +200,9 @@ int main(int argc, char **argv) try {
     // and note timings are driven by the separate native MIDIPlay adapter.
     auto song = gateway::read_intro_mdi(std::string(argv[2]) + "/GATE_004.MUS");
     auto music = std::make_unique<gateway::IntroMdiPlayer>(song);
+    // Preserve the normal OS Ctrl-C behavior even while the recovered C
+    // worker is busy. Window-close events still use the cooperative path.
+    require(SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1"));
     require(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO));
     SDL_Window *window = nullptr;
     SDL_Renderer *renderer = nullptr;

@@ -400,7 +400,9 @@ nix run . -- ../gateway-dos/GATE.EXE
 ```
 
 F11 or Alt-Enter toggles desktop fullscreen; these shortcuts are handled by
-the host. Close the window to stop. Escape, Space, Enter, letters, digits, arrow keys,
+the host. Close the window to stop, or press Ctrl-C in the launching terminal
+to terminate the process immediately even if emulation is stalled.
+Escape, Space, Enter, letters, digits, arrow keys,
 and common punctuation are forwarded to the guest BIOS keyboard queue. Mouse
 motion and left/right/middle buttons reach the DOS mouse driver, with scaling
 for resized windows. **Press Escape at the command prompt to enter mouse mode**
@@ -436,7 +438,8 @@ nix run .#intro-source-c-play -- ../gateway-dos
 ```
 
 Escape skips the rest of the intro and continues into the original game;
-closing the intro window cancels it. This starts `GATEMAIN.EXE` independently
+closing the intro window cancels it, while Ctrl-C terminates the launcher
+without proceeding to the game. This starts `GATEMAIN.EXE` independently
 with the verified original default numeric launcher arguments. It **does not**
 yet transfer source-C guest RAM or DOS process state to the game. The
 source-C intro now starts natively from the original DOS asset files,

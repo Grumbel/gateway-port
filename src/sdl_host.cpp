@@ -183,6 +183,10 @@ void draw_wide_panel(SDL_Renderer *renderer, const UiRect &panel, bool left,
 SdlHost::SdlHost(DisplayAspect aspect, UiLayoutMode layout)
     : aspect_(aspect), layout_(layout) {
     try {
+        // A guest that is slow or stuck may not poll SDL's translated
+        // SIGINT/SIGTERM quit event. Leave these signals to the OS so
+        // Ctrl-C can terminate the emulator immediately.
+        checked(SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1"));
         checked(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO));
         checked(SDL_CreateWindowAndRenderer("Gateway — original-code Linux runtime",
                                             widescreen_ui() ? 1280 : 960, 720,
@@ -275,7 +279,9 @@ bool SdlHost::poll(std::deque<std::uint16_t> &keys, Mouse &mouse, const Vga &vga
     }
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
-        if (event.type == SDL_EVENT_QUIT)
+        if (event.type == SDL_EVENT_QUIT ||
+            (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
+             event.window.windowID == SDL_GetWindowID(window_)))
             return false;
         if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F10) {
             if (!event.key.repeat) {

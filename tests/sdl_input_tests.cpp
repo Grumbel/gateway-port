@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
+#include <string_view>
 
 void require(bool value, const char *message) {
     if (!value)
@@ -14,6 +15,8 @@ void require(bool value, const char *message) {
 int main() {
     try {
         gateway::SdlHost host;
+        require(std::string_view(SDL_GetHint(SDL_HINT_NO_SIGNAL_HANDLERS)) == "1",
+                "Ctrl-C must retain its default OS signal handler");
         gateway::Vga vga;
         vga.set_mode(0x12);
         gateway::Mouse mouse;
@@ -191,6 +194,18 @@ int main() {
         require(SDL_PushEvent(&event), "push aspect-ratio motion");
         host.poll(keys, mouse, vga);
         require(mouse.x == 320 && mouse.y == 175, "4:3 aspect input mapping");
+        // A synthetic window-close request must work even without SDL's
+        // optional automatic SDL_EVENT_QUIT on last-window close.
+        SDL_FlushEvent(SDL_EVENT_QUIT);
+        event = {};
+        event.type = SDL_EVENT_WINDOW_CLOSE_REQUESTED;
+        event.window.windowID = window_id;
+        require(SDL_PushEvent(&event), "push window close request");
+        require(!host.poll(keys, mouse, vga), "window close must stop emulation");
+        event = {};
+        event.type = SDL_EVENT_QUIT;
+        require(SDL_PushEvent(&event), "push quit request");
+        require(!host.poll(keys, mouse, vga), "SDL quit must stop emulation");
         std::cout << "SDL mouse coordinates, click history, and focus checks passed\n";
     } catch (const std::exception &e) {
         std::cerr << e.what() << '\n';
