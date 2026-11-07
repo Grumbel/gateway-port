@@ -302,14 +302,29 @@ The user-side `msc51-compare` run located both signatures inside Microsoft
 C 5.1's `LLIBCR.LIB`. To map those raw offsets to individual object modules,
 run `nix run .#msc51-compare -- --omf-details`. This parses the legacy OMF
 library page layout, identifies the containing `LEDATA` record and segment
-offset, and reports an exact `PUBDEF` name when present. Such names are
-library metadata, not recovered Gateway symbols. Module attribution is
-currently tested on synthetic OMF inputs; run it against the real compiler
-library to verify the module names. Matching both code sequences is strong
-evidence of an identical CRT implementation; a miss is inconclusive when code
-is split into OMF records or generated with different options. This compares
-the historical *runtime*, not the compiler's code generation for Gateway's
-game logic.
+offset, and reports an exact `PUBDEF` name when present. The real Microsoft C
+5.1 library identifies `GATE.RTL:0x091d8` as `rand.c:_srand` (module at
+`LLIBCR.LIB:0x173c0`, segment 1 offset `0x0000`) and `GATE.RTL:0x091ea` as
+`rand.c:_rand` (same module, offset `0x0012`). These names are **compiler
+library metadata**, not independently recovered names in the Gateway binary.
+
+For more exploratory matches, run:
+
+```sh
+nix run -L .#msc51-compare -- --scan-public-prefixes --json build/msc51-crt-candidates.json
+```
+
+This optional scan looks for unique, exact prefixes of at least 16 bytes at
+library `PUBDEF` locations inside a single `LEDATA` record, without masking
+relocations; locations claimed by more than one library symbol are omitted.
+It reports **candidates**, not identified Gateway routines: a
+public symbol may be data, a coincidentally equal byte sequence may not be a
+function, and relocated or noncontiguous code will not match. The JSON report
+contains hashes, offsets and symbol metadata, **not binary data**. Matching
+the two known functions is strong evidence of identical CRT implementations;
+a miss is inconclusive for other OMF modules or compiler options. This
+compares the linked historical *runtime*, not the compiler's code generation
+for Gateway's game logic.
 
 ### In-game Gateway debugger (F10)
 

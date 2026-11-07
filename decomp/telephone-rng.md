@@ -22,6 +22,14 @@ unmasked high word. Do not assume other registers or flags survive.
 The caller sign-extends AX before signed division; the mask guarantees a
 nonnegative dividend.
 
+The 2026-11-07 comparison against the actual Microsoft C 5.1 `LLIBCR.LIB`
+also identified these two functions through the library's original OMF public
+symbols: `GATE.RTL:0x0091d8` matches `rand.c:_srand` (13/17 fixed bytes),
+and `GATE.RTL:0x0091ea` matches `rand.c:_rand` (28/40 fixed bytes). Both
+symbols are in the `rand.c` module at library file offset `0x173c0`, in
+segment 1 at offsets `0x0000` and `0x0012`. These are linked CRT identities,
+not proof that the original game logic was compiled with that exact compiler.
+
 In the captured layout the entry is `1805:3b06` (physical `0x1bb56`), with
 state words at `DS:358e`/`DS:3590`, DS=5b46. Comparing all 40 original bytes
 against RAM changes only the four state-word address operands and the far

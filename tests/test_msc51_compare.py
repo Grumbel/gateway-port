@@ -33,7 +33,7 @@ class MSC51CompareTests(unittest.TestCase):
         module_one = record(0x82, b"\x06RAND.C")
         # PUBDEF: group 0, segment 1, _rand at segment offset 0x0120.
         public = record(0x90, b"\x00\x01\x05_rand\x20\x01\x00")
-        signature = b"\x55\x8b\xec\x2b\x76\x01\x5d\xcb"
+        signature = b"\x55\x8b\xec\x2b\x76\x01\x5d\xcb" + bytes(range(12))
         ledata = record(0xa0, b"\x01\x20\x01" + signature)
         module_bytes = module_one + public + ledata + record(0x8a, b"\x00")
         lib.extend(module_bytes)
@@ -62,6 +62,27 @@ class MSC51CompareTests(unittest.TestCase):
                                                 offset - 1, len(signature)))
         self.assertIsNone(msc.omf_match_details(bytes(lib), modules,
                                                 len(lib) - 1, len(signature)))
+        candidates = msc.scan_exact_crt_prefixes(
+            b"padding" + signature + b"end", bytes(lib), modules)
+        self.assertEqual(candidates, [{
+            "symbol": "_rand",
+            "module": "RAND.C",
+            "rtl_offset": "0x00007",
+            "segment_index": 1,
+            "segment_offset": "0x0120",
+            "exact_prefix_bytes": len(signature),
+        }])
+        self.assertEqual(msc.scan_exact_crt_prefixes(
+            signature + b"padding" + signature, bytes(lib), modules), [])
+        self.assertEqual(msc.scan_exact_crt_prefixes(
+            signature[:15], bytes(lib), modules), [])
+
+        # A second public claiming the same opening bytes makes attribution
+        # ambiguous even when there is only one match in the original RTL.
+        second_module = msc.OMFModule("COPY.C", modules[0].start,
+                                      modules[0].end, modules[0].records)
+        self.assertEqual(msc.scan_exact_crt_prefixes(
+            b"padding" + signature, bytes(lib), [modules[0], second_module]), [])
 
     def test_omf_library_rejects_invalid_header_and_module(self):
         with self.assertRaisesRegex(ValueError, "Not an OMF library"):

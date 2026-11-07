@@ -236,6 +236,77 @@ def omf_match_details(data: bytes, modules: list[OMFModule],
     return None
 
 
+def public_code_prefixes(data: bytes, module: OMFModule,
+                         min_size: int = 16, max_size: int = 64):
+    """Yield contiguous LEDATA prefixes at PUBDEF entries, with no relocation masking.
+
+    Do not run across another public entry or an OMF record boundary. Exact
+    prefixes avoid guessing which bytes a linker might have relocated.
+    """
+    publics = omf_publics(data, module)
+    for segment, offset, symbol in publics:
+        following = [other for seg, other, _ in publics
+                     if seg == segment and other > offset]
+        upper = min(following) if following else offset + max_size
+        for record in module.records:
+            if record.kind not in (0xa0, 0xa1):
+                continue
+            limit = record.end - 1
+            try:
+                record_segment, cursor = omf_index(data, record.start + 3, limit)
+                width = 4 if record.kind == 0xa1 else 2
+                if cursor + width > limit:
+                    continue
+                record_offset = int.from_bytes(data[cursor:cursor + width], "little")
+            except ValueError:
+                continue
+            cursor += width
+            if record_segment != segment or not record_offset <= offset < record_offset + limit - cursor:
+                continue
+            start = cursor + offset - record_offset
+            end = min(limit, start + max_size, start + upper - offset)
+            if end - start >= min_size:
+                yield symbol, segment, offset, data[start:end]
+            break
+
+
+def scan_exact_crt_prefixes(original: bytes, library: bytes,
+                            modules: list[OMFModule], min_size: int = 16) -> list[dict]:
+    """Find unambiguous exact first bytes of OMF publics in original RTL.
+
+    This is an exploratory *candidate* list: exact bytes alone cannot prove a
+    Gateway file location is code, or that a PUBDEF is a function rather than
+    a variable. Relocated prefixes simply do not match (false negatives).
+    """
+    hits = []
+    for module in modules:
+        for symbol, segment, offset, code in public_code_prefixes(
+                library, module, min_size=min_size):
+            prefix = code[:min_size]
+            rtl_offset = original.find(prefix)
+            if rtl_offset < 0 or original.find(prefix, rtl_offset + 1) >= 0:
+                continue
+            matched = min_size
+            while (matched < len(code) and rtl_offset + matched < len(original)
+                   and original[rtl_offset + matched] == code[matched]):
+                matched += 1
+            hits.append({
+                "symbol": symbol,
+                "module": module.name,
+                "rtl_offset": f"0x{rtl_offset:05x}",
+                "segment_index": segment,
+                "segment_offset": f"0x{offset:04x}",
+                "exact_prefix_bytes": matched,
+            })
+    # Two library publics with the same opening instructions do not justify
+    # choosing either name, even if those bytes occur only once in GATE.RTL.
+    counts = {}
+    for hit in hits:
+        counts[hit["rtl_offset"]] = counts.get(hit["rtl_offset"], 0) + 1
+    return sorted((hit for hit in hits if counts[hit["rtl_offset"]] == 1),
+                  key=lambda hit: (int(hit["rtl_offset"], 16), hit["symbol"]))
+
+
 def resolve_library(compiler_root: Path) -> Path:
     for candidate in (compiler_root / "LIB", compiler_root / "lib", compiler_root):
         if candidate.is_dir():
@@ -268,6 +339,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", type=Path, help="optional JSON report path")
     parser.add_argument("--omf-details", action="store_true",
                         help="identify OMF object modules/LEDATA/PUBDEF behind direct matches")
+    parser.add_argument("--scan-public-prefixes", action="store_true",
+                        help="find unique 16-byte exact CRT public prefixes in GATE.RTL (candidates only)")
     args = parser.parse_args(argv)
     if args.library is None and args.compiler is None:
         parser.error("provide --library FILE or GATEWAY_MSC51_DIR/--compiler DIR")
@@ -276,12 +349,15 @@ def main(argv: list[str] | None = None) -> int:
         original = args.original.read_bytes()
         library_bytes = library.read_bytes()
         matches = compare_bytes(original, library_bytes)
-        if args.omf_details:
+        if args.omf_details or args.scan_public_prefixes:
             modules = parse_omf_library(library_bytes)
+        if args.omf_details:
             for entry in matches:
                 entry["omf_matches"] = [omf_match_details(
                     library_bytes, modules, int(position, 16), entry["bytes"])
                     for position in entry["library_offsets"]]
+        public_candidates = (scan_exact_crt_prefixes(original, library_bytes, modules)
+                             if args.scan_public_prefixes else None)
     except (ValueError, OSError) as error:
         parser.error(str(error))
     for entry in matches:
@@ -295,15 +371,25 @@ def main(argv: list[str] | None = None) -> int:
                       f'segment #{details["segment_index"]}:{details["segment_offset"]}{symbol}')
             else:
                 print("  hit is not entirely within a single OMF LEDATA record")
+    if public_candidates is not None:
+        print(f"Unique exact CRT public-prefix candidates (at least 16 bytes): {len(public_candidates)}")
+        for entry in public_candidates:
+            print(f'  GATE.RTL:{entry["rtl_offset"]} {entry["module"]}:{entry["symbol"]} '
+                  f'#{entry["segment_index"]}:{entry["segment_offset"]} '
+                  f'({entry["exact_prefix_bytes"]} exact leading bytes)')
+        print("Candidates need separate code/boundary validation; absent matches prove nothing.")
     print(f"Compared against {library} ({len(library_bytes)} bytes)")
     print("A match supports identical CRT code; a miss is inconclusive for OMF modules.")
     if args.json is not None:
         args.json.parent.mkdir(parents=True, exist_ok=True)
-        args.json.write_text(json.dumps({
+        report = {
             "original_sha256": GATE_RTL_SHA256,
             "library_sha256": hashlib.sha256(library_bytes).hexdigest(),
             "routines": matches,
-        }, indent=2) + "\n")
+        }
+        if public_candidates is not None:
+            report["public_prefix_candidates"] = public_candidates
+        args.json.write_text(json.dumps(report, indent=2) + "\n")
         print(f"Saved {args.json}")
     return 0
 
