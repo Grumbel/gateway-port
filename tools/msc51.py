@@ -11,6 +11,7 @@ and executable outputs stay in a writable directory outside the Nix store.
 import argparse
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -135,6 +136,140 @@ def stage_probe(output: Path) -> None:
     )
 
 
+def msc51_enums_to_macros(source: str) -> str:
+    """Keep full-width original constants in 16-bit MSC's C89 preprocessor.
+
+    MS C 5.1 uses 16-bit int, while many recovered layout/bit constants are
+    larger than INT_MAX. The staged headers use macros so enum overflow
+    cannot silently change their values; checked-in headers stay untouched.
+    """
+    def transform(match: re.Match[str]) -> str:
+        body = re.sub(r"/\*.*?\*/", "", match.group(1), flags=re.DOTALL)
+        declarations = [item.strip() for item in body.split(",") if item.strip()]
+        defines = []
+        for declaration in declarations:
+            parts = declaration.split("=", 1)
+            if len(parts) != 2 or re.fullmatch(r"[A-Za-z_]\w*", parts[0].strip()) is None:
+                raise ValueError(f"Unrecognized C89 enum item: {declaration!r}")
+            defines.append(f"#define {parts[0].strip()} ({parts[1].strip()})")
+        return "\n".join(defines)
+
+    return re.sub(r"\benum\s*\{([^{}]*)\}\s*;", transform, source, flags=re.DOTALL)
+
+
+def msc51_far_compounds_to_calls(source: str) -> tuple[str, bool]:
+    """Convert only C99 GateFarPtr two-field literals to C89 helper calls."""
+    pattern = re.compile(r"\(\s*GateFarPtr\s*\)\s*\{")
+    pieces = []
+    offset = 0
+    found = False
+    while match := pattern.search(source, offset):
+        depth = 0
+        separator = None
+        cursor = match.end()
+        while cursor < len(source):
+            ch = source[cursor]
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+            elif ch == "," and depth == 0:
+                if separator is not None:
+                    raise ValueError("GateFarPtr compound has more than two fields")
+                separator = cursor
+            elif ch == "}" and depth == 0:
+                break
+            cursor += 1
+        if cursor == len(source) or separator is None or depth != 0:
+            raise ValueError("Unbalanced GateFarPtr compound literal")
+        pieces.append(source[offset:match.start()])
+        pieces.append("gate_msc51_far_pointer(" + source[match.end():separator].strip() + ", " +
+                      source[separator + 1:cursor].strip() + ")")
+        offset = cursor + 1
+        found = True
+    pieces.append(source[offset:])
+    return "".join(pieces), found
+
+
+def stage_launcher(output: Path) -> list[str]:
+    """Stage all recovered launcher C translation units as DOS 8.3 C89 files.
+
+    This compiles .OBJ modules only: original linked resident services and
+    guest memory/graphics adapters are not yet available as DOS objects.
+    """
+    output.mkdir(parents=True, exist_ok=True)
+    source_dir = REPO / "decomp/launcher"
+    sources = sorted(source_dir.glob("*.c"))
+    headers = sorted(source_dir.glob("*.h"))
+    aliases = {path.name: f"H{index:02d}.H" for index, path in enumerate(headers)}
+    aliases.update({path.name: f"M{index:02d}.C" for index, path in enumerate(sources)})
+    if len(aliases) != len(headers) + len(sources):
+        raise ValueError("A launcher file basename is ambiguous")
+
+    include_pattern = re.compile(r'(?m)^(#include\s+)"([^"]+)"')
+
+    def rewrite_includes(match: re.Match[str]) -> str:
+        filename = Path(match.group(2)).name
+        if filename not in aliases:
+            raise ValueError(f"Unmapped launcher include: {match.group(2)}")
+        return match.group(1) + '"' + aliases[filename] + '"'
+
+    mapping = []
+    for path in [*headers, *sources]:
+        content = path.read_text()
+        content = include_pattern.sub(rewrite_includes, content)
+        content = re.sub(r"(?m)^#include\s*<stdint\.h>", '#include "STDINT.H"', content)
+        if path.suffix == ".h":
+            content = msc51_enums_to_macros(content)
+            content = re.sub(r"\b_Noreturn\s+", "", content)
+        else:
+            content, had_compounds = msc51_far_compounds_to_calls(content)
+            if had_compounds:
+                includes = list(re.finditer(r"(?m)^#include[^\n]*$", content))
+                if not includes:
+                    raise ValueError(f"No includes before GateFarPtr helper: {path}")
+                at = includes[-1].end()
+                helper = ("\n\n/* C89 equivalent of a two-field GateFarPtr literal. */\n"
+                          "static GateFarPtr gate_msc51_far_pointer(uint16_t segment, uint16_t offset)\n"
+                          "{\n    GateFarPtr result;\n    result.segment = segment;\n"
+                          "    result.offset = offset;\n    return result;\n}\n")
+                content = content[:at] + helper + content[at:]
+        alias = aliases[path.name]
+        (output / alias).write_text(content)
+        mapping.append(f"{alias}  {path.relative_to(REPO).as_posix()}")
+
+    (output / "STDINT.H").write_text(
+        "/* Generated C89 widths for 16-bit Microsoft C 5.1, /AL model. */\n"
+        "#ifndef GATE_MSC51_STDINT_H\n#define GATE_MSC51_STDINT_H\n"
+        "typedef unsigned char uint8_t;\n"
+        "typedef signed char int8_t;\n"
+        "typedef unsigned short uint16_t;\n"
+        "typedef signed short int16_t;\n"
+        "typedef unsigned long uint32_t;\n"
+        "typedef signed long int32_t;\n"
+        "#endif\n"
+    )
+    (output / "SOURCE.MAP").write_text("\n".join(mapping) + "\n")
+    lines = [
+        "@ECHO OFF", "ECHO Gateway MSC 5.1 launcher objects > START.LOG",
+        "SET PATH=C:\\BIN;C:\\", "SET INCLUDE=C:\\INCLUDE;C:\\",
+        "SET LIB=C:\\LIB;C:\\", "SET TEMP=D:\\", "SET TMP=D:\\",
+        "ECHO Compiling recovered launcher translation units > BUILD.LOG",
+    ]
+    for index in range(len(sources)):
+        filename = f"M{index:02d}.C"
+        lines.extend((f"ECHO Compiling {filename} >> BUILD.LOG",
+                      f"CL /AL /Od /c {filename} >> BUILD.LOG",
+                      "IF ERRORLEVEL 1 GOTO BUILD_FAILED",
+                      f"IF NOT EXIST M{index:02d}.OBJ GOTO BUILD_FAILED"))
+    lines.extend(("ECHO All reconstructed launcher objects compiled > SUCCESS.LOG",
+                  "GOTO DONE", ":BUILD_FAILED",
+                  "ECHO Microsoft C failed to compile a module > BUILDFAIL.LOG",
+                  ":DONE", "EXIT"))
+    (output / "COMPILE.BAT").write_text("\r\n".join(lines) + "\r\n")
+    return [f"M{index:02d}.OBJ" for index in range(len(sources))]
+
+
 def remove_probe_outputs(output: Path) -> None:
     """Ensure a previous DOS run cannot satisfy the next run's checks."""
     names = {"START.LOG", "INTROCHK.EXE", "TEST.LOG", "BUILD.LOG", "CLFAIL.LOG", "RUNFAIL.LOG"}
@@ -142,6 +277,25 @@ def remove_probe_outputs(output: Path) -> None:
         for entry in output.iterdir():
             if entry.is_file() and entry.name.upper() in names:
                 entry.unlink()
+
+
+def remove_launcher_outputs(output: Path, objects: list[str]) -> None:
+    """A stale .OBJ or success marker cannot satisfy a fresh DOS compile."""
+    names = {"START.LOG", "BUILD.LOG", "BUILDFAIL.LOG", "SUCCESS.LOG", *objects}
+    if output.is_dir():
+        for entry in output.iterdir():
+            if entry.is_file() and entry.name.upper() in names:
+                entry.unlink()
+
+
+def print_launcher_diagnostics(output: Path) -> None:
+    for name in ("BUILDFAIL.LOG", "BUILD.LOG", "SUCCESS.LOG"):
+        path = locate_case_insensitive(output, name)
+        content = path.read_text(errors="replace") if path is not None else "(not created)"
+        if len(content) > 12_000:
+            content = "[earlier compiler output omitted]\n" + content[-12_000:]
+        print(f"--- {name} ---\n{content.rstrip()}", file=sys.stderr)
+    print(f"Launcher compiler workspace: {output}", file=sys.stderr)
 
 
 def print_probe_diagnostics(output: Path) -> None:
@@ -165,13 +319,14 @@ def print_probe_diagnostics(output: Path) -> None:
     print("Probe workspace: " + str(output), file=sys.stderr)
 
 
-def dosbox_commands(compiler: Path, output: Path, run_probe: bool) -> list[str]:
+def dosbox_commands(compiler: Path, output: Path, run_probe: bool,
+                    batch_file: str = "BUILD.BAT") -> list[str]:
     for path in (compiler, output):
         if any(ch in str(path) for ch in ('"', '\n', '\r')):
             raise ValueError(f"Path cannot be mounted safely in DOSBox: {path}")
     commands = [f'mount c "{compiler}" -ro', f'mount d "{output}"', "d:"]
     if run_probe:
-        commands.append("BUILD.BAT")
+        commands.append(batch_file)
     else:
         commands.extend(("SET PATH=C:\\BIN;C:\\", "SET INCLUDE=C:\\INCLUDE;C:\\", "SET LIB=C:\\LIB;C:\\"))
     return commands
@@ -192,10 +347,11 @@ def install_commands(destination: Path, floppies: list[Path]) -> list[str]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("probe", "shell", "prepare", "install"))
+    parser.add_argument("command", choices=("probe", "shell", "prepare", "install",
+                                            "prepare-launcher", "compile-launcher"))
     parser.add_argument("--compiler", default=os.environ.get("GATEWAY_MSC51_DIR"),
                         help="installed Microsoft C 5.1 directory (or GATEWAY_MSC51_DIR)")
-    parser.add_argument("--output", type=Path, default=Path("build/intro-msc51"),
+    parser.add_argument("--output", type=Path,
                         help="writable DOS workspace; never the Nix store")
     parser.add_argument("--dosbox", default="dosbox-staging")
     parser.add_argument("--install-dir", type=Path,
@@ -203,11 +359,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--floppy", type=Path, action="append", default=[],
                         help="one original floppy image, repeat in original disk order")
     args = parser.parse_args(argv)
-    output = args.output.expanduser().resolve()
-    if args.command not in ("shell", "install"):
+    launcher = args.command in ("prepare-launcher", "compile-launcher")
+    output = (args.output or Path("build/msc51-launcher" if launcher else "build/intro-msc51")).expanduser().resolve()
+    objects = []
+    if launcher:
+        objects = stage_launcher(output)
+        print(f"Staged {len(objects)} original launcher C modules for MSC 5.1 in {output}", flush=True)
+    elif args.command not in ("shell", "install"):
         stage_probe(output)
         print(f"Staged original-code MSC 5.1 probe in {output}", flush=True)
-    if args.command == "prepare":
+    if args.command in ("prepare", "prepare-launcher"):
         return 0
     try:
         if args.command == "install":
@@ -220,7 +381,9 @@ def main(argv: list[str] | None = None) -> int:
             if not args.compiler:
                 parser.error("set GATEWAY_MSC51_DIR or pass --compiler /path/to/installed/MSC51")
             compiler = validate_compiler(Path(args.compiler))
-            commands = dosbox_commands(compiler, output, args.command == "probe")
+            commands = dosbox_commands(compiler, output,
+                                       args.command in ("probe", "compile-launcher"),
+                                       "COMPILE.BAT" if launcher else "BUILD.BAT")
             output.mkdir(parents=True, exist_ok=True)
     except ValueError as error:
         parser.error(str(error))
@@ -232,12 +395,30 @@ def main(argv: list[str] | None = None) -> int:
         # An old successful EXE/LOG must never masquerade as a fresh build.
         remove_probe_outputs(output)
         command.append("--exit")
+    elif args.command == "compile-launcher":
+        remove_launcher_outputs(output, objects)
+        command.append("--exit")
     print("DOSBox commands: " + " ; ".join(commands), flush=True)
     result = subprocess.run(command, check=False)
     if result.returncode != 0:
         if args.command == "probe":
             print_probe_diagnostics(output)
+        elif launcher:
+            print_launcher_diagnostics(output)
         return result.returncode
+    if args.command == "compile-launcher":
+        success = locate_case_insensitive(output, "SUCCESS.LOG")
+        started = locate_case_insensitive(output, "START.LOG")
+        failed = locate_case_insensitive(output, "BUILDFAIL.LOG")
+        missing = [name for name in objects if locate_case_insensitive(output, name) is None]
+        if success is None or started is None or failed is not None or missing:
+            print(f"Microsoft C 5.1 launcher object compilation incomplete; "
+                  f"missing {len(missing)} of {len(objects)} objects.", file=sys.stderr)
+            print_launcher_diagnostics(output)
+            return 1
+        print(f"Microsoft C 5.1 compiled all {len(objects)} launcher objects; "
+              "linkage to original DOS/resident services is still unavailable.")
+        return 0
     if args.command == "probe":
         exe = locate_case_insensitive(output, "INTROCHK.EXE")
         log = locate_case_insensitive(output, "TEST.LOG")

@@ -211,6 +211,8 @@ nix run .#msc51-compare                       # download and compare original CR
 nix run .#msc51-probe                         # compile and run 32 rand steps in DOSBox
 nix run .#msc51-shell                         # interactive DOSBox compiler
 nix run .#msc51-prepare                       # prepare C89 source only (no download)
+nix run .#msc51-prepare-launcher              # stage all 28 recovered launcher modules
+nix run -L .#msc51-compile-launcher            # try all 28 with Microsoft C 5.1
 nix build .#msc51                             # optional: inspect assembled DOS tree
 nix develop .#msc51                           # optional DOSBox toolchain shell
 ```
@@ -288,10 +290,35 @@ still read-only, and its scratch files are directed to the writable D: drive.
 If the failure persists, capture the **new** `BUILD.LOG` output; a successful
 DOSBox process exit by itself does not establish that the DOS compilation ran.
 
-These tools do **not** build a playable Gateway DOS executable; they are a
-compiler comparison/probe environment. The `msc51-tooling` check runs without
-fetching Microsoft binaries, including a synthetic FAT floppy-image import
-test with mtools.
+`msc51-prepare-launcher` stages **all 28** reconstructed launcher `.c` files
+and their headers in `build/msc51-launcher/`, using DOS 8.3 aliases
+(`M00.C`…`M27.C`, `H00.H`…) recorded in `SOURCE.MAP`. The staging pass adapts
+only C syntax and types for the 16-bit Microsoft compiler: it replaces
+`<stdint.h>`, converts potentially overflowing 16-bit `enum` constants to
+preprocessor definitions, removes `_Noreturn` from generated declarations,
+and translates C99 `GateFarPtr` compound literals to a C89 constructor.
+The original `decomp/launcher/` files retain their documented addresses and
+names. A strict host GCC C89 syntax check passes for all 28 staged modules.
+
+`msc51-compile-launcher` uses the same pinned Microsoft C 5.1 installation and
+read-only DOSBox mount as `msc51-probe`; `COMPILE.BAT` attempts `CL /AL /Od /c`
+on each module separately and checks the creation of all 28 `.OBJ` files.
+It removes old outputs first, reports the compiler's `BUILD.LOG` on failure,
+and refuses to report success without a fresh `START.LOG`, `SUCCESS.LOG` and
+all expected object files. To use another compiler installation:
+
+```sh
+nix run -L .#msc51-compile-launcher -- --compiler build/msc51-local
+```
+
+This is a **compile-to-object experiment, not a DOS link**: original resident
+functions and guest memory/graphics/file/input services still lack real-mode
+implementations. It does not produce a playable Gateway executable. Only
+the source staging and host C89 checks could be run in the current workspace;
+actual Microsoft C compiler results require running the new command in an
+environment with the pinned compiler and DOSBox. The `msc51-tooling` check
+runs without fetching Microsoft binaries, including a synthetic FAT
+floppy-image import test with mtools.
 
 The `msc51-compare` app reads the SHA-256-pinned original `GATE.RTL` and the
 assembled `LLIBCR.LIB`. It searches the raw library for

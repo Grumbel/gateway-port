@@ -100,6 +100,22 @@
               exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py prepare "$@"
             '';
           };
+          msc51-prepare-launcher = pkgs.writeShellApplication {
+            name = "gateway-msc51-prepare-launcher";
+            runtimeInputs = [ pkgs.python3 ];
+            text = ''
+              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py prepare-launcher "$@"
+            '';
+          };
+          msc51-compile-launcher = pkgs.writeShellApplication {
+            name = "gateway-msc51-compile-launcher";
+            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
+            text = ''
+              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
+              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py compile-launcher \
+                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
+            '';
+          };
           msc51-install = pkgs.writeShellApplication {
             name = "gateway-msc51-install";
             runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
@@ -253,6 +269,16 @@
           program = "${self.packages.${system}.msc51-prepare}/bin/gateway-msc51-prepare";
           meta.description = "Stage the recovered intro C sources for Microsoft C 5.1 without running DOSBox";
         };
+        msc51-prepare-launcher = {
+          type = "app";
+          program = "${self.packages.${system}.msc51-prepare-launcher}/bin/gateway-msc51-prepare-launcher";
+          meta.description = "Stage all reconstructed Gateway launcher C modules as 16-bit DOS C89 sources without downloading the compiler";
+        };
+        msc51-compile-launcher = {
+          type = "app";
+          program = "${self.packages.${system}.msc51-compile-launcher}/bin/gateway-msc51-compile-launcher";
+          meta.description = "Attempt to compile all 28 reconstructed launcher modules to DOS objects with Microsoft C 5.1";
+        };
         msc51-install = {
           type = "app";
           program = "${self.packages.${system}.msc51-install}/bin/gateway-msc51-install";
@@ -404,6 +430,8 @@ except Exception:
                          self.packages.${system}.msc51-probe
                          self.packages.${system}.msc51-shell
                          self.packages.${system}.msc51-prepare
+                         self.packages.${system}.msc51-prepare-launcher
+                         self.packages.${system}.msc51-compile-launcher
                          self.packages.${system}.msc51-install
                          self.packages.${system}.msc51-compare
                          self.packages.${system}.msc51-unpack ];
