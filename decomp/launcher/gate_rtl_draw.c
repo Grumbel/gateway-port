@@ -62,8 +62,8 @@ void gate_rtl_draw_caption_frame(uint16_t left, uint16_t top, uint16_t right,
     uint16_t x, y;
 
     (void)gate_rtl_set_pen_color(mode == 0
-        ? frame_color(0x4da6, 0x52)
-        : frame_color(0x4da0, 0x4c));
+        ? frame_color(GATE_DS_FRAME_COLOR_QUATERNARY_SEGMENT, GATE_MODE_DESC_FRAME_COLOR_QUATERNARY)
+        : frame_color(GATE_DS_FRAME_COLOR_PRIMARY_SEGMENT, GATE_MODE_DESC_FRAME_COLOR_PRIMARY));
 
     if ((style & 2u) != 0) {
         x = (uint16_t)(left + 1u);
@@ -91,11 +91,11 @@ void gate_rtl_draw_caption_frame(uint16_t left, uint16_t top, uint16_t right,
             return;
         }
 
-        (void)gate_rtl_set_pen_color(frame_color(0x4da4, 0x50));
+        (void)gate_rtl_set_pen_color(frame_color(GATE_DS_FRAME_COLOR_TERTIARY_SEGMENT, GATE_MODE_DESC_FRAME_COLOR_TERTIARY));
         gate_rtl_fill_rectangle(2, (uint16_t)(left + 1u),
                        (uint16_t)(top + 1u), (uint16_t)(right - 1u),
                        (uint16_t)(bottom - 1u));
-        (void)gate_rtl_set_pen_color(frame_color(0x4da6, 0x52));
+        (void)gate_rtl_set_pen_color(frame_color(GATE_DS_FRAME_COLOR_QUATERNARY_SEGMENT, GATE_MODE_DESC_FRAME_COLOR_QUATERNARY));
 
         x = (uint16_t)(left + 1u);
         y = (uint16_t)(top + 1u);
@@ -109,7 +109,7 @@ void gate_rtl_draw_caption_frame(uint16_t left, uint16_t top, uint16_t right,
         if (mode != 1)
             gate_rtl_resident_line_to((uint16_t)(right - 3u), y);
 
-        (void)gate_rtl_set_pen_color(frame_color(0x4da2, 0x4e));
+        (void)gate_rtl_set_pen_color(frame_color(GATE_DS_FRAME_COLOR_SECONDARY_SEGMENT, GATE_MODE_DESC_FRAME_COLOR_SECONDARY));
         y = (uint16_t)(bottom - 1u);
         gate_rtl_resident_move_to((uint16_t)(left + 1u), y);
         x = (uint16_t)(right - 1u);
@@ -136,7 +136,7 @@ void gate_rtl_draw_caption_frame(uint16_t left, uint16_t top, uint16_t right,
             return;
         }
 
-        (void)gate_rtl_set_pen_color(frame_color(0x4da2, 0x4e));
+        (void)gate_rtl_set_pen_color(frame_color(GATE_DS_FRAME_COLOR_SECONDARY_SEGMENT, GATE_MODE_DESC_FRAME_COLOR_SECONDARY));
         x = (uint16_t)(left - 1u);
         gate_rtl_resident_move_to(x, (uint16_t)(bottom + 1u));
         gate_rtl_resident_line_to(x, (uint16_t)(top - 1u));
@@ -152,7 +152,7 @@ void gate_rtl_draw_caption_frame(uint16_t left, uint16_t top, uint16_t right,
                                       (uint16_t)(top - 2u));
         }
 
-        (void)gate_rtl_set_pen_color(frame_color(0x4da6, 0x52));
+        (void)gate_rtl_set_pen_color(frame_color(GATE_DS_FRAME_COLOR_QUATERNARY_SEGMENT, GATE_MODE_DESC_FRAME_COLOR_QUATERNARY));
         y = (uint16_t)(bottom + 1u);
         gate_rtl_resident_move_to(left, y);
         x = (uint16_t)(right + 1u);

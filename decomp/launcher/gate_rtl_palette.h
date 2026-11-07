@@ -6,6 +6,24 @@
 
 #include "gate_exe.h"
 
+/* The palette driver's two lookup tables are indexed relative to its
+ * original relocated near-DS bank at 0fce, yielding linked DS:132a/1334.
+ * Hardware ports below are x86 I/O addresses, NOT DS memory offsets. */
+enum {
+    GATE_PALETTE_TABLE_FIRST_COMPONENT_OFFSET = 0x035c,
+    GATE_PALETTE_TABLE_SECOND_COMPONENT_OFFSET = 0x0366,
+    GATE_VGA_PORT_ATTRIBUTE_CONTROLLER = 0x03c0,
+    GATE_VGA_PORT_DAC_WRITE_INDEX = 0x03c8,
+    GATE_VGA_PORT_DAC_DATA = 0x03c9,
+    GATE_VGA_PORT_MONO_STATUS = 0x03ba,
+    GATE_VGA_PORT_COLOR_STATUS = 0x03da,
+    GATE_VGA_RETRACE_STATUS_BIT = 0x08,
+    GATE_VGA_ATTRIBUTE_OVERSCAN_REGISTER = 0x11,
+    GATE_VGA_ATTRIBUTE_DISPLAY_ENABLE = 0x20,
+    GATE_VGA_ATTRIBUTE_INDEX_MASK = 0x1f,
+    GATE_VGA_DAC_COMPONENT_MASK = 0x3f,
+};
+
 /* Original GATE.RTL file offsets. Unlike the reconstructed C++ preview,
  * these routines retain the original VGA port I/O and mode branching. */
 void gate_rtl_wait_vertical_retrace(void); /* wait for vertical retrace transition */

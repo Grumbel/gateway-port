@@ -26,7 +26,8 @@ uint16_t gate_linked_clear_resident_display(uint16_t page, uint16_t color)
         for (i = 0; i < 8; ++i) {
             uint16_t entry = (uint16_t)(GATE_RESIDENT_MODE_DESCRIPTOR_BASE + i * GATE_RESIDENT_MODE_DESCRIPTOR_BYTES);
             gate_far_set_word(ds, (uint16_t)(entry + GATE_RESIDENT_MODE_CLEAR_CALLBACK_OFFSET),
-                              i == 0 ? 0x011a : i == 3 ? 0x01d7 : 0x0169);
+                              i == 0 ? GATE_RESIDENT_CLEAR_TEXT_CALLBACK :
+                              i == 3 ? GATE_RESIDENT_CLEAR_LINEAR_CALLBACK : GATE_RESIDENT_CLEAR_PLANAR_CALLBACK);
             gate_far_set_word(ds, (uint16_t)(entry + GATE_RESIDENT_MODE_CLEAR_CALLBACK_SEGMENT),
                               GATE_RESIDENT_VIDEO_CALLBACK_SEGMENT_VALUE);
         }
@@ -55,9 +56,10 @@ uint16_t gate_linked_clear_resident_display(uint16_t page, uint16_t color)
     if (mode == 0) {
         /* 2488:011a writes two 4096-word blocks to B800 (16 KiB).
          * At selector zero an odd fill argument produces FF, even 00. */
-        if (aperture != 0xb800 || (uint32_t)page_offset + 16384u > 65536u)
+        if (aperture != GATE_VIDEO_TEXT_APERTURE_SEGMENT ||
+            (uint32_t)page_offset + GATE_VIDEO_TEXT_CLEAR_BYTES > 65536u)
             abort();
-        for (i = 0; i < 16384u; ++i)
+        for (i = 0; i < GATE_VIDEO_TEXT_CLEAR_BYTES; ++i)
             gate_far_set_byte(aperture, (uint16_t)(page_offset + i),
                               (color & 1u) ? 0xff : 0);
         return 0;
@@ -68,7 +70,8 @@ uint16_t gate_linked_clear_resident_display(uint16_t page, uint16_t color)
      * 1. The four planes ultimately contain all-ones or all-zeros bytes. */
     if (mode != 3) {
         size = (uint16_t)(height * (uint32_t)pitch);
-        if (aperture != 0xa000 || (uint32_t)page_offset + size > 65536u)
+        if (aperture != GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT ||
+            (uint32_t)page_offset + size > 65536u)
             abort();
         gate_intro_vga16_fill_bytes(page_offset, (uint16_t)size,
                                      (uint8_t)(color & 15u));
@@ -80,7 +83,8 @@ uint16_t gate_linked_clear_resident_display(uint16_t page, uint16_t color)
     size = (uint16_t)((uint16_t)(height * (uint32_t)gate_far_byte(
         ds, (uint16_t)(descriptor + GATE_RESIDENT_MODE_PLANE_COUNT))) * (uint32_t)pitch);
     size &= ~1u;
-    if (aperture != 0xa000 || (uint32_t)page_offset + size > 65536u)
+    if (aperture != GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT ||
+        (uint32_t)page_offset + size > 65536u)
         abort();
     for (i = 0; i < size; ++i)
         gate_far_set_byte(aperture, (uint16_t)(page_offset + i),

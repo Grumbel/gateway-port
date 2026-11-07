@@ -18,10 +18,10 @@ void gate_rtl_configure_vga_palette(void)
     gate_rtl_wait_vertical_retrace();
     (void)gate_rtl_palette_in(gate_ds_word(GATE_DS_VGA_STATUS_PORT));
     for (i = 0; i < 16; ++i) {
-        gate_rtl_palette_out(0x3c0, (uint8_t)i);
-        gate_rtl_palette_out(0x3c0, (uint8_t)i);
+        gate_rtl_palette_out(GATE_VGA_PORT_ATTRIBUTE_CONTROLLER, (uint8_t)i);
+        gate_rtl_palette_out(GATE_VGA_PORT_ATTRIBUTE_CONTROLLER, (uint8_t)i);
     }
-    gate_rtl_palette_out(0x3c0, 0x20);
+    gate_rtl_palette_out(GATE_VGA_PORT_ATTRIBUTE_CONTROLLER, GATE_VGA_ATTRIBUTE_DISPLAY_ENABLE);
 }
 
 /* Original RTL mode-data table references are relocated near DS words in
@@ -77,7 +77,8 @@ uint16_t gate_rtl_set_video_mode(int16_t requested_mode)
             return 0;
     }
 
-    gate_ds_set_word(GATE_DS_VGA_STATUS_PORT, monitor == 4 ? 0x3bau : 0x3dau);
+    gate_ds_set_word(GATE_DS_VGA_STATUS_PORT,
+                     monitor == 4 ? GATE_VGA_PORT_MONO_STATUS : GATE_VGA_PORT_COLOR_STATUS);
     if (gate_rtl_mode_set_bios(bios_mode) != 0 ||
         gate_rtl_mode_start(1) != 0)
         return 0;

@@ -46,7 +46,7 @@ void gate_rtl_play_preloaded_picture_sequence(uint16_t first_resource, int16_t c
 
     if (count > GATE_PICTURE_SEQUENCE_CAPACITY) {
         gate_linked_print_intro_diagnostic((GateFarPtr){gate_rtl_image_data_segment(),
-                                       0x14b2});
+                                       GATE_RTL_SEQUENCE_LIMIT_MESSAGE_OFFSET});
         return;
     }
 

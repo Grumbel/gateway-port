@@ -19,6 +19,7 @@ enum {
     GATE_RTL_FORMAT_TAGS_OFFSET = 0x1480,
     GATE_RTL_FORMAT_MODES_OFFSET = 0x1486,
     GATE_RTL_MESSAGE_OFFSET = 0x148b,
+    GATE_RTL_SEQUENCE_LIMIT_MESSAGE_OFFSET = 0x14b2,
 };
 
 /* GATE.RTL resource selector's 12-byte on-disk picture-index entry.

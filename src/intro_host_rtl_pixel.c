@@ -48,7 +48,8 @@ void gate_rtl_plot_pixel(uint16_t color, uint16_t y, uint16_t x)
         incoming &= 15u;
         old = gate_intro_vga16_pixel(x, y);
     } else {
-        old = gate_far_byte(0xa000, (uint16_t)(320u * y + x));
+        old = gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                            (uint16_t)(GATE_VIDEO_MODE13_ROW_PIXELS * y + x));
     }
     switch (operation) {
     case 0: output = incoming; break; /* copy */
@@ -60,7 +61,8 @@ void gate_rtl_plot_pixel(uint16_t color, uint16_t y, uint16_t x)
     if (mode == 1 || mode == 2)
         gate_intro_vga16_set_pixel(x, y, output);
     else
-        gate_far_set_byte(0xa000, (uint16_t)(320u * y + x), output);
+        gate_far_set_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                          (uint16_t)(GATE_VIDEO_MODE13_ROW_PIXELS * y + x), output);
 }
 
 /* Graphics-font background is not drawn by RTL:edff itself: it sets the

@@ -16,7 +16,7 @@ static uint8_t scaled_byte(uint8_t sample, uint16_t factor)
 
 void gate_rtl_fade_palette_in(void)
 {
-    uint8_t palette[0x300];
+    uint8_t palette[GATE_INTRO_PALETTE_RGB_BYTES];
     uint16_t factor;
     int16_t count;
 
@@ -28,7 +28,8 @@ void gate_rtl_fade_palette_in(void)
         return;
     }
 
-    count = gate_rtl_graphics_mode() == 3 ? 0x300 : 0x30;
+    count = gate_rtl_graphics_mode() == 3 ? GATE_INTRO_PALETTE_RGB_BYTES :
+            GATE_INTRO_PALETTE_PLANAR_RGB_BYTES;
     for (factor = 0; factor <= 64; factor = (uint16_t)(factor + 4u)) {
         int16_t i;
         for (i = 0; i < count; ++i)
@@ -61,7 +62,7 @@ void gate_rtl_clear_palette_buffer(void)
  * finish by calling the independently recovered 0x12823 routine. */
 void gate_rtl_fade_palette_out(void)
 {
-    uint8_t palette[0x308];
+    uint8_t palette[GATE_RTL_PALETTE_STACK_SCRATCH_BYTES];
     uint16_t mode = gate_rtl_graphics_mode();
 
     if (mode == 0)

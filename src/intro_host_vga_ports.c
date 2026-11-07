@@ -21,7 +21,7 @@ void gate_intro_vga_ports_detach(void)
 uint8_t gate_rtl_palette_in(uint16_t port)
 {
     if (active_ports == 0 ||
-        (port != 0x3da && port != 0x3ba))
+        (port != GATE_VGA_PORT_COLOR_STATUS && port != GATE_VGA_PORT_MONO_STATUS))
         abort();
 
     /* The standalone host has no raster clock yet. A two-phase retrace
@@ -30,7 +30,7 @@ uint8_t gate_rtl_palette_in(uint16_t port)
     ++active_ports->status_reads;
     active_ports->retrace_phase ^= 1u;
     active_ports->attribute_expect_data = 0;
-    return active_ports->retrace_phase ? 0 : 8;
+    return active_ports->retrace_phase ? 0 : GATE_VGA_RETRACE_STATUS_BIT;
 }
 
 void gate_rtl_palette_out(uint16_t port, uint8_t value)
@@ -38,13 +38,13 @@ void gate_rtl_palette_out(uint16_t port, uint8_t value)
     if (active_ports == 0)
         abort();
     switch (port) {
-    case 0x3c8:
+    case GATE_VGA_PORT_DAC_WRITE_INDEX:
         active_ports->dac_index = value;
         active_ports->dac_component = 0;
         return;
-    case 0x3c9:
+    case GATE_VGA_PORT_DAC_DATA:
         active_ports->dac[active_ports->dac_index]
-                         [active_ports->dac_component] = value & 0x3fu;
+                         [active_ports->dac_component] = value & GATE_VGA_DAC_COMPONENT_MASK;
         ++active_ports->dac_writes;
         if (++active_ports->dac_component == 3) {
             active_ports->dac_component = 0;
@@ -58,11 +58,11 @@ void gate_rtl_palette_out(uint16_t port, uint8_t value)
                 active_ports->palette_ready(active_ports->palette_userdata);
         }
         return;
-    case 0x3c0:
+    case GATE_VGA_PORT_ATTRIBUTE_CONTROLLER:
         if (!active_ports->attribute_expect_data) {
-            active_ports->attribute_index = value & 0x1fu;
-            active_ports->display_enabled = (value & 0x20u) != 0;
-            active_ports->attribute_expect_data = value != 0x20u;
+            active_ports->attribute_index = value & GATE_VGA_ATTRIBUTE_INDEX_MASK;
+            active_ports->display_enabled = (value & GATE_VGA_ATTRIBUTE_DISPLAY_ENABLE) != 0;
+            active_ports->attribute_expect_data = value != GATE_VGA_ATTRIBUTE_DISPLAY_ENABLE;
         } else {
             active_ports->attributes[active_ports->attribute_index] = value;
             active_ports->attribute_expect_data = 0;

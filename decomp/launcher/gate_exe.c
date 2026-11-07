@@ -99,7 +99,7 @@ void gate_exe_wait_interruptible(int16_t delay)
  */
 void gate_exe_fade_in_picture(uint16_t image)
 {
-    uint8_t work[0x8c];
+    uint8_t work[GATE_EXE_FADE_PICTURE_WORK_BYTES];
     uint8_t faded[GATE_INTRO_PALETTE_RGB_BYTES];
     int16_t factor;
     int16_t i;

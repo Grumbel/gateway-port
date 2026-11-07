@@ -163,7 +163,7 @@ void gate_linked_blit_vfx_picture(uint16_t unused, uint16_t y, uint16_t x,
             const uint16_t src = (uint16_t)(source_offset + i);
             const uint16_t dst = (uint16_t)(destination + i);
             const uint8_t pixel = gate_far_byte(source_segment, src);
-            const uint8_t old = gate_far_byte(0xa000, dst);
+            const uint8_t old = gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT, dst);
             uint8_t result;
             switch (signed_mode) {
             case 0: result = pixel; break;
@@ -171,7 +171,7 @@ void gate_linked_blit_vfx_picture(uint16_t unused, uint16_t y, uint16_t x,
             case 1: result = (uint8_t)(old & pixel); break;
             default: result = (uint8_t)(old | pixel); break;
             }
-            gate_far_set_byte(0xa000, dst, result);
+            gate_far_set_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT, dst, result);
         }
         /* The 8086 loop adds (stride - copied) after LODS/REP MOVS;
          * destination likewise adds (320 - copied). Both net +stride

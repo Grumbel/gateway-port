@@ -6,6 +6,28 @@
 
 #include "gate_exe.h"
 
+/* Original 14-byte resident video command packet, addressed from SS:BP-0e.
+ * The original RTL initializes only the used bytes before sending it to
+ * the linked 0x10 dispatcher; the remaining bytes are uninitialized guest
+ * stack storage. Byte offsets and command codes are kept here verbatim. */
+enum {
+    GATE_VIDEO_PACKET_BYTES = 14,
+    GATE_VIDEO_PACKET_CHARACTER = 0x00,
+    GATE_VIDEO_PACKET_COMMAND = 0x01,
+    GATE_VIDEO_PACKET_ATTRIBUTE = 0x02,
+    GATE_VIDEO_PACKET_SUBCOMMAND = 0x03,
+    GATE_VIDEO_PACKET_COUNT_LOW = 0x04,
+    GATE_VIDEO_PACKET_COUNT_HIGH = 0x05,
+    GATE_VIDEO_PACKET_COLUMN = 0x06,
+    GATE_VIDEO_PACKET_ROW = 0x07,
+    GATE_VIDEO_DISPATCH_FUNCTION = 0x10,
+    GATE_VIDEO_COMMAND_SET_CURSOR = 0x02,
+    GATE_VIDEO_COMMAND_GET_CURSOR = 0x03,
+    GATE_VIDEO_COMMAND_WRITE_CHARACTER = 0x09,
+    GATE_VIDEO_BLOCK_CURSOR_CHARACTER = 0xdb,
+    GATE_VIDEO_INVERT_ATTRIBUTE_BIT = 0x80,
+};
+
 /* Original 16-bit RTL file-offset identities. These are the text-mode
  * counterparts to the graphics font's RTL:0xedff rasterizer. */
 void gate_rtl_draw_block_cursor(void);                       /* draw inverse block */

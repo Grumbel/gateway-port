@@ -7,9 +7,9 @@
  * then SETS. Both loops deliberately have no timeout or backoff. */
 void gate_rtl_wait_vertical_retrace(void)
 {
-    while ((gate_rtl_palette_in(gate_rtl_palette_status_port()) & 8u) != 0)
+    while ((gate_rtl_palette_in(gate_rtl_palette_status_port()) & GATE_VGA_RETRACE_STATUS_BIT) != 0)
         ;
-    while ((gate_rtl_palette_in(gate_rtl_palette_status_port()) & 8u) == 0)
+    while ((gate_rtl_palette_in(gate_rtl_palette_status_port()) & GATE_VGA_RETRACE_STATUS_BIT) == 0)
         ;
 }
 
@@ -53,7 +53,7 @@ void gate_rtl_upload_vga_palette(GateFarPtr palette)
         if (gate_rtl_palette_mode() != 1)
             count = (int16_t)(count / 3);
 
-        gate_rtl_palette_out(0x3c8, 0);
+        gate_rtl_palette_out(GATE_VGA_PORT_DAC_WRITE_INDEX, 0);
         for (color = 0; color < count; ++color) {
             if (gate_rtl_palette_conversion() == 0) {
                 if (gate_rtl_palette_mode() == 1) {
@@ -62,18 +62,18 @@ void gate_rtl_upload_vga_palette(GateFarPtr palette)
                         (uint16_t)(palette.offset + (uint16_t)color));
                     /* Each pair of packed color bits maps 0..3 to
                      * 0,21,42,63. SAR/AND/IMUL in the original. */
-                    gate_rtl_palette_out(0x3c9, (uint8_t)(
+                    gate_rtl_palette_out(GATE_VGA_PORT_DAC_DATA, (uint8_t)(
                         21u * (((packed >> 1) & 2u) | ((packed >> 5) & 1u))));
-                    gate_rtl_palette_out(0x3c9, (uint8_t)(
+                    gate_rtl_palette_out(GATE_VGA_PORT_DAC_DATA, (uint8_t)(
                         21u * (((packed >> 4) & 1u) | (packed & 2u))));
-                    gate_rtl_palette_out(0x3c9, (uint8_t)(
+                    gate_rtl_palette_out(GATE_VGA_PORT_DAC_DATA, (uint8_t)(
                         21u * (((packed << 1) & 2u) | ((packed >> 3) & 1u))));
                 } else {
-                    gate_rtl_palette_out(0x3c9, palette_byte(palette));
+                    gate_rtl_palette_out(GATE_VGA_PORT_DAC_DATA, palette_byte(palette));
                     next_byte(&palette);
-                    gate_rtl_palette_out(0x3c9, palette_byte(palette));
+                    gate_rtl_palette_out(GATE_VGA_PORT_DAC_DATA, palette_byte(palette));
                     next_byte(&palette);
-                    gate_rtl_palette_out(0x3c9, palette_byte(palette));
+                    gate_rtl_palette_out(GATE_VGA_PORT_DAC_DATA, palette_byte(palette));
                     next_byte(&palette);
                 }
             } else {
@@ -94,34 +94,34 @@ void gate_rtl_upload_vga_palette(GateFarPtr palette)
                     table_index = (int16_t)((sample / 31) * 3);
                     palette.offset = (uint16_t)(palette.offset + 3u);
                 }
-                gate_rtl_palette_out(0x3c9,
+                gate_rtl_palette_out(GATE_VGA_PORT_DAC_DATA,
                     gate_rtl_palette_table_byte(
-                        (uint16_t)(0x35cu + (uint16_t)table_index)));
-                gate_rtl_palette_out(0x3c9,
+                        (uint16_t)(GATE_PALETTE_TABLE_FIRST_COMPONENT_OFFSET + (uint16_t)table_index)));
+                gate_rtl_palette_out(GATE_VGA_PORT_DAC_DATA,
                     gate_rtl_palette_table_byte(
-                        (uint16_t)(0x366u + (uint16_t)table_index)));
-                gate_rtl_palette_out(0x3c9, 0);
+                        (uint16_t)(GATE_PALETTE_TABLE_SECOND_COMPONENT_OFFSET + (uint16_t)table_index)));
+                gate_rtl_palette_out(GATE_VGA_PORT_DAC_DATA, 0);
             }
         }
 
         if (gate_rtl_palette_mode() != 3) {
             (void)gate_rtl_palette_in(gate_rtl_palette_status_port());
-            gate_rtl_palette_out(0x3c0, 0x11);
-            gate_rtl_palette_out(0x3c0, (uint8_t)initial);
-            gate_rtl_palette_out(0x3c0, 0x20);
+            gate_rtl_palette_out(GATE_VGA_PORT_ATTRIBUTE_CONTROLLER, GATE_VGA_ATTRIBUTE_OVERSCAN_REGISTER);
+            gate_rtl_palette_out(GATE_VGA_PORT_ATTRIBUTE_CONTROLLER, (uint8_t)initial);
+            gate_rtl_palette_out(GATE_VGA_PORT_ATTRIBUTE_CONTROLLER, GATE_VGA_ATTRIBUTE_DISPLAY_ENABLE);
         }
     } else {
         uint16_t i;
         (void)gate_rtl_palette_in(gate_rtl_palette_status_port());
         for (i = 0; i < 16; ++i) {
-            gate_rtl_palette_out(0x3c0, (uint8_t)i);
-            gate_rtl_palette_out(0x3c0,
+            gate_rtl_palette_out(GATE_VGA_PORT_ATTRIBUTE_CONTROLLER, (uint8_t)i);
+            gate_rtl_palette_out(GATE_VGA_PORT_ATTRIBUTE_CONTROLLER,
                 gate_far_byte(palette.segment,
                               (uint16_t)(palette.offset + i)));
         }
         (void)gate_rtl_palette_in(gate_rtl_palette_status_port());
-        gate_rtl_palette_out(0x3c0, 0x11);
-        gate_rtl_palette_out(0x3c0, 0);
-        gate_rtl_palette_out(0x3c0, 0x20);
+        gate_rtl_palette_out(GATE_VGA_PORT_ATTRIBUTE_CONTROLLER, GATE_VGA_ATTRIBUTE_OVERSCAN_REGISTER);
+        gate_rtl_palette_out(GATE_VGA_PORT_ATTRIBUTE_CONTROLLER, 0);
+        gate_rtl_palette_out(GATE_VGA_PORT_ATTRIBUTE_CONTROLLER, GATE_VGA_ATTRIBUTE_DISPLAY_ENABLE);
     }
 }

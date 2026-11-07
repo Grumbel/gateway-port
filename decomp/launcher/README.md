@@ -42,6 +42,15 @@ same header. Title/palette stages use separately named channel offsets;
 asset resource IDs and elapsed-time values in the presentation remain the
 literal original call arguments.
 
+The font cache at `DS:54ce` is a two-entry array of 30-byte records, with
+named byte and FAR-pointer displacements (`GATE_FONT_SLOT_*`) shared by the
+font loader and glyph renderer. The 14-byte resident video-command packet
+has a separate `GATE_VIDEO_PACKET_*` layout in `gate_rtl_video.h`, and
+`gate_rtl_palette.h` distinguishes the original palette-table offsets
+`0x035c`/`0x0366` from the x86 VGA I/O port numbers. Hardware aperture
+segments (`A000` and `B800`) and the resident clear callback offsets remain
+explicitly documented in `gate_memory_layout.h`.
+
 These names are labels for **observed memory usage**, not proven original
 compiler symbols. Ambiguous startup words and reserved descriptor fields
 have deliberately neutral labels. The `*_SEGMENT` DS slots hold relocated

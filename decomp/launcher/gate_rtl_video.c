@@ -9,22 +9,23 @@
  * +4 count, +6 column, +7 row, +0 character. The other stack bytes were
  * uninitialized; initializing them here avoids reading undefined host C.
  * Original RTL uses SS:buffer twice with a leading constant 0x10. */
-static void video_call(uint8_t packet[14])
+static void video_call(uint8_t packet[GATE_VIDEO_PACKET_BYTES])
 {
-    gate_rtl_video_command(0x10, packet, packet);
+    gate_rtl_video_command(GATE_VIDEO_DISPATCH_FUNCTION, packet, packet);
 }
 
 /* GATE.RTL:0xf8eb..0xf920, emitted before/after a cursor operation in
  * block-cursor mode. It writes character 0xdb with attribute | 0x80. */
 void gate_rtl_draw_block_cursor(void)
 {
-    uint8_t packet[14] = {0};
-    packet[1] = 9;
-    packet[0] = 0xdb;
-    packet[3] = 0;
-    packet[2] = (uint8_t)(gate_rtl_video_attribute() | 0x80u);
-    packet[4] = 1;
-    packet[5] = 0;
+    uint8_t packet[GATE_VIDEO_PACKET_BYTES] = {0};
+    packet[GATE_VIDEO_PACKET_COMMAND] = GATE_VIDEO_COMMAND_WRITE_CHARACTER;
+    packet[GATE_VIDEO_PACKET_CHARACTER] = GATE_VIDEO_BLOCK_CURSOR_CHARACTER;
+    packet[GATE_VIDEO_PACKET_SUBCOMMAND] = 0;
+    packet[GATE_VIDEO_PACKET_ATTRIBUTE] = (uint8_t)(
+        gate_rtl_video_attribute() | GATE_VIDEO_INVERT_ATTRIBUTE_BIT);
+    packet[GATE_VIDEO_PACKET_COUNT_LOW] = 1;
+    packet[GATE_VIDEO_PACKET_COUNT_HIGH] = 0;
     video_call(packet);
 }
 
@@ -53,12 +54,12 @@ uint16_t gate_rtl_set_block_cursor_mode(uint16_t new_mode)
  * either for NULL). */
 void gate_rtl_get_text_cell_cursor(uint16_t *x, uint16_t *y)
 {
-    uint8_t packet[14] = {0};
-    packet[1] = 3;
-    packet[3] = 0;
+    uint8_t packet[GATE_VIDEO_PACKET_BYTES] = {0};
+    packet[GATE_VIDEO_PACKET_COMMAND] = GATE_VIDEO_COMMAND_GET_CURSOR;
+    packet[GATE_VIDEO_PACKET_SUBCOMMAND] = 0;
     video_call(packet);
-    *y = (uint16_t)(packet[7] + 1u);
-    *x = (uint16_t)(packet[6] + 1u);
+    *y = (uint16_t)(packet[GATE_VIDEO_PACKET_ROW] + 1u);
+    *x = (uint16_t)(packet[GATE_VIDEO_PACKET_COLUMN] + 1u);
 }
 
 /* GATE.RTL:0xf997..0xfa16: compare both coordinates AFTER 16-bit DEC.
@@ -67,19 +68,20 @@ void gate_rtl_get_text_cell_cursor(uint16_t *x, uint16_t *y)
  * Nonzero DS:030e draws a block before and after a real change. */
 void gate_rtl_set_text_cell_cursor(uint16_t x, uint16_t y)
 {
-    uint8_t packet[14] = {0};
-    packet[1] = 3;
-    packet[3] = 0;
+    uint8_t packet[GATE_VIDEO_PACKET_BYTES] = {0};
+    packet[GATE_VIDEO_PACKET_COMMAND] = GATE_VIDEO_COMMAND_GET_CURSOR;
+    packet[GATE_VIDEO_PACKET_SUBCOMMAND] = 0;
     video_call(packet);
     x = (uint16_t)(x - 1u);
     y = (uint16_t)(y - 1u);
-    if ((uint16_t)packet[7] != y || (uint16_t)packet[6] != x) {
+    if ((uint16_t)packet[GATE_VIDEO_PACKET_ROW] != y ||
+        (uint16_t)packet[GATE_VIDEO_PACKET_COLUMN] != x) {
         if (gate_rtl_video_block_mode() != 0)
             gate_rtl_draw_block_cursor();
-        packet[1] = 2;
-        packet[3] = 0;
-        packet[7] = (uint8_t)y;
-        packet[6] = (uint8_t)x;
+        packet[GATE_VIDEO_PACKET_COMMAND] = GATE_VIDEO_COMMAND_SET_CURSOR;
+        packet[GATE_VIDEO_PACKET_SUBCOMMAND] = 0;
+        packet[GATE_VIDEO_PACKET_ROW] = (uint8_t)y;
+        packet[GATE_VIDEO_PACKET_COLUMN] = (uint8_t)x;
         video_call(packet);
         if (gate_rtl_video_block_mode() != 0)
             gate_rtl_draw_block_cursor();
@@ -105,7 +107,7 @@ static int16_t tab_pitch(void)
  * command packet itself may have sent a different 8-bit column. */
 void gate_rtl_print_text_mode_string(GateFarPtr text)
 {
-    uint8_t packet[14] = {0};
+    uint8_t packet[GATE_VIDEO_PACKET_BYTES] = {0};
     int16_t row, column;
     uint8_t attribute;
 
@@ -113,15 +115,16 @@ void gate_rtl_print_text_mode_string(GateFarPtr text)
     if (gate_rtl_video_block_mode() != 0)
         gate_rtl_draw_block_cursor();
 
-    packet[1] = 3;
-    packet[3] = 0;
+    packet[GATE_VIDEO_PACKET_COMMAND] = GATE_VIDEO_COMMAND_GET_CURSOR;
+    packet[GATE_VIDEO_PACKET_SUBCOMMAND] = 0;
     video_call(packet);
-    row = (int16_t)(uint16_t)packet[7];
-    column = (int16_t)(uint16_t)packet[6];
+    row = (int16_t)(uint16_t)packet[GATE_VIDEO_PACKET_ROW];
+    column = (int16_t)(uint16_t)packet[GATE_VIDEO_PACKET_COLUMN];
     if (row >= 0 && row < gate_rtl_video_rows()) {
         if (gate_rtl_video_inversion() != 0) {
             attribute = (uint8_t)((gate_rtl_video_attribute() ^
-                                   (uint8_t)gate_rtl_video_inversion()) | 0x80u);
+                                   (uint8_t)gate_rtl_video_inversion()) |
+                                  GATE_VIDEO_INVERT_ATTRIBUTE_BIT);
         } else {
             attribute = gate_rtl_video_attribute();
         }
@@ -133,31 +136,31 @@ void gate_rtl_print_text_mode_string(GateFarPtr text)
                 int16_t quotient = (int16_t)(column / pitch);
                 column = (int16_t)(uint16_t)((uint16_t)(quotient * (int32_t)pitch) +
                                               (uint16_t)pitch);
-                packet[1] = 2;
-                packet[3] = 0;
-                packet[7] = (uint8_t)row;
-                packet[6] = (uint8_t)column;
+                packet[GATE_VIDEO_PACKET_COMMAND] = GATE_VIDEO_COMMAND_SET_CURSOR;
+                packet[GATE_VIDEO_PACKET_SUBCOMMAND] = 0;
+                packet[GATE_VIDEO_PACKET_ROW] = (uint8_t)row;
+                packet[GATE_VIDEO_PACKET_COLUMN] = (uint8_t)column;
                 video_call(packet);
             } else if (ch == 10) {
                 column = 0;
                 row = (int16_t)(uint16_t)((uint16_t)row + 1u);
-                packet[1] = 2;
-                packet[3] = 0;
-                packet[7] = (uint8_t)row;
-                packet[6] = 0;
+                packet[GATE_VIDEO_PACKET_COMMAND] = GATE_VIDEO_COMMAND_SET_CURSOR;
+                packet[GATE_VIDEO_PACKET_SUBCOMMAND] = 0;
+                packet[GATE_VIDEO_PACKET_ROW] = (uint8_t)row;
+                packet[GATE_VIDEO_PACKET_COLUMN] = 0;
                 video_call(packet);
             } else if (column >= 0 && column < gate_rtl_video_columns()) {
-                packet[1] = 2;
-                packet[3] = 0;
-                packet[7] = (uint8_t)row;
-                packet[6] = (uint8_t)column;
+                packet[GATE_VIDEO_PACKET_COMMAND] = GATE_VIDEO_COMMAND_SET_CURSOR;
+                packet[GATE_VIDEO_PACKET_SUBCOMMAND] = 0;
+                packet[GATE_VIDEO_PACKET_ROW] = (uint8_t)row;
+                packet[GATE_VIDEO_PACKET_COLUMN] = (uint8_t)column;
                 video_call(packet);
-                packet[1] = 9;
-                packet[0] = ch;
-                packet[3] = 0;
-                packet[2] = attribute;
-                packet[4] = 1;
-                packet[5] = 0;
+                packet[GATE_VIDEO_PACKET_COMMAND] = GATE_VIDEO_COMMAND_WRITE_CHARACTER;
+                packet[GATE_VIDEO_PACKET_CHARACTER] = ch;
+                packet[GATE_VIDEO_PACKET_SUBCOMMAND] = 0;
+                packet[GATE_VIDEO_PACKET_ATTRIBUTE] = attribute;
+                packet[GATE_VIDEO_PACKET_COUNT_LOW] = 1;
+                packet[GATE_VIDEO_PACKET_COUNT_HIGH] = 0;
                 video_call(packet);
             }
 
@@ -166,10 +169,10 @@ void gate_rtl_print_text_mode_string(GateFarPtr text)
         }
     }
 
-    packet[1] = 2;
-    packet[3] = 0;
-    packet[7] = (uint8_t)row;
-    packet[6] = (uint8_t)column;
+    packet[GATE_VIDEO_PACKET_COMMAND] = GATE_VIDEO_COMMAND_SET_CURSOR;
+    packet[GATE_VIDEO_PACKET_SUBCOMMAND] = 0;
+    packet[GATE_VIDEO_PACKET_ROW] = (uint8_t)row;
+    packet[GATE_VIDEO_PACKET_COLUMN] = (uint8_t)column;
     video_call(packet);
     if (gate_rtl_video_block_mode() != 0)
         gate_rtl_draw_block_cursor();

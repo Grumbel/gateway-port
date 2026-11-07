@@ -21,8 +21,8 @@ static GateFarPtr font_pointer(GateFarPtr font, uint16_t offset)
 uint16_t gate_rtl_font_line_advance(void)
 {
     GateFarPtr font = gate_rtl_active_font();
-    return (uint16_t)((int16_t)(int8_t)font_byte(font, 9) +
-                      (int16_t)(int8_t)font_byte(font, 10));
+    return (uint16_t)((int16_t)(int8_t)font_byte(font, GATE_FONT_SLOT_LINE_GAP) +
+                      (int16_t)(int8_t)font_byte(font, GATE_FONT_SLOT_GLYPH_HEIGHT));
 }
 
 /* GATE.RTL file 0xec0a..0xeca3: a char-width switch with three font modes.
@@ -42,23 +42,23 @@ uint16_t gate_rtl_font_character_advance(uint16_t character)
         return 0;
 
     font = gate_rtl_active_font();
-    if ((int8_t)font_byte(font, 12) < 0) {
-        GateFarPtr spacing = font_pointer(font, 18);
-        GateFarPtr widths = font_pointer(font, 14);
+    if ((int8_t)font_byte(font, GATE_FONT_SLOT_SPACING_MODE) < 0) {
+        GateFarPtr spacing = font_pointer(font, GATE_FONT_SLOT_SPACING_TABLE_OFFSET);
+        GateFarPtr widths = font_pointer(font, GATE_FONT_SLOT_WIDTH_TABLE_OFFSET);
         int16_t packed = (int8_t)gate_far_byte(spacing.segment,
                                                 (uint16_t)(spacing.offset + character));
         width = (uint16_t)(int16_t)(int8_t)gate_far_byte(
             widths.segment, (uint16_t)(widths.offset + character));
         width = (uint16_t)(width + (((uint16_t)(packed >> 4)) & 15));
         width = (uint16_t)(width + (packed & 15));
-    } else if ((int8_t)font_byte(font, 11) < 0) {
-        GateFarPtr widths = font_pointer(font, 14);
-        width = (uint16_t)((int16_t)(int8_t)font_byte(font, 12) +
+    } else if ((int8_t)font_byte(font, GATE_FONT_SLOT_WIDTH_MODE) < 0) {
+        GateFarPtr widths = font_pointer(font, GATE_FONT_SLOT_WIDTH_TABLE_OFFSET);
+        width = (uint16_t)((int16_t)(int8_t)font_byte(font, GATE_FONT_SLOT_SPACING_MODE) +
                            (int16_t)(int8_t)gate_far_byte(
                                widths.segment, (uint16_t)(widths.offset + character)));
     } else {
-        width = (uint16_t)((int16_t)(int8_t)font_byte(font, 12) +
-                           (int16_t)(int8_t)font_byte(font, 11));
+        width = (uint16_t)((int16_t)(int8_t)font_byte(font, GATE_FONT_SLOT_SPACING_MODE) +
+                           (int16_t)(int8_t)font_byte(font, GATE_FONT_SLOT_WIDTH_MODE));
     }
     return width;
 }
@@ -115,7 +115,7 @@ void gate_rtl_set_text_cursor(int16_t x, int16_t y)
 {
     GateFarPtr font = gate_rtl_active_font();
     gate_rtl_set_cursor(x, y);
-    if (font_byte(font, 3) == 0) {
+    if (font_byte(font, GATE_FONT_SLOT_RESOURCE_ID) == 0) {
         int16_t pitch = gate_rtl_text_mode_pitch();
         uint16_t abs_x = (uint16_t)(x < 0 ? -(int32_t)x : x);
         /* Arithmetic SAR 3, including the original INT16_MIN wrap case. */
@@ -137,7 +137,7 @@ void gate_rtl_draw_text_string(GateFarPtr text)
     GateFarPtr font;
     text = gate_exe_identity_text_pointer(text);
     font = gate_rtl_active_font();
-    if (font_byte(font, 3) == 0) {
+    if (font_byte(font, GATE_FONT_SLOT_RESOURCE_ID) == 0) {
         uint16_t x, y;
         gate_rtl_print_text_mode_string(text);
         gate_rtl_get_text_cell_cursor(&x, &y);
@@ -189,21 +189,21 @@ void gate_rtl_draw_font_glyph(uint16_t character)
     }
 
     font = gate_rtl_active_font();
-    if ((int8_t)font_byte(font, 11) < 0) {
-        GateFarPtr widths = font_pointer(font, 14);
+    if ((int8_t)font_byte(font, GATE_FONT_SLOT_WIDTH_MODE) < 0) {
+        GateFarPtr widths = font_pointer(font, GATE_FONT_SLOT_WIDTH_TABLE_OFFSET);
         glyph_width = (int8_t)gate_far_byte(widths.segment,
                                             (uint16_t)(widths.offset + character));
     } else {
-        glyph_width = (int8_t)font_byte(font, 11);
+        glyph_width = (int8_t)font_byte(font, GATE_FONT_SLOT_WIDTH_MODE);
     }
 
-    if ((int8_t)font_byte(font, 12) < 0) {
-        GateFarPtr spacing = font_pointer(font, 18);
+    if ((int8_t)font_byte(font, GATE_FONT_SLOT_SPACING_MODE) < 0) {
+        GateFarPtr spacing = font_pointer(font, GATE_FONT_SLOT_SPACING_TABLE_OFFSET);
         uint16_t packed = (uint16_t)(int16_t)(int8_t)gate_far_byte(
             spacing.segment, (uint16_t)(spacing.offset + character));
         advance = (uint16_t)(glyph_width + ((packed >> 4) & 15) + (packed & 15));
     } else {
-        advance = (uint16_t)(glyph_width + (int16_t)(int8_t)font_byte(font, 12));
+        advance = (uint16_t)(glyph_width + (int16_t)(int8_t)font_byte(font, GATE_FONT_SLOT_SPACING_MODE));
     }
 
     if (gate_rtl_background_color() >= 0) {
@@ -215,8 +215,8 @@ void gate_rtl_draw_font_glyph(uint16_t character)
             (uint16_t)(x + advance - 1), y, x);
     }
 
-    if ((int8_t)font_byte(font, 12) < 0) {
-        GateFarPtr spacing = font_pointer(font, 18);
+    if ((int8_t)font_byte(font, GATE_FONT_SLOT_SPACING_MODE) < 0) {
+        GateFarPtr spacing = font_pointer(font, GATE_FONT_SLOT_SPACING_TABLE_OFFSET);
         uint16_t packed = (uint16_t)(int16_t)(int8_t)gate_far_byte(
             spacing.segment, (uint16_t)(spacing.offset + character));
         uint16_t bearing = (packed >> 4) & 15;
@@ -225,15 +225,15 @@ void gate_rtl_draw_font_glyph(uint16_t character)
         advance = (uint16_t)(advance - bearing);
     }
 
-    if ((int16_t)character >= (int8_t)font_byte(font, 7) &&
-        (int16_t)character <= (int8_t)font_byte(font, 8)) {
-        int16_t row_bytes = (int8_t)font_byte(font, 6);
-        int16_t height = (int8_t)font_byte(font, 10);
-        int16_t first = (int8_t)font_byte(font, 7);
+    if ((int16_t)character >= (int8_t)font_byte(font, GATE_FONT_SLOT_FIRST_CHARACTER) &&
+        (int16_t)character <= (int8_t)font_byte(font, GATE_FONT_SLOT_LAST_CHARACTER)) {
+        int16_t row_bytes = (int8_t)font_byte(font, GATE_FONT_SLOT_GLYPH_ROW_BYTES);
+        int16_t height = (int8_t)font_byte(font, GATE_FONT_SLOT_GLYPH_HEIGHT);
+        int16_t first = (int8_t)font_byte(font, GATE_FONT_SLOT_FIRST_CHARACTER);
         uint16_t row_index = (uint16_t)((uint32_t)(uint16_t)(character - first) *
                                          (uint16_t)row_bytes);
         uint16_t offset = (uint16_t)((uint32_t)row_index * (uint16_t)height);
-        GateFarPtr bitmap = font_pointer(font, 26);
+        GateFarPtr bitmap = font_pointer(font, GATE_FONT_SLOT_BITMAP_OFFSET);
         uint16_t remaining_rows = (uint16_t)height;
         uint16_t y = (uint16_t)gate_rtl_cursor_y();
         bitmap.offset = (uint16_t)(bitmap.offset + offset);

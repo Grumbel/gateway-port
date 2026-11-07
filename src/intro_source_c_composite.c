@@ -184,7 +184,7 @@ uint16_t gate_linked_clear_resident_display(uint16_t a, uint16_t b)
     /* Clear mode 13h's active video page. */
     unsigned i;
     for (i = 0; i < 320u * 200u; ++i)
-        gate_far_set_byte(0xa000, (uint16_t)i, 0);
+        gate_far_set_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT, (uint16_t)i, 0);
     return 1;
 }
 void gate_rtl_clear_video_display(void) { gate_linked_clear_resident_display(0, 0); }
