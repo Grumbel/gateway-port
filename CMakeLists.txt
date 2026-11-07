@@ -15,6 +15,7 @@ add_library(gateway_intro_decompiled STATIC
   decomp/launcher/gate_exe.c
   decomp/launcher/gate_exe_helpers.c
   decomp/launcher/gate_c_runtime_string.c
+  decomp/launcher/gate_rtl_font.c
   decomp/launcher/gate_rtl.c
   decomp/launcher/gate_rtl_video.c
   decomp/launcher/gate_rtl_graphics.c
@@ -46,7 +47,8 @@ target_compile_features(gateway_intro_file_host PUBLIC c_std_11)
 target_compile_options(gateway_intro_file_host PRIVATE -Wall -Wextra -Wpedantic)
 install(TARGETS gateway_intro_file_host ARCHIVE DESTINATION lib)
 add_library(gateway_intro_memory_host STATIC
-  src/intro_host_memory.c src/intro_host_rtl_globals.c
+  src/intro_host_memory.c src/intro_host_rtl_font.c
+  src/intro_host_rtl_globals.c
   src/intro_host_rtl_text_globals.c src/intro_host_rtl_graphics_globals.c
   src/intro_host_rtl_pixel.c src/intro_host_rtl_palette_globals.c)
 target_include_directories(gateway_intro_memory_host PUBLIC decomp/launcher)
@@ -108,6 +110,28 @@ if(BUILD_TESTING)
   target_include_directories(launcher-rtl-decompile-tests PRIVATE decomp/launcher)
   add_test(NAME launcher-rtl-decompile COMMAND launcher-rtl-decompile-tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos)
+  add_executable(launcher-rtl-font-decompile-tests
+    decomp/launcher/gate_rtl_font.c
+    tests/launcher_rtl_font_decompile_tests.c)
+  target_include_directories(launcher-rtl-font-decompile-tests PRIVATE decomp/launcher)
+  add_test(NAME launcher-rtl-font-decompile COMMAND launcher-rtl-font-decompile-tests)
+  add_executable(launcher-intro-native-font-tests
+    decomp/launcher/gate_rtl_font.c decomp/launcher/gate_rtl.c
+    decomp/launcher/gate_rtl_file.c
+    decomp/launcher/gate_dos_file_runtime.c
+    src/intro_dos_host_files.c src/intro_host_memory.c
+    src/intro_host_rtl_font.c src/intro_host_rtl_text_globals.c
+    tests/launcher_intro_native_font_tests.c)
+  target_include_directories(launcher-intro-native-font-tests PRIVATE decomp/launcher)
+  target_compile_options(launcher-intro-native-font-tests PRIVATE -ffunction-sections -fdata-sections)
+  target_link_options(launcher-intro-native-font-tests PRIVATE -Wl,--gc-sections)
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin" AND
+     EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos/GATE_305.FNT")
+    add_test(NAME launcher-intro-native-original-font
+      COMMAND launcher-intro-native-font-tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin
+        ${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos)
+  endif()
   add_executable(launcher-rtl-video-decompile-tests
     decomp/launcher/gate_rtl_video.c decomp/launcher/gate_exe_helpers.c
     tests/launcher_rtl_video_decompile_tests.c)
@@ -504,6 +528,8 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_decompile_binary_tests.py)
     add_test(NAME launcher-rtl-decompile-binary COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_rtl_decompile_binary_tests.py)
+    add_test(NAME launcher-rtl-font-binary COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_rtl_font_binary_tests.py)
     add_test(NAME gatemain-flags-decompile-binary COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/gatemain_flags_decompile_binary_tests.py)
     add_test(NAME story-visibility-correlation COMMAND ${Python3_EXECUTABLE}

@@ -94,6 +94,10 @@ routines, not newly invented layout/rendering functions:
 
 | Original file range | Linked far call | C function | Recovered original operation |
 | --- | --- | --- | --- |
+| `rtl:0xe771–0xe79a` | same RTL segment | `gate_rtl_e771` | Release both 30-byte font-cache slots in increasing order. |
+| `rtl:0xe79b–0xe800` | same RTL segment | `gate_rtl_e79b` | Reset one occupied font slot, release width/spacing/bitmap FAR allocations and update the active pointer. |
+| `rtl:0xe801–0xe872` | same RTL segment | `gate_rtl_e801` | Choose an empty slot or evict the lowest signed-reference-count slot; free its previous allocations. |
+| `rtl:0xe873–0xebcf` | `0c4d:018d` | `gate_rtl_e873` | Select a cached font or open a `.FNT` resource, read its ten-byte header, allocate optional width/spacing tables and bitmap, retry/fallback on heap failure, and update video text metrics. |
 | `rtl:0xebf7–0xec09` | `0c4d:0511` | `gate_rtl_ebf7` | Add two **signed** font-header bytes at +9 and +10 to obtain line advance. |
 | `rtl:0xec0a–0xeca3` | `0c4d:0524` | `gate_rtl_ec0a` | Return special tab/newline widths; otherwise choose fixed, per-character-width or per-character-width-plus-packed-spacing mode via signed bytes at font +11/+12. |
 | `rtl:0xeca4–0xece9` | `0c4d:05be` | `gate_rtl_eca4` | Normalize a far string pointer, sign-extend each character, sum advances modulo 65536; increment only the far pointer's 16-bit offset. |
@@ -114,6 +118,28 @@ at `DS:550a/550c`. Those linked offsets are **not present** in the
 unrelocated RTL's zero-placeholder operands and may depend on its link
 layout; the source presently uses named externals for these original C
 globals, and for other external runtime calls still under investigation.
+
+The font selector itself is now recovered at `RTL:e771..ebcf` and linked
+from original `0c4d:018d`. The pinned live code relocates its two 30-byte
+slots to `DS:54ce/54ec`; type, fallback height and font metrics use the
+separate DS segment selectors at `4d84..4d8e`. Real FAR calls resolve to
+the previously recovered `0c33` file open/byte-read/block-read/close
+functions and the native-heap boundary `1e2c:0008/0138`. The original
+header is read byte-by-byte, then optional 128-byte width and spacing
+tables and a signed-product bitmap length are allocated and read, in that
+order. Allocation failure releases both slots, retries the same file once,
+and finally constructs the original default text font. Slot eviction,
+cache hits, signed text-metric rounding and 16-bit arithmetic remain in
+the reconstructed C; no synthetic bitmap is substituted for font data.
+
+`launcher-rtl-font-decompile` and `launcher-rtl-font-binary` cover control
+flow, fail/retry cases and original linked addresses. The native font
+integration test additionally opens real `GATE_305.FNT` using the recovered
+RTL file selector and captured 22-second DS tables, verifies *every byte*
+of its three allocated arrays, then checks the original advance functions
+and metric globals. It requires a private guest-memory snapshot and game
+data and is omitted if these are unavailable. This is a verified isolated
+font path, **not** an independently runnable source-C intro.
 
 `launcher-rtl-decompile` runs the reconstructed C with instrumented far
 memory and the original font (when available), checking all printable glyph

@@ -16,6 +16,7 @@
  * allows individual C test targets to use their original-call mock oracles. */
 
 uint16_t gate_far_0c4d_0511(void) { return gate_rtl_ebf7(); }
+void gate_far_0c4d_018d(uint16_t request) { (void)gate_rtl_e873(request); }
 uint16_t gate_far_0c4d_0524(uint16_t ch) { return gate_rtl_ec0a(ch); }
 uint16_t gate_far_0c4d_05be(GateFarPtr string) { return gate_rtl_eca4(string); }
 void gate_far_0c4d_0653(int16_t x, int16_t y) { gate_rtl_ed39(x, y); }

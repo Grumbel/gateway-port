@@ -9,6 +9,13 @@
 
 /* The recovered functions are named for ORIGINAL GATE.RTL file offsets.
  * They use the same segmented-memory intrinsics as gate_exe.c. */
+void gate_rtl_e771(void);                   /* free both font slots */
+void gate_rtl_e79b(GateFarPtr font);         /* free one font slot */
+GateFarPtr gate_rtl_e801(void);              /* evict/select font slot */
+GateFarPtr gate_rtl_e873(uint16_t request);  /* load/select font */
+/* Relocated original FAR allocator, used by the font loader. */
+GateFarPtr gate_far_1e2c_0008(uint16_t bytes);
+void gate_far_1e2c_0138(GateFarPtr pointer);
 uint16_t gate_rtl_ebf7(void);                 /* font line advance */
 uint16_t gate_rtl_ec0a(uint16_t character);   /* font character advance */
 uint16_t gate_rtl_eca4(GateFarPtr text);      /* string advance */
