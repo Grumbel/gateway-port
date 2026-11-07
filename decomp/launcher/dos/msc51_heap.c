@@ -53,3 +53,14 @@ uint16_t gate_linked_release_vfx_pixels(GateFarPtr pointer)
         return 0xffe4u;
     return _dos_freemem(pointer.segment) == 0 ? 0u : 0xffe4u;
 }
+
+/* GATE.EXE startup requests 1000h DOS paragraphs and uses the returned
+ * segment as the base for the relocated intro workspace (minus 12b2h).
+ * The original allocator's private bookkeeping remains unrecovered. */
+uint16_t gate_linked_allocate_intro_memory(uint16_t paragraphs)
+{
+    unsigned int segment = 0;
+    if (paragraphs == 0u || _dos_allocmem(paragraphs, &segment) != 0)
+        return 0u;
+    return (uint16_t)segment;
+}

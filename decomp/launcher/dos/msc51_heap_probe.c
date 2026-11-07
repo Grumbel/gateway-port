@@ -2,12 +2,14 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception */
 
 #include "GATEMEM.H"
+#include <dos.h>
 #include <stdio.h>
 
 GateFarPtr gate_linked_allocate_far_heap(uint16_t bytes);
 void gate_linked_free_far_heap(GateFarPtr pointer);
 GateFarPtr gate_linked_allocate_vfx_pixels(uint32_t bytes);
 uint16_t gate_linked_release_vfx_pixels(GateFarPtr pointer);
+uint16_t gate_linked_allocate_intro_memory(uint16_t paragraphs);
 
 static int check(uint16_t actual, uint16_t expected, const char *label)
 {
@@ -52,6 +54,18 @@ int main(void)
     invalid.offset = 0;
     valid &= check(gate_linked_release_vfx_pixels(invalid), 0xffe4u,
                    "reject null VFX pointer");
+    {
+        uint16_t startup = gate_linked_allocate_intro_memory(0x1000u);
+        if (startup == 0u) {
+            puts("Heap probe: startup paragraph allocation failed");
+            return 1;
+        }
+        gate_far_set_word(startup, 0u, 0xfaceu);
+        valid &= check(gate_far_word(startup, 0u), 0xfaceu,
+                       "startup paragraph base");
+        valid &= check((uint16_t)_dos_freemem(startup), 0u,
+                       "release startup paragraphs");
+    }
     puts(valid ? "Heap probe: PASS" : "Heap probe: FAIL");
     return valid ? 0 : 1;
 }

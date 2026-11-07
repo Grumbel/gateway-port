@@ -983,14 +983,19 @@ After hardware and this stage both pass the user's real compiler and LINK,
 symbol count nor a runnable original launcher is yet verified.
 
 `msc51-compile-resident-state` builds an independent `RESSTATE.OBJ`
-containing five resident entry points anchored to original 2409:0008/003e,
+containing six resident entry points anchored to original 2409:0008/003e,
 25a3:0002/011e, and 2621:000e. It retains the live linked-DS coordinates
 for pen color, pen position and fill arguments, the descriptor selection
 limit of seven, and the original enabled-mode transition using BIOS INT 10h.
+The clear service also copies the recovered 2488:000a descriptor guards,
+text B800 and linear A000 fills, and sets the sequencer plane mask to fill
+individual A000 VGA planes. The probe exercises guard paths without
+damaging the current DOSBox picture; the actual VGA clear effects and
+restored GC/SEQ register state still require visual/hardware verification.
 The DOS probe checks the DS words and selects its already-current BIOS
 mode rather than disturbing the console. Passing `RESCHK.EXE`, fresh
 `RESOK.LOG`, and a matching fingerprint are required before LINK consumes
-the new object. The expected remainder becomes **43** if all previous
+the new object. The expected remainder becomes **42** if all previous
 pending objects link. There is still no original program initialization.
 
 `msc51-compile-heap` compiles `HEAP.OBJ`, implementing real DOS allocation
@@ -1001,7 +1006,7 @@ including buffers larger than 64KiB, and rejects invalid null releases.
 normal release and null rejection; fresh `HEAPOK.LOG` and a source
 fingerprint guard the LINK input. The original heap's private free-list
 has not been reconstructed; the adapter uses DOS allocation explicitly.
-The predicted missing names become **39** if all stages pass on DOSBox.
+The predicted missing names become **37** if all stages pass on DOSBox.
 
 `msc51-compile-input` adds a real DOS BIOS keyboard/mouse adapter for
 linked `0df2:000a/0030` and `0e48:011b/07fe`. It checks original input
@@ -1012,7 +1017,7 @@ non-destructive BIOS status polling. The special Ctrl-Break flushing path
 has not been independently validated and is specifically not claimed as
 bit-identical. `INP.OBJ` is LINK-eligible only after the source-fingerprinted
 DOS test. The same object now also handles the animation input poll through
-the recovered inverse-of-key-pending convention. A **34**-symbol remainder
+the recovered inverse-of-key-pending convention. A **32**-symbol remainder
 is predicted, not yet verified.
 
 `msc51-compile-clock` stages `CLOCK.OBJ` to resolve the two EXE/RTL
@@ -1023,9 +1028,9 @@ wait. Source-fingerprinted `CLKOK.LOG` is required for LINK eligibility.
 This is **not** an original C runtime sampler: the recovered 12a5:38c4
 sample/baseline algorithm is more complex, and runtime execution, midnight,
 DST and animation-side-effect behavior still require differential testing.
-With all pending objects built and accepted, **31** unresolved symbols are
-predicted after the original four-function input stage (now five, so **30**
-after the clock stage). The historically confirmed count remains 55.
+With all pending objects built and accepted, **28** unresolved symbols are
+predicted at the end of the clock stage. The historically confirmed count
+remains 55.
 
 `msc51-compile-crt` adds `CRTENV.OBJ` for the two linked original C runtime
 environment and numeric-conversion functions. Unlike a host reimplementation,
@@ -1033,8 +1038,11 @@ the adapter calls Microsoft C's DOS `getenv` and `atol` through large-model
 FAR pointers, copying only the bounded environment *name* from guest memory.
 `CRTCHK.EXE` probes DOS PATH, missing-name behavior and signed numeric
 conversion before producing a source-fingerprinted success marker.
-The current predicted remainder is **28**; no new Microsoft LINK result has
-been run here.
+The DOS heap adapter now additionally implements the startup allocator's
+1000h-paragraph request with a real DOS segment, tested in `HEAPCHK.EXE`.
+The current predicted remainder is **26**; no new Microsoft LINK result has
+been run here. See [MSC51 link closure](../../docs/msc51-link-closure.md)
+for each outstanding symbol and its evidence requirement.
 
 ## Immediate next functions
 

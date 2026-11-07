@@ -415,23 +415,27 @@ FAR copies. A fresh source-fingerprinted `RTFOK.LOG` is required before
 LINK can consume `RTFILE.OBJ`. These three services would reduce the
 post-hardware count from 51 to **48**, pending user-side validation.
 
-`msc51-compile-resident-state` adds five more original resident functions
+`msc51-compile-resident-state` adds six more original resident functions
 using the observed linked DS locations: pen color, pen position, fill
 pattern/transparency, descriptor selection, and INT 10h mode activation.
 The DOS probe uses the *current* BIOS mode as its expected descriptor and
 checks that no unexpected video mode transition occurs. It does not attempt
-the original line rasterizer, pixel dispatcher, video memory clears or
-renderer initialization. If this object also links, the predicted missing
-symbol count falls from 48 to **43**; the historical DOS compiler test is
-still required before claiming this reduction.
+the original line rasterizer, pixel dispatcher or full renderer
+initialization. If this object also links, the predicted missing
+symbol count falls from 48 to **42**; the historical DOS compiler test is
+still required before claiming this reduction. The sixth function clears
+text/linear VGA apertures or the four individually selected VGA planes,
+using recovered mode descriptors and restoring touched VGA GC/SEQ registers.
+Its test verifies invalid-mode and descriptor guards without erasing the
+DOSBox screen; **visible pixel output has not been verified on DOSBox**.
 
-`msc51-compile-heap` covers four original linked font/VFX allocator and
-release boundaries using real DOS `_dos_allocmem`/`_dos_freemem`.
+`msc51-compile-heap` covers five original linked startup/font/VFX allocator
+and release boundaries using real DOS `_dos_allocmem`/`_dos_freemem`.
 `HEAPCHK.EXE` verifies a normal font block and a VFX buffer crossing a
 64KiB segment boundary. Allocation failures return `0000:0000` and null
 VFX releases are rejected. This replaces the original allocator's unknown
 private free-list bookkeeping with DOS-managed conventional memory.
-The predicted unresolved count falls further to **39** if all pending
+The predicted unresolved count falls further to **37** if all pending
 adapters compile and link successfully.
 
 `msc51-compile-input` adds five BIOS-backed keyboard/mouse and animation
@@ -442,7 +446,7 @@ after checking the one-word unget slot. Mouse state uses INT 33h; the probe
 does not consume real BIOS keys. The original Ctrl-Break-specific DOS
 path is not yet independently recovered, so this stage is a functional
 DOS input adapter, not proof of identical behavior. Assuming it compiles
-and links, **34** missing symbols would remain.
+and links, **32** missing symbols would remain.
 
 `msc51-compile-clock` stages four more timing services for the EXE and
 picture-animator call sites. It reads real MS-DOS time with INT 21h/AH=2Ch,
@@ -451,15 +455,19 @@ The probe requires at least 20 ms of clock progress. This is a functional
 10-ms-resolution substitute, **not** the recovered RTL 12a5:38c4 time
 sampler (which includes a ten-byte calendar sample and original DS baseline).
 Midnight/DST transitions and original animation wait side effects are not
-yet equivalent. After the input stage, **30** unresolved symbols are predicted.
+yet equivalent. After the input stage, **28** unresolved symbols are predicted.
 
 `msc51-compile-crt` resolves the two original linked `getenv` and `atol`
 entry points with Microsoft C 5.1's own large-model C runtime. The probe
 uses the staged DOS `PATH`, an absent variable, and signed integer parsing;
 FAR environment strings remain in the C runtime's address space. This is
 equivalent at the C-library boundary, but not yet a verified match for the
-original 8086 runtime code and complete TZ setup. With all adapter stages,
-**28** unresolved names are predicted, pending your real Microsoft LINK run.
+original 8086 runtime code and complete TZ setup. The DOS heap stage also
+handles the original intro startup's 0x1000-paragraph allocation and checks
+the segment returned to the relocated workspace. With all adapter stages,
+**26** unresolved names are predicted, pending your real Microsoft LINK run.
+The [remaining-symbol inventory](docs/msc51-link-closure.md) assigns each
+name to the missing DOS entry point, resident state, graphics or VFX work.
 
 The separate link-only diagnostic reuses all 28 original object files and
 the tested `MEMORY.OBJ`, `DOSFILE.OBJ` and four RTL objects, without

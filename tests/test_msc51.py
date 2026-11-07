@@ -150,6 +150,8 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("gate_ds_set_word(GATE_DS_DRAW_COLOR, color)",
                           (output / "RESSTATE.C").read_text())
             self.assertIn("int86(0x10, &in, &out)", (output / "RESSTATE.C").read_text())
+            self.assertIn("fill_vga_planes", (output / "RESSTATE.C").read_text())
+            self.assertIn("clear rejects mismatched descriptor", (output / "RESCHK.C").read_text())
             for name in ("RESSTATE.C", "RESCHK.C"):
                 self.assertTrue(all(len(identifier) <= 31 for identifier in
                                     msc51.msc51_identifiers((output / name).read_text())), name)
@@ -163,6 +165,8 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("_dos_allocmem", (output / "HEAP.C").read_text())
             self.assertIn("_dos_freemem", (output / "HEAP.C").read_text())
             self.assertIn("0x10010ul", (output / "HEAPCHK.C").read_text())
+            self.assertIn("gate_linked_allocate_i_c0beca92", (output / "HEAP.C").read_text())
+            self.assertIn("startup paragraph base", (output / "HEAPCHK.C").read_text())
             for name in ("HEAP.C", "HEAPCHK.C"):
                 self.assertTrue(all(len(identifier) <= 31 for identifier in
                                     msc51.msc51_identifiers((output / name).read_text())), name)

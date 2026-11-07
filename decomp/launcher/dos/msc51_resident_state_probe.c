@@ -12,6 +12,7 @@ void gate_rtl_resident_move_to(uint16_t x, uint16_t y);
 void gate_rtl_background_setup(uint16_t pattern, uint16_t color, uint16_t transparent);
 uint16_t gate_rtl_mode_set_bios(uint16_t mode);
 uint16_t gate_rtl_mode_start(uint16_t enabled);
+uint16_t gate_linked_clear_resident_display(uint16_t page, uint16_t color);
 
 static int check(uint16_t actual, uint16_t expected, const char *label)
 {
@@ -35,6 +36,13 @@ int main(void)
         return 1;
     }
     gate_dos_bind_ds((uint16_t)segment);
+    gate_ds_set_word(GATE_DS_RENDERER_MODE, 8u);
+    valid &= check(gate_linked_clear_resident_display(0u, 0u), 0xfffau,
+                   "clear rejects invalid mode");
+    gate_ds_set_word(GATE_DS_RENDERER_MODE, 0u);
+    gate_far_set_byte((uint16_t)segment, GATE_RESIDENT_MODE_DESCRIPTOR_BASE, 3u);
+    valid &= check(gate_linked_clear_resident_display(0u, 0u), 0xfc19u,
+                   "clear rejects mismatched descriptor");
     gate_rtl_resident_set_pen_color(0xabcdu);
     valid &= check(gate_ds_word(GATE_DS_DRAW_COLOR), 0xabcdu, "pen color");
     gate_rtl_resident_move_to(300u, 99u);
