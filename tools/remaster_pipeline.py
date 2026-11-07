@@ -52,24 +52,38 @@ def prepare(args):
     records = []
     for path in images:
         width, height = dimensions(path)
-        # Documented room-art dimensions and archive range; still needs visual triage.
-        if path.parent.name.upper() not in {f'GATE_{n:03}' for n in range(102, 115)} or (width, height) != (379, 224):
+        archive = path.parent.name.upper()
+        entry = int(path.stem)
+        room = (archive in {f'GATE_{n:03}' for n in range(102, 115)} and
+                (width, height) == (379, 224))
+        # Backgrounds identified in docs/intro-reconstruction.md, not sprites.
+        intro = ((archive == 'GATE_301' and entry in range(6)) or
+                 (archive == 'GATE_302' and entry in (0, 33)) or
+                 (archive == 'GATE_303' and entry in (0, 42)) or
+                 (archive == 'GATE_310' and entry == 4)) and (width, height) == (320, 200)
+        if not (room or intro):
             continue
         ident = path.relative_to(raw).with_suffix('').as_posix()
-        # These room images are used in the 640x480 game display; do not apply
-        # the 640x400 screenshot correction to this differently sized artwork.
-        target_w, target_h = width * 3, height * 3
-        geometry = (f'The reference is a {width}×{height} room image, not a full '
-                    f'screen. Preserve its exact aspect ratio and boundaries; target '
-                    f'{target_w}×{target_h} or a larger image with the same ratio. '
-                    'Do not add interface elements or stretch it to 4:3.')
+        if intro:
+            target_w, target_h = 1440, 1080
+            geometry = ('This is a complete 320×200 VGA intro background with '
+                        'non-square pixels. Correct it to a 4:3 square-pixel canvas '
+                        'at 1440×1080 or higher; keep all content in its original '
+                        'relative position and do not crop or extend the frame.')
+        else:
+            target_w, target_h = width * 3, height * 3
+            geometry = (f'The reference is a {width}×{height} room image, not a full '
+                        f'screen. Preserve its exact aspect ratio and boundaries; target '
+                        f'{target_w}×{target_h} or a larger image with the same ratio. '
+                        'Do not add interface elements or stretch it to 4:3.')
         records.append({'id': ident, 'source': path.relative_to(root).as_posix(),
-                        'source_sha256': digest(path), 'width': width, 'height': height,
+                        'source_sha256': digest(path), 'kind': 'intro' if intro else 'room',
+                        'width': width, 'height': height,
                         'suggested_width': target_w, 'suggested_height': target_h,
                         'output': f'restored/{ident}.png', 'status': 'pending',
                         'prompt': PROMPT.format(geometry=geometry)})
     if not records:
-        raise ValueError('no room-image candidates found')
+        raise ValueError('no scene-image candidates found')
     manifest = {'version': 1, 'input_archives': [{'name': p.name, 'sha256': digest(p)} for p in inputs],
                 'extraction_order': 'case-insensitive filename order', 'items': records}
     (root / 'manifest.json').write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + '\n')

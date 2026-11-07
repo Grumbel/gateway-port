@@ -14,10 +14,11 @@ python3 tools/remaster_pipeline.py check --output build/remaster
 Preparation requires an empty output directory. All PIC archives are passed to
 the extractor together, sorted by filename, to retain inherited palettes. Check
 `extraction.log` for warnings. `originals/` contains all decodable PIC images;
-`manifest.json` queues only 379×224 images in GATE_102 through GATE_114, the
-documented room-art archives. This is a dimension-based candidate selection,
+`manifest.json` queues 379×224 images in GATE_102 through GATE_114, the
+documented room-art archives, and eleven 320×200 intro backgrounds identified
+in [intro reconstruction](intro-reconstruction.md). The room selection is dimension-based,
 not a semantic classification: review candidates and omit duplicates, unsuitable
-states or incomplete compositions. It excludes GUI fragments and intro art, but
+states or incomplete compositions. It excludes GUI fragments and intro animation sprites, but
 may also miss scene images with other dimensions. The extractor may produce XOR
 composites or leave unplaced deltas; see its log and the extraction notes in
 README. These files do not capture every possible game-state composition.
@@ -32,9 +33,10 @@ headers. It flags dimensions that differ from the suggested dimensions; it does
 not validate image fidelity, complete PNG data, alpha, or semantic correctness.
 An existing output is only ready for human review, not approved.
 
-The prompt preserves room-image proportions and uses 3× dimensions as a
-minimum working target, rather than applying 640×400 screenshot correction to
-individual room assets. Verify display geometry against the original game before
+The room prompt preserves image proportions and uses 3× dimensions as a
+minimum working target. The intro prompt corrects 320×200 VGA pixels to a
+4:3 image at 1440×1080. The backgrounds do not include animated sprites or
+captions, which are separate elements. Verify display geometry against the original game before
 final production. Compare each result to the original for object positions,
 character identity, borders and color; do not use generated elements as evidence
 of original game content. Room layers, hotspots and animation can require separate
