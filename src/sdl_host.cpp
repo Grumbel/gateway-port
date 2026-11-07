@@ -186,7 +186,11 @@ SdlHost::SdlHost(DisplayAspect aspect, UiLayoutMode layout)
         // A guest that is slow or stuck may not poll SDL's translated
         // SIGINT/SIGTERM quit event. Leave these signals to the OS so
         // Ctrl-C can terminate the emulator immediately.
-        checked(SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1"));
+        // SDL_NO_SIGNAL_HANDLERS may also be supplied by the environment.
+        // A normal-priority hint loses to that value (and can make startup
+        // fail); insist on our no-handler policy even with such an override.
+        checked(SDL_SetHintWithPriority(SDL_HINT_NO_SIGNAL_HANDLERS, "1",
+                                        SDL_HINT_OVERRIDE));
         checked(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO));
         checked(SDL_CreateWindowAndRenderer("Gateway — original-code Linux runtime",
                                             widescreen_ui() ? 1280 : 960, 720,

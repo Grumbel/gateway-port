@@ -632,7 +632,7 @@ if(GATEWAY_WITH_SDL)
     target_link_libraries(sdl-input-tests PRIVATE gateway_core SDL3::SDL3)
     add_test(NAME sdl-input COMMAND sdl-input-tests)
     set_tests_properties(sdl-input PROPERTIES
-      ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy" TIMEOUT 10)
+      ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy;SDL_NO_SIGNAL_HANDLERS=0" TIMEOUT 10)
     add_test(NAME sdl-host COMMAND gateway-host --smoke-test)
     set_tests_properties(sdl-host PROPERTIES
       ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy" TIMEOUT 10)

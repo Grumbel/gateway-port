@@ -15,7 +15,8 @@ void require(bool value, const char *message) {
 int main() {
     try {
         gateway::SdlHost host;
-        require(std::string_view(SDL_GetHint(SDL_HINT_NO_SIGNAL_HANDLERS)) == "1",
+        const char *signal_hint = SDL_GetHint(SDL_HINT_NO_SIGNAL_HANDLERS);
+        require(signal_hint && std::string_view(signal_hint) == "1",
                 "Ctrl-C must retain its default OS signal handler");
         gateway::Vga vga;
         vga.set_mode(0x12);
