@@ -102,7 +102,7 @@ static void check_synthetic(GateIntroVideoModeHardware *video,
     video->adapter_type = 5;
     video->monitor_subtype = 5;
 
-    assert(gate_rtl_f14d(3) == 1);
+    assert(gate_rtl_set_video_mode(3) == 1);
     assert(video->requested_bios_mode == 3 && video->start_value == 1);
     assert(video->bios_mode_valid && video->bios_mode == 0x13);
     assert(video->bios_mode_sets == 1);
@@ -111,7 +111,7 @@ static void check_synthetic(GateIntroVideoModeHardware *video,
     gate_rtl_plot_pixel(23, 4, 7);
     assert(gate_far_byte(0xa000, 1287) == 23);
 
-    assert(gate_rtl_f14d(2) == 1);
+    assert(gate_rtl_set_video_mode(2) == 1);
     assert(video->requested_bios_mode == 2 && ports->status_reads >= 3);
     assert(video->bios_mode == 0x12 && video->bios_mode_sets == 2);
     check_state(2, video, ports);
@@ -120,41 +120,41 @@ static void check_synthetic(GateIntroVideoModeHardware *video,
     gate_rtl_plot_pixel(9, 22, 400); /* synthetic clip ends at x=321 */
     assert(gate_intro_vga16_pixel(400, 22) == 0);
 
-    assert(gate_rtl_f14d(0) == 1);
+    assert(gate_rtl_set_video_mode(0) == 1);
     check_state(0, video, ports);
 
-    assert(gate_rtl_f14d(1) == 1);
+    assert(gate_rtl_set_video_mode(1) == 1);
     check_state(1, video, ports);
     gate_rtl_plot_pixel(12, 30, 20);
     assert(gate_intro_vga16_pixel(20, 30) == 12);
 
     for (i = 1; i <= 5; ++i) {
         video->svga_variant = i;
-        assert(gate_rtl_f14d(4) == 1);
+        assert(gate_rtl_set_video_mode(4) == 1);
         assert(video->requested_bios_mode == expected_bios_modes[i]);
         check_state(4, video, ports);
     }
 
     video->svga_variant = 6;
-    assert(gate_rtl_f14d(4) == 0 && gate_ds_word(0x0fce) == 0xffff);
+    assert(gate_rtl_set_video_mode(4) == 0 && gate_ds_word(0x0fce) == 0xffff);
     video->svga_variant = 1;
-    assert(gate_rtl_f14d(-1) == 0 && gate_ds_word(0x0fce) == 0xffff);
-    assert(gate_rtl_f14d(5) == 0 && gate_ds_word(0x0fce) == 0xffff);
+    assert(gate_rtl_set_video_mode(-1) == 0 && gate_ds_word(0x0fce) == 0xffff);
+    assert(gate_rtl_set_video_mode(5) == 0 && gate_ds_word(0x0fce) == 0xffff);
 
     video->fail_set_mode = 1;
     i = (uint16_t)video->start_calls;
-    assert(gate_rtl_f14d(3) == 0 && gate_ds_word(0x0fce) == 0xffff);
+    assert(gate_rtl_set_video_mode(3) == 0 && gate_ds_word(0x0fce) == 0xffff);
     assert(video->start_calls == i);
     video->fail_set_mode = 0;
     video->fail_start = 1;
-    assert(gate_rtl_f14d(3) == 0 && gate_ds_word(0x0fce) == 0xffff);
+    assert(gate_rtl_set_video_mode(3) == 0 && gate_ds_word(0x0fce) == 0xffff);
     video->fail_start = 0;
 
     video->monitor_subtype = 3;
-    assert(gate_rtl_f14d(3) == 0 && gate_ds_word(0x0fce) == 0xffff);
+    assert(gate_rtl_set_video_mode(3) == 0 && gate_ds_word(0x0fce) == 0xffff);
     assert(gate_ds_word(0x0fd0) == 0);
     video->monitor_subtype = 4;
-    assert(gate_rtl_f14d(2) == 1);
+    assert(gate_rtl_set_video_mode(2) == 1);
     check_state(2, video, ports);
 
     /* The mode table is signed input to IDIV, and the subsequent
@@ -162,7 +162,7 @@ static void check_synthetic(GateIntroVideoModeHardware *video,
     video->monitor_subtype = 5;
     gate_ds_set_word(0x1308, 0xfff5); /* height -11, height+1=-10 */
     gate_ds_set_word(0x131c, 3);
-    assert(gate_rtl_f14d(3) == 1);
+    assert(gate_rtl_set_video_mode(3) == 1);
     assert(gate_far_word(0x3100, 0x003c) == 0xfffd); /* -10/3 = -3 */
     assert(gate_far_word(0x3100, 0x0048) == 0xffff); /* -3/2 = -1 */
     gate_ds_set_word(0x1308, 202);
@@ -202,7 +202,7 @@ static void check_original_snapshot(const char *path)
     assert(gate_ds_word(0x131c) == 25);
     video->adapter_type = 5;
     video->monitor_subtype = 5;
-    assert(gate_rtl_f14d(3) == 1);
+    assert(gate_rtl_set_video_mode(3) == 1);
     assert(video->bios_mode_valid && video->bios_mode == 0x13);
     assert(gate_far_word(gate_ds_word(0x4d92), 0x3e) == 319);
     assert(gate_far_word(gate_ds_word(0x4d94), 0x42) == 199);

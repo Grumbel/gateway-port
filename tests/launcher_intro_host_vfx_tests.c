@@ -13,21 +13,21 @@
 static unsigned saved_calls;
 static unsigned restored_calls;
 
-uint16_t gate_far_1e48_04d9(void)
+uint16_t gate_linked_save_vfx_draw_state(void)
 {
     ++saved_calls;
     return 0xbeefu;
 }
 
-void gate_far_1e48_03c5(uint16_t saved)
+void gate_linked_restore_vfx_draw_state(uint16_t saved)
 {
     assert(saved == 0xbeefu);
     ++restored_calls;
 }
 
-uint16_t gate_far_12a5_3b0c(void) { return 0; }
-void gate_far_223f_00b6(uint32_t delay) { (void)delay; }
-void gate_rtl_131cb(GateFarPtr work) { (void)work; }
+uint16_t gate_linked_runtime_random(void) { return 0; }
+void gate_linked_wait_animation_delay(uint32_t delay) { (void)delay; }
+void gate_rtl_release_picture_record(GateFarPtr work) { (void)work; }
 
 static void set_image_word(GateFarPtr work, uint16_t offset, uint16_t value)
 {
@@ -138,7 +138,7 @@ int main(void)
                 gate_far_set_byte(0xa000, (uint16_t)(320u * row + col), 0x55);
         gate_far_set_byte(work.segment, (uint16_t)(work.offset + 1u),
                           (uint8_t)operation);
-        gate_rtl_12ed7(work); /* reconstructed original C wrapper */
+        gate_rtl_draw_picture_record(work); /* reconstructed original C wrapper */
         check_rect(315, 198, 5, 2, 0x55, (int)operation);
         assert(gate_far_byte(0xa000, (uint16_t)(320u * 197u + 315u)) == 0x55);
         assert(gate_far_byte(0xa000, (uint16_t)(320u * 198u + 314u)) == 0x55);
@@ -148,20 +148,20 @@ int main(void)
     /* Unclipped rows, including the source wrap at 4100:ffff -> 4100:0000. */
     make_image(work, 50, 30);
     gate_far_set_byte(work.segment, (uint16_t)(work.offset + 1u), 0);
-    gate_rtl_12ed7(work);
+    gate_rtl_draw_picture_record(work);
     check_rect(50, 30, 6, 3, 0x55, 0);
 
     /* Invalid image signatures and offscreen placement must not write. */
     set_image_word(work, 0x00, 0);
-    gate_rtl_12ed7(work);
+    gate_rtl_draw_picture_record(work);
     assert(gate_far_byte(0xa000, (uint16_t)(320u * 30u + 50u)) == 1);
     set_image_word(work, 0x00, 0xca00);
     gate_far_set_word(work.segment, (uint16_t)(work.offset + 2u), 320);
-    gate_rtl_12ed7(work);
+    gate_rtl_draw_picture_record(work);
     assert(gate_far_byte(0xa000, (uint16_t)(320u * 30u + 50u)) == 1);
     gate_far_set_word(work.segment, (uint16_t)(work.offset + 2u), 50);
     gate_far_set_word(work.segment, (uint16_t)(work.offset + 4u), 200);
-    gate_rtl_12ed7(work);
+    gate_rtl_draw_picture_record(work);
     assert(gate_far_byte(0xa000, (uint16_t)(320u * 30u + 50u)) == 1);
     assert(saved_calls == 8 && restored_calls == 8);
 
@@ -183,7 +183,7 @@ int main(void)
         gate_far_set_word(0x2a7a, 0x27ee + 3 * 0x3e + 0x1a, 200);
         gate_far_set_word(0x2a7a, 0x27ee + 3 * 0x3e + 0x24, 0);
 
-        assert(gate_far_145d_00f7(3, 5, 3, image, 0) == 0);
+        assert(gate_linked_allocate_vfx_image(3, 5, 3, image, 0) == 0);
         assert(gate_far_word(image.segment, image.offset) == 0xca00);
         assert(gate_far_word(image.segment, (uint16_t)(image.offset + 0x2c)) == 5);
         assert(gate_far_word(image.segment, (uint16_t)(image.offset + 0x2e)) == 3);
@@ -195,7 +195,7 @@ int main(void)
         pixels_segment = gate_far_word(image.segment, (uint16_t)(image.offset + 0x1a));
         assert(pixels_segment == 0x6000);
 
-        gate_far_1479_0002(0x00aa, image);
+        gate_linked_initialize_vfx_image(0x00aa, image);
         for (i = 0; i < 18; ++i)
             assert(gate_far_byte(pixels_segment, (uint16_t)i) == 0xaa);
 
@@ -203,7 +203,7 @@ int main(void)
         gate_far_set_byte(record.segment, (uint16_t)(record.offset + 1u), 0);
         gate_far_set_word(record.segment, (uint16_t)(record.offset + 2u), 25);
         gate_far_set_word(record.segment, (uint16_t)(record.offset + 4u), 37);
-        gate_rtl_12ed7(record);
+        gate_rtl_draw_picture_record(record);
         for (i = 0; i < 3; ++i) {
             unsigned x;
             for (x = 0; x < 5; ++x)
@@ -213,13 +213,13 @@ int main(void)
 
         /* Resourcing two images can coexist; releasing one reuses the
          * first paragraph-aligned interval without invalidating the other. */
-        assert(gate_far_145d_00f7(3, 5, 3, secondary_image, 0) == 0);
+        assert(gate_linked_allocate_vfx_image(3, 5, 3, secondary_image, 0) == 0);
         assert(gate_far_word(secondary_image.segment,
                              (uint16_t)(secondary_image.offset + 0x1a)) != pixels_segment);
         gate_rtl_graphics_release(image);
         for (i = 0; i < 0x80; ++i)
             assert(gate_far_byte(image.segment, (uint16_t)(image.offset + i)) == 0xff);
-        assert(gate_far_145d_00f7(3, 5, 3, image, 0) == 0);
+        assert(gate_linked_allocate_vfx_image(3, 5, 3, image, 0) == 0);
         assert(gate_far_word(image.segment,
                              (uint16_t)(image.offset + 0x1a)) == pixels_segment);
         gate_rtl_graphics_release(image);
@@ -227,11 +227,11 @@ int main(void)
 
         /* Large images use the original paragraph-adjusted FAR allocation
          * scheme instead of wrapping a single 64KiB data segment. */
-        assert(gate_far_145d_00f7(200, 320, 3, image, 0) == 0);
+        assert(gate_linked_allocate_vfx_image(200, 320, 3, image, 0) == 0);
         gate_rtl_graphics_release(image);
-        assert(gate_far_145d_00f7(201, 320, 3, image, 0) == 0);
+        assert(gate_linked_allocate_vfx_image(201, 320, 3, image, 0) == 0);
         gate_rtl_graphics_release(image);
-        assert(gate_far_145d_00f7(256, 320, 3, image, 0) == 0);
+        assert(gate_linked_allocate_vfx_image(256, 320, 3, image, 0) == 0);
         gate_rtl_graphics_release(image);
     }
 
@@ -254,7 +254,7 @@ int main(void)
         gate_far_set_word(0x2a7a, descriptor + 0x1a, 480);
         gate_far_set_word(0x2a7a, descriptor + 0x24, 0);
 
-        assert(gate_far_145d_00f7(480, 640, 2, image, 0) == 0);
+        assert(gate_linked_allocate_vfx_image(480, 640, 2, image, 0) == 0);
         assert(gate_far_word(image.segment, image.offset) == 0xca00);
         assert(gate_far_byte(image.segment, image.offset + 0x12) == 4);
         assert(gate_far_byte(image.segment, image.offset + 0x13) == 1);
@@ -267,7 +267,7 @@ int main(void)
         assert(gate_far_word(image.segment, image.offset + 0x18) == 0);
         pixels_segment = gate_far_word(image.segment, image.offset + 0x1a);
         assert(pixels_segment == 0x6000);
-        gate_far_1479_0002(0x000au, image);
+        gate_linked_initialize_vfx_image(0x000au, image);
         assert(gate_far_byte(pixels_segment, 0) == 0);
         assert(gate_far_byte(pixels_segment, 80) == 0xff);
         assert(gate_far_byte(pixels_segment, 160) == 0);
@@ -281,7 +281,7 @@ int main(void)
         gate_far_set_byte(record.segment, record.offset + 1, 0);
         gate_far_set_word(record.segment, record.offset + 2, 0);
         gate_far_set_word(record.segment, record.offset + 4, 0);
-        gate_rtl_12ed7(record);
+        gate_rtl_draw_picture_record(record);
         assert(gate_intro_vga16_pixel(0, 0) == 0x0a);
         assert(gate_intro_vga16_pixel(319, 200) == 0x0a);
         assert(gate_intro_vga16_pixel(639, 479) == 0x0a);
@@ -289,10 +289,10 @@ int main(void)
 
         /* Unaligned x=633 and y=478 exercise left-shifted source bits,
          * last-byte clipping and bottom clipping, for all four raster ops. */
-        assert(gate_far_145d_00f7(3, 13, 2, image, 0) == 0);
+        assert(gate_linked_allocate_vfx_image(3, 13, 2, image, 0) == 0);
         assert(gate_far_word(image.segment, image.offset + 0x14) == 2);
         assert(gate_far_word(image.segment, image.offset + 0x32) == 0x07f8);
-        gate_far_1479_0002(0, image);
+        gate_linked_initialize_vfx_image(0, image);
         for (row = 0; row < 3; ++row)
             for (x = 0; x < 13; ++x)
                 set_planar_pixel(image, x, row, (uint8_t)((x + row * 5u) & 15u));
@@ -304,7 +304,7 @@ int main(void)
                     gate_intro_vga16_set_pixel((uint16_t)(633u + x),
                                                 (uint16_t)(478u + row), 5);
             gate_far_set_byte(record.segment, record.offset + 1, (uint8_t)op);
-            gate_rtl_12ed7(record);
+            gate_rtl_draw_picture_record(record);
             for (row = 0; row < 2; ++row)
                 for (x = 0; x < 7; ++x) {
                     uint8_t src = (uint8_t)((x + row * 5u) & 15u);

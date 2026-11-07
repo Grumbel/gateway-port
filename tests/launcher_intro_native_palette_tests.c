@@ -39,7 +39,7 @@ static void check_direct_dac(GateIntroVgaPorts *ports, uint16_t mode)
     ports->palette_userdata = &complete;
     gate_ds_set_word(0x0fce, mode);
     install_palette((uint16_t)(colors * 3));
-    gate_rtl_f61b(palette); /* original source-C palette uploader */
+    gate_rtl_upload_vga_palette(palette); /* original source-C palette uploader */
     assert(ports->status_reads >= 2);
     assert(ports->dac_writes == colors * 3);
     assert(complete == 1); /* 16 triples in mode 12h, 256 in mode 13h */
@@ -70,7 +70,7 @@ static void check_other_modes(GateIntroVgaPorts *ports)
     for (uint16_t i = 0; i < 16; ++i)
         gate_far_set_byte(palette.segment, (uint16_t)(palette.offset + i),
                           (uint8_t)(i == 15 ? 63 : i));
-    gate_rtl_f61b(palette);
+    gate_rtl_upload_vga_palette(palette);
     assert(ports->dac_writes == 16 * 3);
     assert(ports->dac[0][0] == 0);
     assert(ports->dac[15][0] == 63 && ports->dac[15][1] == 63 &&
@@ -90,7 +90,7 @@ static void check_other_modes(GateIntroVgaPorts *ports)
     assert(gate_rtl_palette_table_byte(0x366) == 20);
     gate_ds_set_word(0x0fce, 3);
     install_palette(256 * 3);
-    gate_rtl_f61b(palette);
+    gate_rtl_upload_vga_palette(palette);
     assert(ports->dac_writes == 256 * 3);
     for (uint16_t i = 0; i < 256; ++i) {
         const uint8_t sample = gate_far_byte(palette.segment,
@@ -106,7 +106,7 @@ static void check_other_modes(GateIntroVgaPorts *ports)
     reads = ports->status_reads;
     writes = ports->dac_writes;
     gate_ds_set_word(0x0fce, 0);
-    gate_rtl_f61b(palette);
+    gate_rtl_upload_vga_palette(palette);
     assert(ports->status_reads == reads && ports->dac_writes == writes);
 }
 

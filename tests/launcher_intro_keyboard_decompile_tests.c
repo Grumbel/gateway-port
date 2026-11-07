@@ -23,13 +23,13 @@ static void reset(void)
         keys[i] = 0;
 }
 
-uint16_t gate_far_0df2_000a(void)
+uint16_t gate_linked_keyboard_pending(void)
 {
     ++polls;
     return buffered != 0xffff || key_index < key_count;
 }
 
-uint16_t gate_far_0df2_0030(void)
+uint16_t gate_linked_read_keyboard_key(void)
 {
     ++reads;
     if (buffered != 0xffff) {
@@ -51,7 +51,7 @@ void gate_ds_set_word(uint16_t offset, uint16_t value)
 static void test_conditional_unget(void)
 {
     reset();
-    assert(gate_far_0df2_00f8() == 0);
+    assert(gate_linked_read_buffered_key() == 0);
     assert(polls == 1 && reads == 0 && stores == 0);
 
     reset();
@@ -59,26 +59,26 @@ static void test_conditional_unget(void)
     keys[1] = '\r';
     keys[2] = 27;
     key_count = 3;
-    assert(gate_far_0df2_00f8() == ' ');
-    assert(gate_far_0df2_00f8() == '\r');
+    assert(gate_linked_read_buffered_key() == ' ');
+    assert(gate_linked_read_buffered_key() == '\r');
     assert(stores == 0 && reads == 2);
-    assert(gate_far_0df2_00f8() == 27);
+    assert(gate_linked_read_buffered_key() == 27);
     assert(stores == 1 && reads == 3 && buffered == 27);
-    assert(gate_far_0df2_000a() != 0); /* key available again */
-    assert(gate_far_0df2_0030() == 27);
+    assert(gate_linked_keyboard_pending() != 0); /* key available again */
+    assert(gate_linked_read_keyboard_key() == 27);
     assert(buffered == 0xffff);
 
     reset();
     keys[0] = 3;
     key_count = 1;
-    assert(gate_far_0df2_00f8() == 3);
+    assert(gate_linked_read_buffered_key() == 3);
     assert(buffered == 3); /* Ctrl-C is also kept */
 }
 
 static void test_drain_pending_keys(void)
 {
     reset();
-    gate_far_0df2_0128();
+    gate_linked_flush_keyboard();
     assert(polls == 1 && reads == 0);
 
     reset();
@@ -87,7 +87,7 @@ static void test_drain_pending_keys(void)
     keys[2] = 0x103; /* original reads full 16-bit key code */
     key_count = 3;
     buffered = 0x78;
-    gate_far_0df2_0128();
+    gate_linked_flush_keyboard();
     assert(key_index == 3 && buffered == 0xffff);
     assert(reads == 4 && polls == 5 && stores == 0);
 }

@@ -7,16 +7,16 @@
 
 /* Linked 12a5:34d8 (RTL:8bb6) fills a time sample through an SS:offset
  * pointer. Its calendar conversion is not reconstructed here. */
-void gate_far_12a5_34d8(GateFarPtr destination);
+void gate_linked_read_runtime_time_sample(GateFarPtr destination);
 
 /* Microsoft-style FAR C runtime imports at linked 12a5:2cd0, :2bd2 and
  * :2c38, identified by their original 8086 bodies: getenv, strncpy, atol.
  * This translation keeps the original FAR layout instead of consulting the
  * host's timezone environment or copying native pointers into guest RAM. */
-GateFarPtr gate_far_12a5_2cd0(GateFarPtr name);
-GateFarPtr gate_far_12a5_2bd2(GateFarPtr destination, GateFarPtr source,
+GateFarPtr gate_linked_get_runtime_environment(GateFarPtr name);
+GateFarPtr gate_linked_copy_runtime_string(GateFarPtr destination, GateFarPtr source,
                                uint16_t length);
-uint32_t gate_far_12a5_2c38(GateFarPtr number);
+uint32_t gate_linked_parse_runtime_integer(GateFarPtr number);
 
 /* GATE.RTL:8cc8..8d9a, linked 12a5:35ea. Read the DOS process's TZ
  * environment setting, copy its three-byte standard zone, and convert the
@@ -25,20 +25,20 @@ uint32_t gate_far_12a5_2c38(GateFarPtr number);
  * the C runtime's _DIGIT bit (4) or are '-'. '+' is not skipped, and a long
  * number can consequently be mistaken for the daylight zone suffix.
  * Those are original behaviors, retained deliberately. */
-void gate_rtl_8cc8(void)
+void gate_rtl_parse_timezone_environment(void)
 {
-    GateFarPtr value = gate_far_12a5_2cd0((GateFarPtr){gate_ds_segment(), 0x352c});
+    GateFarPtr value = gate_linked_get_runtime_environment((GateFarPtr){gate_ds_segment(), 0x352c});
     uint16_t skip = 0;
 
     if ((value.offset | value.segment) == 0 ||
         gate_far_byte(value.segment, value.offset) == 0)
         return;
 
-    gate_far_12a5_2bd2((GateFarPtr){gate_ds_segment(), 0x353e}, value, 3);
+    gate_linked_copy_runtime_string((GateFarPtr){gate_ds_segment(), 0x353e}, value, 3);
     value.offset = (uint16_t)(value.offset + 3u);
     /* The MUL return is DX:AX, both words must be retained. */
     {
-        uint32_t seconds = gate_rtl_933a(gate_far_12a5_2c38(value), 3600u);
+        uint32_t seconds = gate_rtl_multiply_32(gate_linked_parse_runtime_integer(value), 3600u);
         gate_ds_set_word(0x3538, (uint16_t)seconds);
         gate_ds_set_word(0x353a, (uint16_t)(seconds >> 16));
     }
@@ -54,7 +54,7 @@ void gate_rtl_8cc8(void)
     }
 
     if (gate_far_byte(value.segment, (uint16_t)(value.offset + skip)) != 0) {
-        gate_far_12a5_2bd2((GateFarPtr){gate_ds_segment(), 0x3542},
+        gate_linked_copy_runtime_string((GateFarPtr){gate_ds_segment(), 0x3542},
                             (GateFarPtr){value.segment,
                                          (uint16_t)(value.offset + skip)}, 3);
     } else {
@@ -67,24 +67,24 @@ void gate_rtl_8cc8(void)
  * relocated to DS:6470. Repeated calls skip initialization; the one-time
  * initializer may update the same flag, so the caller increments its
  * actual post-call value rather than blindly setting it to one. */
-void gate_rtl_8cb8(void)
+void gate_rtl_initialize_timezone_once(void)
 {
     if (gate_ds_word(0x6470) == 0) {
-        gate_rtl_8cc8();
+        gate_rtl_parse_timezone_environment();
         gate_ds_set_word(0x6470, (uint16_t)(gate_ds_word(0x6470) + 1u));
     }
 }
 
-void gate_far_12a5_35da(void)
+void gate_linked_initialize_runtime_timezone(void)
 {
-    gate_rtl_8cb8();
+    gate_rtl_initialize_timezone_once();
 }
 
 /* GATE.RTL:929e..9339, linked 12a5:3bc0: signed 32-bit quotient.
  * The 8086 routine tests both sign words, divides magnitudes and restores
  * the sign; the returned DX:AX wraps to 32 bits. Zero divisor faults in
  * the original DIV and is never silently replaced by a result. */
-uint32_t gate_rtl_929e(int32_t dividend, int32_t divisor)
+uint32_t gate_rtl_signed_divide_32(int32_t dividend, int32_t divisor)
 {
     if (divisor == 0)
         abort(); /* original divide trap; no recovery value */
@@ -93,7 +93,7 @@ uint32_t gate_rtl_929e(int32_t dividend, int32_t divisor)
 
 /* GATE.RTL:933a..936b, linked 12a5:3c5c. The 8086 MUL sequence returns
  * only DX:AX; carries above 32 bits are discarded. */
-uint32_t gate_rtl_933a(uint32_t lhs, uint32_t rhs)
+uint32_t gate_rtl_multiply_32(uint32_t lhs, uint32_t rhs)
 {
     return lhs * rhs;
 }
@@ -107,7 +107,7 @@ uint32_t gate_rtl_933a(uint32_t lhs, uint32_t rhs)
  * Preserve the original signed 16-bit fractional subtraction (CBW/CWD)
  * and the 32-bit modular multiplication. This is source recovery only:
  * the host still supplies the elapsed clock directly for playback. */
-uint32_t gate_rtl_8fa2(void)
+uint32_t gate_rtl_elapsed_milliseconds(void)
 {
     uint8_t sample[10] = {0};
     GateFarPtr destination = gate_stack_pointer(sample);
@@ -116,7 +116,7 @@ uint32_t gate_rtl_8fa2(void)
     int16_t fraction;
 
     gate_far_set_word(gate_ds_word(0x4e24), 0x3582, 0);
-    gate_far_12a5_34d8(destination);
+    gate_linked_read_runtime_time_sample(destination);
     current = (uint32_t)gate_far_word(destination.segment, destination.offset) |
               ((uint32_t)gate_far_word(destination.segment,
                                       (uint16_t)(destination.offset + 2)) << 16);
@@ -125,6 +125,6 @@ uint32_t gate_rtl_8fa2(void)
     fraction = (int16_t)(gate_far_word(destination.segment,
                                      (uint16_t)(destination.offset + 4)) -
                          gate_ds_word(0x3588));
-    return gate_rtl_933a(current - baseline, 1000u) +
+    return gate_rtl_multiply_32(current - baseline, 1000u) +
            (uint32_t)(int32_t)fraction;
 }

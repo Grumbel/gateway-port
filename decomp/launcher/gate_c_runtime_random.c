@@ -7,7 +7,7 @@
  * GATE.RTL:091d8) at 12a5:3afa (physical 1654a in the 22-second original
  * intro RAM). The argument is a single 16-bit
  * WORD: high half of the retained 32-bit state is cleared. */
-void gate_far_12a5_3afa(uint16_t seed)
+void gate_linked_seed_runtime_random(uint16_t seed)
 {
     gate_ds_set_word(0x358e, seed);
     gate_ds_set_word(0x3590, 0);
@@ -19,7 +19,7 @@ void gate_far_12a5_3afa(uint16_t seed)
  * 00269ec3h, retaining only the low 32 bits, then masks bit 15 of DX.
  * RTL:13115 and RTL:12f6b consume this exact 0..32767 return value for
  * variable intro animation frame delays. */
-uint16_t gate_far_12a5_3b0c(void)
+uint16_t gate_linked_runtime_random(void)
 {
     uint32_t state = (uint32_t)gate_ds_word(0x358e) |
                      ((uint32_t)gate_ds_word(0x3590) << 16);

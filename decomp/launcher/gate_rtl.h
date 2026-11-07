@@ -7,30 +7,31 @@
 #include "gate_exe.h"
 #include "gate_rtl_video.h"
 
-/* The recovered functions are named for ORIGINAL GATE.RTL file offsets.
+/* Recovered functions have readable names; symbol-names.tsv maps them to
+ * ORIGINAL GATE.RTL file offsets.
  * They use the same segmented-memory intrinsics as gate_exe.c. */
-uint16_t gate_rtl_8298(GateFarPtr text);     /* 12a5:2bba FAR strlen */
-uint32_t gate_rtl_8fa2(void);                /* 12a5:38c4 elapsed clock */
-uint32_t gate_rtl_929e(int32_t dividend, int32_t divisor); /* signed divide */
-void gate_rtl_8cb8(void);                  /* one-time clock/timezone init */
-void gate_rtl_8cc8(void);                  /* DOS TZ environment and zone names */
-uint32_t gate_rtl_933a(uint32_t lhs, uint32_t rhs); /* 12a5:3c5c multiply */
-void gate_rtl_e771(void);                   /* free both font slots */
-void gate_rtl_e79b(GateFarPtr font);         /* free one font slot */
-GateFarPtr gate_rtl_e801(void);              /* evict/select font slot */
-GateFarPtr gate_rtl_e873(uint16_t request);  /* load/select font */
+uint16_t gate_rtl_string_length(GateFarPtr text);     /* 12a5:2bba FAR strlen */
+uint32_t gate_rtl_elapsed_milliseconds(void);                /* 12a5:38c4 elapsed clock */
+uint32_t gate_rtl_signed_divide_32(int32_t dividend, int32_t divisor); /* signed divide */
+void gate_rtl_initialize_timezone_once(void);                  /* one-time clock/timezone init */
+void gate_rtl_parse_timezone_environment(void);                  /* DOS TZ environment and zone names */
+uint32_t gate_rtl_multiply_32(uint32_t lhs, uint32_t rhs); /* 12a5:3c5c multiply */
+void gate_rtl_clear_font_cache(void);                   /* free both font slots */
+void gate_rtl_release_font_slot(GateFarPtr font);         /* free one font slot */
+GateFarPtr gate_rtl_choose_font_slot(void);              /* evict/select font slot */
+GateFarPtr gate_rtl_select_font(uint16_t request);  /* load/select font */
 /* Relocated original FAR allocator, used by the font loader. */
-GateFarPtr gate_far_1e2c_0008(uint16_t bytes);
-void gate_far_1e2c_0138(GateFarPtr pointer);
-uint16_t gate_rtl_ebf7(void);                 /* font line advance */
-uint16_t gate_rtl_ec0a(uint16_t character);   /* font character advance */
-uint16_t gate_rtl_eca4(GateFarPtr text);      /* string advance */
-void gate_rtl_ecea(GateFarPtr ink, GateFarPtr background); /* color getters */
-void gate_rtl_ed01(uint16_t ink, int16_t background);     /* color setter */
-void gate_rtl_ed12(GateFarPtr x, GateFarPtr y);           /* cursor getters */
-void gate_rtl_ed39(int16_t x, int16_t y);    /* text cursor */
-void gate_rtl_ed7e(GateFarPtr text);          /* string draw */
-void gate_rtl_edff(uint16_t character);      /* glyph scan and pixel writes */
+GateFarPtr gate_linked_allocate_far_heap(uint16_t bytes);
+void gate_linked_free_far_heap(GateFarPtr pointer);
+uint16_t gate_rtl_font_line_advance(void);                 /* font line advance */
+uint16_t gate_rtl_font_character_advance(uint16_t character);   /* font character advance */
+uint16_t gate_rtl_measure_text_width(GateFarPtr text);      /* string advance */
+void gate_rtl_get_text_colors(GateFarPtr ink, GateFarPtr background); /* color getters */
+void gate_rtl_set_text_colors(uint16_t ink, int16_t background);     /* color setter */
+void gate_rtl_get_text_cursor(GateFarPtr x, GateFarPtr y);           /* cursor getters */
+void gate_rtl_set_text_cursor(int16_t x, int16_t y);    /* text cursor */
+void gate_rtl_draw_text_string(GateFarPtr text);          /* string draw */
+void gate_rtl_draw_font_glyph(uint16_t character);      /* glyph scan and pixel writes */
 
 /* Original RTL data symbols and linked calls not yet independently named.
  * In the captured GATE.EXE layout, active_font is DS:54ca (far pointer),

@@ -9,7 +9,7 @@
  * count, replacing that count with 256. It clears the flag unconditionally
  * on return, including when the first resource fails. The caller must have
  * sufficient work records: this routine performs no bounds check. */
-uint16_t gate_rtl_12d67(GateFarPtr work, int16_t count,
+uint16_t gate_rtl_load_picture_sequence(GateFarPtr work, int16_t count,
                         uint16_t first_resource, uint16_t mode)
 {
     int16_t loaded = 0;
@@ -20,7 +20,7 @@ uint16_t gate_rtl_12d67(GateFarPtr work, int16_t count,
     }
 
     while (loaded < count) {
-        if (gate_rtl_12c33(work, first_resource, mode) == 0)
+        if (gate_rtl_load_picture_record(work, first_resource, mode) == 0)
             break;
         first_resource = (uint16_t)(first_resource + 1u);
         work.offset = (uint16_t)(work.offset + 0x88u);
@@ -38,21 +38,21 @@ uint16_t gate_rtl_12d67(GateFarPtr work, int16_t count,
  * string; it must return without allocating or releasing any records.
  * Count 0 and negative counts retain the original loader's 256-record
  * fallback, even though that can exceed the local stack allocation. */
-void gate_rtl_130ab(uint16_t first_resource, int16_t count)
+void gate_rtl_play_preloaded_picture_sequence(uint16_t first_resource, int16_t count)
 {
     uint8_t records[0x1100];
     GateFarPtr work;
     uint16_t loaded;
 
     if (count > 32) {
-        gate_far_1258_172e((GateFarPtr){gate_rtl_image_data_segment(),
+        gate_linked_print_intro_diagnostic((GateFarPtr){gate_rtl_image_data_segment(),
                                        0x14b2});
         return;
     }
 
     work = gate_stack_pointer(records);
-    gate_rtl_13191(work, count);
-    loaded = gate_rtl_12d67(work, count, first_resource, 1);
-    gate_rtl_13115(work, (int16_t)loaded);
-    gate_rtl_131f7(work, (int16_t)loaded);
+    gate_rtl_initialize_picture_record_array(work, count);
+    loaded = gate_rtl_load_picture_sequence(work, count, first_resource, 1);
+    gate_rtl_play_timed_picture_records(work, (int16_t)loaded);
+    gate_rtl_release_picture_record_array(work, (int16_t)loaded);
 }

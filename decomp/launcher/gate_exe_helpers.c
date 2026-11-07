@@ -6,7 +6,7 @@
 /* GATE.EXE:0x0bb8..0x0bc9. The apparent string-pointer normalization
  * helper merely loads its FAR argument into DX:AX and returns it. The
  * intervening far call is the Microsoft C stack-check prologue. */
-GateFarPtr gate_exe_0bb8(GateFarPtr pointer)
+GateFarPtr gate_exe_identity_text_pointer(GateFarPtr pointer)
 {
     return pointer;
 }

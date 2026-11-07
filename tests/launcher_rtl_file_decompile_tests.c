@@ -32,13 +32,13 @@ static int divide_faults;
 static uint16_t read_zero_element_size(void)
 {
     GateFarPtr destination = {0x1111, 0x2222};
-    return gate_rtl_e5fc(21, destination, 0, 77);
+    return gate_rtl_read_resource_elements(21, destination, 0, 77);
 }
 
 static uint16_t write_zero_element_size(void)
 {
     GateFarPtr source = {0x2222, 0x3333};
-    return gate_rtl_e669(17, source, 0, 4);
+    return gate_rtl_write_resource_elements(17, source, 0, 4);
 }
 
 uint16_t gate_ds_word(uint16_t offset) { return ds_words[offset]; }
@@ -57,14 +57,14 @@ _Noreturn void gate_rtl_file_divide_fault(void)
     longjmp(divide_fault_jump, 1);
 }
 
-uint16_t gate_far_12a5_3b52(GateFarPtr path, uint16_t code)
+uint16_t gate_linked_open_runtime_path(GateFarPtr path, uint16_t code)
 {
     assert(path.segment == 0x1234 && path.offset == 0x4567);
     assert(code == 4);
     return path_check_result;
 }
 
-void gate_far_12a5_3366(GateFarPtr output, GateFarPtr format,
+void gate_linked_format_resource_filename(GateFarPtr output, GateFarPtr format,
                         GateFarPtr base, uint16_t resource, GateFarPtr table)
 {
     ++formatter_calls;
@@ -77,7 +77,7 @@ void gate_far_12a5_3366(GateFarPtr output, GateFarPtr format,
     memcpy(stack_address, "test", 5);
 }
 
-uint16_t gate_far_1c29_0000(GateFarPtr filename, uint16_t flags)
+uint16_t gate_linked_dos_file_open(GateFarPtr filename, uint16_t flags)
 {
     ++open_calls;
     assert(filename.segment == 0xf000 && filename.offset == 1);
@@ -86,7 +86,7 @@ uint16_t gate_far_1c29_0000(GateFarPtr filename, uint16_t flags)
     return open_result;
 }
 
-uint16_t gate_far_1c29_0074(uint16_t handle, uint16_t origin, uint32_t offset)
+uint16_t gate_linked_dos_file_seek(uint16_t handle, uint16_t origin, uint32_t offset)
 {
     ++seek_calls;
     last_handle = handle;
@@ -95,7 +95,7 @@ uint16_t gate_far_1c29_0074(uint16_t handle, uint16_t origin, uint32_t offset)
     return 0xdead;
 }
 
-uint16_t gate_far_1c29_0036(uint16_t handle, GateFarPtr destination,
+uint16_t gate_linked_dos_file_read(uint16_t handle, GateFarPtr destination,
                             uint16_t count)
 {
     ++read_calls;
@@ -114,7 +114,7 @@ uint16_t gate_far_1c29_0036(uint16_t handle, GateFarPtr destination,
     return read_result;
 }
 
-uint16_t gate_far_1c29_0055(uint16_t handle, GateFarPtr source,
+uint16_t gate_linked_dos_file_write(uint16_t handle, GateFarPtr source,
                             uint16_t count)
 {
     ++write_calls;
@@ -126,7 +126,7 @@ uint16_t gate_far_1c29_0055(uint16_t handle, GateFarPtr source,
     return write_result;
 }
 
-uint16_t gate_far_1c29_0028(uint16_t handle)
+uint16_t gate_linked_dos_file_close(uint16_t handle)
 {
     ++close_calls;
     last_handle = handle;
@@ -136,53 +136,53 @@ uint16_t gate_far_1c29_0028(uint16_t handle)
 static void test_base_and_path(void)
 {
     GateFarPtr path = {0x1234, 0x4567};
-    gate_rtl_e4ff((GateFarPtr){0x4321, 0x8765});
+    gate_rtl_set_resource_path_base((GateFarPtr){0x4321, 0x8765});
     assert(ds_words[0x54c2] == 0x8765);
     assert(ds_words[0x54c4] == 0x4321);
-    assert(gate_rtl_e511(path) == 1);
+    assert(gate_rtl_check_resource_path(path) == 1);
     path_check_result = 1;
-    assert(gate_rtl_e511(path) == 0);
+    assert(gate_rtl_check_resource_path(path) == 0);
     path_check_result = 0xffff;
-    assert(gate_rtl_e511(path) == 0);
+    assert(gate_rtl_check_resource_path(path) == 0);
 
     ds_words[0x0fb6 + 4 * 5] = 0x7788;
     ds_words[0x0fb8 + 4 * 5] = 0x5566;
-    assert(gate_rtl_e531(5, 42) == 17);
+    assert(gate_rtl_open_resource_file(5, 42) == 17);
     assert(formatter_calls == 1 && open_calls == 1);
     assert(last_flags == 0x80);
     ds_words[0x0fb6 + 4 * 4] = 0x7788;
     ds_words[0x0fb8 + 4 * 4] = 0x5566;
     open_result = 0;
-    assert(gate_rtl_e531(4, 42) == 0);
+    assert(gate_rtl_open_resource_file(4, 42) == 0);
     assert(formatter_calls == 2 && open_calls == 2);
     assert(last_flags == 0);
 }
 
 static void test_reads(void)
 {
-    gate_rtl_e582(41, 0x12345678u);
+    gate_rtl_seek_resource_file(41, 0x12345678u);
     assert(seek_calls == 1 && last_handle == 41 && last_origin == 0);
     assert(last_offset == 0x12345678u);
 
     read_result = 1;
-    assert(gate_rtl_e59b(6) == 0xbe78); /* byte read preserves stack high byte */
+    assert(gate_rtl_read_resource_byte(6) == 0xbe78); /* byte read preserves stack high byte */
     assert(last_handle == 6 && last_length == 1);
     read_result = 0;
-    assert(gate_rtl_e59b(6) == 0xffff); /* checked read failure */
+    assert(gate_rtl_read_resource_byte(6) == 0xffff); /* checked read failure */
 
     read_result = 2;
-    assert(gate_rtl_e5c5(8) == expected_read_word);
+    assert(gate_rtl_read_resource_word(8) == expected_read_word);
     assert(last_handle == 8 && last_length == 2);
     read_result = 0;
-    assert(gate_rtl_e5c5(8) == stack_initial); /* UNCHECKED read failure */
+    assert(gate_rtl_read_resource_word(8) == stack_initial); /* UNCHECKED read failure */
 
-    assert(gate_rtl_e5e3(9, (GateFarPtr){0x2345, 0xabcd}, 0x1122) == 0);
+    assert(gate_rtl_read_resource_bytes(9, (GateFarPtr){0x2345, 0xabcd}, 0x1122) == 0);
     assert(last_handle == 9 && last_length == 0x1122);
     assert(last_pointer.segment == 0x2345 && last_pointer.offset == 0xabcd);
     assert(read_calls == 5);
 
     read_result = 19;
-    assert(gate_rtl_e5fc(21, (GateFarPtr){0x1111, 0x2222}, 4, 0x4001) == 4);
+    assert(gate_rtl_read_resource_elements(21, (GateFarPtr){0x1111, 0x2222}, 4, 0x4001) == 4);
     assert(last_handle == 21 && last_length == 4); /* 32-bit product truncated */
     assert(last_pointer.segment == 0x1111 && last_pointer.offset == 0x2222);
     if (setjmp(divide_fault_jump) == 0) {
@@ -194,15 +194,15 @@ static void test_reads(void)
 
 static void test_writes_and_close(void)
 {
-    assert(gate_rtl_e61e(13, 0x12ab) == 2);
+    assert(gate_rtl_write_resource_low_byte(13, 0x12ab) == 2);
     assert(write_calls == 1 && last_length == 1 && last_handle == 13);
-    assert(gate_rtl_e637(14, 0xffab) == 2);
+    assert(gate_rtl_write_resource_low_byte_alternate(14, 0xffab) == 2);
     assert(write_calls == 2 && last_length == 1 && last_handle == 14);
-    assert(gate_rtl_e650(15, (GateFarPtr){0x7654, 0x3210}, 67) == 2);
+    assert(gate_rtl_write_resource_bytes(15, (GateFarPtr){0x7654, 0x3210}, 67) == 2);
     assert(write_calls == 3 && last_length == 67 && last_handle == 15);
     assert(last_pointer.segment == 0x7654 && last_pointer.offset == 0x3210);
     write_result = 24;
-    assert(gate_rtl_e669(17, (GateFarPtr){0x2222, 0x3333}, 6, 0x2aab) == 4);
+    assert(gate_rtl_write_resource_elements(17, (GateFarPtr){0x2222, 0x3333}, 6, 0x2aab) == 4);
     assert(last_handle == 17 && last_length == 2);
     if (setjmp(divide_fault_jump) == 0) {
         (void)write_zero_element_size();
@@ -210,7 +210,7 @@ static void test_writes_and_close(void)
     }
     assert(divide_faults == 2 && last_length == 0);
     assert(write_calls == 5);
-    gate_rtl_e68b(16);
+    gate_rtl_close_resource_file(16);
     assert(close_calls == 1 && last_handle == 16);
     assert(stack_calls >= 6);
 }

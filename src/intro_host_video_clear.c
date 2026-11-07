@@ -15,7 +15,7 @@
  * 2488:011a clears a text aperture, 2488:0169 broadcasts a color over all
  * VGA planes, and 2488:01d7 uses REP STOSW for the 8bpp linear mode.
  * These are native display-memory effects, not an 8086 emulator. */
-uint16_t gate_far_2488_000a(uint16_t page, uint16_t color)
+uint16_t gate_linked_clear_resident_display(uint16_t page, uint16_t color)
 {
     uint16_t mode, descriptor, ds, height, pitch, aperture, page_offset;
     uint32_t size;

@@ -97,7 +97,7 @@ static void draw_mode2(uint16_t y, uint16_t x, uint16_t signed_mode,
     }
 }
 
-void gate_far_24a7_000c(uint16_t unused, uint16_t y, uint16_t x,
+void gate_linked_blit_vfx_picture(uint16_t unused, uint16_t y, uint16_t x,
                         uint16_t signed_mode, GateFarPtr image)
 {
     uint16_t count;

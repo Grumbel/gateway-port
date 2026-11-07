@@ -9,8 +9,8 @@
 
 /* Original far allocation services at 253a:0004/0048, supplied by the
  * host's conventional-memory arena in native builds. */
-GateFarPtr gate_far_253a_0004(uint32_t bytes);
-uint16_t gate_far_253a_0048(GateFarPtr pixels);
+GateFarPtr gate_linked_allocate_vfx_pixels(uint32_t bytes);
+uint16_t gate_linked_release_vfx_pixels(GateFarPtr pixels);
 
 static uint16_t image_word(GateFarPtr image, uint16_t at)
 {
@@ -45,7 +45,7 @@ static void set_pixel_byte(GateFarPtr pixels, uint32_t at, uint8_t value)
  * layouts are pinned against original RAM, including their 32-bit buffer
  * lengths and even-byte alignment of each plane-row.
  * Original stack order: height, width, mode, FAR destination, flag. */
-uint16_t gate_far_145d_00f7(uint16_t height, uint16_t width,
+uint16_t gate_linked_allocate_vfx_image(uint16_t height, uint16_t width,
                             uint16_t mode, GateFarPtr image,
                             uint16_t zero_flag)
 {
@@ -85,7 +85,7 @@ uint16_t gate_far_145d_00f7(uint16_t height, uint16_t width,
      * our isolated conventional-memory heap is deliberately smaller. */
     if (length > 0xfffffu)
         return 0xffe6u;
-    pixels = gate_far_253a_0004(length);
+    pixels = gate_linked_allocate_vfx_pixels(length);
     if (pixels.segment == 0)
         return 0xffe6u;
 
@@ -127,7 +127,7 @@ uint16_t gate_far_145d_00f7(uint16_t height, uint16_t width,
  * to the corresponding bit of the caller's WORD pattern, interleaving
  * planes within each image scanline. The single-plane 8bpp path repeats
  * the low byte. The original advances the FAR segment on offset wrap. */
-void gate_far_1479_0002(uint16_t pattern, GateFarPtr image)
+void gate_linked_initialize_vfx_image(uint16_t pattern, GateFarPtr image)
 {
     uint32_t row;
     uint32_t index;
@@ -167,7 +167,7 @@ void gate_rtl_graphics_release(GateFarPtr image)
         return;
     data.offset = image_word(image, 0x18);
     data.segment = image_word(image, 0x1a);
-    if (gate_far_253a_0048(data) != 0)
+    if (gate_linked_release_vfx_pixels(data) != 0)
         return;
     for (i = 0; i < 0x80u; ++i)
         set_image_byte(image, i, 0xffu);

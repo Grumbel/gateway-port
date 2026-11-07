@@ -18,7 +18,7 @@ void gate_intro_input_detach(void)
     active_input = 0;
 }
 
-uint32_t gate_far_02a5_38c4(void)
+uint32_t gate_linked_exe_elapsed_milliseconds(void)
 {
     if (active_input == 0 || active_input->clock_ms == 0)
         abort();
@@ -27,12 +27,12 @@ uint32_t gate_far_02a5_38c4(void)
 
 /* This is the same C runtime clock invoked from the RTL intro animator,
  * but through another linked call site (12a5 versus EXE's 02a5). */
-uint32_t gate_far_12a5_38c4(void)
+uint32_t gate_linked_animation_elapsed_milliseconds(void)
 {
-    return gate_far_02a5_38c4();
+    return gate_linked_exe_elapsed_milliseconds();
 }
 
-uint16_t gate_far_0df2_000a(void)
+uint16_t gate_linked_keyboard_pending(void)
 {
     if (active_input == 0 || active_input->key_pending == 0)
         abort();
@@ -43,7 +43,7 @@ uint16_t gate_far_0df2_000a(void)
     return gate_ds_word(0x1340) != 0xffff || gate_ds_word(0x133e) != 0;
 }
 
-uint16_t gate_far_0df2_0030(void)
+uint16_t gate_linked_read_keyboard_key(void)
 {
     if (active_input == 0 || active_input->read_key == 0)
         abort();
@@ -62,7 +62,7 @@ uint16_t gate_far_0df2_0030(void)
     return active_input->read_key(active_input->userdata);
 }
 
-uint16_t gate_far_0e48_07fe(void)
+uint16_t gate_linked_intro_mouse_flags(void)
 {
     if (active_input == 0 || active_input->mouse_flags == 0)
         abort();

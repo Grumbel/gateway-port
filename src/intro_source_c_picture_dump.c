@@ -17,19 +17,19 @@
  * Not a complete reconstruction of the intro's surrounding sequence. */
 uint16_t gate_rtl_file_stack_word(void) { return 0; }
 _Noreturn void gate_rtl_file_divide_fault(void) { abort(); }
-uint16_t gate_far_1e48_04d9(void) { return 0; }
-void gate_far_1e48_03c5(uint16_t saved) { (void)saved; }
-GateFarPtr gate_far_0cdc_0430(GateFarPtr palette) { return palette; }
-GateFarPtr gate_far_0cdc_0396(GateFarPtr palette) { return palette; }
-void gate_far_0cdc_04d2(GateFarPtr palette) { gate_rtl_f61b(palette); }
-void gate_far_1258_172e(GateFarPtr message)
+uint16_t gate_linked_save_vfx_draw_state(void) { return 0; }
+void gate_linked_restore_vfx_draw_state(uint16_t saved) { (void)saved; }
+GateFarPtr gate_linked_transform_picture_palette_indexed(GateFarPtr palette) { return palette; }
+GateFarPtr gate_linked_transform_picture_palette_rgb(GateFarPtr palette) { return palette; }
+void gate_linked_upload_intro_palette(GateFarPtr palette) { gate_rtl_upload_vga_palette(palette); }
+void gate_linked_print_intro_diagnostic(GateFarPtr message)
 {
     (void)message;
     abort();
 }
 /* Original sequence-cleanup FAR edge; only the active-record release is
  * reached by the tested single-image resource. */
-void gate_rtl_131cb(GateFarPtr work)
+void gate_rtl_release_picture_record(GateFarPtr work)
 {
     if (gate_far_byte(work.segment, work.offset) != 0) {
         gate_rtl_graphics_release((GateFarPtr){work.segment,
@@ -160,7 +160,7 @@ int main(int argc, char **argv)
                          "%s/source-c-%02u-%04x.ppm", argv[3], step,
                          call.resource) >= (int)sizeof filename)
                 abort();
-            if (gate_rtl_12b19(call.resource, call.mode) != 1) {
+            if (gate_rtl_show_picture(call.resource, call.mode) != 1) {
                 fprintf(stderr, "source-C picture call %u failed: %04x/%u\n",
                         step, call.resource, call.mode);
                 abort();
@@ -177,7 +177,7 @@ int main(int argc, char **argv)
         free(memory);
         return 0;
     }
-    if (gate_rtl_12b19(resource, mode) != 1) {
+    if (gate_rtl_show_picture(resource, mode) != 1) {
         fprintf(stderr, "original C image loader failed on resource 0x%04x mode %u\n",
                 resource, mode);
         gate_dos_host_files_close_all(&files);

@@ -71,16 +71,16 @@ uint8_t gate_far_byte(uint16_t seg, uint16_t offset)
     return guest_record[offset];
 }
 
-void gate_rtl_12893(void) { note('f'); }
-void gate_rtl_12773(void) { note('I'); ++splash_fades; }
+void gate_rtl_fade_palette_out(void) { note('f'); }
+void gate_rtl_fade_palette_in(void) { note('I'); ++splash_fades; }
 
-void gate_far_0cdc_0aac(uint16_t value)
+void gate_linked_set_intro_pen_color(uint16_t value)
 {
     note('A');
     assert(value == 0x2233);
 }
 
-void gate_far_0cdc_0aee(uint16_t two, uint16_t zero_a, uint16_t zero_b,
+void gate_linked_fill_intro_rectangle(uint16_t two, uint16_t zero_a, uint16_t zero_b,
                         uint16_t value_b, uint16_t value_a)
 {
     note('B');
@@ -88,7 +88,7 @@ void gate_far_0cdc_0aee(uint16_t two, uint16_t zero_a, uint16_t zero_b,
     assert(value_b == 0x6677 && value_a == 0x4455);
 }
 
-uint16_t gate_rtl_12c33(GateFarPtr work, uint16_t resource, uint16_t mode)
+uint16_t gate_rtl_load_picture_record(GateFarPtr work, uint16_t resource, uint16_t mode)
 {
     note('L');
     assert(work.segment == work_address.segment &&
@@ -106,7 +106,7 @@ uint16_t gate_rtl_12c33(GateFarPtr work, uint16_t resource, uint16_t mode)
     return 1;
 }
 
-void gate_rtl_12ed7(GateFarPtr work)
+void gate_rtl_draw_picture_record(GateFarPtr work)
 {
     note('D');
     assert(work.segment == work_address.segment &&
@@ -114,7 +114,7 @@ void gate_rtl_12ed7(GateFarPtr work)
     ++draw_count;
 }
 
-void gate_rtl_131cb(GateFarPtr work)
+void gate_rtl_release_picture_record(GateFarPtr work)
 {
     note('C');
     assert(work.segment == work_address.segment &&
@@ -124,22 +124,22 @@ void gate_rtl_131cb(GateFarPtr work)
     ++cleanup_count;
 }
 
-void gate_rtl_1266f(void) { note('P'); ++prepare_count; }
+void gate_rtl_prepare_picture_display(void) { note('P'); ++prepare_count; }
 
-uint32_t gate_far_12a5_38c4(void)
+uint32_t gate_linked_animation_elapsed_milliseconds(void)
 {
     note('T');
     assert(clock_index < clock_count);
     return clocks[clock_index++];
 }
 
-uint16_t gate_far_12a5_3b0c(void)
+uint16_t gate_linked_runtime_random(void)
 {
     note('R');
     return random_result;
 }
 
-uint16_t gate_far_1000_0008(void)
+uint16_t gate_linked_poll_animation_input(void)
 {
     note('K');
     assert(poll_index < poll_count);
@@ -149,11 +149,11 @@ uint16_t gate_far_1000_0008(void)
 static void test_empty_and_negative_first(void)
 {
     reset();
-    gate_rtl_12f6b(0xffff, 0x3456, -1);
+    gate_rtl_play_picture_delta_sequence(0xffff, 0x3456, -1);
     assert(event_count == 4 && memcmp(events, "fABC", 4) == 0);
     assert(load_count == 0 && cleanup_count == 1);
     reset();
-    gate_rtl_12f6b(0x8000, 0x3456, 0);
+    gate_rtl_play_picture_delta_sequence(0x8000, 0x3456, 0);
     assert(event_count == 4 && memcmp(events, "fABC", 4) == 0);
 }
 
@@ -170,7 +170,7 @@ static void test_two_frames_and_deadline_wait(void)
     polls[0] = 1;
     poll_count = 1;
     random_result = 3;
-    gate_rtl_12f6b(0x3001, 0x3221, 2);
+    gate_rtl_play_picture_delta_sequence(0x3001, 0x3221, 2);
     assert(load_count == 3);
     assert(loaded[0] == 0x3001 && loaded_mode[0] == 0);
     assert(loaded[1] == 0x3221 && loaded_mode[1] == 1);
@@ -192,7 +192,7 @@ static void test_input_early_exit(void)
     clock_count = 3;
     polls[0] = 0;
     poll_count = 1;
-    gate_rtl_12f6b(0xffff, 0xffff, 2);
+    gate_rtl_play_picture_delta_sequence(0xffff, 0xffff, 2);
     assert(load_count == 2 && loaded[0] == 0xffff && loaded[1] == 0);
     assert(draw_count == 1 && cleanup_count == 2 && prepare_count == 1);
     assert(clock_index == 3 && poll_index == 1);
@@ -207,19 +207,19 @@ static void test_signed_high_deadline_and_failed_load(void)
     clock_count = 1;
     polls[0] = 0;
     poll_count = 1;
-    gate_rtl_12f6b(0xffff, 0x3300, 1);
+    gate_rtl_play_picture_delta_sequence(0xffff, 0x3300, 1);
     assert(event_count == 7 && memcmp(events, "fABLTKC", 7) == 0);
     assert(draw_count == 0 && cleanup_count == 1);
 
     reset();
     fail_at_resource = 0x3456;
-    gate_rtl_12f6b(0xffff, 0x3456, 4);
+    gate_rtl_play_picture_delta_sequence(0xffff, 0x3456, 4);
     assert(event_count == 5 && memcmp(events, "fABLC", 5) == 0);
     assert(load_count == 1 && draw_count == 0 && cleanup_count == 1);
 
     reset();
     fail_at_resource = 0x3001;
-    gate_rtl_12f6b(0x3001, 0x3456, 0);
+    gate_rtl_play_picture_delta_sequence(0x3001, 0x3456, 0);
     assert(event_count == 8 && memcmp(events, "fABLDICC", 8) == 0);
     assert(splash_fades == 1 && draw_count == 1 && cleanup_count == 2);
 }

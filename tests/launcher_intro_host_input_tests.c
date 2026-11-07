@@ -12,7 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-uint32_t gate_far_12a5_38c4(void);
+uint32_t gate_linked_animation_elapsed_milliseconds(void);
 
 typedef struct FakeInput {
     uint32_t ms;
@@ -57,38 +57,38 @@ int main(void)
     gate_intro_memory_attach(memory);
     gate_ds_set_word(0x1340, 0xffff);
     gate_intro_input_attach(&host);
-    assert(gate_far_02a5_38c4() == 900);
-    assert(gate_far_12a5_38c4() == 901);
-    assert(gate_far_0df2_000a() == 1);
-    assert(gate_far_0df2_0030() == 27);
-    assert(gate_far_0df2_000a() == 0);
-    assert(gate_far_0e48_07fe() == 2);
+    assert(gate_linked_exe_elapsed_milliseconds() == 900);
+    assert(gate_linked_animation_elapsed_milliseconds() == 901);
+    assert(gate_linked_keyboard_pending() == 1);
+    assert(gate_linked_read_keyboard_key() == 27);
+    assert(gate_linked_keyboard_pending() == 0);
+    assert(gate_linked_intro_mouse_flags() == 2);
 
     /* Original 0df2:00f8 must requeue an ordinary non-Space/non-CR key
      * into the same DS slot read by the host's 0df2:0030 adapter. */
     fake.key = 27;
-    assert(gate_far_0df2_00f8() == 27);
+    assert(gate_linked_read_buffered_key() == 27);
     assert(gate_ds_word(0x1340) == 27);
-    assert(gate_far_0df2_000a() != 0);
-    assert(gate_far_0df2_0030() == 27);
+    assert(gate_linked_keyboard_pending() != 0);
+    assert(gate_linked_read_keyboard_key() == 27);
     assert(gate_ds_word(0x1340) == 0xffff);
-    assert(gate_far_0df2_000a() == 0);
+    assert(gate_linked_keyboard_pending() == 0);
 
     fake.key = ' ';
-    assert(gate_far_0df2_00f8() == ' ');
+    assert(gate_linked_read_buffered_key() == ' ');
     assert(gate_ds_word(0x1340) == 0xffff);
     fake.key = '\r';
-    assert(gate_far_0df2_00f8() == '\r');
+    assert(gate_linked_read_buffered_key() == '\r');
     assert(gate_ds_word(0x1340) == 0xffff);
 
     /* Cleanup discards the requeued key and the subsequent host key. */
     gate_ds_set_word(0x1340, 42);
     fake.key = 65;
     unsigned before = fake.reads;
-    gate_far_0df2_0128();
+    gate_linked_flush_keyboard();
     assert(fake.reads == before + 1);
     assert(fake.key == 0 && gate_ds_word(0x1340) == 0xffff);
-    assert(gate_far_0df2_000a() == 0);
+    assert(gate_linked_keyboard_pending() == 0);
 
     gate_intro_input_detach();
     gate_intro_memory_detach();

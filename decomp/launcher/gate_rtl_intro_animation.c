@@ -21,24 +21,24 @@ static uint16_t rtl_deadline_reached(uint32_t now, uint32_t deadline)
  * a 32-bit deadline. First image ID is signed: negative skips the splash;
  * subsequent images load in mode 1 and advance through consecutive IDs.
  * Its peripheral routines and original RTLink globals remain explicit. */
-void gate_rtl_12f6b(uint16_t first, uint16_t next, int16_t count)
+void gate_rtl_play_picture_delta_sequence(uint16_t first, uint16_t next, int16_t count)
 {
     uint8_t record[0x88];
     GateFarPtr work = gate_stack_pointer(record);
     uint32_t deadline = 0;
 
-    gate_rtl_12893();
-    gate_far_0cdc_0aac(gate_far_word(gate_rtl_anim_segment_22(), 0x4c));
-    gate_far_0cdc_0aee(2, 0, 0,
+    gate_rtl_fade_palette_out();
+    gate_linked_set_intro_pen_color(gate_far_word(gate_rtl_anim_segment_22(), 0x4c));
+    gate_linked_fill_intro_rectangle(2, 0, 0,
         gate_far_word(gate_rtl_anim_segment_26(), 0x3e),
         gate_far_word(gate_rtl_anim_segment_24(), 0x42));
 
     record[0] = 0;
     if ((int16_t)first >= 0) {
-        (void)gate_rtl_12c33(work, first, 0);
-        gate_rtl_12ed7(work);
-        gate_rtl_12773();
-        gate_rtl_131cb(work);
+        (void)gate_rtl_load_picture_record(work, first, 0);
+        gate_rtl_draw_picture_record(work);
+        gate_rtl_fade_palette_in();
+        gate_rtl_release_picture_record(work);
     }
 
     while (count > 0) {
@@ -47,23 +47,23 @@ void gate_rtl_12f6b(uint16_t first, uint16_t next, int16_t count)
         uint16_t divisor;
         uint16_t delay;
         --count;
-        if (gate_rtl_12c33(work, next, 1) == 0)
+        if (gate_rtl_load_picture_record(work, next, 1) == 0)
             break;
         next = (uint16_t)(next + 1u);
 
         for (;;) {
-            now = gate_far_12a5_38c4();
+            now = gate_linked_animation_elapsed_milliseconds();
             if (rtl_deadline_reached(now, deadline))
                 break;
-            if (gate_far_1000_0008() == 0)
+            if (gate_linked_poll_animation_input() == 0)
                 goto cleanup;
         }
 
-        gate_rtl_1266f();
-        gate_rtl_12ed7(work);
-        gate_rtl_131cb(work);
-        now = gate_far_12a5_38c4();
-        random_low = gate_far_12a5_3b0c();
+        gate_rtl_prepare_picture_display();
+        gate_rtl_draw_picture_record(work);
+        gate_rtl_release_picture_record(work);
+        now = gate_linked_animation_elapsed_milliseconds();
+        random_low = gate_linked_runtime_random();
         divisor = (uint16_t)(50u * (uint16_t)gate_far_byte(work.segment,
             (uint16_t)(work.offset + 7u)) + 1u);
         delay = (uint16_t)((random_low % divisor) + 50u *
@@ -73,5 +73,5 @@ void gate_rtl_12f6b(uint16_t first, uint16_t next, int16_t count)
     }
 
 cleanup:
-    gate_rtl_131cb(work);
+    gate_rtl_release_picture_record(work);
 }

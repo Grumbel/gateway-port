@@ -57,7 +57,7 @@ GateFarPtr gate_stack_pointer(void *address)
 
 uint16_t gate_rtl_image_data_segment(void) { return 0xaabb; }
 
-void gate_far_1258_172e(GateFarPtr message)
+void gate_linked_print_intro_diagnostic(GateFarPtr message)
 {
     assert(message.segment == 0xaabb && message.offset == 0x14b2);
     ++diagnostics;
@@ -71,7 +71,7 @@ void gate_rtl_resource_ds_set_word(uint16_t offset, uint16_t value)
     note(value == 0 ? '-' : '+');
 }
 
-uint16_t gate_rtl_12c33(GateFarPtr pointer, uint16_t resource, uint16_t mode)
+uint16_t gate_rtl_load_picture_record(GateFarPtr pointer, uint16_t resource, uint16_t mode)
 {
     const size_t index = index_for(pointer);
     assert(attempted < 256);
@@ -86,7 +86,7 @@ uint16_t gate_rtl_12c33(GateFarPtr pointer, uint16_t resource, uint16_t mode)
     return 1;
 }
 
-void gate_rtl_13191(GateFarPtr pointer, int16_t count)
+void gate_rtl_initialize_picture_record_array(GateFarPtr pointer, int16_t count)
 {
     int i;
     note('I');
@@ -97,7 +97,7 @@ void gate_rtl_13191(GateFarPtr pointer, int16_t count)
     }
 }
 
-void gate_rtl_13115(GateFarPtr pointer, int16_t count)
+void gate_rtl_play_timed_picture_records(GateFarPtr pointer, int16_t count)
 {
     int i;
     note('D');
@@ -108,7 +108,7 @@ void gate_rtl_13115(GateFarPtr pointer, int16_t count)
     }
 }
 
-void gate_rtl_131f7(GateFarPtr pointer, int16_t count)
+void gate_rtl_release_picture_record_array(GateFarPtr pointer, int16_t count)
 {
     int i;
     note('R');
@@ -124,7 +124,7 @@ void gate_rtl_131f7(GateFarPtr pointer, int16_t count)
 static void test_loader_consecutive_resources(void)
 {
     reset();
-    assert(gate_rtl_12d67(base, 3, 0xffff, 7) == 3);
+    assert(gate_rtl_load_picture_sequence(base, 3, 0xffff, 7) == 3);
     assert(event_count == 4 && memcmp(events, "LLL-", 4) == 0);
     assert(loaded_ids[0] == 0xffff && loaded_ids[1] == 0 && loaded_ids[2] == 1);
     assert(loaded_modes[0] == 7 && loaded_modes[1] == 7);
@@ -132,13 +132,13 @@ static void test_loader_consecutive_resources(void)
 
     reset();
     fail_after = 1;
-    assert(gate_rtl_12d67(base, 4, 0x1234, 9) == 1);
+    assert(gate_rtl_load_picture_sequence(base, 4, 0x1234, 9) == 1);
     assert(event_count == 3 && memcmp(events, "LL-", 3) == 0);
     assert(attempted == 2 && loaded_ids[1] == 0x1235);
 
     reset();
     fail_after = 0;
-    assert(gate_rtl_12d67(base, 0, 0x2345, 1) == 0);
+    assert(gate_rtl_load_picture_sequence(base, 0, 0x2345, 1) == 0);
     assert(event_count == 3 && memcmp(events, "+L-", 3) == 0);
     assert(!loader_flag);
 }
@@ -146,7 +146,7 @@ static void test_loader_consecutive_resources(void)
 static void test_playback_and_early_failure(void)
 {
     reset();
-    gate_rtl_130ab(0x3010, 3);
+    gate_rtl_play_preloaded_picture_sequence(0x3010, 3);
     assert(event_count == 7 && memcmp(events, "ILLL-DR", 7) == 0);
     assert(initializers == 1 && attempted == 3);
     assert(draws == 3 && releases == 3 && diagnostics == 0);
@@ -155,7 +155,7 @@ static void test_playback_and_early_failure(void)
 
     reset();
     fail_after = 2;
-    gate_rtl_130ab(0x30fe, 5);
+    gate_rtl_play_preloaded_picture_sequence(0x30fe, 5);
     assert(event_count == 7 && memcmp(events, "ILLL-DR", 7) == 0);
     assert(attempted == 3 && draws == 2 && releases == 2);
     assert(loaded_ids[0] == 0x30fe && loaded_ids[2] == 0x3100);
@@ -165,14 +165,14 @@ static void test_playback_and_early_failure(void)
 static void test_over_limit_and_zero_count(void)
 {
     reset();
-    gate_rtl_130ab(0x3001, 33);
+    gate_rtl_play_preloaded_picture_sequence(0x3001, 33);
     assert(event_count == 1 && events[0] == 'E');
     assert(!attempted && !draws && !releases && !initializers);
     assert(stack_records == 0);
 
     reset();
     fail_after = 1;
-    gate_rtl_130ab(0x3001, 0);
+    gate_rtl_play_preloaded_picture_sequence(0x3001, 0);
     assert(event_count == 7 && memcmp(events, "I+LL-DR", 7) == 0);
     assert(attempted == 2 && draws == 1 && releases == 1);
     assert(!loader_flag);

@@ -9,11 +9,11 @@
 /* Original GATE.RTL file offsets (not linked segment:offset addresses).
  * fbf5 returns the previous selected ink; fc23 selects a fill pattern;
  * fc37 is the five-argument rectangle wrapper used by the intro. */
-uint16_t gate_rtl_fbf5(uint16_t color);
-void gate_rtl_fc23(uint16_t pattern);
-void gate_rtl_fc37(uint16_t style, uint16_t left, uint16_t top,
+uint16_t gate_rtl_set_pen_color(uint16_t color);
+void gate_rtl_set_fill_pattern(uint16_t pattern);
+void gate_rtl_fill_rectangle(uint16_t style, uint16_t left, uint16_t top,
                    uint16_t right, uint16_t bottom);
-void gate_rtl_ff99(uint16_t left, uint16_t top, uint16_t right,
+void gate_rtl_draw_caption_frame(uint16_t left, uint16_t top, uint16_t right,
                    uint16_t bottom, uint16_t style);
 
 /* Linked resident calls, outside the original RTL C image. */

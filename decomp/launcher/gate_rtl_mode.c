@@ -9,13 +9,13 @@
 /* GATE.RTL:f49b..f4de. This is a near-called C function rather than a
  * generated 8086 thunk. Only VGA adapters (type 5) and modes 1, 2, 4
  * take this branch. The clear/set retrace wait is the original f473. */
-void gate_rtl_f49b(void)
+void gate_rtl_configure_vga_palette(void)
 {
     uint16_t i;
     uint16_t mode = gate_ds_word(0x0fce);
     if (gate_ds_word(0x5516) != 5 || mode == 0 || mode == 3)
         return;
-    gate_rtl_f473();
+    gate_rtl_wait_vertical_retrace();
     (void)gate_rtl_palette_in(gate_ds_word(0x5514));
     for (i = 0; i < 16; ++i) {
         gate_rtl_palette_out(0x3c0, (uint8_t)i);
@@ -31,7 +31,7 @@ void gate_rtl_f49b(void)
  * The caller's requested mode and the BIOS mode may differ for SVGA 4.
  * The original C stores ffff into the current-mode word on *entry*, so
  * even a rejected request deliberately destroys the preceding mode. */
-uint16_t gate_rtl_f14d(int16_t requested_mode)
+uint16_t gate_rtl_set_video_mode(int16_t requested_mode)
 {
     uint8_t adapter[8] = {0};
     uint16_t video_type;
@@ -83,7 +83,7 @@ uint16_t gate_rtl_f14d(int16_t requested_mode)
         return 0;
 
     gate_ds_set_word(0x0fce, (uint16_t)requested_mode);
-    gate_rtl_f49b();
+    gate_rtl_configure_vga_palette();
     index = (uint16_t)(2u * (uint16_t)requested_mode);
     width = gate_ds_word((uint16_t)(0x12f8 + index));
     height = gate_ds_word((uint16_t)(0x1302 + index));

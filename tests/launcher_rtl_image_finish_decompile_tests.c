@@ -69,7 +69,7 @@ GateFarPtr gate_rtl_image_palette_source(void)
     return (GateFarPtr){PALETTE_SEG, GATE_RTL_TRANSFORM_OFFSET};
 }
 
-GateFarPtr gate_far_0cdc_0430(GateFarPtr palette)
+GateFarPtr gate_linked_transform_picture_palette_indexed(GateFarPtr palette)
 {
     assert(palette.segment == PALETTE_SEG &&
            palette.offset == GATE_RTL_TRANSFORM_OFFSET);
@@ -77,7 +77,7 @@ GateFarPtr gate_far_0cdc_0430(GateFarPtr palette)
     return (GateFarPtr){SRC16_SEG, 0xfff7};
 }
 
-GateFarPtr gate_far_0cdc_0396(GateFarPtr palette)
+GateFarPtr gate_linked_transform_picture_palette_rgb(GateFarPtr palette)
 {
     assert(palette.segment == PALETTE_SEG &&
            palette.offset == GATE_RTL_TRANSFORM_OFFSET);
@@ -85,7 +85,7 @@ GateFarPtr gate_far_0cdc_0396(GateFarPtr palette)
     return (GateFarPtr){SRC48_SEG, 0xffe7};
 }
 
-void gate_far_1258_172e(GateFarPtr message)
+void gate_linked_print_intro_diagnostic(GateFarPtr message)
 {
     assert(message.segment == DATA_SEG && message.offset == GATE_RTL_MESSAGE_OFFSET);
     ++print_calls;
@@ -124,48 +124,48 @@ static void reset_case(uint8_t flags, int8_t format_tag, uint16_t mode)
 static void test_format_selection(void)
 {
     reset_case(3, -1, 2);
-    assert(gate_rtl_120f3() == 0xffff);
+    assert(gate_rtl_detect_picture_format() == 0xffff);
     data_bytes[GATE_RTL_FORMAT_MODES_OFFSET + 2] = 1;
-    assert(gate_rtl_120f3() == 0);
+    assert(gate_rtl_detect_picture_format() == 0);
     reset_case(6, 1, 3);
-    assert(gate_rtl_120f3() == 1);
+    assert(gate_rtl_detect_picture_format() == 1);
     reset_case(6, 0, 3);
-    assert(gate_rtl_120f3() == 0);
+    assert(gate_rtl_detect_picture_format() == 0);
 }
 
 static void test_original_format_table_copy(void)
 {
     uint16_t i;
     reset_case(0x13, -1, 2);
-    gate_rtl_12131(0xffff);
+    gate_rtl_prepare_picture_palette_translation(0xffff);
     assert(src16_calls == 1 && src48_calls == 0);
     for (i = 0; i < 16; ++i)
         assert(table_bytes[GATE_RTL_TRANSFORM_OFFSET + i] ==
                src16_bytes[(uint16_t)(0xfff7u + i)]);
     assert(table_bytes[GATE_RTL_TRANSFORM_OFFSET + 16] == 0);
 
-    gate_rtl_12131(1);
+    gate_rtl_prepare_picture_palette_translation(1);
     assert(src16_calls == 1 && src48_calls == 1);
     for (i = 0; i < 48; ++i)
         assert(table_bytes[GATE_RTL_TRANSFORM_OFFSET + i] ==
                src48_bytes[(uint16_t)(0xffe7u + i)]);
-    gate_rtl_12131(2);
+    gate_rtl_prepare_picture_palette_translation(2);
     assert(src16_calls == 1 && src48_calls == 1);
 
     reset_case(3, -1, 2); /* missing header bit 0x10 */
-    gate_rtl_12131(1);
+    gate_rtl_prepare_picture_palette_translation(1);
     assert(src16_calls == 0 && src48_calls == 0);
 }
 
 static void test_original_coordinate_conversion(void)
 {
-    assert(gate_rtl_121b5(0, 0xfffe) == 0xfffe);
-    assert(gate_rtl_121b5(0xffff, 7) == 6);
-    assert(gate_rtl_121b5(0xffff, (uint16_t)-7) == (uint16_t)-6);
-    assert(gate_rtl_121b5(0xffff, 0x8000) == 0x6000);
-    assert(gate_rtl_121b5(1, 100) == 133);
-    assert(gate_rtl_121b5(1, 0x7fff) == (uint16_t)-1);
-    assert(gate_rtl_121b5(2, 100) == 100);
+    assert(gate_rtl_transform_picture_coordinate(0, 0xfffe) == 0xfffe);
+    assert(gate_rtl_transform_picture_coordinate(0xffff, 7) == 6);
+    assert(gate_rtl_transform_picture_coordinate(0xffff, (uint16_t)-7) == (uint16_t)-6);
+    assert(gate_rtl_transform_picture_coordinate(0xffff, 0x8000) == 0x6000);
+    assert(gate_rtl_transform_picture_coordinate(1, 100) == 133);
+    assert(gate_rtl_transform_picture_coordinate(1, 0x7fff) == (uint16_t)-1);
+    assert(gate_rtl_transform_picture_coordinate(2, 100) == 100);
 }
 
 static void test_original_in_place_compaction(void)
@@ -174,7 +174,7 @@ static void test_original_in_place_compaction(void)
     reset_case(3, -1, 2);
     for (i = 0; i < 20; ++i)
         pixel_bytes[(uint16_t)(0xfffbu + i)] = (uint8_t)(i + 1u);
-    gate_rtl_12383((GateFarPtr){PIXEL_SEG, 0xfffb},
+    gate_rtl_compact_picture_rows((GateFarPtr){PIXEL_SEG, 0xfffb},
                     (GateFarPtr){PIXEL_SEG, 0xfffb}, 0, 4, 4);
     for (i = 0; i < 12; ++i)
         assert(pixel_bytes[(uint16_t)(0xfffbu + i)] == (uint8_t)(i + 1u));
@@ -198,7 +198,7 @@ static void test_original_postload_empty(void)
 {
     reset_case(3, 0, 2);
     setup_work(10, 5, 0);
-    gate_rtl_12205(work);
+    gate_rtl_postprocess_picture(work);
     assert(word(4) == 10);
     assert(src16_calls == 0 && src48_calls == 0 && print_calls == 0);
 }
@@ -210,7 +210,7 @@ static void test_original_postload_negative(void)
     setup_work(0, 3, 0); /* end=3; the index-3 row must be skipped */
     for (i = 0; i < 20; ++i)
         pixel_bytes[0x100 + i] = (uint8_t)(i + 1u);
-    gate_rtl_12205(work);
+    gate_rtl_postprocess_picture(work);
     assert(src16_calls == 1 && src48_calls == 0 && print_calls == 0);
     assert(word(4) == 0);
     assert(word(0x14) == 2); /* compacted count - 1 */
@@ -223,7 +223,7 @@ static void test_original_postload_positive(void)
 {
     reset_case(0x13, 1, 2);
     setup_work(4, 5, 1); /* end=8, positive format uses message service */
-    gate_rtl_12205(work);
+    gate_rtl_postprocess_picture(work);
     assert(word(4) == 5); /* signed (4*4) / 3 */
     assert(word(0x14) == 5); /* original field remains unchanged */
     assert(print_calls == 1 && src16_calls == 0 && src48_calls == 1);

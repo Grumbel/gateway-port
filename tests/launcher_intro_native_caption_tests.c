@@ -19,13 +19,13 @@
 
 /* Unused alternative text-mode original RTL calls: the intro's graphics
  * font ID 5 must not enter any of these three paths. */
-void gate_rtl_f997(uint16_t x, uint16_t y)
+void gate_rtl_set_text_cell_cursor(uint16_t x, uint16_t y)
 {
     (void)x; (void)y;
     abort();
 }
-void gate_rtl_fa45(GateFarPtr text) { (void)text; abort(); }
-void gate_rtl_f959(uint16_t *x, uint16_t *y)
+void gate_rtl_print_text_mode_string(GateFarPtr text) { (void)text; abort(); }
+void gate_rtl_get_text_cell_cursor(uint16_t *x, uint16_t *y)
 {
     (void)x; (void)y;
     abort();
@@ -164,7 +164,7 @@ int main(int argc, char **argv)
         GateFarPtr text = {memory->ds_segment, caption->text_offset};
         uint32_t before_ms = clock.milliseconds;
         unsigned before_polls = clock.polls;
-        uint16_t len = gate_far_02a5_2bba(text);
+        uint16_t len = gate_linked_exe_string_length(text);
         uint16_t left = caption->left, top = caption->top;
         uint16_t right = caption->right, bottom = 0;
         uint8_t ch = gate_far_byte(text.segment, text.offset);
@@ -174,11 +174,11 @@ int main(int argc, char **argv)
 
         assert(len > 20 && len < 500);
         memset(memory->bytes + 0xa0000, 0, 320u * 200u);
-        gate_exe_117e(left, top, right, text);
+        gate_exe_show_caption(left, top, right, text);
         font = gate_rtl_active_font();
         assert(font.segment == memory->ds_segment && font.offset == 0x54ce);
         assert(gate_far_byte(font.segment, font.offset + 3) == 5);
-        assert(gate_rtl_ebf7() == 11);
+        assert(gate_rtl_font_line_advance() == 11);
         assert(gate_dos_host_file_stream(5) == 0); /* original close */
         assert(clock.milliseconds - before_ms >=
                (uint16_t)(2000u + 45u * len));
@@ -199,7 +199,7 @@ int main(int argc, char **argv)
         uint8_t spacing = gate_far_byte(spacing_seg, (uint16_t)(spacing_off + ch));
         assert(ch >= first && width > 0 && width <= 16);
         assert(gate_far_word(gate_ds_word(0x4e44), 0x4c) == 0);
-        gate_exe_103a(&left, &top, &right, &bottom, text);
+        gate_exe_measure_caption(&left, &top, &right, &bottom, text);
         assert(left == caption->left + 5 &&
                right == caption->right - 5 && bottom <= 185);
         assert(top < 200 && top + height < 200);
@@ -229,7 +229,7 @@ int main(int argc, char **argv)
 
     assert(nonzero > 18u * 1000u);
 
-    gate_rtl_e771();
+    gate_rtl_clear_font_cache();
     gate_intro_input_detach();
     gate_dos_host_files_close_all(&files);
     gate_intro_memory_detach();

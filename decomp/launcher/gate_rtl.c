@@ -18,7 +18,7 @@ static GateFarPtr font_pointer(GateFarPtr font, uint16_t offset)
 
 /* GATE.RTL file 0xebf7..0xec09: both font-header bytes are sign-extended
  * BEFORE addition. For GATE_305.FNT, they are 1 and 10, yielding 11. */
-uint16_t gate_rtl_ebf7(void)
+uint16_t gate_rtl_font_line_advance(void)
 {
     GateFarPtr font = gate_rtl_active_font();
     return (uint16_t)((int16_t)(int8_t)font_byte(font, 9) +
@@ -31,7 +31,7 @@ uint16_t gate_rtl_ebf7(void)
  * per-character spacing byte at [font+18] contributes both four-bit nibbles.
  * The index is the complete original 16-bit argument, not a clamped char.
  */
-uint16_t gate_rtl_ec0a(uint16_t character)
+uint16_t gate_rtl_font_character_advance(uint16_t character)
 {
     GateFarPtr font;
     uint16_t width;
@@ -67,22 +67,22 @@ uint16_t gate_rtl_ec0a(uint16_t character)
  * unchanged in DX:AX; the caller then mutates only the OFFSET half of its
  * stack pointer. Signed bytes are passed through CBW;
  * the total accumulates in a wrapping 16-bit local. */
-uint16_t gate_rtl_eca4(GateFarPtr text)
+uint16_t gate_rtl_measure_text_width(GateFarPtr text)
 {
     uint16_t total = 0;
-    text = gate_exe_0bb8(text);
+    text = gate_exe_identity_text_pointer(text);
     while (gate_far_byte(text.segment, text.offset) != 0) {
         uint16_t ch = (uint16_t)(int16_t)(int8_t)gate_far_byte(text.segment,
                                                                text.offset);
         text.offset = (uint16_t)(text.offset + 1);
-        total = (uint16_t)(total + gate_rtl_ec0a(ch));
+        total = (uint16_t)(total + gate_rtl_font_character_advance(ch));
     }
     return total;
 }
 
 /* GATE.RTL file 0xecea..0xed00: unconditionally store two DS globals into
  * caller-provided FAR word pointers, without checking for NULL. */
-void gate_rtl_ecea(GateFarPtr ink, GateFarPtr background)
+void gate_rtl_get_text_colors(GateFarPtr ink, GateFarPtr background)
 {
     gate_far_set_word(ink.segment, ink.offset, gate_rtl_ink_color());
     gate_far_set_word(background.segment, background.offset,
@@ -91,14 +91,14 @@ void gate_rtl_ecea(GateFarPtr ink, GateFarPtr background)
 
 /* GATE.RTL file 0xed01..0xed11: exact two-word color setting, including
  * the sign bit of the background flag used at RTL:0xeea7. */
-void gate_rtl_ed01(uint16_t ink, int16_t background)
+void gate_rtl_set_text_colors(uint16_t ink, int16_t background)
 {
     gate_rtl_set_colors(ink, background);
 }
 
 /* GATE.RTL file 0xed12..0xed38: optional FAR output pointers. The original
  * checks offset OR segment for zero (not either half independently). */
-void gate_rtl_ed12(GateFarPtr x, GateFarPtr y)
+void gate_rtl_get_text_cursor(GateFarPtr x, GateFarPtr y)
 {
     if ((uint16_t)(x.offset | x.segment) != 0)
         gate_far_set_word(x.segment, x.offset, (uint16_t)gate_rtl_cursor_x());
@@ -111,7 +111,7 @@ void gate_rtl_ed12(GateFarPtr x, GateFarPtr y)
  * linked video call is now decompiled at RTL:0xf997; its underlying video
  * dispatcher and the pitch global are unresolved. The signed IDIV,
  * sign/magnitude SAR and +1 conversion come directly from x86. */
-void gate_rtl_ed39(int16_t x, int16_t y)
+void gate_rtl_set_text_cursor(int16_t x, int16_t y)
 {
     GateFarPtr font = gate_rtl_active_font();
     gate_rtl_set_cursor(x, y);
@@ -123,7 +123,7 @@ void gate_rtl_ed39(int16_t x, int16_t y)
                                        ((abs_x & 0x8000) ? 0xe000 : 0));
         if (x < 0)
             shifted = (uint16_t)(-shifted);
-        gate_rtl_f997((uint16_t)(shifted + 1),
+        gate_rtl_set_text_cell_cursor((uint16_t)(shifted + 1),
                        (uint16_t)((int16_t)(y / pitch) + 1));
     }
 }
@@ -132,15 +132,15 @@ void gate_rtl_ed39(int16_t x, int16_t y)
  * branch delegates printing and rescales the saved coordinates. In the
  * graphics-font branch it calls RTL:0xedff once per SIGNED input character.
  * Text-mode calls now resolve to RTL:0xfa45 and RTL:0xf959. */
-void gate_rtl_ed7e(GateFarPtr text)
+void gate_rtl_draw_text_string(GateFarPtr text)
 {
     GateFarPtr font;
-    text = gate_exe_0bb8(text);
+    text = gate_exe_identity_text_pointer(text);
     font = gate_rtl_active_font();
     if (font_byte(font, 3) == 0) {
         uint16_t x, y;
-        gate_rtl_fa45(text);
-        gate_rtl_f959(&x, &y);
+        gate_rtl_print_text_mode_string(text);
+        gate_rtl_get_text_cell_cursor(&x, &y);
         gate_rtl_set_cursor((int16_t)(uint16_t)(x * 8u - 8u),
                             (int16_t)(uint16_t)((uint16_t)(y - 1) *
                                                  (uint16_t)gate_rtl_text_mode_pitch()));
@@ -149,7 +149,7 @@ void gate_rtl_ed7e(GateFarPtr text)
         while ((ch = (uint16_t)(int16_t)(int8_t)gate_far_byte(
                    text.segment, text.offset)) != 0) {
             text.offset = (uint16_t)(text.offset + 1);
-            gate_rtl_edff(ch);
+            gate_rtl_draw_font_glyph(ch);
         }
     }
 }
@@ -165,7 +165,7 @@ void gate_rtl_ed7e(GateFarPtr text)
  *  - bit order is MSB first, with one far pixel call per set bit.
  * The original linked background/pixel functions remain named callbacks.
  */
-void gate_rtl_edff(uint16_t character)
+void gate_rtl_draw_font_glyph(uint16_t character)
 {
     GateFarPtr font;
     int16_t glyph_width;

@@ -197,12 +197,12 @@ uint16_t gate_intro_memory_free(GateFarPtr pointer)
 
 /* The recovered 245d image allocator keeps the original DOS FAR service
  * addresses. These two native thunks provide its pixel allocation boundary. */
-GateFarPtr gate_far_253a_0004(uint32_t bytes)
+GateFarPtr gate_linked_allocate_vfx_pixels(uint32_t bytes)
 {
     return gate_intro_memory_alloc(bytes);
 }
 
-uint16_t gate_far_253a_0048(GateFarPtr pointer)
+uint16_t gate_linked_release_vfx_pixels(GateFarPtr pointer)
 {
     return gate_intro_memory_free(pointer);
 }

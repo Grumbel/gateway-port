@@ -98,12 +98,12 @@ static void output_at(unsigned index, uint16_t port, uint8_t value)
 static void test_retrace_and_disabled_mode(void)
 {
     reset(0, 5, 48, 0);
-    gate_rtl_f61b((GateFarPtr){0, 0});
+    gate_rtl_upload_vga_palette((GateFarPtr){0, 0});
     assert(input_next == 0 && op_count == 0 && far_reads == 0);
 
     reset(1, 5, 16, 0);
     status(8, 8, 0, 8);
-    gate_rtl_f473();
+    gate_rtl_wait_vertical_retrace();
     assert(input_next == 4 && op_count == 4);
     assert(operations[0].kind == 'I' && operations[3].kind == 'I');
 }
@@ -114,7 +114,7 @@ static void test_direct_dac_and_attribute_tail(void)
     GateFarPtr ptr = {RAM_SEG, 0xfffd};
     reset(3, 5, 9, 0); /* 9 component bytes = 3 DAC palette entries */
     status(0, 8, 0, 0);
-    gate_rtl_f61b(ptr);
+    gate_rtl_upload_vga_palette(ptr);
     assert(input_next == 2 && count_index == 10);
     assert(op_count == 2 + 1 + 9 && far_reads == 10);
     output_at(2, 0x3c8, 0);
@@ -125,7 +125,7 @@ static void test_direct_dac_and_attribute_tail(void)
     reset(2, 5, 6, 0);
     status(0, 8, 0x11, 0);
     ram[0x100] = 0; /* first byte also decides attribute register */
-    gate_rtl_f61b((GateFarPtr){RAM_SEG, 0x100});
+    gate_rtl_upload_vga_palette((GateFarPtr){RAM_SEG, 0x100});
     assert(input_next == 3 && count_index == 8);
     assert(op_count == 3 + 1 + 6 + 3);
     output_at(op_count - 3, 0x3c0, 0x11);
@@ -139,7 +139,7 @@ static void test_mode_one_packed_colors(void)
     status(0, 8, 0, 0);
     ram[0x101] = 0x33;
     ram[0x102] = 0x5e;
-    gate_rtl_f61b((GateFarPtr){RAM_SEG, 0x101});
+    gate_rtl_upload_vga_palette((GateFarPtr){RAM_SEG, 0x101});
     assert(input_next == 3 && far_reads == 3 && count_index == 6);
     assert(op_count == 3 + 1 + 6 + 3);
     output_at(3, 0x3c9, 21 * (((0x33 >> 1) & 2) | ((0x33 >> 5) & 1)));
@@ -157,7 +157,7 @@ static void test_converted_vga_modes(void)
     status(0, 8, 0, 0);
     ram[0xfffd] = 0x80; /* signed -128 / 31 = -4; index -12 */
     ram[0x0000] = 0x3e; /* +62 / 31 = +2; index +6 */
-    gate_rtl_f61b(ptr);
+    gate_rtl_upload_vga_palette(ptr);
     assert(input_next == 3 && far_reads == 3 && table_reads == 4);
     table0 = (uint16_t)(0x35c - 12);
     table1 = (uint16_t)(0x366 - 12);
@@ -169,7 +169,7 @@ static void test_converted_vga_modes(void)
     reset(1, 5, 1, 1);
     status(0, 8, 0, 0);
     ram[0x200] = 0x3f;
-    gate_rtl_f61b((GateFarPtr){RAM_SEG, 0x200});
+    gate_rtl_upload_vga_palette((GateFarPtr){RAM_SEG, 0x200});
     /* Bits 0..2 contribute 2 each, bits 3..5 contribute 1 each. */
     output_at(3, 0x3c9, (uint8_t)(((0x35c + 9) & 0xffu) ^ 0x53));
     output_at(4, 0x3c9, (uint8_t)(((0x366 + 9) & 0xffu) ^ 0x53));
@@ -182,7 +182,7 @@ static void test_attribute_only_adapter(void)
     GateFarPtr ptr = {RAM_SEG, 0xfffc};
     reset(2, 4, 48, 0);
     status(0, 8, 0, 0);
-    gate_rtl_f61b(ptr);
+    gate_rtl_upload_vga_palette(ptr);
     assert(input_next == 4 && far_reads == 16);
     assert(op_count == 4 + 32 + 3);
     for (i = 0; i < 16; ++i) {

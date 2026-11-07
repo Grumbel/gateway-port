@@ -9,7 +9,7 @@
  * verified live offsets, with only the original segment words external.
  * In particular DS:4dd4 here names a relocated FAR pointer, NOT the
  * resource selector's scalar data word at relocated DS:1426. */
-void gate_rtl_1266f(void)
+void gate_rtl_prepare_picture_display(void)
 {
     uint16_t video_mode = gate_far_word(gate_rtl_image_mode_segment(),
                                         GATE_RTL_VIDEO_MODE_OFFSET);
@@ -29,7 +29,7 @@ void gate_rtl_1266f(void)
     if (gate_rtl_resource_ds_word(6) != 0) {
         GateFarPtr palette = gate_rtl_image_palette_source();
         gate_rtl_resource_ds_set_word(6, 0);
-        gate_far_0cdc_04d2(palette);
+        gate_linked_upload_intro_palette(palette);
         original_data_segment = gate_rtl_image_data_segment();
         for (i = 0; i < 0x300; ++i)
             gate_far_set_byte(original_data_segment, (uint16_t)(0x56ceu + i),

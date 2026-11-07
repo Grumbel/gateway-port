@@ -131,7 +131,7 @@ uint16_t gate_rtl_video_block_mode(void) { return 0; }
 /* Original resident video clear is a hardware boundary. This mock verifies
  * the source-C RTL wrapper's page/color arguments without linking the
  * full native VGA host, which requires segmented RAM and video mode state. */
-uint16_t gate_far_2488_000a(uint16_t page, uint16_t color)
+uint16_t gate_linked_clear_resident_display(uint16_t page, uint16_t color)
 {
     assert(page == 0 && color == 0);
     ++video_clears;
@@ -185,27 +185,27 @@ static void test_font_advances(void)
     initialize();
     widths[0x0100 + 'A'] = 3;
     spacing[0x0200 + 'A'] = 0x21;
-    assert(gate_rtl_ebf7() == 11);
-    assert(gate_rtl_ec0a('A') == 6);
+    assert(gate_rtl_font_line_advance() == 11);
+    assert(gate_rtl_font_character_advance('A') == 6);
     spacing[0x0200 + 'A'] = 0xf1;
-    assert(gate_rtl_ec0a('A') == 19);
-    assert(gate_rtl_ec0a(9) == 6 && gate_rtl_ec0a(10) == 0);
+    assert(gate_rtl_font_character_advance('A') == 19);
+    assert(gate_rtl_font_character_advance(9) == 6 && gate_rtl_font_character_advance(10) == 0);
 
     /* CBW in the string-width caller sign-extends high-bit characters. */
     widths[0x00ff] = 2;
     spacing[0x01ff] = 0x10;
-    assert(gate_rtl_ec0a(0xffff) == 3);
+    assert(gate_rtl_font_character_advance(0xffff) == 3);
 
     /* Fixed spacing with per-character widths (font+11 signed negative). */
     font[12] = 2;
-    assert(gate_rtl_ec0a('A') == 5);
+    assert(gate_rtl_font_character_advance('A') == 5);
     font[11] = 0xfd;
     /* Neither signed byte is negative only when both flags are nonnegative. */
     font[11] = 4;
-    assert(gate_rtl_ec0a('A') == 6);
+    assert(gate_rtl_font_character_advance('A') == 6);
     font[9] = 0xfe;
     font[10] = 4;
-    assert(gate_rtl_ebf7() == 2);
+    assert(gate_rtl_font_line_advance() == 2);
 }
 
 static void test_original_color_and_cursor_accessors(void)
@@ -214,16 +214,16 @@ static void test_original_color_and_cursor_accessors(void)
     GateFarPtr second = { TEXT_SEG, 0x0104 };
     GateFarPtr null = { 0, 0 };
     initialize();
-    gate_rtl_ed01(0x03ab, -1);
+    gate_rtl_set_text_colors(0x03ab, -1);
     assert(gate_rtl_ink_color() == 0x03ab && gate_rtl_background_color() == -1);
-    gate_rtl_ecea(first, second);
+    gate_rtl_get_text_colors(first, second);
     assert(gate_far_word(TEXT_SEG, 0x0100) == 0x03ab);
     assert(gate_far_word(TEXT_SEG, 0x0104) == 0xffff);
-    gate_rtl_ed39(-17, 276);
-    gate_rtl_ed12(first, null);
+    gate_rtl_set_text_cursor(-17, 276);
+    gate_rtl_get_text_cursor(first, null);
     assert(gate_far_word(TEXT_SEG, 0x0100) == (uint16_t)-17);
     assert(gate_far_word(TEXT_SEG, 0x0104) == 0xffff);
-    gate_rtl_ed12(null, second);
+    gate_rtl_get_text_cursor(null, second);
     assert(gate_far_word(TEXT_SEG, 0x0104) == 276);
 }
 
@@ -238,9 +238,9 @@ static void test_string_width_and_offset_wrap(void)
     text[0] = 10;   /* width 0; same segment after 16-bit offset wrap */
     text[1] = 9;    /* width 6, not the ordinary font's 5 */
     text[2] = 0;
-    assert(gate_rtl_eca4(ptr) == 16);
-    assert(gate_exe_0bb8(ptr).segment == TEXT_SEG);
-    assert(gate_exe_0bb8(ptr).offset == 0xfffe);
+    assert(gate_rtl_measure_text_width(ptr) == 16);
+    assert(gate_exe_identity_text_pointer(ptr).segment == TEXT_SEG);
+    assert(gate_exe_identity_text_pointer(ptr).offset == 0xfffe);
 
     /* Advance adds in AX, not an arbitrarily wide host integer. */
     font[11] = 0x80;
@@ -248,7 +248,7 @@ static void test_string_width_and_offset_wrap(void)
     widths[0x0100 + 'A'] = 0x80;
     widths[0x0100 + 'B'] = 0x80;
     text[0] = 0;
-    assert(gate_rtl_eca4(ptr) == 0xff02);
+    assert(gate_rtl_measure_text_width(ptr) == 0xff02);
 }
 
 static void test_text_cursor_and_printing(void)
@@ -263,9 +263,9 @@ static void test_text_cursor_and_printing(void)
     spacing[0x0200 + 'A'] = 0x10;
     bitmap[0x1000 + ('A' - 33) * 2] = 0x80;
     bitmap[0x1000 + ('A' - 33) * 2 + 1] = 0x80;
-    gate_rtl_ed39(-9, 40);
+    gate_rtl_set_text_cursor(-9, 40);
     assert(cursor_x == -9 && cursor_y == 40 && video_set_x == 0);
-    gate_rtl_ed7e(ptr);
+    gate_rtl_draw_text_string(ptr);
     assert(video_print_count == 0);
     assert(pixel_count == 2 && pixels[0].x == (uint16_t)-8 &&
            pixels[0].y == 40 && pixels[1].x == (uint16_t)-8 &&
@@ -274,14 +274,14 @@ static void test_text_cursor_and_printing(void)
 
     /* In text-mode fonts, y uses IDIV, x uses the original sign/SAR. */
     font[3] = 0;
-    gate_rtl_ed39(-9, -25);
+    gate_rtl_set_text_cursor(-9, -25);
     assert(cursor_x == -9 && cursor_y == -25);
     assert(video_set_x == 0xff && video_set_y == 0xfe);
-    gate_rtl_ed39((int16_t)0x8000, 0);
+    gate_rtl_set_text_cursor((int16_t)0x8000, 0);
     assert(video_set_x == 0 && video_set_y == 0);
     video_cursor_x = 2;
     video_cursor_y = 3;
-    gate_rtl_ed7e(ptr);
+    gate_rtl_draw_text_string(ptr);
     assert(video_print_count == 2 && pixel_count == 2);
     assert(cursor_x == 32 && cursor_y == 30);
 }
@@ -295,7 +295,7 @@ static void test_original_glyph_bit_scan(void)
     bitmap[0x1000 + ('A' - 33) * 2] = 0xa8;
     bitmap[0x1000 + ('A' - 33) * 2 + 1] = 0x50;
     gate_rtl_set_cursor(8, 9);
-    gate_rtl_edff('A');
+    gate_rtl_draw_font_glyph('A');
     assert(pixel_count == 5 && cursor_x == 16 && cursor_y == 9);
     assert(pixels[0].x == 10 && pixels[0].y == 9);
     assert(pixels[1].x == 12 && pixels[1].y == 9);
@@ -312,7 +312,7 @@ static void test_original_glyph_bit_scan(void)
     widths[0x0100 + 'A'] = 2;
     gate_rtl_set_cursor(8, 9);
     font[7] = 'B';
-    gate_rtl_edff('A');
+    gate_rtl_draw_font_glyph('A');
     assert(pixel_count == 0 && cursor_x == 13 && cursor_y == 9);
     assert(background_setups == 1 && background_rects == 1);
     assert(background_setup_args[0] == 0 && background_setup_args[1] == 4 &&
@@ -326,12 +326,12 @@ static void test_tab_newline_and_bitmap_offset_wrap(void)
 {
     initialize();
     gate_rtl_set_cursor(13, 7);
-    gate_rtl_edff(9);
+    gate_rtl_draw_font_glyph(9);
     assert(cursor_x == 16 && cursor_y == 7);
-    gate_rtl_edff(10);
+    gate_rtl_draw_font_glyph(10);
     assert(cursor_x == 0 && cursor_y == 18);
     gate_rtl_set_cursor(96, 7);
-    gate_rtl_edff(9);
+    gate_rtl_draw_font_glyph(9);
     assert(cursor_x == 0 && cursor_y == 18); /* tab exceeds width => newline */
 
     put16(font, 26, 0xffff);
@@ -341,7 +341,7 @@ static void test_tab_newline_and_bitmap_offset_wrap(void)
     bitmap[0xffff] = 0x80;
     bitmap[0] = 0x80;
     gate_rtl_set_cursor(3, 4);
-    gate_rtl_edff('A');
+    gate_rtl_draw_font_glyph('A');
     assert(pixel_count == 2 && pixels[0].x == 3 && pixels[1].x == 3 &&
            pixels[0].y == 4 && pixels[1].y == 5);
     assert(cursor_x == 4 && cursor_y == 4);
@@ -372,18 +372,18 @@ static void test_original_intro_font(const char *directory)
     memcpy(widths + 0x0100, file + 10, 128);
     memcpy(spacing + 0x0200, file + 138, 128);
     memcpy(bitmap + 0x1000, file + 266, count - 266);
-    assert(gate_rtl_ebf7() == 11);
+    assert(gate_rtl_font_line_advance() == 11);
     for (unsigned ch = 33; ch <= 126; ++ch) {
         unsigned expected = (unsigned)widths[0x0100 + ch] +
                             (unsigned)(spacing[0x0200 + ch] & 15) +
                             (unsigned)(spacing[0x0200 + ch] >> 4);
-        assert(gate_rtl_ec0a((uint16_t)ch) == expected);
+        assert(gate_rtl_font_character_advance((uint16_t)ch) == expected);
 
         /* Independent expected bit positions from GATE_305.FNT, not the
          * reconstructed glyph routine's host pixel callbacks. */
         pixel_count = 0;
         gate_rtl_set_cursor(20, 40);
-        gate_rtl_edff((uint16_t)ch);
+        gate_rtl_draw_font_glyph((uint16_t)ch);
         assert(cursor_x == (int16_t)(20 + expected) && cursor_y == 40);
         unsigned total = 0;
         for (unsigned row = 0; row < file[6]; ++row) {
@@ -408,7 +408,7 @@ static void test_original_intro_font(const char *directory)
 int main(int argc, char **argv)
 {
     initialize();
-    gate_rtl_f921();
+    gate_rtl_clear_video_display();
     assert(video_clears == 1);
     test_font_advances();
     test_original_color_and_cursor_accessors();

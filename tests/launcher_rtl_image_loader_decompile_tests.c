@@ -85,14 +85,14 @@ uint16_t gate_rtl_resource_ds_word(uint16_t offset)
     return resource_y;
 }
 
-uint16_t gate_rtl_11ecb(uint16_t resource, uint16_t mode)
+uint16_t gate_rtl_select_picture_resource(uint16_t resource, uint16_t mode)
 {
     record('R');
     assert(resource == expected_resource && mode == expected_mode);
     return resource_status;
 }
 
-uint16_t gate_far_145d_00f7(uint16_t header_word8, uint16_t header_word6,
+uint16_t gate_linked_allocate_vfx_image(uint16_t header_word8, uint16_t header_word6,
                              uint16_t video_mode, GateFarPtr destination,
                              uint16_t zero_flag)
 {
@@ -109,7 +109,7 @@ uint16_t gate_far_145d_00f7(uint16_t header_word8, uint16_t header_word6,
     return allocate_status;
 }
 
-void gate_far_1479_0002(uint16_t zero_flag, GateFarPtr destination)
+void gate_linked_initialize_vfx_image(uint16_t zero_flag, GateFarPtr destination)
 {
     record('I');
     assert(zero_flag == 0);
@@ -117,7 +117,7 @@ void gate_far_1479_0002(uint16_t zero_flag, GateFarPtr destination)
     assert(destination.offset == (uint16_t)(work.offset + 8u));
 }
 
-uint16_t gate_far_0eec_018a(uint16_t first, uint16_t second)
+uint16_t gate_linked_decompress_picture_pixels(uint16_t first, uint16_t second)
 {
     record('S');
     assert(first == 0xabcd && second == 0x4321);
@@ -125,14 +125,14 @@ uint16_t gate_far_0eec_018a(uint16_t first, uint16_t second)
     return validate_status;
 }
 
-void gate_rtl_12205(GateFarPtr pointer)
+void gate_rtl_postprocess_picture(GateFarPtr pointer)
 {
     record('P');
     assert(pointer.segment == work.segment && pointer.offset == work.offset);
     assert(work_byte(0) == 1);
 }
 
-void gate_rtl_131cb(GateFarPtr pointer)
+void gate_rtl_release_picture_record(GateFarPtr pointer)
 {
     record('C');
     assert(pointer.segment == work.segment && pointer.offset == work.offset);
@@ -171,7 +171,7 @@ static void test_success_layout(uint16_t video_mode, uint16_t width,
                                 uint8_t flags, uint16_t expected_stride)
 {
     reset_case(video_mode, width, 0x2468, flags);
-    assert(gate_rtl_12c33(work, expected_resource, expected_mode) == 1);
+    assert(gate_rtl_load_picture_record(work, expected_resource, expected_mode) == 1);
     assert(ncalls == 5 && memcmp(calls, "RAISP", 5) == 0);
     assert(work_byte(0) == 1);
     assert(work_byte(1) == ((flags & 0x40u) ? 3 : 0));
@@ -186,7 +186,7 @@ static void test_previously_active(void)
 {
     reset_case(3, 16, 12, 0x40);
     gate_far_set_byte(work.segment, work.offset, 0xff);
-    assert(gate_rtl_12c33(work, expected_resource, expected_mode) == 0);
+    assert(gate_rtl_load_picture_record(work, expected_resource, expected_mode) == 0);
     assert(ncalls == 0 && work_byte(0) == 0xff);
     assert(work_byte(6) == 0xa5 && work_byte(7) == 0xa5);
 }
@@ -195,7 +195,7 @@ static void test_failed_resource(void)
 {
     reset_case(3, 16, 12, 0);
     resource_status = 0;
-    assert(gate_rtl_12c33(work, expected_resource, expected_mode) == 0);
+    assert(gate_rtl_load_picture_record(work, expected_resource, expected_mode) == 0);
     assert(ncalls == 1 && memcmp(calls, "R", 1) == 0);
     assert(work_byte(0) == 0 && work_byte(6) == 0 && work_byte(7) == 0);
     assert(work_byte(1) == 0xa5);
@@ -205,7 +205,7 @@ static void test_failed_allocation(void)
 {
     reset_case(1, 21, 12, 0);
     allocate_status = 0x100;
-    assert(gate_rtl_12c33(work, expected_resource, expected_mode) == 0);
+    assert(gate_rtl_load_picture_record(work, expected_resource, expected_mode) == 0);
     assert(ncalls == 2 && memcmp(calls, "RA", 2) == 0);
     assert(work_byte(0) == 0 && work_byte(6) == 0 && work_byte(7) == 0);
 }
@@ -214,7 +214,7 @@ static void test_failed_validation(void)
 {
     reset_case(3, 16, 12, 0);
     validate_status = 0xffff;
-    assert(gate_rtl_12c33(work, expected_resource, expected_mode) == 0);
+    assert(gate_rtl_load_picture_record(work, expected_resource, expected_mode) == 0);
     assert(ncalls == 5 && memcmp(calls, "RAISC", 5) == 0);
     assert(work_byte(0) == 0); /* cleanup */
     assert(work_word(0x1c) == 16);

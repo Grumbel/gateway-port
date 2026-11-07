@@ -12,12 +12,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-uint32_t gate_rtl_8fa2(void);
-uint32_t gate_rtl_933a(uint32_t lhs, uint32_t rhs);
-uint32_t gate_rtl_929e(int32_t dividend, int32_t divisor);
-void gate_rtl_8cb8(void);
-void gate_rtl_8cc8(void);
-void gate_far_12a5_35da(void);
+uint32_t gate_rtl_elapsed_milliseconds(void);
+uint32_t gate_rtl_multiply_32(uint32_t lhs, uint32_t rhs);
+uint32_t gate_rtl_signed_divide_32(int32_t dividend, int32_t divisor);
+void gate_rtl_initialize_timezone_once(void);
+void gate_rtl_parse_timezone_environment(void);
+void gate_linked_initialize_runtime_timezone(void);
 
 static uint8_t stack_bytes[65536];
 static uint8_t environment_bytes[65536];
@@ -52,7 +52,7 @@ void gate_far_set_byte(uint16_t segment, uint16_t offset, uint8_t value)
     *word = (uint16_t)((*word & ~(0xffu << shift)) | ((uint16_t)value << shift));
 }
 
-GateFarPtr gate_far_12a5_2cd0(GateFarPtr name)
+GateFarPtr gate_linked_get_runtime_environment(GateFarPtr name)
 {
     assert(name.segment == 0x5555 && name.offset == 0x352c);
     assert(gate_far_byte(name.segment, name.offset) == 'T');
@@ -63,7 +63,7 @@ GateFarPtr gate_far_12a5_2cd0(GateFarPtr name)
     return timezone_present ? (GateFarPtr){0x8800, 0x0100} : (GateFarPtr){0, 0};
 }
 
-GateFarPtr gate_far_12a5_2bd2(GateFarPtr dst, GateFarPtr src, uint16_t n)
+GateFarPtr gate_linked_copy_runtime_string(GateFarPtr dst, GateFarPtr src, uint16_t n)
 {
     assert(dst.segment == 0x5555 && src.segment == 0x8800 && n == 3);
     assert(dst.offset == 0x353e || dst.offset == 0x3542);
@@ -79,7 +79,7 @@ GateFarPtr gate_far_12a5_2bd2(GateFarPtr dst, GateFarPtr src, uint16_t n)
     return dst;
 }
 
-uint32_t gate_far_12a5_2c38(GateFarPtr text)
+uint32_t gate_linked_parse_runtime_integer(GateFarPtr text)
 {
     assert(text.segment == 0x8800);
     ++timezone_number_calls;
@@ -126,7 +126,7 @@ void gate_far_set_word(uint16_t segment, uint16_t offset, uint16_t value)
     stack_bytes[(uint16_t)(offset + 1)] = (uint8_t)(value >> 8);
 }
 
-void gate_far_12a5_34d8(GateFarPtr destination)
+void gate_linked_read_runtime_time_sample(GateFarPtr destination)
 {
     assert(cursor_reset == 0); /* reset precedes original sampler call */
     ++calls;
@@ -150,15 +150,15 @@ int main(void)
     for (unsigned ch = '3'; ch <= '9'; ++ch)
         gate_far_set_byte(0x5555, (uint16_t)(0x33f7 + ch), 4);
     gate_ds_set_word(0x3538, 0xabcd);
-    gate_far_12a5_35da();
+    gate_linked_initialize_runtime_timezone();
     assert(timezone_lookup_calls == 1);
     assert(gate_ds_word(0x6470) == 1);
     assert(gate_ds_word(0x3538) == 0xabcd);
-    gate_rtl_8cb8();
+    gate_rtl_initialize_timezone_once();
     assert(timezone_lookup_calls == 1);
     set_timezone("PST8PDT");
     gate_ds_set_word(0x6470, 0);
-    gate_rtl_8cb8();
+    gate_rtl_initialize_timezone_once();
     assert(timezone_lookup_calls == 2);
     assert(gate_ds_word(0x6470) == 1);
     assert(timezone_copy_calls == 2 && timezone_number_calls == 1);
@@ -169,32 +169,32 @@ int main(void)
     assert(gate_ds_word(0x353c) == 1);
     timezone_lookup_side_effect_flag = 7;
     gate_ds_set_word(0x6470, 0);
-    gate_rtl_8cb8();
+    gate_rtl_initialize_timezone_once();
     assert(gate_ds_word(0x6470) == 8); /* increment actual post-call value */
     timezone_lookup_side_effect_flag = 0;
 
     set_timezone("PST-8PDT");
-    gate_rtl_8cc8();
+    gate_rtl_parse_timezone_environment();
     assert(((uint32_t)gate_ds_word(0x3538) |
             ((uint32_t)gate_ds_word(0x353a) << 16)) == (uint32_t)-28800);
     check_zone(0x3542, "PDT");
     set_timezone("PST8");
-    gate_rtl_8cc8();
+    gate_rtl_parse_timezone_environment();
     assert(gate_far_byte(0x5555, 0x3542) == 0);
     assert(gate_ds_word(0x353c) == 0);
 
     /* Original parser quirk: '+' is not scanned as part of the number,
      * and only three characters of a long number are skipped. */
     set_timezone("PST+8PDT");
-    gate_rtl_8cc8();
+    gate_rtl_parse_timezone_environment();
     check_zone(0x3542, "+8P");
     set_timezone("PST1234ABC");
-    gate_rtl_8cc8();
+    gate_rtl_parse_timezone_environment();
     check_zone(0x3542, "4AB");
 
     set_timezone("");
     unsigned previous_copies = timezone_copy_calls;
-    gate_rtl_8cc8();
+    gate_rtl_parse_timezone_environment();
     assert(timezone_copy_calls == previous_copies);
 
     memset(stack_bytes, 0xcc, sizeof stack_bytes);
@@ -205,7 +205,7 @@ int main(void)
     seconds = 0x00012345;
     fraction = 900;
     cursor_reset = 0xbeef;
-    assert(gate_rtl_8fa2() == 4700);
+    assert(gate_rtl_elapsed_milliseconds() == 4700);
     assert(calls == 1);
 
     ds[0x3584 / 2] = 0xfffe;
@@ -214,18 +214,18 @@ int main(void)
     seconds = 2;
     fraction = 0xffff;
     cursor_reset = 0xbeef;
-    assert(gate_rtl_8fa2() == 3900);
+    assert(gate_rtl_elapsed_milliseconds() == 3900);
     assert(calls == 2);
 
-    assert(gate_rtl_933a(0xffffffffu, 1000u) == 0xfffffc18u);
-    assert(gate_rtl_933a(0x12345678u, 0x87654321u) ==
+    assert(gate_rtl_multiply_32(0xffffffffu, 1000u) == 0xfffffc18u);
+    assert(gate_rtl_multiply_32(0x12345678u, 0x87654321u) ==
            (uint32_t)(0x12345678u * 0x87654321u));
-    assert((int32_t)gate_rtl_929e(3600, 60) == 60);
-    assert((int32_t)gate_rtl_929e(-3600, 60) == -60);
-    assert((int32_t)gate_rtl_929e(3600, -60) == -60);
-    assert((int32_t)gate_rtl_929e(-3600, -60) == 60);
-    assert((int32_t)gate_rtl_929e(-100, 60) == -1);
-    assert(gate_rtl_929e((int32_t)0x80000000u, -1) == 0x80000000u);
+    assert((int32_t)gate_rtl_signed_divide_32(3600, 60) == 60);
+    assert((int32_t)gate_rtl_signed_divide_32(-3600, 60) == -60);
+    assert((int32_t)gate_rtl_signed_divide_32(3600, -60) == -60);
+    assert((int32_t)gate_rtl_signed_divide_32(-3600, -60) == 60);
+    assert((int32_t)gate_rtl_signed_divide_32(-100, 60) == -1);
+    assert(gate_rtl_signed_divide_32((int32_t)0x80000000u, -1) == 0x80000000u);
     puts("RTL:8fa2 clock and RTL:933a multiply: OK");
     return 0;
 }

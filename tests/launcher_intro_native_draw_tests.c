@@ -37,17 +37,17 @@ static void configure(uint16_t mode, uint16_t max_color)
     gate_ds_set_word(0x29de + 0x20,
                      mode == 1 ? 349 : (mode == 2 ? 479 : 199));
     gate_ds_set_word(0x5512, 0);
-    gate_rtl_fc23(0);
+    gate_rtl_set_fill_pattern(0);
 }
 
 static void check_native_mode(uint16_t mode)
 {
     uint16_t x, y;
     configure(mode, mode == 3 ? 255 : 15);
-    assert(gate_rtl_fbf5(mode == 3 ? 23 : 100) == 0);
+    assert(gate_rtl_set_pen_color(mode == 3 ? 23 : 100) == 0);
     assert(gate_ds_word(0x5512) == (mode == 3 ? 23 : 15));
     assert(gate_ds_word(0x29de + 0x0c) == (mode == 3 ? 23 : 15));
-    gate_rtl_fc37(2, 7, 11, 10, 14);
+    gate_rtl_fill_rectangle(2, 7, 11, 10, 14);
     assert(gate_ds_word(0x29de + 0x22) == 0);
     assert(gate_ds_word(0x29de + 0x24) == (mode == 3 ? 23 : 15));
     assert(gate_ds_word(0x29de + 0x26) == 0);
@@ -81,12 +81,12 @@ static void check_native_frame(uint16_t mode)
 {
     configure(mode, mode == 3 ? 255 : 15);
     gate_rtl_resident_move_to(3, 5);
-    gate_rtl_fc37(1, 2, 4, 7, 8);
+    gate_rtl_fill_rectangle(1, 2, 4, 7, 8);
     assert(gate_ds_word(0x29de + 0x12) == 3);
     assert(gate_ds_word(0x29de + 0x14) == 5);
     assert(gate_ds_word(0x29de + 0x10) == 1);
 
-    gate_rtl_ff99(20, 30, 50, 60, 4);
+    gate_rtl_draw_caption_frame(20, 30, 50, 60, 4);
     assert(video_pixel(mode, 20, 30) == 4); /* original outer edge */
     assert(video_pixel(mode, 40, 50) == 6); /* style-2 interior */
     assert(video_pixel(mode, 21, 31) == 9); /* upper-left highlight */
@@ -115,7 +115,7 @@ static void check_original_snapshot(const char *path)
     assert(gate_far_word(0x2a70, 0x54) == 255);
     assert(gate_ds_word(0x12de) == 0 && gate_ds_word(0x12e0) == 0);
     assert(gate_ds_word(0x5512) == 2);
-    assert(gate_rtl_fbf5(999) == 2);
+    assert(gate_rtl_set_pen_color(999) == 2);
     assert(gate_ds_word(0x5512) == 255);
     assert(gate_ds_word(0x29de + 0x0c) == 255);
     assert(gate_ds_word(0x4da0) == 0x2a70 &&
@@ -124,11 +124,11 @@ static void check_original_snapshot(const char *path)
            gate_ds_word(0x4da6) == 0x2a70);
     assert(gate_ds_word(0x29de + 0x28) == 0xffffu);
     assert(gate_ds_word(0x29de + 0x2a) == 1);
-    gate_rtl_fc37(2, 10, 12, 13, 14);
+    gate_rtl_fill_rectangle(2, 10, 12, 13, 14);
     for (uint16_t y = 12; y <= 14; ++y)
         for (uint16_t x = 10; x <= 13; ++x)
             assert(gate_far_byte(0xa000, (uint16_t)(320u * y + x)) == 255);
-    gate_rtl_ff99(20, 30, 50, 60, 4);
+    gate_rtl_draw_caption_frame(20, 30, 50, 60, 4);
     assert(gate_far_byte(0xa000, (uint16_t)(320u * 50 + 40)) == 1);
     assert(gate_far_byte(0xa000, (uint16_t)(320u * 31 + 21)) == 255);
     assert(gate_far_byte(0xa000, (uint16_t)(320u * 59 + 49)) == 2);

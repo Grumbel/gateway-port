@@ -6,8 +6,8 @@
 
 #include <stdio.h>
 
-extern void gate_far_12a5_3afa(uint16_t seed);
-extern uint16_t gate_far_12a5_3b0c(void);
+extern void gate_linked_seed_runtime_random(uint16_t seed);
+extern uint16_t gate_linked_runtime_random(void);
 
 static uint16_t data_words[2];
 
@@ -30,10 +30,10 @@ int main(void)
     uint32_t expected = 1;
     unsigned int i;
 
-    gate_far_12a5_3afa(1);
+    gate_linked_seed_runtime_random(1);
     for (i = 0; i < 32; ++i) {
         expected = expected * 0x343fdu + 0x269ec3u;
-        if (gate_far_12a5_3b0c() != (uint16_t)((expected >> 16) & 0x7fffu)) {
+        if (gate_linked_runtime_random() != (uint16_t)((expected >> 16) & 0x7fffu)) {
             puts("Intro C runtime: FAIL");
             return 1;
         }

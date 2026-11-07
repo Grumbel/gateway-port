@@ -27,7 +27,7 @@ static void called(char id, GateFarPtr pointer)
     call_order[ncalled++] = id;
 }
 
-uint16_t gate_rtl_12c33(GateFarPtr work, uint16_t resource, uint16_t mode)
+uint16_t gate_rtl_load_picture_record(GateFarPtr work, uint16_t resource, uint16_t mode)
 {
     called('L', work);
     assert(work_memory[0] == 0);
@@ -37,19 +37,19 @@ uint16_t gate_rtl_12c33(GateFarPtr work, uint16_t resource, uint16_t mode)
     return load_result;
 }
 
-void gate_rtl_1266f(void)
+void gate_rtl_prepare_picture_display(void)
 {
     assert(work_memory[0] != 0);
     call_order[ncalled++] = 'P';
 }
 
-void gate_rtl_12ed7(GateFarPtr work)
+void gate_rtl_draw_picture_record(GateFarPtr work)
 {
     called('D', work);
     assert(work_memory[0] != 0);
 }
 
-void gate_rtl_131cb(GateFarPtr work)
+void gate_rtl_release_picture_record(GateFarPtr work)
 {
     called('C', work);
     assert(work_memory[0] != 0);
@@ -64,7 +64,7 @@ static void run_case(uint16_t outcome, uint16_t resource, uint16_t mode)
     ncalled = 0;
     work_memory = 0;
     memset(call_order, 0, sizeof call_order);
-    result = gate_rtl_12b19(resource, mode);
+    result = gate_rtl_show_picture(resource, mode);
     assert(result == (outcome != 0 ? 1 : 0));
     assert(seen_resource == resource && seen_mode == mode);
     if (outcome) {

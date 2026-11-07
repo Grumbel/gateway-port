@@ -7,11 +7,11 @@
 #include "gate_exe.h"
 
 /* Original GATE.RTL file offsets, not DOS runtime addresses. */
-void gate_rtl_12773(void); /* fade palette in, linked as 0f10:0c6e */
-void gate_rtl_12823(void); /* clear palette and video buffer, 0f10:0d1e */
-void gate_rtl_12893(void); /* fade palette out, linked as 0f10:0d8e */
-void gate_rtl_13185(GateFarPtr work); /* init work area, 0f10:1680 */
-void gate_rtl_131cb(GateFarPtr work); /* cleanup work area, 0f10:16c6 */
+void gate_rtl_fade_palette_in(void); /* fade palette in, linked as 0f10:0c6e */
+void gate_rtl_clear_palette_buffer(void); /* clear palette and video buffer, 0f10:0d1e */
+void gate_rtl_fade_palette_out(void); /* fade palette out, linked as 0f10:0d8e */
+void gate_rtl_initialize_picture_record(GateFarPtr work); /* init work area, 0f10:1680 */
+void gate_rtl_release_picture_record(GateFarPtr work); /* cleanup work area, 0f10:16c6 */
 
 /* Linked data pointers in the RTL data segment. The original operands
  * DS:000a, DS:0010, DS:0016 and DS:0018 are relocated far globals. The

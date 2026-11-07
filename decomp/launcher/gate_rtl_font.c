@@ -69,31 +69,31 @@ static uint8_t font_fallback_height(void)
 /* RTL:e79b..e800: release one slot if its reference counter is nonzero.
  * The three far pointers are passed to the allocator's free service even
  * when no corresponding optional width/spacing table was ever allocated. */
-void gate_rtl_e79b(GateFarPtr font)
+void gate_rtl_release_font_slot(GateFarPtr font)
 {
     if (font_word(font, 0) == 0)
         return;
     font_set_word(font, 0, 0);
     font_set_byte(font, 2, 0xff);
     font_set_byte(font, 3, 0xff);
-    gate_far_1e2c_0138(font_pointer(font, 14));
-    gate_far_1e2c_0138(font_pointer(font, 18));
-    gate_far_1e2c_0138(font_pointer(font, 26));
+    gate_linked_free_far_heap(font_pointer(font, 14));
+    gate_linked_free_far_heap(font_pointer(font, 18));
+    gate_linked_free_far_heap(font_pointer(font, 26));
     font_set_active(font);
 }
 
 /* RTL:e771..e79a: reset both cache slots in increasing slot order. */
-void gate_rtl_e771(void)
+void gate_rtl_clear_font_cache(void)
 {
     uint16_t i;
     for (i = 0; i < FONT_SLOTS; ++i)
-        gate_rtl_e79b(font_slot(i));
+        gate_rtl_release_font_slot(font_slot(i));
 }
 
 /* RTL:e801..e872: select an unused slot, or the slot with the lowest
  * signed reference count. Its unusual early exit when slot zero is empty
  * is preserved. The chosen slot is released before returning. */
-GateFarPtr gate_rtl_e801(void)
+GateFarPtr gate_rtl_choose_font_slot(void)
 {
     GateFarPtr candidate = font_slot(0);
     int16_t smallest = (int16_t)font_word(candidate, 0);
@@ -111,7 +111,7 @@ GateFarPtr gate_rtl_e801(void)
         }
         ++i;
     }
-    gate_rtl_e79b(candidate);
+    gate_rtl_release_font_slot(candidate);
     return candidate;
 }
 
@@ -125,8 +125,8 @@ static uint16_t font_half(uint16_t value)
 
 static void font_update_metrics(void)
 {
-    uint16_t width = gate_rtl_ec0a('M');
-    uint16_t height = gate_rtl_ebf7();
+    uint16_t width = gate_rtl_font_character_advance('M');
+    uint16_t height = gate_rtl_font_line_advance();
     uint16_t width_segment = gate_ds_word(0x4d88);
     uint16_t height_segment = gate_ds_word(0x4d8a);
     gate_far_set_word(width_segment, 0x0032, width);
@@ -139,7 +139,7 @@ static void font_update_metrics(void)
  * participates in cache identity, but its entire WORD participates in the
  * 16-bit resource ID. Read counts are ignored by the original; short file
  * data leaves the remaining memory unmodified. */
-GateFarPtr gate_rtl_e873(uint16_t request)
+GateFarPtr gate_rtl_select_font(uint16_t request)
 {
     GateFarPtr font;
     uint16_t i;
@@ -162,12 +162,12 @@ GateFarPtr gate_rtl_e873(uint16_t request)
         }
     }
 
-    font = gate_rtl_e801();
+    font = gate_rtl_choose_font_slot();
     font_set_active(font);
 
 retry:
     handle = request != 0
-        ? gate_rtl_e531(2, (uint16_t)(font_resource_type() * 100u + request))
+        ? gate_rtl_open_resource_file(2, (uint16_t)(font_resource_type() * 100u + request))
         : 0;
     font_set_word(font, 0, 1);
     font_set_byte(font, 2, (uint8_t)font_resource_type());
@@ -188,21 +188,21 @@ retry:
     }
 
     for (i = 4; i <= 13; ++i)
-        font_set_byte(font, i, (uint8_t)gate_rtl_e59b(handle));
+        font_set_byte(font, i, (uint8_t)gate_rtl_read_resource_byte(handle));
 
     if ((int8_t)font_byte(font, 11) < 0) {
-        GateFarPtr widths = gate_far_1e2c_0008(128);
+        GateFarPtr widths = gate_linked_allocate_far_heap(128);
         font_set_pointer(font, 14, widths);
         if ((uint16_t)(widths.segment | widths.offset) == 0)
             goto allocation_failed;
-        (void)gate_rtl_e5e3(handle, widths, 128);
+        (void)gate_rtl_read_resource_bytes(handle, widths, 128);
     }
     if ((int8_t)font_byte(font, 12) < 0) {
-        GateFarPtr spacing = gate_far_1e2c_0008(128);
+        GateFarPtr spacing = gate_linked_allocate_far_heap(128);
         font_set_pointer(font, 18, spacing);
         if ((uint16_t)(spacing.segment | spacing.offset) == 0)
             goto allocation_failed;
-        (void)gate_rtl_e5e3(handle, spacing, 128);
+        (void)gate_rtl_read_resource_bytes(handle, spacing, 128);
     }
     {
         uint16_t bytes = (uint16_t)(
@@ -210,18 +210,18 @@ retry:
                        (int16_t)(int8_t)font_byte(font, 7) + 1) *
             (uint16_t)(int16_t)(int8_t)font_byte(font, 6) *
             (uint16_t)(int16_t)(int8_t)font_byte(font, 10));
-        GateFarPtr bitmap = gate_far_1e2c_0008(bytes);
+        GateFarPtr bitmap = gate_linked_allocate_far_heap(bytes);
         font_set_pointer(font, 26, bitmap);
         if ((uint16_t)(bitmap.segment | bitmap.offset) == 0)
             goto allocation_failed;
-        (void)gate_rtl_e5e3(handle, bitmap, bytes);
+        (void)gate_rtl_read_resource_bytes(handle, bitmap, bytes);
     }
-    gate_rtl_e68b(handle);
+    gate_rtl_close_resource_file(handle);
     goto update_metrics;
 
 allocation_failed:
-    gate_rtl_e771();
-    gate_rtl_e68b(handle);
+    gate_rtl_clear_font_cache();
+    gate_rtl_close_resource_file(handle);
     if (retried == 0) {
         retried = 1;
         goto retry; /* original retries exactly once with same resource ID */

@@ -16,36 +16,39 @@
  * Keeping this bridge separate preserves the original caller source and
  * allows individual C test targets to use their original-call mock oracles. */
 
-uint16_t gate_far_0c4d_0511(void) { return gate_rtl_ebf7(); }
-void gate_far_0c4d_018d(uint16_t request) { (void)gate_rtl_e873(request); }
-uint16_t gate_far_0c4d_0524(uint16_t ch) { return gate_rtl_ec0a(ch); }
-uint16_t gate_far_0c4d_05be(GateFarPtr string) { return gate_rtl_eca4(string); }
-void gate_far_0c4d_0653(int16_t x, int16_t y) { gate_rtl_ed39(x, y); }
-void gate_far_0c4d_0698(GateFarPtr string) { gate_rtl_ed7e(string); }
-void gate_far_0c4d_061b(uint16_t ink, uint16_t background)
+uint16_t gate_linked_font_line_advance(void) { return gate_rtl_font_line_advance(); }
+void gate_linked_select_intro_font(uint16_t request) { (void)gate_rtl_select_font(request); }
+uint16_t gate_linked_font_character_advance(uint16_t ch) { return gate_rtl_font_character_advance(ch); }
+uint16_t gate_linked_measure_text_width(GateFarPtr string) { return gate_rtl_measure_text_width(string); }
+void gate_linked_position_intro_text(int16_t x, int16_t y) { gate_rtl_set_text_cursor(x, y); }
+void gate_linked_draw_intro_text(GateFarPtr string) { gate_rtl_draw_text_string(string); }
+void gate_linked_set_intro_text_colors(uint16_t ink, uint16_t background)
 {
-    gate_rtl_ed01(ink, (int16_t)background);
+    gate_rtl_set_text_colors(ink, (int16_t)background);
 }
 
-void gate_far_0f10_0c6e(void) { gate_rtl_12773(); }
-void gate_far_0f10_0d1e(void) { gate_rtl_12823(); }
-void gate_far_0f10_0d8e(void) { gate_rtl_12893(); }
-void gate_far_0f10_1680(GateFarPtr work) { gate_rtl_13185(work); }
-void gate_far_0f10_16c6(GateFarPtr work) { gate_rtl_131cb(work); }
+void gate_linked_fade_intro_palette_in(void) { gate_rtl_fade_palette_in(); }
+void gate_linked_clear_intro_palette(void) { gate_rtl_clear_palette_buffer(); }
+void gate_linked_fade_intro_palette_out(void) { gate_rtl_fade_palette_out(); }
+void gate_linked_initialize_intro_picture_record(GateFarPtr work)
+{
+    gate_rtl_initialize_picture_record(work);
+}
+void gate_linked_release_intro_picture_record(GateFarPtr work) { gate_rtl_release_picture_record(work); }
 
-void gate_far_0cdc_04d2(GateFarPtr palette) { gate_rtl_f61b(palette); }
-void gate_far_0cdc_07d8(void) { gate_rtl_f921(); }
-void gate_far_0cdc_0004(uint16_t mode) { (void)gate_rtl_f14d((int16_t)mode); }
-void gate_far_0cdc_0aac(uint16_t color) { (void)gate_rtl_fbf5(color); }
-void gate_far_0cdc_0aee(uint16_t style, uint16_t left, uint16_t top,
+void gate_linked_upload_intro_palette(GateFarPtr palette) { gate_rtl_upload_vga_palette(palette); }
+void gate_linked_clear_intro_display(void) { gate_rtl_clear_video_display(); }
+void gate_linked_set_intro_video_mode(uint16_t mode) { (void)gate_rtl_set_video_mode((int16_t)mode); }
+void gate_linked_set_intro_pen_color(uint16_t color) { (void)gate_rtl_set_pen_color(color); }
+void gate_linked_fill_intro_rectangle(uint16_t style, uint16_t left, uint16_t top,
                          uint16_t right, uint16_t bottom)
 {
-    gate_rtl_fc37(style, left, top, right, bottom);
+    gate_rtl_fill_rectangle(style, left, top, right, bottom);
 }
-void gate_far_0cdc_0e50(uint16_t left, uint16_t top, uint16_t right,
+void gate_linked_draw_intro_caption_frame(uint16_t left, uint16_t top, uint16_t right,
                          uint16_t bottom, uint16_t style)
 {
-    gate_rtl_ff99(left, top, right, bottom, style);
+    gate_rtl_draw_caption_frame(left, top, right, bottom, style);
 }
 
 /* The original graphics code passes SS:offset of its local palette array,
@@ -56,24 +59,24 @@ void gate_rtl_graphics_palette_upload(const uint8_t *palette)
     GateFarPtr original_pointer = palette != 0
         ? gate_stack_pointer((void *)palette)
         : (GateFarPtr){0, 0};
-    gate_rtl_f61b(original_pointer);
+    gate_rtl_upload_vga_palette(original_pointer);
 }
 
-void gate_far_0f10_1014(uint16_t resource, uint16_t mode)
+void gate_linked_show_intro_picture(uint16_t resource, uint16_t mode)
 {
-    (void)gate_rtl_12b19(resource, mode);
+    (void)gate_rtl_show_picture(resource, mode);
 }
 
-void gate_far_0f10_112e(GateFarPtr work, uint16_t resource, uint16_t mode)
+void gate_linked_load_intro_picture_record(GateFarPtr work, uint16_t resource, uint16_t mode)
 {
-    (void)gate_rtl_12c33(work, resource, mode);
+    (void)gate_rtl_load_picture_record(work, resource, mode);
 }
-void gate_far_0f10_13d2(GateFarPtr work) { gate_rtl_12ed7(work); }
-void gate_far_0f10_1466(uint16_t first, uint16_t next, uint16_t count)
+void gate_linked_draw_intro_picture_record(GateFarPtr work) { gate_rtl_draw_picture_record(work); }
+void gate_linked_play_intro_delta_sequence(uint16_t first, uint16_t next, uint16_t count)
 {
-    gate_rtl_12f6b(first, next, (int16_t)count);
+    gate_rtl_play_picture_delta_sequence(first, next, (int16_t)count);
 }
-void gate_far_0f10_15a6(uint16_t first, uint16_t count)
+void gate_linked_play_intro_preloaded_sequence(uint16_t first, uint16_t count)
 {
-    gate_rtl_130ab(first, (int16_t)count);
+    gate_rtl_play_preloaded_picture_sequence(first, (int16_t)count);
 }

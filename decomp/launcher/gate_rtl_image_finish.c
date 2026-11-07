@@ -6,7 +6,7 @@
 /* GATE.RTL:0x120f3..0x1212f. The low format nibble indexes the original
  * signed-byte format tags at relocated RTL DS:1480. Compare the tag
  * against the mode-indexed byte at RTL DS:1486+word(mode-segment:0fce). */
-uint16_t gate_rtl_120f3(void)
+uint16_t gate_rtl_detect_picture_format(void)
 {
     uint16_t header = gate_rtl_image_header_segment();
     uint16_t index = gate_far_byte(header, GATE_RTL_HEADER_OFFSET + 5) & 0x0fu;
@@ -20,7 +20,7 @@ uint16_t gate_rtl_120f3(void)
 /* GATE.RTL:0x12131..0x121b4. If header bit 0x10 is set, copy 16 or 48
  * bytes from an original mode-specific source into the relocated FAR
  * global (RTL DS:4ddc segment, offset 0fdc). Other format values return. */
-void gate_rtl_12131(uint16_t format)
+void gate_rtl_prepare_picture_palette_translation(uint16_t format)
 {
     uint16_t header = gate_rtl_image_header_segment();
     GateFarPtr source;
@@ -29,10 +29,10 @@ void gate_rtl_12131(uint16_t format)
     if ((gate_far_byte(header, GATE_RTL_HEADER_OFFSET + 5) & 0x10u) == 0)
         return;
     if (format == 0xffffu) {
-        source = gate_far_0cdc_0430(gate_rtl_image_palette_source());
+        source = gate_linked_transform_picture_palette_indexed(gate_rtl_image_palette_source());
         count = 16;
     } else if (format == 1) {
-        source = gate_far_0cdc_0396(gate_rtl_image_palette_source());
+        source = gate_linked_transform_picture_palette_rgb(gate_rtl_image_palette_source());
         count = 48;
     } else {
         return;
@@ -59,7 +59,7 @@ static uint16_t rtl_signed_quarter(uint16_t value)
 
 /* GATE.RTL:0x121b5..0x12204. Both dispatch variants are deliberately
  * computed from the LOW 16 bits, with the original signed IDIV remainder. */
-uint16_t gate_rtl_121b5(uint16_t format, uint16_t value)
+uint16_t gate_rtl_transform_picture_coordinate(uint16_t format, uint16_t value)
 {
     if (format == 0xffffu) {
         int16_t remainder = (int16_t)value % 4;
@@ -77,7 +77,7 @@ uint16_t gate_rtl_121b5(uint16_t format, uint16_t value)
  * consecutive rows with signed index remainder != 3; skip every fourth
  * row. Both FAR offsets are advanced as 16-bit WORDs; REP MOVS copies
  * forward and does not advance the segment on offset wrap. */
-void gate_rtl_12383(GateFarPtr source, GateFarPtr destination,
+void gate_rtl_compact_picture_rows(GateFarPtr source, GateFarPtr destination,
                     int16_t first, int16_t last, uint16_t bytes_per_row)
 {
     uint16_t row = (uint16_t)first;
@@ -112,9 +112,9 @@ static void work_set_word(GateFarPtr work, uint16_t index, uint16_t value)
  * transform, special signed remainder adjustment, and mode-dependent
  * output path. The format-positive case calls the original print service
  * with relocated RTL DS:148b; the other compacts the buffer in place. */
-void gate_rtl_12205(GateFarPtr work)
+void gate_rtl_postprocess_picture(GateFarPtr work)
 {
-    uint16_t format = gate_rtl_120f3();
+    uint16_t format = gate_rtl_detect_picture_format();
     uint16_t starting;
     uint16_t ending;
     uint16_t span;
@@ -123,15 +123,15 @@ void gate_rtl_12205(GateFarPtr work)
 
     if (format == 0)
         return;
-    gate_rtl_12131(format);
+    gate_rtl_prepare_picture_palette_translation(format);
 
     span = (uint16_t)(work_word(work, 0x12) -
                       work_word(work, 0x0e) + 1u);
     starting = work_word(work, 4);
     ending = (uint16_t)(starting + work_word(work, 0x14) -
                         work_word(work, 0x10));
-    work_set_word(work, 4, gate_rtl_121b5(format, starting));
-    adjusted_span = (uint16_t)(gate_rtl_121b5(format, ending) -
+    work_set_word(work, 4, gate_rtl_transform_picture_coordinate(format, starting));
+    adjusted_span = (uint16_t)(gate_rtl_transform_picture_coordinate(format, ending) -
                                work_word(work, 4) + 1u);
 
     if ((int16_t)format < 0 && (int16_t)ending % 4 == 3) {
@@ -142,7 +142,7 @@ void gate_rtl_12205(GateFarPtr work)
     }
 
     if ((int16_t)format > 0) {
-        gate_far_1258_172e((GateFarPtr){gate_rtl_image_data_segment(), GATE_RTL_MESSAGE_OFFSET});
+        gate_linked_print_intro_diagnostic((GateFarPtr){gate_rtl_image_data_segment(), GATE_RTL_MESSAGE_OFFSET});
         return;
     }
 
@@ -150,7 +150,7 @@ void gate_rtl_12205(GateFarPtr work)
     {
         GateFarPtr pixels = {work_word(data, 0x1a), work_word(data, 0x18)};
         uint16_t row_bytes = (uint16_t)(work_word(data, 0x14) << 2);
-        gate_rtl_12383(pixels, pixels, (int16_t)starting,
+        gate_rtl_compact_picture_rows(pixels, pixels, (int16_t)starting,
                        (int16_t)ending, row_bytes);
     }
     work_set_word(data, 0x0c, (uint16_t)(adjusted_span - 1u));

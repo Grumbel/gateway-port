@@ -59,14 +59,14 @@ static uint16_t unexpected_read(void *context)
 
 /* The original RTL text-mode branches are not reachable with the captured
  * 320x200 graphics configuration. Fail explicitly if that assumption breaks. */
-void gate_rtl_f997(uint16_t x, uint16_t y)
+void gate_rtl_set_text_cell_cursor(uint16_t x, uint16_t y)
 {
     (void)x;
     (void)y;
     abort();
 }
-void gate_rtl_fa45(GateFarPtr text) { (void)text; abort(); }
-void gate_rtl_f959(uint16_t *x, uint16_t *y)
+void gate_rtl_print_text_mode_string(GateFarPtr text) { (void)text; abort(); }
+void gate_rtl_get_text_cell_cursor(uint16_t *x, uint16_t *y)
 {
     (void)x;
     (void)y;
@@ -150,7 +150,7 @@ void gate_source_c_captions_close(GateSourceCCaptions *player)
 {
     if (!player)
         return;
-    gate_rtl_e771(); /* original font-cache unload */
+    gate_rtl_clear_font_cache(); /* original font-cache unload */
     gate_intro_input_detach();
     gate_dos_host_files_close_all(&player->files);
     gate_intro_memory_detach();
@@ -175,7 +175,7 @@ int gate_source_c_captions_render(GateSourceCCaptions *player, unsigned page)
     text.offset = call->text_offset;
     memset(player->memory->bytes + 0xa0000, 0, 320u * 200u);
     before = player->milliseconds;
-    gate_exe_117e(call->left, call->top, call->right, text);
+    gate_exe_show_caption(call->left, call->top, call->right, text);
     player->duration = player->milliseconds - before;
     return 1;
 }

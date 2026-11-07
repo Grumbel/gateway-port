@@ -56,7 +56,7 @@ static void test_original_resource(const char *snapshot, const char *directory)
         gate_far_set_byte(memory->ds_segment, (uint16_t)(at + 3), 0xff);
     }
 
-    font = gate_rtl_e873(5); /* original resource type 3, ID 305 */
+    font = gate_rtl_select_font(5); /* original resource type 3, ID 305 */
     assert(font.segment == 0x2a7a && font.offset == 0x54ce);
     assert(gate_ds_word(0x54ca) == font.offset);
     assert(gate_far_byte(font.segment, font.offset + 3) == 5);
@@ -94,14 +94,14 @@ static void test_original_resource(const char *snapshot, const char *directory)
 
     /* The complete original font-width and height functions operate on
      * the freshly loaded native FAR arrays, not the saved guest arrays. */
-    assert(gate_rtl_ebf7() == 11);
-    assert(gate_rtl_ec0a('M') == 9);
+    assert(gate_rtl_font_line_advance() == 11);
+    assert(gate_rtl_font_character_advance('M') == 9);
     assert(gate_far_word(0x2a70, 0x32) == 9);
     assert(gate_far_word(0x2a70, 0x34) == 11);
     assert(gate_far_word(0x2a70, 0x36) == 4);
     assert(gate_far_word(0x2a70, 0x38) == 5);
 
-    gate_rtl_e771();
+    gate_rtl_clear_font_cache();
     assert(gate_ds_word(0x54ce) == 0);
     assert(gate_ds_word(0x54ec) == 0);
     gate_dos_host_files_close_all(&files);

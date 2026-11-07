@@ -48,38 +48,38 @@ static void test_native_dos_file_backend(void)
     ram[0xfffe] = 'A'; ram[0xffff] = 'B'; ram[0] = 'C'; ram[1] = 'D';
 
     gate_dos_host_files_attach(&files);
-    handle = gate_far_1c29_0000(guest_name, 0x80);
+    handle = gate_linked_dos_file_open(guest_name, 0x80);
     assert(handle >= 5);
-    assert(gate_far_1c29_0055(handle, source, 4) == 4);
-    assert(gate_far_1c29_0074(handle, 0, 0) == 0);
-    assert(gate_far_1c29_0036(handle, destination, 4) == 4);
+    assert(gate_linked_dos_file_write(handle, source, 4) == 4);
+    assert(gate_linked_dos_file_seek(handle, 0, 0) == 0);
+    assert(gate_linked_dos_file_read(handle, destination, 4) == 4);
     assert(memcmp(ram + 0x0300, "ABCD", 4) == 0);
-    assert(gate_far_1c29_0036(handle, destination, 4) == 0);
-    assert(gate_far_1c29_0074(handle, 2, 0xffffffffu) == 0);
-    assert(gate_far_1c29_0036(handle, destination, 1) == 1);
+    assert(gate_linked_dos_file_read(handle, destination, 4) == 0);
+    assert(gate_linked_dos_file_seek(handle, 2, 0xffffffffu) == 0);
+    assert(gate_linked_dos_file_read(handle, destination, 1) == 1);
     assert(ram[0x0300] == 'D');
-    assert(gate_far_1c29_0028(handle) == 0);
+    assert(gate_linked_dos_file_close(handle) == 0);
 
     /* Original runtime format used by rtl:e531, with signed 16-bit %03d. */
     memcpy(ram + 0x0500, "%s_%03d.%s", sizeof "%s_%03d.%s");
     memcpy(ram + 0x0520, "GATE", sizeof "GATE");
     memcpy(ram + 0x0540, "PIC", sizeof "PIC");
-    gate_far_12a5_3366((GateFarPtr){segment, 0x0600},
+    gate_linked_format_resource_filename((GateFarPtr){segment, 0x0600},
         (GateFarPtr){segment, 0x0500}, (GateFarPtr){segment, 0x0520},
         201, (GateFarPtr){segment, 0x0540});
     assert(strcmp((char *)(ram + 0x0600), "GATE_201.PIC") == 0);
-    assert(gate_far_12a5_3b52((GateFarPtr){segment, 0x0600}, 4) == 0);
-    assert(gate_far_12a5_3b52((GateFarPtr){segment, 0x0600}, 5) == 0xffff);
+    assert(gate_linked_open_runtime_path((GateFarPtr){segment, 0x0600}, 4) == 0);
+    assert(gate_linked_open_runtime_path((GateFarPtr){segment, 0x0600}, 5) == 0xffff);
 
-    handle = gate_far_1c29_0000(guest_name, 0);
+    handle = gate_linked_dos_file_open(guest_name, 0);
     assert(handle >= 5);
-    assert(gate_far_1c29_0036(handle, destination, 4) == 4);
-    assert(gate_far_1c29_0028(handle) == 0);
-    assert(gate_far_1c29_0036(handle, destination, 1) == 0);
-    assert(gate_far_1c29_0074(handle, 0, 0) == 0xffff);
+    assert(gate_linked_dos_file_read(handle, destination, 4) == 4);
+    assert(gate_linked_dos_file_close(handle) == 0);
+    assert(gate_linked_dos_file_read(handle, destination, 1) == 0);
+    assert(gate_linked_dos_file_seek(handle, 0, 0) == 0xffff);
 
     memcpy(ram + 0x0100, "C:\\..", sizeof "C:\\..");
-    assert(gate_far_1c29_0000(guest_name, 0x80) == 0);
+    assert(gate_linked_dos_file_open(guest_name, 0x80) == 0);
     gate_dos_host_files_close_all(&files);
 
     assert(remove(filename) == 0);

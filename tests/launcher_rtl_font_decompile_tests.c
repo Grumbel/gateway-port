@@ -50,7 +50,7 @@ void gate_ds_set_word(uint16_t offset, uint16_t value)
     gate_far_set_word(DS, offset, value);
 }
 
-GateFarPtr gate_far_1e2c_0008(uint16_t bytes)
+GateFarPtr gate_linked_allocate_far_heap(uint16_t bytes)
 {
     GateFarPtr result;
     ++allocations;
@@ -61,13 +61,13 @@ GateFarPtr gate_far_1e2c_0008(uint16_t bytes)
     next_allocation = (uint16_t)(next_allocation + bytes + 16);
     return result;
 }
-void gate_far_1e2c_0138(GateFarPtr pointer)
+void gate_linked_free_far_heap(GateFarPtr pointer)
 {
     (void)pointer;
     ++frees;
 }
 
-uint16_t gate_rtl_e531(uint16_t type, uint16_t resource)
+uint16_t gate_rtl_open_resource_file(uint16_t type, uint16_t resource)
 {
     ++opens;
     opened_type = type;
@@ -75,12 +75,12 @@ uint16_t gate_rtl_e531(uint16_t type, uint16_t resource)
     reads = 0;
     return type == 2 && resource == 305 ? 5 : 0;
 }
-uint16_t gate_rtl_e59b(uint16_t handle)
+uint16_t gate_rtl_read_resource_byte(uint16_t handle)
 {
     assert(handle == 5 && reads < sizeof contents);
     return contents[reads++];
 }
-uint16_t gate_rtl_e5e3(uint16_t handle, GateFarPtr destination, uint16_t count)
+uint16_t gate_rtl_read_resource_bytes(uint16_t handle, GateFarPtr destination, uint16_t count)
 {
     uint16_t i;
     assert(handle == 5 && reads + count <= sizeof contents);
@@ -89,17 +89,17 @@ uint16_t gate_rtl_e5e3(uint16_t handle, GateFarPtr destination, uint16_t count)
                           contents[reads++]);
     return count;
 }
-void gate_rtl_e68b(uint16_t handle)
+void gate_rtl_close_resource_file(uint16_t handle)
 {
     assert(handle == 5);
     ++closes;
 }
-uint16_t gate_rtl_ec0a(uint16_t ch)
+uint16_t gate_rtl_font_character_advance(uint16_t ch)
 {
     assert(ch == 'M');
     return ink_width;
 }
-uint16_t gate_rtl_ebf7(void)
+uint16_t gate_rtl_font_line_advance(void)
 {
     GateFarPtr p = {gate_ds_word(0x54cc), gate_ds_word(0x54ca)};
     return (uint16_t)((int8_t)gate_far_byte(p.segment, (uint16_t)(p.offset + 9)) +
@@ -149,7 +149,7 @@ static void test_real_resource_branch_and_cache_hit(void)
     GateFarPtr slot, again;
     GateFarPtr widths, spacing, bitmap;
     setup();
-    slot = gate_rtl_e873(5);
+    slot = gate_rtl_select_font(5);
     assert(slot.segment == DS && slot.offset == 0x54ce);
     assert(opened_type == 2 && opened_resource == 305);
     assert(opens == 1 && closes == 1 && reads == sizeof contents);
@@ -174,7 +174,7 @@ static void test_real_resource_branch_and_cache_hit(void)
 
     /* The second call increments both occupied counters, then resets the
      * matching slot's count to one without reopening its FNT file. */
-    again = gate_rtl_e873(0x105);
+    again = gate_rtl_select_font(0x105);
     assert(again.offset == slot.offset);
     assert(gate_far_word(DS, slot.offset) == 1);
     assert(opens == 1 && closes == 1 && allocations == 3 && frees == 0);
@@ -184,20 +184,20 @@ static void test_eviction_and_missing_resource_fallback(void)
 {
     GateFarPtr second, selected;
     setup();
-    (void)gate_rtl_e873(5);
-    second = gate_rtl_e873(9); /* resource 309 is absent */
+    (void)gate_rtl_select_font(5);
+    second = gate_rtl_select_font(9); /* resource 309 is absent */
     assert(second.offset == 0x54ec);
     assert(opened_resource == 309 && opens == 2 && closes == 1);
     assert(gate_far_byte(DS, second.offset + 11) == 8);
     assert(gate_far_byte(DS, second.offset + 10) == 16);
     assert(gate_far_word(DS, 0x54ce) == 2);
     assert(gate_far_word(DS, second.offset) == 1);
-    selected = gate_rtl_e873(7);
+    selected = gate_rtl_select_font(7);
     assert(selected.offset == second.offset); /* lower reference count */
     assert(frees == 3 && opens == 3);
     assert(gate_far_byte(DS, second.offset + 3) == 7);
     assert(gate_far_word(DS, 0x54ce) == 3);
-    gate_rtl_e771();
+    gate_rtl_clear_font_cache();
     assert(frees == 9);
     assert(gate_far_word(DS, 0x54ce) == 0);
     assert(gate_far_word(DS, 0x54ec) == 0);
@@ -211,7 +211,7 @@ static void test_retry_then_default_on_exhausted_heap(void)
     /* Force an allocation failure in each attempt at the same resource.
      * After two failed opens, the original falls back to font ID zero. */
     failure_at = 1;
-    slot = gate_rtl_e873(5);
+    slot = gate_rtl_select_font(5);
     assert(slot.offset == 0x54ce);
     assert(opens == 2 && closes == 2);
     assert(gate_far_byte(DS, slot.offset + 3) == 0);
@@ -227,14 +227,14 @@ static void test_retry_succeeds_and_negative_metric_rounding(void)
     failure_at = 2;
     failure_once = 1; /* second allocation fails only on first pass */
     ink_width = 0xfffd; /* signed -3, half rounds toward zero to -1 */
-    slot = gate_rtl_e873(5);
+    slot = gate_rtl_select_font(5);
     assert(slot.offset == 0x54ce);
     assert(opens == 2 && closes == 2);
     assert(allocations == 5 && frees == 3);
     assert(gate_far_byte(DS, slot.offset + 3) == 5);
     gate_far_set_byte(DS, (uint16_t)(slot.offset + 9), 0xfe);
     gate_far_set_byte(DS, (uint16_t)(slot.offset + 10), 0xfd);
-    (void)gate_rtl_e873(5); /* cached descriptor, signed metrics now -5 */
+    (void)gate_rtl_select_font(5); /* cached descriptor, signed metrics now -5 */
     assert(gate_far_word(MEM_SEG, 0x32) == 0xfffd);
     assert(gate_far_word(MEM_SEG, 0x34) == 0xfffb);
     assert(gate_far_word(MEM_SEG, 0x36) == 0xffff);

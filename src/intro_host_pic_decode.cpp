@@ -32,7 +32,7 @@ static void set_extended_byte(std::uint16_t segment, std::uint16_t offset,
                       static_cast<std::uint16_t>(linear), byte);
 }
 
-extern "C" std::uint16_t gate_far_0eec_018a(std::uint16_t pixel_offset,
+extern "C" std::uint16_t gate_linked_decompress_picture_pixels(std::uint16_t pixel_offset,
                                                std::uint16_t pixel_segment)
 {
     try {

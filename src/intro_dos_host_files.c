@@ -99,7 +99,7 @@ static int guest_string(GateFarPtr source, char *dest, size_t capacity)
     return 0;
 }
 
-void gate_far_12a5_3366(GateFarPtr output, GateFarPtr format,
+void gate_linked_format_resource_filename(GateFarPtr output, GateFarPtr format,
                          GateFarPtr base, uint16_t resource, GateFarPtr table)
 {
     char spec[16];
@@ -127,10 +127,10 @@ void gate_far_12a5_3366(GateFarPtr output, GateFarPtr format,
                           (uint16_t)(output.offset + i), (uint8_t)filename[i]);
 }
 
-/* Known caller gate_rtl_e511 asks for DOS read permission (mode 4) and
+/* Known caller gate_rtl_check_resource_path asks for DOS read permission (mode 4) and
  * treats return value zero as success. Unlike the original generic access
  * runtime this host endpoint only implements that one intro operation. */
-uint16_t gate_far_12a5_3b52(GateFarPtr name, uint16_t mode)
+uint16_t gate_linked_open_runtime_path(GateFarPtr name, uint16_t mode)
 {
     char path[1024];
     FILE *file;

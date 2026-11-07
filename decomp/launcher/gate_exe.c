@@ -24,21 +24,21 @@ static GateFarPtr runtime_palette_pointer(void)
  * Stack-check far call 02a5:0c08 is compiler machinery, not source logic.
  * The `key == 3` branch is intentionally not treated as ordinary Escape.
  */
-uint16_t gate_exe_0e37(void)
+uint16_t gate_exe_handle_intro_input(void)
 {
     uint16_t key;
     uint16_t width;
     uint16_t height;
 
-    if (gate_far_0df2_000a() == 0) {
-        if ((gate_far_0e48_07fe() & 2) != 0)
+    if (gate_linked_keyboard_pending() == 0) {
+        if ((gate_linked_intro_mouse_flags() & 2) != 0)
             return 1;
         return 0;
     }
 
-    key = gate_far_0df2_0030();
+    key = gate_linked_read_keyboard_key();
     if (key == 3) {
-        gate_far_123f_0004();
+        gate_linked_handle_control_key();
         return 0;
     }
     if (key == 27)
@@ -47,17 +47,17 @@ uint16_t gate_exe_0e37(void)
     if (gate_ds_word(0x35fc) != 0)
         return 0;
     gate_ds_set_word(0x35fc, 1);
-    gate_far_0c4d_018d(1);
-    gate_far_0c4d_061b(gate_far_word(gate_ds_word(0x4e40), 0x54), 0xffff);
-    width = gate_far_0c4d_05be(far_pointer(gate_ds_segment(), 0x35fe));
-    height = gate_far_0c4d_0511();
-    gate_far_0c4d_0653(
+    gate_linked_select_intro_font(1);
+    gate_linked_set_intro_text_colors(gate_far_word(gate_ds_word(0x4e40), 0x54), 0xffff);
+    width = gate_linked_measure_text_width(far_pointer(gate_ds_segment(), 0x35fe));
+    height = gate_linked_font_line_advance();
+    gate_linked_position_intro_text(
         (int16_t)((int16_t)(gate_far_word(gate_ds_word(0x4e30), 0x3e) - width) / 2),
         (int16_t)(gate_far_word(gate_ds_word(0x4e2e), 0x42) - height - 1));
-    gate_far_0c4d_0698(far_pointer(gate_ds_segment(), 0x35fe));
+    gate_linked_draw_intro_text(far_pointer(gate_ds_segment(), 0x35fe));
     if (gate_far_word(gate_ds_word(0x4e2a), 0x0fce) != 3) {
-        gate_exe_0f18(3500);
-        gate_far_0df2_00f8();
+        gate_exe_wait_interruptible(3500);
+        gate_linked_read_buffered_key();
     }
     return 0;
 }
@@ -68,21 +68,21 @@ uint16_t gate_exe_0e37(void)
  * words as unsigned, not as a plain unsigned 32-bit timestamp comparison.
  * The delay is sign-extended by CWD and then added with ADC carry.
  */
-void gate_exe_0f18(int16_t delay)
+void gate_exe_wait_interruptible(int16_t delay)
 {
     uint32_t deadline;
     uint32_t now;
 
-    deadline = gate_far_02a5_38c4() + (uint32_t)(int32_t)delay;
+    deadline = gate_linked_exe_elapsed_milliseconds() + (uint32_t)(int32_t)delay;
     for (;;) {
-        now = gate_far_02a5_38c4();
+        now = gate_linked_exe_elapsed_milliseconds();
         if ((int16_t)(now >> 16) > (int16_t)(deadline >> 16) ||
             ((int16_t)(now >> 16) == (int16_t)(deadline >> 16) &&
              (uint16_t)now >= (uint16_t)deadline))
             break;
-        if (gate_far_0df2_000a() != 0)
+        if (gate_linked_keyboard_pending() != 0)
             break;
-        if (gate_far_0e48_07fe() != 0)
+        if (gate_linked_intro_mouse_flags() != 0)
             break;
     }
 }
@@ -97,22 +97,22 @@ void gate_exe_0f18(int16_t delay)
  * division by 64 rounded toward zero. Given factors 0..60 and one-byte
  * components, the signed product stays within 16 bits.
  */
-void gate_exe_0f61(uint16_t image)
+void gate_exe_fade_in_picture(uint16_t image)
 {
     uint8_t work[0x8c];
     uint8_t faded[0x300];
     int16_t factor;
     int16_t i;
 
-    gate_far_0f10_0d8e();
-    gate_far_0f10_1680(gate_stack_pointer(work));
-    gate_far_0f10_112e(gate_stack_pointer(work), image, 0);
+    gate_linked_fade_intro_palette_out();
+    gate_linked_initialize_intro_picture_record(gate_stack_pointer(work));
+    gate_linked_load_intro_picture_record(gate_stack_pointer(work), image, 0);
 
     for (i = 0; i < 0x300; ++i)
         faded[i] = 0;
-    gate_far_0cdc_04d2(gate_stack_pointer(faded));
-    gate_far_0f10_13d2(gate_stack_pointer(work));
-    gate_far_0f10_16c6(gate_stack_pointer(work));
+    gate_linked_upload_intro_palette(gate_stack_pointer(faded));
+    gate_linked_draw_intro_picture_record(gate_stack_pointer(work));
+    gate_linked_release_intro_picture_record(gate_stack_pointer(work));
 
     for (factor = 0; factor < 64; factor += 4) {
         for (i = 0; i < 0x300; ++i) {
@@ -120,9 +120,9 @@ void gate_exe_0f61(uint16_t image)
                 gate_ds_word(0x4e42), (uint16_t)(0x0fdc + i)) * factor);
             faded[i] = (uint8_t)(product / 64);
         }
-        gate_far_0cdc_04d2(gate_stack_pointer(faded));
+        gate_linked_upload_intro_palette(gate_stack_pointer(faded));
     }
-    gate_far_0cdc_04d2(runtime_palette_pointer());
+    gate_linked_upload_intro_palette(runtime_palette_pointer());
 }
 
 /* GATE.EXE file 0x103a..0x117d. Measure an intro text box before drawing.
@@ -137,7 +137,7 @@ void gate_exe_0f61(uint16_t image)
  * 80 or more bytes overwrites nearby stack locals). We do not truncate it.
  * String traversal increments only the 16-bit offset of the far pointer.
  */
-void gate_exe_103a(uint16_t *left, uint16_t *top, uint16_t *right,
+void gate_exe_measure_caption(uint16_t *left, uint16_t *top, uint16_t *right,
                    uint16_t *bottom, GateFarPtr text)
 {
     char word[80];
@@ -145,7 +145,7 @@ void gate_exe_103a(uint16_t *left, uint16_t *top, uint16_t *right,
     uint16_t x;
     uint16_t y;
 
-    gate_far_0c4d_018d(5);
+    gate_linked_select_intro_font(5);
     *left = (uint16_t)(*left + 5);
     *top = (uint16_t)(*top + 5);
     *right = (uint16_t)(*right - 5);
@@ -163,27 +163,27 @@ void gate_exe_103a(uint16_t *left, uint16_t *top, uint16_t *right,
             cursor = (uint16_t)(cursor + 1);
         }
         word[count] = '\0';
-        width = gate_far_0c4d_05be(gate_stack_pointer(word));
+        width = gate_linked_measure_text_width(gate_stack_pointer(word));
 
         if ((int16_t)(uint16_t)(x + width) > (int16_t)*right) {
             x = *left;
-            y = (uint16_t)(y + gate_far_0c4d_0511());
+            y = (uint16_t)(y + gate_linked_font_line_advance());
         }
         x = (uint16_t)(x + width);
 
         separator = gate_far_byte(text.segment, cursor);
         if (separator == '\n') {
             x = *left;
-            y = (uint16_t)(y + gate_far_0c4d_0511());
+            y = (uint16_t)(y + gate_linked_font_line_advance());
             cursor = (uint16_t)(cursor + 1);
         } else if (separator == ' ') {
-            x = (uint16_t)(x + gate_far_0c4d_0524(' '));
+            x = (uint16_t)(x + gate_linked_font_character_advance(' '));
             while (gate_far_byte(text.segment, cursor) == ' ')
                 cursor = (uint16_t)(cursor + 1);
         }
     }
 
-    *bottom = (uint16_t)(gate_far_0c4d_0511() + y - 2);
+    *bottom = (uint16_t)(gate_linked_font_line_advance() + y - 2);
     if ((int16_t)*bottom > 185) {
         *top = (uint16_t)(*top - (uint16_t)(*bottom - 185));
         *bottom = 185;
@@ -198,7 +198,7 @@ void gate_exe_103a(uint16_t *left, uint16_t *top, uint16_t *right,
  * buffer is again 80 bytes and has the same unchecked original overflow.
  * The final wait is uint16_t(2000 + 45 * strlen(text)), not a table lookup.
  */
-void gate_exe_117e(uint16_t left, uint16_t top, uint16_t right, GateFarPtr text)
+void gate_exe_show_caption(uint16_t left, uint16_t top, uint16_t right, GateFarPtr text)
 {
     char word[80];
     uint16_t bottom;
@@ -206,10 +206,10 @@ void gate_exe_117e(uint16_t left, uint16_t top, uint16_t right, GateFarPtr text)
     uint16_t x;
     uint16_t y;
 
-    gate_far_0c4d_018d(5);
-    gate_far_0c4d_061b(gate_far_word(gate_ds_word(0x4e44), 0x004c), 0xffff);
-    gate_exe_103a(&left, &top, &right, &bottom, text);
-    gate_far_0cdc_0e50((uint16_t)(left - 5), (uint16_t)(top - 5),
+    gate_linked_select_intro_font(5);
+    gate_linked_set_intro_text_colors(gate_far_word(gate_ds_word(0x4e44), 0x004c), 0xffff);
+    gate_exe_measure_caption(&left, &top, &right, &bottom, text);
+    gate_linked_draw_intro_caption_frame((uint16_t)(left - 5), (uint16_t)(top - 5),
                          (uint16_t)(right + 5), (uint16_t)(bottom + 5), 4);
 
     x = left;
@@ -226,29 +226,29 @@ void gate_exe_117e(uint16_t left, uint16_t top, uint16_t right, GateFarPtr text)
             cursor = (uint16_t)(cursor + 1);
         }
         word[count] = '\0';
-        width = gate_far_0c4d_05be(gate_stack_pointer(word));
+        width = gate_linked_measure_text_width(gate_stack_pointer(word));
 
         if ((int16_t)(uint16_t)(x + width) > (int16_t)right) {
             x = left;
-            y = (uint16_t)(y + gate_far_0c4d_0511());
+            y = (uint16_t)(y + gate_linked_font_line_advance());
         }
-        gate_far_0c4d_0653((int16_t)x, (int16_t)y);
-        gate_far_0c4d_0698(gate_stack_pointer(word));
+        gate_linked_position_intro_text((int16_t)x, (int16_t)y);
+        gate_linked_draw_intro_text(gate_stack_pointer(word));
         x = (uint16_t)(x + width);
 
         separator = gate_far_byte(text.segment, cursor);
         if (separator == '\n') {
             x = left;
-            y = (uint16_t)(y + gate_far_0c4d_0511());
+            y = (uint16_t)(y + gate_linked_font_line_advance());
             cursor = (uint16_t)(cursor + 1);
         } else if (separator == ' ') {
-            x = (uint16_t)(x + gate_far_0c4d_0524(' '));
+            x = (uint16_t)(x + gate_linked_font_character_advance(' '));
             while (gate_far_byte(text.segment, cursor) == ' ')
                 cursor = (uint16_t)(cursor + 1);
         }
     }
-    gate_exe_0f18((int16_t)(uint16_t)(2000u +
-        (uint16_t)(45u * gate_far_02a5_2bba(text))));
+    gate_exe_wait_interruptible((int16_t)(uint16_t)(2000u +
+        (uint16_t)(45u * gate_linked_exe_string_length(text))));
 }
 
 /* GATE.EXE file 0x1c11..0x1c6b. One of the seven red DAC bars.
@@ -257,26 +257,26 @@ void gate_exe_117e(uint16_t left, uint16_t top, uint16_t right, GateFarPtr text)
  * starts at zero and runs through 63 inclusive. If a key is pending, the
  * ENTIRE fade and its final 500ms wait are skipped.
  */
-void gate_exe_1c11(int16_t bar)
+void gate_exe_reveal_red_bar(int16_t bar)
 {
     uint16_t index;
     uint8_t value;
 
-    if (gate_far_0df2_000a() != 0)
+    if (gate_linked_keyboard_pending() != 0)
         return;
 
     index = (uint16_t)(45 + 3 * (int32_t)bar);
     for (value = 0; value <= 63; ++value) {
         gate_far_set_byte(gate_ds_word(0x4e42), (uint16_t)(0x0fdc + index), value);
-        gate_far_0cdc_04d2(runtime_palette_pointer());
+        gate_linked_upload_intro_palette(runtime_palette_pointer());
     }
-    gate_exe_0f18(500);
+    gate_exe_wait_interruptible(500);
 }
 
 /* GATE.EXE file 0x1c6c..0x1caa. Grayscale title credit reveal.
  * Unlike 0x1c11, there is no keyboard test and no final delay.
  */
-void gate_exe_1c6c(void)
+void gate_exe_reveal_credit_color(void)
 {
     uint8_t value;
     uint16_t segment;
@@ -286,7 +286,7 @@ void gate_exe_1c6c(void)
         gate_far_set_byte(segment, 0x1021, value);
         gate_far_set_byte(segment, 0x1022, value);
         gate_far_set_byte(segment, 0x1023, value);
-        gate_far_0cdc_04d2(runtime_palette_pointer());
+        gate_linked_upload_intro_palette(runtime_palette_pointer());
     }
 }
 
@@ -302,202 +302,202 @@ void gate_exe_1c6c(void)
  * skips that cleanup and joins only at 0x1a0e. The signed comparison at
  * 0x1392 is likewise preserved (JGE, not unsigned JAE).
  */
-void gate_exe_1302(void)
+void gate_exe_play_intro(void)
 {
     uint16_t mode;
 
-    gate_exe_1302_setup();
-    gate_far_0a46_01ec();
+    gate_exe_prepare_intro_globals();
+    gate_linked_initialize_intro_services();
 
     mode = gate_far_word(gate_ds_word(0x4e2a), 0x0fce);
     if (mode == 0) {
-        gate_far_0f10_1014(0x8101, 1);
-        gate_far_0f10_1014(0x8100, 1);
-        gate_exe_0f18(2000);
+        gate_linked_show_intro_picture(0x8101, 1);
+        gate_linked_show_intro_picture(0x8100, 1);
+        gate_exe_wait_interruptible(2000);
     } else {
-        gate_exe_1a14();
+        gate_exe_play_title_interlude();
     }
 
     mode = gate_far_word(gate_ds_word(0x4e2a), 0x0fce);
     if ((int16_t)mode < 2) {
-        gate_far_0f10_0d1e();
-        gate_far_0cdc_07d8();
+        gate_linked_clear_intro_palette();
+        gate_linked_clear_intro_display();
         if (gate_far_word(gate_ds_word(0x4e2a), 0x0fce) == 1) {
-            gate_far_0cdc_0aac(15);
-            gate_far_0cdc_0aee(
+            gate_linked_set_intro_pen_color(15);
+            gate_linked_fill_intro_rectangle(
                 2, 0, 0,
                 gate_far_word(gate_ds_word(0x4e30), 0x003e),
                 gate_far_word(gate_ds_word(0x4e2e), 0x0042));
         }
-        gate_far_0f10_1014(0x8102, 1);
-        gate_exe_0f18(3000);
+        gate_linked_show_intro_picture(0x8102, 1);
+        gate_exe_wait_interruptible(3000);
         goto finish;
     }
 
-    if (gate_exe_0e37() != 0)
+    if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_far_0f10_0d8e();
-    gate_far_0cdc_0004(3);
-    gate_far_0e48_011b();
-    gate_far_0cdc_07d8();
-    gate_far_0f10_1014(0x3000, 1);
-    if (gate_ds_word(0x35fc) == 0 && gate_exe_0e37() != 0)
+    gate_linked_fade_intro_palette_out();
+    gate_linked_set_intro_video_mode(3);
+    gate_linked_reset_intro_mouse();
+    gate_linked_clear_intro_display();
+    gate_linked_show_intro_picture(0x3000, 1);
+    if (gate_ds_word(0x35fc) == 0 && gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_exe_0f18(1000);
-    if (gate_ds_word(0x35fc) == 0 && gate_exe_0e37() != 0)
-        goto cleanup;
-
-    gate_exe_1c11(1);
-    if (gate_ds_word(0x35fc) == 0 && gate_exe_0e37() != 0)
-        goto cleanup;
-    gate_exe_1c11(6);
-    if (gate_ds_word(0x35fc) == 0 && gate_exe_0e37() != 0)
-        goto cleanup;
-    gate_exe_1c11(4);
-    if (gate_ds_word(0x35fc) == 0 && gate_exe_0e37() != 0)
-        goto cleanup;
-    gate_exe_1c11(7);
-    if (gate_ds_word(0x35fc) == 0 && gate_exe_0e37() != 0)
-        goto cleanup;
-    gate_exe_1c11(2);
-    if (gate_ds_word(0x35fc) == 0 && gate_exe_0e37() != 0)
-        goto cleanup;
-    gate_exe_1c11(5);
-    if (gate_ds_word(0x35fc) == 0 && gate_exe_0e37() != 0)
-        goto cleanup;
-    gate_exe_1c11(3);
-    if (gate_ds_word(0x35fc) == 0 && gate_exe_0e37() != 0)
+    gate_exe_wait_interruptible(1000);
+    if (gate_ds_word(0x35fc) == 0 && gate_exe_handle_intro_input() != 0)
         goto cleanup;
 
-    if (gate_far_0df2_000a() == 0)
-        gate_far_0f10_15a6(0x3001, 26);
-    if (gate_far_0df2_000a() == 0) {
-        gate_far_0f10_1014(0x301b, 1);
-        gate_exe_0f18(1000);
+    gate_exe_reveal_red_bar(1);
+    if (gate_ds_word(0x35fc) == 0 && gate_exe_handle_intro_input() != 0)
+        goto cleanup;
+    gate_exe_reveal_red_bar(6);
+    if (gate_ds_word(0x35fc) == 0 && gate_exe_handle_intro_input() != 0)
+        goto cleanup;
+    gate_exe_reveal_red_bar(4);
+    if (gate_ds_word(0x35fc) == 0 && gate_exe_handle_intro_input() != 0)
+        goto cleanup;
+    gate_exe_reveal_red_bar(7);
+    if (gate_ds_word(0x35fc) == 0 && gate_exe_handle_intro_input() != 0)
+        goto cleanup;
+    gate_exe_reveal_red_bar(2);
+    if (gate_ds_word(0x35fc) == 0 && gate_exe_handle_intro_input() != 0)
+        goto cleanup;
+    gate_exe_reveal_red_bar(5);
+    if (gate_ds_word(0x35fc) == 0 && gate_exe_handle_intro_input() != 0)
+        goto cleanup;
+    gate_exe_reveal_red_bar(3);
+    if (gate_ds_word(0x35fc) == 0 && gate_exe_handle_intro_input() != 0)
+        goto cleanup;
+
+    if (gate_linked_keyboard_pending() == 0)
+        gate_linked_play_intro_preloaded_sequence(0x3001, 26);
+    if (gate_linked_keyboard_pending() == 0) {
+        gate_linked_show_intro_picture(0x301b, 1);
+        gate_exe_wait_interruptible(1000);
     }
-    if (gate_far_0df2_000a() == 0) {
-        gate_exe_1c6c();
-        gate_exe_0f18(3000);
+    if (gate_linked_keyboard_pending() == 0) {
+        gate_exe_reveal_credit_color();
+        gate_exe_wait_interruptible(3000);
     }
 
     gate_ds_set_word(0x35fc, 1);
-    if (gate_exe_0e37() != 0)
+    if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_exe_0f61(0x3105);
-    gate_exe_0f18(1000);
-    if (gate_exe_0e37() != 0)
-        goto cleanup;
-
-    gate_exe_117e(10, 120, 310, far_pointer(gate_ds_segment(), 0x363b));
-    if (gate_exe_0e37() != 0)
-        goto cleanup;
-    gate_far_0f10_1014(0x3105, 0);
-    gate_far_0f10_15a6(0x3106, 26);
-    gate_exe_0f18(1000);
-    if (gate_exe_0e37() != 0)
+    gate_exe_fade_in_picture(0x3105);
+    gate_exe_wait_interruptible(1000);
+    if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
 
-    gate_exe_117e(10, 100, 180, far_pointer(gate_ds_segment(), 0x37bf));
-    if (gate_exe_0e37() != 0)
+    gate_exe_show_caption(10, 120, 310, far_pointer(gate_ds_segment(), 0x363b));
+    if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_exe_0f61(0x3100);
-    gate_exe_0f18(1000);
-    gate_exe_117e(10, 10, 160, far_pointer(gate_ds_segment(), 0x3899));
-    if (gate_exe_0e37() != 0)
-        goto cleanup;
-    gate_far_0f10_1014(0x3100, 0);
-    gate_exe_117e(10, 10, 310, far_pointer(gate_ds_segment(), 0x395a));
-    if (gate_exe_0e37() != 0)
+    gate_linked_show_intro_picture(0x3105, 0);
+    gate_linked_play_intro_preloaded_sequence(0x3106, 26);
+    gate_exe_wait_interruptible(1000);
+    if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
 
-    gate_exe_0f61(0x3101);
-    gate_exe_0f18(2000);
-    gate_exe_117e(160, 10, 310, far_pointer(gate_ds_segment(), 0x3a65));
-    if (gate_exe_0e37() != 0)
+    gate_exe_show_caption(10, 100, 180, far_pointer(gate_ds_segment(), 0x37bf));
+    if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_exe_0f61(0x3102);
-    gate_exe_0f18(2000);
-    gate_exe_117e(180, 10, 310, far_pointer(gate_ds_segment(), 0x3b9b));
-    if (gate_exe_0e37() != 0)
+    gate_exe_fade_in_picture(0x3100);
+    gate_exe_wait_interruptible(1000);
+    gate_exe_show_caption(10, 10, 160, far_pointer(gate_ds_segment(), 0x3899));
+    if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_far_0f10_1014(0x3102, 0);
-    gate_exe_117e(180, 10, 310, far_pointer(gate_ds_segment(), 0x3c4f));
-    if (gate_exe_0e37() != 0)
+    gate_linked_show_intro_picture(0x3100, 0);
+    gate_exe_show_caption(10, 10, 310, far_pointer(gate_ds_segment(), 0x395a));
+    if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
 
-    gate_far_0f10_1466(0x332a, 0x332b, 37);
-    if (gate_exe_0e37() != 0)
+    gate_exe_fade_in_picture(0x3101);
+    gate_exe_wait_interruptible(2000);
+    gate_exe_show_caption(160, 10, 310, far_pointer(gate_ds_segment(), 0x3a65));
+    if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_far_0f10_1466(0x3221, 0x323d, 42);
-    gate_exe_0f18(1000);
-    gate_exe_117e(130, 10, 310, far_pointer(gate_ds_segment(), 0x3d71));
-    if (gate_exe_0e37() != 0)
+    gate_exe_fade_in_picture(0x3102);
+    gate_exe_wait_interruptible(2000);
+    gate_exe_show_caption(180, 10, 310, far_pointer(gate_ds_segment(), 0x3b9b));
+    if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_far_0f10_1014(0x3221, 0);
-    gate_exe_117e(140, 10, 310, far_pointer(gate_ds_segment(), 0x3e79));
-    if (gate_exe_0e37() != 0)
-        goto cleanup;
-    gate_far_0f10_1014(0x3221, 0);
-    gate_exe_117e(140, 10, 310, far_pointer(gate_ds_segment(), 0x3f3b));
-    if (gate_exe_0e37() != 0)
-        goto cleanup;
-    gate_far_0f10_1014(0x3221, 0);
-    gate_exe_117e(140, 10, 310, far_pointer(gate_ds_segment(), 0x4086));
-    if (gate_exe_0e37() != 0)
+    gate_linked_show_intro_picture(0x3102, 0);
+    gate_exe_show_caption(180, 10, 310, far_pointer(gate_ds_segment(), 0x3c4f));
+    if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
 
-    gate_exe_0f61(0x3103);
-    gate_exe_0f18(1000);
-    if (gate_exe_0e37() != 0)
+    gate_linked_play_intro_delta_sequence(0x332a, 0x332b, 37);
+    if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_exe_117e(10, 10, 140, far_pointer(gate_ds_segment(), 0x4198));
-    if (gate_exe_0e37() != 0)
+    gate_linked_play_intro_delta_sequence(0x3221, 0x323d, 42);
+    gate_exe_wait_interruptible(1000);
+    gate_exe_show_caption(130, 10, 310, far_pointer(gate_ds_segment(), 0x3d71));
+    if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_exe_0f61(0x3104);
-    gate_exe_117e(60, 120, 310, far_pointer(gate_ds_segment(), 0x42ae));
-    if (gate_exe_0e37() != 0)
+    gate_linked_show_intro_picture(0x3221, 0);
+    gate_exe_show_caption(140, 10, 310, far_pointer(gate_ds_segment(), 0x3e79));
+    if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_far_0f10_1014(0x3104, 0);
-    gate_exe_117e(140, 120, 310, far_pointer(gate_ds_segment(), 0x436c));
-    if (gate_exe_0e37() != 0)
+    gate_linked_show_intro_picture(0x3221, 0);
+    gate_exe_show_caption(140, 10, 310, far_pointer(gate_ds_segment(), 0x3f3b));
+    if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-
-    gate_exe_0f61(0x3200);
-    gate_exe_0f18(1000);
-    if (gate_exe_0e37() != 0)
-        goto cleanup;
-    gate_exe_117e(120, 10, 310, far_pointer(gate_ds_segment(), 0x4436));
-    if (gate_exe_0e37() != 0)
-        goto cleanup;
-    gate_far_0f10_1466(0x3200, 0x3201, 32);
-    gate_far_0f10_1466(0x3221, 0x3222, 27);
-    gate_far_0f10_1466(0x3300, 0x3301, 41);
-    gate_exe_0f18(2000);
-    if (gate_exe_0e37() != 0)
+    gate_linked_show_intro_picture(0x3221, 0);
+    gate_exe_show_caption(140, 10, 310, far_pointer(gate_ds_segment(), 0x4086));
+    if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
 
-    gate_exe_0f61(0x3a04);
-    gate_exe_0f18(2000);
-    if (gate_exe_0e37() != 0)
+    gate_exe_fade_in_picture(0x3103);
+    gate_exe_wait_interruptible(1000);
+    if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_exe_117e(10, 100, 160, far_pointer(gate_ds_segment(), 0x45c4));
-    if (gate_exe_0e37() != 0)
+    gate_exe_show_caption(10, 10, 140, far_pointer(gate_ds_segment(), 0x4198));
+    if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_exe_0f61(0x332a);
-    gate_exe_0f18(1000);
-    if (gate_exe_0e37() != 0)
+    gate_exe_fade_in_picture(0x3104);
+    gate_exe_show_caption(60, 120, 310, far_pointer(gate_ds_segment(), 0x42ae));
+    if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_exe_117e(10, 10, 310, far_pointer(gate_ds_segment(), 0x46c5));
-    if (gate_exe_0e37() != 0)
+    gate_linked_show_intro_picture(0x3104, 0);
+    gate_exe_show_caption(140, 120, 310, far_pointer(gate_ds_segment(), 0x436c));
+    if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_far_0f10_1014(0x332a, 0);
-    gate_exe_117e(10, 10, 310, far_pointer(gate_ds_segment(), 0x4820));
-    gate_exe_0e37();  /* 0x1a05: return value discarded */
+
+    gate_exe_fade_in_picture(0x3200);
+    gate_exe_wait_interruptible(1000);
+    if (gate_exe_handle_intro_input() != 0)
+        goto cleanup;
+    gate_exe_show_caption(120, 10, 310, far_pointer(gate_ds_segment(), 0x4436));
+    if (gate_exe_handle_intro_input() != 0)
+        goto cleanup;
+    gate_linked_play_intro_delta_sequence(0x3200, 0x3201, 32);
+    gate_linked_play_intro_delta_sequence(0x3221, 0x3222, 27);
+    gate_linked_play_intro_delta_sequence(0x3300, 0x3301, 41);
+    gate_exe_wait_interruptible(2000);
+    if (gate_exe_handle_intro_input() != 0)
+        goto cleanup;
+
+    gate_exe_fade_in_picture(0x3a04);
+    gate_exe_wait_interruptible(2000);
+    if (gate_exe_handle_intro_input() != 0)
+        goto cleanup;
+    gate_exe_show_caption(10, 100, 160, far_pointer(gate_ds_segment(), 0x45c4));
+    if (gate_exe_handle_intro_input() != 0)
+        goto cleanup;
+    gate_exe_fade_in_picture(0x332a);
+    gate_exe_wait_interruptible(1000);
+    if (gate_exe_handle_intro_input() != 0)
+        goto cleanup;
+    gate_exe_show_caption(10, 10, 310, far_pointer(gate_ds_segment(), 0x46c5));
+    if (gate_exe_handle_intro_input() != 0)
+        goto cleanup;
+    gate_linked_show_intro_picture(0x332a, 0);
+    gate_exe_show_caption(10, 10, 310, far_pointer(gate_ds_segment(), 0x4820));
+    gate_exe_handle_intro_input();  /* 0x1a05: return value discarded */
 
 cleanup:
-    gate_far_0f10_0d8e();
+    gate_linked_fade_intro_palette_out();
 finish:
-    gate_far_0df2_0128();
+    gate_linked_flush_keyboard();
 }
 
 /* GATE.EXE file 0x1a14..0x1c10. Intro title/palette interlude called from
@@ -510,72 +510,72 @@ finish:
  * A pending key exits only after one of the three specified waits; unlike
  * 0x0e37 no key is consumed by this function.
  */
-void gate_exe_1a14(void)
+void gate_exe_play_title_interlude(void)
 {
     int8_t i;
 
     for (i = 0; i < 45; ++i)
         gate_far_set_byte(gate_ds_word(0x4e42), (uint16_t)(0x0fdc + i), 63);
-    gate_far_0f10_0c6e();
-    gate_exe_0f18(250);
-    gate_far_0f10_1014(0x8101, 1);
+    gate_linked_fade_intro_palette_in();
+    gate_exe_wait_interruptible(250);
+    gate_linked_show_intro_picture(0x8101, 1);
 
     if ((int16_t)gate_far_word(gate_ds_word(0x4e2a), 0x0fce) < 2) {
         gate_far_set_byte(gate_ds_word(0x4e42), 0x0fdd, 0);
-        gate_far_0cdc_04d2(runtime_palette_pointer());
+        gate_linked_upload_intro_palette(runtime_palette_pointer());
     } else {
         for (i = 63; i >= 0; --i) {
             gate_far_set_byte(gate_ds_word(0x4e42), 0x0fdf, (uint8_t)i);
             gate_far_set_byte(gate_ds_word(0x4e42), 0x0fe0, (uint8_t)i);
             gate_far_set_byte(gate_ds_word(0x4e42), 0x0fe1, (uint8_t)i);
-            gate_far_0cdc_04d2(runtime_palette_pointer());
+            gate_linked_upload_intro_palette(runtime_palette_pointer());
         }
     }
-    gate_exe_0f18(2000);
-    if (gate_far_0df2_000a() != 0)
+    gate_exe_wait_interruptible(2000);
+    if (gate_linked_keyboard_pending() != 0)
         return;
 
     if ((int16_t)gate_far_word(gate_ds_word(0x4e2a), 0x0fce) < 2) {
         gate_far_set_byte(gate_ds_word(0x4e42), 0x0fdd, 63);
-        gate_far_0cdc_04d2(runtime_palette_pointer());
+        gate_linked_upload_intro_palette(runtime_palette_pointer());
     } else {
         for (i = 0; i <= 63; ++i) {
             gate_far_set_byte(gate_ds_word(0x4e42), 0x0fdf, (uint8_t)i);
             gate_far_set_byte(gate_ds_word(0x4e42), 0x0fe0, (uint8_t)i);
             gate_far_set_byte(gate_ds_word(0x4e42), 0x0fe1, (uint8_t)i);
-            gate_far_0cdc_04d2(runtime_palette_pointer());
+            gate_linked_upload_intro_palette(runtime_palette_pointer());
         }
     }
-    gate_exe_0f18(500);
-    if (gate_far_0df2_000a() != 0)
+    gate_exe_wait_interruptible(500);
+    if (gate_linked_keyboard_pending() != 0)
         return;
 
-    gate_far_0f10_1014(0x8100, 1);
+    gate_linked_show_intro_picture(0x8100, 1);
     if ((int16_t)gate_far_word(gate_ds_word(0x4e2a), 0x0fce) < 2) {
         gate_far_set_byte(gate_ds_word(0x4e42), 0x0fde, 0);
-        gate_far_0cdc_04d2(runtime_palette_pointer());
+        gate_linked_upload_intro_palette(runtime_palette_pointer());
     } else {
         for (i = 63; i >= 0; --i) {
             gate_far_set_byte(gate_ds_word(0x4e42), 0x0fe2, (uint8_t)i);
             gate_far_set_byte(gate_ds_word(0x4e42), 0x0fe3, (uint8_t)i);
             gate_far_set_byte(gate_ds_word(0x4e42), 0x0fe4, (uint8_t)i);
-            gate_far_0cdc_04d2(runtime_palette_pointer());
+            gate_linked_upload_intro_palette(runtime_palette_pointer());
         }
     }
-    gate_exe_0f18(2000);
-    if (gate_far_0df2_000a() != 0)
+    gate_exe_wait_interruptible(2000);
+    if (gate_linked_keyboard_pending() != 0)
         return;
 
     if ((int16_t)gate_far_word(gate_ds_word(0x4e2a), 0x0fce) < 2) {
         gate_far_set_byte(gate_ds_word(0x4e42), 0x0fdf, 0);
-        gate_far_0cdc_04d2(runtime_palette_pointer());
+        gate_linked_upload_intro_palette(runtime_palette_pointer());
     } else {
         for (i = 63; i >= 0; --i) {
             gate_far_set_byte(gate_ds_word(0x4e42), 0x0fe5, (uint8_t)i);
             gate_far_set_byte(gate_ds_word(0x4e42), 0x0fe6, (uint8_t)i);
             gate_far_set_byte(gate_ds_word(0x4e42), 0x0fe7, (uint8_t)i);
-            gate_far_0cdc_04d2(runtime_palette_pointer());
+            gate_linked_upload_intro_palette(runtime_palette_pointer());
         }
     }
-    gate_exe_0f18(2000);
+    gate_exe_wait_interruptible(2000);
 }

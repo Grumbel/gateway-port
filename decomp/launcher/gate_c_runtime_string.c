@@ -21,14 +21,14 @@ static uint16_t bounded_far_strlen(GateFarPtr text)
     return 0xfffeu;
 }
 
-uint16_t gate_far_02a5_2bba(GateFarPtr text)
+uint16_t gate_linked_exe_string_length(GateFarPtr text)
 {
-    return gate_rtl_8298(text);
+    return gate_rtl_string_length(text);
 }
 
 /* GATE.RTL file 0x8298..0x82ae: LES DI, SCASB with CX=ffff,
  * NOT CX, DEC CX; source identity and linked address are both verified. */
-uint16_t gate_rtl_8298(GateFarPtr text)
+uint16_t gate_rtl_string_length(GateFarPtr text)
 {
     return bounded_far_strlen(text);
 }

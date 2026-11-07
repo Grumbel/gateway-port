@@ -14,7 +14,7 @@
 static uint16_t original_return;
 static unsigned calls;
 
-uint16_t gate_far_0e2c_0094(uint16_t argument)
+uint16_t gate_linked_allocate_intro_memory(uint16_t argument)
 {
     assert(argument == 0x1000);
     ++calls;
@@ -55,7 +55,7 @@ int main(int argc, char **argv)
     /* Original word at DS:4e4e destination was 0x524e at the 134c
      * breakpoint, following the original 0e2c:0094 result 0x6500. */
     original_return = 0x6500;
-    gate_exe_1302_setup();
+    gate_exe_prepare_intro_globals();
     assert(calls == 1);
     for (i = 0; i < sizeof globals / sizeof globals[0]; ++i) {
         uint16_t segment = gate_ds_word(globals[i].selector);

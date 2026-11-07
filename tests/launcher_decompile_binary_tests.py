@@ -191,10 +191,10 @@ class LauncherDecompileBinaryTests(unittest.TestCase):
         exe = self.exe
         inspection = inspect_intro_program(exe)
         source = (ROOT / 'decomp/launcher/gate_exe.c').read_text()
-        source = source.split('void gate_exe_1302(void)', 1)[1]
+        source = source.split('void gate_exe_play_intro(void)', 1)[1]
 
         captions = re.findall(
-            r'gate_exe_117e\((\d+), (\d+), (\d+), '
+            r'gate_exe_show_caption\((\d+), (\d+), (\d+), '
             r'far_pointer\(gate_ds_segment\(\), (0x[0-9a-f]+)\)\);', source)
         found_captions = [(int(ptr, 16), int(left), int(top), int(right))
                           for left, top, right, ptr in captions]
@@ -205,14 +205,14 @@ class LauncherDecompileBinaryTests(unittest.TestCase):
 
         original_bars = [row['bar'] for row in inspection['logo_palette_steps']]
         c_bars = [int(index) for index in re.findall(
-            r'gate_exe_1c11\((\d+)\);', source)]
+            r'gate_exe_reveal_red_bar\((\d+)\);', source)]
         self.assertEqual(c_bars, original_bars)
 
         original_animations = [
             (row['base_resource'], row['next_resource'], row['count'])
             for row in inspection['animations']]
         c_animations = [tuple(int(value, 0) for value in match) for match in
-                        re.findall(r'gate_far_0f10_1466\((0x[0-9a-f]+), '
+                        re.findall(r'gate_linked_play_intro_delta_sequence\((0x[0-9a-f]+), '
                                    r'(0x[0-9a-f]+), (\d+)\);', source)]
         self.assertEqual(c_animations, original_animations)
 
@@ -224,7 +224,7 @@ class LauncherDecompileBinaryTests(unittest.TestCase):
             self.assertEqual(exe[site - 2:site], b'\x50\x0e')
             original_frames.append(u16(exe, site - 4))
         c_frames = [int(value, 16) for value in re.findall(
-            r'gate_exe_0f61\((0x[0-9a-f]+)\);', source)]
+            r'gate_exe_fade_in_picture\((0x[0-9a-f]+)\);', source)]
         self.assertEqual(c_frames, original_frames)
 
 

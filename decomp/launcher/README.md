@@ -8,9 +8,19 @@ into these manually reviewed C files.
 This directory is the **decompilation**, not the native SDL intro player.
 Its goal is to reconstruct the original 16-bit C program function by function,
 with its actual calls, loops, data accesses, argument order, arithmetic and
-bugs. Names are provisional where the original symbol table is absent. A
-function name such as `gate_exe_0f18` gives its immutable **file offset** in
-the original `GATE.EXE`, not a DOS runtime `CS:IP`.
+bugs. Names are descriptive and provisional where the original symbol table
+is absent. The original file offsets are retained in routine comments and
+in [`symbol-names.tsv`](symbol-names.tsv), which maps the 148 former
+address-based identifiers to their new names. The `gate_exe_` and `gate_rtl_`
+entries in its first column identify original **file offsets**, while the
+`gate_far_` entries identify linked `segment:offset` addresses observed in
+one DOS memory layout, not permanent file offsets. The linked wrappers keep
+their own `gate_linked_` names to distinguish a call-site alias from its
+reconstructed RTL implementation. No renaming changes the original calling
+conventions, control flow, or instruction-offset evidence.
+
+The historical progress log in `docs/decompilation-plan.md` retains the
+old names as recorded at the time; use the index to translate them.
 
 The executable is compiled native 8086 code, **not** a small interpreted
 script. Its original C source, compiler version, and library headers have not
@@ -21,15 +31,15 @@ they are **not** a claim to possess byte-for-byte original source text.
 
 | Original file range | C function | Recovered behavior | Uncertainty |
 | --- | --- | --- | --- |
-| `exe:0x0e37–0x0f17` | `gate_exe_0e37()` | Poll key, dispatch key 3/Escape/mouse bit 1, set `DS:35fc`, display first-key message, interruptible 3500ms wait | External text/UI functions retain linked addresses; exact types unknown |
-| `exe:0x0f18–0x0f60` | `gate_exe_0f18(int16_t)` | Signed 16-bit delay added to DX:AX clock, signed-high/unsigned-low deadline, keyboard/mouse early return | Clock RTL name and units inferred; DX:AX ABI certain |
-| `exe:0x1c11–0x1c6b` | `gate_exe_1c11(int16_t)` | If no key pending, update DAC component `45+3*bar` through 64 values and call palette upload each time; wait 500ms | Meaning of palette-upload far pointer not fully proven |
-| `exe:0x1c6c–0x1caa` | `gate_exe_1c6c()` | Write same 0..63 grayscale value to three adjacent DAC components, uploading palette each step | Exact RTL source declarations unknown |
-| `exe:0x1302–0x1a13` | `gate_exe_1302()` | Entire enclosing original intro: initial settings, signed mode fork, short startup branch, 18 explicit caption calls, seven palette-bar calls, five animated sequences, repeated input checks, and distinct cleanup/final paths | Linked graphics services and original mode meaning remain unresolved |
-| `exe:0x1a14–0x1c10` | `gate_exe_1a14()` | Four mode-dependent title palette stages: single-byte change for signed mode below 2, or 64-step three-component fade otherwise, with three early key exits | RTL 0f10:0c6e service not yet decompiled |
-| `exe:0x0f61–0x1039` | `gate_exe_0f61(uint16_t)` | Prepares image in a 140-byte stack work area; uploads a blank 768-byte RGB palette, then 16 palettes scaled by signed `component * factor / 64` for factors `0,4,…,60`, then the complete original palette | Linked image preparation functions remain opaque; stack far-pointer host substitute is not a recovered compiler ABI |
-| `exe:0x103a–0x117d` | `gate_exe_103a()` | Original text-measurement pass, with far pointers to caller's left/top/right/bottom words, signed line-wrap decisions, an 80-byte word buffer, and a signed bottom clamp at 185 that shifts the caller's top coordinate | Now exercised with the real recovered font; unchecked word buffer is original behavior |
-| `exe:0x117e–0x1301` | `gate_exe_117e()` | Select intro font, call `0x103a` with pointers to its own arguments, draw expanded border, emit words/position and advance through whitespace/newlines, then wait `uint16_t(2000+45*strlen(text))` | Native integration tests exercise all eighteen captions, but not through guest-entry differential execution or an SDL loop |
+| `exe:0x0e37–0x0f17` | `gate_exe_handle_intro_input()` | Poll key, dispatch key 3/Escape/mouse bit 1, set `DS:35fc`, display first-key message, interruptible 3500ms wait | External text/UI functions retain linked addresses; exact types unknown |
+| `exe:0x0f18–0x0f60` | `gate_exe_wait_interruptible(int16_t)` | Signed 16-bit delay added to DX:AX clock, signed-high/unsigned-low deadline, keyboard/mouse early return | Clock RTL name and units inferred; DX:AX ABI certain |
+| `exe:0x1c11–0x1c6b` | `gate_exe_reveal_red_bar(int16_t)` | If no key pending, update DAC component `45+3*bar` through 64 values and call palette upload each time; wait 500ms | Meaning of palette-upload far pointer not fully proven |
+| `exe:0x1c6c–0x1caa` | `gate_exe_reveal_credit_color()` | Write same 0..63 grayscale value to three adjacent DAC components, uploading palette each step | Exact RTL source declarations unknown |
+| `exe:0x1302–0x1a13` | `gate_exe_play_intro()` | Entire enclosing original intro: initial settings, signed mode fork, short startup branch, 18 explicit caption calls, seven palette-bar calls, five animated sequences, repeated input checks, and distinct cleanup/final paths | Linked graphics services and original mode meaning remain unresolved |
+| `exe:0x1a14–0x1c10` | `gate_exe_play_title_interlude()` | Four mode-dependent title palette stages: single-byte change for signed mode below 2, or 64-step three-component fade otherwise, with three early key exits | RTL 0f10:0c6e service not yet decompiled |
+| `exe:0x0f61–0x1039` | `gate_exe_fade_in_picture(uint16_t)` | Prepares image in a 140-byte stack work area; uploads a blank 768-byte RGB palette, then 16 palettes scaled by signed `component * factor / 64` for factors `0,4,…,60`, then the complete original palette | Linked image preparation functions remain opaque; stack far-pointer host substitute is not a recovered compiler ABI |
+| `exe:0x103a–0x117d` | `gate_exe_measure_caption()` | Original text-measurement pass, with far pointers to caller's left/top/right/bottom words, signed line-wrap decisions, an 80-byte word buffer, and a signed bottom clamp at 185 that shifts the caller's top coordinate | Now exercised with the real recovered font; unchecked word buffer is original behavior |
+| `exe:0x117e–0x1301` | `gate_exe_show_caption()` | Select intro font, call `0x103a` with pointers to its own arguments, draw expanded border, emit words/position and advance through whitespace/newlines, then wait `uint16_t(2000+45*strlen(text))` | Native integration tests exercise all eighteen captions, but not through guest-entry differential execution or an SDL loop |
 
 The long introductory sequence at **`exe:0x13fc` is not a separate
 function**. Its entry is a `JGE` branch target inside `exe:0x1302`, whose
@@ -64,7 +74,7 @@ assuming an unverified DOS data structure. These are **temporary source-level
 memory intrinsics**. Once the corresponding original data declarations are
 recovered, replace them with C structs and far pointers while preserving
 their offsets. They are not a proposed game engine or renderer API.
-The `uint16_t *` parameters in `gate_exe_103a` express the original
+The `uint16_t *` parameters in `gate_exe_measure_caption` express the original
 SS-relative far pointers to the *caller's* stack variables at source level;
 their exact DOS compiler ABI remains to be verified. Word scan offsets
 increment modulo 65536 without carrying into the source far segment.
@@ -91,8 +101,8 @@ functions in the `0df2` bank that are directly called by `GATE.EXE`:
 
 | Linked entry | Reconstructed C | Original behavior |
 | --- | --- | --- |
-| `0df2:00f8..0127` | `gate_far_0df2_00f8()` | If a key is pending, read it; return that key and store it back to `DS:1340` unless it is Space (`0x20`) or CR (`0x0d`). Return zero without a read when none is pending. |
-| `0df2:0128..0136` | `gate_far_0df2_0128()` | Repeatedly read and discard keys while the pending-key service returns nonzero. |
+| `0df2:00f8..0127` | `gate_linked_read_buffered_key()` | If a key is pending, read it; return that key and store it back to `DS:1340` unless it is Space (`0x20`) or CR (`0x0d`). Return zero without a read when none is pending. |
+| `0df2:0128..0136` | `gate_linked_flush_keyboard()` | Repeatedly read and discard keys while the pending-key service returns nonzero. |
 
 `gate_input.c` preserves their original conditional calls, 16-bit key
 values and memory effects. A strict C11/UBSan test exercises absent keys,
@@ -125,19 +135,19 @@ routines, not newly invented layout/rendering functions:
 
 | Original file range | Linked far call | C function | Recovered original operation |
 | --- | --- | --- | --- |
-| `rtl:0xe771–0xe79a` | same RTL segment | `gate_rtl_e771` | Release both 30-byte font-cache slots in increasing order. |
-| `rtl:0xe79b–0xe800` | same RTL segment | `gate_rtl_e79b` | Reset one occupied font slot, release width/spacing/bitmap FAR allocations and update the active pointer. |
-| `rtl:0xe801–0xe872` | same RTL segment | `gate_rtl_e801` | Choose an empty slot or evict the lowest signed-reference-count slot; free its previous allocations. |
-| `rtl:0xe873–0xebcf` | `0c4d:018d` | `gate_rtl_e873` | Select a cached font or open a `.FNT` resource, read its ten-byte header, allocate optional width/spacing tables and bitmap, retry/fallback on heap failure, and update video text metrics. |
-| `rtl:0xebf7–0xec09` | `0c4d:0511` | `gate_rtl_ebf7` | Add two **signed** font-header bytes at +9 and +10 to obtain line advance. |
-| `rtl:0xec0a–0xeca3` | `0c4d:0524` | `gate_rtl_ec0a` | Return special tab/newline widths; otherwise choose fixed, per-character-width or per-character-width-plus-packed-spacing mode via signed bytes at font +11/+12. |
-| `rtl:0xeca4–0xece9` | `0c4d:05be` | `gate_rtl_eca4` | Normalize a far string pointer, sign-extend each character, sum advances modulo 65536; increment only the far pointer's 16-bit offset. |
-| `rtl:0xecea–0xed00` | same RTL segment | `gate_rtl_ecea` | Get ink/background colors, unconditionally writing through two far pointers. |
-| `rtl:0xed01–0xed11` | same RTL segment | `gate_rtl_ed01` | Set the two color words used by the glyph printer. |
-| `rtl:0xed12–0xed38` | same RTL segment | `gate_rtl_ed12` | Return the cursor x/y via optional far pointers; check **both words together** for NULL. |
-| `rtl:0xed39–0xed7d` | `0c4d:0653` | `gate_rtl_ed39` | Store the text cursor; if font header +3 is zero, convert signed pixel x/y to text-mode positions using SAR/IDIV and one-based coordinates. |
-| `rtl:0xed7e–0xedfe` | `0c4d:0698` | `gate_rtl_ed7e` | Normalize a far string, call the original `rtl:0xedff` glyph routine for each signed character, or dispatch via the alternate text-mode printer and update cursor coordinates. |
-| `rtl:0xedff–0xefd8` | same RTL segment | `gate_rtl_edff` | TAB/newline cursor handling, signed-width and packed-bearing calculations, bitmap offset via two truncated IMULs, per-row MSB-first bit traversal, and one far pixel-write call per set bit. |
+| `rtl:0xe771–0xe79a` | same RTL segment | `gate_rtl_clear_font_cache` | Release both 30-byte font-cache slots in increasing order. |
+| `rtl:0xe79b–0xe800` | same RTL segment | `gate_rtl_release_font_slot` | Reset one occupied font slot, release width/spacing/bitmap FAR allocations and update the active pointer. |
+| `rtl:0xe801–0xe872` | same RTL segment | `gate_rtl_choose_font_slot` | Choose an empty slot or evict the lowest signed-reference-count slot; free its previous allocations. |
+| `rtl:0xe873–0xebcf` | `0c4d:018d` | `gate_rtl_select_font` | Select a cached font or open a `.FNT` resource, read its ten-byte header, allocate optional width/spacing tables and bitmap, retry/fallback on heap failure, and update video text metrics. |
+| `rtl:0xebf7–0xec09` | `0c4d:0511` | `gate_rtl_font_line_advance` | Add two **signed** font-header bytes at +9 and +10 to obtain line advance. |
+| `rtl:0xec0a–0xeca3` | `0c4d:0524` | `gate_rtl_font_character_advance` | Return special tab/newline widths; otherwise choose fixed, per-character-width or per-character-width-plus-packed-spacing mode via signed bytes at font +11/+12. |
+| `rtl:0xeca4–0xece9` | `0c4d:05be` | `gate_rtl_measure_text_width` | Normalize a far string pointer, sign-extend each character, sum advances modulo 65536; increment only the far pointer's 16-bit offset. |
+| `rtl:0xecea–0xed00` | same RTL segment | `gate_rtl_get_text_colors` | Get ink/background colors, unconditionally writing through two far pointers. |
+| `rtl:0xed01–0xed11` | same RTL segment | `gate_rtl_set_text_colors` | Set the two color words used by the glyph printer. |
+| `rtl:0xed12–0xed38` | same RTL segment | `gate_rtl_get_text_cursor` | Return the cursor x/y via optional far pointers; check **both words together** for NULL. |
+| `rtl:0xed39–0xed7d` | `0c4d:0653` | `gate_rtl_set_text_cursor` | Store the text cursor; if font header +3 is zero, convert signed pixel x/y to text-mode positions using SAR/IDIV and one-based coordinates. |
+| `rtl:0xed7e–0xedfe` | `0c4d:0698` | `gate_rtl_draw_text_string` | Normalize a far string, call the original `rtl:0xedff` glyph routine for each signed character, or dispatch via the alternate text-mode printer and update cursor coordinates. |
+| `rtl:0xedff–0xefd8` | same RTL segment | `gate_rtl_draw_font_glyph` | TAB/newline cursor handling, signed-width and packed-bearing calculations, bitmap offset via two truncated IMULs, per-row MSB-first bit traversal, and one far pixel-write call per set bit. |
 
 The intro's active font points at a runtime descriptor with a four-byte
 prefix, followed by the font header. Its `+9=1`, `+10=10`, `+11=-1` and
@@ -187,7 +197,7 @@ font bitmap bits. With the available snapshot, all 18 pass (323,066
 nonzero pixels in total, 268 verified first-glyph ink pixels). An optional
 PGM output argument exports the first caption with a *diagnostic* contrast
 map, not the DOS VGA DAC palette. These are independently run original C
-**caption calls**, not the enclosing `gate_exe_1302` presentation, which
+**caption calls**, not the enclosing `gate_exe_play_intro` presentation, which
 still needs its graphics, event loop and startup dependencies wired together.
 
 `launcher-rtl-decompile` runs the reconstructed C with instrumented far
@@ -212,11 +222,11 @@ Five further original functions are recovered in `gate_rtl_graphics.c`:
 
 | RTL file offset | Original linked far entry | C function | Operation |
 | --- | --- | --- | --- |
-| `0x12773–0x12821` | `0f10:0c6e` | `gate_rtl_12773()` | For graphics mode 3, upload 17 palettes containing 768 signed bytes scaled by `0,4,...,64`; for other nonzero modes except 1, scale 48 bytes; mode 1 uploads a null FAR pointer once. |
-| `0x12823–0x12891` | `0f10:0d1e` | `gate_rtl_12823()` | Clear a positive, mode-indexed signed number of bytes in the original video buffer, then upload a null palette pointer. |
-| `0x12893–0x12995` | `0f10:0d8e` | `gate_rtl_12893()` | Mode 1: three rounds of 16 destructive byte bit-transformations, null palette uploads, and 100ms delays. Other nonzero modes: 17 palettes with factors `64,60,...,0`, followed by `rtl:0x12823`. |
-| `0x13185–0x13190` | `0f10:1680` | `gate_rtl_13185()` | Clear the first byte of an unconditionally dereferenced far work-area pointer. |
-| `0x131cb–0x131f5` | `0f10:16c6` | `gate_rtl_131cb()` | If the pointer is non-null and its first byte is set, call the original resource-release service on the same-segment pointer plus 8, then clear that byte. |
+| `0x12773–0x12821` | `0f10:0c6e` | `gate_rtl_fade_palette_in()` | For graphics mode 3, upload 17 palettes containing 768 signed bytes scaled by `0,4,...,64`; for other nonzero modes except 1, scale 48 bytes; mode 1 uploads a null FAR pointer once. |
+| `0x12823–0x12891` | `0f10:0d1e` | `gate_rtl_clear_palette_buffer()` | Clear a positive, mode-indexed signed number of bytes in the original video buffer, then upload a null palette pointer. |
+| `0x12893–0x12995` | `0f10:0d8e` | `gate_rtl_fade_palette_out()` | Mode 1: three rounds of 16 destructive byte bit-transformations, null palette uploads, and 100ms delays. Other nonzero modes: 17 palettes with factors `64,60,...,0`, followed by `rtl:0x12823`. |
+| `0x13185–0x13190` | `0f10:1680` | `gate_rtl_initialize_picture_record()` | Clear the first byte of an unconditionally dereferenced far work-area pointer. |
+| `0x131cb–0x131f5` | `0f10:16c6` | `gate_rtl_release_picture_record()` | If the pointer is non-null and its first byte is set, call the original resource-release service on the same-segment pointer plus 8, then clear that byte. |
 
 Both fades preserve the original low-16-bit IMUL result and signed
 truncate-toward-zero division. The buffer reset preserves the mode table's
@@ -249,8 +259,8 @@ checks, **not yet original-entry guest differential tests**.
 
 | Original `GATE.RTL` file range | C function | Recovered control flow |
 | --- | --- | --- |
-| `0xf473–0xf49a` | `gate_rtl_f473()` | Read the original display status port until retrace bit 3 clears, then repeatedly until it sets. No timeout. |
-| `0xf61b–0xf826` | `gate_rtl_f61b(GateFarPtr)` | Wait for retrace; dispatch by original palette mode and display-adapter type. For adapter type 5, program VGA DAC index `0x3c8` and data `0x3c9` through direct RGB triples, 2-bit packed-to-6-bit RGB, or two original lookup tables plus a zero blue component. For other adapters, program 16 attribute-controller entries at `0x3c0`. Re-enable the attribute controller after non-mode-3 output. |
+| `0xf473–0xf49a` | `gate_rtl_wait_vertical_retrace()` | Read the original display status port until retrace bit 3 clears, then repeatedly until it sets. No timeout. |
+| `0xf61b–0xf826` | `gate_rtl_upload_vga_palette(GateFarPtr)` | Wait for retrace; dispatch by original palette mode and display-adapter type. For adapter type 5, program VGA DAC index `0x3c8` and data `0x3c9` through direct RGB triples, 2-bit packed-to-6-bit RGB, or two original lookup tables plus a zero blue component. For other adapters, program 16 attribute-controller entries at `0x3c0`. Re-enable the attribute controller after non-mode-3 output. |
 
 The original source reads the first byte of the FAR palette argument even
 when the argument is `0000:0000`, and the low-level palette uploader is
@@ -259,7 +269,7 @@ and `IDIV` for the color count and lookup quotient; the FAR pointer's offset
 increments by three without segment carry in the direct/converted paths.
 None of these quirks were removed.
 
-The source-level linkage now maps `gate_far_0cdc_04d2` to `gate_rtl_f61b`.
+The source-level linkage now maps `gate_linked_upload_intro_palette` to `gate_rtl_upload_vga_palette`.
 The earlier fade helpers pass a host stack pointer; their isolated linker
 adapter converts it into the original FAR shape via `gate_stack_pointer()`.
 The palette's relocated DS globals and VGA port writes now have bounded
@@ -313,7 +323,7 @@ and, only on nonzero return, invokes original `rtl:0x1266f`, calls the
 cleanup, and returns 1. On load failure, it returns 0 immediately.
 
 The original callers ignore AX; the source-level far-call adapter retains
-their `void` signature but `gate_rtl_12b19()` itself preserves the original
+their `void` signature but `gate_rtl_show_picture()` itself preserves the original
 16-bit result. Independent tests check both paths and complete call order;
 the pinned RTL binary test verifies the four **near call** targets.
 
@@ -640,7 +650,7 @@ snapshot, plus binary-dispatch provenance. This advances a source-C branch,
 font loader, caption frames and SDL event/presentation loop still need work.
 
 The complete original **caption-frame painter** at `GATE.RTL:ff99..1029f`
-is now source C (`gate_rtl_ff99`), connected to original FAR call
+is now source C (`gate_rtl_draw_caption_frame`), connected to original FAR call
 `0cdc:0e50`. Its full frame-style flow preserves the low-byte bit-1
 outline, bit-2 inset/bevel and bit-3 outset/shadow forks, including the
 special graphics-mode-0 and graphics-mode-1 branches, exact 16-bit corner
@@ -671,7 +681,7 @@ The supplied original `GATE.RTL` confirms `rtl:0x8298..0x82ae` is a FAR
 `strlen` entry. The newly regenerated 22-second linked RAM capture verifies
 that **all 23 bytes** occur at physical `0x1560a`, the address of runtime
 `12a5:2bba` (EXE-relative `02a5:2bba`), exactly once in the 1 MiB image.
-The source-C linked wrapper now delegates to `gate_rtl_8298`; 16-bit FAR
+The source-C linked wrapper now delegates to `gate_rtl_string_length`; 16-bit FAR
 offset wrapping and the missing-terminator scan bound remain tested.
 
 With OpenWatcom v2's **16-bit** `wcl` on `PATH`, run
@@ -691,7 +701,7 @@ original Microsoft C ABI or segmented data layout.
 ## Immediate next functions
 
 1. Connect the existing verified native video, font, picture and caption
-   services to the source-C `gate_exe_1302` startup and SDL3 event/render
+   services to the source-C `gate_exe_play_intro` startup and SDL3 event/render
    loop, preserving the original sequence and its interruptibility.
 2. Recover the remaining patterned/background and text-mode video
    dependencies (`rtl:0xed74/0xeda5/0xedb7`), keyboard, mouse and timing

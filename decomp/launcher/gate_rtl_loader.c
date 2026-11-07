@@ -12,7 +12,7 @@
  * All memory access uses original segment:offset arithmetic. The three
  * relocated RTL DS globals and the three linked FAR services remain narrow
  * external dependencies, not newly designed host-image abstractions. */
-uint16_t gate_rtl_12c33(GateFarPtr work, uint16_t resource, uint16_t mode)
+uint16_t gate_rtl_load_picture_record(GateFarPtr work, uint16_t resource, uint16_t mode)
 {
     uint16_t mode_segment;
     uint16_t header_segment;
@@ -26,7 +26,7 @@ uint16_t gate_rtl_12c33(GateFarPtr work, uint16_t resource, uint16_t mode)
     gate_far_set_byte(work.segment, (uint16_t)(work.offset + 6u), 0);
     gate_far_set_byte(work.segment, (uint16_t)(work.offset + 7u), 0);
 
-    if (gate_rtl_11ecb(resource, mode) == 0)
+    if (gate_rtl_select_picture_resource(resource, mode) == 0)
         return 0;
 
     destination.segment = work.segment;
@@ -34,12 +34,12 @@ uint16_t gate_rtl_12c33(GateFarPtr work, uint16_t resource, uint16_t mode)
     mode_segment = gate_rtl_image_mode_segment();
     header_segment = gate_rtl_image_header_segment();
     video_mode = gate_far_word(mode_segment, GATE_RTL_VIDEO_MODE_OFFSET);
-    if (gate_far_145d_00f7(gate_far_word(header_segment, GATE_RTL_HEADER_OFFSET + 8),
+    if (gate_linked_allocate_vfx_image(gate_far_word(header_segment, GATE_RTL_HEADER_OFFSET + 8),
                            gate_far_word(header_segment, GATE_RTL_HEADER_OFFSET + 6),
                            video_mode, destination, 0) != 0)
         return 0;
 
-    gate_far_1479_0002(0, destination);
+    gate_linked_initialize_vfx_image(0, destination);
 
     /* The original linked A1 20 14 / A1 22 14 read relocated *near DS
      * scalar values* (RTL DS:000a/000c -> linked DS:1420/1422): picture
@@ -73,12 +73,12 @@ uint16_t gate_rtl_12c33(GateFarPtr work, uint16_t resource, uint16_t mode)
     }
     gate_far_set_word(work.segment, (uint16_t)(work.offset + 0x1cu), width);
 
-    if (gate_far_0eec_018a(
+    if (gate_linked_decompress_picture_pixels(
             gate_far_word(work.segment, (uint16_t)(work.offset + 0x20u)),
             gate_far_word(work.segment, (uint16_t)(work.offset + 0x22u))) != 0) {
-        gate_rtl_131cb(work);
+        gate_rtl_release_picture_record(work);
         return 0;
     }
-    gate_rtl_12205(work);
+    gate_rtl_postprocess_picture(work);
     return 1;
 }

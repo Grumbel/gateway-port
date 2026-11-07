@@ -66,7 +66,7 @@ static void test_synthetic(GateIntroMemory *memory,
     hardware->bios_mode = 0x13;
     hardware->bios_mode_valid = 1;
     memset(memory->bytes + 0xa0000, 0xaa, 65536);
-    assert(gate_far_2488_000a(0, 0x1234) == 0);
+    assert(gate_linked_clear_resident_display(0, 0x1234) == 0);
     assert_aperture(memory->bytes, 0xa0000, 64000, 0x34);
     assert_aperture(memory->bytes, 0xa0000 + 64000, 1536, 0xaa);
     assert(gate_far_byte(0x2a7a, 0x27ed) == 1);
@@ -77,21 +77,21 @@ static void test_synthetic(GateIntroMemory *memory,
     /* Original resident 2488:000a compares INT 10h/AH=0fh AL against
      * descriptor +16h only when the DS:15d2 check flag is exactly one. */
     hardware->bios_mode = 0x12;
-    assert(gate_far_2488_000a(0, 0x9876) == 0xfff9);
+    assert(gate_linked_clear_resident_display(0, 0x9876) == 0xfff9);
     assert_aperture(memory->bytes, 0xa0000, 64000, 0x34);
     gate_ds_set_word(0x15d2, 2); /* no BIOS check for non-one flag */
-    assert(gate_far_2488_000a(0, 0x009a) == 0);
+    assert(gate_linked_clear_resident_display(0, 0x009a) == 0);
     assert_aperture(memory->bytes, 0xa0000, 64000, 0x9a);
     gate_ds_set_word(0x15d2, 1);
     hardware->bios_mode = 0x13;
 
     block_mode = 0;
-    gate_rtl_f921(); /* actual GATE.RTL source C -> resident native host */
+    gate_rtl_clear_video_display(); /* actual GATE.RTL source C -> resident native host */
     assert_aperture(memory->bytes, 0xa0000, 64000, 0);
     assert_aperture(memory->bytes, 0xa0000 + 64000, 1536, 0xaa);
     assert(cursor_draws == 0);
     block_mode = 1;
-    gate_rtl_f921();
+    gate_rtl_clear_video_display();
     assert(cursor_draws == 1);
     block_mode = 0;
 
@@ -99,7 +99,7 @@ static void test_synthetic(GateIntroMemory *memory,
         memset(memory->vga_planes[p], 0xa5, 65536);
     gate_ds_set_word(0x15cc, 2);
     hardware->bios_mode = 0x12;
-    assert(gate_far_2488_000a(0, 0x000d) == 0);
+    assert(gate_linked_clear_resident_display(0, 0x000d) == 0);
     for (p = 0; p < 4; ++p) {
         assert_aperture(memory->vga_planes[p], 0, 38400,
                         (0x0d & (1u << p)) ? 0xff : 0);
@@ -111,7 +111,7 @@ static void test_synthetic(GateIntroMemory *memory,
     /* Mode 1 has a second display page at physical planar offset 8000h. */
     gate_ds_set_word(0x15cc, 1);
     hardware->bios_mode = 0x10;
-    assert(gate_far_2488_000a(1, 0x0002) == 0);
+    assert(gate_linked_clear_resident_display(1, 0x0002) == 0);
     for (p = 0; p < 4; ++p) {
         assert_aperture(memory->vga_planes[p], 0, 32768,
                         (0x0d & (1u << p)) ? 0xff : 0);
@@ -122,7 +122,7 @@ static void test_synthetic(GateIntroMemory *memory,
     /* Modes 4..7 dispatch to the same planar callback, including 800x600. */
     gate_ds_set_word(0x15cc, 7);
     hardware->bios_mode = 0x54;
-    assert(gate_far_2488_000a(0, 0x0009) == 0);
+    assert(gate_linked_clear_resident_display(0, 0x0009) == 0);
     for (p = 0; p < 4; ++p) {
         assert_aperture(memory->vga_planes[p], 0, 60000,
                         (0x09 & (1u << p)) ? 0xff : 0);
@@ -133,17 +133,17 @@ static void test_synthetic(GateIntroMemory *memory,
     gate_ds_set_word(0x15cc, 0);
     hardware->bios_mode = 3;
     memset(memory->bytes + 0xb8000, 0xaa, 16385);
-    assert(gate_far_2488_000a(0, 1) == 0);
+    assert(gate_linked_clear_resident_display(0, 1) == 0);
     assert_aperture(memory->bytes, 0xb8000, 16384, 0xff);
     assert(memory->bytes[0xb8000 + 16384] == 0xaa);
-    assert(gate_far_2488_000a(0, 0) == 0);
+    assert(gate_linked_clear_resident_display(0, 0) == 0);
     assert_aperture(memory->bytes, 0xb8000, 16384, 0);
 
     gate_ds_set_word(0x15cc, 8);
-    assert(gate_far_2488_000a(0, 0) == 0xfffa);
+    assert(gate_linked_clear_resident_display(0, 0) == 0xfffa);
     gate_ds_set_word(0x15cc, 3);
     gate_far_set_byte(0x2a7a, (uint16_t)(0x27ee + 3 * 0x3e), 2);
-    assert(gate_far_2488_000a(0, 0) == 0xfc19);
+    assert(gate_linked_clear_resident_display(0, 0) == 0xfc19);
 }
 
 static void test_original_snapshot(GateIntroMemory *memory,
@@ -166,7 +166,7 @@ static void test_original_snapshot(GateIntroMemory *memory,
     memcpy(original, memory->bytes, GATE_INTRO_RAM_BYTES);
     memset(memory->bytes + 0xa0000, 0x55, 65536);
     block_mode = 0;
-    gate_rtl_f921();
+    gate_rtl_clear_video_display();
     assert_aperture(memory->bytes, 0xa0000, 64000, 0);
     assert_aperture(memory->bytes, 0xa0000 + 64000, 1536, 0x55);
     /* No guest memory outside the destination aperture is modified. */

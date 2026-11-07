@@ -16,7 +16,7 @@ static void video_call(uint8_t packet[14])
 
 /* GATE.RTL:0xf8eb..0xf920, emitted before/after a cursor operation in
  * block-cursor mode. It writes character 0xdb with attribute | 0x80. */
-void gate_rtl_f8eb(void)
+void gate_rtl_draw_block_cursor(void)
 {
     uint8_t packet[14] = {0};
     packet[1] = 9;
@@ -31,19 +31,19 @@ void gate_rtl_f8eb(void)
 /* GATE.RTL:0xf921..0xf935, linked from the original intro as 0cdc:07d8.
  * Resident 2488:000a clears the display page with color zero. The RTL
  * cursor restoration is conditional on DS:030e. */
-void gate_rtl_f921(void)
+void gate_rtl_clear_video_display(void)
 {
-    gate_far_2488_000a(0, 0);
+    gate_linked_clear_resident_display(0, 0);
     if (gate_rtl_video_block_mode() != 0)
-        gate_rtl_f8eb();
+        gate_rtl_draw_block_cursor();
 }
 
 /* GATE.RTL:0xf937..0xf958. */
-uint16_t gate_rtl_f937(uint16_t new_mode)
+uint16_t gate_rtl_set_block_cursor_mode(uint16_t new_mode)
 {
     uint16_t previous = gate_rtl_video_block_mode();
     if (new_mode != previous)
-        gate_rtl_f8eb();
+        gate_rtl_draw_block_cursor();
     gate_rtl_video_set_block_mode(new_mode);
     return previous;
 }
@@ -51,7 +51,7 @@ uint16_t gate_rtl_f937(uint16_t new_mode)
 /* GATE.RTL:0xf959..0xf995: byte coordinates returned as 1-based WORDs.
  * Its FAR output pointers are unconditional (the original does not test
  * either for NULL). */
-void gate_rtl_f959(uint16_t *x, uint16_t *y)
+void gate_rtl_get_text_cell_cursor(uint16_t *x, uint16_t *y)
 {
     uint8_t packet[14] = {0};
     packet[1] = 3;
@@ -65,7 +65,7 @@ void gate_rtl_f959(uint16_t *x, uint16_t *y)
  * Reading back byte coordinates before comparison is intentional: e.g.
  * requested x=0 wraps to 0xffff and cannot equal returned byte 0xff.
  * Nonzero DS:030e draws a block before and after a real change. */
-void gate_rtl_f997(uint16_t x, uint16_t y)
+void gate_rtl_set_text_cell_cursor(uint16_t x, uint16_t y)
 {
     uint8_t packet[14] = {0};
     packet[1] = 3;
@@ -75,14 +75,14 @@ void gate_rtl_f997(uint16_t x, uint16_t y)
     y = (uint16_t)(y - 1u);
     if ((uint16_t)packet[7] != y || (uint16_t)packet[6] != x) {
         if (gate_rtl_video_block_mode() != 0)
-            gate_rtl_f8eb();
+            gate_rtl_draw_block_cursor();
         packet[1] = 2;
         packet[3] = 0;
         packet[7] = (uint8_t)y;
         packet[6] = (uint8_t)x;
         video_call(packet);
         if (gate_rtl_video_block_mode() != 0)
-            gate_rtl_f8eb();
+            gate_rtl_draw_block_cursor();
     }
 }
 
@@ -103,15 +103,15 @@ static int16_t tab_pitch(void)
  * and sends cursor commands before glyphs, for tabs and for newlines.
  * Critically, it increments its local column even after TAB/newline; the
  * command packet itself may have sent a different 8-bit column. */
-void gate_rtl_fa45(GateFarPtr text)
+void gate_rtl_print_text_mode_string(GateFarPtr text)
 {
     uint8_t packet[14] = {0};
     int16_t row, column;
     uint8_t attribute;
 
-    text = gate_exe_0bb8(text);
+    text = gate_exe_identity_text_pointer(text);
     if (gate_rtl_video_block_mode() != 0)
-        gate_rtl_f8eb();
+        gate_rtl_draw_block_cursor();
 
     packet[1] = 3;
     packet[3] = 0;
@@ -172,5 +172,5 @@ void gate_rtl_fa45(GateFarPtr text)
     packet[6] = (uint8_t)column;
     video_call(packet);
     if (gate_rtl_video_block_mode() != 0)
-        gate_rtl_f8eb();
+        gate_rtl_draw_block_cursor();
 }

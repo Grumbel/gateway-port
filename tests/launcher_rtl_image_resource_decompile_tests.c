@@ -108,24 +108,24 @@ GateFarPtr gate_rtl_image_palette_source(void)
     return (GateFarPtr){0x6789, GATE_RTL_TRANSFORM_OFFSET};
 }
 
-void gate_far_0c33_019a(uint16_t handle)
+void gate_linked_close_resource_file(uint16_t handle)
 {
     record('C', handle, 0, 0);
 }
 
-uint16_t gate_far_0c33_0040(uint16_t zero, uint16_t file)
+uint16_t gate_linked_open_resource_file(uint16_t zero, uint16_t file)
 {
     assert(zero == 0);
     record('O', zero, file, 0);
     return open_result;
 }
 
-void gate_far_0c33_0091(uint16_t handle, uint32_t offset)
+void gate_linked_seek_resource_file(uint16_t handle, uint32_t offset)
 {
     record('S', handle, 0, offset);
 }
 
-uint16_t gate_far_0c33_00f2(uint16_t handle, GateFarPtr destination,
+uint16_t gate_linked_read_resource_bytes(uint16_t handle, GateFarPtr destination,
                             uint16_t count)
 {
     record('R', handle, count,
@@ -133,7 +133,7 @@ uint16_t gate_far_0c33_00f2(uint16_t handle, GateFarPtr destination,
     return descriptor_result;
 }
 
-uint16_t gate_far_0c33_00d4(uint16_t handle)
+uint16_t gate_linked_read_resource_word(uint16_t handle)
 {
     record('W', handle, 0, 0);
     return word_reads++ == 0 ? MODE_SEG : PALETTE_SEG;
@@ -174,7 +174,7 @@ static void expect_event(unsigned i, char kind, uint16_t a, uint16_t b,
 static void test_basic_resource_selection(void)
 {
     reset_case(3, 0, 3);
-    assert(gate_rtl_11ecb(0x0123, 2) == 1);
+    assert(gate_rtl_select_picture_resource(0x0123, 2) == 1);
     assert(gate_rtl_resource_ds_word(8) == 101);
     assert(gate_far_word(HANDLE_SEG, GATE_RTL_FILE_HANDLE_OFFSET) == 0x44);
     assert(gate_rtl_resource_ds_word(0x0a) == MODE_SEG);
@@ -193,17 +193,17 @@ static void test_basic_resource_selection(void)
 static void test_cached_handle_and_changed_file(void)
 {
     reset_case(3, 0, 1);
-    assert(gate_rtl_11ecb(0x0123, 1) == 1);
+    assert(gate_rtl_select_picture_resource(0x0123, 1) == 1);
     nevents = 0;
     word_reads = 0;
-    assert(gate_rtl_11ecb(0x0124, 1) == 1);
+    assert(gate_rtl_select_picture_resource(0x0124, 1) == 1);
     assert(nevents == 6); /* same resource file; no close or open */
     assert(events[0].kind == 'S');
     assert(gate_rtl_resource_ds_word(8) == 101);
 
     /* Different resource-file id triggers close followed by reopen. */
     nevents = 0;
-    assert(gate_rtl_11ecb(0x0324, 0) == 1);
+    assert(gate_rtl_select_picture_resource(0x0324, 0) == 1);
     assert(events[0].kind == 'C' && events[0].a == 0x44);
     assert(events[1].kind == 'O' && events[1].b == 103);
     assert(gate_rtl_resource_ds_word(8) == 103);
@@ -213,49 +213,49 @@ static void test_open_failure_latches(void)
 {
     reset_case(2, 0, 0);
     open_result = 0;
-    assert(gate_rtl_11ecb(0x0123, 1) == 0);
+    assert(gate_rtl_select_picture_resource(0x0123, 1) == 0);
     assert(nevents == 1 && events[0].kind == 'O' && events[0].b == 1);
     assert(gate_rtl_resource_ds_word(0) == 1);
     assert(gate_rtl_resource_ds_word(8) == 0xffff);
-    assert(gate_rtl_11ecb(0x0123, 1) == 0 && nevents == 1);
+    assert(gate_rtl_select_picture_resource(0x0123, 1) == 0 && nevents == 1);
 }
 
 static void test_descriptor_failures(void)
 {
     reset_case(2, 0, 2);
     descriptor_result = 0;
-    assert(gate_rtl_11ecb(0x0123, 2) == 0);
+    assert(gate_rtl_select_picture_resource(0x0123, 2) == 0);
     assert(nevents == 3);
 
     reset_case(2, 0, 2);
     gate_far_set_word(HEADER_SEG, GATE_RTL_HEADER_OFFSET, 0);
     gate_far_set_word(HEADER_SEG, GATE_RTL_HEADER_OFFSET + 2, 0);
-    assert(gate_rtl_11ecb(0x0123, 2) == 0);
+    assert(gate_rtl_select_picture_resource(0x0123, 2) == 0);
     assert(nevents == 3);
 
     reset_case(2, 0, 2);
     gate_far_set_word(HEADER_SEG, GATE_RTL_HEADER_OFFSET + 6, 0);
-    assert(gate_rtl_11ecb(0x0123, 2) == 0);
+    assert(gate_rtl_select_picture_resource(0x0123, 2) == 0);
     assert(nevents == 7);
     reset_case(2, 0, 2);
     gate_far_set_word(HEADER_SEG, GATE_RTL_HEADER_OFFSET + 8, 0);
-    assert(gate_rtl_11ecb(0x0123, 2) == 0);
+    assert(gate_rtl_select_picture_resource(0x0123, 2) == 0);
 }
 
 static void test_negative_and_capped_modes(void)
 {
     reset_case(2, 0, 2);
-    assert(gate_rtl_11ecb(0x0123, 16) == 1);
+    assert(gate_rtl_select_picture_resource(0x0123, 16) == 1);
     expect_event(3, 'S', 0x44, 0, 0x1234fff0u + 4u);
 
     reset_case(2, 0, 2);
-    assert(gate_rtl_11ecb(0x0123, 0xffff) == 1);
+    assert(gate_rtl_select_picture_resource(0x0123, 0xffff) == 1);
     assert(nevents == 4);
     assert(gate_rtl_resource_ds_word(0x0a) == 0);
     assert(gate_rtl_resource_ds_word(0x0c) == 0);
 
     reset_case(0xfe, 0, 2); /* signed header mode count -2 */
-    assert(gate_rtl_11ecb(0x0123, 2) == 1);
+    assert(gate_rtl_select_picture_resource(0x0123, 2) == 1);
     assert(nevents == 4);
     expect_event(3, 'S', 0x44, 0, 0x1234ffe8u);
 }
@@ -263,11 +263,11 @@ static void test_negative_and_capped_modes(void)
 static void test_compressed_format(void)
 {
     reset_case(1, 0, 3);
-    assert(gate_rtl_11ecb(0x8123, 1) == 1);
+    assert(gate_rtl_select_picture_resource(0x8123, 1) == 1);
     assert(events[0].kind == 'O' && events[0].b == 301);
 
     reset_case(1, 0x13, 1);
-    assert(gate_rtl_11ecb(0x8123, 1) == 1);
+    assert(gate_rtl_select_picture_resource(0x8123, 1) == 1);
     assert(events[0].kind == 'O' && events[0].b == 101);
     assert(nevents == 8 && events[7].kind == 'R');
     assert(events[7].b == 0x5a);
@@ -276,12 +276,12 @@ static void test_compressed_format(void)
 
     reset_case(1, 0x13, 1);
     gate_rtl_resource_ds_set_word(0x0e, 1);
-    assert(gate_rtl_11ecb(0x8123, 1) == 0);
+    assert(gate_rtl_select_picture_resource(0x8123, 1) == 0);
     assert(nevents == 3 && gate_rtl_resource_ds_word(6) == 0);
 
     reset_case(1, 0x13, 1);
     gate_rtl_resource_ds_set_word(0x10, 1);
-    assert(gate_rtl_11ecb(0x8123, 1) == 1);
+    assert(gate_rtl_select_picture_resource(0x8123, 1) == 1);
     assert(nevents == 6 && gate_rtl_resource_ds_word(6) == 0);
 }
 

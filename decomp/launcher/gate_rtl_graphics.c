@@ -13,7 +13,7 @@ static uint8_t scaled_byte(uint8_t sample, uint16_t factor)
     return (uint8_t)((int16_t)product / 64);
 }
 
-void gate_rtl_12773(void)
+void gate_rtl_fade_palette_in(void)
 {
     uint8_t palette[0x300];
     uint16_t factor;
@@ -39,7 +39,7 @@ void gate_rtl_12773(void)
 /* GATE.RTL:0x12823..0x12891. The original REPNE STOSB simply clears
  * the positive signed count from the mode-indexed table, then invokes the
  * palette service with a zero FAR pointer. */
-void gate_rtl_12823(void)
+void gate_rtl_clear_palette_buffer(void)
 {
     uint16_t mode = gate_rtl_graphics_mode();
     if (mode != 0) {
@@ -58,7 +58,7 @@ void gate_rtl_12823(void)
  * bit transformations of the *source buffer*. Other nonzero modes fade
  * the original signed samples from factor 64 to 0 inclusive. Both paths
  * finish by calling the independently recovered 0x12823 routine. */
-void gate_rtl_12893(void)
+void gate_rtl_fade_palette_out(void)
 {
     uint8_t palette[0x308];
     uint16_t mode = gate_rtl_graphics_mode();
@@ -92,12 +92,12 @@ void gate_rtl_12893(void)
             gate_rtl_graphics_palette_upload(palette);
         }
     }
-    gate_rtl_12823();
+    gate_rtl_clear_palette_buffer();
 }
 
 /* GATE.RTL:0x13185..0x13190: zero the first byte of the caller's FAR
  * work record, unconditionally (there is no null check). */
-void gate_rtl_13185(GateFarPtr work)
+void gate_rtl_initialize_picture_record(GateFarPtr work)
 {
     gate_far_set_byte(work.segment, work.offset, 0);
 }
@@ -105,7 +105,7 @@ void gate_rtl_13185(GateFarPtr work)
 /* GATE.RTL:0x131cb..0x131f5. Non-null is the OR of both original FAR
  * pointer WORDs. The argument passed to the resource release service is
  * offset+8 with the SAME segment, even across 16-bit offset wrap. */
-void gate_rtl_131cb(GateFarPtr work)
+void gate_rtl_release_picture_record(GateFarPtr work)
 {
     if ((work.offset | work.segment) != 0 &&
         gate_far_byte(work.segment, work.offset) != 0) {

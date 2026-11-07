@@ -112,12 +112,12 @@ void gate_far_set_word(uint16_t segment, uint16_t offset, uint16_t value)
     intro_last_offset = offset;
     intro_last_value = value;
 }
-uint16_t gate_far_0df2_000a(void) { return keyboard_pending; }
-uint16_t gate_far_0df2_0030(void) { ++key_reads; return keyboard_key; }
-uint16_t gate_far_0df2_00f8(void) { ++keyboard_flushes; return 0; }
-uint16_t gate_far_0e48_07fe(void) { return mouse_flags; }
-uint32_t gate_far_02a5_38c4(void) { clock_now += clock_step; return clock_now; }
-uint16_t gate_far_02a5_2bba(GateFarPtr text)
+uint16_t gate_linked_keyboard_pending(void) { return keyboard_pending; }
+uint16_t gate_linked_read_keyboard_key(void) { ++key_reads; return keyboard_key; }
+uint16_t gate_linked_read_buffered_key(void) { ++keyboard_flushes; return 0; }
+uint16_t gate_linked_intro_mouse_flags(void) { return mouse_flags; }
+uint32_t gate_linked_exe_elapsed_milliseconds(void) { clock_now += clock_step; return clock_now; }
+uint16_t gate_linked_exe_string_length(GateFarPtr text)
 {
     uint16_t length = 0;
     while (gate_far_byte(text.segment, (uint16_t)(text.offset + length)) != 0)
@@ -128,38 +128,38 @@ uint16_t gate_far_02a5_2bba(GateFarPtr text)
     }
     return length;
 }
-void gate_far_123f_0004(void) { ++special_calls; }
-void gate_far_0c4d_018d(uint16_t value)
+void gate_linked_handle_control_key(void) { ++special_calls; }
+void gate_linked_select_intro_font(uint16_t value)
 {
     assert(value == 1 || value == 5);
     if (value == 1) ++clear_calls;
     else ++intro_text_font_calls;
 }
-void gate_far_0c4d_061b(uint16_t handle, uint16_t mode)
+void gate_linked_set_intro_text_colors(uint16_t handle, uint16_t mode)
 {
     assert((handle == 12 || handle == 34) && mode == 0xffff);
     ++message_calls;
 }
-uint16_t gate_far_0c4d_05be(GateFarPtr string)
+uint16_t gate_linked_measure_text_width(GateFarPtr string)
 {
     if (string.segment == 0x7777 && string.offset == 0x7777)
         return (uint16_t)strlen((const char *)stack_pointer);
     assert(string.segment == 0x1234 && string.offset == 0x35fe);
     return 16;
 }
-uint16_t gate_far_0c4d_0524(uint16_t character)
+uint16_t gate_linked_font_character_advance(uint16_t character)
 {
     assert(character == ' ');
     return 1;
 }
-uint16_t gate_far_0c4d_0511(void) { return 5; }
-void gate_far_0c4d_0653(int16_t x, int16_t y)
+uint16_t gate_linked_font_line_advance(void) { return 5; }
+void gate_linked_position_intro_text(int16_t x, int16_t y)
 {
     center_x = x;
     center_y = y;
     ++center_calls;
 }
-void gate_far_0c4d_0698(GateFarPtr string)
+void gate_linked_draw_intro_text(GateFarPtr string)
 {
     if (string.segment == 0x7777) {
         assert(string.offset == 0x7777 && stack_pointer);
@@ -170,7 +170,7 @@ void gate_far_0c4d_0698(GateFarPtr string)
     }
     ++print_calls;
 }
-void gate_far_0cdc_04d2(GateFarPtr ptr)
+void gate_linked_upload_intro_palette(GateFarPtr ptr)
 {
     if (ptr.segment == 0x7777) {
         assert(ptr.offset == 0x7777 && stack_pointer != NULL);
@@ -179,7 +179,9 @@ void gate_far_0cdc_04d2(GateFarPtr ptr)
         local_palette_sample_one[local_palette_uploads] = stack_pointer[1];
         ++local_palette_uploads;
     } else {
-        assert(ptr.segment == 0x1a7a && ptr.offset == 0x0fdc);
+        /* The DOS loader relocates the EXE's on-disk 1a7a palette bank;
+         * the caller obtains the active segment via the linked selector. */
+        assert(ptr.segment == ds[0x4e42] && ptr.offset == 0x0fdc);
     }
     ++palette_uploads;
 }
@@ -189,68 +191,68 @@ GateFarPtr gate_stack_pointer(void *ptr)
     stack_pointer = ptr;
     return result;
 }
-uint16_t gate_far_0e2c_0094(uint16_t value)
+uint16_t gate_linked_allocate_intro_memory(uint16_t value)
 {
     assert(value == 0x1000);
     ++intro_setup;
     return 0x1337;
 }
-void gate_far_0a46_01ec(void) { ++intro_common_init; }
-void gate_far_0f10_0d1e(void) { ++intro_short_init; }
-void gate_far_0f10_0d8e(void) { ++intro_cleanup; }
-void gate_far_0f10_0c6e(void) { ++intro_interlude; }
-void gate_far_0f10_1014(uint16_t image, uint16_t mode)
+void gate_linked_initialize_intro_services(void) { ++intro_common_init; }
+void gate_linked_clear_intro_palette(void) { ++intro_short_init; }
+void gate_linked_fade_intro_palette_out(void) { ++intro_cleanup; }
+void gate_linked_fade_intro_palette_in(void) { ++intro_interlude; }
+void gate_linked_show_intro_picture(uint16_t image, uint16_t mode)
 {
     assert(intro_image_count < sizeof intro_images / sizeof intro_images[0]);
     assert(mode <= 1);
     intro_images[intro_image_count++] = image;
     if (mode == 0) ++intro_fullscreen;
 }
-void gate_far_0f10_15a6(uint16_t image, uint16_t value)
+void gate_linked_play_intro_preloaded_sequence(uint16_t image, uint16_t value)
 {
     assert(value == 26);
     assert(image == 0x3001 || image == 0x3106);
     ++intro_video;
 }
-void gate_far_0f10_1466(uint16_t first, uint16_t next, uint16_t count)
+void gate_linked_play_intro_delta_sequence(uint16_t first, uint16_t next, uint16_t count)
 {
     assert(intro_anim_count < 5);
     intro_anim_base[intro_anim_count] = first;
     intro_anim_next[intro_anim_count] = next;
     intro_anim_lengths[intro_anim_count++] = count;
 }
-void gate_far_0f10_1680(GateFarPtr buffer)
+void gate_linked_initialize_intro_picture_record(GateFarPtr buffer)
 {
     assert(buffer.segment == 0x7777 && buffer.offset == 0x7777);
     ++fade_prepare_calls;
 }
-void gate_far_0f10_112e(GateFarPtr buffer, uint16_t image, uint16_t mode)
+void gate_linked_load_intro_picture_record(GateFarPtr buffer, uint16_t image, uint16_t mode)
 {
     assert(buffer.segment == 0x7777 && buffer.offset == 0x7777 && mode == 0);
     assert(intro_fade_count < 16);
     intro_fades[intro_fade_count++] = image;
 }
-void gate_far_0f10_13d2(GateFarPtr buffer)
+void gate_linked_draw_intro_picture_record(GateFarPtr buffer)
 {
     assert(buffer.segment == 0x7777 && buffer.offset == 0x7777);
     ++fade_finish_calls;
 }
-void gate_far_0f10_16c6(GateFarPtr buffer)
+void gate_linked_release_intro_picture_record(GateFarPtr buffer)
 {
     assert(buffer.segment == 0x7777 && buffer.offset == 0x7777);
     ++fade_finish_calls;
 }
-void gate_far_0cdc_07d8(void) { ++intro_palette; }
-void gate_far_0cdc_0004(uint16_t value) { assert(value == 3); ++intro_mode1; }
-void gate_far_0cdc_0aac(uint16_t value) { assert(value == 15); ++intro_short_special; }
-void gate_far_0cdc_0aee(uint16_t a, uint16_t b, uint16_t c,
+void gate_linked_clear_intro_display(void) { ++intro_palette; }
+void gate_linked_set_intro_video_mode(uint16_t value) { assert(value == 3); ++intro_mode1; }
+void gate_linked_set_intro_pen_color(uint16_t value) { assert(value == 15); ++intro_short_special; }
+void gate_linked_fill_intro_rectangle(uint16_t a, uint16_t b, uint16_t c,
                          uint16_t d, uint16_t e)
 {
     assert(a == 2 && b == 0 && c == 0 && d == 80 && e == 25);
     ++intro_rect;
 }
-void gate_far_0e48_011b(void) { ++intro_credit; }
-void gate_far_0cdc_0e50(uint16_t left, uint16_t top, uint16_t right,
+void gate_linked_reset_intro_mouse(void) { ++intro_credit; }
+void gate_linked_draw_intro_caption_frame(uint16_t left, uint16_t top, uint16_t right,
                          uint16_t bottom, uint16_t style)
 {
     assert(style == 4 && intro_frame_count < 18);
@@ -260,31 +262,31 @@ void gate_far_0cdc_0e50(uint16_t left, uint16_t top, uint16_t right,
     intro_frame_bottom[intro_frame_count] = bottom;
     ++intro_frame_count;
 }
-void gate_far_0df2_0128(void) { ++intro_finished; }
+void gate_linked_flush_keyboard(void) { ++intro_finished; }
 
 static void test_wait(void)
 {
     reset();
     clock_step = 1;
-    gate_exe_0f18(3);
+    gate_exe_wait_interruptible(3);
     assert(clock_now == 4);
 
     reset();
     keyboard_pending = 1;
     clock_step = 1;
-    gate_exe_0f18(2000);
+    gate_exe_wait_interruptible(2000);
     assert(clock_now == 2);
 
     reset();
     mouse_flags = 1; /* wait treats any nonzero mouse status as input */
     clock_step = 1;
-    gate_exe_0f18(2000);
+    gate_exe_wait_interruptible(2000);
     assert(clock_now == 2);
 
     reset();
     clock_now = 0x7ffffffd;
     clock_step = 1;
-    gate_exe_0f18(3);
+    gate_exe_wait_interruptible(3);
     /* Deliberately preserve the ORIGINAL signed-high-word comparison. */
     assert(clock_now == 0x7fffffff);
 }
@@ -293,14 +295,14 @@ static void test_bar_fade(void)
 {
     reset();
     ds[0x4e42] = 0x6666;
-    gate_exe_1c11(6);
+    gate_exe_reveal_red_bar(6);
     assert(palette_uploads == 64 && palette_writes == 64);
     assert(palette[0x0fdc + 45 + 3 * 6] == 63);
     assert(clock_now >= 500);
 
     reset();
     keyboard_pending = 1;
-    gate_exe_1c11(6);
+    gate_exe_reveal_red_bar(6);
     assert(palette_uploads == 0 && palette_writes == 0 && clock_now == 0);
 }
 
@@ -308,7 +310,7 @@ static void test_credit_fade(void)
 {
     reset();
     ds[0x4e42] = 0x6666;
-    gate_exe_1c6c();
+    gate_exe_reveal_credit_color();
     assert(palette_writes == 192 && palette_uploads == 64);
     assert(palette[0x1021] == 63 && palette[0x1022] == 63 &&
            palette[0x1023] == 63);
@@ -319,16 +321,16 @@ static void test_input(void)
 {
     reset();
     mouse_flags = 2;
-    assert(gate_exe_0e37() == 1);
+    assert(gate_exe_handle_intro_input() == 1);
     mouse_flags = 1;
-    assert(gate_exe_0e37() == 0);
+    assert(gate_exe_handle_intro_input() == 0);
 
     reset();
     keyboard_pending = 1;
     keyboard_key = 27;
-    assert(gate_exe_0e37() == 1 && ds[0x35fc] == 0);
+    assert(gate_exe_handle_intro_input() == 1 && ds[0x35fc] == 0);
     keyboard_key = 3;
-    assert(gate_exe_0e37() == 0 && special_calls == 1);
+    assert(gate_exe_handle_intro_input() == 0 && special_calls == 1);
 
     reset();
     keyboard_pending = 1;
@@ -337,12 +339,12 @@ static void test_input(void)
     ds[0x4e30] = 0x3333;
     ds[0x4e2e] = 0x4444;
     ds[0x4e2a] = 0x5555;
-    assert(gate_exe_0e37() == 0);
+    assert(gate_exe_handle_intro_input() == 0);
     assert(ds[0x35fc] == 1);
     assert(center_x == 32 && center_y == 19);
     assert(message_calls == 1 && clear_calls == 1 &&
            center_calls == 1 && print_calls == 1 && keyboard_flushes == 1);
-    assert(gate_exe_0e37() == 0);
+    assert(gate_exe_handle_intro_input() == 0);
     assert(message_calls == 1 && keyboard_flushes == 1);
 }
 
@@ -359,7 +361,7 @@ static void test_enclosing_intro_short_paths(void)
     ds[0x4e4c] = 0x7003;
     ds[0x4e4e] = 0x7004;
 
-    gate_exe_1302();
+    gate_exe_play_intro();
     assert(intro_setup == 1 && intro_common_init == 1 && intro_word_writes == 5);
     assert(intro_last_segment == 0x7004 && intro_last_offset == 0x658 &&
            intro_last_value == 0x85);
@@ -380,7 +382,7 @@ static void test_enclosing_intro_short_paths(void)
     ds[0x4e4c] = 0x7003;
     ds[0x4e4e] = 0x7004;
     intro_mode = 1;
-    gate_exe_1302();
+    gate_exe_play_intro();
     assert(intro_interlude == 1 && intro_short_init == 1 &&
            intro_short_special == 1 && intro_rect == 1);
     assert(intro_image_count == 3 && intro_images[0] == 0x8101 &&
@@ -399,7 +401,7 @@ static void test_enclosing_intro_short_paths(void)
     ds[0x4e4c] = 0x7003;
     ds[0x4e4e] = 0x7004;
     intro_mode = 0xffff;
-    gate_exe_1302();
+    gate_exe_play_intro();
     assert(intro_short_init == 1 && intro_short_special == 0 && intro_rect == 0);
     assert(intro_caption_count == 0 && intro_finished == 1);
 }
@@ -410,7 +412,7 @@ static void test_original_interlude_fade_and_key_exit(void)
     ds[0x4e2a] = 0x5555;
     ds[0x4e42] = 0x6666;
     intro_mode = 2;
-    gate_exe_1a14();
+    gate_exe_play_title_interlude();
     assert(intro_interlude == 1 && intro_image_count == 2);
     assert(intro_images[0] == 0x8101 && intro_images[1] == 0x8100);
     assert(palette_writes == 45 + 4 * 64 * 3);
@@ -425,7 +427,7 @@ static void test_original_interlude_fade_and_key_exit(void)
     ds[0x4e42] = 0x6666;
     intro_mode = 2;
     keyboard_pending = 1;
-    gate_exe_1a14();
+    gate_exe_play_title_interlude();
     assert(intro_image_count == 1 && intro_images[0] == 0x8101);
     assert(palette_writes == 45 + 64 * 3 && palette_uploads == 64);
 }
@@ -436,7 +438,7 @@ static void test_original_picture_fade_signed_palette(void)
     ds[0x4e42] = 0x6666;
     palette[0x0fdc] = 63;
     palette[0x0fdd] = (uint8_t)-64;
-    gate_exe_0f61(0x3105);
+    gate_exe_fade_in_picture(0x3105);
 
     assert(intro_cleanup == 1 && intro_fade_count == 1);
     assert(intro_fades[0] == 0x3105);
@@ -462,7 +464,7 @@ static void test_original_caption_two_pass_layout(void)
     top = 20;
     right = 24;
     bottom = 0xffff;
-    gate_exe_103a(&left, &top, &right, &bottom, text);
+    gate_exe_measure_caption(&left, &top, &right, &bottom, text);
     /* Space run is counted as ONE advance; 2nd word wraps to next line. */
     assert(left == 15 && top == 25 && right == 19 && bottom == 38);
     assert(intro_text_font_calls == 1 && intro_frame_count == 0);
@@ -471,7 +473,7 @@ static void test_original_caption_two_pass_layout(void)
     synthetic_text = intro_test_text;
     ds[0x4e44] = 0x7776;
     clock_step = 1;
-    gate_exe_117e(10, 20, 24, text);
+    gate_exe_show_caption(10, 20, 24, text);
     assert(intro_text_font_calls == 2 && message_calls == 1);
     assert(intro_frame_count == 1 && intro_caption_count == 0);
     assert(intro_caption_left[0] == 10 && intro_caption_top[0] == 20);
@@ -487,7 +489,7 @@ static void test_original_caption_two_pass_layout(void)
     top = 182;
     right = 310;
     bottom = 0xffff;
-    gate_exe_103a(&left, &top, &right, &bottom, text);
+    gate_exe_measure_caption(&left, &top, &right, &bottom, text);
     /* The helper moves TOP upward by the bottom overflow, clamps at 185. */
     assert(left == 15 && top == 177 && right == 305 && bottom == 185);
 }
@@ -537,7 +539,7 @@ static void test_enclosing_intro_complete_sequence(void)
     ds[0x4e4c] = 0x7003;
     ds[0x4e4e] = 0x7004;
     intro_mode = 2;
-    gate_exe_1302();
+    gate_exe_play_intro();
     assert(intro_short_init == 0 && intro_interlude == 1 && intro_short_special == 0);
     assert(intro_caption_count == 18 && intro_frame_count == 18 &&
            intro_anim_count == 5);
@@ -574,7 +576,7 @@ static void test_enclosing_intro_complete_sequence(void)
     intro_mode = 2;
     keyboard_pending = 1;
     keyboard_key = 27;
-    gate_exe_1302();
+    gate_exe_play_intro();
     assert(intro_caption_count == 0 && intro_image_count == 1);
     assert(intro_cleanup == 1 && intro_finished == 1);
 }

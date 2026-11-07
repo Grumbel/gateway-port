@@ -8,10 +8,10 @@
 
 /* The original mode-switch entry in GATE.RTL, linked as 0cdc:0004.
  * Its AX result is 1 for success and 0 for a rejected/failed mode. */
-uint16_t gate_rtl_f14d(int16_t requested_mode);
+uint16_t gate_rtl_set_video_mode(int16_t requested_mode);
 
 /* Near helper called at RTL:f25a to program the VGA attribute palette. */
-void gate_rtl_f49b(void);
+void gate_rtl_configure_vga_palette(void);
 
 /* Original linked resident hardware calls, with their identities preserved.
  * The query writes at least two bytes (adapter type, monitor subtype).

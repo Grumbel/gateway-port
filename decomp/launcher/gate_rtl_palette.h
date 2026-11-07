@@ -8,8 +8,8 @@
 
 /* Original GATE.RTL file offsets. Unlike the reconstructed C++ preview,
  * these routines retain the original VGA port I/O and mode branching. */
-void gate_rtl_f473(void); /* wait for vertical retrace transition */
-void gate_rtl_f61b(GateFarPtr palette); /* palette upload, 0cdc:04d2 */
+void gate_rtl_wait_vertical_retrace(void); /* wait for vertical retrace transition */
+void gate_rtl_upload_vga_palette(GateFarPtr palette); /* palette upload, 0cdc:04d2 */
 
 /* Original relocated RTL data globals. DS offsets refer to the palette
  * driver's data segment (not necessarily the graphics driver's DS). */

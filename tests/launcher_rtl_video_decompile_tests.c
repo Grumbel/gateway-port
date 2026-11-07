@@ -32,7 +32,7 @@ int16_t gate_rtl_video_columns(void) { return columns; }
 int16_t gate_rtl_video_rows(void) { return rows; }
 int16_t gate_rtl_video_tab_base(void) { return tab_base; }
 
-uint16_t gate_far_2488_000a(uint16_t first, uint16_t second)
+uint16_t gate_linked_clear_resident_display(uint16_t first, uint16_t second)
 {
     assert(first == 0 && second == 0);
     ++resident_calls;
@@ -85,14 +85,14 @@ static void reset(void)
 static void test_original_intro_video_reset_wrapper(void)
 {
     reset();
-    gate_rtl_f921();
+    gate_rtl_clear_video_display();
     assert(resident_calls == 1 && count == 0);
     assert(resident_sequence == 1 && video_sequence == 0);
 
     reset();
     mode = 1;
     ink = 0x12;
-    gate_rtl_f921();
+    gate_rtl_clear_video_display();
     assert(resident_calls == 1 && count == 1);
     assert(resident_sequence == 1 && video_sequence == 2);
     assert(commands[0].op == 9 && commands[0].ch == 0xdb);
@@ -105,26 +105,26 @@ static void test_cursor_queries_and_mode_changes(void)
     reset();
     cursor_x = 255;
     cursor_y = 254;
-    gate_rtl_f959(&x, &y);
+    gate_rtl_get_text_cell_cursor(&x, &y);
     assert(x == 256 && y == 255 && count == 1 && commands[0].op == 3);
 
     reset();
-    gate_rtl_f997(1, 1);
+    gate_rtl_set_text_cell_cursor(1, 1);
     assert(count == 1 && commands[0].op == 3);
-    gate_rtl_f997(3, 4);
+    gate_rtl_set_text_cell_cursor(3, 4);
     assert(count == 3 && commands[1].op == 3 && commands[2].op == 2);
     assert(cursor_x == 2 && cursor_y == 3);
 
     /* DS:030e transition calls RTL:f8eb even when turning the mode off. */
-    assert(gate_rtl_f937(1) == 0 && mode == 1);
+    assert(gate_rtl_set_block_cursor_mode(1) == 0 && mode == 1);
     assert(count == 4 && commands[3].op == 9 && commands[3].ch == 0xdb);
     assert(commands[3].attr == 0x87 && commands[3].length == 1);
-    gate_rtl_f997(4, 6);
+    gate_rtl_set_text_cell_cursor(4, 6);
     assert(count == 8);
     assert(commands[4].op == 3 && commands[5].op == 9 &&
            commands[6].op == 2 && commands[7].op == 9);
     assert(cursor_x == 3 && cursor_y == 5);
-    assert(gate_rtl_f937(0) == 1 && mode == 0);
+    assert(gate_rtl_set_block_cursor_mode(0) == 1 && mode == 0);
     assert(count == 9 && commands[8].op == 9);
 }
 
@@ -136,7 +136,7 @@ static void test_original_text_control_flow(void)
     memcpy(text + 0x0100, "A\tB\nC", 6);
     ink = 0x0b;
     invert = 4;
-    gate_rtl_fa45(ptr);
+    gate_rtl_print_text_mode_string(ptr);
     assert(count == 10);
     assert(commands[0].op == 3);
     assert(commands[1].op == 2 && commands[1].row == 0 && commands[1].col == 0);
@@ -157,7 +157,7 @@ static void test_original_text_control_flow(void)
     text[0xffff] = 'Q';
     text[0] = 0x80;
     text[1] = 0;
-    gate_rtl_fa45((GateFarPtr){TEXT_SEG, 0xffff});
+    gate_rtl_print_text_mode_string((GateFarPtr){TEXT_SEG, 0xffff});
     assert(count == 6 && commands[2].ch == 'Q' && commands[4].ch == 0x80);
     assert(commands[5].op == 2 && commands[5].col == 2);
 }
@@ -168,7 +168,7 @@ static void test_clipping_and_cursor_wrap(void)
     reset();
     cursor_y = 25;
     text[0] = 'X';
-    gate_rtl_fa45(ptr);
+    gate_rtl_print_text_mode_string(ptr);
     assert(count == 2 && commands[0].op == 3 && commands[1].op == 2);
     assert(commands[1].row == 25); /* no glyph above row limit */
 
@@ -177,11 +177,11 @@ static void test_clipping_and_cursor_wrap(void)
     columns = 2;
     text[0] = 'X';
     text[1] = 0;
-    gate_rtl_fa45(ptr);
+    gate_rtl_print_text_mode_string(ptr);
     assert(count == 2 && commands[1].col == 3);
 
     reset();
-    gate_rtl_f997(0, 0);
+    gate_rtl_set_text_cell_cursor(0, 0);
     /* DEC of 1-based arguments happens in WORDs, while the packet holds
      * bytes; 0 becomes 0xffff and is transmitted as 0xff. */
     assert(count == 2 && commands[1].col == 255 && commands[1].row == 255);
@@ -194,7 +194,7 @@ static void test_print_with_block_cursor(void)
     mode = 1;
     ink = 5;
     text[0x0100] = 'X';
-    gate_rtl_fa45(ptr);
+    gate_rtl_print_text_mode_string(ptr);
     assert(count == 6);
     assert(commands[0].op == 9 && commands[0].ch == 0xdb &&
            commands[0].attr == 0x85);

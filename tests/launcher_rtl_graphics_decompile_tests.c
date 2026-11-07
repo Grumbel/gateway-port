@@ -105,7 +105,7 @@ static void test_palette_fade_in(void)
     uint8_t original[0x300];
     reset(3, 0x300);
     memcpy(original, buffer, sizeof original);
-    gate_rtl_12773();
+    gate_rtl_fade_palette_in();
     assert(index_writes == 1 && index_value == 0);
     assert(nuploads == 17 && pixel_writes == 0 && size_reads == 0);
     for (step = 0; step < 17; ++step) {
@@ -118,17 +118,17 @@ static void test_palette_fade_in(void)
     /* All non-1/non-3 nonzero modes select the shorter, fixed 0x30 path. */
     reset(2, 0x300);
     byte_count = 0x30;
-    gate_rtl_12773();
+    gate_rtl_fade_palette_in();
     assert(nuploads == 17);
     for (step = 0; step < 17; ++step)
         for (i = 0; i < 0x30; ++i)
             assert(uploads[step].bytes[i] == expected(buffer[i], (int)step * 4));
 
     reset(1, 16);
-    gate_rtl_12773();
+    gate_rtl_fade_palette_in();
     assert(index_writes == 1 && nuploads == 1 && uploads[0].kind == 'N');
     reset(0, 16);
-    gate_rtl_12773();
+    gate_rtl_fade_palette_in();
     assert(index_writes == 0 && nuploads == 0);
 }
 
@@ -136,11 +136,11 @@ static void test_buffer_reset(void)
 {
     unsigned i;
     reset(0, 20);
-    gate_rtl_12823();
+    gate_rtl_clear_palette_buffer();
     assert(pixel_writes == 0 && nuploads == 0 && size_reads == 0);
 
     reset(3, 0x300);
-    gate_rtl_12823();
+    gate_rtl_clear_palette_buffer();
     assert(size_reads == 2 && last_size_index == 6);
     assert(pixel_writes == 0x300 && nuploads == 1 && uploads[0].kind == 'N');
     for (i = 0; i < 0x300; ++i)
@@ -148,7 +148,7 @@ static void test_buffer_reset(void)
     assert(buffer[0x300] == (uint8_t)(0x300u * 113u + 128u));
 
     reset(0xffff, -1);
-    gate_rtl_12823();
+    gate_rtl_clear_palette_buffer();
     assert(last_size_index == 0xfffe && pixel_writes == 0);
     assert(nuploads == 1 && uploads[0].kind == 'N');
 }
@@ -159,7 +159,7 @@ static void test_palette_fade_out(void)
     uint8_t original[8];
     reset(2, 8);
     memcpy(original, buffer, 8);
-    gate_rtl_12893();
+    gate_rtl_fade_palette_out();
     assert(index_writes == 1 && index_value == 0);
     assert(last_size_index == 4 && size_reads == 3);
     assert(nuploads == 18 && pixel_writes == 8);
@@ -174,7 +174,7 @@ static void test_palette_fade_out(void)
     assert(buffer[8] == (uint8_t)(8u * 113u + 128u));
 
     reset(0, 8);
-    gate_rtl_12893();
+    gate_rtl_fade_palette_out();
     assert(nuploads == 0 && index_writes == 0);
 }
 
@@ -191,7 +191,7 @@ static void test_mode_one_destructive_transform(void)
     uint8_t expected_bytes[16];
     reset(1, 16);
     memcpy(expected_bytes, buffer, sizeof expected_bytes);
-    gate_rtl_12893();
+    gate_rtl_fade_palette_out();
     assert(index_writes == 1 && nuploads == 7);
     assert(pixel_writes == 3 * 16 + 16 && size_reads == 2);
     for (step = 0; step < 3; ++step) {
@@ -217,20 +217,20 @@ static void test_original_far_work_record(void)
     active_work_offset = ptr.offset;
     releases = 0;
 
-    gate_rtl_13185(ptr);
+    gate_rtl_initialize_picture_record(ptr);
     assert(work_memory[0xfffc] == 0 && releases == 0);
-    gate_rtl_131cb(ptr);
+    gate_rtl_release_picture_record(ptr);
     assert(releases == 0);
 
     work_memory[0xfffc] = 0xa5;
-    gate_rtl_131cb(ptr);
+    gate_rtl_release_picture_record(ptr);
     assert(releases == 1 && work_memory[0xfffc] == 0);
     assert(released.segment == ptr.segment && released.offset == 4);
-    gate_rtl_131cb(ptr);
+    gate_rtl_release_picture_record(ptr);
     assert(releases == 1); /* idempotent once first byte is clear */
 
     /* Original checks both pointer words together before dereferencing. */
-    gate_rtl_131cb((GateFarPtr){0, 0});
+    gate_rtl_release_picture_record((GateFarPtr){0, 0});
     assert(releases == 1);
 }
 

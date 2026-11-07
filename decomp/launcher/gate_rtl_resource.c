@@ -10,7 +10,7 @@
  * and conditionally processes a format table. Read/write order and early
  * exits match the 8086; original linked I/O calls are retained as externs.
  */
-uint16_t gate_rtl_11ecb(uint16_t resource, uint16_t mode)
+uint16_t gate_rtl_select_picture_resource(uint16_t resource, uint16_t mode)
 {
     uint16_t file_group;
     uint16_t resource_file;
@@ -42,9 +42,9 @@ uint16_t gate_rtl_11ecb(uint16_t resource, uint16_t mode)
     handle_segment = gate_rtl_resource_handle_segment();
     if (resource_file != gate_rtl_resource_ds_word(8)) {
         if (gate_rtl_resource_ds_word(8) != 0xffffu)
-            gate_far_0c33_019a(gate_far_word(handle_segment, GATE_RTL_FILE_HANDLE_OFFSET));
+            gate_linked_close_resource_file(gate_far_word(handle_segment, GATE_RTL_FILE_HANDLE_OFFSET));
         gate_rtl_resource_ds_set_word(8, resource_file);
-        file_handle = gate_far_0c33_0040(0, resource_file);
+        file_handle = gate_linked_open_resource_file(0, resource_file);
         gate_far_set_word(handle_segment, GATE_RTL_FILE_HANDLE_OFFSET, file_handle);
         if (file_handle == 0) {
             gate_rtl_resource_ds_set_word(8, 0xffffu);
@@ -55,8 +55,8 @@ uint16_t gate_rtl_11ecb(uint16_t resource, uint16_t mode)
 
     file_handle = gate_far_word(handle_segment, GATE_RTL_FILE_HANDLE_OFFSET);
     /* The original byte-index * 12 is promoted by CWD before the seek. */
-    gate_far_0c33_0091(file_handle, (uint32_t)(resource & 0xffu) * 12u);
-    if (gate_far_0c33_00f2(file_handle,
+    gate_linked_seek_resource_file(file_handle, (uint32_t)(resource & 0xffu) * 12u);
+    if (gate_linked_read_resource_bytes(file_handle,
             (GateFarPtr){gate_rtl_image_header_segment(), GATE_RTL_HEADER_OFFSET},
             12) == 0)
         return 0;
@@ -79,9 +79,9 @@ uint16_t gate_rtl_11ecb(uint16_t resource, uint16_t mode)
     if (selected_mode > 0) {
         uint32_t location = (uint32_t)(header_offset +
                                         (uint32_t)((int32_t)selected_mode * 4 - 4));
-        gate_far_0c33_0091(file_handle, location);
-        gate_rtl_resource_ds_set_word(0x0a, gate_far_0c33_00d4(file_handle));
-        gate_rtl_resource_ds_set_word(0x0c, gate_far_0c33_00d4(file_handle));
+        gate_linked_seek_resource_file(file_handle, location);
+        gate_rtl_resource_ds_set_word(0x0a, gate_linked_read_resource_word(file_handle));
+        gate_rtl_resource_ds_set_word(0x0c, gate_linked_read_resource_word(file_handle));
     } else {
         gate_rtl_resource_ds_set_word(0x0a, 0);
         gate_rtl_resource_ds_set_word(0x0c, 0);
@@ -92,12 +92,12 @@ uint16_t gate_rtl_11ecb(uint16_t resource, uint16_t mode)
 
     /* The original header's count at +4 is SIGN-extended, even though
      * ordinary game descriptors have a small positive count. */
-    gate_far_0c33_0091(file_handle, (uint32_t)(header_offset +
+    gate_linked_seek_resource_file(file_handle, (uint32_t)(header_offset +
         (uint32_t)((int32_t)(int8_t)gate_far_byte(header_segment, GATE_RTL_HEADER_OFFSET + 4) * 4)));
     if ((gate_far_byte(header_segment, GATE_RTL_HEADER_OFFSET + 5) & 0x10u) != 0) {
         uint16_t table_word = gate_far_word(gate_rtl_resource_size_table_segment(),
                                            (uint16_t)(GATE_RTL_SIZE_TABLE_OFFSET + (format << 1)));
-        (void)gate_far_0c33_00f2(file_handle,
+        (void)gate_linked_read_resource_bytes(file_handle,
             gate_rtl_image_palette_source(), table_word);
         gate_rtl_resource_ds_set_word(6, 1);
     }

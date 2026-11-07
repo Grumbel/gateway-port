@@ -154,14 +154,14 @@ static uint16_t read_key(void *context)
 static uint16_t no_mouse(void *context) { (void)context; return 0; }
 
 /* Host boundaries for services not yet represented by recovered C. The
- * source-C original sequence remains in gate_exe_1302; no scene schedule is
+ * source-C original sequence remains in gate_exe_play_intro; no scene schedule is
  * recreated in this driver. MIDIPlay synthesis lives in the native SDL host. */
-uint16_t gate_far_0e2c_0094(uint16_t size)
+uint16_t gate_linked_allocate_intro_memory(uint16_t size)
 {
     if (size != 0x1000) abort();
     return 0x6500; /* pinned original EXE:1302 entry/134c RAM diff */
 }
-void gate_far_0a46_01ec(void)
+void gate_linked_initialize_intro_services(void)
 {
     /* At the genuine EXE:134c startup boundary, consult the recovered
      * original RTL:c3bd device predicates before notifying the host.
@@ -171,9 +171,9 @@ void gate_far_0a46_01ec(void)
         gate_rtl_c3bd_music_initialization_required())
         active_clock->hooks->music_start(active_clock->hooks->userdata);
 }
-void gate_far_123f_0004(void) { abort(); /* unimplemented key-3 branch */ }
-void gate_far_0e48_011b(void) { /* mouse cursor setup: headless */ }
-uint16_t gate_far_2488_000a(uint16_t a, uint16_t b)
+void gate_linked_handle_control_key(void) { abort(); /* unimplemented key-3 branch */ }
+void gate_linked_reset_intro_mouse(void) { /* mouse cursor setup: headless */ }
+uint16_t gate_linked_clear_resident_display(uint16_t a, uint16_t b)
 {
     (void)a;
     if (gate_ds_word(0x15cc) == 2) {
@@ -187,15 +187,15 @@ uint16_t gate_far_2488_000a(uint16_t a, uint16_t b)
         gate_far_set_byte(0xa000, (uint16_t)i, 0);
     return 1;
 }
-void gate_rtl_f921(void) { gate_far_2488_000a(0, 0); }
-uint16_t gate_far_1000_0008(void)
+void gate_rtl_clear_video_display(void) { gate_linked_clear_resident_display(0, 0); }
+uint16_t gate_linked_poll_animation_input(void)
 {
     return active_clock && active_clock->hooks &&
            active_clock->hooks->key_pending &&
            active_clock->hooks->key_pending(active_clock->hooks->userdata)
         ? 0 : 1;
 }
-void gate_far_223f_00b6(uint32_t delay)
+void gate_linked_wait_animation_delay(uint32_t delay)
 {
     if (!active_clock)
         return;
@@ -209,19 +209,19 @@ void gate_far_223f_00b6(uint32_t delay)
         active_clock->milliseconds += delay;
     }
 }
-void gate_rtl_graphics_delay(uint32_t delay) { gate_far_223f_00b6(delay); }
+void gate_rtl_graphics_delay(uint32_t delay) { gate_linked_wait_animation_delay(delay); }
 
 /* Original C RTL text-mode services cannot be reached in captured mode 3. */
-void gate_rtl_f997(uint16_t x, uint16_t y) { (void)x; (void)y; abort(); }
-void gate_rtl_fa45(GateFarPtr text) { (void)text; abort(); }
-void gate_rtl_f959(uint16_t *x, uint16_t *y) { (void)x; (void)y; abort(); }
+void gate_rtl_set_text_cell_cursor(uint16_t x, uint16_t y) { (void)x; (void)y; abort(); }
+void gate_rtl_print_text_mode_string(GateFarPtr text) { (void)text; abort(); }
+void gate_rtl_get_text_cell_cursor(uint16_t *x, uint16_t *y) { (void)x; (void)y; abort(); }
 uint16_t gate_rtl_file_stack_word(void) { return 0; }
 _Noreturn void gate_rtl_file_divide_fault(void) { abort(); }
-uint16_t gate_far_1e48_04d9(void) { return 0; }
-void gate_far_1e48_03c5(uint16_t saved) { (void)saved; }
-GateFarPtr gate_far_0cdc_0430(GateFarPtr palette) { return palette; }
-GateFarPtr gate_far_0cdc_0396(GateFarPtr palette) { return palette; }
-void gate_far_1258_172e(GateFarPtr message) { (void)message; abort(); }
+uint16_t gate_linked_save_vfx_draw_state(void) { return 0; }
+void gate_linked_restore_vfx_draw_state(uint16_t saved) { (void)saved; }
+GateFarPtr gate_linked_transform_picture_palette_indexed(GateFarPtr palette) { return palette; }
+GateFarPtr gate_linked_transform_picture_palette_rgb(GateFarPtr palette) { return palette; }
+void gate_linked_print_intro_diagnostic(GateFarPtr message) { (void)message; abort(); }
 
 static int configure(GateIntroMemory *memory)
 {
@@ -435,7 +435,7 @@ static int run_intro(const char *snapshot, const char *dos_dir,
          * DS:15cc are 2 (BIOS mode 12h). GATE.EXE:13a7 changes to mode 3
          * after the opening interlude; the earlier 22-second capture used
          * by the legacy deterministic replay was already in mode 3. */
-        uint16_t setup_result = gate_rtl_f14d(2);
+        uint16_t setup_result = gate_rtl_set_video_mode(2);
         if (setup_result != 1) {
             fprintf(stderr, "original mode-12h init failed: result=%u mode=%u renderer=%u\n",
                     setup_result, gate_ds_word(0x0fce), gate_ds_word(0x15cc));
@@ -459,7 +459,7 @@ static int run_intro(const char *snapshot, const char *dos_dir,
             active_recording = &recording;
         }
         frame_update(&clock);
-        gate_exe_1302();
+        gate_exe_play_intro();
         frame_update(&clock);
         /* The real EXE:1302 must invoke the relocated RTL:f14d C routine
          * once through its linked FAR alias, rather than silently relying
@@ -471,12 +471,12 @@ static int run_intro(const char *snapshot, const char *dos_dir,
             video.bios_mode != 0x13 || !video.clipping_enabled)
             abort();
     } else {
-        if (gate_rtl_12b19(0x3105, 0) != 1)
+        if (gate_rtl_show_picture(0x3105, 0) != 1)
             abort();
         memcpy(background, memory->bytes + 0xa0000, sizeof background);
         /* First source-C EXE:117e caption, original call arguments and text
          * pointer, drawn over the image in the same host memory. */
-        gate_exe_117e(10, 120, 310,
+        gate_exe_show_caption(10, 120, 310,
                       (GateFarPtr){memory->ds_segment, 0x363b});
     }
 
@@ -519,7 +519,7 @@ static int run_intro(const char *snapshot, const char *dos_dir,
         if (fclose(out) != 0)
             abort();
     }
-    gate_rtl_e771();
+    gate_rtl_clear_font_cache();
     if (recording.file && fclose(recording.file) != 0)
         abort();
     active_recording = 0;

@@ -14,13 +14,13 @@
 
 /* The text-mode video dispatcher remains a separate unresolved boundary.
  * Only the original graphics font (font+3 != 0) is exercised here. */
-void gate_rtl_f997(uint16_t x, uint16_t y)
+void gate_rtl_set_text_cell_cursor(uint16_t x, uint16_t y)
 {
     (void)x; (void)y;
     abort();
 }
-void gate_rtl_fa45(GateFarPtr text) { (void)text; abort(); }
-void gate_rtl_f959(uint16_t *x, uint16_t *y)
+void gate_rtl_print_text_mode_string(GateFarPtr text) { (void)text; abort(); }
+void gate_rtl_get_text_cell_cursor(uint16_t *x, uint16_t *y)
 {
     (void)x; (void)y;
     abort();
@@ -133,7 +133,7 @@ static void check_synthetic_glyph(void)
 
     gate_rtl_set_cursor(20, 30);
     gate_rtl_set_colors(0x0d, -1);
-    gate_rtl_edff('A');
+    gate_rtl_draw_font_glyph('A');
     assert(gate_rtl_cursor_x() == 28 && gate_rtl_cursor_y() == 30);
     for (row = 0; row < 3; ++row)
         for (column = 0; column < 7; ++column) {
@@ -151,7 +151,7 @@ static void check_synthetic_glyph(void)
     gate_ds_set_word(0x29de + 0x2a, 3);
     gate_rtl_set_cursor(40, 50);
     gate_rtl_set_colors(13, 2);
-    gate_rtl_edff('A');
+    gate_rtl_draw_font_glyph('A');
     assert(gate_rtl_cursor_x() == 48 && gate_rtl_cursor_y() == 50);
     assert(gate_ds_word(0x29de + 0x0c) == 0x1234);
     assert(gate_ds_word(0x29de + 0x28) == 0xabcd);
@@ -226,7 +226,7 @@ static void check_original_glyphs(const char *capture)
 
         assert(x + advance < 320 && y + height < 200);
         gate_rtl_set_cursor((int16_t)x, (int16_t)y);
-        gate_rtl_edff(ch);
+        gate_rtl_draw_font_glyph(ch);
         assert(gate_rtl_cursor_x() == (int16_t)(x + advance));
         for (row = 0; row < height; ++row)
             for (col = 0; col < width; ++col) {
@@ -259,7 +259,7 @@ static void check_original_glyphs(const char *capture)
         memset(memory->bytes + 0xa0000, 0, sizeof expected);
         gate_rtl_set_colors(15, 2);
         gate_rtl_set_cursor((int16_t)x, (int16_t)y);
-        gate_rtl_edff(ch);
+        gate_rtl_draw_font_glyph(ch);
         assert(gate_rtl_cursor_x() == (int16_t)(x + advance));
         for (row = 0; row < line_height; ++row)
             for (col = 0; col < advance; ++col)

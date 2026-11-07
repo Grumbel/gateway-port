@@ -5,7 +5,7 @@
 
 /* GATE.RTL:0xf473..0xf49a. Poll until retrace bit 3 first CLEARS,
  * then SETS. Both loops deliberately have no timeout or backoff. */
-void gate_rtl_f473(void)
+void gate_rtl_wait_vertical_retrace(void)
 {
     while ((gate_rtl_palette_in(gate_rtl_palette_status_port()) & 8u) != 0)
         ;
@@ -35,13 +35,13 @@ static void next_byte(GateFarPtr *pointer)
  *   its signed value by 31, then advances the pointer by three;
  * - the attribute-controller access at end of mode!=3 writes three bytes.
  */
-void gate_rtl_f61b(GateFarPtr palette)
+void gate_rtl_upload_vga_palette(GateFarPtr palette)
 {
     uint16_t mode;
 
     if (gate_rtl_palette_mode() == 0)
         return;
-    gate_rtl_f473();
+    gate_rtl_wait_vertical_retrace();
 
     if (gate_rtl_palette_video_type() == 5) {
         uint16_t initial = palette_byte(palette) != 0 ? 15u : 0u;

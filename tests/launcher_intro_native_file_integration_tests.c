@@ -35,14 +35,14 @@ _Noreturn void gate_rtl_file_divide_fault(void) { abort(); }
  * callbacks below are not image decoding: state save/restore is a VGA host
  * responsibility. Post-load correction uses the actual recovered RTL C.
  * This integration exercises the ordinary (no-transform) DCL path. */
-uint16_t gate_far_1e48_04d9(void) { return 0; }
-void gate_far_1e48_03c5(uint16_t saved) { (void)saved; }
-uint16_t gate_far_12a5_3b0c(void) { return 0; }
-void gate_far_223f_00b6(uint32_t milliseconds) { (void)milliseconds; }
-GateFarPtr gate_far_0cdc_0430(GateFarPtr palette) { return palette; }
-GateFarPtr gate_far_0cdc_0396(GateFarPtr palette) { return palette; }
-void gate_far_1258_172e(GateFarPtr message) { (void)message; abort(); }
-void gate_rtl_131cb(GateFarPtr work)
+uint16_t gate_linked_save_vfx_draw_state(void) { return 0; }
+void gate_linked_restore_vfx_draw_state(uint16_t saved) { (void)saved; }
+uint16_t gate_linked_runtime_random(void) { return 0; }
+void gate_linked_wait_animation_delay(uint32_t milliseconds) { (void)milliseconds; }
+GateFarPtr gate_linked_transform_picture_palette_indexed(GateFarPtr palette) { return palette; }
+GateFarPtr gate_linked_transform_picture_palette_rgb(GateFarPtr palette) { return palette; }
+void gate_linked_print_intro_diagnostic(GateFarPtr message) { (void)message; abort(); }
+void gate_rtl_release_picture_record(GateFarPtr work)
 {
     if (gate_far_byte(work.segment, work.offset)) {
         gate_rtl_graphics_release((GateFarPtr){work.segment,
@@ -88,19 +88,19 @@ static void test_original_rtl_file_opener_using_native_memory_and_files(void)
     guest_string((GateFarPtr){ds, suffix_offset}, "PIC");
     /* Real GATE.RTL:e4ff initializes the base FAR pointer. Its e531
      * argument table is read from DS:0fba, not hardcoded in the adapter. */
-    gate_rtl_e4ff((GateFarPtr){ds, 0x2000});
+    gate_rtl_set_resource_path_base((GateFarPtr){ds, 0x2000});
     gate_ds_set_word(0x0fba, suffix_offset);
     gate_ds_set_word(0x0fbc, ds);
 
-    handle = gate_rtl_e531(1, 201);
+    handle = gate_rtl_open_resource_file(1, 201);
     assert(handle >= 5);
-    assert(gate_rtl_e5e3(handle, payload, 4) == 4);
+    assert(gate_rtl_read_resource_bytes(handle, payload, 4) == 4);
     assert(gate_far_byte(payload.segment, payload.offset) == 'P');
     assert(gate_far_byte(payload.segment, payload.offset + 1) == 'I');
     assert(gate_far_byte(payload.segment, payload.offset + 2) == 'C');
     assert(gate_far_byte(payload.segment, payload.offset + 3) == '!');
-    gate_rtl_e68b(handle);
-    assert(gate_rtl_e531(1, 202) == 0); /* missing asset */
+    gate_rtl_close_resource_file(handle);
+    assert(gate_rtl_open_resource_file(1, 202) == 0); /* missing asset */
 
     gate_dos_host_files_close_all(&files);
     gate_intro_memory_detach();
@@ -135,9 +135,9 @@ static void test_original_linked_snapshot(const char *capture,
 
     assert(gate_ds_word(0x54c2) == 0x3592);
     assert(gate_ds_word(0x54c4) == memory->ds_segment);
-    assert(gate_rtl_e531(0, 200) >= 5);
+    assert(gate_rtl_open_resource_file(0, 200) >= 5);
     handle = 5; /* first DOS file handle in a fresh host */
-    assert(gate_rtl_e5e3(handle, (GateFarPtr){0x4000, 0x200}, 16) == 16);
+    assert(gate_rtl_read_resource_bytes(handle, (GateFarPtr){0x4000, 0x200}, 16) == 16);
     for (unsigned i = 0; i < sizeof actual; ++i)
         actual[i] = gate_far_byte(0x4000, (uint16_t)(0x200 + i));
     assert(snprintf(filename, sizeof filename, "%s/GATE_200.PIC",
@@ -147,12 +147,12 @@ static void test_original_linked_snapshot(const char *capture,
     assert(fread(expected, 1, sizeof expected, asset) == sizeof expected);
     assert(fclose(asset) == 0);
     assert(memcmp(actual, expected, sizeof actual) == 0);
-    gate_rtl_e68b(handle);
+    gate_rtl_close_resource_file(handle);
 
     /* The reconstructed resource-selector C follows original 0c33 aliases
      * into the same native file and segmented-memory adapters. */
     gate_rtl_resource_ds_set_word(8, 0xffffu); /* no live guest FD imported */
-    assert(gate_rtl_11ecb(0x3001, 1) == 1);
+    assert(gate_rtl_select_picture_resource(0x3001, 1) == 1);
     assert(gate_rtl_resource_ds_word(8) == 300);
     assert(gate_far_word(gate_rtl_image_header_segment(),
                          GATE_RTL_HEADER_OFFSET + 6) == 0x010e);
@@ -162,7 +162,7 @@ static void test_original_linked_snapshot(const char *capture,
                          GATE_RTL_HEADER_OFFSET + 5) == 0x43);
     assert(gate_rtl_resource_ds_word(0x0a) == 24);
     assert(gate_rtl_resource_ds_word(0x0c) == 81);
-    assert(gate_rtl_120f3() == 0); /* no post-load format transform */
+    assert(gate_rtl_detect_picture_format() == 0); /* no post-load format transform */
     /* Continue with reconstructed original 145d VFX allocation, its
      * 1479 fill and the 24a7 VGA rasterizer. Only the GATE_300 descriptor
      * is original picture data here; the image pixels are still a test
@@ -172,7 +172,7 @@ static void test_original_linked_snapshot(const char *capture,
         GateFarPtr image = {0x4000, 0x1000};
         uint16_t pixels;
         assert(gate_far_word(0x2a7a, 0x15cc) == 3);
-        assert(gate_far_145d_00f7(
+        assert(gate_linked_allocate_vfx_image(
             gate_far_word(header, GATE_RTL_HEADER_OFFSET + 8),
             gate_far_word(header, GATE_RTL_HEADER_OFFSET + 6),
             3, image, 0) == 0);
@@ -180,8 +180,8 @@ static void test_original_linked_snapshot(const char *capture,
         assert(gate_far_word(image.segment, image.offset + 0x2e) == 38);
         pixels = gate_far_word(image.segment, image.offset + 0x1a);
         assert(pixels >= 0x6000);
-        gate_far_1479_0002(0x44, image);
-        gate_far_24a7_000c(0, 4, 5, 0, image);
+        gate_linked_initialize_vfx_image(0x44, image);
+        gate_linked_blit_vfx_picture(0, 4, 5, 0, image);
         assert(gate_far_byte(0xa000, 320 * 4 + 5) == 0x44);
         assert(gate_far_byte(0xa000, 320 * 41 + 274) == 0x44);
         gate_rtl_graphics_release(image);
@@ -201,7 +201,7 @@ static void test_original_linked_snapshot(const char *capture,
         uint16_t src_offset;
         unsigned nonzero = 0;
         gate_far_set_byte(work.segment, work.offset, 0);
-        assert(gate_rtl_12c33(work, 0x3001, 1) == 1);
+        assert(gate_rtl_load_picture_record(work, 0x3001, 1) == 1);
         assert(gate_far_word(work.segment, work.offset + 2) == 24);
         assert(gate_far_word(work.segment, work.offset + 4) == 81);
         assert(gate_far_word(image.segment, image.offset + 0x2c) == 270);
@@ -217,14 +217,14 @@ static void test_original_linked_snapshot(const char *capture,
             for (unsigned x = 0; x < 270; ++x)
                 gate_far_set_byte(0xa000,
                     (uint16_t)(320u * (81u + y) + 24u + x), 0);
-        gate_rtl_12ed7(work);
+        gate_rtl_draw_picture_record(work);
         for (unsigned y = 0; y < 38; ++y)
             for (unsigned x = 0; x < 270; ++x)
                 assert(gate_far_byte(0xa000,
                            (uint16_t)(320u * (81u + y) + 24u + x)) ==
                        gate_far_byte(src_segment,
                            (uint16_t)(src_offset + 270u * y + x)));
-        gate_rtl_131cb(work);
+        gate_rtl_release_picture_record(work);
         assert(gate_far_byte(work.segment, work.offset) == 0);
         puts("original GATE_300.PIC #1 decoded and rendered through reconstructed C loader: OK");
     }
@@ -271,7 +271,7 @@ static void test_original_planar_snapshot(const char *capture,
     gate_rtl_resource_ds_set_word(0, 0);
     gate_rtl_resource_ds_set_word(8, 0xffffu);
     gate_far_set_byte(work.segment, work.offset, 0);
-    assert(gate_rtl_12c33(work, 0x8101, 1) == 1);
+    assert(gate_rtl_load_picture_record(work, 0x8101, 1) == 1);
     assert(gate_rtl_resource_ds_word(8) == 201);
     assert(gate_far_word(image.segment, image.offset) == 0xca00);
     assert(gate_far_byte(image.segment, image.offset + 0x12) == 4);
@@ -282,7 +282,7 @@ static void test_original_planar_snapshot(const char *capture,
     y = gate_far_word(work.segment, work.offset + 4);
     assert(width == 300 && height == 30);
     assert(x + width <= 640 && y + height <= 480);
-    gate_rtl_12ed7(work);
+    gate_rtl_draw_picture_record(work);
     for (row = 0; row < height; ++row)
         for (col = 0; col < width; ++col)
             nonzero += gate_intro_vga16_pixel((uint16_t)(x + col),
@@ -291,7 +291,7 @@ static void test_original_planar_snapshot(const char *capture,
     assert(gate_intro_planar_pic_matches_reference(game_directory, 1, x, y));
     if (x != 0)
         assert(gate_intro_vga16_pixel((uint16_t)(x - 1u), y) == 0);
-    gate_rtl_131cb(work);
+    gate_rtl_release_picture_record(work);
     gate_dos_host_files_close_all(&files);
     gate_intro_memory_detach();
     free(memory);

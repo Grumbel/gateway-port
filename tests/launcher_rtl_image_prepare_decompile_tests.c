@@ -79,7 +79,7 @@ void gate_rtl_resource_ds_set_word(uint16_t offset, uint16_t value)
     rtl_ds_compressed = value;
 }
 
-void gate_far_0cdc_04d2(GateFarPtr palette)
+void gate_linked_upload_intro_palette(GateFarPtr palette)
 {
     assert(palette.segment == PALETTE_SOURCE_SEG &&
            palette.offset == GATE_RTL_TRANSFORM_OFFSET);
@@ -112,7 +112,7 @@ static void reset_case(uint16_t video_mode, uint16_t compressed)
 static void test_video_off_does_nothing(void)
 {
     reset_case(0, 1);
-    gate_rtl_1266f();
+    gate_rtl_prepare_picture_display();
     assert(uploaded == 0 && rtl_ds_compressed == 1);
     assert(gate_far_word(STATUS_SEG, 0x70) == 0xa5a5);
     assert(source_data[0x82] == 0x51);
@@ -122,7 +122,7 @@ static void test_original_status_and_flags(void)
 {
     unsigned i;
     reset_case(3, 0);
-    gate_rtl_1266f();
+    gate_rtl_prepare_picture_display();
     assert(uploaded == 0);
     assert(gate_far_word(STATUS_SEG, 0x70) == 1);
     for (i = 0; i < 8; ++i)
@@ -136,7 +136,7 @@ static void test_original_status_and_flags(void)
 
     reset_case(3, 0);
     source_data[0x82] = source_data[0x83] = 0;
-    gate_rtl_1266f();
+    gate_rtl_prepare_picture_display();
     assert(gate_far_word(STATUS_SEG, 0x70) == 0);
 }
 
@@ -144,7 +144,7 @@ static void test_original_palette_upload_and_copy(void)
 {
     unsigned i;
     reset_case(2, 1);
-    gate_rtl_1266f();
+    gate_rtl_prepare_picture_display();
     assert(uploaded == 1 && rtl_ds_compressed == 0);
     for (i = 0; i < 0x300; ++i)
         assert(data[0x56ce + i] == (uint8_t)(i * 17u + 3u));
