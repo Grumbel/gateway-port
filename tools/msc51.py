@@ -229,12 +229,22 @@ def msc51_rename_identifiers(source: str, names: dict[str, str]) -> str:
 
 
 MEMORY_SOURCES = ("GATEMEM.H", "STDINT.H", "MEMORY.C", "MEMCHK.C")
+DOS_FILE_SOURCES = ("GATEDOS.H", "GATEMEM.H", "STDINT.H", "DOSFILE.C", "FILECHK.C",
+                    "MEMORY.C")
 
 
 def memory_source_signature(output: Path) -> str:
     """Reject a stale DOS memory object after an adapter/staging change."""
     digest = hashlib.sha256(b"MS C 5.1 /AL /Od memory adapter v1\n")
     for name in MEMORY_SOURCES:
+        digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
+    return digest.hexdigest()[:16]
+
+
+def dos_file_source_signature(output: Path) -> str:
+    """Reject obsolete DOS file objects, including memory-ABI changes."""
+    digest = hashlib.sha256(b"MS C 5.1 /AL /Od DOS file adapter v1\n")
+    for name in DOS_FILE_SOURCES:
         digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
     return digest.hexdigest()[:16]
 
@@ -344,6 +354,38 @@ def stage_launcher(output: Path) -> list[str]:
         ":DONE", "EXIT",
     ]
     (output / "MEMORY.BAT").write_text("\r\n".join(memory_batch) + "\r\n")
+    (output / "GATEDOS.H").write_text(
+        "/* Microsoft C 5.1 DOS file adapter; not original game code. */\n"
+        '#include "GATEMEM.H"\n'
+        "typedef struct GateDosFileResult {\n"
+        "    uint16_t ax;\n    uint16_t dx;\n    uint8_t carry;\n"
+        "} GateDosFileResult;\n"
+        "GateDosFileResult gate_dos_file_open(GateFarPtr path, uint16_t access, uint16_t create);\n"
+        "GateDosFileResult gate_dos_file_close(uint16_t handle);\n"
+        "GateDosFileResult gate_dos_file_read(uint16_t handle, GateFarPtr dest, uint16_t count);\n"
+        "GateDosFileResult gate_dos_file_write(uint16_t handle, GateFarPtr src, uint16_t count);\n"
+        "GateDosFileResult gate_dos_file_seek(uint16_t handle, uint16_t origin, uint32_t offset);\n"
+    )
+    for dos_name, staged_name in (("msc51_dos_file.c", "DOSFILE.C"),
+                                  ("msc51_dos_file_probe.c", "FILECHK.C")):
+        (output / staged_name).write_text((source_dir / "dos" / dos_name).read_text())
+    file_signature = dos_file_source_signature(output)
+    file_batch = [
+        "@ECHO OFF", "ECHO MS C 5.1 DOS file adapter > FILSTART.LOG",
+        "SET PATH=C:\\BIN;C:\\", "SET INCLUDE=C:\\INCLUDE;C:\\",
+        "SET LIB=C:\\LIB;C:\\", "SET TEMP=D:\\", "SET TMP=D:\\",
+        "CL /AL /Od /c DOSFILE.C > FILBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        "IF NOT EXIST DOSFILE.OBJ GOTO FAILED",
+        "CL /AL /Od FILECHK.C DOSFILE.OBJ MEMORY.OBJ /FeFILECHK.EXE /link LLIBCR.LIB LIBH.LIB/NOD >> FILBUILD.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST FILECHK.EXE GOTO FAILED",
+        "FILECHK.EXE > FILTEST.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        f"ECHO {file_signature} > FILSIG.LOG",
+        "ECHO Microsoft C DOS file probe passed > FILOK.LOG",
+        "GOTO DONE", ":FAILED",
+        "ECHO Microsoft C DOS file probe failed > FILFAIL.LOG",
+        ":DONE", "EXIT",
+    ]
+    (output / "DOSFILE.BAT").write_text("\r\n".join(file_batch) + "\r\n")
     lines = [
         "@ECHO OFF", "ECHO Gateway MSC 5.1 launcher objects > START.LOG",
         "SET PATH=C:\\BIN;C:\\", "SET INCLUDE=C:\\INCLUDE;C:\\",
@@ -365,7 +407,7 @@ def stage_launcher(output: Path) -> list[str]:
     # Microsoft's LINK response file is prompt-oriented: object modules,
     # output executable, map, libraries/options, and an empty DEF response.
     # Each trailing + extends the SAME response across CRLFs (MS KB Q40429).
-    response = ([f"{name}+" for name in objects] + ["MEMORY.OBJ",
+    response = ([f"{name}+" for name in objects] + ["MEMORY.OBJ+", "DOSFILE.OBJ",
                 "GATEWAY.EXE", "GATEWAY.MAP", "LLIBCR.LIB LIBH.LIB /NOD", ";"])
     (output / "LINK.RSP").write_text("\r\n".join(response) + "\r\n")
     link_batch = [
@@ -443,6 +485,37 @@ def print_memory_diagnostics(output: Path) -> None:
         content = path.read_text(errors="replace") if path else "(not created)"
         print(f"--- {name} ---\n{content[-8_000:].rstrip()}", file=sys.stderr)
     print(f"Memory adapter workspace: {output}", file=sys.stderr)
+
+
+def validate_dos_file_adapter(output: Path) -> None:
+    """Require a successful DOS INT 21h file-operations round trip."""
+    if (locate_case_insensitive(output, "DOSFILE.OBJ") is None or
+            locate_case_insensitive(output, "FILSTART.LOG") is None or
+            locate_case_insensitive(output, "FILOK.LOG") is None or
+            locate_case_insensitive(output, "FILFAIL.LOG") is not None):
+        raise ValueError("Cannot link launcher: DOS file adapter is unverified. "
+                         "Run msc51-compile-dos-files first.")
+    signature = locate_case_insensitive(output, "FILSIG.LOG")
+    if signature is None or signature.read_text().strip() != dos_file_source_signature(output):
+        raise ValueError("Cannot link launcher: DOS file adapter source has changed "
+                         "since its test. Run msc51-compile-dos-files again.")
+
+
+def remove_dos_file_outputs(output: Path) -> None:
+    names = {"FILSTART.LOG", "FILOK.LOG", "FILFAIL.LOG", "FILBUILD.LOG", "FILSIG.LOG",
+             "FILTEST.LOG", "DOSFILE.OBJ", "FILECHK.EXE", "FILECHK.OBJ"}
+    if output.is_dir():
+        for entry in output.iterdir():
+            if entry.is_file() and entry.name.upper() in names:
+                entry.unlink()
+
+
+def print_dos_file_diagnostics(output: Path) -> None:
+    for name in ("FILFAIL.LOG", "FILBUILD.LOG", "FILTEST.LOG", "FILOK.LOG"):
+        path = locate_case_insensitive(output, name)
+        content = path.read_text(errors="replace") if path else "(not created)"
+        print(f"--- {name} ---\n{content[-8_000:].rstrip()}", file=sys.stderr)
+    print(f"DOS file adapter workspace: {output}", file=sys.stderr)
 
 
 def remove_launcher_link_outputs(output: Path) -> None:
@@ -527,7 +600,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("probe", "shell", "prepare", "install",
                                             "prepare-launcher", "compile-launcher",
-                                            "compile-memory", "link-launcher"))
+                                            "compile-memory", "compile-dos-files",
+                                            "link-launcher"))
     parser.add_argument("--compiler", default=os.environ.get("GATEWAY_MSC51_DIR"),
                         help="installed Microsoft C 5.1 directory (or GATEWAY_MSC51_DIR)")
     parser.add_argument("--output", type=Path,
@@ -539,7 +613,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="one original floppy image, repeat in original disk order")
     args = parser.parse_args(argv)
     launcher = args.command in ("prepare-launcher", "compile-launcher",
-                                "compile-memory", "link-launcher")
+                                "compile-memory", "compile-dos-files", "link-launcher")
     output = (args.output or Path("build/msc51-launcher" if launcher else "build/intro-msc51")).expanduser().resolve()
     objects = []
     if launcher:
@@ -560,14 +634,19 @@ def main(argv: list[str] | None = None) -> int:
         else:
             if args.command == "link-launcher":
                 validate_launcher_objects(output, objects)
+            if args.command in ("compile-dos-files", "link-launcher"):
                 validate_memory_adapter(output)
+            if args.command == "link-launcher":
+                validate_dos_file_adapter(output)
             if not args.compiler:
                 parser.error("set GATEWAY_MSC51_DIR or pass --compiler /path/to/installed/MSC51")
             compiler = validate_compiler(Path(args.compiler))
             commands = dosbox_commands(
                 compiler, output,
-                args.command in ("probe", "compile-launcher", "compile-memory", "link-launcher"),
+                args.command in ("probe", "compile-launcher", "compile-memory",
+                                 "compile-dos-files", "link-launcher"),
                 ("LINK.BAT" if args.command == "link-launcher" else
+                 "DOSFILE.BAT" if args.command == "compile-dos-files" else
                  "MEMORY.BAT" if args.command == "compile-memory" else
                  "COMPILE.BAT" if launcher else "BUILD.BAT"))
             output.mkdir(parents=True, exist_ok=True)
@@ -589,6 +668,10 @@ def main(argv: list[str] | None = None) -> int:
         remove_memory_outputs(output)
         remove_launcher_link_outputs(output)
         command.append("--exit")
+    elif args.command == "compile-dos-files":
+        remove_dos_file_outputs(output)
+        remove_launcher_link_outputs(output)
+        command.append("--exit")
     elif args.command == "link-launcher":
         remove_launcher_link_outputs(output)
         command.append("--exit")
@@ -601,6 +684,8 @@ def main(argv: list[str] | None = None) -> int:
             print_launcher_diagnostics(output)
         elif args.command == "compile-memory":
             print_memory_diagnostics(output)
+        elif args.command == "compile-dos-files":
+            print_dos_file_diagnostics(output)
         elif args.command == "link-launcher":
             print_launcher_link_diagnostics(output)
         return result.returncode
@@ -613,6 +698,16 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print("Microsoft C 5.1 verified DOS memory access, DS binding and stack pointers; "
               "MEMORY.OBJ can now be linked with the 28 launcher objects.")
+        return 0
+    if args.command == "compile-dos-files":
+        try:
+            validate_dos_file_adapter(output)
+        except ValueError:
+            print("Microsoft C did not compile and verify the DOS file adapter.", file=sys.stderr)
+            print_dos_file_diagnostics(output)
+            return 1
+        print("Microsoft C 5.1 verified DOS file create/open/read/write/seek/close; "
+              "DOSFILE.OBJ can now be linked with the launcher objects.")
         return 0
     if args.command == "link-launcher":
         started = locate_case_insensitive(output, "LNKSTART.LOG")

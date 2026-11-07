@@ -56,9 +56,10 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("ECHO All reconstructed launcher objects compiled > SUCCESS.LOG", batch)
             self.assertNotIn("/Fe", batch)  # No complete DOS executable yet.
             response = (output / "LINK.RSP").read_text().splitlines()
-            self.assertEqual(response[:29],
-                             [f"M{index:02d}.OBJ+" for index in range(28)] + ["MEMORY.OBJ"])
-            self.assertEqual(response[29:], ["GATEWAY.EXE", "GATEWAY.MAP",
+            self.assertEqual(response[:30],
+                             [f"M{index:02d}.OBJ+" for index in range(28)] +
+                             ["MEMORY.OBJ+", "DOSFILE.OBJ"])
+            self.assertEqual(response[30:], ["GATEWAY.EXE", "GATEWAY.MAP",
                                              "LLIBCR.LIB LIBH.LIB /NOD", ";"])
             memory_batch = (output / "MEMORY.BAT").read_text()
             self.assertIn("CL /AL /Od /c MEMORY.C", memory_batch)
@@ -73,6 +74,17 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("FP_OFF(address) = offset", adapter)
             self.assertIn("gate_dos_bind_ds", adapter)
             self.assertIn("_dos_allocmem", (output / "MEMCHK.C").read_text())
+            file_batch = (output / "DOSFILE.BAT").read_text()
+            self.assertIn("CL /AL /Od /c DOSFILE.C", file_batch)
+            self.assertIn("CL /AL /Od FILECHK.C DOSFILE.OBJ MEMORY.OBJ", file_batch)
+            self.assertIn("FILECHK.EXE > FILTEST.LOG", file_batch)
+            self.assertIn("FILSIG.LOG", file_batch)
+            self.assertIn("IF ERRORLEVEL 1 GOTO FAILED", file_batch)
+            file_adapter = (output / "DOSFILE.C").read_text()
+            self.assertIn("intdosx(input, &output, &segments)", file_adapter)
+            self.assertIn("output.x.cflag", file_adapter)
+            self.assertIn("input.h.ah = 0x42u", file_adapter)
+            self.assertIn("remove(filename)", (output / "FILECHK.C").read_text())
             link_batch = (output / "LINK.BAT").read_text()
             self.assertIn("C:\\BIN\\LINK.EXE @LINK.RSP > LINK.LOG", link_batch)
             self.assertNotIn("\nLINK @LINK.RSP", link_batch)
@@ -196,6 +208,17 @@ class MSC51Tests(unittest.TestCase):
             (output / "memstart.log").write_text("tested")
             (output / "memok.log").write_text("passed")
             (output / "memsig.log").write_text(msc51.memory_source_signature(output))
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run") as run, \
+                 redirect_stderr(io.StringIO()) as error:
+                with self.assertRaises(SystemExit):
+                    msc51.main(args)
+                run.assert_not_called()
+            self.assertIn("msc51-compile-dos-files first", error.getvalue())
+            (output / "dosfile.obj").write_bytes(b"DOS file adapter")
+            (output / "filstart.log").write_text("tested")
+            (output / "filok.log").write_text("passed")
+            (output / "filsig.log").write_text(msc51.dos_file_source_signature(output))
             for name in ("LINKSTAR.LOG", "LNKSTART.LOG", "LINKDONE.LOG", "LINKFAIL.LOG",
                          "LINK.LOG", "GATEWAY.EXE", "GATEWAY.MAP"):
                 (output / name.lower()).write_bytes(b"stale result")
@@ -275,6 +298,65 @@ class MSC51Tests(unittest.TestCase):
             (output / "MEMORY.C").write_text((output / "MEMORY.C").read_text() + "/* changed */\n")
             with self.assertRaisesRegex(ValueError, "source has changed"):
                 msc51.validate_memory_adapter(output)
+
+    def test_compile_dos_files_requires_memory_and_checks_int21_probe(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            compiler = root / "compiler"
+            for directory in ("BIN", "LIB", "INCLUDE"):
+                (compiler / directory).mkdir(parents=True)
+            for name in ("CL.EXE", "C1.EXE", "C1L.EXE", "C2.EXE", "C3.EXE", "LINK.EXE"):
+                (compiler / "BIN" / name).touch()
+            for name in ("LLIBCR.LIB", "LIBH.LIB"):
+                (compiler / "LIB" / name).touch()
+            (compiler / "INCLUDE" / "STDIO.H").touch()
+            output = root / "launcher"
+            args = ["compile-dos-files", "--compiler", str(compiler), "--output", str(output)]
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run") as run, \
+                 redirect_stderr(io.StringIO()) as error:
+                with self.assertRaises(SystemExit):
+                    msc51.main(args)
+                run.assert_not_called()
+            self.assertIn("msc51-compile-memory first", error.getvalue())
+
+            (output / "memory.obj").write_bytes(b"DOS memory adapter")
+            (output / "memstart.log").write_text("tested")
+            (output / "memok.log").write_text("passed")
+            (output / "memsig.log").write_text(msc51.memory_source_signature(output))
+
+            def failed_probe(command, check):
+                self.assertIn("DOSFILE.BAT", command)
+                self.assertFalse(check)
+                (output / "FILSTART.LOG").write_text("started")
+                (output / "DOSFILE.OBJ").write_bytes(b"compiled")
+                (output / "FILFAIL.LOG").write_text("carry flag test failed")
+                return mock.Mock(returncode=0)
+
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run", side_effect=failed_probe), \
+                 redirect_stderr(io.StringIO()) as error:
+                self.assertEqual(msc51.main(args), 1)
+            self.assertIn("carry flag test failed", error.getvalue())
+
+            def successful_probe(command, check):
+                self.assertIn("DOSFILE.BAT", command)
+                self.assertFalse((output / "FILFAIL.LOG").exists())
+                self.assertFalse((output / "DOSFILE.OBJ").exists())
+                (output / "FILSTART.LOG").write_text("started")
+                (output / "DOSFILE.OBJ").write_bytes(b"compiled")
+                (output / "FILOK.LOG").write_text("passed")
+                (output / "FILTEST.LOG").write_text("DOS file probe: PASS")
+                (output / "FILSIG.LOG").write_text(msc51.dos_file_source_signature(output))
+                return mock.Mock(returncode=0)
+
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run", side_effect=successful_probe):
+                self.assertEqual(msc51.main(args), 0)
+
+            (output / "DOSFILE.C").write_text((output / "DOSFILE.C").read_text() + "/* changed */\n")
+            with self.assertRaisesRegex(ValueError, "source has changed"):
+                msc51.validate_dos_file_adapter(output)
 
     def test_stages_only_recovered_source_with_c89_headers(self):
         with tempfile.TemporaryDirectory() as scratch:

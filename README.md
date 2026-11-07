@@ -214,6 +214,7 @@ nix run .#msc51-prepare                       # prepare C89 source only (no down
 nix run .#msc51-prepare-launcher              # stage all 28 recovered launcher modules
 nix run -L .#msc51-compile-launcher            # compile all 28 with Microsoft C 5.1
 nix run -L .#msc51-compile-memory              # compile and test real DOS memory adapter
+nix run -L .#msc51-compile-dos-files           # compile and test real DOS file operations
 nix run -L .#msc51-link-launcher               # try LINK with the resulting objects
 nix run .#msc51-link-report                    # classify saved LINK.LOG without DOSBox
 nix build .#msc51                             # optional: inspect assembled DOS tree
@@ -341,17 +342,32 @@ are reported from `MEMBUILD.LOG` and `MEMTEST.LOG`. The adapter requires an
 explicit `gate_dos_bind_ds(segment)` before game DS access. It does not
 reconstruct the original game's data-segment allocation/initialization.
 
-The separate link-only diagnostic reuses all 28 object files **and** the
-verified `MEMORY.OBJ`, without recompiling any of them:
+The user's follow-up Microsoft LINK run consumed `MEMORY.OBJ` and reduced
+the unresolved-symbol count **from 108 to 100**, exactly removing those
+eight segmented-memory names. This verifies linkage, not the launcher
+startup or any remaining services.
+
+The next five names are the direct DOS file-service boundary in
+`gate_dos_file_runtime.c`. `msc51-compile-dos-files` stages `DOSFILE.C`,
+which calls the original DOS `INT 21h` functions 3Ch, 3Dh, 3Eh, 3Fh, 40h
+and 42h through Microsoft C's `intdosx`, preserving AX, DX and carry. The
+standalone DOS `FILECHK.EXE` creates a disposable `GWTST.TMP` file in the
+staging mount, exercises binary write/read, seek, EOF, close and invalid
+handle carry, and removes its test file. Its `FILOK.LOG` and source
+fingerprint are required before linking. Like the memory stage, this new
+test has not yet been executed under the user's DOS compiler.
+
+The separate link-only diagnostic reuses all 28 object files and the
+verified `MEMORY.OBJ` and `DOSFILE.OBJ`, without recompiling any of them:
 
 ```sh
-nix run -L .#msc51-compile-memory
+nix run -L .#msc51-compile-dos-files
 nix run -L .#msc51-link-launcher
 nix run .#msc51-link-report -- --json build/msc51-link-report.json
 ```
 
 It generates `build/msc51-launcher/LINK.RSP` and `LINK.BAT`, then invokes
-`C:\BIN\LINK.EXE` explicitly with all 28 `Mxx.OBJ` files, `MEMORY.OBJ`,
+`C:\BIN\LINK.EXE` explicitly with all 28 `Mxx.OBJ` files, `MEMORY.OBJ`, `DOSFILE.OBJ`,
 the large-model `LLIBCR.LIB` and `LIBH.LIB`. The historical LINK response file supplies the
 object list (continued using trailing `+`), EXE name, MAP name, libraries and
 an empty definitions-file answer, as documented by
@@ -370,9 +386,10 @@ The user's initial Microsoft **Overlay Linker 3.65** run passed all
 28 object names to LINK and reported **108 `L2029` unresolved externals**.
 They include the CRT's `_main`, eight generic segmented-memory accessors,
 DOS file services, linked resident FAR calls and RTL-state/hardware adapters.
-The new adapter is intended to remove the eight memory symbols only after
-its *real Microsoft C 5.1 test* passes; it has not yet been executed in this
-environment. The remaining CRT entry, DOS/resident and RTL services must
+The original memory adapter has now resolved those eight symbols in the
+user's linker run. The new file adapter should resolve five additional
+names if its Microsoft C 5.1 test passes. The remaining CRT entry,
+linked resident and RTL services must
 still be implemented to produce a working executable. This is a
 source-coverage/host-adapter boundary, not a new compiler incompatibility.
 To inventory the saved log without invoking DOSBox or downloading the

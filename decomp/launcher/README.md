@@ -919,9 +919,20 @@ implementation in `dos/msc51_memory.c`, using Microsoft C 5.1 `FP_SEG`/
 Microsoft C DOS `MEMCHK.EXE` before permitting the next link attempt.
 The probe checks DS words, 8086 offset wrapping, and SS:offset access to a
 stack variable. A recorded source fingerprint also prevents reusing an older
-`MEMORY.OBJ` after an adapter change. A new `LINK.LOG` will show whether these eight symbols have
-been resolved; the user-host probe has not yet run. No original launcher DS
-setup, CRT entry or resident services are claimed to exist yet.
+`MEMORY.OBJ` after an adapter change. The subsequent user's LINK run confirms
+that these eight symbols are resolved. No original launcher DS setup, CRT
+entry or resident services are claimed to exist yet.
+
+**Confirmed follow-up:** the user's real Microsoft LINK invocation now
+includes `MEMORY.OBJ` and reports 100 missing names, exactly eight fewer
+than the original report. The next boundary is the five `gate_dos_file_*`
+calls. `dos/msc51_dos_file.c` implements `INT 21h` create/open/close/read/
+write/seek with Microsoft C 5.1 `intdosx`, retaining the carry flag alongside
+the actual AX and DX registers. `nix run -L .#msc51-compile-dos-files` builds
+`DOSFILE.OBJ` and runs a DOS `FILECHK.EXE` using a temporary file on the
+writable staging mount. A fresh `FILOK.LOG` and source fingerprint are
+required to include the adapter in the following `LINK.RSP`; this
+historical-DOS validation is awaiting the user's next run.
 
 ## Immediate next functions
 
