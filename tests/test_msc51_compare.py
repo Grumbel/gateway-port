@@ -138,6 +138,49 @@ class MSC51CompareTests(unittest.TestCase):
         self.assertEqual(hits[0]["relocation_aware_bytes"], 160)
         self.assertEqual(hits[0]["masked_relocation_bytes"], 4)
 
+    def test_omf_exact_only_explanations(self):
+        fixup = b"\xc4\x04\x44\x01"  # 2-byte fixup at offset 4
+        library, modules, code = self.fixture_with_fixups([fixup])
+        relocated_copy = bytearray(code)
+        relocated_copy[4] ^= 1
+        original = b"padding" + code + b"gap" + relocated_copy
+        baseline = msc.scan_exact_crt_prefixes(original, library, modules)
+        relocated = msc.scan_exact_crt_prefixes(
+            original, library, modules, relocations=True)
+        self.assertEqual(len(baseline), 1)
+        self.assertEqual(relocated, [])
+        difference = msc.compare_public_scans(baseline, relocated)
+        reasons = msc.explain_exact_only(
+            original, library, modules, difference["exact_only"])
+        self.assertEqual(reasons[0]["status"], "ambiguous_best_fixed_match")
+        self.assertEqual(reasons[0]["masked_opening_matches"], 2)
+        self.assertEqual(reasons[0]["best_fixed_bytes"], 158)
+
+        # The default exact scan still matches the bytes even if OMF's
+        # fixup record is unsupported, but the masked comparison fails closed.
+        broken_lib, broken_modules, _ = self.fixture_with_fixups(
+            [b"\xd8\x04\x44\x01"])
+        explanation = msc.explain_exact_only(
+            b"padding" + code, broken_lib, broken_modules, [{
+                "rtl_offset": "0x00007", "module": "TEST.C", "symbol": "_fn",
+            }])
+        self.assertEqual(explanation[0]["status"],
+                         "invalid_or_unsupported_fixups")
+
+        # Six two-byte fixups in the initial 16 bytes leave only four fixed
+        # bytes, deliberately below the independent 12-byte safety minimum.
+        dense_fixups = b"".join(
+            b"\xc4" + bytes((2 * index,)) + b"\x44\x01"
+            for index in range(6))
+        dense_lib, dense_modules, _ = self.fixture_with_fixups([dense_fixups])
+        dense_reason = msc.explain_exact_only(
+            b"padding" + code, dense_lib, dense_modules, [{
+                "rtl_offset": "0x00007", "module": "TEST.C", "symbol": "_fn",
+            }])
+        self.assertEqual(dense_reason[0]["status"],
+                         "too_few_fixed_opening_bytes")
+        self.assertEqual(dense_reason[0]["fixed_opening_bytes"], 4)
+
     def test_omf_module_and_exact_public_symbol_attribution(self):
         def record(kind, payload):
             header = bytes((kind, (len(payload) + 1) & 255,

@@ -432,6 +432,45 @@ def omf_relocation_masks(data: bytes, module: OMFModule) -> dict[int, bytes | No
     return masks
 
 
+def choose_relocated_prefix(original: bytes, code: bytes, mask: bytes,
+                            min_size: int = 16) -> dict:
+    """Resolve a masked public to one RTL offset or explain why we cannot.
+
+    Only *fixed* agreeing bytes break ties. Return counts and file offsets,
+    never executable bytes, so diagnostics are safe to export as JSON.
+    """
+    if len(mask) != len(code):
+        return {"status": "invalid_or_unsupported_fixups"}
+    fixed_opening = sum(mask[:min_size])
+    if fixed_opening < 12:
+        return {"status": "too_few_fixed_opening_bytes",
+                "fixed_opening_bytes": fixed_opening}
+    positions = search_code(original, code[:min_size], mask[:min_size])
+    if not positions:
+        return {"status": "no_masked_opening_match"}
+    scores = []
+    for rtl_offset in positions:
+        matched = min_size
+        while matched < len(code) and rtl_offset + matched < len(original):
+            if mask[matched] and original[rtl_offset + matched] != code[matched]:
+                break
+            matched += 1
+        scores.append((sum(mask[:matched]), rtl_offset, matched))
+    best_fixed = max(fixed for fixed, _, _ in scores)
+    best = [(location, length) for fixed, location, length in scores
+            if fixed == best_fixed]
+    if len(best) != 1:
+        return {"status": "ambiguous_best_fixed_match",
+                "masked_opening_matches": len(positions),
+                "best_fixed_bytes": best_fixed,
+                "tied_locations": [f"0x{location:05x}" for location, _ in best[:8]],
+                "ties_truncated": len(best) > 8}
+    rtl_offset, matched = best[0]
+    return {"status": "unique", "rtl_offset": rtl_offset,
+            "matched_bytes": matched, "fixed_compared_bytes": best_fixed,
+            "masked_opening_matches": len(positions)}
+
+
 def scan_exact_crt_prefixes(original: bytes, library: bytes,
                             modules: list[OMFModule], min_size: int = 16,
                             relocations: bool = False) -> list[dict]:
@@ -454,38 +493,20 @@ def scan_exact_crt_prefixes(original: bytes, library: bytes,
             code_mask = (masks.get(record_start) or b"")[data_offset:data_offset + len(code)]
             if relocations and len(code_mask) != len(code):
                 continue
-            prefix = code[:min_size]
-
-            def matching_length(rtl_offset: int) -> int:
+            if relocations:
+                chosen = choose_relocated_prefix(original, code, code_mask, min_size)
+                if chosen["status"] != "unique":
+                    continue
+                rtl_offset, matched = chosen["rtl_offset"], chosen["matched_bytes"]
+            else:
+                rtl_offset = original.find(code[:min_size])
+                if rtl_offset < 0 or original.find(code[:min_size], rtl_offset + 1) >= 0:
+                    continue
                 matched = min_size
                 while matched < len(code) and rtl_offset + matched < len(original):
-                    if ((not relocations or code_mask[matched])
-                            and original[rtl_offset + matched] != code[matched]):
+                    if original[rtl_offset + matched] != code[matched]:
                         break
                     matched += 1
-                return matched
-
-            if relocations:
-                if sum(code_mask[:min_size]) < 12:
-                    continue
-                locations = search_code(original, prefix, code_mask[:min_size])
-                if not locations:
-                    continue
-                scored = []
-                for location in locations:
-                    length = matching_length(location)
-                    scored.append((sum(code_mask[:length]), location, length))
-                best_fixed = max(fixed for fixed, _, _ in scored)
-                best = [(location, length) for fixed, location, length in scored
-                        if fixed == best_fixed]
-                if len(best) != 1:
-                    continue
-                rtl_offset, matched = best[0]
-            else:
-                rtl_offset = original.find(prefix)
-                if rtl_offset < 0 or original.find(prefix, rtl_offset + 1) >= 0:
-                    continue
-                matched = matching_length(rtl_offset)
             info = segments.get(segment, {})
             hits.append({
                 "symbol": symbol,
@@ -548,6 +569,43 @@ def compare_public_scans(exact: list[dict], relocated: list[dict]) -> dict:
         "relocation_only": [dict(rtl_offset=rtl, module=module, symbol=symbol)
                             for rtl, module, symbol in sorted(relocated_keys - exact_keys)],
     }
+
+
+def explain_exact_only(original: bytes, library: bytes,
+                       modules: list[OMFModule], exact_only: list[dict]) -> list[dict]:
+    """Give each lost exact match an actionable OMF/matcher rejection reason."""
+    explanations = []
+    for hit in exact_only:
+        sources = []
+        for module in modules:
+            if module.name != hit["module"]:
+                continue
+            masks = omf_relocation_masks(library, module)
+            for symbol, segment, offset, code, record_start, data_offset in public_code_prefixes(
+                    library, module, max_size=512):
+                if symbol != hit["symbol"]:
+                    continue
+                mask = masks.get(record_start)
+                code_mask = (mask or b"")[data_offset:data_offset + len(code)]
+                sources.append(choose_relocated_prefix(original, code, code_mask))
+        result = {"rtl_offset": hit["rtl_offset"], "module": hit["module"],
+                  "symbol": hit["symbol"]}
+        if len(sources) != 1:
+            result["status"] = "source_public_unavailable_or_ambiguous"
+            result["source_public_count"] = len(sources)
+        else:
+            chosen = sources[0]
+            result.update({key: value for key, value in chosen.items()
+                           if key != "rtl_offset"})
+            if chosen["status"] == "unique":
+                selected = f'0x{chosen["rtl_offset"]:05x}'
+                if selected != hit["rtl_offset"]:
+                    result["status"] = "unique_match_at_other_rtl_offset"
+                    result["selected_rtl_offset"] = selected
+                else:
+                    result["status"] = "overlapping_public_at_same_rtl_offset"
+        explanations.append(result)
+    return explanations
 
 
 def resolve_library(compiler_root: Path) -> Path:
@@ -653,6 +711,8 @@ def main(argv: list[str] | None = None) -> int:
             print("FIXUPP masking is restricted to each LEDATA/public boundary; "
                   "malformed or unsupported fixups are excluded.")
             differences = compare_public_scans(exact_baseline, public_candidates)
+            explanations = explain_exact_only(
+                original, library_bytes, modules, differences["exact_only"])
             print(f'Exact-prefix baseline: {differences["exact_candidates"]} candidates; '
                   f'{len(differences["exact_only"])} exact-only, '
                   f'{len(differences["relocation_only"])} relocation-only.')
@@ -662,6 +722,14 @@ def main(argv: list[str] | None = None) -> int:
                     print(f'{label} entries: ' + ", ".join(
                         f'{hit["module"]}:{hit["symbol"]}@{hit["rtl_offset"]}'
                         for hit in differences[name]))
+            for item in explanations:
+                print(f'  Exact-only reason {item["module"]}:{item["symbol"]} '
+                      f'at {item["rtl_offset"]}: {item["status"]}'
+                      + (f' ({item["fixed_opening_bytes"]} fixed opening bytes)'
+                         if "fixed_opening_bytes" in item else "")
+                      + (f' ({item["masked_opening_matches"]} possible openings, '
+                         f'{item["best_fixed_bytes"]} best fixed bytes)'
+                         if "best_fixed_bytes" in item else ""))
     print(f"Compared against {library} ({len(library_bytes)} bytes)")
     print("A match supports identical CRT code; a miss is inconclusive for OMF modules.")
     if args.json is not None:
@@ -679,6 +747,7 @@ def main(argv: list[str] | None = None) -> int:
             if exact_baseline is not None:
                 report["public_prefix_exact_baseline"] = exact_baseline
                 report["public_prefix_scan_comparison"] = differences
+                report["public_prefix_exact_only_explanations"] = explanations
         args.json.write_text(json.dumps(report, indent=2) + "\n")
         print(f"Saved {args.json}")
     return 0

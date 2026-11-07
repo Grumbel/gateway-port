@@ -366,7 +366,12 @@ If the initial masked 16-byte signature occurs more than once, the scanner
 continues comparing later **fixed** bytes and accepts a location only if
 exactly one candidate has the longest fixed-byte match. The command also
 prints the original exact-prefix baseline and which symbol/RTL pairs appear
-in only one mode; JSON retains both candidate sets in separate fields.
+in only one mode; JSON retains both candidate sets in separate fields. For
+each exact-only entry it now reports a specific rejection reason: an invalid
+or unsupported fixup, fewer than 12 fixed bytes in the opening, multiple
+equally strong locations, a better match elsewhere, or an overlapping public
+claim. The JSON key `public_prefix_exact_only_explanations` records those
+reasons and match counts without including executable bytes.
 
 This is deliberately an *opt-in candidate search*, not function recovery:
 comparison stops at a new public symbol or OMF record boundary, does not
@@ -385,6 +390,12 @@ not occur in the earlier exact-prefix set. Conversely, a few of the earlier
 create ambiguities that the original exact bytes distinguished. The extended
 fixed-byte disambiguation and side-by-side baseline reporting were added
 *after* that user-side run and still require verification with `LLIBCR.LIB`.
+The second real-library run confirmed **69 relocation-aware candidates**
+(64 `CODE`, five `DATA`) and returned `_srand` to the candidate list. Its
+side-by-side comparison found four exact-only entries (`__amsg_exit`,
+`__FF_MSGBANNER`, `__output`, `_tzset`) and three relocation-only entries
+(`_fopen`, `__amlink`, `_memmove`). The new per-entry exclusion diagnostics
+were added after this second run and still await host verification.
 
 ### In-game Gateway debugger (F10)
 
