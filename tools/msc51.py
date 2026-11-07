@@ -121,10 +121,15 @@ def stage_probe(output: Path) -> None:
         "IF ERRORLEVEL 1 GOTO BUILD_FAILED\r\n"
         "IF NOT EXIST INTROCHK.EXE GOTO BUILD_FAILED\r\n"
         "INTROCHK.EXE > TEST.LOG\r\n"
-        "IF ERRORLEVEL 1 ECHO DOS probe returned an error > RUNFAIL.LOG\r\n"
+        # DOS shells can open a redirected file before evaluating an IF.
+        # Only execute the ECHO (and create RUNFAIL.LOG) on genuine failure.
+        "IF ERRORLEVEL 1 GOTO RUN_FAILED\r\n"
         "GOTO DONE\r\n"
         ":BUILD_FAILED\r\n"
         "ECHO Microsoft CL returned an error > CLFAIL.LOG\r\n"
+        "GOTO DONE\r\n"
+        ":RUN_FAILED\r\n"
+        "ECHO DOS probe returned an error > RUNFAIL.LOG\r\n"
         ":DONE\r\n"
         "EXIT\r\n"
     )

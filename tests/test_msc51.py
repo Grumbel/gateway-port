@@ -41,10 +41,16 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("IF ERRORLEVEL 1 GOTO BUILD_FAILED", batch)
             self.assertIn("IF NOT EXIST INTROCHK.EXE GOTO BUILD_FAILED", batch)
             self.assertIn(":BUILD_FAILED\nECHO Microsoft CL returned an error > CLFAIL.LOG", batch)
-            self.assertIn("IF ERRORLEVEL 1 ECHO DOS probe returned an error > RUNFAIL.LOG", batch)
+            self.assertIn("IF ERRORLEVEL 1 GOTO RUN_FAILED\nGOTO DONE", batch)
+            self.assertIn(":RUN_FAILED\nECHO DOS probe returned an error > RUNFAIL.LOG", batch)
+            self.assertNotIn("IF ERRORLEVEL 1 ECHO", batch)
             # Never launch a partial EXE that LINK left behind on failure.
             self.assertLess(batch.index("IF ERRORLEVEL 1 GOTO BUILD_FAILED"),
                             batch.index("INTROCHK.EXE > TEST.LOG"))
+            # The RUNFAIL.LOG redirection must be unreachable on success.
+            self.assertLess(batch.index("IF ERRORLEVEL 1 GOTO RUN_FAILED"),
+                            batch.index("GOTO DONE\n:BUILD_FAILED"))
+            self.assertLess(batch.index(":BUILD_FAILED\n"), batch.index(":RUN_FAILED\n"))
             self.assertTrue(batch.endswith("EXIT\n"))
 
     def test_installation_is_looked_up_case_insensitively(self):

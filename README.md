@@ -278,7 +278,9 @@ If DOSBox starts but the compilation fails, `msc51-probe` prints the
 compiler's `BUILD.LOG` and, when present, `TEST.LOG` automatically. `START.LOG`
 confirms that DOSBox actually reached the batch file; `CLFAIL.LOG` flags a
 nonzero Microsoft compiler exit status, and `RUNFAIL.LOG` a failed DOS test
-program. A failed compiler/link step never attempts to execute a partial
+program. The DOS batch jumps to a dedicated error label before creating
+`RUNFAIL.LOG`: its output redirection must not run on successful tests.
+A failed compiler/link step never attempts to execute a partial
 `INTROCHK.EXE`. The wrapper clears these files and
 the old executable before each run, and recognizes DOSBox-created filenames
 regardless of case on a case-sensitive host. The compiler's installation is
