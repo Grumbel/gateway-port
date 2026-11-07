@@ -53,6 +53,41 @@
                 exec ${python}/bin/python3 ${source}/tools/run_intro_ghidra.py "$@"
               '';
             };
+          # Historical compiler: run the *user-provided* Microsoft C 5.1
+          # installation under DOSBox, never fetch/store proprietary binaries.
+          # The probe stages C89-compatible copies of the recovered C routines
+          # in build/ rather than attempting to package the original compiler.
+          msc51-probe = pkgs.writeShellApplication {
+            name = "gateway-msc51-probe";
+            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
+            text = ''
+              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py probe \
+                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
+            '';
+          };
+          msc51-shell = pkgs.writeShellApplication {
+            name = "gateway-msc51-shell";
+            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
+            text = ''
+              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py shell \
+                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
+            '';
+          };
+          msc51-prepare = pkgs.writeShellApplication {
+            name = "gateway-msc51-prepare";
+            runtimeInputs = [ pkgs.python3 ];
+            text = ''
+              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py prepare "$@"
+            '';
+          };
+          msc51-install = pkgs.writeShellApplication {
+            name = "gateway-msc51-install";
+            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
+            text = ''
+              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py install \
+                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
+            '';
+          };
         });
       apps = eachSystem (system:
         let
@@ -168,6 +203,26 @@
           program = "${self.packages.${system}.intro-ghidra}/bin/gateway-decompile-intro";
           meta.description = "Decompile a relocated Gateway intro snapshot with Ghidra";
         };
+        msc51-probe = {
+          type = "app";
+          program = "${self.packages.${system}.msc51-probe}/bin/gateway-msc51-probe";
+          meta.description = "Compile and run the recovered intro random-number probe with a local Microsoft C 5.1 installation in DOSBox";
+        };
+        msc51-shell = {
+          type = "app";
+          program = "${self.packages.${system}.msc51-shell}/bin/gateway-msc51-shell";
+          meta.description = "Open DOSBox with a user-installed Microsoft C 5.1 compiler and writable Gateway work directory";
+        };
+        msc51-prepare = {
+          type = "app";
+          program = "${self.packages.${system}.msc51-prepare}/bin/gateway-msc51-prepare";
+          meta.description = "Stage the recovered intro C sources for Microsoft C 5.1 without running DOSBox";
+        };
+        msc51-install = {
+          type = "app";
+          program = "${self.packages.${system}.msc51-install}/bin/gateway-msc51-install";
+          meta.description = "Install user-provided Microsoft C 5.1 floppy images into a local directory using DOSBox";
+        };
       });
       checks = eachSystem (system:
         let pkgs = import nixpkgs { inherit system; }; in {
@@ -193,6 +248,14 @@
             src = self;
           } ''
             python3 "$src/tools/decomp_status.py" --tracker "$src/decomp/functions.tsv" check
+            touch "$out"
+          '';
+          msc51-tooling = pkgs.runCommand "gateway-port-msc51-tooling" {
+            nativeBuildInputs = [ pkgs.python3 ];
+            src = self;
+          } ''
+            cd "$src"
+            python3 tests/test_msc51.py
             touch "$out"
           '';
         });
@@ -287,6 +350,14 @@ except Exception:
                          (pkgs.python3.withPackages (ps: [ ps.pyghidra ]))
                          self.packages.${system}.intro-ghidra ];
             GHIDRA_INSTALL_DIR = "${pkgs.ghidra}/lib/ghidra";
+          };
+          msc51 = pkgs.mkShell {
+            inputsFrom = [ self.devShells.${system}.default ];
+            packages = [ pkgs.dosbox-staging pkgs.python3
+                         self.packages.${system}.msc51-probe
+                         self.packages.${system}.msc51-shell
+                         self.packages.${system}.msc51-prepare
+                         self.packages.${system}.msc51-install ];
           };
         });
     };

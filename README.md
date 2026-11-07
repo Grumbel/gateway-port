@@ -195,6 +195,57 @@ exports preliminary C-like listings to `build/ghidra/pseudocode.txt`.
 adds labels for the **696 mapped object/event handlers** from a native snapshot.
 See [Ghidra workflow and limitations](docs/ghidra.md).
 
+### Historical Microsoft C 5.1 toolchain (optional)
+
+Gateway's `GATE.RTL` contains a Microsoft C runtime signature dated 1988,
+making Microsoft C 5.1 a useful compiler-code-generation reference. The flake
+offers DOSBox Staging wrappers for a **locally installed** copy of Microsoft C
+5.1. The compiler is proprietary: no Microsoft executable, disk image or
+runtime library is included, downloaded during Nix evaluation, or placed in
+the Nix store.
+
+Distributions can be researched at
+[PCjs (11-disk DOS set)](https://www.pcjs.org/software/pcx86/lang/microsoft/c/5.10/)
+or [WinWorld](https://winworldpc.com/product/microsoft-c-c/5x).
+Install the complete original disks into a writable directory outside this
+repository. The flake can start the original DOS `SETUP.EXE` from your extracted
+floppy images (repeat `--floppy` for every disk, in the original order):
+
+```sh
+nix run .#msc51-install -- --install-dir "$HOME/opt/msc51-drive" \
+  --floppy /path/to/SETUP.img --floppy /path/to/COMPILER1.img \
+  --floppy /path/to/COMPILER2.img # ... and all remaining disk images
+```
+
+In the DOS installer, install under `C:\MSC51`; press `Ctrl+F4` in DOSBox
+when it asks for the next floppy. The resulting directory must have `BIN/CL.EXE`, `C1.EXE`,
+`C2.EXE`, `C3.EXE`, `LINK.EXE`, `INCLUDE/STDIO.H`, and `LIB/LLIBCR.LIB`.
+The installer mounts only the explicit local images and install destination;
+the DOSBox session is interactive. Do not add the installed files to Git.
+
+From the Gateway checkout:
+
+```sh
+export GATEWAY_MSC51_DIR="$HOME/opt/msc51-drive/MSC51"  # your installed copy
+nix run .#msc51-prepare                         # prepare C89 source only
+nix run .#msc51-shell                           # interactive DOSBox compiler
+nix run .#msc51-probe                           # compile and run 32 rand steps
+nix develop .#msc51                             # optional DOSBox toolchain shell
+```
+
+All generated files are in `build/intro-msc51/`. `PROBE.C` and `RANDOM.C`
+are the recovered original-code functions, changed only to include a tiny
+generated C89 compatibility header (Microsoft C 5.1 predates `<stdint.h>`).
+`BUILD.BAT` compiles them using `/AL /Od` and writes `INTROCHK.EXE`,
+`BUILD.LOG`, and `TEST.LOG`. `msc51-probe` checks that the DOS executable
+actually reports all 32 original `rand()` states correct. To customize the
+toolchain directory or the staging output directory, pass `--compiler DIR`
+or `--output DIR` after `--` in the `nix run` commands.
+
+These tools do **not** build a playable Gateway DOS executable; they are a
+compiler comparison/probe environment. A source-only test runs as the
+`msc51-tooling` flake check even when the historical compiler is absent.
+
 ### In-game Gateway debugger (F10)
 
 Launch the original Gateway 1 executable, enter a room, then press **F10**:
