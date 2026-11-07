@@ -557,7 +557,9 @@ def scan_exact_crt_prefixes(original: bytes, library: bytes,
     """Find unambiguous OMF public prefixes in the original RTL.
 
     Relocation-aware mode masks only FIXUPP locations and joins contiguous
-    LEDATA fragments in the same module/segment, but still requires
+    LEDATA fragments in CODE-class segments only. For DATA/unknown segments,
+    it retains the original single-record bound to avoid repeated arrays
+    acquiring misleading longer matches. Both modes require
     at least 12 fixed bytes in an opening of 16–64 bytes. If several RTL locations
     match the masked opening, select a location only when the additional
     *fixed* bytes establish a unique longest match.
@@ -567,7 +569,25 @@ def scan_exact_crt_prefixes(original: bytes, library: bytes,
     for module in modules:
         segments = omf_segments(library, module)
         if relocations:
-            candidates = stitched_public_code(library, module, min_size=min_size)
+            def relocation_candidates():
+                for row in stitched_public_code(library, module, min_size=min_size):
+                    if segment_kind(segments.get(row[1], {})) == "code":
+                        yield row
+                # Repeated records in _iob and other DATA segments may have
+                # valid long prefixes at multiple RTL positions. Keep their
+                # original bounded search: more masked bytes are not always
+                # stronger evidence about which table was linked.
+                masks = omf_relocation_masks(library, module)
+                for symbol, segment, offset, code, record_start, data_offset in (
+                        public_code_prefixes(
+                            library, module, min_size=min_size, max_size=512)):
+                    if segment_kind(segments.get(segment, {})) == "code":
+                        continue
+                    mask = (masks.get(record_start) or b"")[
+                        data_offset:data_offset + len(code)]
+                    yield symbol, segment, offset, code, mask, [record_start] * len(code)
+
+            candidates = relocation_candidates()
         else:
             candidates = ((symbol, segment, offset, code, b"", [])
                           for symbol, segment, offset, code, _, _ in
@@ -696,6 +716,11 @@ def summarize_candidate_spans(catalogue: list[dict]) -> dict:
     spans = sorted((int(hit["rtl_offset"], 16),
                     int(hit["rtl_offset"], 16) + hit["candidate_span_bytes"])
                    for hit in catalogue if hit["segment_kind"] == "code")
+    source_spans = [
+        (int(hit["rtl_offset"], 16),
+         int(hit["rtl_offset"], 16) + hit["candidate_span_bytes"],
+         f'{hit["module"]}:{hit["symbol"]}')
+        for hit in catalogue if hit["segment_kind"] == "code"]
     if not spans:
         return {"code_class_candidates": 0, "candidate_spanned_bytes": 0,
                 "unmatched_gap_count": 0, "unmatched_gap_bytes": 0,
@@ -717,7 +742,13 @@ def summarize_candidate_spans(catalogue: list[dict]) -> dict:
         "unmatched_gap_bytes": sum(end - start for start, end in gaps),
         "largest_unmatched_gaps": [{"start": f"0x{start:05x}",
                                      "end": f"0x{end:05x}",
-                                     "bytes": end - start}
+                                     "bytes": end - start,
+                                     "preceding_publics": sorted(
+                                         name for _, span_end, name in source_spans
+                                         if span_end == start),
+                                     "following_publics": sorted(
+                                         name for span_start, _, name in source_spans
+                                         if span_start == end)}
                                     for start, end in sorted(
                                         gaps, key=lambda gap: (-(gap[1] - gap[0]), gap[0]))[:8]],
     }
@@ -733,7 +764,14 @@ def explain_exact_only(original: bytes, library: bytes,
             if module.name != hit["module"]:
                 continue
             module_sources = []
-            for symbol, _, _, code, code_mask, _ in stitched_public_code(library, module):
+            segments = omf_segments(library, module)
+            is_code = any(
+                symbol == hit["symbol"] and
+                segment_kind(segments.get(segment, {})) == "code"
+                for segment, _, symbol in omf_publics(library, module))
+            for symbol, segment, _, code, code_mask, _ in stitched_public_code(library, module):
+                if not is_code or segment_kind(segments.get(segment, {})) != "code":
+                    continue
                 if symbol != hit["symbol"]:
                     continue
                 module_sources.append(choose_relocated_prefix(original, code, code_mask))
@@ -805,8 +843,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="find unique 16-byte exact CRT public prefixes in GATE.RTL (candidates only)")
     parser.add_argument("--scan-relocations", action="store_true",
                         help="scan OMF public prefixes with FIXUPP relocations masked, "
-                             "up to 4096 bytes across contiguous LEDATA records "
-                             "(candidates only)")
+                             "up to 4096 bytes across contiguous CODE-class "
+                             "LEDATA records (candidates only)")
     args = parser.parse_args(argv)
     if args.library is None and args.compiler is None:
         parser.error("provide --library FILE or GATEWAY_MSC51_DIR/--compiler DIR")
@@ -875,6 +913,8 @@ def main(argv: list[str] | None = None) -> int:
             print("FIXUPP masking is per LEDATA record; comparison crosses only "
                   "contiguous valid same-segment LEDATA, never a public boundary, "
                   "gap, overlap or unsupported fixup.")
+            print("Cross-record stitching is CODE-class only; DATA and unknown "
+                  "classes retain the bounded single-record comparison.")
             differences = compare_public_scans(exact_baseline, public_candidates)
             explanations = explain_exact_only(
                 original, library_bytes, modules, differences["exact_only"])
@@ -910,6 +950,8 @@ def main(argv: list[str] | None = None) -> int:
             for gap in span_summary["largest_unmatched_gaps"][:5]:
                 print(f'  Unmatched candidate gap {gap["start"]}..{gap["end"]} '
                       f'({gap["bytes"]} bytes)')
+                print(f'    between {", ".join(gap["preceding_publics"]) or "?"} and '
+                      f'{", ".join(gap["following_publics"]) or "?"}')
             print("These are candidate match spans; gaps and CODE classes do not "
                   "establish function boundaries or classify game logic.")
     print(f"Compared against {library} ({len(library_bytes)} bytes)")

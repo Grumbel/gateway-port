@@ -358,13 +358,20 @@ nix run -L .#msc51-compare -- \
 `FIXUPP` subrecords attached to each `LEDATA` record (including frame/target
 threads) and masks **only** the specified linker-modified fields. It compares
 up to **4096 bytes** across contiguous `LEDATA` records in the same OMF module
-and segment, instead of the exact scan's 64-byte single-record limit, and
+and **CODE-class** segment, instead of the exact scan's 64-byte single-record
+limit, and
 records exact-leading, fixed-compared and masked-relocation byte counts in
 the output and JSON (`public_prefix_scan_mode: omf-fixupp`), including the
 number of `LEDATA` records traversed. Each record's relocation mask is
 applied at its own segment-relative offset. Missing or overlapping bytes,
 malformed/unsupported fixups and iterated `LIDATA` prevent stitching across
 the affected region; an intervening `PUBDEF` always ends the comparison.
+`DATA`-class and unknown-class publics retain the old relocation-aware
+512-byte **single-record** limit: longer repeated table contents can make
+different symbols appear to match the same RTL location. In particular,
+the first cross-record host run lost the distinct `__iob`/`__iob2` DATA
+attributions to such a collision; the class-specific bound is intended to
+preserve those entries without sacrificing longer CODE-class matches.
 The masked
 opening starts at 16 bytes but can grow to **64 bytes** to collect at least
 **12 unmasked bytes**; it never crosses the current public or an untrusted
@@ -439,6 +446,19 @@ of that gap. The new cross-record scan is intended to test that hypothesis;
 its real-library result has not yet been checked. These are coverage
 statistics for candidate matches, not proven source attribution for every
 byte in a span.
+
+The subsequent real-library cross-record scan confirmed `__output` extends
+to **2650 matched bytes across four `LEDATA` records**, removing the former
+2138-byte hole. `_fread` extends to 632 matched bytes, `_fseek` to 792, and
+`_ftell` to 526. CODE-class coverage increased from **9209** to **11761
+bytes**, with only **1056 bytes in 26 intervening gaps**. The largest three
+remaining gaps are `0x06330..0x064d8` (424 bytes), `0x07f1a..0x07ff7`
+(221 bytes) and `0x08b48..0x08bb6` (110 bytes). The same run exposed the
+DATA-table ambiguity described above: 69 CODE-class candidates were retained,
+but two DATA matches collided and the total relocated-candidate count fell
+from 75 to 73. The refined class-specific comparison and named gap neighbors
+require another host run. None of these intervals is independently proved to
+be a complete original CRT function.
 
 ### In-game Gateway debugger (F10)
 

@@ -233,6 +233,8 @@ class MSC51CompareTests(unittest.TestCase):
             "unmatched_gap_bytes": 28,
             "largest_unmatched_gaps": [{
                 "start": "0x00024", "end": "0x00040", "bytes": 28,
+                "preceding_publics": ["CRT.ASM:_both"],
+                "following_publics": ["CRT.ASM:_new"],
             }],
         })
         self.assertEqual(msc.summarize_candidate_spans([]), {
@@ -260,10 +262,11 @@ class MSC51CompareTests(unittest.TestCase):
                 bytes((i * 37 + 11) & 255 for i in range(634)))
 
         def library_and_module(second_offset=24, second_fixup=b"\xc4\x2e\x44\x01",
-                               extra_public=False, lidata=False):
+                               extra_public=False, lidata=False, data_class=False):
             raw_records = [
                 (0x82, b"\x06TEST.C"),
-                (0x96, b"\x05_TEXT\x04CODE\x00"),
+                (0x96, b"\x05_TEXT\x04DATA\x00" if data_class else
+                 b"\x05_TEXT\x04CODE\x00"),
                 (0x98, b"\x28\x78\x00\x01\x02\x03"),
                 (0x90, b"\x00\x01\x03_fn\x00\x00\x00"),
                 (0xa0, b"\x01\x00\x00" + code[:24]),
@@ -320,6 +323,16 @@ class MSC51CompareTests(unittest.TestCase):
         library, modules = library_and_module(lidata=True)
         self.assertEqual(msc.scan_exact_crt_prefixes(
             original, library, modules, relocations=True), [])
+
+        # Avoid promoting repetitive DATA tables to false long matches:
+        # their relocation-aware fingerprints stay inside the first record.
+        library, modules = library_and_module(data_class=True)
+        hits = msc.scan_exact_crt_prefixes(
+            original, library, modules, relocations=True)
+        self.assertEqual(len(hits), 1)
+        self.assertEqual(hits[0]["segment_class"], "DATA")
+        self.assertEqual(hits[0]["relocation_aware_bytes"], 24)
+        self.assertEqual(hits[0]["ledata_records_compared"], 1)
 
     def test_omf_module_and_exact_public_symbol_attribution(self):
         def record(kind, payload):
