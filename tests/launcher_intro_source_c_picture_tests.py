@@ -16,20 +16,22 @@ EXECUTABLE = None
 
 
 class IntroPicture(unittest.TestCase):
-    def test_original_image(self):
+    def original_inputs(self):
         if EXECUTABLE is None:
             self.skipTest('standalone executable path not supplied')
-        executable = Path(EXECUTABLE)
         snapshot = ROOT / 'build/intro-analysis/at-22000.bin'
         assets = ROOT.parent / 'gateway-dos'
         if not snapshot.is_file() or not (assets / 'GATE_300.PIC').is_file():
             self.skipTest('private DOS RAM snapshot or original PIC absent')
+        return str(EXECUTABLE), str(snapshot), str(assets)
+
+    def test_original_image(self):
+        executable, snapshot, assets = self.original_inputs()
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / 'image.pgm'
-            result = subprocess.run([str(executable), str(snapshot),
-                                     str(assets), str(output)],
+            result = subprocess.run([executable, snapshot, assets, str(output)],
                                     check=True, capture_output=True, text=True)
-            self.assertIn('2589 nonzero VGA pixels', result.stdout)
+            self.assertIn('resource 0x3001 mode 1: 2589 nonzero VGA pixels', result.stdout)
             frame = output.read_bytes()
             self.assertEqual(len(frame), 320 * 200 + len(b'P5\n320 200\n255\n'))
             self.assertEqual(hashlib.sha256(frame).hexdigest(),
@@ -41,6 +43,50 @@ class IntroPicture(unittest.TestCase):
                               max(x for x, _ in occupied),
                               min(y for _, y in occupied),
                               max(y for _, y in occupied)), (24, 293, 81, 118))
+
+    def test_intro_resource_ids(self):
+        executable, snapshot, assets = self.original_inputs()
+        # These are original EXE:1302 display-call arguments. All IDs are
+        # tested on a *fresh* snapshot, not concatenated into a fake intro.
+        expected = {
+            (0x3000, 1): (2394, '3dad20661269bef1bbab54d82c8068bbf4102b813ca5c0de118cac9c3037c012'),
+            (0x301b, 1): (7574, '2b023f22c4044e9bd1569e886ffa26282468f579b52745528125754ed1670a9a'),
+            (0x3105, 0): (64000, 'c5e49ba9c383123eb2a91ba5ca5e4c872076e3becbe0a18d3ea05df5dc9c88d8'),
+            (0x3100, 0): (62772, 'ad6bd1f3118e1b29090989e05b03e5a5206f5766f52b4049843459c20c30c6cd'),
+            (0x3102, 0): (61988, 'b9d2360e323c4a5b68dbcda4afb563d5e517b34de17d30bd1dd0d05271d4acee'),
+            (0x3221, 0): (40880, '44388c91fbdea037f0b967f89ae8c44f10dcefad4ed2210d74be27823fdb72a2'),
+            (0x3104, 0): (4418, 'fa886b38dde7586d2c1c8066dc154fe22ab497cdfaa5194f45b82cbc937309ec'),
+            (0x332a, 0): (992, 'e6608228bb702c164dd207cd93ff00b1b2c94bb2c71cf806df89e728b7350623'),
+            (0x8101, 1): (61105, '42cc7cfd26d791c7bbd94167723bc5469ea6744243cd485aa64fe81dfc477e79'),
+            (0x8100, 1): (62772, 'ad6bd1f3118e1b29090989e05b03e5a5206f5766f52b4049843459c20c30c6cd'),
+            (0x8102, 1): (61988, 'b9d2360e323c4a5b68dbcda4afb563d5e517b34de17d30bd1dd0d05271d4acee'),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'frame.pgm'
+            for (resource, mode), (pixels, digest) in expected.items():
+                with self.subTest(resource=hex(resource), mode=mode):
+                    result = subprocess.run([executable, snapshot, assets,
+                                             str(output), '--resource',
+                                             hex(resource), str(mode)],
+                                            check=True, capture_output=True,
+                                            text=True)
+                    self.assertIn(f'{pixels} nonzero VGA pixels', result.stdout)
+                    self.assertRegex(result.stdout,
+                                     r'\b(?:0|768) DAC component writes\b')
+                    self.assertEqual(hashlib.sha256(output.read_bytes()).hexdigest(),
+                                     digest)
+
+    def test_original_rgb_dac(self):
+        executable, snapshot, assets = self.original_inputs()
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'frame.ppm'
+            subprocess.run([executable, snapshot, assets, str(output),
+                            '--resource', '0x3105', '0', '--rgb'], check=True,
+                           capture_output=True)
+            frame = output.read_bytes()
+            self.assertTrue(frame.startswith(b'P6\n320 200\n255\n'))
+            self.assertEqual(hashlib.sha256(frame).hexdigest(),
+                             'ea177bdef50098ced01d716c9e14d3e7c2987ece312bda44312c22a91a67ff43')
 
 
 if __name__ == '__main__':

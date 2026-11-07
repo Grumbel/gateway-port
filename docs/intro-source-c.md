@@ -68,6 +68,22 @@ nix run .#intro-source-c-picture-dump -- \
   build/intro-analysis/at-22000.bin ../gateway-dos build/source-c-picture.pgm
 ```
 
+The command accepts `--resource ID MODE` to select original picture calls
+from `EXE:1302`; for example, `--resource 0x3105 0` displays the first
+large prose background. With `--rgb` at the end, it writes a true-color PPM
+instead of indexed grayscale. The RGB data is produced by the recovered
+`GATE.RTL:f61b` palette uploader and an explicit native VGA DAC port model;
+the 6-bit VGA components expand to eight bits for the image file.
+For resources that do not upload a palette (such as `0x301b`), standalone
+RGB output lacks the palette inherited from preceding intro frames; it is
+therefore not yet a complete color-accurate sequential playback.
+
+Eleven independent original display-ID/mode combinations are currently
+exercised against the private 22-second snapshot, each from a fresh copy
+of that state. The regression suite pins every complete 320×200 pixel-index
+frame by SHA-256, as well as the 0x3105 RGB PPM output. Calls with different
+resource IDs can legitimately share pixels (e.g. `0x8100`/`0x3100`).
+
 It runs the full recovered original `RTL:12b19` one-picture caller, including
 `RTL:12c33` for resource selection/loading, `RTL:1266f` for pre-display state,
 `RTL:12ed7` for drawing and the original C image descriptor and memory

@@ -42,12 +42,14 @@ set(GATEWAY_INTRO_SOURCE_C_PICTURE_SOURCES
   decomp/launcher/gate_rtl_loader.c
   decomp/launcher/gate_rtl_image.c
   decomp/launcher/gate_rtl_image_prepare.c
+  decomp/launcher/gate_rtl_palette.c
   decomp/launcher/gate_rtl_image_finish.c
   decomp/launcher/gate_rtl_image_processor.c
   decomp/launcher/gate_vfx_image.c
   decomp/launcher/gate_dos_file_runtime.c
   src/intro_dos_host_files.c src/intro_host_memory.c src/intro_host_vfx.c
   src/intro_host_rtl_globals.c
+  src/intro_host_rtl_palette_globals.c src/intro_host_vga_ports.c
   src/intro_source_c_picture_dump.c)
 
 # This is reconstructed original C, not the separate SDL/C++ approximation

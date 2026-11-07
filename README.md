@@ -431,6 +431,8 @@ The independent original C image path is also runnable as
 `nix run .#intro-source-c-picture-dump -- build/intro-analysis/at-22000.bin
 ../gateway-dos build/source-c-picture.pgm`, using the original PIC decoder
 host boundary and the recovered C image-loader and drawing functions.
+Use `--resource 0x3105 0 --rgb` after the output filename to render an
+original intro background in full color through the source-C DAC service.
 
 A separate native C++ intro prototype renders the initial Legend splash,
 logo sequence, all eighteen narrative pages, and several background/sprite
