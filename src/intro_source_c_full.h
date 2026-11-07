@@ -28,7 +28,9 @@ typedef struct GateSourceCFullHooks {
     void (*music_start)(void *userdata);
 } GateSourceCFullHooks;
 
-/* 0 = original entry returned normally, nonzero = missing/invalid input.
+/* Pass a 1 MiB original DOS guest RAM snapshot, or "--from-original" to
+ * build the verified default intro startup entirely from the DOS assets.
+ * 0 = original entry returned normally, nonzero = missing/invalid input.
  * Only one intro can be active at a time: the original RTL host globals are
  * process-global, exactly like the existing headless source-C host. */
 int gate_source_c_full_run(const char *snapshot, const char *dos_directory,

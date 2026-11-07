@@ -271,8 +271,10 @@ static int run_intro(const char *snapshot, const char *dos_dir,
                      const char *dependency_output, int restore_exe_data,
                      int restore_rtl_data, int restore_palette,
                      int restore_selectors, int restore_defaults,
+                     int restore_vectors,
                      const GateSourceCFullHooks *hooks)
 {
+    const int cold_start = strcmp(snapshot, "--from-original") == 0;
     GateIntroMemory *memory;
     GateDosHostFiles files = {0};
     GateIntroVgaPorts ports = {0};
@@ -281,7 +283,7 @@ static int run_intro(const char *snapshot, const char *dos_dir,
     Recording recording = {0};
     uint8_t *dependency_maps = NULL;
     GateIntroHostInput input = {&clock, sample_time, key_pending, read_key, no_mouse};
-    FILE *in, *out;
+    FILE *out;
     unsigned i, text_pixels = 0, background_pixels = 0, final_pixels = 0;
     uint8_t background[320u * 200u] = {0};
     clock.hooks = hooks;
@@ -299,23 +301,40 @@ static int run_intro(const char *snapshot, const char *dos_dir,
         memory->written_bytes = dependency_maps + GATE_INTRO_RAM_BYTES;
     }
     clock.memory = memory;
-    in = fopen(snapshot, "rb");
-    if (!in) {
-        perror(snapshot);
+    if (cold_start && !full) {
+        fputs("native source-C cold startup requires --full\n", stderr);
         free(dependency_maps);
         free(memory);
-        return 1;
+        return 2;
     }
-    if (fread(memory->bytes, 1, GATE_INTRO_RAM_BYTES, in) !=
-        GATE_INTRO_RAM_BYTES) {
-        fprintf(stderr, "invalid 1 MiB DOS RAM snapshot: %s\n", snapshot);
+    if (!cold_start) {
+        FILE *in = fopen(snapshot, "rb");
+        if (!in) {
+            perror(snapshot);
+            free(dependency_maps);
+            free(memory);
+            return 1;
+        }
+        if (fread(memory->bytes, 1, GATE_INTRO_RAM_BYTES, in) !=
+            GATE_INTRO_RAM_BYTES) {
+            fprintf(stderr, "invalid 1 MiB DOS RAM snapshot: %s\n", snapshot);
+            fclose(in);
+            free(dependency_maps);
+            free(memory);
+            return 1;
+        }
         fclose(in);
-        free(dependency_maps);
-        free(memory);
-        return 1;
     }
-    fclose(in);
     memory->ds_segment = 0x2a7a;
+    /* Native-only intro: the original files, linked selectors, default DOS
+     * vectors and device settings reconstruct the complete observed startup
+     * inputs. No Unicorn capture, executable code or copied RAM is needed. */
+    restore_exe_data |= cold_start;
+    restore_rtl_data |= cold_start;
+    restore_palette |= cold_start;
+    restore_selectors |= cold_start;
+    restore_defaults |= cold_start;
+    restore_vectors |= cold_start;
     if (restore_exe_data &&
         !gate_intro_restore_static_exe_data(memory, dos_dir)) {
         fprintf(stderr, "cannot restore verified GATE.EXE static data from %s\n",
@@ -350,6 +369,12 @@ static int run_intro(const char *snapshot, const char *dos_dir,
     if (restore_defaults &&
         !gate_intro_restore_default_runtime_state(memory)) {
         fprintf(stderr, "cannot restore default launcher runtime state\n");
+        free(dependency_maps);
+        free(memory);
+        return 1;
+    }
+    if (restore_vectors && !gate_intro_restore_default_vectors(memory)) {
+        fprintf(stderr, "cannot reconstruct installed DOS interrupt vectors\n");
         free(dependency_maps);
         free(memory);
         return 1;
@@ -476,7 +501,7 @@ int gate_source_c_full_run(const char *snapshot, const char *dos_directory,
     if (!snapshot || !dos_directory)
         return 2;
     return run_intro(snapshot, dos_directory, NULL, 1, NULL, NULL, NULL,
-                     0, 0, 0, 0, 0,
+                     0, 0, 0, 0, 0, 0,
                      hooks);
 }
 
@@ -491,6 +516,7 @@ int main(int argc, char **argv)
     int restore_palette = 0;
     int restore_selectors = 0;
     int restore_defaults = 0;
+    int restore_vectors = 0;
     int full = argc >= 5 && strcmp(argv[4], "--full") == 0;
     int i;
     if (argc < 4 || (argc > 4 && !full))
@@ -521,6 +547,11 @@ int main(int argc, char **argv)
             ++i;
             continue;
         }
+        if (strcmp(argv[i], "--restore-vectors") == 0 && !restore_vectors) {
+            restore_vectors = 1;
+            ++i;
+            continue;
+        }
         if (i + 1 >= argc)
             goto usage;
         if (strcmp(argv[i], "--record") == 0 && !record_output)
@@ -536,9 +567,9 @@ int main(int argc, char **argv)
     return run_intro(argv[1], argv[2], argv[3], full, record_output,
                      memory_output, dependency_output, restore_exe_data,
                      restore_rtl_data, restore_palette, restore_selectors,
-                     restore_defaults, NULL);
+                     restore_defaults, restore_vectors, NULL);
 usage:
-    fputs("usage: gateway-intro-source-c-composite guest-22s.bin DOS-DIR OUTPUT.ppm [--full [--record FILE.gvr] [--dump-memory FILE.bin] [--read-deps FILE.txt] [--restore-exe-data] [--restore-rtl-data] [--restore-palette] [--restore-selectors] [--restore-defaults]]\n",
+    fputs("usage: gateway-intro-source-c-composite (guest-22s.bin|--from-original) DOS-DIR OUTPUT.ppm [--full [--record FILE.gvr] [--dump-memory FILE.bin] [--read-deps FILE.txt] [--restore-exe-data] [--restore-rtl-data] [--restore-palette] [--restore-selectors] [--restore-defaults] [--restore-vectors]]\n",
           stderr);
     return 2;
 }

@@ -145,7 +145,7 @@ int gate_intro_restore_static_rtl_data(GateIntroMemory *memory,
      * resident image. The other 46 bytes comprise 23 little-endian RTLink
      * operand fixups, whose raw file words are both zero. Copying only
      * nonzero source bytes preserves all 23 relocated target values, which
-     * still need to be supplied by the remaining startup state. */
+     * are not accessed by the corrected source-C palette path. */
     for (i = 0; i < sizeof raw; ++i)
         if (raw[i] != 0)
             memory->bytes[GATE_RTL_RAM_OFFSET + i] = raw[i];
@@ -286,5 +286,54 @@ int gate_intro_restore_default_runtime_state(GateIntroMemory *memory)
     /* VGA standard color status port and the original VGA adapter type. */
     write_ds_word(memory, 0x5514, 0x03dau);
     write_ds_word(memory, 0x5516, 5);
+
+    /* MIDIPlay's default AdLib-capable device byte is already installed at
+     * this boundary. RTL:c3c5 checks bits 1/2 at EXE:134c. This copied
+     * device *selection* is independent of any original IRQ8 driver code. */
+    memory->bytes[base + 0x0662u] = 0x5a;
+    return 1;
+}
+
+int gate_intro_restore_default_vectors(GateIntroMemory *memory)
+{
+    /* Original DOS/RTLink startup installed these seven interrupt vectors
+     * before EXE:1302. Six targets are relative to the original EXE load
+     * paragraph (DS - the original 1a7a data-segment relative paragraph),
+     * and the BIOS mouse vector remains f000:0300. These are linked
+     * addresses, not a copy of interrupt-handler executable instructions. */
+    static const struct {
+        uint8_t interrupt;
+        uint16_t offset;
+        uint16_t relative_segment;
+    } linked[] = {
+        {0x00, 0x0a58, 0x02a5}, /* DOS divide-error handler. */
+        {0x08, 0x00ca, 0x072c}, /* Installed timer/music IRQ. */
+        {0x1b, 0x000b, 0x0df1}, /* Ctrl-Break handler. */
+        {0x1c, 0x08d0, 0x0f10}, /* Periodic clock callback. */
+        {0x23, 0x000b, 0x0df1}, /* DOS Ctrl-C handler. */
+        {0x24, 0x0008, 0x0df1}, /* DOS critical-error handler. */
+    };
+    const uint16_t original_exe_data_segment = 0x1a7a;
+    uint16_t load_segment;
+    unsigned i;
+
+    if (!memory || memory->ds_segment < original_exe_data_segment)
+        return 0;
+    load_segment = (uint16_t)(memory->ds_segment - original_exe_data_segment);
+    for (i = 0; i < sizeof linked / sizeof linked[0]; ++i) {
+        const unsigned at = 4u * linked[i].interrupt;
+        const uint16_t segment =
+            (uint16_t)(load_segment + linked[i].relative_segment);
+        memory->bytes[at] = (uint8_t)linked[i].offset;
+        memory->bytes[at + 1] = (uint8_t)(linked[i].offset >> 8);
+        memory->bytes[at + 2] = (uint8_t)segment;
+        memory->bytes[at + 3] = (uint8_t)(segment >> 8);
+    }
+    /* An unchanged BIOS mouse callback, before the native mouse service
+     * has replaced device I/O for this standalone source-C playback. */
+    memory->bytes[4u * 0x33] = 0;
+    memory->bytes[4u * 0x33 + 1] = 3;
+    memory->bytes[4u * 0x33 + 2] = 0;
+    memory->bytes[4u * 0x33 + 3] = 0xf0;
     return 1;
 }

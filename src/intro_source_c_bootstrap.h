@@ -14,7 +14,8 @@ int gate_intro_restore_static_exe_data(GateIntroMemory *memory,
 
 /* Restore unchanged, nonzero GATE.RTL bytes in a linked resident bank while
  * leaving zero placeholders (and their runtime relocation words) untouched.
- * This still needs those relocated words from a separate startup source. */
+ * The intro's corrected linked palette operands do not read that old code
+ * bank, so the original RTL relocation words are not cold-start inputs. */
 int gate_intro_restore_static_rtl_data(GateIntroMemory *memory,
                                        const char *dos_directory);
 
@@ -34,5 +35,10 @@ int gate_intro_restore_linked_selectors(GateIntroMemory *memory);
  * video ports and the executable-derived filename prefix. This is only the
  * pinned default configuration, not a general DOS startup replacement. */
 int gate_intro_restore_default_runtime_state(GateIntroMemory *memory);
+
+/* Recreate the installed DOS interrupt-vector entries seen at the original
+ * pinned introduction boundary from the relocated EXE load paragraph. Other
+ * vectors remain unchanged; this is not a full DOS interrupt dispatcher. */
+int gate_intro_restore_default_vectors(GateIntroMemory *memory);
 
 #endif

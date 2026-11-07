@@ -439,7 +439,9 @@ Escape skips the rest of the intro and continues into the original game;
 closing the intro window cancels it. This starts `GATEMAIN.EXE` independently
 with the verified original default numeric launcher arguments. It **does not**
 yet transfer source-C guest RAM or DOS process state to the game. The
-live runner and its transition have not been compiled/tested with SDL3 here.
+source-C intro now starts natively from the original DOS asset files,
+without executing any Unicorn/DOS startup instructions. The live runner
+and its transition have not been compiled/tested with SDL3 here.
 
 An independent original source-C caption-only diagnostic remains available,
 separate from the C++ renderer below. Given a captured 1 MiB
@@ -448,8 +450,9 @@ build/intro-analysis/at-22000.bin ../gateway-dos` displays eighteen pages
 through the recovered `GATE.EXE:117e` source-C functions. The headless
 `nix run .#intro-source-c-dump -- build/intro-analysis/at-22000.bin
 ../gateway-dos build/source-c-pages` exports the same frames (create the
-output directory first). The full intro still bootstraps a private 22-second
-DOS RAM capture with Unicorn; the hybrid game transition starts a fresh
+output directory first). The **full** intro's default live and replay modes
+reconstruct their linked startup state from the original EXE/RTL/PIC assets
+with no guest-RAM capture. The hybrid game transition still starts a fresh
 emulated main-program process. SDL audio and timing parity remain to be
 tested against original DOS. See
 [source-C intro status](docs/intro-source-c.md) for snapshot setup and tests.

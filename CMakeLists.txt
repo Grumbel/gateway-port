@@ -185,9 +185,16 @@ target_compile_options(launcher-intro-source-c-live-tests PRIVATE
   -ffunction-sections -fdata-sections)
 target_link_options(launcher-intro-source-c-live-tests PRIVATE -Wl,--gc-sections)
 target_link_libraries(launcher-intro-source-c-live-tests PRIVATE gateway_intro_pic_host)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos/GATE.EXE" AND
+   EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos/GATE.RTL" AND
+   EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos/GATE_301.PIC")
+  add_test(NAME launcher-intro-source-c-live-native COMMAND
+    launcher-intro-source-c-live-tests --from-original
+    ${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos)
+endif()
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin" AND
    EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos/GATE_300.PIC")
-  add_test(NAME launcher-intro-source-c-live COMMAND
+  add_test(NAME launcher-intro-source-c-live-snapshot COMMAND
     launcher-intro-source-c-live-tests
     ${CMAKE_CURRENT_SOURCE_DIR}/build/intro-analysis/at-22000.bin
     ${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos)

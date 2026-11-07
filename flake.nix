@@ -75,15 +75,10 @@
                   echo "missing $dos_dir/GATE.EXE" >&2
                   exit 1
                 fi
-                echo "Preparing source-C intro state from original DOS executable..." >&2
-                if ! ${self.packages.${system}.default}/bin/gateway-probe \
-                    "$dos_dir/GATE.EXE" --headless --read-only --deterministic-clock \
-                    --milliseconds 24000 --dump-at "22000:$replay_dir/guest-22s" \
-                    >"$replay_dir/probe.log" 2>&1; then
-                  tail -n 50 "$replay_dir/probe.log" >&2
-                  exit 1
-                fi
-                snapshot="$replay_dir/guest-22s.bin"
+                # The source-C renderer builds its observed DOS/RTLink
+                # inputs directly from the user's unmodified original assets.
+                # No Unicorn startup snapshot is needed on the default path.
+                snapshot="--from-original"
               elif [ -z "''${snapshot:-}" ]; then
                 snapshot="$2"
               fi
@@ -156,7 +151,7 @@
         intro-source-c-live = {
           type = "app";
           program = "${sourceCLive}/bin/gateway-intro-source-c-live";
-          meta.description = "Play the source-C Gateway intro live through SDL3 with original MIDIPlay AdLib music and keyboard input";
+          meta.description = "Play the source-C Gateway intro live from original DOS assets through SDL3 with AdLib music and keyboard input";
         };
         intro-source-c-play = {
           type = "app";

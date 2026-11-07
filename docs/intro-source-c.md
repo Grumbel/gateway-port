@@ -11,8 +11,10 @@ the original C input check; a separate deterministic recording/replayer
 remains available for frame inspection. The **live** SDL3 path now plays
 the original `GATE_004.MUS` song zero using a native AdLib MIDIPlay decoder
 and the repository's Nuked OPL3 synthesizer. The deterministic frame replay
-remains silent. **Both start from a captured DOS memory state**: the original
-DOS music IRQ driver and independent startup C are pending. A separate hybrid
+remains silent. **Both now start directly from the original DOS assets by
+default**, with native C reconstruction of the observed linked startup
+memory; neither requires a Unicorn snapshot. The original DOS music IRQ
+driver is still a host boundary. A separate hybrid
 launcher can now enter the original game after this source-C intro, but does
 not yet carry the reconstructed guest state across that boundary.
 
@@ -23,18 +25,19 @@ and initial mode `13h` to `f14d`, which establishes the renderer descriptor, sel
 mode `13h`, and configures the four clipping edges and clipping enable.
 Those clipping writes were removed from the source-C host's initial setup.
 The corrected 1,561-frame replay and final guest-RAM checks remain byte-exact;
-this still does not reconstruct the earlier DOS startup responsible for
-building the linked tables and relocating the C runtime.
+the pinned native bootstrap builds the required linked tables and default
+devices, but is not a general MS-DOS loader or RTLink implementation.
 
 The first executable C-only milestone is the complete set of eighteen
 `GATE.EXE:117e` caption calls with their original arguments, font loading,
 word wrapping, bevel frames, pixels, and wait-duration calculation. The
 host bridge in `src/intro_source_c_captions.c` retains the original segmented
 memory layout and calls the actual recovered C routines. It does not duplicate
-their text rasterizer or invent caption text. A pinned private DOS RAM capture
-provides relocated globals, source text and the initial data structures.
+their text rasterizer or invent caption text. The pinned private DOS RAM
+capture is now an optional oracle; the normal full-intro startup reconstructs
+the required linked globals and initializes data from original DOS files.
 
-## Prepare the original snapshot
+## Optional: prepare a DOS snapshot for diagnostics
 
 With the original DOS assets in `../gateway-dos`:
 
@@ -70,13 +73,11 @@ existing file. The default 22-second snapshot produces **6,661 first-read
 bytes across six pages** (physical page bases `00000`, `2a000`,
 `2b000`, `2d000`, `2e000`, `2f000`). The original full intro's 1,561-frame
 recording and output hashes are unchanged. A regression additionally zeroes
-all other 249 pages of the original 1 MiB RAM image in a private temporary
+all other 250 pages of the original 1 MiB RAM image in a private temporary
 copy, reruns the source-C intro, and obtains the **same complete 1,561-frame
-recording byte-for-byte**. Thus the current observed path only requires
-24 KiB of observed *page-granularity* startup state. Further ablation of
-those seven pages established that zeroing the `2a000` page as well still
-preserves the entire recorded replay, leaving just **six pages (24 KiB)**
-necessary to reproduce this pinned visual run. That does not prove the
+recording byte-for-byte**. The memory profiler therefore observes six
+4 KiB pages (24 KiB); separately ablating the `2a000` page also preserves
+the replay. This does not prove the
 removed page is irrelevant to every side effect or input path.
 
 One substantial dependency is already accounted for by the original files:
@@ -84,10 +85,8 @@ the `2dddb:2f15e` first-read range (4,995 bytes) is part of a contiguous
 **5,869-byte exact copy of `GATE.EXE` data**. The captured RAM interval
 `2dd9d:2f48a` matches original file offsets `04251:0593e` byte for byte.
 The original-asset test verifies this mapping without including those bytes
-in the repository. A future native startup can load this region from the
-original EXE instead of capturing it through Unicorn; other observed reads
-(including DOS vectors, relocated code and runtime globals) still require
-reconstruction.
+in the repository. The new native startup loads the region from the original
+EXE and reconstructs the other observed runtime values.
 
 The standalone composite now offers an opt-in native restoration step:
 
@@ -157,29 +156,30 @@ Two further opt-in source-C initializers reconstruct non-file runtime state:
   startup or other hardware/command-line variants.
 
 Most importantly, a byte-level sparse-memory regression starts with **all
-1 MiB zero**, preserves only the 7,419 guest bytes first-read before writes
+1 MiB zero**, preserves only the 6,661 guest bytes first-read before writes
 in the pinned default replay (excluding the ablated `2a000` page), and
 then removes all disk-reconstructible regions and both natively initialized
 runtime groups. Eight remaining first-read nonzero values were separately
 ablated as immaterial to the pinned replay (not necessarily every path).
 Only **22 nonzero bytes of captured RAM** remain, all in seven DOS
-interrupt-vector entries.
-Combining all five restoration options still reproduces the complete
-1,561-frame recording and final PPM, byte for byte. This counts
-the remaining *nonzero values*, not a self-contained serialized bootstrap:
-the DOS interrupt-hook values still need principled
-initialization before the original Unicorn snapshot can be removed. The
-captured data is neither committed nor copied into the output bundle.
+interrupt-vector entries. The additional `--restore-vectors` option
+reconstructs those entries relative to the real DOS-linked EXE load
+paragraph and preserves the fixed `F000:0300` BIOS mouse vector.
+With **all six** restoration options an *entirely zero 1 MiB guest RAM image*
+produces the complete 1,561-frame recording and final PPM byte-for-byte.
+The `--from-original` argument creates this zero RAM internally and enables
+all six steps automatically. This is sufficient for the pinned default
+source-C intro, not a general DOS/RTLink process initializer.
 
 This is a narrow dependency oracle, **not proof that all memory accesses are
 profiled**: the host tracks `gate_far_byte` and `gate_far_set_byte` (including
 WORD accessors), but not arbitrary direct native reads of the RAM array,
 external file resources, native stack views, or direct VGA planes. Host VGA
 initialization is explicitly marked as a write to avoid treating all 64,000
-cleared framebuffer bytes as original inputs. The 28 KiB subset is valid for
+cleared framebuffer bytes as original inputs. The 24 KiB subset is valid for
 the pinned full default intro replay; different settings, input sequences,
-or untracked direct accesses still need examination before replacing the
-Unicorn-generated startup snapshot.
+or untracked direct accesses still need examination before claiming all
+intro configurations equivalent to a genuine DOS startup.
 
 ## Run the source-C captions
 
@@ -224,11 +224,12 @@ and printable keys are also forwarded to the recovered C handler, including
 its non-Escape prompt branch. P pauses the host clock and F9 toggles
 filtering. Mouse input and extended DOS scan codes are not forwarded yet.
 
-As in the recording mode below, the one-argument Nix app first uses the
-Unicorn DOS runner to generate a private 22-second memory snapshot. An
-existing snapshot may instead be given as a second argument (or before
-`DOS-DIR`) to skip the initial emulation. The temporary snapshot is removed
-on exit. The original C intro itself does not execute any x86 instructions.
+Like the deterministic recording mode below, the one-argument Nix app now
+initializes guest RAM natively from original files, linked selectors and
+the default installed DOS vectors. There is **no Unicorn bootstrap** in the
+intro. An existing private 22-second snapshot may still be passed as a
+second argument (or before `DOS-DIR`) for differential diagnostics. The
+original C intro itself does not execute any x86 instructions.
 
 The original AdLib song is read directly from `GATE_004.MUS` in the same DOS
 directory, so no extraction step or proprietary files in the Nix store are
@@ -293,14 +294,13 @@ including its original image, fade, caption and animation entry points.
 Narrow native bridges supply VFX/DCL, RAM, VGA mode 13h, files, deterministic
 clock and silent audio initialization. It first creates a private temporary
 framebuffer/DAC recording, then replays those frames in SDL3 at their
-simulated timestamps. With only the DOS directory argument, the Nix app
-first uses the existing `gateway-probe` with deterministic Unicorn execution
-to regenerate the same 22-second RAM snapshot. Only the *preparation* uses
-8086 emulation; `EXE:1302` and its scene sequencing execute as source C.
-The RAM image and recording are removed on exit. No game assets are packaged
-in the Nix derivation. For subsequent quick runs, an existing private snapshot
-can be passed as a second argument, or in the earlier `snapshot DOS-DIR`
-order, to skip the probe.
+simulated timestamps. With only the DOS directory argument, the native
+bootstrap reconstructs the original startup requirements directly from
+`GATE.EXE`, `GATE.RTL` and `GATE_301.PIC`, without a probe or snapshot.
+The temporary recording is removed on exit. No game assets are packaged
+in the Nix derivation. To compare against a captured original DOS state,
+an existing private snapshot can still be passed as a second argument or
+in the earlier `snapshot DOS-DIR` order.
 
 Controls: Space/P pauses, Left/Right seeks five seconds, Home/End seeks to
 the beginning/end, F9 toggles image filtering and Escape exits. These are
@@ -313,15 +313,15 @@ To capture the full sequence without SDL3:
 ```sh
 nix build .#intro-decompile
 result/bin/gateway-intro-source-c-composite \
-  build/intro-analysis/at-22000.bin ../gateway-dos \
+  --from-original ../gateway-dos \
   build/intro-final.ppm --full --record build/intro-full.gvr \
   --dump-memory build/intro-post-ram.bin
 ```
 
 The private `GVR1` format consists of four signature bytes followed by
 records of: 32-bit little-endian virtual timestamp (ms), 64,000 VGA mode-13h
-pixel indices, and 768 six-bit DAC components. Its 816 frames span 342,026
-simulated milliseconds on the pinned RAM capture; two consecutive headless
+pixel indices, and 768 six-bit DAC components. Its 1,561 frames span 342,026
+simulated milliseconds on the pinned native startup; two consecutive headless
 runs produced byte-identical recordings. The source-only Nix package does
 not require SDL3 or Unicorn. `--dump-memory` saves the complete **1 MiB RAM
 at the return of original C `EXE:1302`**, *before* the host shuts down its
@@ -428,9 +428,10 @@ image-path diagnostic, **not the original animation schedule**.
 
 ## Remaining limitations
 
-- The original C entry uses an already relocated 22-second DOS RAM capture.
-  The Nix wrapper generates it automatically, but independent source-C
-  startup without a Unicorn bootstrap is not yet reconstructed.
+- The pinned default source-C entry is independent of the DOS snapshot and
+  Unicorn. Its initializer rebuilds only the runtime state exercised along
+  the verified default 22-second-entry path, not all possible loader options,
+  DOS calls or memory management behavior.
 - Original `RTL:c3bd` IRQ8 music setup remains a native host boundary, but
   live SDL3 playback now uses the original MIDIPlay/MDI stream and Nuked OPL3.
   The separate deterministic `GVR1` replayer is still silent, and output/timing

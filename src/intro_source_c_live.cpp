@@ -164,7 +164,7 @@ int main(int argc, char **argv) try {
     const bool exit_on_complete = argc == 4 &&
         std::string_view(argv[3]) == "--exit-on-complete";
     if ((argc != 3 && !exit_on_complete) || std::string_view(argv[1]) == "--help") {
-        std::cout << "usage: gateway-intro-source-c-live guest-22s.bin DOS-DIR [--exit-on-complete]\n"
+        std::cout << "usage: gateway-intro-source-c-live (guest-22s.bin|--from-original) DOS-DIR [--exit-on-complete]\n"
                      "Original live source-C intro, native AdLib MIDIPlay audio. "
                      "Space/Return/letters: "
                      "original C keys, P: pause, F9: filter, Escape: interrupt.\n";

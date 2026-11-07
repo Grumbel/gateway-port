@@ -35,14 +35,21 @@ def digest(path):
 
 
 class IntroFull(unittest.TestCase):
-    def inputs(self):
+    def asset_inputs(self):
         if EXECUTABLE is None:
             self.skipTest('standalone executable path not supplied')
-        snapshot = ROOT / 'build/intro-analysis/at-22000.bin'
         assets = ROOT.parent / 'gateway-dos'
-        if not snapshot.is_file() or not (assets / 'GATE_300.PIC').is_file():
-            self.skipTest('private DOS RAM snapshot or original PIC absent')
-        return str(EXECUTABLE), str(snapshot), str(assets)
+        if not all((assets / filename).is_file() for filename in
+                   ('GATE.EXE', 'GATE.RTL', 'GATE_301.PIC')):
+            self.skipTest('original Gateway DOS assets absent')
+        return str(EXECUTABLE), str(assets)
+
+    def inputs(self):
+        executable, assets = self.asset_inputs()
+        snapshot = ROOT / 'build/intro-analysis/at-22000.bin'
+        if not snapshot.is_file():
+            self.skipTest('private DOS RAM snapshot absent')
+        return executable, str(snapshot), assets
 
     def test_shared_image_and_caption(self):
         executable, snapshot, assets = self.inputs()
@@ -223,6 +230,25 @@ class IntroFull(unittest.TestCase):
         self.assertEqual(set(selectors), {0x2a7a, 0x2a70})
         self.assertEqual(selectors.count(0x2a7a), 32)
 
+        # Original DOS installs exactly seven populated interrupt vectors
+        # at the 22-second boundary. Their targets are derived at load time,
+        # not executable code bytes to embed into the native port.
+        populated = {
+            index: (int.from_bytes(ram[index * 4:index * 4 + 2], 'little'),
+                    int.from_bytes(ram[index * 4 + 2:index * 4 + 4], 'little'))
+            for index in range(192)
+            if any(ram[index * 4:index * 4 + 4])
+        }
+        self.assertEqual(populated, {
+            0x00: (0x0a58, 0x12a5),
+            0x08: (0x00ca, 0x172c),
+            0x1b: (0x000b, 0x1df1),
+            0x1c: (0x08d0, 0x1f10),
+            0x23: (0x000b, 0x1df1),
+            0x24: (0x0008, 0x1df1),
+            0x33: (0x0300, 0xf000),
+        })
+
         pic = (Path(assets) / 'GATE_301.PIC').read_bytes()
         entry = pic[5 * 12:6 * 12]
         palette_at = int.from_bytes(entry[:4], 'little') + 4 * entry[4]
@@ -296,6 +322,48 @@ class IntroFull(unittest.TestCase):
                              '6a3f6394fbaac476700dbb54d30a8dd0f9028183493cfa3f416d9e4a7c87a777')
             self.assertEqual(digest(restored_record),
                              '856737f003f9af3a1ce4fdd3f7e494ee22b4cb7b9db36c728a6c9d57ad088ccf')
+
+            # Rebuild the last 22 nonzero guest bytes as linked DOS vectors.
+            # A completely zero 1 MiB source (with the original files beside
+            # it) must reproduce the entire pinned source-C replay.
+            empty = directory / 'zero-memory.bin'
+            zero_final = directory / 'zero-final.ppm'
+            zero_record = directory / 'zero-record.gvr'
+            empty.write_bytes(bytes(len(captured)))
+            subprocess.run([executable, str(empty), assets, str(zero_final),
+                            '--full', '--restore-exe-data',
+                            '--restore-rtl-data', '--restore-palette',
+                            '--restore-selectors', '--restore-defaults',
+                            '--restore-vectors', '--record', str(zero_record)],
+                           check=True, capture_output=True, text=True)
+            self.assertEqual(digest(zero_final), digest(restored_final))
+            self.assertEqual(digest(zero_record), digest(restored_record))
+
+    def test_native_cold_start_from_original_files(self):
+        executable, assets = self.asset_inputs()
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            final = directory / 'cold-final.ppm'
+            replay = directory / 'cold-replay.gvr'
+            report = subprocess.run(
+                [executable, '--from-original', assets, str(final),
+                 '--full', '--record', str(replay)],
+                check=True, capture_output=True, text=True)
+            self.assertIn('342026 virtual ms', report.stdout)
+            self.assertIn('1561 replay frames', report.stdout)
+            self.assertEqual(digest(final),
+                             '6a3f6394fbaac476700dbb54d30a8dd0f9028183493cfa3f416d9e4a7c87a777')
+            self.assertEqual(digest(replay),
+                             '856737f003f9af3a1ce4fdd3f7e494ee22b4cb7b9db36c728a6c9d57ad088ccf')
+
+            # An actual cold start must read the original assets, not
+            # silently fall back to any previous 1 MiB Unicorn capture.
+            missing = subprocess.run(
+                [executable, '--from-original', str(directory),
+                 str(directory / 'absent.ppm'), '--full'],
+                capture_output=True, text=True)
+            self.assertEqual(missing.returncode, 1)
+            self.assertIn('cannot restore verified GATE.EXE', missing.stderr)
 
     def test_static_bootstrap_rejects_missing_and_incompatible_exe(self):
         executable, snapshot, _ = self.inputs()
