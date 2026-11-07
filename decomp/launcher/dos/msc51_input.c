@@ -7,16 +7,15 @@
  * disassembly verification; do not infer its extra behavior from this host. */
 #include "GATEMEM.H"
 #include "RTLLAY.H"
+#include <bios.h>
 #include <dos.h>
 
-/* INT 16h/AH=01h sets ZF for an empty BIOS keyboard buffer. The original
- * linked function also checks DS:1340 and DS:133e, in that order. */
+/* Microsoft C 5.1's _bios_keybrd(_KEYBRD_READY) wraps INT 16h/AH=01h,
+ * preserving the BIOS zero-flag check that union REGS cannot expose.
+ * The original linked function also checks DS:1340 and DS:133e. */
 uint16_t gate_linked_keyboard_pending(void)
 {
-    union REGS input, output;
-    input.x.ax = 0x0100u;
-    int86(0x16, &input, &output);
-    if ((output.x.flags & 0x0040u) == 0u)
+    if (_bios_keybrd(_KEYBRD_READY) != 0u)
         return 1u;
     if (gate_ds_word(GATE_DS_INPUT_BUFFERED_KEY) != 0xffffu)
         return 1u;
@@ -27,7 +26,6 @@ uint16_t gate_linked_keyboard_pending(void)
  * INT 16h blocking input. BIOS returns scan code in AH and ASCII in AL. */
 uint16_t gate_linked_read_keyboard_key(void)
 {
-    union REGS input, output;
     uint16_t pending = gate_ds_word(GATE_DS_INPUT_PENDING_COUNT);
     if (pending != 0u) {
         gate_ds_set_word(GATE_DS_INPUT_PENDING_COUNT, (uint16_t)(pending - 1u));
@@ -36,9 +34,7 @@ uint16_t gate_linked_read_keyboard_key(void)
         gate_ds_set_word(GATE_DS_INPUT_BUFFERED_KEY, 0xffffu);
         return key;
     }
-    input.x.ax = 0u;
-    int86(0x16, &input, &output);
-    return output.x.ax;
+    return (uint16_t)_bios_keybrd(_KEYBRD_READ);
 }
 
 /* INT 33h AX=0003h returns the current mouse button mask in BX. */

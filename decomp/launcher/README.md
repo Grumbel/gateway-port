@@ -1010,8 +1010,9 @@ The predicted missing names become **37** if all stages pass on DOSBox.
 
 `msc51-compile-input` adds a real DOS BIOS keyboard/mouse adapter for
 linked `0df2:000a/0030` and `0e48:011b/07fe`. It checks original input
-state at linked DS:133e/1340, queries INT 16h/AH=01h without consuming
-the keyboard queue, reads INT 16h/AH=00h when needed, and calls INT 33h
+state at linked DS:133e/1340, queries INT 16h/AH=01h through Microsoft C's
+`_bios_keybrd(_KEYBRD_READY)` without consuming the keyboard queue,
+reads through `_bios_keybrd(_KEYBRD_READ)` when needed, and calls INT 33h
 for mouse reset/buttons. Its DOS probe checks the original unget slot and
 non-destructive BIOS status polling. The special Ctrl-Break flushing path
 has not been independently validated and is specifically not claimed as
@@ -1019,6 +1020,13 @@ bit-identical. `INP.OBJ` is LINK-eligible only after the source-fingerprinted
 DOS test. The same object now also handles the animation input poll through
 the recovered inverse-of-key-pending convention. A **32**-symbol remainder
 is predicted, not yet verified.
+
+The user's genuine 5.1 compiler rejected `union REGS.x.flags` with C2038.
+That member was present only in the host-side syntax fixture, not in the
+historical header. The corrected BIOS library calls implement the same
+read/peek services without accessing FLAGS through the register structure.
+Re-run `msc51-compile-input`; the earlier failed probe does not qualify
+`INP.OBJ` for the final launcher link.
 
 `msc51-compile-clock` stages `CLOCK.OBJ` to resolve the two EXE/RTL
 elapsed-millisecond call sites and two delay functions. A genuine DOS

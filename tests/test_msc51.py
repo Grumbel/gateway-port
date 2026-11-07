@@ -177,7 +177,10 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("INPSIG.LOG", input_batch)
             self.assertIn("INPOK.LOG", input_batch)
             self.assertNotIn("IF ERRORLEVEL 1 ECHO", input_batch)
-            self.assertIn("int86(0x16, &input, &output)", (output / "INP.C").read_text())
+            self.assertIn("#include <bios.h>", (output / "INP.C").read_text())
+            self.assertIn("_bios_keybrd(_KEYBRD_READY)", (output / "INP.C").read_text())
+            self.assertIn("_bios_keybrd(_KEYBRD_READ)", (output / "INP.C").read_text())
+            self.assertNotIn("output.x.flags", (output / "INP.C").read_text())
             self.assertIn("int86(0x33, &input, &output)", (output / "INP.C").read_text())
             self.assertIn("unget slot reset", (output / "INPCHK.C").read_text())
             for name in ("INP.C", "INPCHK.C"):
