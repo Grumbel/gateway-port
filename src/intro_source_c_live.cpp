@@ -5,6 +5,7 @@
 // Only the host clock, keyboard and video boundaries are native; the scene
 // order, caption layout, animation and palette C remain in decomp/launcher.
 #include "intro_source_c_full.h"
+#include "intro_live_frame_mailbox.hpp"
 #include "intro_mdi_player.hpp"
 
 #include <SDL3/SDL.h>
@@ -15,7 +16,6 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
-#include <cstring>
 #include <deque>
 #include <iostream>
 #include <memory>
@@ -33,10 +33,7 @@ using Clock = std::chrono::steady_clock;
 using namespace std::chrono_literals;
 
 struct LiveState {
-    std::mutex frame_mutex;
-    std::array<std::uint8_t, 320u * 200u> indices{};
-    std::array<std::uint8_t, 256u * 3u> palette{};
-    std::uint64_t generation = 0;
+    gateway::IntroLiveFrameMailbox frames;
 
     std::mutex time_mutex;
     Clock::time_point origin = Clock::now();
@@ -53,11 +50,6 @@ struct LiveState {
     std::mutex input_mutex;
     std::deque<std::uint16_t> keys;
 
-    /* Accessed only on the source-C execution thread. */
-    Clock::time_point last_publish{};
-    std::array<std::uint8_t, 320u * 200u> last_indices{};
-    std::array<std::uint8_t, 256u * 3u> last_palette{};
-    bool have_last = false;
 };
 
 std::uint32_t elapsed_ms(LiveState &state) {
@@ -119,24 +111,7 @@ void music_start(void *userdata) {
 void frame_ready(void *userdata, const std::uint8_t *indices,
                  const std::uint8_t dac[256][3]) {
     auto &state = *static_cast<LiveState *>(userdata);
-    const auto now = Clock::now();
-    // The original palette service can upload hundreds of palettes in a
-    // fade. Present at most 60fps, copying a fully composed VGA snapshot.
-    if (state.have_last && now - state.last_publish < 16ms) return;
-    if (state.have_last &&
-        std::memcmp(indices, state.last_indices.data(), state.last_indices.size()) == 0 &&
-        std::memcmp(dac, state.last_palette.data(), state.last_palette.size()) == 0)
-        return;
-    std::memcpy(state.last_indices.data(), indices, state.last_indices.size());
-    std::memcpy(state.last_palette.data(), dac, state.last_palette.size());
-    state.have_last = true;
-    state.last_publish = now;
-    {
-        std::lock_guard lock(state.frame_mutex);
-        state.indices = state.last_indices;
-        state.palette = state.last_palette;
-        ++state.generation;
-    }
+    state.frames.publish(indices, dac);
 }
 
 void require(bool ok) {
@@ -222,8 +197,7 @@ int main(int argc, char **argv) try {
         std::uint64_t previous_generation = 0;
         std::uint32_t previous_second = UINT32_MAX;
         bool previous_paused = false, previous_completed = false;
-        std::array<std::uint8_t, 320u * 200u> indices{};
-        std::array<std::uint8_t, 256u * 3u> palette{};
+        gateway::IntroLiveFrame frame;
         std::vector<std::uint32_t> argb(320u * 200u, 0xff000000u);
         try {
             while (running) {
@@ -257,18 +231,8 @@ int main(int argc, char **argv) try {
                         queue_key(state, static_cast<std::uint16_t>(event.key.key));
                     }
                 }
-                bool dirty = false;
-                {
-                    std::lock_guard lock(state.frame_mutex);
-                    if (state.generation != previous_generation) {
-                        indices = state.indices;
-                        palette = state.palette;
-                        previous_generation = state.generation;
-                        dirty = true;
-                    }
-                }
-                if (dirty) {
-                    copy_to_argb(indices, palette, argb);
+                if (state.frames.read_after(previous_generation, frame)) {
+                    copy_to_argb(frame.indices, frame.palette, argb);
                     require(SDL_UpdateTexture(texture, nullptr, argb.data(), 320 * 4));
                 }
                 if (audio && state.music_started.load() &&

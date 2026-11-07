@@ -638,6 +638,10 @@ if(GATEWAY_WITH_SDL)
   install(TARGETS gateway-intro RUNTIME DESTINATION bin)
 endif()
 if(BUILD_TESTING)
+  add_executable(intro-live-frame-mailbox-tests
+    tests/intro_live_frame_mailbox_tests.cpp)
+  target_include_directories(intro-live-frame-mailbox-tests PRIVATE src)
+  add_test(NAME intro-live-frame-mailbox COMMAND intro-live-frame-mailbox-tests)
   add_executable(gatemain-flags-decompile-tests
     decomp/engine/gatemain_flags.c tests/gatemain_flags_decompile_tests.c)
   target_include_directories(gatemain-flags-decompile-tests PRIVATE decomp/engine)

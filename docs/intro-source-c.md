@@ -218,6 +218,13 @@ nix run .#intro-source-c-live -- ../gateway-dos
 This executes `GATE.EXE:1302` on a worker thread while an SDL3 window
 displays the actual source-C VGA output at its 320×200 resolution and
 the original 4:3 display aspect. The clock and delays follow host time.
+The source-C worker publishes every changed complete VGA index/DAC snapshot
+to a latest-frame mailbox; SDL samples that mailbox at its normal display
+rate. Unlike the previous wall-clock 16ms callback filter, rapid successive
+DAC writes cannot cause the *final* palette state to be dropped when the
+source-C routine becomes idle. A host-only regression checks a 63-step
+palette ramp, palette-only updates, duplicate suppression, and complete
+index/DAC pairs without requiring SDL3.
 Escape is injected as an original DOS key event: the recovered C code
 takes its own interruption and cleanup branches. Space, Return, Backspace
 and printable keys are also forwarded to the recovered C handler, including
@@ -344,6 +351,8 @@ now match the independent PIC decoder at every sprite pixel. Three of these
 (`GATE_303` #3/#7/#35) also contain full 768-byte VGA DAC palettes, and their
 source-C RGB renders match independent decoded colors pixel-for-pixel. These
 tests verify isolated image palettes, not every live SDL palette transition.
+Original `GATE_303` frame #3/#7/#35 palettes also match its backdrop #0;
+there is no resource-side palette discrepancy in those inspected frames.
 
 The corrected full C recording retains **1,561 frames**, **342,026ms** of
 virtual duration, and the same final RGB screenshot, with GVR1 SHA-256
