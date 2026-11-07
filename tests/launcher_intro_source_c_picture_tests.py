@@ -88,6 +88,36 @@ class IntroPicture(unittest.TestCase):
             self.assertEqual(hashlib.sha256(frame).hexdigest(),
                              'ea177bdef50098ced01d716c9e14d3e7c2987ece312bda44312c22a91a67ff43')
 
+    def test_persistent_image_call_sequence(self):
+        executable, snapshot, assets = self.original_inputs()
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run([executable, snapshot, assets,
+                                     directory, '--sequence'],
+                                    check=True, capture_output=True, text=True)
+            frames = sorted(Path(directory).glob('source-c-*.ppm'))
+            self.assertEqual(len(frames), 13)
+            self.assertEqual(len(result.stdout.splitlines()), 13)
+            expected_hashes = {
+                'source-c-00-8101.ppm': '40e34b98c5ebbe405915a56f33c295e9e3b85b2914c54b024d2e5cd05bb35cc3',
+                'source-c-01-8100.ppm': '83a253023f8473487ac6cba801ed0977b784a4a0f0547e40a49acc1322150de0',
+                'source-c-02-8102.ppm': 'd5aa115a1ff5548d31265dede9c40a5f515f477c21735128ae4760a1472755b5',
+                'source-c-03-3000.ppm': 'a95d4cb55feeb7b3ef7c2bd289f32d1ce3105da4e91d71348eb1eaa6dc9adce2',
+                'source-c-04-301b.ppm': 'edddb0cd4dcb9a2398cfffe2dbb350d1866f4b2b4cf15e282e75cb28c8b092af',
+                'source-c-05-3105.ppm': 'ea177bdef50098ced01d716c9e14d3e7c2987ece312bda44312c22a91a67ff43',
+                'source-c-06-3100.ppm': '83a253023f8473487ac6cba801ed0977b784a4a0f0547e40a49acc1322150de0',
+                'source-c-07-3102.ppm': 'd5aa115a1ff5548d31265dede9c40a5f515f477c21735128ae4760a1472755b5',
+                'source-c-08-3221.ppm': '92cd6ef778886b6c6bd62619449bb40b54d2f92226e0dc9ef9d7b47555b04005',
+                'source-c-09-3221.ppm': '92cd6ef778886b6c6bd62619449bb40b54d2f92226e0dc9ef9d7b47555b04005',
+                'source-c-10-3221.ppm': '92cd6ef778886b6c6bd62619449bb40b54d2f92226e0dc9ef9d7b47555b04005',
+                'source-c-11-3104.ppm': '207452fa66b870b65d7883198084eb20715afbe4401696321c0e934ed9d74476',
+                'source-c-12-332a.ppm': '9cae20e6693d0f17169981e07e998e50fbf4c897a9355ad23ecc4ac10429f71d',
+            }
+            self.assertEqual(set(expected_hashes), {frame.name for frame in frames})
+            for frame in frames:
+                with self.subTest(name=frame.name):
+                    self.assertEqual(hashlib.sha256(frame.read_bytes()).hexdigest(),
+                                     expected_hashes[frame.name])
+
 
 if __name__ == '__main__':
     EXECUTABLE = sys.argv[1] if len(sys.argv) == 2 else None

@@ -433,6 +433,9 @@ The independent original C image path is also runnable as
 host boundary and the recovered C image-loader and drawing functions.
 Use `--resource 0x3105 0 --rgb` after the output filename to render an
 original intro background in full color through the source-C DAC service.
+Use `--sequence` with an existing output directory to render thirteen
+successive original source-C picture calls with persistent guest memory and
+palette state; see [source-C intro status](docs/intro-source-c.md).
 
 A separate native C++ intro prototype renders the initial Legend splash,
 logo sequence, all eighteen narrative pages, and several background/sprite

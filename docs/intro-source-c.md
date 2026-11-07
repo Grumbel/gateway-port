@@ -78,6 +78,27 @@ For resources that do not upload a palette (such as `0x301b`), standalone
 RGB output lacks the palette inherited from preceding intro frames; it is
 therefore not yet a complete color-accurate sequential playback.
 
+To inspect inherited palette and guest-memory state across successive
+picture calls, run the **persistent source-C picture-call sequence**:
+
+```sh
+mkdir -p build/source-c-sequence
+nix run .#intro-source-c-picture-dump -- \
+  build/intro-analysis/at-22000.bin ../gateway-dos \
+  build/source-c-sequence --sequence
+```
+
+This executes thirteen selected original `EXE:1302`/`1a14` picture calls in
+one source-C memory and DAC context and exports each completed framebuffer
+as an RGB PPM. Unlike eleven separate `--resource` runs, this retains the
+palette and file/resource caches between calls, including the palette
+carried into resource `0x301b`. The regression checks the SHA-256 of all
+thirteen exported frames. **This is deliberately an image-call subset, not
+an attempt to fake the complete intro:** the original interleaves palette
+fades, animation batches, source-C caption calls, waits and early key exits
+between these calls. Repeated `0x3221` stages are equal here precisely
+because those intervening operations are still absent.
+
 Eleven independent original display-ID/mode combinations are currently
 exercised against the private 22-second snapshot, each from a fresh copy
 of that state. The regression suite pins every complete 320×200 pixel-index

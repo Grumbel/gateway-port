@@ -38,23 +38,74 @@ void gate_rtl_131cb(GateFarPtr work)
     }
 }
 
+typedef struct IntroPictureCall {
+    uint16_t resource;
+    uint16_t mode;
+} IntroPictureCall;
+
+/* These are only the original EXE:1302/1a14 single-picture calls in
+ * introduction order. The original interleaves fades, captions, input
+ * checks and animation calls between them; this diagnostic does not. */
+static const IntroPictureCall picture_calls[] = {
+    {0x8101, 1}, {0x8100, 1}, {0x8102, 1},
+    {0x3000, 1}, {0x301b, 1},
+    {0x3105, 0}, {0x3100, 0}, {0x3102, 0},
+    {0x3221, 0}, {0x3221, 0}, {0x3221, 0},
+    {0x3104, 0}, {0x332a, 0}
+};
+
+static int export_frame(const char *path, const GateIntroMemory *memory,
+                        const GateIntroVgaPorts *ports, int rgb_output)
+{
+    FILE *out = fopen(path, "wb");
+    unsigned i, nonzero = 0;
+    if (!out) {
+        perror(path);
+        return -1;
+    }
+    if (fprintf(out, "%s\n320 200\n255\n", rgb_output ? "P6" : "P5") < 0)
+        abort();
+    for (i = 0; i < 320u * 200u; ++i) {
+        uint8_t pixel = memory->bytes[0xa0000 + i];
+        nonzero += pixel != 0;
+        if (rgb_output) {
+            uint8_t rgb[3];
+            unsigned component;
+            for (component = 0; component < 3; ++component) {
+                uint8_t six_bit = ports->dac[pixel][component];
+                rgb[component] = (uint8_t)((six_bit << 2) | (six_bit >> 4));
+            }
+            if (fwrite(rgb, 1, 3, out) != 3)
+                abort();
+        } else if (fwrite(&pixel, 1, 1, out) != 1) {
+            abort();
+        }
+    }
+    if (fclose(out) != 0)
+        abort();
+    return (int)nonzero;
+}
+
 int main(int argc, char **argv)
 {
     GateIntroMemory *memory;
     GateDosHostFiles files = {0};
     GateIntroVgaPorts ports = {0};
-    FILE *in, *out;
+    FILE *in;
     uint16_t resource = 0x3001, mode = 1;
     int rgb_output = 0;
-    unsigned i, nonzero = 0;
-    if (argc == 5 || argc == 8) {
+    int sequence = 0, nonzero;
+    if (argc == 5 && strcmp(argv[4], "--sequence") == 0) {
+        sequence = 1;
+        --argc;
+    } else if (argc == 5 || argc == 8) {
         if (strcmp(argv[argc - 1], "--rgb") != 0)
             return 2;
         rgb_output = 1;
         --argc;
     }
     if (argc != 4 && argc != 7) {
-        fputs("usage: gateway-intro-source-c-picture-dump guest-22s.bin DOS-DIR OUTPUT.ppm [--resource ID MODE] [--rgb]\n",
+        fputs("usage: gateway-intro-source-c-picture-dump guest-22s.bin DOS-DIR OUTPUT.ppm [--resource ID MODE] [--rgb]\n       gateway-intro-source-c-picture-dump guest-22s.bin DOS-DIR OUTPUT-DIR --sequence\n",
               stderr);
         return 2;
     }
@@ -100,6 +151,32 @@ int main(int argc, char **argv)
     gate_rtl_resource_ds_set_word(6, 0); /* discard prior snapshot image's pending DAC */
     gate_rtl_resource_ds_set_word(8, 0xffffu);
     memset(memory->bytes + 0xa0000, 0, 320u * 200u);
+    if (sequence) {
+        unsigned step;
+        for (step = 0; step < sizeof picture_calls / sizeof picture_calls[0]; ++step) {
+            char filename[4096];
+            IntroPictureCall call = picture_calls[step];
+            if (snprintf(filename, sizeof filename,
+                         "%s/source-c-%02u-%04x.ppm", argv[3], step,
+                         call.resource) >= (int)sizeof filename)
+                abort();
+            if (gate_rtl_12b19(call.resource, call.mode) != 1) {
+                fprintf(stderr, "source-C picture call %u failed: %04x/%u\n",
+                        step, call.resource, call.mode);
+                abort();
+            }
+            nonzero = export_frame(filename, memory, &ports, 1);
+            if (nonzero < 0)
+                abort();
+            printf("stage %u: %04x/%u, %d pixels, DAC writes %u\n",
+                   step, call.resource, call.mode, nonzero, ports.dac_writes);
+        }
+        gate_dos_host_files_close_all(&files);
+        gate_intro_vga_ports_detach();
+        gate_intro_memory_detach();
+        free(memory);
+        return 0;
+    }
     if (gate_rtl_12b19(resource, mode) != 1) {
         fprintf(stderr, "original C image loader failed on resource 0x%04x mode %u\n",
                 resource, mode);
@@ -109,30 +186,8 @@ int main(int argc, char **argv)
         free(memory);
         return 1;
     }
-    out = fopen(argv[3], "wb");
-    if (!out) {
-        perror(argv[3]);
-        abort();
-    }
-    if (fprintf(out, "%s\n320 200\n255\n", rgb_output ? "P6" : "P5") < 0)
-        abort();
-    for (i = 0; i < 320u * 200u; ++i) {
-        uint8_t pixel = memory->bytes[0xa0000 + i];
-        nonzero += pixel != 0;
-        if (rgb_output) {
-            uint8_t rgb[3];
-            unsigned component;
-            for (component = 0; component < 3; ++component) {
-                uint8_t six_bit = ports.dac[pixel][component];
-                rgb[component] = (uint8_t)((six_bit << 2) | (six_bit >> 4));
-            }
-            if (fwrite(rgb, 1, 3, out) != 3)
-                abort();
-        } else if (fwrite(&pixel, 1, 1, out) != 1) {
-            abort();
-        }
-    }
-    if (fclose(out) != 0)
+    nonzero = export_frame(argv[3], memory, &ports, rgb_output);
+    if (nonzero < 0)
         abort();
     gate_dos_host_files_close_all(&files);
     gate_intro_vga_ports_detach();
