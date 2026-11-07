@@ -35,6 +35,10 @@ GateFarPtr gate_linked_get_runtime_environment(GateFarPtr name)
 
 uint32_t gate_linked_parse_runtime_integer(GateFarPtr number)
 {
-    char far *digits = (char far *)MK_FP(number.segment, number.offset);
+    /* MSC 5.1's DOS.H defines FP_SEG/FP_OFF as assignable FAR-pointer
+     * components; MK_FP is not a function/macro in this toolchain. */
+    char far *digits;
+    FP_SEG(digits) = number.segment;
+    FP_OFF(digits) = number.offset;
     return (uint32_t)atol(digits);
 }

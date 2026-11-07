@@ -203,6 +203,9 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("CRTSIG.LOG", crt_batch)
             self.assertIn("CRTOK.LOG", crt_batch)
             self.assertIn("FP_SEG(value)", (output / "CRTENV.C").read_text())
+            self.assertIn("FP_SEG(digits) = number.segment", (output / "CRTENV.C").read_text())
+            self.assertIn("FP_OFF(digits) = number.offset", (output / "CRTENV.C").read_text())
+            self.assertNotIn("MK_FP(", (output / "CRTENV.C").read_text())
             self.assertIn("atol(digits)", (output / "CRTENV.C").read_text())
             for name in ("CRTENV.C", "CRTCHK.C"):
                 self.assertTrue(all(len(identifier) <= 31 for identifier in

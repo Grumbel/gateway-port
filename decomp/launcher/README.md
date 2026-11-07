@@ -1038,6 +1038,11 @@ the adapter calls Microsoft C's DOS `getenv` and `atol` through large-model
 FAR pointers, copying only the bounded environment *name* from guest memory.
 `CRTCHK.EXE` probes DOS PATH, missing-name behavior and signed numeric
 conversion before producing a source-fingerprinted success marker.
+Microsoft C 5.1 does **not** supply Turbo C's `MK_FP` helper: construct the
+numeric input pointer with `FP_SEG(digits) = segment` and
+`FP_OFF(digits) = offset` from `<dos.h>`; this resolves the user's observed
+`LINK L2029: _MK_FP` compiler-probe failure. The corrected source still
+requires a genuine DOSBox rerun.
 The DOS heap adapter now additionally implements the startup allocator's
 1000h-paragraph request with a real DOS segment, tested in `HEAPCHK.EXE`.
 The current predicted remainder is **26**; no new Microsoft LINK result has
