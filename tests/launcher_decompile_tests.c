@@ -26,6 +26,7 @@ static uint16_t intro_caption_top[18], intro_caption_right[18];
 static uint16_t intro_frame_bottom[18];
 static uint16_t intro_images[16], intro_fades[16];
 static uint16_t intro_anim_base[5], intro_anim_next[5], intro_anim_lengths[5];
+static uint16_t intro_preloaded_image[2], intro_preloaded_count[2];
 static uint16_t intro_word_writes, intro_last_segment, intro_last_offset;
 static uint16_t intro_last_value;
 static uint8_t *stack_pointer;
@@ -58,6 +59,8 @@ static void reset(void)
     intro_fullscreen = intro_palette = intro_mode1 = intro_rect = 0;
     intro_caption_count = intro_image_count = intro_anim_count = intro_fade_count = 0;
     intro_frame_count = intro_text_font_calls = 0;
+    memset(intro_preloaded_image, 0, sizeof intro_preloaded_image);
+    memset(intro_preloaded_count, 0, sizeof intro_preloaded_count);
     intro_word_writes = intro_last_segment = intro_last_offset = intro_last_value = 0;
     stack_pointer = NULL;
     local_palette_uploads = fade_prepare_calls = fade_finish_calls = 0;
@@ -211,7 +214,9 @@ void gate_linked_show_intro_picture(uint16_t image, uint16_t mode)
 void gate_linked_play_intro_preloaded_sequence(uint16_t image, uint16_t value)
 {
     assert(value == 26);
-    assert(image == 0x3001 || image == 0x3106);
+    assert(intro_video < 2);
+    intro_preloaded_image[intro_video] = image;
+    intro_preloaded_count[intro_video] = value;
     ++intro_video;
 }
 void gate_linked_play_intro_delta_sequence(uint16_t first, uint16_t next, uint16_t count)
@@ -547,6 +552,8 @@ static void test_enclosing_intro_complete_sequence(void)
            message_calls == 18);
     assert(intro_fade_count == 9 && intro_image_count == 12);
     assert(intro_video == 2 && intro_cleanup == 2 + 9 && intro_finished == 1);
+    assert(intro_preloaded_image[0] == 0x3001 && intro_preloaded_count[0] == 26);
+    assert(intro_preloaded_image[1] == 0x3106 && intro_preloaded_count[1] == 26);
     assert(ds[0x35fc] == 1 && palette_uploads == 4 * 64 + 7 * 64 + 64 + 9 * 18);
     assert(local_palette_uploads == 9 * 17 && fade_prepare_calls == 9 &&
            fade_finish_calls == 18);

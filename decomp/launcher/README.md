@@ -38,9 +38,28 @@ delays are picture-record bytes `+0x06` and `+0x07`.
 
 The eighteen sequential `GATE_DS_INTRO_CAPTION_01` through `_18` names
 also pin their original `DS:363b` through `DS:4820` string pointers in the
-same header. Title/palette stages use separately named channel offsets;
-asset resource IDs and elapsed-time values in the presentation remain the
-literal original call arguments.
+same header. Title/palette stages use separately named channel offsets.
+
+[`gate_intro_schedule.h`](gate_intro_schedule.h) names every picture-resource
+ID and animation frame-count argument in the original `GATE.EXE:1302..1a13`
+intro and `EXE:1a14..1c10` title interlude. The exact 16-bit resource IDs
+remain in the enum declarations (`0x3105` = `GATE_301.PIC` entry #5;
+`0x332a` = `GATE_303.PIC` entry #42); names such as
+`GATE_INTRO_PICTURE_CAPTIONS_01_02` describe *where the asset is used*,
+not an unverified interpretation of its artwork. There are two 26-frame
+preloaded sequences and five three-argument delta sequences. The latter's
+source call offsets are `EXE:1743`, `1762`, `191f`, `1933`, and `1947`,
+with original `(base, first delta, count)` values retained in the header.
+The C mock test retains raw IDs as independent expected values; the
+original-executable regression resolves named arguments back to these
+literal constants before comparing against disassembled call operands.
+The same header names the original 1,000/2,000/3,000ms scene waits, title
+interlude waits, 500ms red-bar hold, and the 2,000 + 45ms-per-character
+caption timeout. Caption font selection, 80-byte word buffer, five-pixel
+text inset, 185-pixel bottom clamp, DAC channel strides and 64-level palette
+ramps are documented there as source-level immediates. These are *not*
+newly introduced presentation timings: the original loops and calls retain
+their order, signed arithmetic and interruptibility.
 
 The font cache at `DS:54ce` is a two-entry array of 30-byte records, with
 named byte and FAR-pointer displacements (`GATE_FONT_SLOT_*`) shared by the

@@ -2,6 +2,7 @@
 /* SPDX-License-Identifier: LicenseRef-Gateway-Derived */
 
 #include "gate_exe.h"
+#include "gate_intro_schedule.h"
 
 static GateFarPtr far_pointer(uint16_t segment, uint16_t offset)
 {
@@ -47,7 +48,7 @@ uint16_t gate_exe_handle_intro_input(void)
     if (gate_ds_word(GATE_DS_INTRO_KEY_SEEN) != 0)
         return 0;
     gate_ds_set_word(GATE_DS_INTRO_KEY_SEEN, 1);
-    gate_linked_select_intro_font(1);
+    gate_linked_select_intro_font(GATE_INTRO_PROMPT_FONT);
     gate_linked_set_intro_text_colors(gate_far_word(gate_ds_word(GATE_DS_INTRO_PROMPT_COLOR_SEGMENT), GATE_MODE_DESC_MAX_PEN_COLOR), 0xffff);
     width = gate_linked_measure_text_width(far_pointer(gate_ds_segment(), GATE_DS_INTRO_KEY_HINT_TEXT));
     height = gate_linked_font_line_advance();
@@ -56,7 +57,7 @@ uint16_t gate_exe_handle_intro_input(void)
         (int16_t)(gate_far_word(gate_ds_word(GATE_DS_INTRO_SCREEN_HEIGHT_SEGMENT), GATE_MODE_DESC_SCREEN_HEIGHT) - height - 1));
     gate_linked_draw_intro_text(far_pointer(gate_ds_segment(), GATE_DS_INTRO_KEY_HINT_TEXT));
     if (gate_far_word(gate_ds_word(GATE_DS_INTRO_MODE_SEGMENT), GATE_DS_GRAPHICS_MODE) != 3) {
-        gate_exe_wait_interruptible(3500);
+        gate_exe_wait_interruptible(GATE_INTRO_KEY_HINT_WAIT_MS);
         gate_linked_read_buffered_key();
     }
     return 0;
@@ -114,11 +115,12 @@ void gate_exe_fade_in_picture(uint16_t image)
     gate_linked_draw_intro_picture_record(gate_stack_pointer(work));
     gate_linked_release_intro_picture_record(gate_stack_pointer(work));
 
-    for (factor = 0; factor < 64; factor += 4) {
+    for (factor = 0; factor < GATE_INTRO_PALETTE_SCALE_DENOMINATOR;
+         factor += GATE_INTRO_PALETTE_FADE_STEP) {
         for (i = 0; i < GATE_INTRO_PALETTE_RGB_BYTES; ++i) {
             int16_t product = (int16_t)((int8_t)gate_far_byte(
                 gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), (uint16_t)(GATE_INTRO_PALETTE_BANK_OFFSET + i)) * factor);
-            faded[i] = (uint8_t)(product / 64);
+            faded[i] = (uint8_t)(product / GATE_INTRO_PALETTE_SCALE_DENOMINATOR);
         }
         gate_linked_upload_intro_palette(gate_stack_pointer(faded));
     }
@@ -140,15 +142,15 @@ void gate_exe_fade_in_picture(uint16_t image)
 void gate_exe_measure_caption(uint16_t *left, uint16_t *top, uint16_t *right,
                    uint16_t *bottom, GateFarPtr text)
 {
-    char word[80];
+    char word[GATE_INTRO_CAPTION_WORD_BUFFER_BYTES];
     uint16_t cursor = text.offset;
     uint16_t x;
     uint16_t y;
 
-    gate_linked_select_intro_font(5);
-    *left = (uint16_t)(*left + 5);
-    *top = (uint16_t)(*top + 5);
-    *right = (uint16_t)(*right - 5);
+    gate_linked_select_intro_font(GATE_INTRO_CAPTION_FONT);
+    *left = (uint16_t)(*left + GATE_INTRO_CAPTION_TEXT_INSET);
+    *top = (uint16_t)(*top + GATE_INTRO_CAPTION_TEXT_INSET);
+    *right = (uint16_t)(*right - GATE_INTRO_CAPTION_TEXT_INSET);
     x = *left;
     y = *top;
 
@@ -183,10 +185,10 @@ void gate_exe_measure_caption(uint16_t *left, uint16_t *top, uint16_t *right,
         }
     }
 
-    *bottom = (uint16_t)(gate_linked_font_line_advance() + y - 2);
-    if ((int16_t)*bottom > 185) {
-        *top = (uint16_t)(*top - (uint16_t)(*bottom - 185));
-        *bottom = 185;
+    *bottom = (uint16_t)(gate_linked_font_line_advance() + y - GATE_INTRO_CAPTION_BOTTOM_INSET);
+    if ((int16_t)*bottom > GATE_INTRO_CAPTION_BOTTOM_LIMIT) {
+        *top = (uint16_t)(*top - (uint16_t)(*bottom - GATE_INTRO_CAPTION_BOTTOM_LIMIT));
+        *bottom = GATE_INTRO_CAPTION_BOTTOM_LIMIT;
     }
 }
 
@@ -200,17 +202,20 @@ void gate_exe_measure_caption(uint16_t *left, uint16_t *top, uint16_t *right,
  */
 void gate_exe_show_caption(uint16_t left, uint16_t top, uint16_t right, GateFarPtr text)
 {
-    char word[80];
+    char word[GATE_INTRO_CAPTION_WORD_BUFFER_BYTES];
     uint16_t bottom;
     uint16_t cursor;
     uint16_t x;
     uint16_t y;
 
-    gate_linked_select_intro_font(5);
+    gate_linked_select_intro_font(GATE_INTRO_CAPTION_FONT);
     gate_linked_set_intro_text_colors(gate_far_word(gate_ds_word(GATE_DS_INTRO_CAPTION_COLOR_SEGMENT), GATE_MODE_DESC_FRAME_COLOR_PRIMARY), 0xffff);
     gate_exe_measure_caption(&left, &top, &right, &bottom, text);
-    gate_linked_draw_intro_caption_frame((uint16_t)(left - 5), (uint16_t)(top - 5),
-                         (uint16_t)(right + 5), (uint16_t)(bottom + 5), 4);
+    gate_linked_draw_intro_caption_frame((uint16_t)(left - GATE_INTRO_CAPTION_TEXT_INSET),
+                         (uint16_t)(top - GATE_INTRO_CAPTION_TEXT_INSET),
+                         (uint16_t)(right + GATE_INTRO_CAPTION_TEXT_INSET),
+                         (uint16_t)(bottom + GATE_INTRO_CAPTION_TEXT_INSET),
+                         GATE_INTRO_CAPTION_FRAME_STYLE);
 
     x = left;
     y = top;
@@ -247,8 +252,8 @@ void gate_exe_show_caption(uint16_t left, uint16_t top, uint16_t right, GateFarP
                 cursor = (uint16_t)(cursor + 1);
         }
     }
-    gate_exe_wait_interruptible((int16_t)(uint16_t)(2000u +
-        (uint16_t)(45u * gate_linked_exe_string_length(text))));
+    gate_exe_wait_interruptible((int16_t)(uint16_t)(GATE_INTRO_CAPTION_BASE_DURATION_MS +
+        (uint16_t)(GATE_INTRO_CAPTION_PER_CHARACTER_MS * gate_linked_exe_string_length(text))));
 }
 
 /* GATE.EXE file 0x1c11..0x1c6b. One of the seven red DAC bars.
@@ -265,12 +270,13 @@ void gate_exe_reveal_red_bar(int16_t bar)
     if (gate_linked_keyboard_pending() != 0)
         return;
 
-    index = (uint16_t)(45 + 3 * (int32_t)bar);
-    for (value = 0; value <= 63; ++value) {
+    index = (uint16_t)(GATE_INTRO_RED_BAR_FIRST_DAC_COMPONENT +
+                       GATE_INTRO_RED_BAR_COMPONENT_STRIDE * (int32_t)bar);
+    for (value = 0; value <= GATE_INTRO_RED_BAR_MAX_DAC_LEVEL; ++value) {
         gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), (uint16_t)(GATE_INTRO_PALETTE_BANK_OFFSET + index), value);
         gate_linked_upload_intro_palette(runtime_palette_pointer());
     }
-    gate_exe_wait_interruptible(500);
+    gate_exe_wait_interruptible(GATE_INTRO_RED_BAR_HOLD_MS);
 }
 
 /* GATE.EXE file 0x1c6c..0x1caa. Grayscale title credit reveal.
@@ -281,7 +287,7 @@ void gate_exe_reveal_credit_color(void)
     uint8_t value;
     uint16_t segment;
 
-    for (value = 0; value < 64; ++value) {
+    for (value = 0; value <= GATE_INTRO_TITLE_MAX_DAC_LEVEL; ++value) {
         segment = gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT);
         gate_far_set_byte(segment, GATE_INTRO_PALETTE_CREDIT_RGB, value);
         gate_far_set_byte(segment, (GATE_INTRO_PALETTE_CREDIT_RGB + 1), value);
@@ -311,9 +317,9 @@ void gate_exe_play_intro(void)
 
     mode = gate_far_word(gate_ds_word(GATE_DS_INTRO_MODE_SEGMENT), GATE_DS_GRAPHICS_MODE);
     if (mode == 0) {
-        gate_linked_show_intro_picture(0x8101, 1);
-        gate_linked_show_intro_picture(0x8100, 1);
-        gate_exe_wait_interruptible(2000);
+        gate_linked_show_intro_picture(GATE_INTRO_PICTURE_FIRST_SPLASH, 1);
+        gate_linked_show_intro_picture(GATE_INTRO_PICTURE_SECOND_SPLASH, 1);
+        gate_exe_wait_interruptible(GATE_INTRO_SPLASH_WAIT_MS);
     } else {
         gate_exe_play_title_interlude();
     }
@@ -329,8 +335,8 @@ void gate_exe_play_intro(void)
                 gate_far_word(gate_ds_word(GATE_DS_INTRO_SCREEN_WIDTH_SEGMENT), GATE_MODE_DESC_SCREEN_WIDTH),
                 gate_far_word(gate_ds_word(GATE_DS_INTRO_SCREEN_HEIGHT_SEGMENT), GATE_MODE_DESC_SCREEN_HEIGHT));
         }
-        gate_linked_show_intro_picture(0x8102, 1);
-        gate_exe_wait_interruptible(3000);
+        gate_linked_show_intro_picture(GATE_INTRO_PICTURE_SHORT_PATH_END, 1);
+        gate_exe_wait_interruptible(GATE_INTRO_SHORT_PATH_WAIT_MS);
         goto finish;
     }
 
@@ -340,10 +346,10 @@ void gate_exe_play_intro(void)
     gate_linked_set_intro_video_mode(3);
     gate_linked_reset_intro_mouse();
     gate_linked_clear_intro_display();
-    gate_linked_show_intro_picture(0x3000, 1);
+    gate_linked_show_intro_picture(GATE_INTRO_PICTURE_RED_BAR_TITLE, 1);
     if (gate_ds_word(GATE_DS_INTRO_KEY_SEEN) == 0 && gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_exe_wait_interruptible(1000);
+    gate_exe_wait_interruptible(GATE_INTRO_SCENE_SHORT_WAIT_MS);
     if (gate_ds_word(GATE_DS_INTRO_KEY_SEEN) == 0 && gate_exe_handle_intro_input() != 0)
         goto cleanup;
 
@@ -370,127 +376,137 @@ void gate_exe_play_intro(void)
         goto cleanup;
 
     if (gate_linked_keyboard_pending() == 0)
-        gate_linked_play_intro_preloaded_sequence(0x3001, 26);
+        gate_linked_play_intro_preloaded_sequence(GATE_INTRO_PICTURE_RED_LOGO_FIRST_DELTA, GATE_INTRO_RED_LOGO_FRAMES);
     if (gate_linked_keyboard_pending() == 0) {
-        gate_linked_show_intro_picture(0x301b, 1);
-        gate_exe_wait_interruptible(1000);
+        gate_linked_show_intro_picture(GATE_INTRO_PICTURE_RED_LOGO_CREDIT, 1);
+        gate_exe_wait_interruptible(GATE_INTRO_SCENE_SHORT_WAIT_MS);
     }
     if (gate_linked_keyboard_pending() == 0) {
         gate_exe_reveal_credit_color();
-        gate_exe_wait_interruptible(3000);
+        gate_exe_wait_interruptible(GATE_INTRO_RED_CREDIT_WAIT_MS);
     }
 
     gate_ds_set_word(GATE_DS_INTRO_KEY_SEEN, 1);
     if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_exe_fade_in_picture(0x3105);
-    gate_exe_wait_interruptible(1000);
+    gate_exe_fade_in_picture(GATE_INTRO_PICTURE_CAPTIONS_01_02);
+    gate_exe_wait_interruptible(GATE_INTRO_SCENE_SHORT_WAIT_MS);
     if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
 
     gate_exe_show_caption(10, 120, 310, far_pointer(gate_ds_segment(), GATE_DS_INTRO_CAPTION_01));
     if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_linked_show_intro_picture(0x3105, 0);
-    gate_linked_play_intro_preloaded_sequence(0x3106, 26);
-    gate_exe_wait_interruptible(1000);
+    gate_linked_show_intro_picture(GATE_INTRO_PICTURE_CAPTIONS_01_02, 0);
+    gate_linked_play_intro_preloaded_sequence(GATE_INTRO_PICTURE_OPENING_SHIP_FIRST, GATE_INTRO_OPENING_SHIP_FRAMES);
+    gate_exe_wait_interruptible(GATE_INTRO_SCENE_SHORT_WAIT_MS);
     if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
 
     gate_exe_show_caption(10, 100, 180, far_pointer(gate_ds_segment(), GATE_DS_INTRO_CAPTION_02));
     if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_exe_fade_in_picture(0x3100);
-    gate_exe_wait_interruptible(1000);
+    gate_exe_fade_in_picture(GATE_INTRO_PICTURE_CAPTIONS_03_04);
+    gate_exe_wait_interruptible(GATE_INTRO_SCENE_SHORT_WAIT_MS);
     gate_exe_show_caption(10, 10, 160, far_pointer(gate_ds_segment(), GATE_DS_INTRO_CAPTION_03));
     if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_linked_show_intro_picture(0x3100, 0);
+    gate_linked_show_intro_picture(GATE_INTRO_PICTURE_CAPTIONS_03_04, 0);
     gate_exe_show_caption(10, 10, 310, far_pointer(gate_ds_segment(), GATE_DS_INTRO_CAPTION_04));
     if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
 
-    gate_exe_fade_in_picture(0x3101);
-    gate_exe_wait_interruptible(2000);
+    gate_exe_fade_in_picture(GATE_INTRO_PICTURE_CAPTION_05);
+    gate_exe_wait_interruptible(GATE_INTRO_SCENE_LONG_WAIT_MS);
     gate_exe_show_caption(160, 10, 310, far_pointer(gate_ds_segment(), GATE_DS_INTRO_CAPTION_05));
     if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_exe_fade_in_picture(0x3102);
-    gate_exe_wait_interruptible(2000);
+    gate_exe_fade_in_picture(GATE_INTRO_PICTURE_CAPTIONS_06_07);
+    gate_exe_wait_interruptible(GATE_INTRO_SCENE_LONG_WAIT_MS);
     gate_exe_show_caption(180, 10, 310, far_pointer(gate_ds_segment(), GATE_DS_INTRO_CAPTION_06));
     if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_linked_show_intro_picture(0x3102, 0);
+    gate_linked_show_intro_picture(GATE_INTRO_PICTURE_CAPTIONS_06_07, 0);
     gate_exe_show_caption(180, 10, 310, far_pointer(gate_ds_segment(), GATE_DS_INTRO_CAPTION_07));
     if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
 
-    gate_linked_play_intro_delta_sequence(0x332a, 0x332b, 37);
+    gate_linked_play_intro_delta_sequence(GATE_INTRO_PICTURE_CAPTIONS_17_18,
+                                          GATE_INTRO_PICTURE_STARFIELD_FIRST_DELTA,
+                                          GATE_INTRO_STARFIELD_PREVIEW_FRAMES);
     if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_linked_play_intro_delta_sequence(0x3221, 0x323d, 42);
-    gate_exe_wait_interruptible(1000);
+    gate_linked_play_intro_delta_sequence(GATE_INTRO_PICTURE_CAPTIONS_08_11,
+                                          GATE_INTRO_PICTURE_STATION_LATER_DELTA,
+                                          GATE_INTRO_STATION_LATER_FRAMES);
+    gate_exe_wait_interruptible(GATE_INTRO_SCENE_SHORT_WAIT_MS);
     gate_exe_show_caption(130, 10, 310, far_pointer(gate_ds_segment(), GATE_DS_INTRO_CAPTION_08));
     if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_linked_show_intro_picture(0x3221, 0);
+    gate_linked_show_intro_picture(GATE_INTRO_PICTURE_CAPTIONS_08_11, 0);
     gate_exe_show_caption(140, 10, 310, far_pointer(gate_ds_segment(), GATE_DS_INTRO_CAPTION_09));
     if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_linked_show_intro_picture(0x3221, 0);
+    gate_linked_show_intro_picture(GATE_INTRO_PICTURE_CAPTIONS_08_11, 0);
     gate_exe_show_caption(140, 10, 310, far_pointer(gate_ds_segment(), GATE_DS_INTRO_CAPTION_10));
     if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_linked_show_intro_picture(0x3221, 0);
+    gate_linked_show_intro_picture(GATE_INTRO_PICTURE_CAPTIONS_08_11, 0);
     gate_exe_show_caption(140, 10, 310, far_pointer(gate_ds_segment(), GATE_DS_INTRO_CAPTION_11));
     if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
 
-    gate_exe_fade_in_picture(0x3103);
-    gate_exe_wait_interruptible(1000);
+    gate_exe_fade_in_picture(GATE_INTRO_PICTURE_CAPTION_12);
+    gate_exe_wait_interruptible(GATE_INTRO_SCENE_SHORT_WAIT_MS);
     if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
     gate_exe_show_caption(10, 10, 140, far_pointer(gate_ds_segment(), GATE_DS_INTRO_CAPTION_12));
     if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_exe_fade_in_picture(0x3104);
+    gate_exe_fade_in_picture(GATE_INTRO_PICTURE_CAPTIONS_13_14);
     gate_exe_show_caption(60, 120, 310, far_pointer(gate_ds_segment(), GATE_DS_INTRO_CAPTION_13));
     if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_linked_show_intro_picture(0x3104, 0);
+    gate_linked_show_intro_picture(GATE_INTRO_PICTURE_CAPTIONS_13_14, 0);
     gate_exe_show_caption(140, 120, 310, far_pointer(gate_ds_segment(), GATE_DS_INTRO_CAPTION_14));
     if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
 
-    gate_exe_fade_in_picture(0x3200);
-    gate_exe_wait_interruptible(1000);
+    gate_exe_fade_in_picture(GATE_INTRO_PICTURE_CAPTION_15);
+    gate_exe_wait_interruptible(GATE_INTRO_SCENE_SHORT_WAIT_MS);
     if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
     gate_exe_show_caption(120, 10, 310, far_pointer(gate_ds_segment(), GATE_DS_INTRO_CAPTION_15));
     if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_linked_play_intro_delta_sequence(0x3200, 0x3201, 32);
-    gate_linked_play_intro_delta_sequence(0x3221, 0x3222, 27);
-    gate_linked_play_intro_delta_sequence(0x3300, 0x3301, 41);
-    gate_exe_wait_interruptible(2000);
+    gate_linked_play_intro_delta_sequence(GATE_INTRO_PICTURE_CAPTION_15,
+                                          GATE_INTRO_PICTURE_APPROACH_FIRST_DELTA,
+                                          GATE_INTRO_APPROACH_FRAMES);
+    gate_linked_play_intro_delta_sequence(GATE_INTRO_PICTURE_CAPTIONS_08_11,
+                                          GATE_INTRO_PICTURE_STATION_FIRST_DELTA,
+                                          GATE_INTRO_STATION_FIRST_FRAMES);
+    gate_linked_play_intro_delta_sequence(GATE_INTRO_PICTURE_EXIT_STARFIELD,
+                                          GATE_INTRO_PICTURE_EXIT_SHIP_FIRST_DELTA,
+                                          GATE_INTRO_EXIT_SHIP_FRAMES);
+    gate_exe_wait_interruptible(GATE_INTRO_SCENE_LONG_WAIT_MS);
     if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
 
-    gate_exe_fade_in_picture(0x3a04);
-    gate_exe_wait_interruptible(2000);
+    gate_exe_fade_in_picture(GATE_INTRO_PICTURE_CAPTION_16);
+    gate_exe_wait_interruptible(GATE_INTRO_SCENE_LONG_WAIT_MS);
     if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
     gate_exe_show_caption(10, 100, 160, far_pointer(gate_ds_segment(), GATE_DS_INTRO_CAPTION_16));
     if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_exe_fade_in_picture(0x332a);
-    gate_exe_wait_interruptible(1000);
+    gate_exe_fade_in_picture(GATE_INTRO_PICTURE_CAPTIONS_17_18);
+    gate_exe_wait_interruptible(GATE_INTRO_SCENE_SHORT_WAIT_MS);
     if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
     gate_exe_show_caption(10, 10, 310, far_pointer(gate_ds_segment(), GATE_DS_INTRO_CAPTION_17));
     if (gate_exe_handle_intro_input() != 0)
         goto cleanup;
-    gate_linked_show_intro_picture(0x332a, 0);
+    gate_linked_show_intro_picture(GATE_INTRO_PICTURE_CAPTIONS_17_18, 0);
     gate_exe_show_caption(10, 10, 310, far_pointer(gate_ds_segment(), GATE_DS_INTRO_CAPTION_18));
     gate_exe_handle_intro_input();  /* 0x1a05: return value discarded */
 
@@ -514,55 +530,58 @@ void gate_exe_play_title_interlude(void)
 {
     int8_t i;
 
-    for (i = 0; i < 45; ++i)
-        gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), (uint16_t)(GATE_INTRO_PALETTE_BANK_OFFSET + i), 63);
+    for (i = 0; i < GATE_INTRO_TITLE_PALETTE_PREFIX_BYTES; ++i)
+        gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT),
+                          (uint16_t)(GATE_INTRO_PALETTE_BANK_OFFSET + i),
+                          GATE_INTRO_TITLE_MAX_DAC_LEVEL);
     gate_linked_fade_intro_palette_in();
-    gate_exe_wait_interruptible(250);
-    gate_linked_show_intro_picture(0x8101, 1);
+    gate_exe_wait_interruptible(GATE_INTRO_TITLE_LEAD_IN_MS);
+    gate_linked_show_intro_picture(GATE_INTRO_PICTURE_FIRST_SPLASH, 1);
 
     if ((int16_t)gate_far_word(gate_ds_word(GATE_DS_INTRO_MODE_SEGMENT), GATE_DS_GRAPHICS_MODE) < 2) {
         gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), GATE_INTRO_TITLE_FIRST_SINGLE_COMPONENT, 0);
         gate_linked_upload_intro_palette(runtime_palette_pointer());
     } else {
-        for (i = 63; i >= 0; --i) {
+        for (i = GATE_INTRO_TITLE_MAX_DAC_LEVEL; i >= 0; --i) {
             gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), GATE_INTRO_TITLE_FIRST_RGB, (uint8_t)i);
             gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), (GATE_INTRO_TITLE_FIRST_RGB + 1), (uint8_t)i);
             gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), (GATE_INTRO_TITLE_FIRST_RGB + 2), (uint8_t)i);
             gate_linked_upload_intro_palette(runtime_palette_pointer());
         }
     }
-    gate_exe_wait_interruptible(2000);
+    gate_exe_wait_interruptible(GATE_INTRO_TITLE_HOLD_MS);
     if (gate_linked_keyboard_pending() != 0)
         return;
 
     if ((int16_t)gate_far_word(gate_ds_word(GATE_DS_INTRO_MODE_SEGMENT), GATE_DS_GRAPHICS_MODE) < 2) {
-        gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), GATE_INTRO_TITLE_FIRST_SINGLE_COMPONENT, 63);
+        gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT),
+                          GATE_INTRO_TITLE_FIRST_SINGLE_COMPONENT, GATE_INTRO_TITLE_MAX_DAC_LEVEL);
         gate_linked_upload_intro_palette(runtime_palette_pointer());
     } else {
-        for (i = 0; i <= 63; ++i) {
+        for (i = 0; i <= GATE_INTRO_TITLE_MAX_DAC_LEVEL; ++i) {
             gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), GATE_INTRO_TITLE_FIRST_RGB, (uint8_t)i);
             gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), (GATE_INTRO_TITLE_FIRST_RGB + 1), (uint8_t)i);
             gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), (GATE_INTRO_TITLE_FIRST_RGB + 2), (uint8_t)i);
             gate_linked_upload_intro_palette(runtime_palette_pointer());
         }
     }
-    gate_exe_wait_interruptible(500);
+    gate_exe_wait_interruptible(GATE_INTRO_TITLE_MIDPOINT_MS);
     if (gate_linked_keyboard_pending() != 0)
         return;
 
-    gate_linked_show_intro_picture(0x8100, 1);
+    gate_linked_show_intro_picture(GATE_INTRO_PICTURE_SECOND_SPLASH, 1);
     if ((int16_t)gate_far_word(gate_ds_word(GATE_DS_INTRO_MODE_SEGMENT), GATE_DS_GRAPHICS_MODE) < 2) {
         gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), GATE_INTRO_TITLE_SECOND_SINGLE_COMPONENT, 0);
         gate_linked_upload_intro_palette(runtime_palette_pointer());
     } else {
-        for (i = 63; i >= 0; --i) {
+        for (i = GATE_INTRO_TITLE_MAX_DAC_LEVEL; i >= 0; --i) {
             gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), GATE_INTRO_TITLE_SECOND_RGB, (uint8_t)i);
             gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), (GATE_INTRO_TITLE_SECOND_RGB + 1), (uint8_t)i);
             gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), (GATE_INTRO_TITLE_SECOND_RGB + 2), (uint8_t)i);
             gate_linked_upload_intro_palette(runtime_palette_pointer());
         }
     }
-    gate_exe_wait_interruptible(2000);
+    gate_exe_wait_interruptible(GATE_INTRO_TITLE_HOLD_MS);
     if (gate_linked_keyboard_pending() != 0)
         return;
 
@@ -570,12 +589,12 @@ void gate_exe_play_title_interlude(void)
         gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), GATE_INTRO_TITLE_THIRD_SINGLE_COMPONENT, 0);
         gate_linked_upload_intro_palette(runtime_palette_pointer());
     } else {
-        for (i = 63; i >= 0; --i) {
+        for (i = GATE_INTRO_TITLE_MAX_DAC_LEVEL; i >= 0; --i) {
             gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), GATE_INTRO_TITLE_THIRD_RGB, (uint8_t)i);
             gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), (GATE_INTRO_TITLE_THIRD_RGB + 1), (uint8_t)i);
             gate_far_set_byte(gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT), (GATE_INTRO_TITLE_THIRD_RGB + 2), (uint8_t)i);
             gate_linked_upload_intro_palette(runtime_palette_pointer());
         }
     }
-    gate_exe_wait_interruptible(2000);
+    gate_exe_wait_interruptible(GATE_INTRO_TITLE_HOLD_MS);
 }

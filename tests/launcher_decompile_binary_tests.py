@@ -192,11 +192,30 @@ class LauncherDecompileBinaryTests(unittest.TestCase):
         inspection = inspect_intro_program(exe)
         source = (ROOT / 'decomp/launcher/gate_exe.c').read_text()
         source = source.split('void gate_exe_play_intro(void)', 1)[1]
+        source = source.split('void gate_exe_play_title_interlude(void)', 1)[0]
+
+        # The C transcription now uses descriptive names, while this oracle
+        # independently reads the untouched original machine-code operands.
+        # Resolve names from the source headers, preserving the literal
+        # original resource IDs, DS offsets and counts in their declarations.
+        headers = ''.join((ROOT / path).read_text() for path in (
+            'decomp/launcher/gate_intro_schedule.h',
+            'decomp/launcher/gate_memory_layout.h',
+        ))
+        named_values = {
+            name: int(value, 0)
+            for name, value in re.findall(
+                r'^\s*(GATE_(?:DS_INTRO_CAPTION|INTRO_PICTURE|INTRO_)[A-Z0-9_]+)'
+                r'\s*=\s*(0x[0-9a-f]+|\d+)\s*,', headers, re.MULTILINE)
+        }
+
+        def original_operand(token):
+            return named_values[token] if token.startswith('GATE_') else int(token, 0)
 
         captions = re.findall(
             r'gate_exe_show_caption\((\d+), (\d+), (\d+), '
-            r'far_pointer\(gate_ds_segment\(\), (0x[0-9a-f]+)\)\);', source)
-        found_captions = [(int(ptr, 16), int(left), int(top), int(right))
+            r'far_pointer\(gate_ds_segment\(\), (GATE_DS_INTRO_CAPTION_\d+)\)\);', source)
+        found_captions = [(original_operand(ptr), int(left), int(top), int(right))
                           for left, top, right, ptr in captions]
         original_captions = [
             (row['text_pointer'], row['left'], row['requested_top'], row['right'])
@@ -211,9 +230,12 @@ class LauncherDecompileBinaryTests(unittest.TestCase):
         original_animations = [
             (row['base_resource'], row['next_resource'], row['count'])
             for row in inspection['animations']]
-        c_animations = [tuple(int(value, 0) for value in match) for match in
-                        re.findall(r'gate_linked_play_intro_delta_sequence\((0x[0-9a-f]+), '
-                                   r'(0x[0-9a-f]+), (\d+)\);', source)]
+        c_animations = [tuple(original_operand(value) for value in match)
+                        for match in re.findall(
+                            r'gate_linked_play_intro_delta_sequence\('
+                            r'\s*(GATE_INTRO_PICTURE_[A-Z0-9_]+),'
+                            r'\s*(GATE_INTRO_PICTURE_[A-Z0-9_]+),'
+                            r'\s*(GATE_INTRO_[A-Z0-9_]+)\);', source)]
         self.assertEqual(c_animations, original_animations)
 
         original_frames = []
@@ -223,8 +245,8 @@ class LauncherDecompileBinaryTests(unittest.TestCase):
             self.assertEqual(exe[site - 5], 0xb8)
             self.assertEqual(exe[site - 2:site], b'\x50\x0e')
             original_frames.append(u16(exe, site - 4))
-        c_frames = [int(value, 16) for value in re.findall(
-            r'gate_exe_fade_in_picture\((0x[0-9a-f]+)\);', source)]
+        c_frames = [original_operand(value) for value in re.findall(
+            r'gate_exe_fade_in_picture\((GATE_INTRO_PICTURE_[A-Z0-9_]+)\);', source)]
         self.assertEqual(c_frames, original_frames)
 
 
