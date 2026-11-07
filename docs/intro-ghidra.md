@@ -125,6 +125,13 @@ are independently recovered in `gate_rtl_audio_startup.c`, allowing the
 silent/unconfigured fast exit to be decided in source C. **The music-loader
 branch, interrupt lifecycle, and actual intro startup call remain unported.**
 
+An independent original-entry/return boundary capture (physical
+`0x107b2..0x107b7`) verifies that this call modifies exactly one interrupt
+vector, IRQ 8 (`f000:0100` to `172c:00ca` in this run), while mode-13h VGA
+memory remains byte-identical. Audio flag `DS:0662` changes from `0x0a`
+to `0x5a`. This supports a separate optional host music service, but does
+not prove that skipping enabled music reproduces all original side effects.
+
 The fourth bank correlates the following *original file offsets*, not just
 runtime addresses:
 
