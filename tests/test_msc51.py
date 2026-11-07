@@ -56,12 +56,12 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("ECHO All reconstructed launcher objects compiled > SUCCESS.LOG", batch)
             self.assertNotIn("/Fe", batch)  # No complete DOS executable yet.
             response = (output / "LINK.RSP").read_text().splitlines()
-            self.assertEqual(response[:35],
+            self.assertEqual(response[:36],
                              [f"M{index:02d}.OBJ+" for index in range(28)] +
                              ["MEMORY.OBJ+", "DOSFILE.OBJ+", "RTLIMG.OBJ+",
                               "RTLTEXT.OBJ+", "RTLPAL.OBJ+", "RTLGR.OBJ+",
-                              "RTLHW.OBJ"])
-            self.assertEqual(response[35:], ["GATEWAY.EXE", "GATEWAY.MAP",
+                              "RTLHW.OBJ+", "RTFILE.OBJ"])
+            self.assertEqual(response[36:], ["GATEWAY.EXE", "GATEWAY.MAP",
                                              "LLIBCR.LIB LIBH.LIB /NOD", ";"])
             memory_batch = (output / "MEMORY.BAT").read_text()
             self.assertIn("CL /AL /Od /c MEMORY.C", memory_batch)
@@ -125,6 +125,18 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("gate_ds_set_word(GATE_DS_DRAW_CLIPPING_ENABLED, enabled == 1 ? 1 : 0)", hardware)
             self.assertIn("GATE_DS_DRAW_CLIP_BOTTOM", (output / "HWCHK.C").read_text())
             for name in ("RTLHW.C", "HWCHK.C"):
+                self.assertTrue(all(len(identifier) <= 31 for identifier in
+                                    msc51.msc51_identifiers((output / name).read_text())), name)
+            runtime_batch = (output / "RTFILE.BAT").read_text()
+            self.assertIn("CL /AL /Od /c RTFILE.C", runtime_batch)
+            self.assertIn("RTFCHK.C RTFILE.OBJ MEMORY.OBJ", runtime_batch)
+            self.assertIn("RTFCHK.EXE > RTFTEST.LOG", runtime_batch)
+            self.assertIn("RTFSIG.LOG", runtime_batch)
+            self.assertIn("RTFOK.LOG", runtime_batch)
+            self.assertNotIn("IF ERRORLEVEL 1 ECHO", runtime_batch)
+            self.assertIn("access(pathname, 4)", (output / "RTFILE.C").read_text())
+            self.assertIn("strncpy padding", (output / "RTFCHK.C").read_text())
+            for name in ("RTFILE.C", "RTFCHK.C"):
                 self.assertTrue(all(len(identifier) <= 31 for identifier in
                                     msc51.msc51_identifiers((output / name).read_text())), name)
             link_batch = (output / "LINK.BAT").read_text()
@@ -286,6 +298,17 @@ class MSC51Tests(unittest.TestCase):
             (output / "hwstart.log").write_text("tested")
             (output / "hwok.log").write_text("passed")
             (output / "hwsig.log").write_text(msc51.hardware_source_signature(output))
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run") as run, \
+                 redirect_stderr(io.StringIO()) as error:
+                with self.assertRaises(SystemExit):
+                    msc51.main(args)
+                run.assert_not_called()
+            self.assertIn("msc51-compile-runtime-files first", error.getvalue())
+            (output / "rtfile.obj").write_bytes(b"real DOS runtime file services")
+            (output / "rtfstart.log").write_text("tested")
+            (output / "rtfok.log").write_text("passed")
+            (output / "rtfsig.log").write_text(msc51.runtime_file_source_signature(output))
             for name in ("LINKSTAR.LOG", "LNKSTART.LOG", "LINKDONE.LOG", "LINKFAIL.LOG",
                          "LINK.LOG", "GATEWAY.EXE", "GATEWAY.MAP"):
                 (output / name.lower()).write_bytes(b"stale result")
@@ -556,6 +579,71 @@ class MSC51Tests(unittest.TestCase):
             (output / "RTLHW.C").write_text((output / "RTLHW.C").read_text() + "/* changed */\n")
             with self.assertRaisesRegex(ValueError, "source has changed"):
                 msc51.validate_hardware_adapter(output)
+
+    def test_compile_runtime_files_requires_fresh_real_dos_probe(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            compiler = root / "compiler"
+            for directory in ("BIN", "LIB", "INCLUDE"):
+                (compiler / directory).mkdir(parents=True)
+            for name in ("CL.EXE", "C1.EXE", "C1L.EXE", "C2.EXE", "C3.EXE", "LINK.EXE"):
+                (compiler / "BIN" / name).touch()
+            for name in ("LLIBCR.LIB", "LIBH.LIB"):
+                (compiler / "LIB" / name).touch()
+            (compiler / "INCLUDE" / "STDIO.H").touch()
+            output = root / "launcher"
+            msc51.stage_launcher(output)
+            args = ["compile-runtime-files", "--compiler", str(compiler),
+                    "--output", str(output)]
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run") as run, \
+                 redirect_stderr(io.StringIO()) as error:
+                with self.assertRaises(SystemExit):
+                    msc51.main(args)
+                run.assert_not_called()
+            self.assertIn("msc51-compile-memory first", error.getvalue())
+
+            (output / "memory.obj").write_bytes(b"memory")
+            (output / "memstart.log").write_text("tested")
+            (output / "memok.log").write_text("passed")
+            (output / "memsig.log").write_text(msc51.memory_source_signature(output))
+            for name in ("RTFILE.OBJ", "RTFSTART.LOG", "RTFOK.LOG", "RTFSIG.LOG"):
+                (output / name).write_text("stale")
+
+            def failed_probe(command, check):
+                self.assertIn("RTFILE.BAT", command)
+                self.assertFalse(check)
+                self.assertFalse((output / "RTFILE.OBJ").exists())
+                self.assertFalse((output / "RTFOK.LOG").exists())
+                (output / "RTFSTART.LOG").write_text("started")
+                (output / "RTFILE.OBJ").write_bytes(b"compiled")
+                (output / "RTFFAIL.LOG").write_text("resource filename mismatch")
+                return mock.Mock(returncode=0)
+
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run", side_effect=failed_probe), \
+                 redirect_stderr(io.StringIO()) as error:
+                self.assertEqual(msc51.main(args), 1)
+            self.assertIn("resource filename mismatch", error.getvalue())
+
+            def successful_probe(command, check):
+                self.assertIn("RTFILE.BAT", command)
+                self.assertFalse((output / "RTFFAIL.LOG").exists())
+                self.assertFalse((output / "RTFILE.OBJ").exists())
+                (output / "RTFSTART.LOG").write_text("started")
+                (output / "RTFILE.OBJ").write_bytes(b"compiled")
+                (output / "RTFOK.LOG").write_text("passed")
+                (output / "RTFTEST.LOG").write_text("Runtime file probe: PASS")
+                (output / "RTFSIG.LOG").write_text(msc51.runtime_file_source_signature(output))
+                return mock.Mock(returncode=0)
+
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run", side_effect=successful_probe):
+                self.assertEqual(msc51.main(args), 0)
+
+            (output / "RTFILE.C").write_text((output / "RTFILE.C").read_text() + "/* changed */\n")
+            with self.assertRaisesRegex(ValueError, "source has changed"):
+                msc51.validate_runtime_file_adapter(output)
 
     def test_stages_only_recovered_source_with_c89_headers(self):
         with tempfile.TemporaryDirectory() as scratch:

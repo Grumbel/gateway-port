@@ -967,6 +967,21 @@ not a substitute for the missing resident video dispatcher, palette
 upload, sound, input, overlays, or startup; if the user confirms it with
 `nix run -L .#msc51-compile-hardware`, the expected linker remainder is 51.
 
+`msc51-compile-runtime-files` is a further independent DOS adapter.
+`dos/msc51_runtime_files.c` implements three original linked Microsoft C
+runtime boundaries: FAR `strncpy` (including NUL padding and destination
+pointer return), `access(path,4)` for DOS read permission, and the
+`%s_%03d.%s` resource filename formatter. The adapters use original
+segment:offset addresses through the verified `MEMORY.OBJ`; the pathname
+buffer is bounded by the recovered 80-byte caller stack allocation.
+`RTFCHK.EXE` verifies signed resource naming, NUL padding, bounded copying,
+and both present/missing files on the writable DOS drive. LINK requires a
+fresh `RTFOK.LOG` and source fingerprint before using `RTFILE.OBJ`.
+After hardware and this stage both pass the user's real compiler and LINK,
+**48** unresolved symbols are predicted: 26 original linked services,
+21 RTL state/hardware functions and the CRT `_main`. Neither the resulting
+symbol count nor a runnable original launcher is yet verified.
+
 ## Immediate next functions
 
 1. Connect the existing verified native video, font, picture and caption

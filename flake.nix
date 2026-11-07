@@ -152,6 +152,15 @@
                 --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
             '';
           };
+          msc51-compile-runtime-files = pkgs.writeShellApplication {
+            name = "gateway-msc51-compile-runtime-files";
+            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
+            text = ''
+              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
+              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py compile-runtime-files \
+                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
+            '';
+          };
           msc51-link-launcher = pkgs.writeShellApplication {
             name = "gateway-msc51-link-launcher";
             runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
@@ -352,6 +361,11 @@
           program = "${self.packages.${system}.msc51-compile-hardware}/bin/gateway-msc51-compile-hardware";
           meta.description = "Compile DOS VGA port I/O and verified resident clipping state with Microsoft C 5.1";
         };
+        msc51-compile-runtime-files = {
+          type = "app";
+          program = "${self.packages.${system}.msc51-compile-runtime-files}/bin/gateway-msc51-compile-runtime-files";
+          meta.description = "Compile and probe three reconstructed FAR string, DOS access, and resource path services with Microsoft C 5.1";
+        };
         msc51-link-launcher = {
           type = "app";
           program = "${self.packages.${system}.msc51-link-launcher}/bin/gateway-msc51-link-launcher";
@@ -520,6 +534,7 @@ except Exception:
                          self.packages.${system}.msc51-compile-dos-files
                          self.packages.${system}.msc51-compile-rtl-state
                          self.packages.${system}.msc51-compile-hardware
+                         self.packages.${system}.msc51-compile-runtime-files
                          self.packages.${system}.msc51-link-launcher
                          self.packages.${system}.msc51-link-report
                          self.packages.${system}.msc51-install

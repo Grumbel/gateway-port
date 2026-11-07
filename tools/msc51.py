@@ -236,6 +236,7 @@ RTL_STATE_SOURCES = ("RTLLAY.H", "RTLIMAC.H", "RTLSTATE.H", "GATEMEM.H", "STDINT
                      "MEMORY.C")
 HARDWARE_SOURCES = ("RTLLAY.H", "GATEMEM.H", "STDINT.H", "RTLHW.C", "HWCHK.C",
                     "MEMORY.C")
+RUNTIME_FILE_SOURCES = ("GATEMEM.H", "STDINT.H", "RTFILE.C", "RTFCHK.C", "MEMORY.C")
 
 
 def memory_source_signature(output: Path) -> str:
@@ -265,6 +266,13 @@ def rtl_state_source_signature(output: Path) -> str:
 def hardware_source_signature(output: Path) -> str:
     digest = hashlib.sha256(b"MS C 5.1 /AL /Od RTL hardware adapter v1\n")
     for name in HARDWARE_SOURCES:
+        digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
+    return digest.hexdigest()[:16]
+
+
+def runtime_file_source_signature(output: Path) -> str:
+    digest = hashlib.sha256(b"MS C 5.1 /AL /Od runtime file services v1\n")
+    for name in RUNTIME_FILE_SOURCES:
         digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
     return digest.hexdigest()[:16]
 
@@ -501,6 +509,27 @@ def stage_launcher(output: Path) -> list[str]:
         ":DONE", "EXIT",
     ]
     (output / "RTLHW.BAT").write_text("\r\n".join(hardware_batch) + "\r\n")
+    for original, staged in (("msc51_runtime_files.c", "RTFILE.C"),
+                             ("msc51_runtime_files_probe.c", "RTFCHK.C")):
+        (output / staged).write_text(msc51_rename_identifiers(
+            (source_dir / "dos" / original).read_text(), shortened))
+    runtime_file_signature = runtime_file_source_signature(output)
+    runtime_file_batch = [
+        "@ECHO OFF", "ECHO MS C 5.1 runtime FAR string and path services > RTFSTART.LOG",
+        "SET PATH=C:\\BIN;C:\\", "SET INCLUDE=C:\\INCLUDE;C:\\",
+        "SET LIB=C:\\LIB;C:\\", "SET TEMP=D:\\", "SET TMP=D:\\",
+        "CL /AL /Od /c RTFILE.C > RTFBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        "IF NOT EXIST RTFILE.OBJ GOTO FAILED",
+        "CL /AL /Od RTFCHK.C RTFILE.OBJ MEMORY.OBJ /FeRTFCHK.EXE /link LLIBCR.LIB LIBH.LIB/NOD >> RTFBUILD.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST RTFCHK.EXE GOTO FAILED",
+        "RTFCHK.EXE > RTFTEST.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        f"ECHO {runtime_file_signature} > RTFSIG.LOG",
+        "ECHO Real-mode runtime file services passed > RTFOK.LOG",
+        "GOTO DONE", ":FAILED",
+        "ECHO Real-mode runtime file services failed > RTFFAIL.LOG",
+        ":DONE", "EXIT",
+    ]
+    (output / "RTFILE.BAT").write_text("\r\n".join(runtime_file_batch) + "\r\n")
     lines = [
         "@ECHO OFF", "ECHO Gateway MSC 5.1 launcher objects > START.LOG",
         "SET PATH=C:\\BIN;C:\\", "SET INCLUDE=C:\\INCLUDE;C:\\",
@@ -524,7 +553,7 @@ def stage_launcher(output: Path) -> list[str]:
     # Each trailing + extends the SAME response across CRLFs (MS KB Q40429).
     response = ([f"{name}+" for name in objects] + ["MEMORY.OBJ+", "DOSFILE.OBJ+",
                 "RTLIMG.OBJ+", "RTLTEXT.OBJ+", "RTLPAL.OBJ+", "RTLGR.OBJ+",
-                "RTLHW.OBJ",
+                "RTLHW.OBJ+", "RTFILE.OBJ",
                 "GATEWAY.EXE", "GATEWAY.MAP", "LLIBCR.LIB LIBH.LIB /NOD", ";"])
     (output / "LINK.RSP").write_text("\r\n".join(response) + "\r\n")
     link_batch = [
@@ -697,6 +726,35 @@ def print_hardware_diagnostics(output: Path) -> None:
     print(f"RTL hardware adapter workspace: {output}", file=sys.stderr)
 
 
+def validate_runtime_file_adapter(output: Path) -> None:
+    if (any(locate_case_insensitive(output, name) is None
+            for name in ("RTFILE.OBJ", "RTFSTART.LOG", "RTFOK.LOG")) or
+            locate_case_insensitive(output, "RTFFAIL.LOG") is not None):
+        raise ValueError("Cannot link launcher: runtime FAR string/file services "
+                         "are unverified. Run msc51-compile-runtime-files first.")
+    signature = locate_case_insensitive(output, "RTFSIG.LOG")
+    if signature is None or signature.read_text().strip() != runtime_file_source_signature(output):
+        raise ValueError("Cannot link launcher: runtime FAR string/file source has changed "
+                         "since its test. Run msc51-compile-runtime-files again.")
+
+
+def remove_runtime_file_outputs(output: Path) -> None:
+    names = {"RTFSTART.LOG", "RTFOK.LOG", "RTFFAIL.LOG", "RTFBUILD.LOG",
+             "RTFSIG.LOG", "RTFTEST.LOG", "RTFILE.OBJ", "RTFCHK.EXE", "RTFCHK.OBJ"}
+    if output.is_dir():
+        for entry in output.iterdir():
+            if entry.is_file() and entry.name.upper() in names:
+                entry.unlink()
+
+
+def print_runtime_file_diagnostics(output: Path) -> None:
+    for name in ("RTFFAIL.LOG", "RTFBUILD.LOG", "RTFTEST.LOG", "RTFOK.LOG"):
+        path = locate_case_insensitive(output, name)
+        content = path.read_text(errors="replace") if path else "(not created)"
+        print(f"--- {name} ---\n{content[-8_000:].rstrip()}", file=sys.stderr)
+    print(f"Runtime FAR string/file workspace: {output}", file=sys.stderr)
+
+
 def remove_launcher_link_outputs(output: Path) -> None:
     """Never accept a previous link's EXE, map or success marker."""
     names = {"LNKSTART.LOG", "LINKSTAR.LOG", "LINKSTART.LOG", "LINK.LOG",
@@ -781,6 +839,7 @@ def main(argv: list[str] | None = None) -> int:
                                             "prepare-launcher", "compile-launcher",
                                             "compile-memory", "compile-dos-files",
                                             "compile-rtl-state", "compile-hardware",
+                                            "compile-runtime-files",
                                             "link-launcher"))
     parser.add_argument("--compiler", default=os.environ.get("GATEWAY_MSC51_DIR"),
                         help="installed Microsoft C 5.1 directory (or GATEWAY_MSC51_DIR)")
@@ -794,7 +853,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     launcher = args.command in ("prepare-launcher", "compile-launcher",
                                 "compile-memory", "compile-dos-files",
-                                "compile-rtl-state", "compile-hardware", "link-launcher")
+                                "compile-rtl-state", "compile-hardware",
+                                "compile-runtime-files", "link-launcher")
     output = (args.output or Path("build/msc51-launcher" if launcher else "build/intro-msc51")).expanduser().resolve()
     objects = []
     if launcher:
@@ -816,12 +876,14 @@ def main(argv: list[str] | None = None) -> int:
             if args.command == "link-launcher":
                 validate_launcher_objects(output, objects)
             if args.command in ("compile-dos-files", "compile-rtl-state",
-                                "compile-hardware", "link-launcher"):
+                                "compile-hardware", "compile-runtime-files",
+                                "link-launcher"):
                 validate_memory_adapter(output)
             if args.command == "link-launcher":
                 validate_dos_file_adapter(output)
                 validate_rtl_state_adapter(output)
                 validate_hardware_adapter(output)
+                validate_runtime_file_adapter(output)
             if not args.compiler:
                 parser.error("set GATEWAY_MSC51_DIR or pass --compiler /path/to/installed/MSC51")
             compiler = validate_compiler(Path(args.compiler))
@@ -829,11 +891,13 @@ def main(argv: list[str] | None = None) -> int:
                 compiler, output,
                 args.command in ("probe", "compile-launcher", "compile-memory",
                                  "compile-dos-files", "compile-rtl-state",
-                                 "compile-hardware", "link-launcher"),
+                                 "compile-hardware", "compile-runtime-files",
+                                 "link-launcher"),
                 ("LINK.BAT" if args.command == "link-launcher" else
                  "DOSFILE.BAT" if args.command == "compile-dos-files" else
                  "RTLST.BAT" if args.command == "compile-rtl-state" else
                  "RTLHW.BAT" if args.command == "compile-hardware" else
+                 "RTFILE.BAT" if args.command == "compile-runtime-files" else
                  "MEMORY.BAT" if args.command == "compile-memory" else
                  "COMPILE.BAT" if launcher else "BUILD.BAT"))
             output.mkdir(parents=True, exist_ok=True)
@@ -867,6 +931,10 @@ def main(argv: list[str] | None = None) -> int:
         remove_hardware_outputs(output)
         remove_launcher_link_outputs(output)
         command.append("--exit")
+    elif args.command == "compile-runtime-files":
+        remove_runtime_file_outputs(output)
+        remove_launcher_link_outputs(output)
+        command.append("--exit")
     elif args.command == "link-launcher":
         remove_launcher_link_outputs(output)
         command.append("--exit")
@@ -885,6 +953,8 @@ def main(argv: list[str] | None = None) -> int:
             print_rtl_state_diagnostics(output)
         elif args.command == "compile-hardware":
             print_hardware_diagnostics(output)
+        elif args.command == "compile-runtime-files":
+            print_runtime_file_diagnostics(output)
         elif args.command == "link-launcher":
             print_launcher_link_diagnostics(output)
         return result.returncode
@@ -929,6 +999,17 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print("Microsoft C 5.1 verified the RTL video clipping state and port-read smoke test; "
               "RTLHW.OBJ is ready for the launcher link.")
+        return 0
+    if args.command == "compile-runtime-files":
+        try:
+            validate_runtime_file_adapter(output)
+        except ValueError:
+            print("Microsoft C did not compile and verify runtime FAR string/file services.",
+                  file=sys.stderr)
+            print_runtime_file_diagnostics(output)
+            return 1
+        print("Microsoft C 5.1 verified FAR strncpy, resource formatting and DOS path access; "
+              "RTFILE.OBJ is ready for the launcher link.")
         return 0
     if args.command == "link-launcher":
         started = locate_case_insensitive(output, "LNKSTART.LOG")
