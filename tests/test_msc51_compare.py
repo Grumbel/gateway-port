@@ -19,6 +19,62 @@ SPEC.loader.exec_module(msc)
 
 
 class MSC51CompareTests(unittest.TestCase):
+    def test_omf_module_and_exact_public_symbol_attribution(self):
+        def record(kind, payload):
+            header = bytes((kind, (len(payload) + 1) & 255,
+                            (len(payload) + 1) >> 8))
+            return header + payload + bytes(((-sum(header + payload)) & 255,))
+
+        page_size = 32
+        dictionary_offset = 512
+        header = (bytes((0xf0, page_size - 3, 0)) +
+                  dictionary_offset.to_bytes(4, "little") + b"\x01\x00\x00")
+        lib = bytearray(header.ljust(page_size, b"\0"))
+        module_one = record(0x82, b"\x06RAND.C")
+        # PUBDEF: group 0, segment 1, _rand at segment offset 0x0120.
+        public = record(0x90, b"\x00\x01\x05_rand\x20\x01\x00")
+        signature = b"\x55\x8b\xec\x2b\x76\x01\x5d\xcb"
+        ledata = record(0xa0, b"\x01\x20\x01" + signature)
+        module_bytes = module_one + public + ledata + record(0x8a, b"\x00")
+        lib.extend(module_bytes)
+        lib.extend(bytes((-len(lib)) % page_size))
+        second = record(0x80, b"\x08STRAND.C") + record(0x8a, b"\x00")
+        second_start = len(lib)
+        lib.extend(second)
+        lib.extend(bytes((-len(lib)) % page_size))
+        lib.extend(bytes((0xf1,)))
+        lib.extend(bytes(dictionary_offset - len(lib)))
+        lib.extend(bytes(512))  # dictionary block
+
+        modules = msc.parse_omf_library(bytes(lib))
+        self.assertEqual([m.name for m in modules], ["RAND.C", "STRAND.C"])
+        self.assertEqual(modules[1].start, second_start)
+        offset = page_size + len(module_one) + len(public) + 3 + 3
+        self.assertEqual(lib[offset:offset + len(signature)], signature)
+        self.assertEqual(msc.omf_match_details(bytes(lib), modules, offset, len(signature)), {
+            "module": "RAND.C",
+            "module_offset": "0x00020",
+            "segment_index": 1,
+            "segment_offset": "0x0120",
+            "public_symbol": "_rand",
+        })
+        self.assertIsNone(msc.omf_match_details(bytes(lib), modules,
+                                                offset - 1, len(signature)))
+        self.assertIsNone(msc.omf_match_details(bytes(lib), modules,
+                                                len(lib) - 1, len(signature)))
+
+    def test_omf_library_rejects_invalid_header_and_module(self):
+        with self.assertRaisesRegex(ValueError, "Not an OMF library"):
+            msc.parse_omf_library(b"other bytes")
+        malformed = bytearray(1024)
+        malformed[0:3] = b"\xf0\x1d\x00"  # 32-byte page
+        malformed[3:7] = (512).to_bytes(4, "little")
+        with self.assertRaisesRegex(ValueError, "Missing OMF module header"):
+            msc.parse_omf_library(bytes(malformed))
+        malformed[32:35] = b"\x82\xff\xff"  # overruns dictionary
+        with self.assertRaisesRegex(ValueError, "Truncated OMF record"):
+            msc.parse_omf_library(bytes(malformed))
+
     def test_only_mutable_operands_are_ignored(self):
         mask = msc.build_mask(msc.SIGNATURES[0])
         self.assertEqual(sum(mask), 13)

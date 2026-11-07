@@ -298,10 +298,18 @@ assembled `LLIBCR.LIB`. It searches the raw library for
 the original `srand` (`rtl:0x91d8`) and `rand` (`rtl:0x91ea`) instruction
 sequences while ignoring only the mutable address/call operands. The optional
 JSON report contains locations, lengths, and file hashes, **not binary data**.
-Matching both code sequences would be strong evidence of an identical CRT
-implementation; a miss is inconclusive when code is split into OMF records
-or generated with different options. This compares the historical *runtime*,
-not the compiler's code generation for Gateway's game logic.
+The user-side `msc51-compare` run located both signatures inside Microsoft
+C 5.1's `LLIBCR.LIB`. To map those raw offsets to individual object modules,
+run `nix run .#msc51-compare -- --omf-details`. This parses the legacy OMF
+library page layout, identifies the containing `LEDATA` record and segment
+offset, and reports an exact `PUBDEF` name when present. Such names are
+library metadata, not recovered Gateway symbols. Module attribution is
+currently tested on synthetic OMF inputs; run it against the real compiler
+library to verify the module names. Matching both code sequences is strong
+evidence of an identical CRT implementation; a miss is inconclusive when code
+is split into OMF records or generated with different options. This compares
+the historical *runtime*, not the compiler's code generation for Gateway's
+game logic.
 
 ### In-game Gateway debugger (F10)
 
