@@ -665,6 +665,22 @@ original font, and all captions can draw through the original C chain.
 Video startup, picture/animation presentation and SDL3 remain outstanding,
 so full source-C intro playback is **not independently playable**.
 
+## Experimental 16-bit DOS compiler probe
+
+With OpenWatcom v2's **16-bit** `wcl` on `PATH`, run
+`sh tools/build_intro_dos_probe.sh` from the repository root. The intended
+output is `build/intro-dos/INTROCHK.EXE`, a real-mode DOS diagnostic testing
+32 steps of the recovered Microsoft C runtime random generator with a small
+DS adapter. It does **not** launch Gateway or load any game assets. GCC
+passes the equivalent test, but OpenWatcom is unavailable in this workspace,
+so its DOS link and runtime are unverified.
+
+The full source-C archive is not yet DOS-linkable: the `gate_far_*` calls
+represent relocated original 16:16 services, while the guest-memory,
+filesystem, input and video adapters still need real-mode implementations.
+Compiling the source in OpenWatcom's small model alone cannot reproduce the
+original Microsoft C ABI or segmented data layout.
+
 ## Immediate next functions
 
 1. Connect the existing verified native video, font, picture and caption
