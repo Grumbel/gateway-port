@@ -55,7 +55,9 @@ def validate_compiler(directory: Path) -> Path:
     lib_dirs = [directory] + ([lib_dir] if lib_dir is not None else [])
     missing = [name for name in ("CL.EXE", "C1.EXE", "C1L.EXE", "C2.EXE", "C3.EXE", "LINK.EXE")
                if not any(locate_case_insensitive(base, name) for base in bin_dirs)]
-    missing += [name for name in ("LLIBCR.LIB",)
+    # MSC 5.1 ships its long-integer arithmetic helpers separately from the
+    # model-specific run-time library, in LIBH.LIB.
+    missing += [name for name in ("LLIBCR.LIB", "LIBH.LIB")
                 if not any(locate_case_insensitive(base, name) for base in lib_dirs)]
     if not any(locate_case_insensitive(base, "STDIO.H")
                for base in [directory] + ([include_dir] if include_dir is not None else [])):
@@ -115,7 +117,7 @@ def stage_probe(output: Path) -> None:
         "SET TEMP=D:\\\r\n"
         "SET TMP=D:\\\r\n"
         "IF EXIST INTROCHK.EXE DEL INTROCHK.EXE\r\n"
-        "CL /AL /Od PROBE.C RANDOM.C /FeINTROCHK.EXE /link LLIBCR.LIB/NOD > BUILD.LOG\r\n"
+        "CL /AL /Od PROBE.C RANDOM.C /FeINTROCHK.EXE /link LLIBCR.LIB LIBH.LIB/NOD > BUILD.LOG\r\n"
         "IF ERRORLEVEL 1 GOTO BUILD_FAILED\r\n"
         "IF NOT EXIST INTROCHK.EXE GOTO BUILD_FAILED\r\n"
         "INTROCHK.EXE > TEST.LOG\r\n"

@@ -34,7 +34,7 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("typedef unsigned long uint32_t;", header)
             self.assertIn("typedef unsigned short uint16_t;", header)
             batch = (output / "BUILD.BAT").read_text()
-            self.assertIn("CL /AL /Od PROBE.C RANDOM.C /FeINTROCHK.EXE /link LLIBCR.LIB/NOD", batch)
+            self.assertIn("CL /AL /Od PROBE.C RANDOM.C /FeINTROCHK.EXE /link LLIBCR.LIB LIBH.LIB/NOD", batch)
             self.assertIn("INTROCHK.EXE > TEST.LOG", batch)
             self.assertIn("ECHO Gateway MSC 5.1 batch started > START.LOG", batch)
             self.assertIn("SET TMP=D:\\", batch)
@@ -55,8 +55,13 @@ class MSC51Tests(unittest.TestCase):
             for name in ("cl.exe", "c1.exe", "c1l.exe", "c2.exe", "c3.exe", "link.exe"):
                 (root / "bin" / name).touch()
             (root / "lib" / "llibcr.lib").touch()
+            (root / "lib" / "libh.lib").touch()
             (root / "include" / "stdio.h").touch()
             self.assertEqual(msc51.validate_compiler(root), root)
+            (root / "lib" / "libh.lib").unlink()
+            with self.assertRaisesRegex(ValueError, "LIBH.LIB"):
+                msc51.validate_compiler(root)
+            (root / "lib" / "libh.lib").touch()
             (root / "bin" / "c2.exe").unlink()
             with self.assertRaisesRegex(ValueError, "C2.EXE"):
                 msc51.validate_compiler(root)
@@ -105,6 +110,7 @@ class MSC51Tests(unittest.TestCase):
             for name in ("CL.EXE", "C1.EXE", "C1L.EXE", "C2.EXE", "C3.EXE", "LINK.EXE"):
                 (compiler / "BIN" / name).touch()
             (compiler / "LIB" / "LLIBCR.LIB").touch()
+            (compiler / "LIB" / "LIBH.LIB").touch()
             (compiler / "INCLUDE" / "STDIO.H").touch()
             output = root / "output"
             output.mkdir()
@@ -157,6 +163,7 @@ class MSC51Tests(unittest.TestCase):
             for name in ("CL.EXE", "C1.EXE", "C1L.EXE", "C2.EXE", "C3.EXE", "LINK.EXE"):
                 (compiler / "BIN" / name).touch()
             (compiler / "LIB" / "LLIBCR.LIB").touch()
+            (compiler / "LIB" / "LIBH.LIB").touch()
             (compiler / "INCLUDE" / "STDIO.H").touch()
             output = root / "output"
 
@@ -182,6 +189,7 @@ class MSC51Tests(unittest.TestCase):
             for name in ("CL.EXE", "C1.EXE", "C1L.EXE", "C2.EXE", "C3.EXE", "LINK.EXE"):
                 (compiler / "BIN" / name).touch()
             (compiler / "LIB" / "LLIBCR.LIB").touch()
+            (compiler / "LIB" / "LIBH.LIB").touch()
             (compiler / "INCLUDE" / "STDIO.H").touch()
             output = root / "output"
 
@@ -209,6 +217,7 @@ class MSC51Tests(unittest.TestCase):
             for name in ("CL.EXE", "C1.EXE", "C1L.EXE", "C2.EXE", "C3.EXE", "LINK.EXE"):
                 (root / "BIN" / name).write_bytes(b"MZ" + bytes(126))
             (root / "LIB" / "LLIBCR.LIB").touch()
+            (root / "LIB" / "LIBH.LIB").touch()
             (root / "INCLUDE" / "STDIO.H").touch()
 
             protected = bytearray(b"MZ" + bytes(126))

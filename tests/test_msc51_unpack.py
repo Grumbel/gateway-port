@@ -27,6 +27,7 @@ FILES = {
     "compiler/C3.EXE": b"c3",
     "utility/LINK.EXE": b"link",
     "libraries/LLIBCR.LIB": b"library",
+    "libraries/LIBH.LIB": b"helpers",
     "include/INCLUDE/STDIO.H": b"header",
     "include/INCLUDE/SYS/STAT.H": b"nested header",
     "setup/PACKING.LST": b"ignored",
@@ -48,9 +49,10 @@ class MSC51UnpackTests(unittest.TestCase):
             source.mkdir()
             make_tree(source)
             counts = unpacker.unpack(source, root / "output")
-            self.assertEqual(counts, {"BIN": 6, "LIB": 1, "INCLUDE": 2})
+            self.assertEqual(counts, {"BIN": 6, "LIB": 2, "INCLUDE": 2})
             self.assertEqual((root / "output/BIN/CL.EXE").read_bytes(), b"cl")
             self.assertEqual((root / "output/LIB/LLIBCR.LIB").read_bytes(), b"library")
+            self.assertEqual((root / "output/LIB/LIBH.LIB").read_bytes(), b"helpers")
             self.assertEqual((root / "output/INCLUDE/SYS/STAT.H").read_bytes(), b"nested header")
             self.assertFalse((root / "output/PACKING.LST").exists())
 
@@ -188,6 +190,7 @@ class MSC51UnpackTests(unittest.TestCase):
             result = unpacker.unpack(source, root / "result")
             self.assertGreater(result["BIN"], 0)
             self.assertEqual((root / "result/LIB/LLIBCR.LIB").read_bytes(), b"library")
+            self.assertEqual((root / "result/LIB/LIBH.LIB").read_bytes(), b"helpers")
             self.assertEqual((root / "result/INCLUDE/STDIO.H").read_bytes(), b"header")
 
 
