@@ -28,6 +28,11 @@ int gate_dos_load_intro_rtl_data(uint16_t handle, uint16_t lower_segment,
 int gate_dos_load_intro_resident_bank(uint16_t rtl_handle,
                                       uint16_t resident_segment,
                                       uint16_t paragraphs);
+int gate_dos_prepare_intro_resident_bank(uint16_t rtl_handle,
+                                         uint16_t resident_segment,
+                                         uint16_t paragraphs,
+                                         uint16_t data_segment,
+                                         GateFarPtr exe_callback);
 int gate_dos_relocate_intro_resident_self_calls(uint16_t resident_segment,
                                                 uint16_t paragraphs);
 int gate_dos_relocate_intro_resident_ds_loads(uint16_t resident_segment,
@@ -267,12 +272,16 @@ int main(void)
                 break;
             }
     }
-    /* All 98 zero-operand CALL FAR sites are checked atomically by the
-     * relocator. Include an out-of-copy-range target to ensure it keeps
-     * the target offset even when later banks are not yet installed. */
-    if (good && gate_dos_relocate_intro_resident_self_calls(
-                    (uint16_t)resident_allocated, 0x03d0u) != 0)
+    /* Exercise the composed bank bootstrap against the original file.
+     * The preliminary load above was compared bytewise before relocation. */
+    exe_target.segment = 0x1234u;
+    exe_target.offset = 0x0030u;
+    if (good && gate_dos_prepare_intro_resident_bank(handle,
+                    (uint16_t)resident_allocated, 0x03d0u,
+                    data_segment, exe_target) != 0)
         good = 0;
+    /* Include an out-of-copy-range self-call target to verify that the
+     * original offset is retained even before later banks are loaded. */
     if (good && (gate_far_word((uint16_t)resident_allocated, 0x09d7u) != 0x0bdeu ||
                  gate_far_word((uint16_t)resident_allocated, 0x09d9u) !=
                      (uint16_t)resident_allocated ||
@@ -281,24 +290,13 @@ int main(void)
                      (uint16_t)resident_allocated ||
                  gate_far_word((uint16_t)resident_allocated, 0x3b1du) != 0x3c5cu))
         good = 0;
-    if (good && gate_dos_relocate_intro_resident_ds_loads(
-                    (uint16_t)resident_allocated, 0x03d0u, data_segment) != 0)
-        good = 0;
     if (good && (gate_far_word((uint16_t)resident_allocated, 0x020eu) != data_segment ||
                  gate_far_word((uint16_t)resident_allocated, 0x0a59u) != data_segment))
         good = 0;
-    /* Probe the binding operation using a synthetic target only. The real
-     * recompiled EXE's equivalent routine has not been identified yet. */
-    exe_target.segment = 0x1234u;
-    exe_target.offset = 0x0030u;
-    if (good && gate_dos_relocate_intro_exe_call((uint16_t)resident_allocated,
-                                                 0x03d0u, exe_target) != 0)
-        good = 0;
+    /* The synthetic EXE callback is not an executable target. The real
+     * recompiled EXE's equivalent routine is not yet identified. */
     if (good && (gate_far_word((uint16_t)resident_allocated, 0x0a4eu) != 0x0030u ||
                  gate_far_word((uint16_t)resident_allocated, 0x0a50u) != 0x1234u))
-        good = 0;
-    if (good && gate_dos_relocate_intro_resident_direct_segments(
-                    (uint16_t)resident_allocated, 0x03d0u, data_segment) != 0)
         good = 0;
     if (good && (gate_far_word((uint16_t)resident_allocated, 0x14c8u) != data_segment ||
                  gate_far_word((uint16_t)resident_allocated, 0x1502u) != data_segment ||

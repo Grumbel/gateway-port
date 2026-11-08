@@ -238,6 +238,41 @@ int gate_dos_relocate_intro_resident_direct_segments(uint16_t resident_segment,
     return 0;
 }
 
+/* Stage the first reconstructed resident bank in the eventual DOS entry.
+ * Unlike the data-only bootstrap below, this operation does not establish
+ * the remaining resident banks, interrupt vectors, or an executable entry.
+ * Failure leaves a partially loaded/relocated allocation: discard it.
+ * -1 bad arguments, -2 file load, -3 self calls, -4 DS loads,
+ * -5 EXE callback, -6 direct segment operands. */
+int gate_dos_prepare_intro_resident_bank(uint16_t rtl_handle,
+                                         uint16_t resident_segment,
+                                         uint16_t paragraphs,
+                                         uint16_t data_segment,
+                                         GateFarPtr exe_callback)
+{
+    if (resident_segment == 0u || resident_segment > 0xfc30u ||
+        paragraphs < GATE_RESIDENT_PARAS || data_segment == 0u ||
+        exe_callback.segment == 0u)
+        return -1;
+    if (gate_dos_load_intro_resident_bank(rtl_handle, resident_segment,
+                                          paragraphs) != 0)
+        return -2;
+    if (gate_dos_relocate_intro_resident_self_calls(resident_segment,
+                                                    paragraphs) != 0)
+        return -3;
+    if (gate_dos_relocate_intro_resident_ds_loads(resident_segment,
+                                                  paragraphs, data_segment) != 0)
+        return -4;
+    if (gate_dos_relocate_intro_exe_call(resident_segment, paragraphs,
+                                         exe_callback) != 0)
+        return -5;
+    if (gate_dos_relocate_intro_resident_direct_segments(resident_segment,
+                                                         paragraphs,
+                                                         data_segment) != 0)
+        return -6;
+    return 0;
+}
+
 
 /* At 100, 125, 175 and 250ms the first 64 bytes after the two-byte
  * RTL data header are zero, whereas the raw RTL preimage contains resident

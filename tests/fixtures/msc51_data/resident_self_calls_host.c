@@ -187,6 +187,15 @@ int main(void)
     if (gate_far_word(segment, 0x09b9u) != 0x200au ||
         gate_far_word(segment, 0x019cu) != segment)
         abort();
+    if (gate_dos_prepare_intro_resident_bank(1u, segment, 0x03cfu,
+                                             0x200au, external) != -1)
+        abort();
+    /* The fixture deliberately rejects file I/O, so the composed loader
+     * must stop at that boundary without disturbing relocated guest RAM. */
+    if (gate_dos_prepare_intro_resident_bank(1u, segment, 0x03d0u,
+                                             0x200au, external) != -2 ||
+        gate_far_word(segment, 0x09d7u) != 0x0bdeu)
+        abort();
     puts("98 self-calls, 7 DS loads, EXE call and 7 direct segments: PASS");
     return 0;
 }
