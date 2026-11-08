@@ -428,9 +428,15 @@ and original-file DOS probes verify it. The subsequent remainder report
 identified 19 additional reproducible internal offset words: six rebased
 by `0x0f92`, eight by `0x14e0`, and five resident-code pointer offsets
 set to `0x0c02`. `gate_dos_fix_intro_rtl_offs` now stages those too, with
-an all-sites source preflight. Together these explain **92 of 260 early
-changed bytes**. The other **168 remain unexplained**, so `DATA.OBJ`
-stays outside the launcher link.
+an all-sites source preflight. The next genuine remainder report isolated
+19 more FAR pointers in two regular tables (eight and eleven entries).
+Their source fields are all zero, but their target segments must come from
+two as-yet-unidentified allocations. The
+`gate_dos_fix_intro_rtl_external(lower, paras, first_seg, second_seg)`
+helper now accepts these segments from its caller, with all-site source
+preflight; it never hardcodes the original-run `252c` and `25d7` values.
+Together the three helpers account for **157 of 260 early changed bytes**;
+**103 remain unexplained**, so `DATA.OBJ` stays outside the launcher link.
 Add `--json` to inspect all reported candidate words.
 
 After updating this source, rerun the Microsoft C test, including both
@@ -440,8 +446,9 @@ real original files:
 nix run -L .#msc51-compile-data -- --original-game-dir ../gateway-dos
 ```
 
-Once both probes pass with these 46 segment/offset words, investigate
-the **remaining 168** first-prepared changed bytes with:
+Once both probes pass with the 27 segment words, 19 offset words and
+19 external pointers, investigate the **remaining 103** first-prepared
+changed bytes with:
 
 ```sh
 python3 tools/inspect_msc51_startup.py \
@@ -451,9 +458,11 @@ python3 tools/inspect_msc51_startup.py \
   --runtime-data-remainder
 ```
 
-The remainder report first checks that all 46 known sites have their
-original RTL source words and independently observed target values in
-every 100–250ms capture. It then excludes only those 92 bytes and
+The remainder report first checks that all 46 internal word sites and
+19 external pointer entries have their original RTL source words and
+independently observed target values in every 100–250ms capture. It
+also checks that each external table shares one nonzero observed segment.
+It then excludes only the 157 changed bytes they explain and
 prints clusters of remaining changes with short original/observed hex
 samples, byte-change frequencies, and repeated 16-bit transformations.
 Use `--json` for complete, untruncated clusters. Neither repeated words

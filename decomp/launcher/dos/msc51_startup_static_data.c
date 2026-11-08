@@ -8,9 +8,11 @@
  *
  * The second routine stages only the *unmodified RTL preimage*: the
  * mismatched 260 bytes at 100ms are partly reconstructed: 27 source-zero
- * segment words and 19 independently observed offset words below.
- * The remaining 168 mismatch bytes have no established initialization
- * rule. No original data is embedded. The file-copy routines require
+ * segment words, 19 independently observed offset words, and two externally
+ * segmented FAR-pointer tables below. The external tables require segment
+ * values from actual caller-owned allocations; the original observations
+ * cannot establish those allocations. No original data is embedded.
+ * The file-copy routines require
  * caller-owned segment windows and file handles; none of these routines
  * loads resident banks, creates BSS or implements DOS launcher main().
  */
@@ -184,5 +186,73 @@ int gate_dos_fix_intro_rtl_offs(uint16_t lower_segment, uint16_t paragraphs)
         gate_ds_set_word(gate_rtl_offset_fixups[i].site,
                          (uint16_t)(gate_rtl_offset_fixups[i].source +
                                     gate_rtl_offset_fixups[i].addend));
+    return 0;
+}
+
+typedef struct GateIntroExternalPtr {
+    uint16_t site;
+    uint16_t offset;
+} GateIntroExternalPtr;
+
+/* The original 100..250ms captures show two regular FAR-pointer tables:
+ * eight entries at DS:2814 (stride 003eh) and eleven at DS:2a93 (stride
+ * 0014h). All 76 source bytes are zero in the pinned RTL preimage. The
+ * first table's observed segment was 252ch; the second's was 25d7h.
+ * Those are original-run addresses, NOT portable segments. We stage only
+ * the observed offsets; the caller must provide each actual allocated
+ * target segment independently. No assumption is made about its origin.
+ */
+static const GateIntroExternalPtr gate_rtl_external_a[] = {
+    {0x2814u, 0x000au}, {0x2852u, 0x0032u},
+    {0x2890u, 0x0032u}, {0x28ceu, 0x0053u},
+    {0x290cu, 0x0065u}, {0x294au, 0x0065u},
+    {0x2988u, 0x0065u}, {0x29c6u, 0x0065u}
+};
+
+static const GateIntroExternalPtr gate_rtl_external_b[] = {
+    {0x2a93u, 0x006bu}, {0x2aa7u, 0x00d6u},
+    {0x2abbu, 0x00d6u}, {0x2acfu, 0x0133u},
+    {0x2ae3u, 0x0189u}, {0x2af7u, 0x0189u},
+    {0x2b0bu, 0x0189u}, {0x2b1fu, 0x0189u},
+    {0x2b33u, 0x01e3u}, {0x2b47u, 0x0272u},
+    {0x2b5bu, 0x0440u}
+};
+
+/* -1 invalid DS binding/allocation/target segment; -2 unexpected source
+ * (ALL sites checked before writing). Must run on an untouched, copied
+ * RTL preimage. The caller must separately allocate/identify both target
+ * segments; this routine neither allocates them nor verifies their data.
+ */
+int gate_dos_fix_intro_rtl_external(uint16_t lower_segment, uint16_t paragraphs,
+                                    uint16_t first_segment, uint16_t second_segment)
+{
+    unsigned int i;
+    if (lower_segment == 0u || lower_segment > 0xfff5u ||
+        paragraphs < GATE_DATA_MIN_PARAS ||
+        first_segment == 0u || second_segment == 0u ||
+        gate_ds_segment() != (uint16_t)(lower_segment + 0x000au))
+        return -1;
+
+    for (i = 0u; i < sizeof gate_rtl_external_a /
+                      sizeof gate_rtl_external_a[0]; ++i)
+        if (gate_ds_word(gate_rtl_external_a[i].site) != 0u ||
+            gate_ds_word((uint16_t)(gate_rtl_external_a[i].site + 2u)) != 0u)
+            return -2;
+    for (i = 0u; i < sizeof gate_rtl_external_b /
+                      sizeof gate_rtl_external_b[0]; ++i)
+        if (gate_ds_word(gate_rtl_external_b[i].site) != 0u ||
+            gate_ds_word((uint16_t)(gate_rtl_external_b[i].site + 2u)) != 0u)
+            return -2;
+
+    for (i = 0u; i < sizeof gate_rtl_external_a /
+                      sizeof gate_rtl_external_a[0]; ++i) {
+        gate_ds_set_word(gate_rtl_external_a[i].site, gate_rtl_external_a[i].offset);
+        gate_ds_set_word((uint16_t)(gate_rtl_external_a[i].site + 2u), first_segment);
+    }
+    for (i = 0u; i < sizeof gate_rtl_external_b /
+                      sizeof gate_rtl_external_b[0]; ++i) {
+        gate_ds_set_word(gate_rtl_external_b[i].site, gate_rtl_external_b[i].offset);
+        gate_ds_set_word((uint16_t)(gate_rtl_external_b[i].site + 2u), second_segment);
+    }
     return 0;
 }

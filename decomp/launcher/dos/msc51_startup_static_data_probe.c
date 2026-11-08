@@ -15,6 +15,8 @@ int gate_dos_load_intro_rtl_data(uint16_t handle, uint16_t lower_segment,
 int gate_dos_fix_intro_rtl_segs(uint16_t lower_segment, uint16_t paragraphs,
                                 uint16_t resident_segment);
 int gate_dos_fix_intro_rtl_offs(uint16_t lower_segment, uint16_t paragraphs);
+int gate_dos_fix_intro_rtl_external(uint16_t lower_segment, uint16_t paragraphs,
+                                    uint16_t first_segment, uint16_t second_segment);
 
 typedef struct ExpectedOffset {
     uint16_t site, source, expected;
@@ -30,6 +32,20 @@ static const ExpectedOffset expected_offsets[] = {
     {0x33dcu, 0x0000u, 0x0c02u}, {0x33e0u, 0x0000u, 0x0c02u},
     {0x33e4u, 0x0000u, 0x0c02u}, {0x33e8u, 0x0000u, 0x0c02u},
     {0x33ecu, 0x0000u, 0x0c02u}
+};
+static const ExpectedOffset external_a[] = {
+    {0x2814u, 0u, 0x000au}, {0x2852u, 0u, 0x0032u},
+    {0x2890u, 0u, 0x0032u}, {0x28ceu, 0u, 0x0053u},
+    {0x290cu, 0u, 0x0065u}, {0x294au, 0u, 0x0065u},
+    {0x2988u, 0u, 0x0065u}, {0x29c6u, 0u, 0x0065u}
+};
+static const ExpectedOffset external_b[] = {
+    {0x2a93u, 0u, 0x006bu}, {0x2aa7u, 0u, 0x00d6u},
+    {0x2abbu, 0u, 0x00d6u}, {0x2acfu, 0u, 0x0133u},
+    {0x2ae3u, 0u, 0x0189u}, {0x2af7u, 0u, 0x0189u},
+    {0x2b0bu, 0u, 0x0189u}, {0x2b1fu, 0u, 0x0189u},
+    {0x2b33u, 0u, 0x01e3u}, {0x2b47u, 0u, 0x0272u},
+    {0x2b5bu, 0u, 0x0440u}
 };
 
 static const uint16_t observed_ds_sites[] = {
@@ -169,6 +185,33 @@ int main(void)
         good &= gate_ds_word(observed_ds_sites[i]) == (uint16_t)(allocated + 10u);
     for (i = 0u; i < sizeof observed_cs_sites / sizeof observed_cs_sites[0]; ++i)
         good &= gate_ds_word(observed_cs_sites[i]) == 0x1234u;
+    for (i = 0u; i < sizeof external_a / sizeof external_a[0]; ++i) {
+        gate_ds_set_word(external_a[i].site, 0u);
+        gate_ds_set_word((uint16_t)(external_a[i].site + 2u), 0u);
+    }
+    for (i = 0u; i < sizeof external_b / sizeof external_b[0]; ++i) {
+        gate_ds_set_word(external_b[i].site, 0u);
+        gate_ds_set_word((uint16_t)(external_b[i].site + 2u), 0u);
+    }
+    gate_ds_set_word((uint16_t)(external_b[10].site + 2u), 0x1234u);
+    good &= gate_dos_fix_intro_rtl_external((uint16_t)allocated, 0x100au,
+                                            0x3333u, 0x4444u) == -2;
+    good &= gate_ds_word(external_a[0].site) == 0u;
+    gate_ds_set_word((uint16_t)(external_b[10].site + 2u), 0u);
+    good &= gate_dos_fix_intro_rtl_external((uint16_t)allocated, 0x1009u,
+                                            0x3333u, 0x4444u) == -1;
+    good &= gate_dos_fix_intro_rtl_external((uint16_t)allocated, 0x100au,
+                                            0u, 0x4444u) == -1;
+    good &= gate_dos_fix_intro_rtl_external((uint16_t)allocated, 0x100au,
+                                            0x3333u, 0x4444u) == 0;
+    for (i = 0u; i < sizeof external_a / sizeof external_a[0]; ++i) {
+        good &= gate_ds_word(external_a[i].site) == external_a[i].expected;
+        good &= gate_ds_word((uint16_t)(external_a[i].site + 2u)) == 0x3333u;
+    }
+    for (i = 0u; i < sizeof external_b / sizeof external_b[0]; ++i) {
+        good &= gate_ds_word(external_b[i].site) == external_b[i].expected;
+        good &= gate_ds_word((uint16_t)(external_b[i].site + 2u)) == 0x4444u;
+    }
     for (i = 0u; i < sizeof expected_offsets / sizeof expected_offsets[0]; ++i)
         gate_ds_set_word(expected_offsets[i].site, expected_offsets[i].source);
     gate_ds_set_word(expected_offsets[18].site, 0x9876u);
@@ -191,7 +234,7 @@ int main(void)
         good = 0;
     if (remove(rtl_source_name) != 0)
         good = 0;
-    puts(good ? "Static EXE/RTL data probe: PASS (5976 + 13714 bytes; 27 seg + 19 off fixes)"
+    puts(good ? "Static EXE/RTL data probe: PASS (5976 + 13714 bytes; 27 seg + 19 off + 19 external pointers)"
               : "Static EXE/RTL data probe: FAIL");
     return good ? 0 : 1;
 }

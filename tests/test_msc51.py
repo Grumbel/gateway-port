@@ -59,6 +59,20 @@ class MSC51Tests(unittest.TestCase):
                              source, f"unexpected RTL offset field at {site:04x}")
             addend = 0x0f92 if index < 6 else 0x14e0 if index < 14 else 0x0c02
             self.assertEqual((observed - source) & 0xffff, addend)
+        external_tables = (
+            ((0x2814, 0x000a), (0x2852, 0x0032), (0x2890, 0x0032),
+             (0x28ce, 0x0053), (0x290c, 0x0065), (0x294a, 0x0065),
+             (0x2988, 0x0065), (0x29c6, 0x0065)),
+            ((0x2a93, 0x006b), (0x2aa7, 0x00d6), (0x2abb, 0x00d6),
+             (0x2acf, 0x0133), (0x2ae3, 0x0189), (0x2af7, 0x0189),
+             (0x2b0b, 0x0189), (0x2b1f, 0x0189), (0x2b33, 0x01e3),
+             (0x2b47, 0x0272), (0x2b5b, 0x0440)),
+        )
+        self.assertEqual(sum(len(table) for table in external_tables), 19)
+        for table in external_tables:
+            for site, _ in table:
+                self.assertEqual(rtl[0x29 + site:0x29 + site + 4], bytes(4),
+                                 f"unexpected RTL external pointer at {site:04x}")
 
     def test_staged_static_data_copy_c89_host_and_probe_only_link(self):
         if not shutil.which("gcc"):
@@ -75,7 +89,7 @@ class MSC51Tests(unittest.TestCase):
             self.assertEqual(build.returncode, 0, build.stderr)
             probe = subprocess.run([str(executable)], capture_output=True, text=True)
             self.assertEqual(probe.returncode, 0, probe.stderr)
-            self.assertIn("static EXE/RTL copy, 27 segment and 19 offset fixes host: PASS", probe.stdout)
+            self.assertIn("static EXE/RTL copy, 27 seg + 19 off + 19 external pointers host: PASS", probe.stdout)
             batch = (output / "DATA.BAT").read_text()
             self.assertIn("CL /AL /Od /c DATA.C", batch)
             self.assertIn("DATACHK.C DATA.OBJ SEL.OBJ MEMORY.OBJ DOSFILE.OBJ", batch)
@@ -85,6 +99,7 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("gate_dos_load_intro_rtl_data", (output / "DATA.C").read_text())
             self.assertIn("gate_dos_fix_intro_rtl_segs", (output / "DATA.C").read_text())
             self.assertIn("gate_dos_fix_intro_rtl_offs", (output / "DATA.C").read_text())
+            self.assertIn("gate_dos_fix_intro_rtl_external", (output / "DATA.C").read_text())
             self.assertNotIn("DATA.OBJ", (output / "LINK.RSP").read_text())
             (output / "STDINT.H").write_text('#include <stdint.h>\n')
             for source in ("DATACHK.C", "DATAREAL.C"):
@@ -149,7 +164,7 @@ class MSC51Tests(unittest.TestCase):
                 for name in ("DATA.OBJ", "DATACHK.EXE", "DATAREAL.EXE", "DATSTART.LOG", "DATOK.LOG"):
                     (output / name).write_text("current")
                 (output / "DATTEST.LOG").write_text(
-                    "Static EXE/RTL data probe: PASS (5976 + 13714 bytes; 27 seg + 19 off fixes)\n")
+                    "Static EXE/RTL data probe: PASS (5976 + 13714 bytes; 27 seg + 19 off + 19 external pointers)\n")
                 (output / "DATSIG.LOG").write_text(msc51.static_data_source_signature(output))
                 return mock.Mock(returncode=0)
 
@@ -160,11 +175,11 @@ class MSC51Tests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "does not verify"):
                 msc51.validate_static_data_probe(output)
             (output / "DATTEST.LOG").write_text(
-                "Static EXE/RTL data probe: PASS (5976 + 13714 bytes; 27 seg + 19 off fixes)\n")
+                "Static EXE/RTL data probe: PASS (5976 + 13714 bytes; 27 seg + 19 off + 19 external pointers)\n")
             with self.assertRaisesRegex(ValueError, "original GATE.EXE/GATE.RTL data test"):
                 msc51.validate_static_data_probe(output, require_original=True)
             (output / "DATREAL.LOG").write_text(
-                "Original EXE/RTL data probe: PASS (5976 + 13714 bytes, 27 seg + 19 off fixes)\n")
+                "Original EXE/RTL data probe: PASS (5976 + 13714 bytes, 27 seg + 19 off + 19 external pointers)\n")
             msc51.validate_static_data_probe(output, require_original=True)
             (output / "DATA.C").write_text((output / "DATA.C").read_text() + "/* stale */\n")
             with self.assertRaisesRegex(ValueError, "source changed"):

@@ -697,6 +697,39 @@ existing segment words. The extended Microsoft C 5.1 tests still need
 to run on the user's machine, and no initialized image is yet eligible
 for startup execution.
 
+**Follow-up: two external-segment pointer tables from the 168-byte
+remainder.** The genuine 100/125/175/250ms captures show eight four-byte
+FAR pointers at `DS:2814..29c9`, stride `003eh`, and eleven at
+`DS:2a93..2b5e`, stride `0014h`. All **76 source bytes** are zero in the
+pinned original `GATE.RTL` preimage. Their observed offsets repeat
+consistently (`000a,0032,0032,0053,0065` in the first group;
+`006b,00d6,0133,0189,01e3,0272,0440` in the second). The corresponding
+segments **in this one original capture** are `252ch` and `25d7h`,
+respectively. There is not yet evidence tying those addresses to specific
+allocation requests or ensuring they remain fixed in another run.
+
+`gate_dos_fix_intro_rtl_external(lower, paras, first_seg, second_seg)`
+therefore takes **both actual target segments as caller parameters** and
+never embeds the observed addresses. It checks all 38 original source
+words are zero before applying any replacements, rejects zero target
+segments or incorrect DS allocation bounds, and does not allocate or
+initialize either target window. The synthetic MS C 5.1 and real-file
+DOSBox probes now exercise this helper with arbitrary test segment values;
+the latter also verifies the source against the original game files.
+The host C89 and Python unit checks pass, but the new guest DOSBox results
+remain pending on the user's machine.
+
+These 19 pointers explain another **65 changed bytes** (some target
+offsets contain zero bytes), reducing the unclassified early mismatch
+count from 168 to **103**. The Python remainder inspector validates every
+pointer and a *single common segment per table* in all early snapshots,
+reports each observed segment explicitly, and excludes only bytes it has
+verified. The other 103 bytes include dynamic zeroing near `DS:0002`,
+small unknown value initializations, and candidate internal offset words
+near `DS:3244`, `DS:33ac`, and `DS:353e`. Do not label these BSS or stage
+them without separate analysis. `DATA.OBJ` remains probe-only; it is not
+a working launcher or a proof of how those two segments are allocated.
+
 **Microsoft C 5.1 build correction:** The first user-side `DATA.BAT` run
 compiled `DATA.C` but stopped with `DATACHK.C(22): C2073` (an initialized
 automatic `char name[]`), so **neither test executable ran**. Both test

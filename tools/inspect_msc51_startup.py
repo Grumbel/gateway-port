@@ -60,6 +60,22 @@ KNOWN_RTL_OFFSET_FIXUPS = (
     (0x33e4, 0x0000, 0x0c02), (0x33e8, 0x0000, 0x0c02),
     (0x33ec, 0x0000, 0x0c02),
 )
+# The offsets, not the target segment values, are stable in the original
+# capture. The two segment values are sampled independently at runtime and
+# must not be used as compile-time allocation addresses.
+KNOWN_RTL_EXTERNAL_POINTERS = (
+    ("external_a", (
+        (0x2814, 0x000a), (0x2852, 0x0032), (0x2890, 0x0032),
+        (0x28ce, 0x0053), (0x290c, 0x0065), (0x294a, 0x0065),
+        (0x2988, 0x0065), (0x29c6, 0x0065),
+    )),
+    ("external_b", (
+        (0x2a93, 0x006b), (0x2aa7, 0x00d6), (0x2abb, 0x00d6),
+        (0x2acf, 0x0133), (0x2ae3, 0x0189), (0x2af7, 0x0189),
+        (0x2b0b, 0x0189), (0x2b1f, 0x0189), (0x2b33, 0x01e3),
+        (0x2b47, 0x0272), (0x2b5b, 0x0440),
+    )),
+)
 
 
 def source_window_index(exe, rtl, seed=DATA_MATCH_SEED):
@@ -275,7 +291,7 @@ def rtl_preimage_fixup_candidates(rtl, samples, runtime_ds, image_load):
 
 
 def rtl_preimage_remainder(rtl, samples, runtime_ds, image_load):
-    """Describe first-prepared bytes outside 27 segment and 19 offset words.
+    """Describe bytes outside 46 known words and 19 external FAR pointers.
 
     A known word is excluded only if its source value, observed value and
     all early snapshots agree. The remaining bytes are deliberately kept as
@@ -312,6 +328,31 @@ def rtl_preimage_remainder(rtl, samples, runtime_ds, image_load):
         known[offset:offset + 2] = b"\x01\x01"
     if sum(known) != 92:
         raise ValueError("expected 92 bytes at 46 known word sites")
+
+    external = []
+    verified_external_bytes = 0
+    for name, entries in KNOWN_RTL_EXTERNAL_POINTERS:
+        observed_segment = word(first, entries[0][0] + 2)
+        if observed_segment == 0:
+            raise ValueError("observed segment is zero in RTL %s" % name)
+        for offset, observed_offset in entries:
+            if (offset + 4 > size or word(source, offset) != 0 or
+                    word(source, offset + 2) != 0 or
+                    any(word(sample, offset) != observed_offset or
+                        word(sample, offset + 2) != observed_segment
+                        for sample in early)):
+                raise ValueError("known RTL %s pointer at DS:%04x is not "
+                                 "verified in every early snapshot" % (name, offset))
+            if any(known[offset:offset + 4]):
+                raise ValueError("overlapping known RTL external pointer at DS:%04x" %
+                                 offset)
+            known[offset:offset + 4] = b"\x01" * 4
+            verified_external_bytes += sum(
+                source[i] != first[i] for i in range(offset, offset + 4))
+        external.append({"name": name, "pointer_count": len(entries),
+                         "observed_segment": observed_segment})
+    if sum(item["pointer_count"] for item in external) != 19:
+        raise ValueError("expected 19 external FAR pointers")
 
     residual = [i for i in range(size) if source[i] != first[i] and not known[i]]
     # Each disjoint cluster has one or more truly changed bytes. The raw
@@ -373,7 +414,10 @@ def rtl_preimage_remainder(rtl, samples, runtime_ds, image_load):
         "verified_segment_bytes": 54,
         "verified_offset_words": 19,
         "verified_offset_bytes": 38,
-        "verified_total_bytes": 92,
+        "verified_external_pointers": 19,
+        "verified_external_bytes": verified_external_bytes,
+        "observed_external_tables": external,
+        "verified_total_bytes": 92 + verified_external_bytes,
         "remaining_changed_bytes": len(residual),
         "source_zero_to_nonzero": sum(source[i] == 0 for i in residual),
         "source_nonzero_to_zero": sum(first[i] == 0 for i in residual),
@@ -948,12 +992,19 @@ def main():
                       (fixups["candidate_word_count"] - 80))
         if args.runtime_data_remainder:
             remaining = report["runtime_data_remainder"]
-            print("RTL preimage changes excluding 27 segment and 19 offset fixes:")
-            print("  %d initial changed bytes - %d segment bytes - %d offset bytes = "
+            print("RTL preimage changes excluding 27 segment, 19 offset, "
+                  "and 19 external-pointer fixes:")
+            print("  %d initial changed bytes - %d segment bytes - %d offset bytes "
+                  "- %d external-pointer bytes = "
                   "%d unclassified bytes" % (
                 remaining["initial_changed_bytes"], remaining["verified_segment_bytes"],
-                remaining["verified_offset_bytes"],
+                remaining["verified_offset_bytes"], remaining["verified_external_bytes"],
                 remaining["remaining_changed_bytes"]))
+            for entry in remaining["observed_external_tables"]:
+                print("  %s: %d FAR pointers, observed segment=%04x "
+                      "(caller must identify allocation)" % (
+                      entry["name"], entry["pointer_count"],
+                      entry["observed_segment"]))
             print("  remainder classes: %d zero->nonzero, %d nonzero->zero, "
                   "%d changed nonzero; %d clusters" % (
                       remaining["source_zero_to_nonzero"],
