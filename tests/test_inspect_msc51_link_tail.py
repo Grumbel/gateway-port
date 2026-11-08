@@ -441,9 +441,28 @@ class LinkTailTests(unittest.TestCase):
         rtl[nested_source:nested_source + nested_length] = nested_original
         nested_linked = bytearray(nested_original)
         nested_linked[nested_fars[0]:nested_fars[0] + 5] = \
-            b'\x9a\x22\x01\x01\x26'
+            b'\x9a\xda\x17\xa5\x12'
         nested_physical = (0x1000 + 0x02a5) * 16 + 0x0f62
         ram[nested_physical:nested_physical + nested_length] = nested_linked
+
+        flush_source, flush_length, flush_fars, flush_words, flush_pairs = \
+            RELOCATED_CALLEE_ENTRIES[0x02a5, 0x17da]
+        self.assertEqual((flush_source, flush_length, flush_fars, flush_words,
+                          flush_pairs), (0x6eb8, 142, (87,), (32, 50), ()))
+        flush_original = bytearray((index * 19 + 31) & 255
+                                   for index in range(flush_length))
+        for start in flush_fars:
+            flush_original[start:start + 5] = b'\x9a\x00\x00\x00\x00'
+        for start in flush_words:
+            flush_original[start:start + 2] = b'\x00\x00'
+        rtl[flush_source:flush_source + flush_length] = flush_original
+        flush_linked = bytearray(flush_original)
+        flush_linked[flush_words[0]:flush_words[0] + 2] = b'\x11\x31'
+        flush_linked[flush_words[1]:flush_words[1] + 2] = b'\x77\x31'
+        flush_linked[flush_fars[0]:flush_fars[0] + 5] = \
+            b'\x9a\x34\x12\x01\x26'
+        flush_physical = (0x1000 + 0x02a5) * 16 + 0x17da
+        ram[flush_physical:flush_physical + flush_length] = flush_linked
 
         cleanup = inspect(exe, rtl, ram)[1]['relocated_far_calls'][0]
         self.assertEqual(cleanup['relocated_source_match']['offset'], source)
@@ -456,7 +475,26 @@ class LinkTailTests(unittest.TestCase):
                          44)
         self.assertEqual(deeper['callee_far_calls'][0]['original_call_offset'],
                          nested_source + nested_fars[0])
-        self.assertEqual(deeper['callee_far_calls'][0]['target_segment'], 0x2601)
+        self.assertEqual(deeper['callee_far_calls'][0]['target_segment'], 0x12a5)
+        flush = deeper['callee_far_calls'][0]
+        self.assertEqual(flush['relocated_source_match']['offset'], flush_source)
+        self.assertEqual(flush['relocated_source_match']['matched_nonrelocated_bytes'],
+                         134)
+        self.assertEqual(len(flush['callee_far_calls']), 1)
+        self.assertEqual(flush['callee_far_calls'][0]['original_call_offset'],
+                         flush_source + flush_fars[0])
+        self.assertEqual(flush['callee_far_calls'][0]['target_segment'], 0x2601)
+
+        # A differing, non-relocated stream instruction must reject the
+        # whole flush identity without inventing a downstream target.
+        ram[flush_physical + 58] ^= 1
+        flush = inspect(exe, rtl, ram)[1]['relocated_far_calls'][0] \
+            ['callee_far_calls'][0]['callee_far_calls'][0]
+        self.assertNotIn('relocated_source_match', flush)
+        self.assertNotIn('callee_far_calls', flush)
+        self.assertEqual(flush['live_entry_hex'],
+                         ram[flush_physical:flush_physical + 48].hex())
+        ram[flush_physical + 58] ^= 1
 
         # An unchanged first-48-byte instruction must still agree even when
         # the known bank independently projects the original entry.

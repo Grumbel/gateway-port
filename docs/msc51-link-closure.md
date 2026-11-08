@@ -5,8 +5,8 @@
 
 This is the **remaining implementation/verification inventory**, not a list
 of functions already recovered. The latest real Microsoft LINK 3.65 report
-supplied by the user on 2026-11-08 confirmed **four unresolved names**:
-the CRT `_main` and three original game services. An earlier LINK run
+supplied by the user on 2026-11-08 confirmed **three unresolved names**:
+the CRT `_main`, the original Ctrl-Break handler and the diagnostic. An earlier LINK run
 confirmed **26 names**, with
 `RTLHW`, `RTFILE`, `RESSTATE`, `HEAP`, `INP`, `CLOCK` and `CRTENV` linked.
 The extended `RTLHW` adapter supplies eight RTL text/video names, and
@@ -17,20 +17,20 @@ with bounded host behavior. A new C89 DCL decoder additionally stages the
 compressed-picture service, with host-verified buffered DOS input and planar
 output. The original resource file wrappers now stage their raw BP-2 stack
 slots and unguarded CPU division without two external host-test callbacks.
-**Four is now the measured LINK result**, not a prediction. A new bounded
-audio startup guard in `RTLHW.OBJ` would lower the unresolved count to
-**three if its changed DOS probe passes**; its enabled-music branch still
-aborts rather than silently omitting the original IRQ 8 initialization.
+**Three is now the measured LINK result**, not a prediction: the original
+music-init external is no longer listed. The bounded audio startup guard
+in `RTLHW.OBJ` covers the proven no-music branches, but its enabled-music
+branch still aborts rather than silently omitting the original IRQ 8
+initialization. The separately modified heap DOS probe is still pending.
 The two VFX state definitions now cover only the verified state-flag and
 mouse-cursor paths; the video-buffer path explicitly aborts. Do not
 manufacture no-op definitions merely to obtain an executable.
 
-## The four names in the latest confirmed LINK report
+## The three names in the latest confirmed LINK report
 
 | Original unresolved name | Source reference | Current work |
 | --- | --- | --- |
 | `_main` | Microsoft 5.1 `LLIBCR.LIB(dos/crt0.asm)` | No working real-mode original startup yet. It must allocate and bind the original EXE/RTL data segments, initialize and relocate resident driver tables and assets, and transfer to `gate_exe_play_intro`. A placeholder `main()` would make LINK succeed but not create a working Gateway launcher. |
-| `_gate_linked_initialize_c306ca35` | `GATE.RTL:c3bd..c6fe`, linked `0a46:01ec` | **Staged as a bounded guard in `RTLHW.OBJ`.** Verified original flags/config early exits are preserved. Enabled music requires `GATE_004.MUS` and an IRQ 8 handler, so the substitute aborts on that branch. The changed `msc51-compile-hardware` DOS probe must pass before re-linking. |
 | `_gate_linked_handle_control_key` | `GATE.RTL:157b8..157e4`, linked `123f:0004`, called on input key `0x0003` | The full six-call entry is verified. Its video-state branch reaches `RTL:10da1` and the already reconstructed VFX image destructor `RTL:180fe`; several other shutdown services and the original state binding still require verification. Do not conflate Ctrl-C/Break cleanup with ordinary keyboard flushing. |
 | `_gate_linked_print_intr_b006848b` | `GATE.RTL:170c7..1712d`, linked `1258:172e`, called by image sequence failure paths | The complete five-call entry is verified; it formats into a 258-byte local buffer, calls resident output, and polls both mouse and keyboard helpers. The full callee ABI, output behavior and failure paths are not yet restored; a no-op would hide loader failures. |
 
@@ -125,6 +125,22 @@ as verified on a 16-byte prefix, the inspector now checks **only its first
 bytes). On success it will expose that call's live target; the rest of the
 function, nested callee behavior, and overall shutdown ABI remain
 unverified.
+
+The latest source-bank projection of that first call is now confirmed by
+the user's new 22-second capture: **all 44 invariant bytes of the
+`RTL:6640` 48-byte prefix match**, and its call at `RTL:6663` targets
+`12a5:17da`. This target independently projects to original `RTL:6eb8`,
+with 16 matching entry-prefix bytes. The original bounded function
+`RTL:6eb8..6f45` handles a buffered stream flush: it examines the FAR
+stream descriptor's flags, conditionally sends pending bytes to a FAR write
+service, sets error flag `20h` and returns `ffffh` on a short write, and
+resets the stream's current pointer to its base even when no write occurs.
+It is 142 bytes long with just one relocated FAR call at `RTL:6f0f`
+and two independent immediate WORD relocations at `RTL:6ed8/6eea`.
+The inspector now checks this **whole bounded function (134 invariant
+bytes)** and exposes the write service only after a successful match. The
+16-byte projected prefix is not evidence that the whole function matches
+until the next genuine snapshot.
 
 The third call is now identified as `rtl:10da1..10dc6`, a bounded FAR
 routine (preceded and terminated by `RETF`). It starts with `push cs; call
