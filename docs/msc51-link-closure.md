@@ -179,9 +179,41 @@ stack bound, returns the positive free-stack distance in AX or zero if
 the bound has been reached, restores the return address and executes RETF.
 The original 20-byte body has one relocated global-address WORD at
 `RTL:7eb1`, leaving **18 invariant bytes**. The inspector now checks that
-whole leaf routine without inventing any more nested calls. Confirmation
-against an authentic 22-second capture is still pending, and this identity
-alone does not establish the complete CRT descriptor-writer ABI.
+whole leaf routine without inventing any more nested calls. The user's
+next authentic 22-second run **matched all 18 invariant bytes** at original
+`RTL:7eae`; its verified `callee_far_calls` is empty. This closes only the
+writer's nested stack-space leaf, not the entire Ctrl-Break handler or the
+complete CRT descriptor-writer ABI.
+
+## Next startup evidence for the remaining `_main` gap
+
+The original `GATE.EXE` MZ header is 32 bytes and names initial relative
+`CS:IP=002c:0071`, corresponding to original file offset `exe:0351`.
+The source instructions at `exe:0351` call a loader helper at `exe:0359`
+then FAR-jump indirectly through `CS:0004`. That is an **RTLink loader
+bootstrap**, not the missing Microsoft C 5.1 `_main` of the rebuilt
+source-C launcher. Before implementing that new entry point, obtain
+original startup RAM **and registers**, not just the much later
+22-second resident bank view:
+
+```sh
+mkdir -p build/msc51-startup
+nix run -L .#probe -- ../gateway-dos/GATE.EXE \
+  --headless --read-only --deterministic-clock --milliseconds 2000 \
+  --dump-at 0:build/msc51-startup/at-0 \
+  --dump-at 10:build/msc51-startup/at-10 \
+  --dump-at 100:build/msc51-startup/at-100 \
+  --dump-at 500:build/msc51-startup/at-500 \
+  --dump-at 1500:build/msc51-startup/at-1500
+```
+
+The probe accepts multiple `--dump-at` values and writes `.regs`, `.bin`,
+and `.ppm` for each prefix. The `.regs` files reveal evolving CS:IP,
+DS/ES and SS:SP; the `.bin` files permit byte-level comparison with the
+original MZ relocation table and resident segment load progress. The
+two-second run and all five dumps are independent of the launcher LINK
+attempt. Merely matching original loader startup does not supply an
+equivalent reconstructed DOS `main()`.
 
 The third call is now identified as `rtl:10da1..10dc6`, a bounded FAR
 routine (preceded and terminated by `RETF`). It starts with `push cs; call
