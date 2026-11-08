@@ -19,6 +19,9 @@ int gate_dos_fix_intro_rtl_offs(uint16_t lower_segment, uint16_t paragraphs);
 int gate_dos_fix_intro_rtl_startup_words(uint16_t lower_segment, uint16_t paragraphs);
 int gate_dos_fix_intro_return_pointer(uint16_t lower_segment,
                                       uint16_t paragraphs, GateFarPtr target);
+int gate_dos_load_intro_resident_bank(uint16_t rtl_handle,
+                                      uint16_t resident_segment,
+                                      uint16_t paragraphs);
 int gate_dos_fix_intro_rtl_external(uint16_t lower_segment, uint16_t paragraphs,
                                     uint16_t first_segment, uint16_t second_segment);
 
@@ -108,6 +111,7 @@ static int write_fixture(char *name, unsigned int size, uint8_t mask)
 int main(void)
 {
     unsigned int allocated = 0u;
+    unsigned int resident_allocated = 0u;
     unsigned int i;
     GateDosFileResult opened;
     GateDosFileResult closed;
@@ -115,7 +119,7 @@ int main(void)
     int good;
 
     good = write_fixture(source_name, 0x593eu, 0u);
-    good &= write_fixture(rtl_source_name, 0x35bbu, 0x5au);
+    good &= write_fixture(rtl_source_name, 0x93deu, 0x5au);
     if (!good || _dos_allocmem(0x100au, &allocated) != 0) {
         remove(source_name);
         remove(rtl_source_name);
@@ -165,6 +169,17 @@ int main(void)
                 good = 0;
                 break;
             }
+        }
+        if (good && _dos_allocmem(0x03d0u, &resident_allocated) != 0)
+            good = 0;
+        if (good) {
+            good &= gate_dos_load_intro_resident_bank(opened.ax,
+                         (uint16_t)resident_allocated, 0x03cfu) == -1;
+            good &= gate_dos_load_intro_resident_bank(opened.ax,
+                         (uint16_t)resident_allocated, 0x03d0u) == 0;
+            for (i = 0u; good && i < 0x3d00u; ++i)
+                good &= gate_far_byte((uint16_t)resident_allocated, (uint16_t)i) ==
+                        (uint8_t)(pattern(0x56deu + i) ^ 0x5au);
         }
         closed = gate_dos_file_close(opened.ax);
         good &= closed.carry == 0u;
@@ -287,6 +302,8 @@ int main(void)
     good &= gate_ds_word(0x4d84u) == (uint16_t)(allocated + 10u);
     good &= gate_far_byte(gate_ds_segment(), 0x3592u) == pattern(0x41e6u);
     gate_dos_bind_ds(0u);
+    if (resident_allocated != 0u && _dos_freemem(resident_allocated) != 0)
+        good = 0;
     if (_dos_freemem(allocated) != 0)
         good = 0;
     if (remove(source_name) != 0)

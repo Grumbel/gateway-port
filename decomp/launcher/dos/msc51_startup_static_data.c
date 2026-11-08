@@ -25,6 +25,35 @@
 #define GATE_RTL_DATA_SOURCE 0x00000029ul
 #define GATE_RTL_DATA_BYTES 0x3592u
 #define GATE_DATA_MIN_PARAS 0x100au
+#define GATE_RESIDENT_SOURCE 0x000056deul
+#define GATE_RESIDENT_BYTES 0x3d00u
+#define GATE_RESIDENT_PARAS 0x03d0u
+
+/* The original RTL:56de..93dd bank is present at linked relative segment
+ * 02a5 by 125ms. Copy only the *raw* bank; the original snapshot differs
+ * at relocated words, so executing this image before relocation is unsafe.
+ * The caller supplies its own allocated segment and retains the file handle.
+ * -1 bad destination, -2 bad seek, -3 failed/short read. On -3 discard the
+ * allocation: it may contain a partial code image. */
+int gate_dos_load_intro_resident_bank(uint16_t rtl_handle,
+                                      uint16_t resident_segment,
+                                      uint16_t paragraphs)
+{
+    GateDosFileResult result;
+    GateFarPtr target;
+    if (resident_segment == 0u || resident_segment > 0xfc30u ||
+        paragraphs < GATE_RESIDENT_PARAS)
+        return -1;
+    result = gate_dos_file_seek(rtl_handle, 0u, GATE_RESIDENT_SOURCE);
+    if (result.carry || result.ax != 0x56deu || result.dx != 0u)
+        return -2;
+    target.segment = resident_segment;
+    target.offset = 0u;
+    result = gate_dos_file_read(rtl_handle, target, GATE_RESIDENT_BYTES);
+    if (result.carry || result.ax != GATE_RESIDENT_BYTES)
+        return -3;
+    return 0;
+}
 
 /* At 100, 125, 175 and 250ms the first 64 bytes after the two-byte
  * RTL data header are zero, whereas the raw RTL preimage contains resident

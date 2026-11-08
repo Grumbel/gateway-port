@@ -797,6 +797,17 @@ does not attempt rollback. Neither the missing 14 bytes nor actual code-bank
 loading, IRQ/music setup or entry transfer are supplied. This is a functional
 startup-data component, **not a playable DOS executable**.
 
+**First resident code-bank copy:** The 15,616-byte original `GATE.RTL`
+region `56de..93dd` is independently established as the source image for
+resident bank relative `02a5`. Added a bounded DOS loader that seeks to
+`56deh`, reads exactly `3d00h` bytes into a caller-owned allocation of at
+least `03d0h` paragraphs, and rejects malformed destinations, failed seek
+and short read. Synthetic C89 host tests compare all bytes and the
+`DATACHK`/`DATAREAL` DOS probes now cover this raw copy (the real probe
+re-reads the original file independently). This **does not execute** the
+bank: its original runtime bytes differ at relocation operands, and a
+reconstructed linker/relocator and actual `_main` are still required.
+
 **Follow-up: determine external allocation ownership from snapshots.**
 After the 167 verified initialization byte changes are excluded, the user's
 remainder report contains only ten clusters: a 63-byte zeroed prefix at

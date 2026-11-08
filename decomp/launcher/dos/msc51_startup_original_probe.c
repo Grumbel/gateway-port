@@ -17,12 +17,17 @@
 #define GATE_REAL_RTL_BYTES 109193ul
 #define GATE_RTL_SOURCE 0x0029ul
 #define GATE_RTL_COUNT 0x3592u
+#define GATE_RTL_RESIDENT_SOURCE 0x56deul
+#define GATE_RTL_RESIDENT_COUNT 0x3d00u
 
 int gate_dos_bind_intro_aliases(uint16_t lower_segment, uint16_t paragraphs);
 int gate_dos_load_intro_static_data(uint16_t handle, uint16_t lower_segment,
                                     uint16_t paragraphs);
 int gate_dos_load_intro_rtl_data(uint16_t handle, uint16_t lower_segment,
                                  uint16_t paragraphs);
+int gate_dos_load_intro_resident_bank(uint16_t rtl_handle,
+                                      uint16_t resident_segment,
+                                      uint16_t paragraphs);
 int gate_dos_clear_intro_rtl_prefix(uint16_t lower_segment, uint16_t paragraphs);
 int gate_dos_fix_intro_rtl_startup_words(uint16_t lower_segment, uint16_t paragraphs);
 int gate_dos_fix_intro_rtl_segs(uint16_t lower_segment, uint16_t paragraphs,
@@ -82,6 +87,7 @@ int main(void)
 {
     uint8_t buffer[128];
     unsigned int allocated = 0u;
+    unsigned int resident_allocated = 0u;
     uint16_t handle = 0u;
     uint16_t data_segment = 0u;
     uint16_t i, j, count;
@@ -222,6 +228,34 @@ int main(void)
                  gate_ds_word(0x4d82u) != (uint16_t)allocated ||
                  gate_ds_word(0x4d84u) != data_segment))
         good = 0;
+    /* Source-image comparison only: this raw code has NOT been relocated
+     * and must not be called. Verify all bytes via a second DOS file read. */
+    if (good && _dos_allocmem(0x03d0u, &resident_allocated) != 0u)
+        good = 0;
+    if (good && gate_dos_load_intro_resident_bank(handle,
+                      (uint16_t)resident_allocated, 0x03d0u) != 0)
+        good = 0;
+    if (good) {
+        result = gate_dos_file_seek(handle, 0u, GATE_RTL_RESIDENT_SOURCE);
+        if (result.carry || result.dx != 0u || result.ax != 0x56deu)
+            good = 0;
+    }
+    for (i = 0u; good && i < GATE_RTL_RESIDENT_COUNT; i = (uint16_t)(i + count)) {
+        count = (uint16_t)(GATE_RTL_RESIDENT_COUNT - i);
+        if (count > sizeof buffer)
+            count = sizeof buffer;
+        result = gate_dos_file_read(handle, gate_stack_pointer(buffer), count);
+        if (result.carry || result.ax != count) {
+            good = 0;
+            break;
+        }
+        for (j = 0u; j < count; ++j)
+            if (buffer[j] != gate_far_byte((uint16_t)resident_allocated,
+                                          (uint16_t)(i + j))) {
+                good = 0;
+                break;
+            }
+    }
     if (good && gate_dos_clear_intro_rtl_prefix((uint16_t)allocated,
                                                GATE_REAL_PARAGRAPHS) != 0)
         good = 0;
@@ -288,6 +322,8 @@ int main(void)
         if (result.carry)
             good = 0;
     }
+    if (resident_allocated != 0u && _dos_freemem(resident_allocated) != 0u)
+        good = 0;
     if (have_allocation) {
         gate_dos_bind_ds(0u);
         if (_dos_freemem(allocated) != 0u)

@@ -24,6 +24,9 @@ int gate_dos_prepare_intro_data(uint16_t exe_handle, uint16_t rtl_handle,
                                 uint16_t external_a_segment,
                                 uint16_t external_b_segment,
                                 GateFarPtr return_callback);
+int gate_dos_load_intro_resident_bank(uint16_t rtl_handle,
+                                      uint16_t resident_segment,
+                                      uint16_t paragraphs);
 int gate_dos_fix_intro_rtl_offs(uint16_t lower_segment, uint16_t paragraphs);
 int gate_dos_fix_intro_rtl_external(uint16_t lower_segment, uint16_t paragraphs,
                                     uint16_t first_segment, uint16_t second_segment);
@@ -114,7 +117,7 @@ GateDosFileResult gate_dos_file_seek(uint16_t handle, uint16_t origin,
     ++calls_seek;
     if (origin != 0u ||
         !((handle == 7u && offset == 0x41e6ul) ||
-          (handle == 8u && offset == 0x29ul)))
+          (handle == 8u && (offset == 0x29ul || offset == 0x56deul))))
         abort();
     result.carry = 0u;
     result.ax = seek_bad ? 0u : (uint16_t)offset;
@@ -128,18 +131,23 @@ GateDosFileResult gate_dos_file_read(uint16_t handle, GateFarPtr target,
     GateDosFileResult result;
     unsigned int i;
     ++calls_read;
-    if (target.segment != data_segment ||
-        !((handle == 7u && target.offset == 0x3592u && length == 0x1758u) ||
-          (handle == 8u && target.offset == 0u && length == 0x3592u)))
+    if (!((handle == 7u && target.segment == data_segment &&
+           target.offset == 0x3592u && length == 0x1758u) ||
+          (handle == 8u && target.segment == data_segment &&
+           target.offset == 0u && length == 0x3592u) ||
+          (handle == 8u && target.segment == 0x3000u &&
+           target.offset == 0u && length == 0x3d00u)))
         abort();
     result.carry = (uint8_t)(read_bad != 0u);
     result.dx = 0u;
     result.ax = read_short ? length - 1u : length;
     for (i = 0u; i < result.ax && !read_bad; ++i)
         gate_far_set_byte(target.segment, (uint16_t)(target.offset + i),
-                         (uint8_t)(pattern((handle == 7u ? 0x41e6u : 0x29u) + i) ^
+                         (uint8_t)(pattern((handle == 7u ? 0x41e6u :
+                                           length == 0x3d00u ? 0x56deu : 0x29u) + i) ^
                                    (handle == 8u ? 0x5au : 0u)));
-    if (integrated_fixture && handle == 8u && !read_bad && !read_short) {
+    if (integrated_fixture && handle == 8u && target.segment == data_segment &&
+        !read_bad && !read_short) {
         for (i = 0u; i < sizeof observed_ds_sites / sizeof observed_ds_sites[0]; ++i)
             gate_ds_set_word(observed_ds_sites[i], 0u);
         for (i = 0u; i < sizeof observed_cs_sites / sizeof observed_cs_sites[0]; ++i)
@@ -369,6 +377,13 @@ int main(void)
         gate_ds_word(0x4d84u) != 0x200au ||
         gate_far_byte(data_segment, 0x3592u) != pattern(0x41e6u))
         abort();
+    if (gate_dos_load_intro_resident_bank(8u, 0x3000u, 0x03cfu) != -1 ||
+        gate_dos_load_intro_resident_bank(8u, 0x3000u, 0x03d0u) != 0)
+        abort();
+    for (i = 0u; i < 0x3d00u; ++i)
+        if (gate_far_byte(0x3000u, (uint16_t)i) !=
+            (uint8_t)(pattern(0x56deu + i) ^ 0x5au))
+            abort();
     read_short = 0u;
     read_bad = 1u;
     if (gate_dos_load_intro_static_data(7u, 0x2000u, 0x100au) != -3)
