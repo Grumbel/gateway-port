@@ -10,6 +10,7 @@ need user-side verification with the separately generated RESCHK.EXE.
 from pathlib import Path
 import re
 import shutil
+import signal
 import subprocess
 import tempfile
 import unittest
@@ -57,6 +58,8 @@ static unsigned char memory[0x100000ul];
 static unsigned char planar[640ul * 480ul];
 static uint16_t video_mode = 3u;
 static uint16_t current_ds = 0x3000u;
+static unsigned int mouse_hides;
+static unsigned int mouse_shows;
 
 uint16_t gate_ds_segment(void) { return current_ds; }
 uint8_t gate_far_byte(uint16_t segment, uint16_t offset)
@@ -88,6 +91,16 @@ int inp(unsigned int port) { (void)port; return 0u; }
 int outp(unsigned int port, int value) { (void)port; return value; }
 int int86(int number, union REGS *input, union REGS *output)
 {
+    if (number == 0x33) {
+        if (input->x.ax == 2u)
+            ++mouse_hides;
+        else if (input->x.ax == 1u)
+            ++mouse_shows;
+        else
+            assert(0);
+        *output = *input;
+        return 0;
+    }
     assert(number == 0x10);
     *output = *input;
     switch (input->h.ah) {
@@ -119,15 +132,54 @@ void gate_rtl_background_rect(uint16_t style, uint16_t bottom, uint16_t right,
                               uint16_t top, uint16_t left);
 void gate_linked_blit_vfx_picture(uint16_t zero, uint16_t y, uint16_t x,
                                   uint16_t operation, GateFarPtr image);
+uint16_t gate_linked_save_vfx_draw_state(void);
+void gate_linked_restore_vfx_draw_state(uint16_t saved);
 
 static uint8_t pixel13(uint16_t x, uint16_t y)
 {
     return gate_far_byte(0xa000u, (uint16_t)(320ul * y + x));
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     GateFarPtr image;
+    if (argc > 1) {
+        /* The backing-buffer branch is deliberately unimplemented;
+         * ensure it never silently returns a fake successful save. */
+        (void)argv;
+        gate_ds_set_word(GATE_DS_VFX_STATE_FLAGS, 0x000du);
+        gate_linked_save_vfx_draw_state();
+        return 123;
+    }
+    /* The original save/restore entry examines the full WORD. A save
+     * that clears the only set bit leaves no state to restore. */
+    gate_ds_set_word(GATE_DS_VFX_STATE_FLAGS, 0u);
+    assert(gate_linked_save_vfx_draw_state() == 0u);
+    gate_linked_restore_vfx_draw_state(1u);
+    assert(gate_ds_word(GATE_DS_VFX_STATE_FLAGS) == 0u);
+    gate_ds_set_word(GATE_DS_VFX_STATE_FLAGS, 1u);
+    assert(gate_linked_save_vfx_draw_state() == 1u);
+    gate_linked_restore_vfx_draw_state(1u);
+    assert(gate_ds_word(GATE_DS_VFX_STATE_FLAGS) == 0u);
+
+    gate_ds_set_word(GATE_DS_VFX_STATE_FLAGS, 0x8041u);
+    assert(gate_linked_save_vfx_draw_state() == 1u);
+    assert(gate_ds_word(GATE_DS_VFX_STATE_FLAGS) == 0x8040u);
+    gate_linked_restore_vfx_draw_state(0u);
+    assert(gate_ds_word(GATE_DS_VFX_STATE_FLAGS) == 0x8040u);
+    gate_linked_restore_vfx_draw_state(1u);
+    assert(gate_ds_word(GATE_DS_VFX_STATE_FLAGS) == 0x8041u);
+
+    /* INT 33h AX=2/1 calls are paired even if the upper bit is set.
+     * When both 0x30 and 0x0c are set, the mouse branch wins. */
+    gate_ds_set_word(GATE_DS_VFX_STATE_FLAGS, 0x803du);
+    assert(gate_linked_save_vfx_draw_state() == 1u);
+    assert(gate_ds_word(GATE_DS_VFX_STATE_FLAGS) == 0x803cu);
+    assert(mouse_hides == 1u && mouse_shows == 0u);
+    gate_linked_restore_vfx_draw_state(1u);
+    assert(gate_ds_word(GATE_DS_VFX_STATE_FLAGS) == 0x803du);
+    assert(mouse_hides == 1u && mouse_shows == 1u);
+
     gate_ds_set_word(GATE_DS_RENDERER_MODE, 3u);
     gate_ds_set_word(GATE_DS_DRAW_CLIPPING_ENABLED, 0u);
     gate_ds_set_word(GATE_DS_DRAW_OPERATION, 0u);
@@ -238,6 +290,11 @@ int main(void)
             self.assertEqual(build.returncode, 0, build.stdout + build.stderr)
             tested = subprocess.run([str(binary)], capture_output=True, text=True)
             self.assertEqual(tested.returncode, 0, tested.stdout + tested.stderr)
+            unsupported = subprocess.run([str(binary), "--unverified-buffer"],
+                                         capture_output=True, text=True,
+                                         cwd=str(scratch))
+            self.assertEqual(unsupported.returncode, -signal.SIGABRT,
+                             unsupported.stdout + unsupported.stderr)
 
 
 if __name__ == "__main__":

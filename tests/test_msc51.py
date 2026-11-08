@@ -249,6 +249,9 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("gate_linked_blit_vfx_picture", (output / "RESCHK.C").read_text())
             self.assertIn("mode-13 VFX pixel copy", (output / "RESCHK.C").read_text())
             self.assertIn("mode-12 VFX four-plane pixel", (output / "RESCHK.C").read_text())
+            self.assertIn("int86(0x33, &in, &out)", (output / "RESSTATE.C").read_text())
+            self.assertIn("VFX save state accepted", (output / "RESCHK.C").read_text())
+            self.assertIn("GATE_DS_VFX_STATE_FLAGS", (output / "RTLLAY.H").read_text())
             for name in ("RESSTATE.C", "RESCHK.C"):
                 self.assertTrue(all(len(identifier) <= 31 for identifier in
                                     msc51.msc51_identifiers((output / name).read_text())), name)

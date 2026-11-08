@@ -19,6 +19,8 @@ void gate_rtl_background_rect(uint16_t style, uint16_t bottom,
                               uint16_t right, uint16_t top, uint16_t left);
 void gate_linked_blit_vfx_picture(uint16_t zero, uint16_t y, uint16_t x,
                                   uint16_t operation, GateFarPtr image);
+uint16_t gate_linked_save_vfx_draw_state(void);
+void gate_linked_restore_vfx_draw_state(uint16_t saved);
 
 static int check(uint16_t actual, uint16_t expected, const char *label)
 {
@@ -43,6 +45,14 @@ int main(void)
         return 1;
     }
     gate_dos_bind_ds((uint16_t)segment);
+    gate_ds_set_word(GATE_DS_VFX_STATE_FLAGS, 0x8041u);
+    valid &= check(gate_linked_save_vfx_draw_state(), 1u,
+                   "VFX save state accepted");
+    valid &= check(gate_ds_word(GATE_DS_VFX_STATE_FLAGS), 0x8040u,
+                   "VFX saved state flag cleared");
+    gate_linked_restore_vfx_draw_state(1u);
+    valid &= check(gate_ds_word(GATE_DS_VFX_STATE_FLAGS), 0x8041u,
+                   "VFX restored state flag set");
     gate_ds_set_word(GATE_DS_RENDERER_MODE, 8u);
     valid &= check(gate_linked_clear_resident_display(0u, 0u), 0xfffau,
                    "clear rejects invalid mode");

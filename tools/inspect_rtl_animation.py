@@ -104,6 +104,24 @@ VFX_STATE_FAR_CALLS = {
     'restore_unknown_draw': 0x1106c,
 }
 
+# Callback identities derived from the original 8086 instructions, rather
+# than inferred from a runtime segment:offset pair. Recheck their entry
+# prefixes before annotating a file-offset match as a particular service.
+VFX_CALLBACK_IDENTITIES = {
+    0xf473: ('vga_retrace_wait',
+             'wait for the status-port bit 3 low-to-high transition',
+             bytes.fromhex('558bec83ec0257568b3e0600')),
+    0x8468: ('software_interrupt',
+             'invoke a supplied interrupt with input/output register blocks',
+             bytes.fromhex('558bec565783ec0ac646f6cd')),
+    0x184e8: ('vfx_frame_draw',
+              'render the original VFX picture record',
+              bytes.fromhex('558bec83ec261e065657')),
+    0x18a95: ('video_region_transfer',
+              'clip a region and dispatch a transfer through the video driver',
+              bytes.fromhex('558bec83ec241e065657')),
+}
+
 
 def inspect_vfx_state(rtl, ram, drawing, ds=None):
     """Recover *live* save/restore flags, relocated fields and FAR callees.
@@ -189,7 +207,15 @@ def resolve_vfx_far_sources(exe, rtl, ram, calls, load_segment=0x1000):
     results = {}
     for name, target in calls.items():
         key = (target['segment'] - load_segment, target['offset'])
-        results[name] = matches.get(key)
+        match = matches.get(key)
+        if match is not None and match['file'] == 'rtl':
+            identified = VFX_CALLBACK_IDENTITIES.get(match['offset'])
+            if identified is not None:
+                service, purpose, prefix = identified
+                offset = match['offset']
+                if rtl[offset:offset + len(prefix)] == prefix:
+                    match = {**match, 'service': service, 'purpose': purpose}
+        results[name] = match
     return results
 
 
@@ -579,6 +605,8 @@ def main():
                 source = vfx['resident_far_sources'][name]
                 evidence = (f'{source["file"]}:0x{source["offset"]:05x} '
                             f'({source["matched_bytes"]}-byte match)'
+                            + (f' [{source["service"]}]'
+                               if 'service' in source else '')
                             if source is not None else 'unresolved source')
                 print(f'  {name:<24} {target["segment"]:04x}:{target["offset"]:04x}'
                       f' -> {evidence}')

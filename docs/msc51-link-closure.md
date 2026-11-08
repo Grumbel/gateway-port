@@ -15,9 +15,11 @@ with bounded host behavior. A new C89 DCL decoder additionally stages the
 compressed-picture service, with host-verified buffered DOS input and planar
 output. The original resource file wrappers now stage their raw BP-2 stack
 slots and unguarded CPU division without two external host-test callbacks.
-**6 is the predicted remainder if all updated DOS probes pass.**
+**4 is the predicted remainder if all updated DOS probes pass.**
 This is not yet a measured Microsoft LINK result.
-Do not manufacture no-op definitions merely to obtain an executable.
+The two VFX state definitions now cover only the verified state-flag and
+mouse-cursor paths; the video-buffer path explicitly aborts. Do not
+manufacture no-op definitions merely to obtain an executable.
 
 ## The 26 names in the last confirmed LINK report
 
@@ -31,7 +33,7 @@ Do not manufacture no-op definitions merely to obtain an executable.
 | Runtime calendar sample | `gate_linked_read_runtime_time_sample` | 1 | **Staged, DOS probe pending.** Original `RTL:8bb6..8cb7` reads DOS INT 21h/2Ah and 2Ch and fills the ten-byte epoch/milliseconds/TZ-minutes/DST sample. The bounded adapter follows original calendar and 1987 US DST arithmetic, including different hour/second values at the two DST call sites. Independent host tests cover leap days, timezone signs, boundaries, and FAR offset wrap. The other animation clocks are still approximate. |
 | VFX/picture pipeline | `gate_linked_decompress_picture_pixels`, `gate_linked_blit_vfx_picture`, `gate_linked_transform_picture_palette_indexed`, `gate_linked_transform_picture_palette_rgb`, `gate_linked_save_vfx_draw_state`, `gate_linked_restore_vfx_draw_state` | 6 | The two palette transforms are **staged and host-tested** against original RTL `f4df`/`f579`. The VFX blitter is **staged as a bounded DOS adapter**, not an instruction-for-instruction reconstruction of resident `24a7:000c`: modes 2/3 interpret original CA00 image records and render four-plane mode 12h through BIOS pixels or mode 13h through A000 bytes, with original raster operators and clipping. A bounded C89 streaming DCL decoder is staged and host-tested against a reference stream, mode-12h plane packing, 64KiB rollover and file-position preservation. DOS probes are still pending; saved drawing-state lifetime remains unresolved. |
 | Intro services and diagnostics | `gate_linked_initialize_intro_services`, `gate_linked_handle_control_key`, `gate_linked_print_intro_diagnostic` | 3 | Reconstruct the original music/IRQ8 setup, Ctrl-Break branch and resident diagnostic destination/format from the EXE and RTL. Silent success and dummy output are not valid equivalents. |
-| **Reported total** | | **26** | 18 more definitions and two original-stack/fault call-site replacements staged since this report; 6 projected unresolved after DOS probes. |
+| **Reported total** | | **26** | 20 more definitions and two original-stack/fault call-site replacements staged since this report; 4 projected unresolved after DOS probes. |
 
 ### Current DOS probe order
 
@@ -122,7 +124,7 @@ slower than its optimized native VGA-register loop.
 
 ### Original VFX save/restore state: the remaining evidence
 
-The missing `gate_linked_save_vfx_draw_state` and
+The previously missing `gate_linked_save_vfx_draw_state` and
 `gate_linked_restore_vfx_draw_state` **are present in the original RTL**:
 `GATE.RTL:0x11078..0x1111f` and `0x10f64..0x11077`. The three far calls
 from the frame renderer `rtl:0x12ed7` and their original source identities
@@ -131,8 +133,8 @@ are independently captured in `docs/picture-conditions.md`.
 These two functions are *not* simple copies of `DS:29de` drawing words.
 Their original 8086 branches inspect a linker-relocated flag WORD, test
 bit 0 and bit masks `0x30` and `0x0c`, and may call additional resident
-services. Some of those calls receive rectangle coordinates, while others
-receive a request number `0x33`; their precise effects remain unverified.
+services. Some of those calls receive rectangle coordinates, while the
+software-interrupt wrapper receives interrupt number `0x33`.
 The provable short path
 of the save function clears flag bit 0 and returns 1 if the state is
 nonzero and bit 0 was set; otherwise it returns 0. The restore function
@@ -195,17 +197,17 @@ FAR entries. Their identities and downstream semantics must remain distinct:
 
 | Call-site group | Captured FAR target | State of evidence |
 | --- | --- | --- |
-| Save/restore prepare | `2251:032a` | Unclassified resident service |
-| Both request-`0x33` paths | `1805:2d84` | Unclassified resident request dispatcher |
+| Save/restore prepare | `2251:032a` | Now matched to `RTL:f473`, VGA vertical-retrace wait |
+| Both request-`0x33` paths | `1805:2d84` | Now matched to `RTL:8468`, general interrupt wrapper (INT 33h here) |
 | Save/restore draw | `2a1c:000c` | Already matched independently to original `RTL:184e8` VFX drawing service |
-| Two restore rectangle operations | `2a71:0004` | Unclassified resident service |
+| Two restore rectangle operations | `2a71:0004` | Now matched to `RTL:18a95`, clipped video-region transfer dispatcher |
 
 The extended inspector includes `resident_far_sources` for each call, matched
 from its actual 16-byte guest entry to an original RTL/EXE offset whenever
 unambiguous; a missing/overwritten entry is emitted as `null`, not guessed.
-This additional step is necessary before confidently dispatching mode-mask
-`0x30` or `0x0c` from new C functions. A separately observed VFX-entry DS
-can be passed with `--vfx-ds HEX` for flags at capture time; animation entry
+This additional step established the mouse mode-mask `0x30` semantics;
+the backing-buffer mode `0x0c` remains unverified. A separately observed
+VFX-entry DS can be passed with `--vfx-ds HEX` for flags at capture time; animation entry
 traces for neighboring routines are not by themselves proof of that DS.
 
 If a VFX entry trace independently establishes the live DS segment, supply
@@ -215,9 +217,42 @@ that the capture necessarily exercised a particular branch. Its synthetic
 tests cover relocated operands, inconsistent linker sites, state-flag
 branch selection and callback extraction. An optional SHA-256-pinned original
 binary test checks all 27 opcode/displacement pairs, both FAR entry points
-and eight unrelocated FAR CALL sites. **No DOS
-VFX state definitions are staged until the real relocated offsets and
-required downstream callbacks have been validated.**
+and eight unrelocated FAR CALL sites.
+
+The user's second `checkpoint-book_taken.bin` report uniquely matches all
+four callback entry points against their original RTL file locations:
+
+| FAR callback (that one load only) | Original RTL entry | Verified purpose |
+| --- | --- | --- |
+| `2251:032a` | `rtl:f473` | Poll the VGA input-status port until retrace bit 3 goes low, then high; the port is indirect through the driver's DS word at `+6` |
+| `1805:2d84` | `rtl:8468` | Execute the requested software interrupt using an input/output register block; the callers supply interrupt `33h`, AX=2 (hide mouse) on save and AX=1 (show) on restore |
+| `2a1c:000c` | `rtl:184e8` | The previously verified VFX image renderer |
+| `2a71:0004` | `rtl:18a95` | Validate and clip a video-region transfer, then dispatch through the selected video driver's FAR callback at descriptor `+2e`; called twice during restore |
+
+These are not EXE entry points, and each runtime FAR address is valid for
+that captured loading layout only. Each original RTL offset was separately
+checked against its 8086 instructions. The inspector now labels callbacks
+only if both the file-offset match and instruction prefix agree. An entry
+match alone cannot prove that any particular branch executed in the capture.
+
+The original `rtl:11078` save returns zero unless the flag WORD at relocated
+`DS:13d2` is nonzero with bit 0 set; it then clears **only bit 0**. The
+corresponding `rtl:10f64` restore requires a nonzero flag WORD, a cleared
+bit 0, and a nonzero saved argument, then sets **only bit 0**. If `flags &
+30h` is nonzero, the original calls INT 33h AX=2 (save) or AX=1
+(restore). That branch wins over `flags & 0ch` when both masks are set.
+
+`RESSTATE.OBJ` now stages these verified flag-only and mouse-cursor paths.
+Host tests check early returns, preserved high bits, balanced INT 33h mouse
+calls, branch priority, and the unusual `flags=1` case where clearing bit 0
+leaves no state to restore. The DOS probe checks the flag-only path.
+**These are bounded adapters, not the full original behavior.** When `flags
+& 0ch` is set without the `30h` mouse branch, they abort explicitly. That
+branch still requires the meanings of the two backing-region descriptors
+(`DS:0000` and `DS:0080` in the original routine's DS), `rtl:10dc7`
+coordinate transformation, and source/destination behavior of `rtl:18a95`.
+It must not be silently approximated as a CA00 image blit. Rerun
+`msc51-compile-resident-state` before the next Microsoft LINK attempt.
 
 The new `msc51-compile-picture-dcl` stage builds `PICTDCL.OBJ` from a
 streaming, bounded C89 translation of the repository's independently tested

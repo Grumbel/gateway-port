@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 from inspect_rtl_animation import (
     DRAW_CALL_SITES, ROOM_CALLS, VFX_STATE_FAR_CALLS, VFX_STATE_OPERANDS,
+    VFX_CALLBACK_IDENTITIES,
     inspect_animation_calls, inspect_vfx_state,
     inspect_animation_draw_calls, inspect_animation_state,
     mode3_rasterizer_addresses, relocated_displacement,
@@ -44,6 +45,32 @@ class AnimationServiceTests(unittest.TestCase):
         self.assertEqual(resolved['draw']['matched_bytes'], 16)
         self.assertEqual(resolved['draw'], resolved['duplicate'])
         self.assertIsNone(resolved['unknown'])
+        self.assertNotIn('service', resolved['draw'])
+
+    def test_vfx_service_names_require_verified_source_code(self):
+        for original, (service, purpose, prefix) in VFX_CALLBACK_IDENTITIES.items():
+            with self.subTest(service=service):
+                rtl = bytearray(0x19000)
+                ram = bytearray(1 << 20)
+                segment, offset = 0x2a1c, 0x10
+                # An exact 16-byte entry match is a necessary prerequisite
+                # for labeling a source, but a name additionally requires
+                # its independently recovered original instruction prefix.
+                entry = prefix + bytes((0xff ^ i) for i in range(16 - len(prefix)))
+                rtl[original:original + 16] = entry
+                linear = segment * 16 + offset
+                ram[linear:linear + 16] = entry
+                calls = {'target': {'segment': segment, 'offset': offset}}
+                row = resolve_vfx_far_sources(b'MZ', rtl, ram, calls)['target']
+                self.assertEqual(row['offset'], original)
+                self.assertEqual(row['service'], service)
+                self.assertEqual(row['purpose'], purpose)
+                rtl[original] ^= 0x01
+                row = resolve_vfx_far_sources(b'MZ', rtl, ram, calls)['target']
+                # The origin matcher tolerates some different entry bytes
+                # when later instructions still match. The *semantic* label
+                # must nevertheless require its own verified prefix.
+                self.assertNotIn('service', row or {})
 
     def test_missing_snapshot_has_reproducible_capture_instructions(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -137,6 +164,9 @@ class AnimationServiceTests(unittest.TestCase):
         for name, offset in VFX_STATE_FAR_CALLS.items():
             with self.subTest(call=name):
                 self.assertEqual(rtl[offset:offset + 5], b'\x9a\0\0\0\0')
+        for offset, (service, _purpose, prefix) in VFX_CALLBACK_IDENTITIES.items():
+            with self.subTest(service=service):
+                self.assertEqual(rtl[offset:offset + len(prefix)], prefix)
 
     def setUp(self):
         self.ovl = bytearray(0x51570)

@@ -39,6 +39,10 @@ enum {
     GATE_DS_MODE_COLOR_LAYOUT_TABLE = 0x1320,
     GATE_DS_INPUT_PENDING_COUNT = 0x133e,
     GATE_DS_INPUT_BUFFERED_KEY = 0x1340,
+    /* RTL:10f64/11078 VFX save/restore WORD, verified from the linked
+     * room snapshot. Bit 0 tracks whether drawing state is active;
+     * 30h selects the DOS mouse interrupt path, 0ch the video-buffer path. */
+    GATE_DS_VFX_STATE_FLAGS = 0x13d2,
     GATE_DS_RESOURCE_SCALARS_BASE = 0x1416,
 
     GATE_DS_RENDERER_MODE = 0x15cc,

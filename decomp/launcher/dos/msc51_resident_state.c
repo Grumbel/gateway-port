@@ -214,6 +214,53 @@ static uint8_t vfx_raster_byte(uint8_t incoming, uint8_t old,
     }
 }
 
+/* RTL:11078 (save) and RTL:10f64 (restore), original FAR entries
+ * 23bd:04d9 and 23bd:03c5. The original chooses the mouse driver before
+ * the video-buffer path when both sets of flags are present. The linked
+ * INT dispatcher RTL:8468 invokes INT 33h with AX=2 to hide and AX=1 to
+ * show the cursor; these calls must remain paired, since the driver uses
+ * a visibility counter rather than an idempotent on/off flag.
+ *
+ * The video-buffer branch (flags & 0x0c) invokes RTL:18a95 with two
+ * overlapping region descriptors, and RTL:10dc7 to shift the saved area.
+ * It is not equivalent to the image blitter below. Stop on that branch
+ * until the descriptor contents and transfer directions are verified.
+ * In particular, never manufacture a successful save for that mode. */
+static void vfx_mouse_visibility(uint16_t function)
+{
+    union REGS in, out;
+    in.x.ax = function;
+    in.x.bx = 0u;
+    in.x.cx = 0u;
+    in.x.dx = 0u;
+    int86(0x33, &in, &out);
+}
+
+uint16_t gate_linked_save_vfx_draw_state(void)
+{
+    uint16_t flags = gate_ds_word(GATE_DS_VFX_STATE_FLAGS);
+    if (flags == 0u || (flags & 1u) == 0u)
+        return 0u;
+    if ((flags & 0x30u) == 0u && (flags & 0x0cu) != 0u)
+        abort();
+    gate_ds_set_word(GATE_DS_VFX_STATE_FLAGS, (uint16_t)(flags & ~1u));
+    if ((flags & 0x30u) != 0u)
+        vfx_mouse_visibility(2u);
+    return 1u;
+}
+
+void gate_linked_restore_vfx_draw_state(uint16_t saved)
+{
+    uint16_t flags = gate_ds_word(GATE_DS_VFX_STATE_FLAGS);
+    if (flags == 0u || (flags & 1u) != 0u || saved == 0u)
+        return;
+    if ((flags & 0x30u) == 0u && (flags & 0x0cu) != 0u)
+        abort();
+    gate_ds_set_word(GATE_DS_VFX_STATE_FLAGS, (uint16_t)(flags | 1u));
+    if ((flags & 0x30u) != 0u)
+        vfx_mouse_visibility(1u);
+}
+
 void gate_linked_blit_vfx_picture(uint16_t zero, uint16_t y, uint16_t x,
                                    uint16_t operation, GateFarPtr image)
 {
