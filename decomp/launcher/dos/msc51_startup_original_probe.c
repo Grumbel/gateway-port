@@ -315,6 +315,14 @@ int main(void)
                  gate_far_word((uint16_t)resident_allocated, 0x2909u) != 0x33d4u ||
                  gate_far_word((uint16_t)resident_allocated, 0x2b36u) != 0x2b70u))
         good = 0;
+    if (good && (gate_far_word((uint16_t)resident_allocated, 0x14ebu) != 0x2c42u ||
+                 gate_far_word((uint16_t)resident_allocated, 0x235au) != 0x2beeu ||
+                 gate_far_word((uint16_t)resident_allocated, 0x3262u) != 0x2be1u))
+        good = 0;
+    if (good && (gate_far_word((uint16_t)resident_allocated, 0x34f0u) != 0x3538u ||
+                 gate_far_word((uint16_t)resident_allocated, 0x35dcu) != 0x6470u ||
+                 gate_far_word((uint16_t)resident_allocated, 0x3b28u) != 0x358eu))
+        good = 0;
     /* The synthetic EXE callback is not an executable target. The real
      * recompiled EXE's equivalent routine is not yet identified. */
     if (good && (gate_far_word((uint16_t)resident_allocated, 0x0a4eu) != 0x0030u ||

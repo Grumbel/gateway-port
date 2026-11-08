@@ -414,6 +414,48 @@ int main(void)
         if (gate_far_word(segment, gate_resident_allocator_offsets[i].site) !=
             gate_resident_allocator_offsets[i].target)
             abort();
+    for (i = 0u; i < sizeof gate_resident_bound_offsets /
+                      sizeof gate_resident_bound_offsets[0]; ++i) {
+        gate_far_set_word(segment, gate_resident_bound_offsets[i].site, 0u);
+        gate_far_set_word(segment,
+                          (uint16_t)(gate_resident_bound_offsets[i].site - 2u),
+                          gate_resident_bound_offsets[i].prefix);
+    }
+    if (gate_dos_relocate_intro_resident_bound_offsets(segment, 0x03cfu) != -1)
+        abort();
+    gate_far_set_word(segment, 0x3262u, 1u);
+    if (gate_dos_relocate_intro_resident_bound_offsets(segment, 0x03d0u) != -2 ||
+        gate_far_word(segment, 0x0fd4u) != 0u)
+        abort();
+    gate_far_set_word(segment, 0x3262u, 0u);
+    if (gate_dos_relocate_intro_resident_bound_offsets(segment, 0x03d0u) != 0)
+        abort();
+    for (i = 0u; i < sizeof gate_resident_bound_offsets /
+                      sizeof gate_resident_bound_offsets[0]; ++i)
+        if (gate_far_word(segment, gate_resident_bound_offsets[i].site) !=
+            gate_resident_bound_offsets[i].target)
+            abort();
+    for (i = 0u; i < sizeof gate_resident_trailing_offsets /
+                      sizeof gate_resident_trailing_offsets[0]; ++i) {
+        gate_far_set_word(segment, gate_resident_trailing_offsets[i].site, 0u);
+        gate_far_set_word(segment,
+                          (uint16_t)(gate_resident_trailing_offsets[i].site - 2u),
+                          gate_resident_trailing_offsets[i].prefix);
+    }
+    if (gate_dos_relocate_intro_resident_trailing_offsets(segment, 0x03cfu) != -1)
+        abort();
+    gate_far_set_word(segment, 0x3b28u, 1u);
+    if (gate_dos_relocate_intro_resident_trailing_offsets(segment, 0x03d0u) != -2 ||
+        gate_far_word(segment, 0x34f0u) != 0u)
+        abort();
+    gate_far_set_word(segment, 0x3b28u, 0u);
+    if (gate_dos_relocate_intro_resident_trailing_offsets(segment, 0x03d0u) != 0)
+        abort();
+    for (i = 0u; i < sizeof gate_resident_trailing_offsets /
+                      sizeof gate_resident_trailing_offsets[0]; ++i)
+        if (gate_far_word(segment, gate_resident_trailing_offsets[i].site) !=
+            gate_resident_trailing_offsets[i].target)
+            abort();
     puts("98 self-calls, 7 DS loads, EXE call and 7 direct segments: PASS");
     return 0;
 }
