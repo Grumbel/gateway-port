@@ -102,6 +102,11 @@ static const uint16_t observed_early_words[8] = {
     0x00e0u, 0x00efu, 0x020bu, 0x020bu,
     0x0203u, 0x010bu, 0x00feu, 0x011du
 };
+static const uint16_t observed_paragraph_sites[13] = {
+    0x113du, 0x1170u, 0x1273u, 0x12cbu, 0x131du,
+    0x398du, 0x3998u, 0x39c3u, 0x39cfu,
+    0x3a06u, 0x3a11u, 0x3a64u, 0x3a6fu
+};
 
 int main(void)
 {
@@ -309,6 +314,10 @@ int main(void)
                  gate_far_word((uint16_t)resident_allocated, 0x019cu) !=
                      (uint16_t)resident_allocated))
         good = 0;
+    for (i = 0u; good && i < 13u; ++i)
+        if (gate_far_word((uint16_t)resident_allocated,
+                          observed_paragraph_sites[i]) != 0x1000u)
+            good = 0;
     if (good && gate_dos_clear_intro_rtl_prefix((uint16_t)allocated,
                                                GATE_REAL_PARAGRAPHS) != 0)
         good = 0;

@@ -239,12 +239,65 @@ int gate_dos_relocate_intro_resident_direct_segments(uint16_t resident_segment,
     return 0;
 }
 
+/* The original Microsoft C large-model far-memory helpers adjust segment
+ * registers by 1000h paragraphs (64KiB) when the 16-bit offset wraps.
+ * These are arithmetic constants, NOT the original EXE load segment: all
+ * four 125..500ms RAM captures contain 1000h at the same thirteen source-
+ * zero instruction operands. Check the opcode context at each site before
+ * writing, without changing another instruction on preflight failure. */
+typedef struct GateResidentParagraphFixup {
+    uint16_t site;
+    uint8_t opcode;
+} GateResidentParagraphFixup;
+static const GateResidentParagraphFixup gate_resident_paragraph_fixups[] = {
+    {0x113du, 0x81u}, {0x1170u, 0x81u},
+    {0x1273u, 0x25u}, {0x12cbu, 0x81u}, {0x131du, 0x25u},
+    {0x398du, 0x05u}, {0x3998u, 0x05u},
+    {0x39c3u, 0x2du}, {0x39cfu, 0x2du},
+    {0x3a06u, 0x05u}, {0x3a11u, 0x05u},
+    {0x3a64u, 0x05u}, {0x3a6fu, 0x05u}
+};
+
+int gate_dos_relocate_intro_resident_paragraphs(uint16_t resident_segment,
+                                                  uint16_t paragraphs)
+{
+    unsigned int i;
+    if (resident_segment == 0u || resident_segment > 0xfc30u ||
+        paragraphs < GATE_RESIDENT_PARAS)
+        return -1;
+    for (i = 0u; i < sizeof gate_resident_paragraph_fixups /
+                      sizeof gate_resident_paragraph_fixups[0]; ++i) {
+        uint16_t site = gate_resident_paragraph_fixups[i].site;
+        uint8_t opcode = gate_resident_paragraph_fixups[i].opcode;
+        uint16_t opcode_site = (uint16_t)(site - (opcode == 0x81u ? 3u : 1u));
+        if (gate_far_byte(resident_segment, opcode_site) != opcode ||
+            gate_far_word(resident_segment, site) != 0u)
+            return -2;
+        if (opcode == 0x81u) {
+            if (site == 0x1170u) {
+                if (gate_far_byte(resident_segment, (uint16_t)(site - 2u)) != 0x46u ||
+                    gate_far_byte(resident_segment, (uint16_t)(site - 1u)) != 0x08u)
+                    return -2;
+            } else if (gate_far_byte(resident_segment, (uint16_t)(site - 4u)) != 0x26u ||
+                       gate_far_byte(resident_segment, (uint16_t)(site - 2u)) != 0x47u ||
+                       gate_far_byte(resident_segment, (uint16_t)(site - 1u)) != 0x02u) {
+                return -2;
+            }
+        }
+    }
+    for (i = 0u; i < sizeof gate_resident_paragraph_fixups /
+                      sizeof gate_resident_paragraph_fixups[0]; ++i)
+        gate_far_set_word(resident_segment, gate_resident_paragraph_fixups[i].site,
+                         0x1000u);
+    return 0;
+}
+
 /* Stage the first reconstructed resident bank in the eventual DOS entry.
  * Unlike the data-only bootstrap below, this operation does not establish
  * the remaining resident banks, interrupt vectors, or an executable entry.
  * Failure leaves a partially loaded/relocated allocation: discard it.
  * -1 bad arguments, -2 file load, -3 self calls, -4 DS loads,
- * -5 EXE callback, -6 direct segment operands. */
+ * -5 EXE callback, -6 direct segment operands, -7 paragraph carries. */
 int gate_dos_prepare_intro_resident_bank(uint16_t rtl_handle,
                                          uint16_t resident_segment,
                                          uint16_t paragraphs,
@@ -271,6 +324,9 @@ int gate_dos_prepare_intro_resident_bank(uint16_t rtl_handle,
                                                          paragraphs,
                                                          data_segment) != 0)
         return -6;
+    if (gate_dos_relocate_intro_resident_paragraphs(resident_segment,
+                                                    paragraphs) != 0)
+        return -7;
     return 0;
 }
 

@@ -196,6 +196,37 @@ int main(void)
                                              0x200au, external) != -2 ||
         gate_far_word(segment, 0x09d7u) != 0x0bdeu)
         abort();
+    /* Reconstruct only opcode contexts and zero words in fresh paragraph
+     * relocation operands; the actual file/snapshot oracle is in Python. */
+    for (i = 0u; i < sizeof gate_resident_paragraph_fixups /
+                      sizeof gate_resident_paragraph_fixups[0]; ++i) {
+        uint16_t site = gate_resident_paragraph_fixups[i].site;
+        uint8_t opcode = gate_resident_paragraph_fixups[i].opcode;
+        gate_far_set_word(segment, site, 0u);
+        gate_far_set_byte(segment, (uint16_t)(site - (opcode == 0x81u ? 3u : 1u)),
+                          opcode);
+        if (opcode == 0x81u) {
+            gate_far_set_byte(segment, (uint16_t)(site - 2u),
+                              site == 0x1170u ? 0x46u : 0x47u);
+            gate_far_set_byte(segment, (uint16_t)(site - 1u),
+                              site == 0x1170u ? 0x08u : 0x02u);
+            if (site != 0x1170u)
+                gate_far_set_byte(segment, (uint16_t)(site - 4u), 0x26u);
+        }
+    }
+    if (gate_dos_relocate_intro_resident_paragraphs(segment, 0x03cfu) != -1)
+        abort();
+    gate_far_set_byte(segment, 0x3a6eu, 0x90u);
+    if (gate_dos_relocate_intro_resident_paragraphs(segment, 0x03d0u) != -2 ||
+        gate_far_word(segment, 0x113du) != 0u)
+        abort();
+    gate_far_set_byte(segment, 0x3a6eu, 0x05u);
+    if (gate_dos_relocate_intro_resident_paragraphs(segment, 0x03d0u) != 0)
+        abort();
+    for (i = 0u; i < sizeof gate_resident_paragraph_fixups /
+                      sizeof gate_resident_paragraph_fixups[0]; ++i)
+        if (gate_far_word(segment, gate_resident_paragraph_fixups[i].site) != 0x1000u)
+            abort();
     puts("98 self-calls, 7 DS loads, EXE call and 7 direct segments: PASS");
     return 0;
 }

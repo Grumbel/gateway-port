@@ -45,7 +45,40 @@ def direct_segment_manifest(name):
     return [int(value, 16) for value in re.findall(r"0x([0-9a-f]+)u", match.group(1))]
 
 
+def paragraph_manifest():
+    source = (ROOT / "decomp/launcher/dos/msc51_startup_static_data.c").read_text()
+    match = re.search(r"static const GateResidentParagraphFixup "
+                      r"gate_resident_paragraph_fixups\[\] = \{(.*?)\n\};",
+                      source, re.DOTALL)
+    if match is None:
+        raise AssertionError("resident paragraph fixup table missing")
+    return [(int(site, 16), int(opcode, 16)) for site, opcode in
+            re.findall(r"\{0x([0-9a-f]+)u, 0x([0-9a-f]+)u\}", match.group(1))]
+
+
 class ResidentSelfCallTests(unittest.TestCase):
+    def test_paragraph_carries_against_original_ram(self):
+        rtl_path = ROOT.parent / "gateway-dos/GATE.RTL"
+        captures = [ROOT / f"build/msc51-startup-fine/at-{ms}.bin"
+                    for ms in (125, 175, 250)]
+        captures.append(ROOT / "build/msc51-startup/at-500.bin")
+        if not rtl_path.exists() or not all(path.exists() for path in captures):
+            self.skipTest("Original RTL and settled DOS captures unavailable")
+        rtl = rtl_path.read_bytes()[0x56de:0x93de]
+        live = [path.read_bytes()[0x12a50:0x12a50 + len(rtl)] for path in captures]
+        sites = paragraph_manifest()
+        self.assertEqual(len(sites), 13)
+        self.assertEqual([site for site, _ in sites], sorted(set(site for site, _ in sites)))
+        for site, opcode in sites:
+            self.assertEqual(rtl[site:site + 2], bytes(2), hex(site))
+            prefix = site - (3 if opcode == 0x81 else 1)
+            self.assertEqual(rtl[prefix], opcode, hex(site))
+            if opcode == 0x81:
+                self.assertEqual(rtl[site - 2:site],
+                                 b"\x46\x08" if site == 0x1170 else b"\x47\x02")
+            for ram in live:
+                self.assertEqual(ram[site:site + 2], b"\x00\x10", hex(site))
+
     def test_early_data_words_against_original_ram_captures(self):
         rtl_path = ROOT.parent / "gateway-dos/GATE.RTL"
         captures = [ROOT / "build/msc51-startup/at-100.bin",
