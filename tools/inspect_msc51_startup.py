@@ -165,6 +165,104 @@ def rtl_preimage_comparison(rtl, data):
             "largest_changed_regions": zero_regions(mask, minimum=16)[:12]}
 
 
+def rtl_preimage_fixup_candidates(rtl, samples, runtime_ds, image_load):
+    """Find *hypotheses*, not verified relocations, in the RTL data preimage.
+
+    `samples` are (milliseconds, eventual-DS bytes), regardless of the
+    loader's temporary DS. A changed word is interesting when its runtime
+    value, or its 16-bit difference from the source, equals an observed
+    segment base. Adjacent byte pairs at *both* alignments are considered:
+    x86 relocations can appear at odd offsets within instructions.
+
+    An exact segment value needs both bytes changed (or a zero source word);
+    a known 16-bit segment delta may legitimately change only the high byte.
+    This is a filter for investigation, not proof of linker relocation.
+    """
+    if runtime_ds is None:
+        raise ValueError("cannot inspect RTL fixups before original DS is observed")
+    size = RTL_DATA_IMAGE_END
+    base = RTL_DATA_IMAGE_FILE_OFFSET
+    if len(rtl) < base + size:
+        raise ValueError("RTL file is too small for leading DS preimage")
+    prepared = [(time, data[:size]) for time, data in samples if time >= 100]
+    if not prepared or any(len(data) != size for _, data in prepared):
+        raise ValueError("need complete eventual-DS snapshots at or after 100ms")
+    prepared.sort(key=lambda item: item[0])
+    first_time, first = prepared[0]
+    if first_time > 250:
+        raise ValueError("need an early 100..250ms snapshot to classify startup fixups")
+    source = rtl[base:base + size]
+    segment_labels = {
+        "runtime_ds": runtime_ds,
+        "lower_ds": (runtime_ds - 10) & 0xffff,
+        "resident_cs": (image_load + RESIDENT_SEGMENT) & 0xffff,
+        "image_load": image_load,
+    }
+    changed = [i for i in range(size) if source[i] != first[i]]
+    # Distinguish bytes already changed by our first observation from those
+    # later updated by the running game. Both are compared to real captures.
+    early = [data for time, data in prepared if time <= 250]
+    late = [data for time, data in prepared if time >= 500]
+    stable_early = [i for i in changed if all(data[i] == first[i] for data in early)]
+    changed_later = [i for i in changed if any(data[i] != first[i] for data in late)]
+    all_later_updates = sum(any(data[i] != first[i] for data in late)
+                            for i in range(size))
+
+    candidates = []
+    for offset in range(size - 1):
+        before = word(source, offset)
+        after = word(first, offset)
+        if before == after:
+            continue
+        both_bytes_changed = (source[offset] != first[offset] and
+                              source[offset + 1] != first[offset + 1])
+        target_names = [name for name, value in segment_labels.items()
+                        if after == value]
+        delta_names = [name for name, value in segment_labels.items()
+                       if (after - before) & 0xffff == value]
+        if not target_names and not delta_names:
+            continue
+        if not both_bytes_changed and not (before == 0 and target_names) and not delta_names:
+            continue
+        candidates.append({
+            "runtime_ds_offset": offset,
+            "rtl_file_offset": base + offset,
+            "source_word": before,
+            "observed_word": after,
+            "delta_word": (after - before) & 0xffff,
+            "target_segments": target_names,
+            "delta_segments": delta_names,
+            "stable_through_250ms": all(word(data, offset) == after for data in early),
+            "changed_by_500ms_or_later": any(word(data, offset) != after for data in late),
+        })
+    return {
+        "first_prepared_ms": first_time,
+        "early_sample_ms": [time for time, _ in prepared if time <= 250],
+        "late_sample_ms": [time for time, _ in prepared if time >= 500],
+        "rtl_file_offset": base,
+        "runtime_ds_length": size,
+        "observed_segments": segment_labels,
+        "changed_bytes": len(changed),
+        "changed_bytes_stable_through_250ms": len(stable_early),
+        "changed_bytes_mutated_by_500ms_or_later": len(changed_later),
+        "all_bytes_mutated_by_500ms_or_later": all_later_updates,
+        "candidate_word_count": len(candidates),
+        "candidate_words": candidates,
+    }
+
+
+def runtime_data_fixups(rtl, captures, runtime_ds, image_load):
+    """Obtain the eventual DS even during captures of the temporary loader."""
+    if runtime_ds is None:
+        raise ValueError("cannot inspect RTL fixups before original DS is observed")
+    start = runtime_ds * 16
+    if start + 0x10000 > RAM_SIZE:
+        raise ValueError("runtime data segment outside conventional RAM")
+    return rtl_preimage_fixup_candidates(
+        rtl, [(time, ram[start:start + 0x10000]) for time, _, ram in captures],
+        runtime_ds, image_load)
+
+
 def runtime_data_layout(exe, rtl, captures, segment, *, minimum=DATA_MATCH_MINIMUM):
     """Report EXE/RTL exact matches and zero spans in the *eventual* DS.
 
@@ -562,6 +660,8 @@ def main():
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--runtime-data-layout", action="store_true",
                         help="find exact original-file copies and zero spans in the eventual 64KiB DS")
+    parser.add_argument("--runtime-data-fixups", action="store_true",
+                        help="report unverified candidate segment-word fixups in the early RTL preimage")
     args = parser.parse_args()
     try:
         exe = args.exe.read_bytes()
@@ -571,6 +671,10 @@ def main():
         if args.runtime_data_layout:
             report["runtime_data_layout"] = runtime_data_layout(
                 exe, rtl, captures, report["observed_runtime_data_segment"])
+        if args.runtime_data_fixups:
+            report["runtime_data_fixups"] = runtime_data_fixups(
+                rtl, captures, report["observed_runtime_data_segment"],
+                report["original_exe"]["image_load_segment"])
     except (ValueError, OSError) as error:
         parser.error(str(error))
     if args.json:
@@ -659,6 +763,34 @@ def main():
             for span in zero_spans[:12]:
                 print("     DS:%04x +%d zero bytes (not proven BSS)" % (
                     span["runtime_ds_offset"], span["length"]))
+        if args.runtime_data_fixups:
+            fixups = report["runtime_data_fixups"]
+            print("RTL data-preimage word candidates (unverified; first %dms):" %
+                  fixups["first_prepared_ms"])
+            print("  early samples=%s; later samples=%s" % (
+                fixups["early_sample_ms"], fixups["late_sample_ms"]))
+            print("  %d/%d bytes differ from source; %d stable across early samples, "
+                  "%d of those changed in later samples; %d total bytes updated later" % (
+                      fixups["changed_bytes"], fixups["runtime_ds_length"],
+                      fixups["changed_bytes_stable_through_250ms"],
+                      fixups["changed_bytes_mutated_by_500ms_or_later"],
+                      fixups["all_bytes_mutated_by_500ms_or_later"]))
+            print("  %d two-byte candidates matching an observed segment or a segment delta" %
+                  fixups["candidate_word_count"])
+            for candidate in fixups["candidate_words"][:80]:
+                kinds = (["value=" + ",".join(candidate["target_segments"])]
+                         if candidate["target_segments"] else [])
+                if candidate["delta_segments"]:
+                    kinds.append("delta=" + ",".join(candidate["delta_segments"]))
+                print("    DS:%04x RTL:%05x %04x->%04x (%s)%s%s" % (
+                    candidate["runtime_ds_offset"], candidate["rtl_file_offset"],
+                    candidate["source_word"], candidate["observed_word"],
+                    "; ".join(kinds),
+                    " unstable-before-250ms" if not candidate["stable_through_250ms"] else "",
+                    " mutated-after-500ms" if candidate["changed_by_500ms_or_later"] else ""))
+            if fixups["candidate_word_count"] > 80:
+                print("    ... %d more candidate words (use --json for all)" %
+                      (fixups["candidate_word_count"] - 80))
 
 
 if __name__ == "__main__":

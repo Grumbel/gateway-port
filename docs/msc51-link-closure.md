@@ -601,6 +601,26 @@ nix run -L .#msc51-compile-data -- --original-game-dir ../gateway-dos
 # Both DATTEST.LOG and DATREAL.LOG must pass; return DATBUILD.LOG on failure.
 ```
 
+**Follow-up (user confirmation):** Both `DATTEST.LOG` and `DATREAL.LOG`
+report PASS on the genuine MS C 5.1/DOSBox run. That verifies these two
+bounded source-image copy tests, but does not prove the reconstructed
+launcher would initialize DS to match the original.
+
+**Next relocation investigation:** `inspect_msc51_startup.py
+--runtime-data-fixups` now isolates the first 100–250ms changed bytes
+from the raw `RTL:+0029` preimage, counts which of those subsequently
+change after 500ms, and separately counts *all* later writes. It examines
+both even- and odd-offset 16-bit windows. Two candidate classes are
+reported: an observed word equals the original image-load, resident-CS,
+runtime-DS or lower-DS segment, or the wrapping difference from its
+source word equals one of these bases. The report includes each source
+file offset, before/after words, and early/late stability. Every entry is
+**unverified**: matches can be coincidental or runtime initialization;
+zero-source pointers are not automatically relocation slots. Complete
+candidate lists are available as `--runtime-data-fixups --json` and must
+be checked against original startup instructions before being translated
+to DOS fixups. No new loader writes have been added on speculation.
+
 **Microsoft C 5.1 build correction:** The first user-side `DATA.BAT` run
 compiled `DATA.C` but stopped with `DATACHK.C(22): C2073` (an initialized
 automatic `char name[]`), so **neither test executable ran**. Both test

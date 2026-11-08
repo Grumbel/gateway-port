@@ -46,6 +46,66 @@ def regs(cs, ip, ds, ss, sp):
 
 
 class StartupSnapshotTests(unittest.TestCase):
+    def test_preimage_fixups_restrict_hypotheses_and_track_later_writes(self):
+        length = startup.RTL_DATA_IMAGE_END
+        rtl = bytearray(b"\x55" * (0x29 + length))
+        source = memoryview(rtl)[0x29:]
+        for offset, initial in ((0x100, 0), (0x107, 0), (0x200, 7),
+                                (0x260, 0x1234), (0x300, 0x1234)):
+            put_word(source, offset, initial)
+        first = bytearray(source)
+        for offset, observed in ((0x100, 0x2a7a), (0x107, 0x2a70),
+                                 (0x200, 0x12ac), (0x260, 0x2234),
+                                 (0x300, 0xabcd)):
+            put_word(first, offset, observed)
+        during = bytearray(first)
+        during[0x107] ^= 1
+        late = bytearray(first)
+        late[0x200] ^= 1
+        late[0x310] ^= 1  # A later write absent from the first mismatches.
+        report = startup.rtl_preimage_fixup_candidates(
+            bytes(rtl), [(100, bytes(first)), (125, bytes(during)),
+                         (500, bytes(late))], 0x2a7a, 0x1000)
+        self.assertEqual(report["changed_bytes"], 9)
+        self.assertEqual(report["changed_bytes_stable_through_250ms"], 8)
+        self.assertEqual(report["changed_bytes_mutated_by_500ms_or_later"], 1)
+        self.assertEqual(report["all_bytes_mutated_by_500ms_or_later"], 2)
+        candidates = {item["runtime_ds_offset"]: item
+                      for item in report["candidate_words"]}
+        self.assertEqual(set(candidates), {0x100, 0x107, 0x200, 0x260})
+        self.assertIn("runtime_ds", candidates[0x100]["target_segments"])
+        self.assertIn("lower_ds", candidates[0x107]["target_segments"])
+        self.assertFalse(candidates[0x107]["stable_through_250ms"])
+        self.assertIn("resident_cs", candidates[0x200]["delta_segments"])
+        self.assertTrue(candidates[0x200]["changed_by_500ms_or_later"])
+        self.assertIn("image_load", candidates[0x260]["delta_segments"])
+        self.assertFalse(candidates[0x260]["changed_by_500ms_or_later"])
+        self.assertEqual(candidates[0x107]["rtl_file_offset"], 0x130)
+        # Early loader DS is deliberately different from the eventual DS.
+        ram_first = bytearray(startup.RAM_SIZE)
+        ram_late = bytearray(startup.RAM_SIZE)
+        start = 0x2a7a * 16
+        ram_first[start:start + length] = first
+        ram_late[start:start + length] = late
+        wrapped = startup.runtime_data_fixups(
+            bytes(rtl), [
+                (100, regs(0x3259, 0x103c, 0x348a, 0x3229, 0x3c4),
+                 bytes(ram_first)),
+                (500, regs(0x12a5, 0x3570, 0x2a7a, 0x2a7a, 0x7a1a),
+                 bytes(ram_late)),
+            ], 0x2a7a, 0x1000)
+        self.assertEqual(wrapped["changed_bytes"], 9)
+        self.assertEqual(wrapped["first_prepared_ms"], 100)
+        with self.assertRaisesRegex(ValueError, "100..250ms"):
+            startup.rtl_preimage_fixup_candidates(
+                bytes(rtl), [(500, bytes(late))], 0x2a7a, 0x1000)
+        with self.assertRaisesRegex(ValueError, "complete"):
+            startup.rtl_preimage_fixup_candidates(
+                bytes(rtl), [(100, b"tiny")], 0x2a7a, 0x1000)
+        with self.assertRaisesRegex(ValueError, "before original DS"):
+            startup.rtl_preimage_fixup_candidates(
+                bytes(rtl), [(100, bytes(first))], None, 0x1000)
+
     def test_data_layout_recovers_exact_exe_and_rtl_runs_with_zero_prefix(self):
         exe = bytearray(0x400)
         exe[:2] = b"MZ"

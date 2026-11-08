@@ -406,6 +406,23 @@ BSS, relocate RTL resident banks, or recreate `_main`. The probe does
 not bundle or copy original game bytes; the eventual loader must be
 given separate handles to the user's original `GATE.EXE` and `GATE.RTL`.
 
+After both original-file probes pass, the next task is to identify the
+initialization differences within the RTL preimage. With the original
+startup RAM captures from `msc51-capture-startup`, run:
+
+```sh
+python3 tools/inspect_msc51_startup.py \
+  --exe ../gateway-dos/GATE.EXE --rtl ../gateway-dos/GATE.RTL \
+  --snapshot-dir build/msc51-startup \
+  --snapshot-dir build/msc51-startup-fine \
+  --runtime-data-fixups
+```
+
+This reports early changed-byte counts and *unverified* 16-bit segment
+value/delta candidates, including odd-aligned words. A stable candidate
+is not proof of an RTL relocation; later changes can be normal runtime
+state. Add `--json` to inspect the complete candidate list.
+
 The user's follow-up Microsoft LINK run consumed `MEMORY.OBJ` and reduced
 the unresolved-symbol count **from 108 to 100**, exactly removing those
 eight segmented-memory names. This verifies linkage, not the launcher
