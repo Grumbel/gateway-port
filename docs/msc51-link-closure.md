@@ -59,6 +59,14 @@ real VGA pixels, but not full original image reproduction. The original
 binary assets and GATE.EXE/GATE.RTL live guest snapshot remain necessary to
 recover and validate the listed core services.
 
+`msc51-link-launcher` now checks all 12 compiler/probe prerequisites and
+reports every missing or stale source signature with its `nix run` command
+in one rejection. The 28 reconstructed modules can therefore compile
+successfully while LINK is still blocked by an older `RTLSIG.LOG` or
+`PICSIG.LOG`; those are freshness failures, not additional unresolved
+symbols. Do not run `msc51-link-report` until LINK has actually produced
+`LINK.LOG`.
+
 The file-wrapper changes require rerunning `msc51-compile-launcher` so
 `M11.C` compiles with `GATE_MSC51_ORIGINAL_FILE_ABI`. The checked-in source
 C continues using explicit host callbacks for deterministic tests. A GCC

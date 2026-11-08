@@ -783,6 +783,38 @@ def validate_launcher_objects(output: Path, objects: list[str]) -> None:
                          "Run msc51-compile-launcher first.")
 
 
+def validate_link_prerequisites(output: Path, objects: list[str]) -> None:
+    """Report every missing/stale probe before running Microsoft LINK.
+
+    The separately compiled adapters depend on shared staged headers. A
+    change to a header may invalidate several objects at once; rejecting
+    only the first forces unnecessary DOSBox/link retry cycles.
+    """
+    validations = (
+        ("msc51-compile-launcher", lambda: validate_launcher_objects(output, objects)),
+        ("msc51-compile-memory", lambda: validate_memory_adapter(output)),
+        ("msc51-compile-dos-files", lambda: validate_dos_file_adapter(output)),
+        ("msc51-compile-rtl-state", lambda: validate_rtl_state_adapter(output)),
+        ("msc51-compile-hardware", lambda: validate_hardware_adapter(output)),
+        ("msc51-compile-runtime-files", lambda: validate_runtime_file_adapter(output)),
+        ("msc51-compile-picture-dcl", lambda: validate_picture_dcl_adapter(output)),
+        ("msc51-compile-resident-state", lambda: validate_resident_state_adapter(output)),
+        ("msc51-compile-heap", lambda: validate_heap_adapter(output)),
+        ("msc51-compile-input", lambda: validate_input_adapter(output)),
+        ("msc51-compile-clock", lambda: validate_clock_adapter(output)),
+        ("msc51-compile-crt", lambda: validate_crt_adapter(output)),
+    )
+    failures = []
+    for command, validate in validations:
+        try:
+            validate()
+        except ValueError as error:
+            failures.append(f"  nix run -L .#{command}\n    {error}")
+    if failures:
+        raise ValueError("Cannot link launcher; rebuild these prerequisites "
+                         "and rerun LINK:\n" + "\n".join(failures))
+
+
 def validate_memory_adapter(output: Path) -> None:
     """Require a successful real-DOS probe, not a link-satisfying stub."""
     if (locate_case_insensitive(output, "MEMORY.OBJ") is None or
@@ -1241,7 +1273,7 @@ def main(argv: list[str] | None = None) -> int:
             destination.mkdir(parents=True, exist_ok=True)
         else:
             if args.command == "link-launcher":
-                validate_launcher_objects(output, objects)
+                validate_link_prerequisites(output, objects)
             if args.command in ("compile-dos-files", "compile-rtl-state",
                                 "compile-hardware", "compile-runtime-files",
                                 "compile-picture-dcl",
@@ -1249,23 +1281,11 @@ def main(argv: list[str] | None = None) -> int:
                                 "compile-heap",
                                 "compile-input",
                                 "compile-clock",
-                                "compile-crt",
-                                "link-launcher"):
+                                "compile-crt"):
                 validate_memory_adapter(output)
             if args.command == "compile-picture-dcl":
                 validate_dos_file_adapter(output)
                 validate_rtl_state_adapter(output)
-            if args.command == "link-launcher":
-                validate_dos_file_adapter(output)
-                validate_rtl_state_adapter(output)
-                validate_hardware_adapter(output)
-                validate_runtime_file_adapter(output)
-                validate_picture_dcl_adapter(output)
-                validate_resident_state_adapter(output)
-                validate_heap_adapter(output)
-                validate_input_adapter(output)
-                validate_clock_adapter(output)
-                validate_crt_adapter(output)
             if not args.compiler:
                 parser.error("set GATEWAY_MSC51_DIR or pass --compiler /path/to/installed/MSC51")
             compiler = validate_compiler(Path(args.compiler))

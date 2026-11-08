@@ -549,6 +549,22 @@ class MSC51Tests(unittest.TestCase):
                  mock.patch.object(msc51.subprocess, "run", side_effect=simulate_success):
                 self.assertEqual(msc51.main(args), 0)
 
+            # A shared RTL layout update can invalidate multiple probes.
+            # All requested rebuilds must appear in one rejection, without
+            # invoking LINK or treating its previous result as fresh.
+            (output / "rtlsig.log").write_text("stale RTL layout")
+            (output / "picsig.log").write_text("stale picture layout")
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run") as run, \
+                 redirect_stderr(io.StringIO()) as error:
+                with self.assertRaises(SystemExit):
+                    msc51.main(args)
+                run.assert_not_called()
+            self.assertIn("nix run -L .#msc51-compile-rtl-state", error.getvalue())
+            self.assertIn("nix run -L .#msc51-compile-picture-dcl", error.getvalue())
+            self.assertIn("source has changed since its test", error.getvalue())
+            self.assertNotIn("msc51-compile-input:", error.getvalue())
+
     def test_compile_memory_runs_separately_and_checks_dos_probe_result(self):
         with tempfile.TemporaryDirectory() as scratch:
             root = Path(scratch)
