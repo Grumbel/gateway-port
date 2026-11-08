@@ -120,6 +120,53 @@ plane contributions. The original VFX resident module and other display
 modes have not been decompiled; BIOS-per-pixel drawing is intentionally
 slower than its optimized native VGA-register loop.
 
+### Original VFX save/restore state: the remaining evidence
+
+The missing `gate_linked_save_vfx_draw_state` and
+`gate_linked_restore_vfx_draw_state` **are present in the original RTL**:
+`GATE.RTL:0x11078..0x1111f` and `0x10f64..0x11077`. The three far calls
+from the frame renderer `rtl:0x12ed7` and their original source identities
+are independently captured in `docs/picture-conditions.md`.
+
+These two functions are *not* simple copies of `DS:29de` drawing words.
+Their original 8086 branches inspect a linker-relocated flag WORD, test
+bit 0 and bit masks `0x30` and `0x0c`, and may call additional resident
+services. Some of those calls receive rectangle coordinates, while others
+receive a request number `0x33`; their precise effects remain unverified.
+The provable short path
+of the save function clears flag bit 0 and returns 1 if the state is
+nonzero and bit 0 was set; otherwise it returns 0. The restore function
+conditionally sets bit 0 if called with a nonzero saved result, and its
+other branches may redraw screen regions. Consequently, an unconditional
+`return 1` / empty restore would hide missing graphics behavior.
+
+The read-only `--vfx-state` inspector now verifies **all 27 direct DS operand
+sites** in these two routines against `GATE.RTL` and the live relocated RAM
+image (including one-byte `MOV AX,[imm16]` opcodes), checks consistent shared
+flags, width and height offsets, reports cursor offsets, and resolves eight
+additional FAR call targets.
+With an original scene snapshot and the game's files outside Git:
+
+```sh
+python3 tools/inspect_rtl_animation.py \
+  --ovl ../gateway-dos/GATEMAIN.OVL \
+  --exe ../gateway-dos/GATE.EXE \
+  --rtl ../gateway-dos/GATE.RTL \
+  --ram build/rgn-scenes-v026/before.bin \
+  --vfx-state --json
+```
+
+If a VFX entry trace independently establishes the live DS segment, supply
+it with `--vfx-ds HEX` to inspect the flag WORD at that **capture time**;
+the analyzer does not assume the screenshot's DS is the service's DS, or
+that the capture necessarily exercised a particular branch. Its synthetic
+tests cover relocated operands, inconsistent linker sites, state-flag
+branch selection and callback extraction. An optional SHA-256-pinned original
+binary test checks all 27 opcode/displacement pairs, both FAR entry points
+and eight unrelocated FAR CALL sites. **No DOS
+VFX state definitions are staged until the real relocated offsets and
+required downstream callbacks have been validated.**
+
 The new `msc51-compile-picture-dcl` stage builds `PICTDCL.OBJ` from a
 streaming, bounded C89 translation of the repository's independently tested
 PKWARE DCL decoder (`src/pic.cpp`). It uses a 4096-byte static history

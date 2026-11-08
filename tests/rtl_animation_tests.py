@@ -4,6 +4,7 @@
 
 """Synthetic and optional original-image tests for RTL animation services."""
 
+import hashlib
 from pathlib import Path
 import re
 import struct
@@ -14,14 +15,90 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 from inspect_rtl_animation import (
-    DRAW_CALL_SITES, ROOM_CALLS, inspect_animation_calls,
+    DRAW_CALL_SITES, ROOM_CALLS, VFX_STATE_FAR_CALLS, VFX_STATE_OPERANDS,
+    inspect_animation_calls, inspect_vfx_state,
     inspect_animation_draw_calls, inspect_animation_state,
     mode3_rasterizer_addresses, relocated_displacement,
     resolve_animation_draw_origins, summarize_deadline_trace,
     summarize_mode3_trace)
+from prepare_intro_ghidra import RTL_SHA256
 
 
 class AnimationServiceTests(unittest.TestCase):
+    def test_vfx_save_restore_relocation_evidence_and_branch_selection(self):
+        """Synthetic RTL and RAM: never embed the proprietary routine bytes."""
+        rtl = bytearray(0x19000)
+        ram = bytearray(1 << 20)
+        origin = 0x13031
+        entries = [('save_video_state', 0x11078, 0x04d9),
+                   ('restore_video_state', 0x10f64, 0x03c5)]
+        drawing = [{'name': name, 'callee_source': {'offset': source},
+                    'runtime_target': {'linear': 0x23bd0 + entry}}
+                   for name, source, entry in entries]
+        for name, (source, opcodes, original) in VFX_STATE_OPERANDS.items():
+            size = len(opcodes) + 2
+            rtl[source:source + size] = bytes(opcodes) + struct.pack('<H', original)
+            relocated = 0x2000 + original
+            ram[origin + source:origin + source + size] = bytes(opcodes) + \
+                struct.pack('<H', relocated)
+        for index, (name, source) in enumerate(VFX_STATE_FAR_CALLS.items()):
+            rtl[source:source + 5] = b'\x9a\x00\x00\x00\x00'
+            struct.pack_into('<BHH', ram, origin + source, 0x9a,
+                             0x0100 + index, 0x4100)
+        ds = 0x2a7a
+        struct.pack_into('<H', ram, ds * 16 + 0x2000, 1)
+        report = inspect_vfx_state(rtl, ram, drawing, ds)
+        self.assertEqual(report['original_entries'],
+                         {'save_video_state': 0x11078,
+                          'restore_video_state': 0x10f64})
+        self.assertEqual(set(report['relocated_ds_offsets'].values()),
+                         {0x2000, 0x2002, 0x2004, 0x2098, 0x209a,
+                          0x2100, 0x2102})
+        self.assertEqual(report['resident_far_calls']['save_request_33'],
+                         {'segment': 0x4100, 'offset': 0x0101})
+        self.assertTrue(report['save_fast_path'])
+        self.assertFalse(report['restore_fast_path_if_saved_nonzero'])
+        struct.pack_into('<H', ram, ds * 16 + 0x2000, 2)
+        report = inspect_vfx_state(rtl, ram, drawing, ds)
+        self.assertFalse(report['save_fast_path'])
+        self.assertTrue(report['restore_fast_path_if_saved_nonzero'])
+        ram[origin + VFX_STATE_OPERANDS['restore_flags_test'][0] + 2] ^= 1
+        with self.assertRaisesRegex(ValueError, 'inconsistent VFX flags'):
+            inspect_vfx_state(rtl, ram, drawing)
+        ram[origin + VFX_STATE_OPERANDS['restore_flags_test'][0] + 2] ^= 1
+        struct.pack_into('<HH', ram,
+                         origin + VFX_STATE_FAR_CALLS['restore_request_33'] + 1,
+                         0, 0)
+        with self.assertRaisesRegex(ValueError, 'was not relocated'):
+            inspect_vfx_state(rtl, ram, drawing)
+
+    def test_vfx_state_rejects_wrong_rtl_identity_and_missing_call(self):
+        with self.assertRaisesRegex(ValueError, 'missing verified original'):
+            inspect_vfx_state(b'', b'', [{'name': 'save_video_state',
+                                          'callee_source': {'offset': 0x11078}}])
+
+    def test_optional_original_vfx_save_restore_instructions(self):
+        original = ROOT.parent / 'gateway-dos/GATE.RTL'
+        if not original.is_file():
+            original = ROOT.parent / 'original-inputs/gateway-dos/GATE.RTL'
+        if not original.is_file():
+            self.skipTest('original GATE.RTL unavailable')
+        rtl = original.read_bytes()
+        if hashlib.sha256(rtl).hexdigest() != RTL_SHA256:
+            self.skipTest('GATE.RTL differs from pinned original')
+        self.assertEqual(rtl[0x10f64:0x10f67], b'\x55\x8b\xec')
+        self.assertEqual(rtl[0x11077], 0xcb)
+        self.assertEqual(rtl[0x11078:0x1107b], b'\x55\x8b\xec')
+        self.assertEqual(rtl[0x1111f], 0xcb)
+        for name, (offset, opcodes, displacement) in VFX_STATE_OPERANDS.items():
+            with self.subTest(operand=name):
+                self.assertEqual(rtl[offset:offset + len(opcodes)], bytes(opcodes))
+                self.assertEqual(struct.unpack_from('<H', rtl,
+                                 offset + len(opcodes))[0], displacement)
+        for name, offset in VFX_STATE_FAR_CALLS.items():
+            with self.subTest(call=name):
+                self.assertEqual(rtl[offset:offset + 5], b'\x9a\0\0\0\0')
+
     def setUp(self):
         self.ovl = bytearray(0x51570)
         self.exe = b'MZ' + bytes(0x800)

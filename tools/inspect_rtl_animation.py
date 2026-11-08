@@ -60,6 +60,116 @@ DRAW_MODE3 = {
     'vga': 0x187da,
 }
 
+# Original FAR entries RTL:11078 (save) and 10f64 (restore), called by
+# RTL:12ed7. The zero displacements are *linker slots*, not DS:0000.
+# Keep each independent occurrence: the live relocation must agree at
+# every read/write, including both functions' shared flag word.
+VFX_STATE_OPERANDS = {
+    'save_flags_read': (0x1107f, (0x83, 0x3e), 0x0000),
+    'save_flags_test': (0x11086, (0xf6, 0x06), 0x0000),
+    'save_flags_clear': (0x11092, (0x80, 0x26), 0x0000),
+    'save_mode_mask': (0x11097, (0xf6, 0x06), 0x0000),
+    'save_cursor_mask': (0x110bb, (0xf6, 0x06), 0x0000),
+    'save_width_segment': (0x110c7, (0x8e, 0x06), 0x0002),
+    'save_width_limit': (0x110d3, (0x39, 0x36), 0x0100),
+    'save_width_value': (0x110de, (0xa1,), 0x0100),
+    'save_height_segment': (0x110e7, (0x8e, 0x06), 0x0004),
+    'save_height_limit': (0x110f3, (0x39, 0x36), 0x0102),
+    'save_height_value': (0x110fe, (0xa1,), 0x0102),
+    'restore_flags_read': (0x10f6b, (0x83, 0x3e), 0x0000),
+    'restore_flags_test': (0x10f72, (0xf6, 0x06), 0x0000),
+    'restore_flags_result': (0x10f7f, (0xa1,), 0x0000),
+    'restore_flags_set': (0x10f88, (0x80, 0x0e), 0x0000),
+    'restore_mode_mask': (0x10f8d, (0xf6, 0x06), 0x0000),
+    'restore_cursor_mask': (0x10fb2, (0xf6, 0x06), 0x0000),
+    'restore_width_segment': (0x10fbc, (0x8e, 0x06), 0x0002),
+    'restore_width_limit': (0x10fc8, (0x39, 0x36), 0x0100),
+    'restore_width_value': (0x10fd3, (0xa1,), 0x0100),
+    'restore_height_segment': (0x10fdc, (0x8e, 0x06), 0x0004),
+    'restore_height_limit': (0x10fe8, (0x39, 0x36), 0x0102),
+    'restore_height_value': (0x10ff3, (0xa1,), 0x0102),
+    'restore_cursor_x': (0x1103f, (0xff, 0x36), 0x0098),
+    'restore_cursor_y': (0x1103b, (0xff, 0x36), 0x009a),
+    'restore_region_width': (0x11047, (0xff, 0x36), 0x0100),
+    'restore_region_height': (0x11043, (0xff, 0x36), 0x0102),
+}
+VFX_STATE_FAR_CALLS = {
+    'save_unknown_prepare': 0x110c2,
+    'save_request_33': 0x110b1,
+    'save_unknown_draw': 0x11113,
+    'restore_request_33': 0x10fa7,
+    'restore_unknown_rect_a': 0x11015,
+    'restore_unknown_rect_b': 0x11036,
+    'restore_unknown_prepare': 0x11058,
+    'restore_unknown_draw': 0x1106c,
+}
+
+
+def inspect_vfx_state(rtl, ram, drawing, ds=None):
+    """Recover *live* save/restore flags, relocated fields and FAR callees.
+
+    This is evidence for the remaining VFX functions, not their C adapter.
+    A saved RAM image alone does not prove what code paths executed or
+    that its DS equals the DS at a particular earlier service entry.
+    """
+    entries = {row['name']: row for row in drawing}
+    for name, source in (('save_video_state', 0x11078),
+                         ('restore_video_state', 0x10f64)):
+        if name not in entries or entries[name]['callee_source']['offset'] != source:
+            raise ValueError(f'missing verified original {name} function')
+    origins = {entries[name]['runtime_target']['linear'] - source
+               for name, source in (('save_video_state', 0x11078),
+                                    ('restore_video_state', 0x10f64))}
+    if len(origins) != 1:
+        raise ValueError('VFX save/restore do not share a resident RTL bank')
+    origin = origins.pop()
+    offsets = {
+        name: relocated_displacement(rtl, ram, source, origin + source,
+                                     opcodes, original)
+        for name, (source, opcodes, original) in VFX_STATE_OPERANDS.items()
+    }
+    groups = {
+        'flags': [name for name in offsets if 'flags' in name or 'mask' in name],
+        'width_segment': ['save_width_segment', 'restore_width_segment'],
+        'height_segment': ['save_height_segment', 'restore_height_segment'],
+        'width_limit': ['save_width_limit', 'save_width_value',
+                        'restore_width_limit', 'restore_width_value',
+                        'restore_region_width'],
+        'height_limit': ['save_height_limit', 'save_height_value',
+                         'restore_height_limit', 'restore_height_value',
+                         'restore_region_height'],
+    }
+    for group, names in groups.items():
+        if len({offsets[name] for name in names}) != 1:
+            raise ValueError(f'inconsistent VFX {group} linker relocations')
+    calls = {}
+    for name, source in VFX_STATE_FAR_CALLS.items():
+        target = origin + source
+        if (rtl[source:source + 5] != b'\x9a\x00\x00\x00\x00' or
+                not 0 <= target <= len(ram) - 5 or ram[target] != 0x9a):
+            raise ValueError(f'{name} resident FAR call instruction changed')
+        offset, segment = struct.unpack_from('<HH', ram, target + 1)
+        if segment == 0 and offset == 0:
+            raise ValueError(f'{name} resident FAR call was not relocated')
+        calls[name] = dict(segment=segment, offset=offset)
+    result = {'original_entries': {name: entries[name]['callee_source']['offset']
+                                   for name in ('save_video_state', 'restore_video_state')},
+              'relocated_ds_offsets': offsets, 'resident_far_calls': calls}
+    if ds is not None:
+        if not 0 <= ds <= 0xffff:
+            raise ValueError('VFX DS must be a 16-bit segment')
+        address = ds * 16 + offsets['save_flags_read']
+        if address + 2 > len(ram):
+            raise ValueError('VFX flags outside guest RAM')
+        flags = struct.unpack_from('<H', ram, address)[0]
+        result['ds'] = ds
+        result['flags_at_capture'] = flags
+        result['save_fast_path'] = (flags != 0 and (flags & 1) != 0 and
+                                    (flags & 0x3c) == 0)
+        result['restore_fast_path_if_saved_nonzero'] = (
+            flags != 0 and (flags & 1) == 0 and (flags & 0x3c) == 0)
+    return result
+
 
 def inspect_animation_calls(ovl, exe, rtl, ram, load_segment=0x1000):
     """Return linked-to-file matches, rejecting changed or unresolved calls."""
@@ -103,13 +213,16 @@ def relocated_displacement(original, live, source_offset, guest_offset,
                            opcodes, original_displacement):
     """Read a linker-patched 16-bit displacement after matching its opcode."""
     expected = bytes(opcodes)
-    if (original[source_offset:source_offset + 2] != expected or
-            live[guest_offset:guest_offset + 2] != expected or
-            source_offset + 4 > len(original) or guest_offset + 4 > len(live)):
+    length = len(expected)
+    if (original[source_offset:source_offset + length] != expected or
+            live[guest_offset:guest_offset + length] != expected or
+            source_offset < 0 or guest_offset < 0 or
+            source_offset + length + 2 > len(original) or
+            guest_offset + length + 2 > len(live)):
         raise ValueError(f'RTL instruction mismatch at file 0x{source_offset:x}')
-    if struct.unpack_from('<H', original, source_offset + 2)[0] != original_displacement:
+    if struct.unpack_from('<H', original, source_offset + length)[0] != original_displacement:
         raise ValueError(f'original RTL data operand changed at 0x{source_offset:x}')
-    return struct.unpack_from('<H', live, guest_offset + 2)[0]
+    return struct.unpack_from('<H', live, guest_offset + length)[0]
 
 
 def inspect_animation_draw_calls(rtl, ram, services, load_segment=0x1000):
@@ -325,10 +438,16 @@ def main():
                         help='resolve the frame renderer far CALLs in this RAM snapshot')
     parser.add_argument('--draw-trace', type=Path,
                         help='trace with rasterizer entry watches (implies --draw-calls)')
+    parser.add_argument('--vfx-state', action='store_true',
+                        help='recover the relocated RTL save/restore VFX state and FAR callees')
+    parser.add_argument('--vfx-ds', type=lambda value: int(value, 16),
+                        help='DS observed at a VFX service entry (hex; requires --vfx-state)')
     parser.add_argument('--json', action='store_true')
     args = parser.parse_args()
     if args.write_trace is not None and args.ds is None:
         parser.error('--write-trace requires --ds')
+    if args.vfx_ds is not None and not args.vfx_state:
+        parser.error('--vfx-ds requires --vfx-state')
     try:
         rtl, ram = args.rtl.read_bytes(), args.ram.read_bytes()
         rows = inspect_animation_calls(args.ovl.read_bytes(), args.exe.read_bytes(),
@@ -337,8 +456,10 @@ def main():
             args.exe.read_bytes(), rtl, ram,
             inspect_animation_draw_calls(rtl, ram, rows, args.load_segment),
             args.load_segment)
-                   if args.draw_calls or args.draw_trace else None)
+                   if args.draw_calls or args.draw_trace or args.vfx_state else None)
         branches = mode3_rasterizer_addresses(rtl, drawing) if drawing is not None else None
+        vfx = (inspect_vfx_state(rtl, ram, drawing, args.vfx_ds)
+               if args.vfx_state else None)
         raster_trace = None
         if args.draw_trace is not None:
             with args.draw_trace.open() as stream:
@@ -363,6 +484,8 @@ def main():
             output['state'] = state
         if cadence is not None:
             output['deadline_trace'] = cadence
+        if vfx is not None:
+            output['vfx_state'] = vfx
         print(json.dumps(output, indent=2))
     else:
         for row in rows:
@@ -407,6 +530,18 @@ def main():
             print('Guest-ms increments: ' + ', '.join(
                 f'{step} x {hits}' for step, hits in
                 cadence['guest_ms_step_counts'].items()))
+        if vfx is not None:
+            print('RTL VFX state save/restore relocations:')
+            for name, offset in vfx['relocated_ds_offsets'].items():
+                print(f'  {name:<24} DS:{offset:04x}')
+            print('RTL VFX state resident FAR calls:')
+            for name, target in vfx['resident_far_calls'].items():
+                print(f'  {name:<24} {target["segment"]:04x}:{target["offset"]:04x}')
+            if 'flags_at_capture' in vfx:
+                print(f'VFX service DS={vfx["ds"]:04x}, flags at capture='
+                      f'{vfx["flags_at_capture"]:04x}; '
+                      f'save fast path={vfx["save_fast_path"]}; '
+                      f'restore fast path={vfx["restore_fast_path_if_saved_nonzero"]}')
 
 
 if __name__ == '__main__':
