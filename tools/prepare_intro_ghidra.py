@@ -9,6 +9,7 @@ Ghidra output in ignored build/, never in Git.
 """
 
 import argparse
+from collections import Counter
 import hashlib
 import json
 from pathlib import Path
@@ -53,14 +54,16 @@ RTL_CORE_BANKS = (
 # Reconstructed physical code windows from original startup snapshots. The
 # original RTL file inserts metadata between linked code fragments, so a
 # single file offset delta cannot explain either entire window. Every span
-# below is independently checked against the 22-second capture (90-96% exact
-# bytes), with function-entry witnesses. The B window contains unresolved
-# single-byte gaps at offsets 04ad and 0c15; do not assign RTL source offsets.
+# below is independently checked against the 22-second capture (90-100%
+# exact bytes), with function-entry witnesses. The A window starts with ten
+# unmapped bytes, B with four; B also has two single-byte fragment gaps.
+# All such bytes are retained in the live snapshot but NOT given a false
+# source-file identity. B ends before seven observed zeroed source bytes.
 # All file_base values identify original GATE.RTL bytes (not embedded data).
 RTL_GRAPHICS_BANKS = (
-    dict(segment=0x152c, file_base=0x18df6, size=0x0ab0,
+    dict(segment=0x152c, file_base=0x18e00, size=0x0ab0,
          spans=(
-             dict(offset=0x0000, file_base=0x18df6, size=0x00e4),
+             dict(offset=0x000a, file_base=0x18e00, size=0x00da),
              dict(offset=0x00e4, file_base=0x18edf, size=0x009e),
              dict(offset=0x0182, file_base=0x18f8c, size=0x04e6),
              dict(offset=0x0668, file_base=0x194d7, size=0x010a),
@@ -69,11 +72,11 @@ RTL_GRAPHICS_BANKS = (
          ),
          witnesses=(0x18e00, 0x18e28, 0x18e49, 0x18e5b, 0x18edf,
                     0x18f8c, 0x194d7, 0x19606, 0x19777)),
-    dict(segment=0x15d7, file_base=0x19993, size=0x0d80,
+    dict(segment=0x15d7, file_base=0x19997, size=0x0d79,
          spans=(
-             dict(offset=0x0000, file_base=0x19993, size=0x04ad),
+             dict(offset=0x0004, file_base=0x19997, size=0x04a9),
              dict(offset=0x04ae, file_base=0x19ec2, size=0x0767),
-             dict(offset=0x0c16, file_base=0x1a6ee, size=0x016a),
+             dict(offset=0x0c16, file_base=0x1a6ee, size=0x0163),
          ),
          witnesses=(0x19a20, 0x19ae6, 0x19b9d, 0x19c2c, 0x19dfa,
                     0x19ec2, 0x19ef2, 0x19f2d, 0x1a6ee)),
@@ -302,6 +305,110 @@ def validate_bank(rtl, snapshot, bank, load_segment):
     return start, matches, verified
 
 
+def observed_zero_word_changes(rtl, snapshot, bank, load_segment):
+    """Classify changed code bytes WITHOUT asserting linker-fixup semantics.
+
+    A candidate is an originally 0000h 16-bit word whose live value is
+    nonzero. A one-byte difference is accepted only if its following high
+    byte is zero in *both* images. All other differences are left explicit.
+    These are observations, not a portable relocation table: targets must
+    still be identified from machine instructions and caller allocation.
+    """
+    start = (load_segment + bank['segment']) * 16
+    candidates = []
+    unclassified = []
+    covered = 0
+    equal = 0
+    for span in source_spans(bank):
+        file_base = span['file_base']
+        offset = span['offset']
+        length = span['size']
+        original = rtl[file_base:file_base + length]
+        live = snapshot[start + offset:start + offset + length]
+        if len(original) != length or len(live) != length:
+            raise ValueError('truncated source span in graphics word analysis')
+        covered += length
+        equal += sum(a == b for a, b in zip(original, live))
+        i = 0
+        while i < length:
+            if original[i] == live[i]:
+                i += 1
+                continue
+            end = i + 1
+            while end < length and original[end] != live[end]:
+                end += 1
+            size = end - i
+            # Zero-source changes of two or four consecutive bytes can be
+            # interpreted as one or two adjacent complete words. The
+            # original instruction operand boundaries remain unproven.
+            if size in (2, 4) and not any(original[i:end]):
+                for site in range(i, end, 2):
+                    candidates.append(dict(runtime_offset=offset + site,
+                                           rtl_file_offset=file_base + site,
+                                           observed_value=int.from_bytes(
+                                               live[site:site + 2], 'little'),
+                                           changed_bytes=2))
+            elif (size == 1 and original[i] == 0 and i + 1 < length and
+                  original[i + 1] == live[i + 1] == 0):
+                candidates.append(dict(runtime_offset=offset + i,
+                                       rtl_file_offset=file_base + i,
+                                       observed_value=live[i], changed_bytes=1))
+            else:
+                unclassified.append(dict(runtime_offset=offset + i,
+                                         rtl_file_offset=file_base + i,
+                                         length=size))
+            i = end
+
+    changed = covered - equal
+    candidate_bytes = sum(item['changed_bytes'] for item in candidates)
+    leftover = sum(item['length'] for item in unclassified)
+    if candidate_bytes + leftover != changed:
+        raise AssertionError('graphics word classification lost changed bytes')
+    # Only two instruction patterns are recognized here, both verifiable
+    # without guessing a function boundary or running a decompiler:
+    # B8 <word> 8E D8/C0 loads DS/ES; 9A/EA <off> <seg> calls/jumps FAR.
+    # A generic zero-word substitution remains unclassified even if its
+    # observed value resembles a segment address.
+    by_offset = {item['runtime_offset']: item for item in candidates}
+    for item in candidates:
+        site = item['runtime_offset']
+        span = source_span(bank, item['rtl_file_offset'])
+        pos = item['rtl_file_offset'] - span['file_base']
+        source = rtl[span['file_base']:span['file_base'] + span['size']]
+        live = snapshot[start + span['offset']:start + span['offset'] + span['size']]
+        kind = 'unresolved-zero-word'
+        if (pos >= 1 and pos + 4 <= len(source) and
+                source[pos - 1] == live[pos - 1] == 0xb8 and
+                source[pos + 2:pos + 4] == live[pos + 2:pos + 4]):
+            if source[pos + 2:pos + 4] == b'\x8e\xd8':
+                kind = 'mov-ax-ds'
+            elif source[pos + 2:pos + 4] == b'\x8e\xc0':
+                kind = 'mov-ax-es'
+        if (kind == 'unresolved-zero-word' and pos >= 1 and
+                pos + 4 <= len(source) and
+                source[pos - 1] == live[pos - 1] and
+                source[pos - 1] in (0x9a, 0xea) and
+                site + 2 in by_offset):
+            kind = ('far-call-offset' if source[pos - 1] == 0x9a
+                    else 'far-jump-offset')
+        if (kind == 'unresolved-zero-word' and pos >= 3 and
+                source[pos - 3] == live[pos - 3] and
+                source[pos - 3] in (0x9a, 0xea) and
+                site - 2 in by_offset):
+            kind = ('far-call-segment' if source[pos - 3] == 0x9a
+                    else 'far-jump-segment')
+        item['instruction_context'] = kind
+    return dict(covered_source_bytes=covered, equal_source_bytes=equal,
+                candidate_words=candidates, candidate_changed_bytes=candidate_bytes,
+                unclassified=unclassified, unclassified_bytes=leftover,
+                unmapped_live_bytes=bank['size'] - covered,
+                context_counts=dict(sorted(Counter(
+                    item['instruction_context'] for item in candidates).items())),
+                note='Zero-source 16-bit word changes only. DS/ES immediate '
+                     'and FAR transfer opcode contexts are verified; other '
+                     'operand and relocation semantics are not')
+
+
 def staged_unlinked_copy(rtl, snapshot, load_segment):
     """Flag the observed unrelocated RTL staging region, if still present."""
     candidate = RAW_COPY_CANDIDATE
@@ -357,7 +464,10 @@ def prepare(exe_path, rtl_path, snapshot_path, output, load_segment=0x1000,
                              relocated_file=str(path.resolve()),
                              relocated_sha256=sha256(image),
                              exact_byte_matches=matches, witnesses=verified,
-                             entries=entries))
+                             entries=entries,
+                             zero_word_changes=(observed_zero_word_changes(
+                                 rtl, snapshot, bank, load_segment)
+                                 if bank in RTL_GRAPHICS_BANKS else None)))
     unmapped = sorted(off for off in rtl_entries if source_bank(RTL_BANKS, off) is None)
     exe_labels = [dict(name='gate_exe_%x' % offset, file_offset=offset,
                        role='source-reconstructed',
@@ -386,6 +496,8 @@ def main():
     parser.add_argument('--snapshot', type=Path, required=True)
     parser.add_argument('--output', type=Path, default=Path('build/ghidra-intro'))
     parser.add_argument('--load-segment', type=lambda value: int(value, 0), default=0x1000)
+    parser.add_argument('--graphics-word-changes', action='store_true',
+                        help='summarize source-zero word candidates in linked graphics banks')
     args = parser.parse_args()
     try:
         path, plan = prepare(args.exe, args.rtl, args.snapshot, args.output.resolve(),
@@ -395,6 +507,23 @@ def main():
                   path, len(plan['sections']),
                   sum(len(section['entries']) for section in plan['sections']),
                   len(plan['unmapped_rtl_entries'])))
+        if args.graphics_word_changes:
+            for section in plan['sections']:
+                change = section['zero_word_changes']
+                if change is None:
+                    continue
+                print('  graphics %04x: %d/%d source bytes unchanged; '
+                      '%d changed bytes in %d zero-source word candidates; '
+                      '%d unclassified bytes, %d unmapped live bytes' % (
+                          section['segment'], change['equal_source_bytes'],
+                          change['covered_source_bytes'],
+                          change['candidate_changed_bytes'],
+                          len(change['candidate_words']),
+                          change['unclassified_bytes'],
+                          change['unmapped_live_bytes']))
+                print('    opcode contexts: %s' % ', '.join(
+                    '%s=%d' % (name, count) for name, count
+                    in change['context_counts'].items()))
     except (OSError, ValueError) as error:
         parser.exit(1, 'prepare_intro_ghidra: %s\n' % error)
 

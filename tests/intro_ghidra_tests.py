@@ -17,7 +17,7 @@ from prepare_intro_ghidra import (EXE_SHA256, RTL_SHA256, EXE_ENTRIES,
                                   RTL_CANDIDATES,
                                   RAW_COPY_CANDIDATE, find_source_entries,
                                   source_bank, source_span, source_spans,
-                                  validate_bank,
+                                  validate_bank, observed_zero_word_changes,
                                   mz_relocations, prepare, staged_unlinked_copy)
 from run_intro_ghidra import command, run
 
@@ -40,8 +40,8 @@ class IntroGhidraTests(unittest.TestCase):
     def test_graphics_banks_are_bounded_and_snapshot_verified(self):
         self.assertEqual([(bank['segment'], bank['file_base'], bank['size'])
                           for bank in RTL_GRAPHICS_BANKS],
-                         [(0x152c, 0x18df6, 0x0ab0),
-                          (0x15d7, 0x19993, 0x0d80)])
+                         [(0x152c, 0x18e00, 0x0ab0),
+                          (0x15d7, 0x19997, 0x0d79)])
         rtl = bytes((i * 23 + i // 11) % 251 for i in range(0x21000))
         ram = bytearray(0x100000)
         original_segments = {(0x1000 + bank['segment']) for bank in RTL_CORE_BANKS}
@@ -97,6 +97,28 @@ class IntroGhidraTests(unittest.TestCase):
             bytes(later['size']))
         with self.assertRaisesRegex(ValueError, 'source span'):
             validate_bank(rtl, bytes(damaged), b, 0x1000)
+
+    def test_zero_word_candidates_do_not_silently_classify_other_changes(self):
+        bank = dict(segment=0x123, file_base=0x20, size=32)
+        rtl = bytearray(range(80))
+        for offset in (4, 5, 10, 11, 20, 21, 24):
+            rtl[0x20 + offset] = 0
+        ram = bytearray(0x100000)
+        start = (0x1000 + bank['segment']) * 16
+        ram[start:start + 32] = rtl[0x20:0x40]
+        ram[start + 4:start + 6] = b'\x7a\x2a'
+        ram[start + 10:start + 12] = b'\x20\x03'
+        ram[start + 20] = 0x25  # only the low byte of a zero-source word
+        ram[start + 24] = 0x30  # next byte is not source-zero; not a word
+        ram[start + 26] ^= 1    # original nonzero byte changed
+        report = observed_zero_word_changes(bytes(rtl), bytes(ram), bank, 0x1000)
+        self.assertEqual([(item['runtime_offset'], item['observed_value'],
+                           item['changed_bytes']) for item in report['candidate_words']],
+                         [(4, 0x2a7a, 2), (10, 0x0320, 2), (20, 0x25, 1)])
+        self.assertEqual(report['candidate_changed_bytes'], 5)
+        self.assertEqual(report['unclassified_bytes'], 2)
+        self.assertEqual({entry['runtime_offset'] for entry
+                          in report['unclassified']}, {24, 26})
 
     def test_missing_or_invalid_inputs(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -158,9 +180,42 @@ class RealGatewayIntroEvidence(unittest.TestCase):
                         if s['segment'] in (0x152c, 0x15d7)}
             self.assertEqual(set(graphics), {0x152c, 0x15d7})
             self.assertEqual((graphics[0x152c]['exact_byte_matches'],
-                              graphics[0x15d7]['exact_byte_matches']), (2601, 3198))
+                              graphics[0x15d7]['exact_byte_matches']), (2600, 3198))
             self.assertEqual((graphics[0x152c]['size'],
-                              graphics[0x15d7]['size']), (0x0ab0, 0x0d80))
+                              graphics[0x15d7]['size']), (0x0ab0, 0x0d79))
+            rtl = self.rtl.read_bytes()
+            ram = self.snapshot.read_bytes()
+            for segment, covered, sites, changed, unmapped in (
+                    (0x152c, 2726, 64, 126, 10),
+                    (0x15d7, 3443, 134, 245, 6)):
+                data = graphics[segment]['zero_word_changes']
+                self.assertEqual(data['covered_source_bytes'], covered)
+                self.assertEqual(data['equal_source_bytes'],
+                                 graphics[segment]['exact_byte_matches'])
+                self.assertEqual(len(data['candidate_words']), sites)
+                self.assertEqual(data['candidate_changed_bytes'], changed)
+                self.assertEqual(data['unclassified_bytes'], 0)
+                self.assertEqual(data['unmapped_live_bytes'], unmapped)
+                contexts = data['context_counts']
+                if segment == 0x152c:
+                    self.assertEqual(contexts, {
+                        'far-call-offset': 3, 'far-call-segment': 3,
+                        'mov-ax-ds': 18, 'mov-ax-es': 1,
+                        'unresolved-zero-word': 39})
+                else:
+                    self.assertEqual(contexts, {
+                        'far-call-offset': 27, 'far-call-segment': 27,
+                        'far-jump-offset': 3, 'far-jump-segment': 3,
+                        'mov-ax-ds': 12, 'unresolved-zero-word': 62})
+                # The plan never embeds the original instruction stream:
+                # each site is a tested on-disk zero word plus a live value.
+                for candidate in data['candidate_words']:
+                    source = candidate['rtl_file_offset']
+                    live = ((0x1000 + segment) * 16 +
+                            candidate['runtime_offset'])
+                    self.assertEqual(rtl[source:source + 2], b'\x00\x00')
+                    self.assertEqual(int.from_bytes(ram[live:live + 2], 'little'),
+                                     candidate['observed_value'])
             self.assertEqual({entry['file_offset'] for entry
                               in graphics[0x152c]['entries']},
                              {off for off in RTL_CANDIDATES
@@ -169,8 +224,6 @@ class RealGatewayIntroEvidence(unittest.TestCase):
                               in graphics[0x15d7]['entries']},
                              {off for off in RTL_CANDIDATES
                               if source_span(RTL_GRAPHICS_BANKS[1], off)})
-            rtl = self.rtl.read_bytes()
-            ram = self.snapshot.read_bytes()
             for section in graphics.values():
                 for entry in section['entries']:
                     source = entry['file_offset']

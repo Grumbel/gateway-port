@@ -200,6 +200,9 @@ fragments with verified original-file identities) from the original 22-second
 RAM capture, including the newly verified `252c` coordinate helpers and
 `25d7` graphics dispatch. It also preserves readable C symbol names from
 `decomp/launcher/symbol-names.tsv` without losing the original file offsets.
+An optional `--graphics-word-changes` preparation report identifies 198
+originally zero word sites differing in the linked graphics image; these are
+snapshot observations, not a reconstructed DOS relocation table.
 
 ### Historical Microsoft C 5.1 toolchain (optional)
 

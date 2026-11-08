@@ -921,6 +921,24 @@ The original 350–1500ms trace sampled only the first `0600h`/`0640h`
 bytes; the expanded later regions are presently proven at 22 seconds,
 not claimed to have been resident at 350ms.
 
+**Later source-origin and word-site audit:** Tightened the nine graphics
+fragment ranges using the genuine 22-second image. The first ten runtime
+bytes of `252c` and the first four of `25d7` are no longer assigned RTL
+source offsets. The two B fragment-boundary bytes still lack file origins,
+and B's last seven formerly imported bytes are zero in RAM and outside the
+revised `25d7:0000..0d78` import. Across the now source-verified ranges,
+`252c` is 2600/2726 exact and `25d7` is 3198/3443 exact; the other
+**371 changed bytes** fit **198** originally-zero 16-bit word sites, with
+no unexplained changed bytes *within covered source spans*. Instruction
+context proves 30 DS and one ES immediate loads and 33 FAR transfers
+(30 calls and three jumps, 66 offset/segment word operands). The remaining
+101 sites cannot yet be labeled linker fixups just because their original
+words were zero. The snapshot-dependent evidence is exported as
+`zero_word_changes` by `prepare_intro_ghidra.py --graphics-word-changes`
+and regression-tested against the pinned original binaries. Neither the
+graphics loading algorithm nor the caller-side allocation and fixup sequence
+is implemented by this analysis.
+
 **Microsoft C 5.1 build correction:** The first user-side `DATA.BAT` run
 compiled `DATA.C` but stopped with `DATACHK.C(22): C2073` (an initialized
 automatic `char name[]`), so **neither test executable ran**. Both test

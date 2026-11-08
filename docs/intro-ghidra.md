@@ -93,7 +93,7 @@ for another batch, or open the existing `project/GatewayIntro.gpr` manually.
 
 | Path in `build/ghidra-intro/` | Purpose |
 | --- | --- |
-| `intro-ghidra-plan.json` | Original file identities, source offsets, linked bank map and witnesses |
+| `intro-ghidra-plan.json` | Original file identities, source offsets, linked bank map, witnesses and graphics zero-word observations |
 | `sections/*.linked.bin` | Executable bytes **from live DOS memory**, retaining relocations |
 | `intro-ghidra-import-report.json` | Ghidra import and EXE signature resolution |
 | `intro-ghidra-functions.tsv` | All Ghidra-discovered intro functions and their original offset identities |
@@ -120,19 +120,19 @@ batches for inspection instead of manually translating six functions per turn.
 `GATE.RTL:56de..93dd`, including linked `strlen` and the C runtime random
 generator. Its verified start is based on the on-disk/linked byte correlation;
 its end deliberately stops before the next region overwrites memory near
-`RTL:9480`. Two more EXE-relative graphics spans are `152c:0000..0aaf`
-(resident `252c:0000..0aaf`, first copied RTL file base `18df6`) and
-`15d7:0000..0d7f` (resident `25d7:0000..0d7f`, RTL file base `19993`).
-Direct comparison with the pinned 22-second guest RAM verified **2601/2736**
-source bytes in A and **3198/3454** covered source bytes in B, each with
-multiple independent witnesses. The uncovered B bytes at `+04ad` and
-`+0c15` are not assigned original file offsets. Of B's previously reported
-489 differences against a *single* 1600-byte linear source, most resulted
-from wrongly projecting that file mapping beyond `+04ad`. Within the same
-first 1600 runtime bytes, only **154** mismatches remain across the verified
-fragments. Across the full extended B window, 256 differing covered bytes
-include relocation operands and have not all been explained. Other
-unverified sections and external
+`RTL:9480`. Two more EXE-relative graphics windows are `152c:0000..0aaf`
+(resident `252c:0000..0aaf`) and `15d7:0000..0d78` (resident
+`25d7:0000..0d78`). The first A fragment starts at runtime `+000a`
+(`RTL:18e00`); the first B fragment at `+0004` (`RTL:19997`).
+Direct comparison with the pinned 22-second guest RAM verifies **2600/2726**
+covered source bytes unchanged in A and **3198/3443** in B, each with
+multiple independent witnesses. Ten leading A bytes, four leading B bytes,
+and B's single-byte boundaries `+04ad` and `+0c15` lack verified RTL file
+identities. Seven trailing B bytes from an earlier proposed mapping were
+zeroed in live memory and are now excluded from the import; they are not
+treated as copied code. B's previous 489 mismatches against one *linear*
+1600-byte source were largely caused by projecting across RTL metadata gaps.
+Other unverified sections and external
 service segments remain excluded. All missing calls must be mapped/verified before the intro is
 complete. An imported label or successful pseudocode export is not evidence
 that the original calling convention, signedness, data structure or guest
@@ -152,15 +152,51 @@ Relative offsets are not interchangeable across fragments:
 
 | Runtime graphics window | Runtime offset range | Original RTL file range |
 | --- | --- | --- |
-| `252c` | `0000..00e3` | `18df6..18ed9` |
+| `252c` | `000a..00e3` | `18e00..18ed9` |
 | `252c` | `00e4..0181` | `18edf..18f7c` |
 | `252c` | `0182..0667` | `18f8c..19471` |
 | `252c` | `0668..0771` | `194d7..195e0` |
 | `252c` | `0772..08b7` | `19606..1974b` |
 | `252c` | `08b8..0aaf` | `19777..1996e` |
-| `25d7` | `0000..04ac` | `19993..19e3f` |
+| `25d7` | `0004..04ac` | `19997..19e3f` |
 | `25d7` | `04ae..0c14` | `19ec2..1a628` |
-| `25d7` | `0c16..0d7f` | `1a6ee..1a857` |
+| `25d7` | `0c16..0d78` | `1a6ee..1a850` |
+
+### Linked graphics word changes
+
+The original bytes within these independently validated spans differ from
+the 22-second linked image only at originally `0000h` two-byte word sites.
+The preparer records each candidate's **original RTL file offset**, runtime
+offset, observed word and conservative machine-instruction context in the
+`zero_word_changes` section of `intro-ghidra-plan.json`. For a compact
+console summary:
+
+```sh
+python3 tools/prepare_intro_ghidra.py \
+  ../gateway-dos/GATE.EXE ../gateway-dos/GATE.RTL \
+  --snapshot build/intro-analysis/at-22000.bin \
+  --output build/ghidra-graphics-words \
+  --graphics-word-changes
+```
+
+| Linked window | Originally zero word sites | Changed bytes accounted for | Changed covered bytes unexplained |
+| --- | ---: | ---: | ---: |
+| `252c` | 64 | 126 | 0 |
+| `25d7` | 134 | 245 | 0 |
+| **Total** | **198** | **371** | **0** |
+
+Opcode inspection independently identifies **30** `MOV AX,imm16; MOV DS,AX`
+and **one** `MOV AX,imm16; MOV ES,AX` sites, and **30 FAR CALLs** plus
+**three FAR JMPs** (66 offset/segment words). All 31 segment-load words
+contain `2a7ah` in this snapshot. The other **101 word sites** are not yet
+assigned instruction semantics. A one-byte substitution is classified as a
+word candidate only when the adjacent high byte was zero in *both* images.
+
+**This is a classification of bytes, not a working relocation table.** An
+originally zero word becoming nonzero is not proof of why or when the linker
+wrote it. Runtime values can depend on allocations and load layout; the
+remaining sites need verified instruction context, and the nine code
+fragments still need a real DOS loader before a standalone EXE can use them.
 
 The additional 22 seeded entries are recognized by matching the original
 Microsoft C function prologues (before the patched `DS` immediate), not by
