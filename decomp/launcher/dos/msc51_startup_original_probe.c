@@ -303,6 +303,10 @@ int main(void)
     if (good && (gate_far_word((uint16_t)resident_allocated, 0x020eu) != data_segment ||
                  gate_far_word((uint16_t)resident_allocated, 0x0a59u) != data_segment))
         good = 0;
+    if (good && (gate_far_word((uint16_t)resident_allocated, 0x0261u) != 0x02f3u ||
+                 gate_far_word((uint16_t)resident_allocated, 0x0303u) != 0x02dbu ||
+                 gate_far_word((uint16_t)resident_allocated, 0x0373u) != 0x030fu))
+        good = 0;
     /* The synthetic EXE callback is not an executable target. The real
      * recompiled EXE's equivalent routine is not yet identified. */
     if (good && (gate_far_word((uint16_t)resident_allocated, 0x0a4eu) != 0x0030u ||

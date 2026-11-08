@@ -611,6 +611,42 @@ int gate_dos_relocate_intro_resident_early_offsets(uint16_t resident_segment,
     return 0;
 }
 
+/* CS-prefixed timer/interrupt bookkeeping in the early resident routines.
+ * These thirteen zero-source absolute operands resolve to offsets within
+ * the resident code segment itself, not the DS:05xx state above. Every
+ * value is unchanged across the four settled original RAM captures. */
+static const GateResidentEarlyOffsetFixup gate_resident_cs_state_offsets[] = {
+    {0x0261u, 0x02f3u, 0x068cu}, {0x0266u, 0x02f0u, 0x3689u},
+    {0x026eu, 0x02dbu, 0xa32eu}, {0x0284u, 0x031bu, 0xa32eu},
+    {0x028du, 0x030fu, 0xa32eu}, {0x02e5u, 0x02dbu, 0xa32eu},
+    {0x02fcu, 0x02f0u, 0x3689u}, {0x0303u, 0x02dbu, 0xa32eu},
+    {0x0319u, 0x030fu, 0x0681u}, {0x0360u, 0x02f3u, 0xa32eu},
+    {0x0368u, 0x02f0u, 0x3689u}, {0x036cu, 0x031bu, 0xa12eu},
+    {0x0373u, 0x030fu, 0xa32eu}
+};
+
+int gate_dos_relocate_intro_resident_cs_state(uint16_t resident_segment,
+                                              uint16_t paragraphs)
+{
+    unsigned int i;
+    if (resident_segment == 0u || resident_segment > 0xfc30u ||
+        paragraphs < GATE_RESIDENT_PARAS)
+        return -1;
+    for (i = 0u; i < sizeof gate_resident_cs_state_offsets /
+                      sizeof gate_resident_cs_state_offsets[0]; ++i) {
+        uint16_t site = gate_resident_cs_state_offsets[i].site;
+        if (gate_far_word(resident_segment, (uint16_t)(site - 2u)) !=
+                gate_resident_cs_state_offsets[i].prefix ||
+            gate_far_word(resident_segment, site) != 0u)
+            return -2;
+    }
+    for (i = 0u; i < sizeof gate_resident_cs_state_offsets /
+                      sizeof gate_resident_cs_state_offsets[0]; ++i)
+        gate_far_set_word(resident_segment, gate_resident_cs_state_offsets[i].site,
+                         gate_resident_cs_state_offsets[i].target);
+    return 0;
+}
+
 /* Stage the first reconstructed resident bank in the eventual DOS entry.
  * Unlike the data-only bootstrap below, this operation does not establish
  * the remaining resident banks, interrupt vectors, or an executable entry.
@@ -619,7 +655,7 @@ int gate_dos_relocate_intro_resident_early_offsets(uint16_t resident_segment,
  * -5 EXE callback, -6 direct segment operands, -7 paragraph carries,
  * -8 linked DS flag offsets, -9 additional state offsets,
  * -10 linked small data offsets, -11 CS-local dispatch table,
- * -12 early DS-state offsets. */
+ * -12 early DS-state offsets, -13 early resident CS-state offsets. */
 int gate_dos_prepare_intro_resident_bank(uint16_t rtl_handle,
                                          uint16_t resident_segment,
                                          uint16_t paragraphs,
@@ -664,6 +700,9 @@ int gate_dos_prepare_intro_resident_bank(uint16_t rtl_handle,
     if (gate_dos_relocate_intro_resident_early_offsets(resident_segment,
                                                        paragraphs) != 0)
         return -12;
+    if (gate_dos_relocate_intro_resident_cs_state(resident_segment,
+                                                 paragraphs) != 0)
+        return -13;
     return 0;
 }
 
