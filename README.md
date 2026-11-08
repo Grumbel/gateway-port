@@ -380,6 +380,22 @@ nix run -L .#msc51-compile-data
 # If it fails, inspect build/msc51-launcher/DATBUILD.LOG and DATTEST.LOG.
 ```
 
+To additionally exercise the **actual original** `GATE.EXE` file in DOSBox,
+pass its directory explicitly:
+
+```sh
+nix run -L .#msc51-compile-data -- --original-game-dir ../gateway-dos
+# Also inspect build/msc51-launcher/DATREAL.LOG.
+```
+
+This optional mode verifies the original file's pinned SHA-256 *on the host*,
+mounts its directory **read-only** as DOSBox drive `E:`, and builds a separate
+`DATAREAL.EXE` to compare the complete copied 5,976-byte static-data range
+against a second DOS read. It checks both neighboring bytes and representative
+selector aliases. The generated-data `DATACHK.EXE` still runs first; an absent,
+stale or failing `DATREAL.LOG` fails the optional mode. Without this flag,
+the test needs no original game files and does not mount drive `E:`.
+
 `DATA.OBJ` is not yet in `LINK.RSP`: it does not fill BSS, relocate RTL
 resident banks, or recreate `_main`. The probe does not bundle or copy
 any original game bytes; the eventual loader must be given a separate

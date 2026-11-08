@@ -503,6 +503,20 @@ nix run -L .#msc51-compile-data
 outside this range, the BSS, runtime addresses/relocations, resident bank
 loading and the full `_main` control flow are not reconstructed.
 
+**Real original-file variant (next DOS guest test):** `compile-data` now
+accepts `--original-game-dir ../gateway-dos`, checks the pinned `GATE.EXE`
+SHA-256 on the host, and mounts the supplied directory read-only as DOSBox
+drive `E:`. The separately compiled `DATAREAL.EXE` checks the DOS-visible
+file size, allocates both overlapping windows, binds the 45 selectors,
+executes the existing 5,976-byte loader against the original on-disk file,
+then compares the destination against a second DOS read. It checks sentinels
+at both boundaries, two representative selector words, and closes/frees
+the temporary resources. The optional `DATREAL.LOG` must contain its exact
+success marker before the host accepts the result; the default synthetic
+`DATACHK.EXE` remains separately mandatory. This is an original-file I/O
+and memory-placement validation, not a substitute for the missing full
+startup BSS/relocations or three linker definitions.
+
 The third call is now identified as `rtl:10da1..10dc6`, a bounded FAR
 routine (preceded and terminated by `RETF`). It starts with `push cs; call
 near rtl:11078`, tests bits `0x0c` of a relocated DS byte, conditionally

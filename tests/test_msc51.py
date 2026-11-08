@@ -43,14 +43,17 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("CL /AL /Od /c DATA.C", batch)
             self.assertIn("DATACHK.C DATA.OBJ SEL.OBJ MEMORY.OBJ DOSFILE.OBJ", batch)
             self.assertIn("DATACHK.EXE > DATTEST.LOG", batch)
+            self.assertIn("DATAREAL.C DATA.OBJ SEL.OBJ MEMORY.OBJ DOSFILE.OBJ", batch)
+            self.assertIn("IF EXIST E:\\GATE.EXE DATAREAL.EXE > DATREAL.LOG", batch)
             self.assertNotIn("DATA.OBJ", (output / "LINK.RSP").read_text())
             (output / "STDINT.H").write_text('#include <stdint.h>\n')
-            syntax = subprocess.run(
-                ["gcc", "-std=c89", "-Wall", "-Wextra", "-Werror", "-fsyntax-only",
-                 "-I", str(REPO / "tests/fixtures/msc51_data"),
-                 "-I", str(output), "-x", "c", str(output / "DATACHK.C")],
-                capture_output=True, text=True)
-            self.assertEqual(syntax.returncode, 0, syntax.stderr)
+            for source in ("DATACHK.C", "DATAREAL.C"):
+                syntax = subprocess.run(
+                    ["gcc", "-std=c89", "-Wall", "-Wextra", "-Werror", "-fsyntax-only",
+                     "-I", str(REPO / "tests/fixtures/msc51_data"),
+                     "-I", str(output), "-x", "c", str(output / source)],
+                    capture_output=True, text=True)
+                self.assertEqual(syntax.returncode, 0, syntax.stderr)
 
     def test_compile_data_requires_verified_dependencies_and_current_guest_log(self):
         with tempfile.TemporaryDirectory() as scratch:
@@ -85,14 +88,15 @@ class MSC51Tests(unittest.TestCase):
             for name in ("DOSFILE.OBJ", "FILSTART.LOG", "FILOK.LOG"):
                 (output / name).write_text("tested")
             (output / "FILSIG.LOG").write_text(msc51.dos_file_source_signature(output))
-            for name in ("DATA.OBJ", "DATACHK.EXE", "DATTEST.LOG", "DATOK.LOG"):
+            for name in ("DATA.OBJ", "DATACHK.EXE", "DATAREAL.EXE", "DATREAL.LOG",
+                         "DATTEST.LOG", "DATOK.LOG"):
                 (output / name).write_text("stale")
 
             def completed(command, check):
                 self.assertIn("DATA.BAT", command)
                 self.assertFalse(check)
                 self.assertFalse((output / "DATACHK.EXE").exists())
-                for name in ("DATA.OBJ", "DATACHK.EXE", "DATSTART.LOG", "DATOK.LOG"):
+                for name in ("DATA.OBJ", "DATACHK.EXE", "DATAREAL.EXE", "DATSTART.LOG", "DATOK.LOG"):
                     (output / name).write_text("current")
                 (output / "DATTEST.LOG").write_text(
                     "Static EXE data probe: PASS (5976 bytes at DS:3592h)\n")
@@ -107,9 +111,54 @@ class MSC51Tests(unittest.TestCase):
                 msc51.validate_static_data_probe(output)
             (output / "DATTEST.LOG").write_text(
                 "Static EXE data probe: PASS (5976 bytes at DS:3592h)\n")
+            with self.assertRaisesRegex(ValueError, "original GATE.EXE data test"):
+                msc51.validate_static_data_probe(output, require_original=True)
+            (output / "DATREAL.LOG").write_text(
+                "Original EXE data probe: PASS (5976 bytes, matching disk image)\n")
+            msc51.validate_static_data_probe(output, require_original=True)
             (output / "DATA.C").write_text((output / "DATA.C").read_text() + "/* stale */\n")
             with self.assertRaisesRegex(ValueError, "source changed"):
                 msc51.validate_static_data_probe(output)
+
+    def test_real_original_file_is_explicitly_pinned_and_readonly(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            game = Path(scratch) / "original"
+            game.mkdir()
+            (game / "GATE.EXE").write_bytes(b"MZ\0wrong release")
+            with redirect_stderr(io.StringIO()) as diagnostic:
+                with self.assertRaises(SystemExit):
+                    msc51.main(["compile-data", "--original-game-dir", str(game),
+                                "--output", str(Path(scratch) / "launcher")])
+            self.assertIn("does not match the pinned original SHA-256",
+                          diagnostic.getvalue())
+            commands = msc51.dosbox_commands(
+                Path("/compiler"), Path("/build"), True, "DATA.BAT", game)
+            self.assertIn(f'mount e "{game}" -ro', commands)
+            self.assertLess(commands.index(f'mount e "{game}" -ro'),
+                            commands.index("DATA.BAT"))
+            self.assertIn('mount c "/compiler" -ro', commands)
+
+    def test_real_original_file_mount_and_required_result(self):
+        game = REPO.parent / "gateway-dos"
+        if not (game / "GATE.EXE").is_file():
+            self.skipTest("user-owned original GATE.EXE is not present")
+        with tempfile.TemporaryDirectory() as scratch:
+            args = ["compile-data", "--original-game-dir", str(game),
+                    "--output", str(Path(scratch) / "launcher"),
+                    "--compiler", str(Path(scratch) / "compiler")]
+            with mock.patch.object(msc51, "validate_memory_adapter"), \
+                 mock.patch.object(msc51, "validate_selector_probe"), \
+                 mock.patch.object(msc51, "validate_dos_file_adapter"), \
+                 mock.patch.object(msc51, "validate_compiler", return_value=Path(scratch)), \
+                 mock.patch.object(msc51, "validate_static_data_probe") as validate, \
+                 mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run", return_value=mock.Mock(returncode=0)) as run:
+                self.assertEqual(msc51.main(args), 0)
+                validate.assert_called_once_with(Path(scratch) / "launcher",
+                                                 require_original=True)
+            command = run.call_args.args[0]
+            self.assertIn(f'mount e "{game.resolve()}" -ro', command)
+            self.assertIn("DATA.BAT", command)
 
     def test_staged_startup_selectors_match_snapshot_layout_and_run_on_host(self):
         if not shutil.which("gcc"):

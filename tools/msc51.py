@@ -231,7 +231,7 @@ def msc51_rename_identifiers(source: str, names: dict[str, str]) -> str:
 MEMORY_SOURCES = ("GATEMEM.H", "STDINT.H", "MEMORY.C", "MEMCHK.C")
 SELECTOR_SOURCES = ("GATEMEM.H", "STDINT.H", "SEL.C", "SELCHK.C", "MEMORY.C")
 STATIC_DATA_SOURCES = ("GATEMEM.H", "GATEDOS.H", "STDINT.H", "DATA.C",
-                       "DATACHK.C", "SEL.C", "MEMORY.C", "DOSFILE.C")
+                       "DATACHK.C", "DATAREAL.C", "SEL.C", "MEMORY.C", "DOSFILE.C")
 DOS_FILE_SOURCES = ("GATEDOS.H", "GATEMEM.H", "STDINT.H", "DOSFILE.C", "FILECHK.C",
                     "MEMORY.C")
 RTL_STATE_SOURCES = ("RTLLAY.H", "RTLIMAC.H", "RTLSTATE.H", "GATEMEM.H", "STDINT.H",
@@ -516,7 +516,8 @@ def stage_launcher(output: Path) -> list[str]:
                                   ("msc51_dos_file_probe.c", "FILECHK.C")):
         (output / staged_name).write_text((source_dir / "dos" / dos_name).read_text())
     for dos_name, staged_name in (("msc51_startup_static_data.c", "DATA.C"),
-                                  ("msc51_startup_static_data_probe.c", "DATACHK.C")):
+                                  ("msc51_startup_static_data_probe.c", "DATACHK.C"),
+                                  ("msc51_startup_original_probe.c", "DATAREAL.C")):
         (output / staged_name).write_text((source_dir / "dos" / dos_name).read_text())
     data_signature = static_data_source_signature(output)
     data_batch = [
@@ -528,6 +529,10 @@ def stage_launcher(output: Path) -> list[str]:
         "CL /AL /Od DATACHK.C DATA.OBJ SEL.OBJ MEMORY.OBJ DOSFILE.OBJ /FeDATACHK.EXE /link LLIBCR.LIB LIBH.LIB/NOD >> DATBUILD.LOG",
         "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST DATACHK.EXE GOTO FAILED",
         "DATACHK.EXE > DATTEST.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        "CL /AL /Od DATAREAL.C DATA.OBJ SEL.OBJ MEMORY.OBJ DOSFILE.OBJ /FeDATAREAL.EXE /link LLIBCR.LIB LIBH.LIB/NOD >> DATBUILD.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST DATAREAL.EXE GOTO FAILED",
+        "IF EXIST E:\\GATE.EXE DATAREAL.EXE > DATREAL.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED",
         f"ECHO {data_signature} > DATSIG.LOG",
         "ECHO DOS static EXE data copy probe passed > DATOK.LOG",
         "GOTO DONE", ":FAILED", "ECHO DOS static EXE data copy probe failed > DATFAIL.LOG",
@@ -942,9 +947,9 @@ def print_selector_diagnostics(output: Path) -> None:
     print(f"DOS selector workspace: {output}", file=sys.stderr)
 
 
-def validate_static_data_probe(output: Path) -> None:
+def validate_static_data_probe(output: Path, *, require_original: bool = False) -> None:
     if (any(locate_case_insensitive(output, name) is None
-            for name in ("DATA.OBJ", "DATACHK.EXE", "DATSTART.LOG",
+            for name in ("DATA.OBJ", "DATACHK.EXE", "DATAREAL.EXE", "DATSTART.LOG",
                          "DATOK.LOG", "DATTEST.LOG")) or
             locate_case_insensitive(output, "DATFAIL.LOG") is not None):
         raise ValueError("DOS static EXE data copy probe failed. "
@@ -957,10 +962,17 @@ def validate_static_data_probe(output: Path) -> None:
     if re.search(r"^Static EXE data probe: PASS \(5976 bytes at DS:3592h\)\s*$",
                  result.read_text(), re.MULTILINE) is None:
         raise ValueError("DOS static data copy log does not verify all 5976 bytes.")
+    if require_original:
+        real = locate_case_insensitive(output, "DATREAL.LOG")
+        if (real is None or re.search(
+                r"^Original EXE data probe: PASS \(5976 bytes, matching disk image\)\s*$",
+                real.read_text(), re.MULTILINE) is None):
+            raise ValueError("DOS original GATE.EXE data test is missing or failed.")
 
 
 def remove_static_data_outputs(output: Path) -> None:
-    names = {"DATA.OBJ", "DATACHK.OBJ", "DATACHK.EXE", "DATSTART.LOG",
+    names = {"DATA.OBJ", "DATACHK.OBJ", "DATACHK.EXE", "DATAREAL.OBJ",
+             "DATAREAL.EXE", "DATREAL.LOG", "DATSTART.LOG",
              "DATBUILD.LOG", "DATTEST.LOG", "DATOK.LOG", "DATFAIL.LOG", "DATSIG.LOG",
              "DATASRC.BIN"}
     if output.is_dir():
@@ -970,7 +982,7 @@ def remove_static_data_outputs(output: Path) -> None:
 
 
 def print_static_data_diagnostics(output: Path) -> None:
-    for name in ("DATFAIL.LOG", "DATBUILD.LOG", "DATTEST.LOG", "DATOK.LOG"):
+    for name in ("DATFAIL.LOG", "DATBUILD.LOG", "DATTEST.LOG", "DATREAL.LOG", "DATOK.LOG"):
         path = locate_case_insensitive(output, name)
         content = path.read_text(errors="replace") if path else "(not created)"
         print(f"--- {name} ---\n{content[-8_000:].rstrip()}", file=sys.stderr)
@@ -1345,11 +1357,14 @@ def print_probe_diagnostics(output: Path) -> None:
 
 
 def dosbox_commands(compiler: Path, output: Path, run_probe: bool,
-                    batch_file: str = "BUILD.BAT") -> list[str]:
-    for path in (compiler, output):
+                    batch_file: str = "BUILD.BAT",
+                    original_game_dir: Path | None = None) -> list[str]:
+    for path in (compiler, output, *([original_game_dir] if original_game_dir else [])):
         if any(ch in str(path) for ch in ('"', '\n', '\r')):
             raise ValueError(f"Path cannot be mounted safely in DOSBox: {path}")
     commands = [f'mount c "{compiler}" -ro', f'mount d "{output}"', "d:"]
+    if original_game_dir is not None:
+        commands.insert(2, f'mount e "{original_game_dir}" -ro')
     if run_probe:
         commands.append(batch_file)
     else:
@@ -1394,7 +1409,11 @@ def main(argv: list[str] | None = None) -> int:
                         help="writable target for installing the original Microsoft compiler")
     parser.add_argument("--floppy", type=Path, action="append", default=[],
                         help="one original floppy image, repeat in original disk order")
+    parser.add_argument("--original-game-dir", type=Path,
+                        help="compile-data only: verify pinned GATE.EXE mounted read-only as drive E")
     args = parser.parse_args(argv)
+    if args.original_game_dir is not None and args.command != "compile-data":
+        parser.error("--original-game-dir is supported only by compile-data")
     launcher = args.command in ("prepare-launcher", "compile-launcher",
                                 "compile-memory", "compile-selectors", "compile-data",
                                 "compile-dos-files",
@@ -1417,6 +1436,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.command in ("prepare", "prepare-launcher"):
         return 0
     try:
+        original_game_dir = None
+        if args.original_game_dir is not None:
+            original_game_dir = args.original_game_dir.expanduser().resolve()
+            original_exe = locate_case_insensitive(original_game_dir, "GATE.EXE")
+            if original_exe is None or not original_exe.is_file():
+                raise ValueError(f"GATE.EXE not found in {original_game_dir}")
+            expected = "767ccbbacbd6b304a5bab072894a45ca426a2196ae369b2f11d02ef92bb7134b"
+            if hashlib.sha256(original_exe.read_bytes()).hexdigest() != expected:
+                raise ValueError("GATE.EXE does not match the pinned original SHA-256")
         if args.command == "install":
             if args.install_dir is None:
                 parser.error("--install-dir is required for the install command")
@@ -1471,7 +1499,8 @@ def main(argv: list[str] | None = None) -> int:
                  "CLOCK.BAT" if args.command == "compile-clock" else
                  "CRT.BAT" if args.command == "compile-crt" else
                  "MEMORY.BAT" if args.command == "compile-memory" else
-                 "COMPILE.BAT" if launcher else "BUILD.BAT"))
+                 "COMPILE.BAT" if launcher else "BUILD.BAT"),
+                original_game_dir=original_game_dir)
             output.mkdir(parents=True, exist_ok=True)
     except ValueError as error:
         parser.error(str(error))
@@ -1600,15 +1629,17 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "compile-data":
         try:
-            validate_static_data_probe(output)
+            validate_static_data_probe(output, require_original=original_game_dir is not None)
         except ValueError as error:
             print(f"Microsoft C did not verify startup static data copy: {error}",
                   file=sys.stderr)
             print_static_data_diagnostics(output)
             return 1
         print("Microsoft C 5.1 verified a 5976-byte generated fixture can be copied "
-              "from original EXE offsets to runtime DS:3592; DATA.OBJ remains probe-only pending "
-              "the rest of startup and RTLink fixups.")
+              "from original EXE offsets to runtime DS:3592"
+              + (" and confirmed the same copy against read-only GATE.EXE"
+                 if original_game_dir is not None else "")
+              + "; DATA.OBJ remains probe-only pending the rest of startup and RTLink fixups.")
         return 0
     if args.command == "compile-dos-files":
         try:
