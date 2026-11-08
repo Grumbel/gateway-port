@@ -1487,6 +1487,26 @@ def dosbox_commands(compiler: Path, output: Path, run_probe: bool,
     return commands
 
 
+def dosbox_performance_args(cycles: str = "max", core: str = "dynamic") -> list[str]:
+    """Override DOSBox Staging's slow real-mode defaults for compiler runs.
+
+    The legacy `cycles` option works across the supported DOSBox Staging
+    versions (including 0.82+); `--set` has been supported since 0.79.
+    `default` preserves the user's normal DOSBox configuration instead.
+    """
+    if core not in ("auto", "normal", "simple", "dynamic", "default"):
+        raise ValueError("--dosbox-core must be auto, normal, simple, dynamic or default")
+    if cycles not in ("auto", "max", "default"):
+        if not cycles.isascii() or not cycles.isdecimal() or not 50 <= int(cycles) <= 2_000_000:
+            raise ValueError("--dosbox-cycles must be auto, max, default or 50..2000000")
+    result = []
+    if core != "default":
+        result += ["--set", f"core={core}"]
+    if cycles != "default":
+        result += ["--set", f"cycles={cycles}"]
+    return result
+
+
 def install_commands(destination: Path, floppies: list[Path]) -> list[str]:
     if not floppies:
         raise ValueError("pass at least one --floppy IMAGE (in disk order)")
@@ -1520,6 +1540,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path,
                         help="writable DOS workspace; never the Nix store")
     parser.add_argument("--dosbox", default="dosbox-staging")
+    parser.add_argument("--dosbox-cycles", default="max",
+                        help="DOSBox CPU cycles: max (default), auto, 50..2000000 or default (no override)")
+    parser.add_argument("--dosbox-core", default="dynamic",
+                        choices=("dynamic", "auto", "normal", "simple", "default"),
+                        help="DOSBox CPU core: dynamic (default), auto, normal, simple or default (no override)")
     parser.add_argument("--install-dir", type=Path,
                         help="writable target for installing the original Microsoft compiler")
     parser.add_argument("--floppy", type=Path, action="append", default=[],
@@ -1628,7 +1653,12 @@ def main(argv: list[str] | None = None) -> int:
     dosbox = shutil.which(args.dosbox)
     if dosbox is None:
         parser.error(f"DOSBox executable not found: {args.dosbox}")
-    command = [dosbox, *(part for line in commands for part in ("-c", line))]
+    try:
+        performance_args = dosbox_performance_args(args.dosbox_cycles, args.dosbox_core)
+    except ValueError as error:
+        parser.error(str(error))
+    command = [dosbox, *performance_args,
+               *(part for line in commands for part in ("-c", line))]
     if args.command == "probe":
         # An old successful EXE/LOG must never masquerade as a fresh build.
         remove_probe_outputs(output)
@@ -1690,6 +1720,7 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "link-launcher":
         remove_launcher_link_outputs(output)
         command.append("--exit")
+    print("DOSBox CPU: " + (" ".join(performance_args) or "user configuration"), flush=True)
     print("DOSBox commands: " + " ; ".join(commands), flush=True)
     result = subprocess.run(command, check=False)
     if result.returncode != 0:

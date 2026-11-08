@@ -426,6 +426,8 @@ class MSC51Tests(unittest.TestCase):
             command = run.call_args.args[0]
             self.assertIn(f'mount e "{game.resolve()}" -ro', command)
             self.assertIn("DATA.BAT", command)
+            self.assertEqual(command[:5], ["/usr/bin/false", "--set", "core=dynamic",
+                                           "--set", "cycles=max"])
 
     def test_staged_startup_selectors_match_snapshot_layout_and_run_on_host(self):
         if not shutil.which("gcc"):
@@ -1966,6 +1968,22 @@ class MSC51Tests(unittest.TestCase):
             self.assertEqual(commands[-1], "BUILD.BAT")
             with self.assertRaisesRegex(ValueError, "cannot be mounted"):
                 msc51.dosbox_commands(root / 'bad"dir', root / "output", True)
+
+    def test_msc51_dosbox_compiler_cpu_speed_and_compatibility_overrides(self):
+        self.assertEqual(msc51.dosbox_performance_args(),
+                         ["--set", "core=dynamic", "--set", "cycles=max"])
+        self.assertEqual(msc51.dosbox_performance_args("25000", "normal"),
+                         ["--set", "core=normal", "--set", "cycles=25000"])
+        self.assertEqual(msc51.dosbox_performance_args("auto", "auto"),
+                         ["--set", "core=auto", "--set", "cycles=auto"])
+        self.assertEqual(msc51.dosbox_performance_args("default", "default"), [])
+        for invalid in ("", "0", "49", "2000001", "overclock", "2.5", "max --exit",
+                        "٥٠", "0100000000000000000000000000000000000000000"):
+            with self.subTest(cycles=invalid):
+                with self.assertRaisesRegex(ValueError, "--dosbox-cycles"):
+                    msc51.dosbox_performance_args(invalid, "dynamic")
+        with self.assertRaisesRegex(ValueError, "--dosbox-core"):
+            msc51.dosbox_performance_args("max", "hyper")
 
     def test_installer_mounts_original_images_in_supplied_order(self):
         with tempfile.TemporaryDirectory() as scratch:

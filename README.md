@@ -244,6 +244,28 @@ nix build .#msc51                             # optional: inspect assembled DOS 
 nix develop .#msc51                           # optional DOSBox toolchain shell
 ```
 
+The compiler and probe sessions use **DOSBox Staging's dynamic CPU core and
+maximum automatic CPU cycles** by default (`--set core=dynamic --set
+cycles=max`). This speeds up CPU-bound real-mode compilation compared with
+the emulator's default interpreted real-mode core; the actual speedup depends
+on the host. The settings apply only to the launched DOSBox process, not to
+your global configuration. For the original-file data/boot probes, for
+example, you can instead pin a cycle budget or restore conservative timing:
+
+```sh
+nix run -L .#msc51-compile-data -- --original-game-dir ../gateway-dos --dosbox-cycles 25000
+nix run -L .#msc51-compile-data -- --original-game-dir ../gateway-dos --dosbox-core auto --dosbox-cycles auto
+nix run -L .#msc51-compile-data -- --original-game-dir ../gateway-dos --dosbox-core default --dosbox-cycles default
+```
+
+Use `auto` if timing-dependent DOS behavior fails at `max`; use `default`
+for both options to leave the settings to your own DOSBox configuration.
+The flags apply to all DOSBox-running `msc51-*` commands handled by
+`tools/msc51.py`.
+See the [DOSBox Staging CPU documentation](https://www.dosbox-staging.org/0.83/manual/system/cpu/)
+for the core and cycle tradeoffs. An unchanged probe result is still
+required; more CPU cycles are not evidence of correct startup behavior.
+
 The opt-in `msc51-archive` Nix package downloads
 [WinWorld's Microsoft C 5.1 5¼-inch distribution](https://winworldpc.com/product/microsoft-c-c/5x)
 from either of its two mirrors using the archive's published SHA-512 checksum.
