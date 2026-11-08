@@ -34,6 +34,9 @@ int gate_dos_prepare_intro_resident_bank(uint16_t rtl_handle,
                                          uint16_t paragraphs,
                                          uint16_t data_segment,
                                          GateFarPtr exe_callback);
+int gate_dos_overlay_intro_resident_exe_tail(uint16_t exe_handle,
+                                              uint16_t resident_segment,
+                                              uint16_t paragraphs);
 int gate_dos_relocate_intro_resident_self_calls(uint16_t resident_segment,
                                                 uint16_t paragraphs);
 int gate_dos_relocate_intro_resident_ds_loads(uint16_t resident_segment,
@@ -331,6 +334,18 @@ int main(void)
                  gate_far_word((uint16_t)resident_allocated, 0x0a19u) != 0x4fdcu ||
                  gate_far_word((uint16_t)resident_allocated, 0x1f4du) != 0x4e22u))
         good = 0;
+    if (good && (gate_far_byte((uint16_t)resident_allocated, 0x00d2u) != 0x1bu ||
+                 gate_far_word((uint16_t)resident_allocated, 0x0274u) != 0x5103u ||
+                 gate_far_byte((uint16_t)resident_allocated, 0x0924u) != 0x1bu))
+        good = 0;
+    if (good && (gate_far_word((uint16_t)resident_allocated, 0x0040u) != 0x0220u ||
+                 gate_far_word((uint16_t)resident_allocated, 0x006au) != 0x039bu ||
+                 gate_far_word((uint16_t)resident_allocated, 0x00adu) != 0x0956u))
+        good = 0;
+    if (good && (gate_far_word((uint16_t)resident_allocated, 0x0a65u) != 0x0b40u ||
+                 gate_far_word((uint16_t)resident_allocated, 0x14c1u) != 0x3250u ||
+                 gate_far_word((uint16_t)resident_allocated, 0x3b2cu) != 0x3590u))
+        good = 0;
     /* The synthetic EXE callback is not an executable target. The real
      * recompiled EXE's equivalent routine is not yet identified. */
     if (good && (gate_far_word((uint16_t)resident_allocated, 0x0a4eu) != 0x0030u ||
@@ -367,6 +382,37 @@ int main(void)
                  gate_far_word((uint16_t)resident_allocated, 0x0116u) != 0x05aau ||
                  gate_far_word((uint16_t)resident_allocated, 0x09a2u) != 0x05d3u))
         good = 0;
+    /* The first ten settled resident bytes were inherited from the tail of
+     * GATE.EXE, not relocated from RTL. Reopen the original file and check
+     * the bounded ten-byte copy without executing inherited guest code. */
+    if (good) {
+        result = gate_dos_file_open(gate_stack_pointer(original_exe_name), 0u, 0u);
+        if (result.carry)
+            good = 0;
+        else {
+            uint16_t exe_tail_handle = result.ax;
+            if (gate_dos_overlay_intro_resident_exe_tail(exe_tail_handle,
+                        (uint16_t)resident_allocated, 0x03d0u) != 0)
+                good = 0;
+            if (good) {
+                result = gate_dos_file_seek(exe_tail_handle, 0u, 0x3739ul);
+                if (result.carry || result.ax != 0x3739u || result.dx != 0u)
+                    good = 0;
+            }
+            if (good) {
+                result = gate_dos_file_read(exe_tail_handle,
+                                             gate_stack_pointer(buffer), 10u);
+                if (result.carry || result.ax != 10u)
+                    good = 0;
+            }
+            for (i = 0u; good && i < 10u; ++i)
+                if (gate_far_byte((uint16_t)resident_allocated, i) != buffer[i])
+                    good = 0;
+            result = gate_dos_file_close(exe_tail_handle);
+            if (result.carry)
+                good = 0;
+        }
+    }
     if (good && gate_dos_clear_intro_rtl_prefix((uint16_t)allocated,
                                                GATE_REAL_PARAGRAPHS) != 0)
         good = 0;

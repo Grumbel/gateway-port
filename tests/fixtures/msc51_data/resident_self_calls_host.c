@@ -11,6 +11,10 @@
 
 static uint8_t memory[0x100000];
 static uint16_t data_segment;
+static uint8_t tail_mock_mode;
+static uint8_t real_file_mode;
+static FILE *real_rtl_file;
+static FILE *real_exe_file;
 
 uint16_t gate_ds_segment(void) { return data_segment; }
 void gate_dos_bind_ds(uint16_t segment) { data_segment = segment; }
@@ -46,25 +50,71 @@ int gate_dos_bind_intro_aliases(uint16_t lower_segment, uint16_t paragraphs)
 GateDosFileResult gate_dos_file_seek(uint16_t handle, uint16_t origin, uint32_t offset)
 {
     GateDosFileResult result;
-    (void)handle; (void)origin; (void)offset;
+    FILE *file;
     memset(&result, 0, sizeof result);
-    result.carry = 1u;
+    if (real_file_mode) {
+        file = handle == 1u ? real_rtl_file :
+               (handle == 2u ? real_exe_file : NULL);
+        if (file == NULL || origin != 0u || fseek(file, (long)offset, SEEK_SET) != 0)
+            result.carry = 1u;
+        else {
+            result.ax = (uint16_t)offset;
+            result.dx = (uint16_t)(offset >> 16);
+        }
+        return result;
+    }
+    (void)handle;
+    if ((tail_mock_mode == 1u || tail_mock_mode == 2u) &&
+        offset == 0x3739ul && origin == 0u) {
+        result.ax = 0x3739u;
+    } else {
+        result.carry = 1u;
+    }
     return result;
 }
 GateDosFileResult gate_dos_file_read(uint16_t handle, GateFarPtr target, uint16_t length)
 {
     GateDosFileResult result;
-    (void)handle; (void)target; (void)length;
+    unsigned int i;
+    FILE *file;
     memset(&result, 0, sizeof result);
-    result.carry = 1u;
+    if (real_file_mode) {
+        file = handle == 1u ? real_rtl_file :
+               (handle == 2u ? real_exe_file : NULL);
+        if (file == NULL) {
+            result.carry = 1u;
+            return result;
+        }
+        for (i = 0u; i < length; ++i) {
+            int byte = fgetc(file);
+            if (byte == EOF)
+                break;
+            gate_far_set_byte(target.segment, (uint16_t)(target.offset + i),
+                              (uint8_t)byte);
+        }
+        result.ax = (uint16_t)i;
+        if (i != length)
+            result.carry = 1u;
+        return result;
+    }
+    (void)handle;
+    if ((tail_mock_mode == 1u || tail_mock_mode == 2u) && length == 10u) {
+        for (i = 0u; i < length; ++i)
+            gate_far_set_byte(target.segment, (uint16_t)(target.offset + i),
+                              (uint8_t)(0x60u + i));
+        result.ax = tail_mock_mode == 1u ? length : (uint16_t)(length - 1u);
+    } else {
+        result.carry = 1u;
+    }
     return result;
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     unsigned int i;
     uint16_t segment = 0x3000u;
     GateFarPtr external;
+    FILE *ram_file;
     uint16_t first_site = gate_resident_self_calls[0].site;
     uint16_t last_site = gate_resident_self_calls[
         sizeof gate_resident_self_calls / sizeof gate_resident_self_calls[0] - 1u].site;
@@ -291,6 +341,8 @@ int main(void)
         gate_far_set_word(segment,
                           (uint16_t)(gate_resident_small_offsets[i].site - 2u),
                           gate_resident_small_offsets[i].prefix);
+    /* The preceding FAR CALL has already linked the high segment byte. */
+    gate_far_set_byte(segment, 0x1872u, (uint8_t)(segment >> 8));
     if (gate_dos_relocate_intro_resident_small_offsets(segment, 0x03cfu) != -1)
         abort();
     gate_far_set_word(segment, 0x223au, 0xffffu);
@@ -498,6 +550,141 @@ int main(void)
         if (gate_far_word(segment, gate_resident_remaining_zero_offsets[i].site) !=
             gate_resident_remaining_zero_offsets[i].target)
             abort();
+    for (i = 0u; i < sizeof gate_resident_byte_offsets /
+                      sizeof gate_resident_byte_offsets[0]; ++i) {
+        gate_far_set_byte(segment, gate_resident_byte_offsets[i].site, 0u);
+        gate_far_set_word(segment,
+                          (uint16_t)(gate_resident_byte_offsets[i].site - 2u),
+                          gate_resident_byte_offsets[i].prefix);
+    }
+    /* The following byte is not part of the relocation: preserve 51h. */
+    gate_far_set_byte(segment, 0x0275u, 0x51u);
+    if (gate_dos_relocate_intro_resident_byte_offsets(segment, 0x03cfu) != -1)
+        abort();
+    gate_far_set_byte(segment, 0x0924u, 1u);
+    if (gate_dos_relocate_intro_resident_byte_offsets(segment, 0x03d0u) != -2 ||
+        gate_far_byte(segment, 0x00d2u) != 0u)
+        abort();
+    gate_far_set_byte(segment, 0x0924u, 0u);
+    if (gate_dos_relocate_intro_resident_byte_offsets(segment, 0x03d0u) != 0)
+        abort();
+    for (i = 0u; i < sizeof gate_resident_byte_offsets /
+                      sizeof gate_resident_byte_offsets[0]; ++i)
+        if (gate_far_byte(segment, gate_resident_byte_offsets[i].site) !=
+            gate_resident_byte_offsets[i].target)
+            abort();
+    if (gate_far_byte(segment, 0x0275u) != 0x51u)
+        abort();
+    for (i = 0u; i < sizeof gate_resident_move_immediates /
+                      sizeof gate_resident_move_immediates[0]; ++i) {
+        uint16_t site = gate_resident_move_immediates[i].site;
+        gate_far_set_word(segment, (uint16_t)(site - 4u), 0x06c7u);
+        gate_far_set_word(segment, (uint16_t)(site - 2u),
+                          gate_resident_move_immediates[i].destination);
+        gate_far_set_word(segment, site, 0u);
+    }
+    if (gate_dos_relocate_intro_resident_move_immediates(segment, 0x03cfu) != -1)
+        abort();
+    gate_far_set_word(segment, 0x00adu, 1u);
+    if (gate_dos_relocate_intro_resident_move_immediates(segment, 0x03d0u) != -2 ||
+        gate_far_word(segment, 0x0040u) != 0u)
+        abort();
+    gate_far_set_word(segment, 0x00adu, 0u);
+    if (gate_dos_relocate_intro_resident_move_immediates(segment, 0x03d0u) != 0)
+        abort();
+    for (i = 0u; i < sizeof gate_resident_move_immediates /
+                      sizeof gate_resident_move_immediates[0]; ++i)
+        if (gate_far_word(segment, gate_resident_move_immediates[i].site) !=
+            gate_resident_move_immediates[i].value)
+            abort();
+    for (i = 0u; i < sizeof gate_resident_linked_words /
+                      sizeof gate_resident_linked_words[0]; ++i) {
+        uint16_t site = gate_resident_linked_words[i].site;
+        gate_far_set_word(segment, site, gate_resident_linked_words[i].source);
+        gate_far_set_byte(segment,
+                          (uint16_t)(site - gate_resident_linked_words[i].guard_back),
+                          gate_resident_linked_words[i].guard);
+    }
+    if (gate_dos_relocate_intro_resident_linked_words(segment, 0x03cfu) != -1)
+        abort();
+    gate_far_set_word(segment, 0x3b2cu, 0u);
+    if (gate_dos_relocate_intro_resident_linked_words(segment, 0x03d0u) != -2 ||
+        gate_far_word(segment, 0x0a65u) != 0u)
+        abort();
+    gate_far_set_word(segment, 0x3b2cu, 2u);
+    if (gate_dos_relocate_intro_resident_linked_words(segment, 0x03d0u) != 0)
+        abort();
+    for (i = 0u; i < sizeof gate_resident_linked_words /
+                      sizeof gate_resident_linked_words[0]; ++i)
+        if (gate_far_word(segment, gate_resident_linked_words[i].site) !=
+            gate_resident_linked_words[i].target)
+            abort();
+    if (gate_dos_overlay_intro_resident_exe_tail(2u, segment, 0x03cfu) != -1)
+        abort();
+    tail_mock_mode = 3u;
+    if (gate_dos_overlay_intro_resident_exe_tail(2u, segment, 0x03d0u) != -2)
+        abort();
+    tail_mock_mode = 2u;
+    if (gate_dos_overlay_intro_resident_exe_tail(2u, segment, 0x03d0u) != -3)
+        abort();
+    tail_mock_mode = 1u;
+    if (gate_dos_overlay_intro_resident_exe_tail(2u, segment, 0x03d0u) != 0)
+        abort();
+    for (i = 0u; i < 10u; ++i)
+        if (gate_far_byte(segment, (uint16_t)i) != (uint8_t)(0x60u + i))
+            abort();
+    if (argc == 4) {
+        int prepare_result;
+        real_rtl_file = fopen(argv[1], "rb");
+        real_exe_file = fopen(argv[2], "rb");
+        ram_file = fopen(argv[3], "rb");
+        if (real_rtl_file == NULL || real_exe_file == NULL || ram_file == NULL)
+            abort();
+        real_file_mode = 1u;
+        external.segment = 0x1000u;
+        external.offset = 0x0030u;
+        prepare_result = gate_dos_prepare_intro_resident_bank_with_exe(1u, 2u,
+                    0x12a5u, 0x03d0u, 0x2a7au, external);
+        if (prepare_result != 0) {
+            if (prepare_result == -10) {
+                unsigned int disagreements = 0u;
+                for (i = 0u; i < sizeof gate_resident_small_offsets /
+                                  sizeof gate_resident_small_offsets[0]; ++i) {
+                    uint16_t site = gate_resident_small_offsets[i].site;
+                    uint16_t prefix = gate_far_word(0x12a5u, (uint16_t)(site - 2u));
+                    uint16_t source = gate_far_word(0x12a5u, site);
+                    if (prefix != gate_resident_small_offsets[i].prefix ||
+                        source != gate_resident_small_offsets[i].original) {
+                        fprintf(stderr, "small offset +%04x: prefix %04x/%04x "
+                                        "source %04x/%04x\n", site, prefix,
+                                gate_resident_small_offsets[i].prefix, source,
+                                gate_resident_small_offsets[i].original);
+                        ++disagreements;
+                    }
+                }
+                fprintf(stderr, "total small-offset preflight mismatches %u\n",
+                        disagreements);
+            }
+            fprintf(stderr, "composed resident prepare failed: %d\n", prepare_result);
+            abort();
+        }
+        if (fseek(ram_file, 0x12a50l, SEEK_SET) != 0)
+            abort();
+        for (i = 0u; i < 0x3d00u; ++i) {
+            int expected = fgetc(ram_file);
+            if (gate_far_byte(0x12a5u, (uint16_t)i) != expected) {
+                fprintf(stderr, "resident mismatch +%04x: %02x != %02x\n",
+                        i, gate_far_byte(0x12a5u, (uint16_t)i), expected);
+                abort();
+            }
+        }
+        if (fclose(real_rtl_file) != 0 || fclose(real_exe_file) != 0 ||
+            fclose(ram_file) != 0)
+            abort();
+        puts("Full 15616-byte original resident bank: PASS");
+    } else if (argc != 1) {
+        abort();
+    }
     puts("98 self-calls, 7 DS loads, EXE call and 7 direct segments: PASS");
     return 0;
 }

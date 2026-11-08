@@ -195,6 +195,43 @@ def remaining_zero_manifest():
                        match.group(1))]
 
 
+def byte_offset_manifest():
+    source = (ROOT / "decomp/launcher/dos/msc51_startup_static_data.c").read_text()
+    match = re.search(r"static const GateResidentByteOffsetFixup "
+                      r"gate_resident_byte_offsets\[\] = \{(.*?)\n\};",
+                      source, re.DOTALL)
+    if match is None:
+        raise AssertionError("resident single-byte offsets missing")
+    return [tuple(int(value, 16) for value in entry) for entry in
+            re.findall(r"\{0x([0-9a-f]+)u, 0x([0-9a-f]+)u, 0x([0-9a-f]+)u\}",
+                       match.group(1))]
+
+
+def move_immediate_manifest():
+    source = (ROOT / "decomp/launcher/dos/msc51_startup_static_data.c").read_text()
+    match = re.search(r"static const GateResidentMoveImmediate "
+                      r"gate_resident_move_immediates\[\] = \{(.*?)\n\};",
+                      source, re.DOTALL)
+    if match is None:
+        raise AssertionError("paired MOV immediates missing")
+    return [tuple(int(value, 16) for value in entry) for entry in
+            re.findall(r"\{0x([0-9a-f]+)u, 0x([0-9a-f]+)u, 0x([0-9a-f]+)u\}",
+                       match.group(1))]
+
+
+def linked_word_manifest():
+    source = (ROOT / "decomp/launcher/dos/msc51_startup_static_data.c").read_text()
+    match = re.search(r"static const GateResidentLinkedWord "
+                      r"gate_resident_linked_words\[\] = \{(.*?)\n\};",
+                      source, re.DOTALL)
+    if match is None:
+        raise AssertionError("linked source-word table missing")
+    return [tuple(int(value, 16) for value in entry) for entry in
+            re.findall(r"\{0x([0-9a-f]+)u, 0x([0-9a-f]+)u, "
+                       r"0x([0-9a-f]+)u, 0x([0-9a-f]+)u, ([0-9]+)u\}",
+                       match.group(1))]
+
+
 class ResidentSelfCallTests(unittest.TestCase):
     def test_relocation_tables_cover_disjoint_changed_bytes(self):
         rtl_path = ROOT.parent / "gateway-dos/GATE.RTL"
@@ -240,12 +277,105 @@ class ResidentSelfCallTests(unittest.TestCase):
                 self.assertFalse({site - 2, site - 1} & occupied, hex(site))
             for site, _, _ in entries:
                 claim(site, 2)
+        for site, _, _ in byte_offset_manifest():
+            self.assertFalse({site - 2, site - 1} & occupied, hex(site))
+            claim(site, 1)
+        for site, _, _ in move_immediate_manifest():
+            self.assertFalse({site - 4, site - 3} & occupied, hex(site))
+            self.assertTrue({site - 2, site - 1} <= occupied, hex(site))
+            claim(site, 2)
+        for site, _, _, _, back in linked_word_manifest():
+            self.assertNotIn(site - back, occupied, hex(site))
+            claim(site, 2)
 
         changed = {i for i, (source, settled) in enumerate(zip(rtl, live))
                    if source != settled}
         self.assertEqual(len(changed), 1660)
-        self.assertEqual(len(changed & occupied), 1531)
-        self.assertEqual(len(changed - occupied), 129)
+        self.assertEqual(len(changed & occupied), 1650)
+        self.assertEqual(len(changed - occupied), 10)
+        self.assertEqual(changed - occupied, set(range(10)))
+
+    def test_remaining_ten_bytes_are_preserved_original_exe_tail(self):
+        exe_path = ROOT.parent / "gateway-dos/GATE.EXE"
+        rtl_path = ROOT.parent / "gateway-dos/GATE.RTL"
+        captures = [ROOT / f"build/msc51-startup-fine/at-{ms}.bin"
+                    for ms in (125, 175, 250)]
+        captures.append(ROOT / "build/msc51-startup/at-500.bin")
+        if not exe_path.exists() or not rtl_path.exists() or not all(
+                p.exists() for p in captures):
+            self.skipTest("Original EXE, RTL and settled DOS captures unavailable")
+        exe = exe_path.read_bytes()
+        rtl = rtl_path.read_bytes()
+        inherited = exe[0x3739:0x3743]
+        self.assertEqual(len(inherited), 10)
+        self.assertNotEqual(rtl[0x56de:0x56e8], inherited)
+        self.assertEqual(exe.find(inherited), 0x3739)
+        self.assertEqual(exe.rfind(inherited), 0x3739)
+        # Include the preceding code to distinguish an EXE load boundary
+        # from an accidental short instruction-suffix coincidence.
+        for path in captures:
+            ram = path.read_bytes()
+            self.assertEqual(ram[0x12a30:0x12a5a], exe[0x3719:0x3743],
+                             path.name)
+
+    def test_38_linked_source_words_against_original_ram(self):
+        rtl_path = ROOT.parent / "gateway-dos/GATE.RTL"
+        captures = [ROOT / f"build/msc51-startup-fine/at-{ms}.bin"
+                    for ms in (125, 175, 250)]
+        captures.append(ROOT / "build/msc51-startup/at-500.bin")
+        if not rtl_path.exists() or not all(path.exists() for path in captures):
+            self.skipTest("Original RTL and settled DOS captures unavailable")
+        rtl = rtl_path.read_bytes()[0x56de:0x93de]
+        live = [path.read_bytes()[0x12a50:0x12a50 + len(rtl)] for path in captures]
+        entries = linked_word_manifest()
+        self.assertEqual(len(entries), 38)
+        for site, source, target, guard, back in entries:
+            self.assertEqual(rtl[site - back], guard, hex(site))
+            self.assertEqual(rtl[site:site + 2], source.to_bytes(2, "little"),
+                             hex(site))
+            for ram in live:
+                self.assertEqual(ram[site:site + 2], target.to_bytes(2, "little"),
+                                 hex(site))
+
+    def test_8_paired_mov_immediates_against_original_ram(self):
+        rtl_path = ROOT.parent / "gateway-dos/GATE.RTL"
+        captures = [ROOT / f"build/msc51-startup-fine/at-{ms}.bin"
+                    for ms in (125, 175, 250)]
+        captures.append(ROOT / "build/msc51-startup/at-500.bin")
+        if not rtl_path.exists() or not all(path.exists() for path in captures):
+            self.skipTest("Original RTL and settled DOS captures unavailable")
+        rtl = rtl_path.read_bytes()[0x56de:0x93de]
+        live = [path.read_bytes()[0x12a50:0x12a50 + len(rtl)] for path in captures]
+        entries = move_immediate_manifest()
+        self.assertEqual(len(entries), 8)
+        for site, destination, value in entries:
+            self.assertEqual(rtl[site - 4:site - 2], bytes.fromhex("c706"), hex(site))
+            self.assertEqual(rtl[site - 2:site + 2], bytes(4), hex(site))
+            for ram in live:
+                self.assertEqual(ram[site - 2:site], destination.to_bytes(2, "little"),
+                                 hex(site))
+                self.assertEqual(ram[site:site + 2], value.to_bytes(2, "little"),
+                                 hex(site))
+
+    def test_27_single_byte_offsets_against_original_ram(self):
+        rtl_path = ROOT.parent / "gateway-dos/GATE.RTL"
+        captures = [ROOT / f"build/msc51-startup-fine/at-{ms}.bin"
+                    for ms in (125, 175, 250)]
+        captures.append(ROOT / "build/msc51-startup/at-500.bin")
+        if not rtl_path.exists() or not all(path.exists() for path in captures):
+            self.skipTest("Original RTL and settled DOS captures unavailable")
+        rtl = rtl_path.read_bytes()[0x56de:0x93de]
+        live = [path.read_bytes()[0x12a50:0x12a50 + len(rtl)] for path in captures]
+        entries = byte_offset_manifest()
+        self.assertEqual(len(entries), 27)
+        self.assertEqual([site for site, _, _ in entries],
+                         sorted(set(site for site, _, _ in entries)))
+        for site, target, prefix in entries:
+            self.assertEqual(rtl[site - 2:site], prefix.to_bytes(2, "little"), hex(site))
+            self.assertEqual(rtl[site], 0, hex(site))
+            for ram in live:
+                self.assertEqual(ram[site], target, hex(site))
+                self.assertEqual(ram[site + 1], rtl[site + 1], hex(site))
 
     def test_25_remaining_zero_offsets_against_original_ram(self):
         rtl_path = ROOT.parent / "gateway-dos/GATE.RTL"
@@ -558,6 +688,22 @@ class ResidentSelfCallTests(unittest.TestCase):
             self.assertEqual(ran.returncode, 0, ran.stderr)
             self.assertIn("98 self-calls, 7 DS loads, EXE call and 7 direct segments: PASS",
                           ran.stdout)
+            rtl_path = ROOT.parent / "gateway-dos/GATE.RTL"
+            exe_path = ROOT.parent / "gateway-dos/GATE.EXE"
+            captures = [ROOT / f"build/msc51-startup-fine/at-{ms}.bin"
+                        for ms in (125, 175, 250)]
+            captures.append(ROOT / "build/msc51-startup/at-500.bin")
+            if rtl_path.exists() and exe_path.exists():
+                for capture in captures:
+                    if not capture.exists():
+                        continue
+                    actual = subprocess.run(
+                        [str(executable), str(rtl_path), str(exe_path), str(capture)],
+                        capture_output=True, text=True)
+                    self.assertEqual(actual.returncode, 0,
+                                     f"{capture.name}: {actual.stderr}")
+                    self.assertIn("Full 15616-byte original resident bank: PASS",
+                                  actual.stdout)
 
     def test_original_source_and_four_stable_live_captures(self):
         rtl_path = ROOT.parent / "gateway-dos/GATE.RTL"

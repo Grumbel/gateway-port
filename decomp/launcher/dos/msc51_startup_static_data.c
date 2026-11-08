@@ -29,6 +29,8 @@
 #define GATE_RESIDENT_SOURCE 0x000056deul
 #define GATE_RESIDENT_BYTES 0x3d00u
 #define GATE_RESIDENT_PARAS 0x03d0u
+#define GATE_RESIDENT_EXE_TAIL_SOURCE 0x00003739ul
+#define GATE_RESIDENT_EXE_TAIL_BYTES 10u
 
 /* The original RTL:56de..93dd bank is present at linked relative segment
  * 02a5 by 125ms. Copy only the *raw* bank; the original snapshot differs
@@ -478,8 +480,14 @@ int gate_dos_relocate_intro_resident_small_offsets(uint16_t resident_segment,
     for (i = 0u; i < sizeof gate_resident_small_offsets /
                       sizeof gate_resident_small_offsets[0]; ++i) {
         uint16_t site = gate_resident_small_offsets[i].site;
+        uint16_t prefix = gate_resident_small_offsets[i].prefix;
+        /* +1872 is the high byte of the preceding CALL FAR's relocated
+         * segment at +186e. The MOV opcode at +1873 stays unchanged. */
+        if (site == 0x1874u)
+            prefix = (uint16_t)((prefix & 0xff00u) |
+                                (resident_segment >> 8));
         if (gate_far_word(resident_segment, (uint16_t)(site - 2u)) !=
-                gate_resident_small_offsets[i].prefix ||
+                prefix ||
             gate_far_word(resident_segment, site) !=
                 gate_resident_small_offsets[i].original)
             return -2;
@@ -897,6 +905,168 @@ int gate_dos_relocate_intro_resident_remaining_zero(uint16_t resident_segment,
     return 0;
 }
 
+/* The bank has 27 relocations that modify ONLY the
+ * low byte of an absolute operand. Preserve each existing high byte (which
+ * is not always zero); these are not full-WORD replacements. */
+typedef struct GateResidentByteOffsetFixup {
+    uint16_t site;
+    uint8_t target;
+    uint16_t prefix;
+} GateResidentByteOffsetFixup;
+static const GateResidentByteOffsetFixup gate_resident_byte_offsets[] = {
+    {0x00d2u, 0x1bu, 0x06c6u}, {0x022au, 0x1bu, 0x06c6u},
+    {0x0274u, 0x03u, 0x0026u}, {0x02d7u, 0x20u, 0x06ffu},
+    {0x0320u, 0x1au, 0x3e80u}, {0x0331u, 0x1bu, 0x3e80u},
+    {0x0340u, 0x1cu, 0x0683u}, {0x0346u, 0x1cu, 0x368bu},
+    {0x034bu, 0x1eu, 0x068eu}, {0x038fu, 0x1bu, 0x06c6u},
+    {0x03a8u, 0x1bu, 0x06c6u}, {0x0538u, 0x20u, 0x06ffu},
+    {0x0584u, 0x1au, 0x3e80u}, {0x0595u, 0x1bu, 0x3e80u},
+    {0x05a4u, 0x1cu, 0x0683u}, {0x05aau, 0x1cu, 0x368bu},
+    {0x05afu, 0x1eu, 0x068eu}, {0x05f3u, 0x1bu, 0x06c6u},
+    {0x07deu, 0x1bu, 0x3e80u}, {0x07e6u, 0x1cu, 0x0683u},
+    {0x07ecu, 0x1cu, 0x1e8bu}, {0x07f1u, 0x1eu, 0x068eu},
+    {0x0924u, 0x1bu, 0x06c6u}, {0x0b3bu, 0x4du, 0x00bfu},
+    {0x0b4eu, 0x4du, 0x00beu}, {0x121fu, 0x0cu, 0xb9f6u},
+    {0x1233u, 0x0cu, 0xb9f6u}
+};
+
+int gate_dos_relocate_intro_resident_byte_offsets(uint16_t resident_segment,
+                                                   uint16_t paragraphs)
+{
+    unsigned int i;
+    if (resident_segment == 0u || resident_segment > 0xfc30u ||
+        paragraphs < GATE_RESIDENT_PARAS)
+        return -1;
+    for (i = 0u; i < sizeof gate_resident_byte_offsets /
+                      sizeof gate_resident_byte_offsets[0]; ++i) {
+        uint16_t site = gate_resident_byte_offsets[i].site;
+        if (gate_far_word(resident_segment, (uint16_t)(site - 2u)) !=
+                gate_resident_byte_offsets[i].prefix ||
+            gate_far_byte(resident_segment, site) != 0u)
+            return -2;
+    }
+    for (i = 0u; i < sizeof gate_resident_byte_offsets /
+                      sizeof gate_resident_byte_offsets[0]; ++i)
+        gate_far_set_byte(resident_segment, gate_resident_byte_offsets[i].site,
+                          gate_resident_byte_offsets[i].target);
+    return 0;
+}
+
+/* Eight early C7 06 [disp16], imm16 instructions have TWO linked operands.
+ * Their destination offsets have already been relocated by the earlier
+ * DS:05xx pass, so inspect the stable opcode and the *linked* destination
+ * while requiring the original zero immediate. All checks precede writes. */
+typedef struct GateResidentMoveImmediate {
+    uint16_t site;
+    uint16_t destination;
+    uint16_t value;
+} GateResidentMoveImmediate;
+static const GateResidentMoveImmediate gate_resident_move_immediates[] = {
+    {0x0040u, 0x05b0u, 0x0220u}, {0x0046u, 0x05b2u, 0x0220u},
+    {0x0064u, 0x05b0u, 0x0238u}, {0x006au, 0x05b2u, 0x039bu},
+    {0x008bu, 0x05b0u, 0x0493u}, {0x0091u, 0x05b2u, 0x039bu},
+    {0x00a7u, 0x05b0u, 0x06eeu}, {0x00adu, 0x05b2u, 0x0956u}
+};
+
+int gate_dos_relocate_intro_resident_move_immediates(uint16_t resident_segment,
+                                                      uint16_t paragraphs)
+{
+    unsigned int i;
+    if (resident_segment == 0u || resident_segment > 0xfc30u ||
+        paragraphs < GATE_RESIDENT_PARAS)
+        return -1;
+    for (i = 0u; i < sizeof gate_resident_move_immediates /
+                      sizeof gate_resident_move_immediates[0]; ++i) {
+        uint16_t site = gate_resident_move_immediates[i].site;
+        if (gate_far_word(resident_segment, (uint16_t)(site - 4u)) != 0x06c7u ||
+            gate_far_word(resident_segment, (uint16_t)(site - 2u)) !=
+                gate_resident_move_immediates[i].destination ||
+            gate_far_word(resident_segment, site) != 0u)
+            return -2;
+    }
+    for (i = 0u; i < sizeof gate_resident_move_immediates /
+                      sizeof gate_resident_move_immediates[0]; ++i)
+        gate_far_set_word(resident_segment, gate_resident_move_immediates[i].site,
+                         gate_resident_move_immediates[i].value);
+    return 0;
+}
+
+/* Late linker fixups whose original WORD is not necessarily 0000h.
+ * Validate both the original source value and an instruction-context byte.
+ * For +0a65 the guard is the C7/06 opcode tail three bytes back: the
+ * immediately preceding displacement has already been linked by stage 14. */
+typedef struct GateResidentLinkedWord {
+    uint16_t site;
+    uint16_t source;
+    uint16_t target;
+    uint8_t guard;
+    uint8_t guard_back;
+} GateResidentLinkedWord;
+static const GateResidentLinkedWord gate_resident_linked_words[] = {
+    {0x0a65u, 0x0000u, 0x0b40u, 0x06u, 3u},
+    {0x0fa5u, 0x0004u, 0x3338u, 0x87u, 1u},
+    {0x0ff9u, 0x0002u, 0x2c40u, 0xb8u, 1u},
+    {0x107du, 0x0002u, 0x33aeu, 0x16u, 1u},
+    {0x14c1u, 0x000cu, 0x3250u, 0x08u, 1u},
+    {0x14cfu, 0x0018u, 0x325cu, 0x08u, 1u},
+    {0x14f0u, 0x000cu, 0x3250u, 0x08u, 1u},
+    {0x14ffu, 0x0000u, 0x2e44u, 0xb8u, 1u},
+    {0x150cu, 0x0000u, 0x3044u, 0xb8u, 1u},
+    {0x1e03u, 0x0007u, 0x33b7u, 0xb8u, 1u},
+    {0x1f0au, 0x0004u, 0x33e0u, 0x1eu, 1u},
+    {0x1f2cu, 0x000cu, 0x33e8u, 0x1eu, 1u},
+    {0x1f52u, 0x0010u, 0x33ecu, 0x1eu, 1u},
+    {0x228cu, 0x000eu, 0x33beu, 0xb8u, 1u},
+    {0x2310u, 0x0002u, 0x33aeu, 0x16u, 1u},
+    {0x2819u, 0x0000u, 0x33c8u, 0xa3u, 1u},
+    {0x28c2u, 0x0000u, 0x33d4u, 0xa3u, 1u},
+    {0x2cc0u, 0x0001u, 0x33f7u, 0x87u, 1u},
+    {0x2cdcu, 0x0002u, 0x2c0cu, 0x16u, 1u},
+    {0x333au, 0x0002u, 0x3336u, 0x87u, 1u},
+    {0x34ecu, 0x0002u, 0x353au, 0x36u, 1u},
+    {0x361fu, 0x0002u, 0x3540u, 0x36u, 1u},
+    {0x364du, 0x0000u, 0x3538u, 0xa3u, 1u},
+    {0x3651u, 0x0002u, 0x353au, 0x16u, 1u},
+    {0x3666u, 0x0001u, 0x33f7u, 0x87u, 1u},
+    {0x3691u, 0x0006u, 0x3544u, 0x36u, 1u},
+    {0x3695u, 0x0004u, 0x3542u, 0x36u, 1u},
+    {0x36a4u, 0x0004u, 0x3542u, 0x1eu, 1u},
+    {0x36acu, 0x0004u, 0x3542u, 0x1eu, 1u},
+    {0x371du, 0x0002u, 0x3514u, 0x87u, 1u},
+    {0x37d9u, 0xfffeu, 0x3510u, 0xbfu, 1u},
+    {0x3877u, 0x0000u, 0x3538u, 0xa1u, 1u},
+    {0x387bu, 0x0002u, 0x353au, 0x16u, 1u},
+    {0x38f4u, 0x0002u, 0x3586u, 0x16u, 1u},
+    {0x3908u, 0x0004u, 0x3588u, 0x06u, 1u},
+    {0x3b05u, 0x0002u, 0x3590u, 0x06u, 1u},
+    {0x3b16u, 0x0002u, 0x3590u, 0x36u, 1u},
+    {0x3b2cu, 0x0002u, 0x3590u, 0x16u, 1u}
+};
+
+int gate_dos_relocate_intro_resident_linked_words(uint16_t resident_segment,
+                                                   uint16_t paragraphs)
+{
+    unsigned int i;
+    if (resident_segment == 0u || resident_segment > 0xfc30u ||
+        paragraphs < GATE_RESIDENT_PARAS)
+        return -1;
+    for (i = 0u; i < sizeof gate_resident_linked_words /
+                      sizeof gate_resident_linked_words[0]; ++i) {
+        uint16_t site = gate_resident_linked_words[i].site;
+        if (gate_far_byte(resident_segment,
+                          (uint16_t)(site - gate_resident_linked_words[i].guard_back)) !=
+                gate_resident_linked_words[i].guard ||
+            gate_far_word(resident_segment, site) !=
+                gate_resident_linked_words[i].source)
+            return -2;
+    }
+    for (i = 0u; i < sizeof gate_resident_linked_words /
+                      sizeof gate_resident_linked_words[0]; ++i)
+        gate_far_set_word(resident_segment, gate_resident_linked_words[i].site,
+                         gate_resident_linked_words[i].target);
+    return 0;
+}
+
 /* Stage the first reconstructed resident bank in the eventual DOS entry.
  * Unlike the data-only bootstrap below, this operation does not establish
  * the remaining resident banks, interrupt vectors, or an executable entry.
@@ -908,7 +1078,9 @@ int gate_dos_relocate_intro_resident_remaining_zero(uint16_t resident_segment,
  * -12 early DS-state offsets, -13 early resident CS-state offsets,
  * -14 runtime-service DS offsets, -15 allocator DS offsets,
  * -16 additional memory-bound DS offsets, -17 trailing resident DS offsets,
- * -18 linked startup-service table offsets, -19 remaining zero operands. */
+ * -18 linked startup-service table offsets, -19 remaining zero operands,
+ * -20 early timer single-byte offsets, -21 paired MOV immediates,
+ * -22 nonzero-source linked operand words. */
 int gate_dos_prepare_intro_resident_bank(uint16_t rtl_handle,
                                          uint16_t resident_segment,
                                          uint16_t paragraphs,
@@ -974,6 +1146,64 @@ int gate_dos_prepare_intro_resident_bank(uint16_t rtl_handle,
     if (gate_dos_relocate_intro_resident_remaining_zero(resident_segment,
                                                         paragraphs) != 0)
         return -19;
+    if (gate_dos_relocate_intro_resident_byte_offsets(resident_segment,
+                                                      paragraphs) != 0)
+        return -20;
+    if (gate_dos_relocate_intro_resident_move_immediates(resident_segment,
+                                                         paragraphs) != 0)
+        return -21;
+    if (gate_dos_relocate_intro_resident_linked_words(resident_segment,
+                                                      paragraphs) != 0)
+        return -22;
+    return 0;
+}
+
+/* The first ten resident bytes are NOT linker-relocated RTL header data.
+ * All four settled original DOS captures contain the same ten bytes as the
+ * original GATE.EXE:3739..3742, preceded by another 32 matching EXE bytes
+ * outside this bank. The original loader leaves this EXE tail in place.
+ * Reproduce that observed boundary only when the original EXE is available;
+ * this copies proprietary bytes at runtime and embeds none in the port.
+ * -1 invalid allocation, -2 failed seek, -3 failed/short read.
+ * On -3 the caller must discard the partially written resident allocation. */
+int gate_dos_overlay_intro_resident_exe_tail(uint16_t exe_handle,
+                                              uint16_t resident_segment,
+                                              uint16_t paragraphs)
+{
+    GateDosFileResult result;
+    GateFarPtr target;
+    if (resident_segment == 0u || resident_segment > 0xfc30u ||
+        paragraphs < GATE_RESIDENT_PARAS)
+        return -1;
+    result = gate_dos_file_seek(exe_handle, 0u, GATE_RESIDENT_EXE_TAIL_SOURCE);
+    if (result.carry || result.ax != 0x3739u || result.dx != 0u)
+        return -2;
+    target.segment = resident_segment;
+    target.offset = 0u;
+    result = gate_dos_file_read(exe_handle, target, GATE_RESIDENT_EXE_TAIL_BYTES);
+    if (result.carry || result.ax != GATE_RESIDENT_EXE_TAIL_BYTES)
+        return -3;
+    return 0;
+}
+
+/* Optional source-exact staging operation for callers holding both DOS
+ * file handles. Do not execute this bank yet: other banks, the real EXE
+ * callback and the launcher _main remain unresolved. -23 EXE tail failure. */
+int gate_dos_prepare_intro_resident_bank_with_exe(uint16_t rtl_handle,
+                                                   uint16_t exe_handle,
+                                                   uint16_t resident_segment,
+                                                   uint16_t paragraphs,
+                                                   uint16_t data_segment,
+                                                   GateFarPtr exe_callback)
+{
+    int result = gate_dos_prepare_intro_resident_bank(rtl_handle,
+                   resident_segment, paragraphs, data_segment, exe_callback);
+    if (result != 0)
+        return result;
+    if (gate_dos_overlay_intro_resident_exe_tail(exe_handle,
+                                                  resident_segment,
+                                                  paragraphs) != 0)
+        return -23;
     return 0;
 }
 
