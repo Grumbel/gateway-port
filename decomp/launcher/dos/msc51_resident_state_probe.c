@@ -17,6 +17,8 @@ void gate_rtl_plot_pixel(uint16_t color, uint16_t y, uint16_t x);
 void gate_rtl_resident_line_to(uint16_t x, uint16_t y);
 void gate_rtl_background_rect(uint16_t style, uint16_t bottom,
                               uint16_t right, uint16_t top, uint16_t left);
+void gate_linked_blit_vfx_picture(uint16_t zero, uint16_t y, uint16_t x,
+                                  uint16_t operation, GateFarPtr image);
 
 static int check(uint16_t actual, uint16_t expected, const char *label)
 {
@@ -34,6 +36,7 @@ int main(void)
     int valid = 1;
     union REGS in, out;
     uint8_t original_bios_mode;
+    GateFarPtr image;
 
     if (_dos_allocmem(0x1000u, &segment) != 0) {
         puts("Resident state probe: DOS memory allocation failed");
@@ -121,6 +124,31 @@ int main(void)
     valid &= check(gate_ds_word(GATE_DS_DRAW_Y), 12u,
                    "outline restores pen Y");
 
+    image.segment = (uint16_t)segment;
+    image.offset = 0x0500u;
+    gate_far_set_word(image.segment, image.offset, 0xca00u);
+    gate_far_set_word(image.segment, image.offset + 0x2cu, 2u);
+    gate_far_set_word(image.segment, image.offset + 0x2eu, 1u);
+    gate_far_set_word(image.segment, image.offset + 0x30u, 2u);
+    gate_far_set_word(image.segment, image.offset + 0x14u, 2u);
+    gate_far_set_word(image.segment, image.offset + 0x18u, 0x0800u);
+    gate_far_set_word(image.segment, image.offset + 0x1au, (uint16_t)segment);
+    gate_far_set_byte(image.segment, image.offset + 0x12u, 1u);
+    gate_far_set_byte(image.segment, image.offset + 0x13u, 8u);
+    gate_far_set_byte(image.segment, 0x0800u, 0x25u);
+    gate_far_set_byte(image.segment, 0x0801u, 0x4au);
+    gate_linked_blit_vfx_picture(0u, 30u, 31u, 0u, image);
+    valid &= check(gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                                 (uint16_t)(30u * 320u + 31u)),
+                   0x25u, "mode-13 VFX pixel copy");
+    valid &= check(gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                                 (uint16_t)(30u * 320u + 32u)),
+                   0x4au, "mode-13 VFX pixel adjacent");
+    gate_linked_blit_vfx_picture(0u, 30u, 31u, 3u, image);
+    valid &= check(gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                                 (uint16_t)(30u * 320u + 31u)),
+                   0u, "mode-13 VFX XOR restore");
+
     /* The 640x480 branch uses real BIOS planar pixels rather than treating
      * A000 as a linear 4-bit buffer. Test only one pixel to avoid replacing
      * the original resident rasterizer's fast path with a slow bulk test. */
@@ -134,6 +162,26 @@ int main(void)
     in.x.dx = 4u;
     int86(0x10, &in, &out);
     valid &= check((uint16_t)(out.h.al & 15u), 0x0bu, "planar VGA pixel");
+
+    gate_far_set_word(image.segment, image.offset + 0x14u, 1u);
+    gate_far_set_byte(image.segment, image.offset + 0x12u, 4u);
+    gate_far_set_byte(image.segment, image.offset + 0x13u, 1u);
+    gate_far_set_byte(image.segment, 0x0800u, 0x80u);
+    gate_far_set_byte(image.segment, 0x0801u, 0x40u);
+    gate_far_set_byte(image.segment, 0x0802u, 0x80u);
+    gate_far_set_byte(image.segment, 0x0803u, 0u);
+    gate_linked_blit_vfx_picture(0u, 15u, 16u, 0u, image);
+    in.x.ax = 0x0d00u;
+    in.x.bx = 0u;
+    in.x.cx = 16u;
+    in.x.dx = 15u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 5u,
+                   "mode-12 VFX four-plane pixel");
+    in.x.cx = 17u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 2u,
+                   "mode-12 VFX alternate pixel");
 
     in.x.ax = original_bios_mode;
     int86(0x10, &in, &out);

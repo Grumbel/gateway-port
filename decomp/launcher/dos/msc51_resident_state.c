@@ -172,6 +172,140 @@ void gate_rtl_background_rect(uint16_t style, uint16_t bottom,
     gate_ds_set_word(GATE_DS_DRAW_LINE_WIDTH, saved_width);
 }
 
+/* 24a7:000c resident VFX draw bridge. The original performs direct VGA
+ * writes; this bounded DOS host implementation follows the already
+ * tested src/intro_host_vfx.c for the introductory mode-12h and mode-13h
+ * CA00 image layouts. Header offsets are from gate_rtl_image.h, and
+ * must remain fixed for compatibility with the original C record loader. */
+enum {
+    DOS_VFX_SIGNATURE = 0x00,
+    DOS_VFX_PLANES = 0x12,
+    DOS_VFX_BPP = 0x13,
+    DOS_VFX_STRIDE = 0x14,
+    DOS_VFX_PIXELS_OFFSET = 0x18,
+    DOS_VFX_PIXELS_SEGMENT = 0x1a,
+    DOS_VFX_WIDTH = 0x2c,
+    DOS_VFX_HEIGHT = 0x2e,
+    DOS_VFX_ROW_BYTES = 0x30
+};
+
+static uint16_t vfx_word(GateFarPtr image, uint16_t offset)
+{
+    return gate_far_word(image.segment, (uint16_t)(image.offset + offset));
+}
+
+/* Resident 244c:0000 rolls the segment ahead by 1000h on a 64KiB
+ * read-offset boundary. Plain 8086 FAR read helpers do not do that. */
+static uint8_t vfx_extended_byte(GateFarPtr data, uint32_t position)
+{
+    uint32_t linear = (uint32_t)data.offset + position;
+    return gate_far_byte((uint16_t)(data.segment + ((linear >> 16) << 12)),
+                         (uint16_t)linear);
+}
+
+static uint8_t vfx_raster_byte(uint8_t incoming, uint8_t old,
+                               uint16_t operation)
+{
+    switch (operation) {
+    case 0u: return incoming;
+    case 1u: return (uint8_t)(old & incoming);
+    case 3u: return (uint8_t)(old ^ incoming);
+    default: return (uint8_t)(old | incoming);
+    }
+}
+
+void gate_linked_blit_vfx_picture(uint16_t zero, uint16_t y, uint16_t x,
+                                   uint16_t operation, GateFarPtr image)
+{
+    uint16_t mode = gate_ds_word(GATE_DS_RENDERER_MODE);
+    uint16_t width, original_width, height, stride, row, col;
+    int16_t available;
+    GateFarPtr source;
+    (void)zero;
+    if (mode != 2u && mode != 3u)
+        abort();
+    if (vfx_word(image, DOS_VFX_SIGNATURE) != 0xca00u)
+        return;
+
+    width = vfx_word(image, DOS_VFX_WIDTH);
+    original_width = width;
+    height = vfx_word(image, DOS_VFX_HEIGHT);
+    stride = vfx_word(image, DOS_VFX_STRIDE);
+    source.segment = vfx_word(image, DOS_VFX_PIXELS_SEGMENT);
+    source.offset = vfx_word(image, DOS_VFX_PIXELS_OFFSET);
+    if (stride == 0u || source.segment == 0u)
+        abort();
+    available = (int16_t)(uint16_t)((mode == 2u ? 640u : 320u) - x);
+    if (available <= 0)
+        return;
+    if ((int16_t)width > available)
+        width = (uint16_t)available;
+    available = (int16_t)(uint16_t)((mode == 2u ? 480u : 200u) - y);
+    if (available <= 0)
+        return;
+    if ((int16_t)height > available)
+        height = (uint16_t)available;
+    if (width == 0u || height == 0u)
+        return;
+
+    if (mode == 3u) {
+        uint16_t copy_bytes = vfx_word(image, DOS_VFX_ROW_BYTES);
+        uint16_t dest = (uint16_t)(320ul * y + x);
+        if (gate_far_byte(image.segment,
+                (uint16_t)(image.offset + DOS_VFX_PLANES)) != 1u ||
+            gate_far_byte(image.segment,
+                (uint16_t)(image.offset + DOS_VFX_BPP)) != 8u)
+            abort();
+        if (width < original_width)
+            copy_bytes = width;
+        for (row = 0u; row < height; ++row) {
+            for (col = 0u; col < copy_bytes; ++col) {
+                uint16_t address = (uint16_t)(dest + col);
+                uint8_t pixel = gate_far_byte(source.segment,
+                    (uint16_t)(source.offset + col));
+                uint8_t old = gate_far_byte(
+                    GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT, address);
+                gate_far_set_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                    address, vfx_raster_byte(pixel, old, operation));
+            }
+            source.offset = (uint16_t)(source.offset + stride);
+            dest = (uint16_t)(dest + 320u);
+        }
+    } else {
+        /* Mode 12h uses four bitplanes per row in source memory, with
+         * MSB-first bits. Use BIOS read/write to respect VGA latches and
+         * preserve the caller's sequencer / graphics-controller state. */
+        union REGS in, out;
+        if (gate_far_byte(image.segment,
+                (uint16_t)(image.offset + DOS_VFX_PLANES)) != 4u ||
+            gate_far_byte(image.segment,
+                (uint16_t)(image.offset + DOS_VFX_BPP)) != 1u)
+            abort();
+        for (row = 0u; row < height; ++row) {
+            for (col = 0u; col < width; ++col) {
+                uint16_t plane;
+                uint32_t base = (uint32_t)row * 4u * stride + col / 8u;
+                uint8_t mask = (uint8_t)(0x80u >> (col & 7u));
+                uint8_t pixel = 0u;
+                uint8_t old;
+                for (plane = 0u; plane < 4u; ++plane)
+                    if ((vfx_extended_byte(source,
+                         base + (uint32_t)plane * stride) & mask) != 0u)
+                        pixel = (uint8_t)(pixel | (uint8_t)(1u << plane));
+                in.x.ax = 0x0d00u;
+                in.x.bx = 0u;
+                in.x.cx = (uint16_t)(x + col);
+                in.x.dx = (uint16_t)(y + row);
+                int86(0x10, &in, &out);
+                old = (uint8_t)(out.h.al & 15u);
+                in.h.ah = 0x0cu;
+                in.h.al = (uint8_t)(vfx_raster_byte(pixel, old, operation) & 15u);
+                int86(0x10, &in, &out);
+            }
+        }
+    }
+}
+
 /* 25a3:0002 accepts pattern 0..11 and records color and strict binary
  * transparency. Unknown patterns are not approximated as pattern zero. */
 void gate_rtl_background_setup(uint16_t pattern, uint16_t color,

@@ -117,6 +117,8 @@ void gate_rtl_resident_line_to(uint16_t x, uint16_t y);
 void gate_rtl_background_setup(uint16_t pattern, uint16_t color, uint16_t transparent);
 void gate_rtl_background_rect(uint16_t style, uint16_t bottom, uint16_t right,
                               uint16_t top, uint16_t left);
+void gate_linked_blit_vfx_picture(uint16_t zero, uint16_t y, uint16_t x,
+                                  uint16_t operation, GateFarPtr image);
 
 static uint8_t pixel13(uint16_t x, uint16_t y)
 {
@@ -125,6 +127,7 @@ static uint8_t pixel13(uint16_t x, uint16_t y)
 
 int main(void)
 {
+    GateFarPtr image;
     gate_ds_set_word(GATE_DS_RENDERER_MODE, 3u);
     gate_ds_set_word(GATE_DS_DRAW_CLIPPING_ENABLED, 0u);
     gate_ds_set_word(GATE_DS_DRAW_OPERATION, 0u);
@@ -182,6 +185,46 @@ int main(void)
     gate_ds_set_word(GATE_DS_DRAW_OPERATION, 3u);
     gate_rtl_plot_pixel(0x07u, 16u, 18u);
     assert(planar[16ul * 640u + 18u] == 0x0cu);
+
+    /* A real CA00 VFX image record, first in mode 13h, then 12h.
+     * Source pixel buffers are separate from the VGA aperture. */
+    image.segment = 0x6000u;
+    image.offset = 0x0500u;
+    gate_far_set_word(image.segment, image.offset, 0xca00u);
+    gate_far_set_word(image.segment, image.offset + 0x2cu, 2u);
+    gate_far_set_word(image.segment, image.offset + 0x2eu, 2u);
+    gate_far_set_word(image.segment, image.offset + 0x30u, 2u);
+    gate_far_set_word(image.segment, image.offset + 0x14u, 2u);
+    gate_far_set_word(image.segment, image.offset + 0x18u, 0x0200u);
+    gate_far_set_word(image.segment, image.offset + 0x1au, 0x6100u);
+    gate_far_set_byte(image.segment, image.offset + 0x12u, 1u);
+    gate_far_set_byte(image.segment, image.offset + 0x13u, 8u);
+    gate_far_set_byte(0x6100u, 0x0200u, 0x13u);
+    gate_far_set_byte(0x6100u, 0x0201u, 0x24u);
+    gate_far_set_byte(0x6100u, 0x0202u, 0x35u);
+    gate_far_set_byte(0x6100u, 0x0203u, 0x46u);
+    gate_ds_set_word(GATE_DS_RENDERER_MODE, 3u);
+    gate_linked_blit_vfx_picture(0u, 20u, 30u, 0u, image);
+    assert(pixel13(30u, 20u) == 0x13u);
+    assert(pixel13(31u, 20u) == 0x24u);
+    assert(pixel13(30u, 21u) == 0x35u);
+    assert(pixel13(31u, 21u) == 0x46u);
+    gate_linked_blit_vfx_picture(0u, 20u, 30u, 3u, image);
+    assert(pixel13(30u, 20u) == 0u);
+    assert(pixel13(31u, 21u) == 0u);
+
+    gate_ds_set_word(GATE_DS_RENDERER_MODE, 2u);
+    gate_far_set_word(image.segment, image.offset + 0x2eu, 1u);
+    gate_far_set_word(image.segment, image.offset + 0x14u, 1u);
+    gate_far_set_byte(image.segment, image.offset + 0x12u, 4u);
+    gate_far_set_byte(image.segment, image.offset + 0x13u, 1u);
+    gate_far_set_byte(0x6100u, 0x0200u, 0x80u); /* plane 0, x=0 */
+    gate_far_set_byte(0x6100u, 0x0201u, 0x40u); /* plane 1, x=1 */
+    gate_far_set_byte(0x6100u, 0x0202u, 0x80u); /* plane 2, x=0 */
+    gate_far_set_byte(0x6100u, 0x0203u, 0u);
+    gate_linked_blit_vfx_picture(0u, 16u, 18u, 0u, image);
+    assert(planar[16ul * 640u + 18u] == 5u);
+    assert(planar[16ul * 640u + 19u] == 2u);
     return 0;
 }
 ''')

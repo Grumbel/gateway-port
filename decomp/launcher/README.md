@@ -1070,6 +1070,15 @@ signed byte quotient semantics and host round-trip tests, reducing the
 still needed. See
 [MSC51 link closure](../../docs/msc51-link-closure.md) for the inventory.
 
+The same `RESSTATE.OBJ` now stages the bounded 24a7:000c VFX image draw
+service. Like the separately tested native VFX adapter it supports original
+CA00 4-plane mode-12h images and linear mode-13h 8-bit images, with
+original clipping, row strides, 8086 source-offset wrap and COPY/AND/OR/XOR
+operators. Real DOS planar output uses BIOS INT 10h pixel read/write in
+place of resident register-optimized drawing. Host and DOS probe fixtures
+check both modes; these are **not** proof of instruction-equivalent VFX
+behavior. One further projected symbol is removed, leaving **10**.
+
 ## Immediate next functions
 
 1. Connect the existing verified native video, font, picture and caption

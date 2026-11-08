@@ -10,7 +10,8 @@ supplied by the user on 2026-11-08 confirmed **26 unresolved names**, with
 The extended `RTLHW` adapter supplies eight RTL text/video names, and
 `RESSTATE` supplies three bounded raster names. The adapter also now stages
 two original BIOS/chipset detection entry points and two exact relocated
-RTL palette transforms. **11 is the predicted remainder if both modified
+RTL palette transforms. The intro's mode-12h/13h VFX blitter is also staged
+with bounded host behavior. **10 is the predicted remainder if both modified
 DOS probes pass.** This is not yet a measured Microsoft LINK result.
 Do not manufacture no-op definitions merely to obtain an executable.
 
@@ -24,9 +25,9 @@ Do not manufacture no-op definitions merely to obtain an executable.
 | Video adapter query | `gate_rtl_mode_query_adapter`, `gate_rtl_mode_svga_variant` | 2 | **Staged, DOS probe pending.** Original `GATE.RTL:17c95..17d79` maps INT 10h/AX=1a00 active/alternate display codes to type/monitor pairs; `17b4f..17c24` tests AH=6fh, ROM signatures and bank/CRTC ports for SVGA variant 0–5. The old-BIOS fallback and exotic adapter-switch helpers remain outside the supported boundary; unsupported display BIOS requests abort. |
 | Original exception/stack state | `gate_rtl_file_divide_fault`, `gate_rtl_file_stack_word` | 2 | Trace original divide-fault exit and near-stack word reader; `0` or `abort()` substitute values would hide original behavior. |
 | Runtime calendar sample | `gate_linked_read_runtime_time_sample` | 1 | Reconstruct `12a5:34d8` ten-byte sample and its date/time, timezone/DST dependencies, then compare against the already recovered `gate_rtl_elapsed_milliseconds`. The pending DOS clock is an intentionally approximate live substitute. |
-| VFX/picture pipeline | `gate_linked_decompress_picture_pixels`, `gate_linked_blit_vfx_picture`, `gate_linked_transform_picture_palette_indexed`, `gate_linked_transform_picture_palette_rgb`, `gate_linked_save_vfx_draw_state`, `gate_linked_restore_vfx_draw_state` | 6 | The two palette transforms are **staged and host-tested**, DOS probe pending: linked `0cdc:0396`/`:0430` map exactly to original RTL `f4df`/`f579`; sixteen packed 6-bit colors expand into 48 RGB bytes scaled by 21, and the inverse uses signed byte division by 16. Four other VFX services still require decompression, destination pixel layout, and saved drawing-state reconstruction. |
+| VFX/picture pipeline | `gate_linked_decompress_picture_pixels`, `gate_linked_blit_vfx_picture`, `gate_linked_transform_picture_palette_indexed`, `gate_linked_transform_picture_palette_rgb`, `gate_linked_save_vfx_draw_state`, `gate_linked_restore_vfx_draw_state` | 6 | The two palette transforms are **staged and host-tested** against original RTL `f4df`/`f579`. The VFX blitter is **staged as a bounded DOS adapter**, not an instruction-for-instruction reconstruction of resident `24a7:000c`: modes 2/3 interpret original CA00 image records and render four-plane mode 12h through BIOS pixels or mode 13h through A000 bytes, with original raster operators and clipping. All three still need DOS probes. Decompression and saved drawing-state lifetime remain unresolved. |
 | Intro services and diagnostics | `gate_linked_initialize_intro_services`, `gate_linked_handle_control_key`, `gate_linked_print_intro_diagnostic` | 3 | Reconstruct the original music/IRQ8 setup, Ctrl-Break branch and resident diagnostic destination/format from the EXE and RTL. Silent success and dummy output are not valid equivalents. |
-| **Reported total** | | **26** | 15 more definitions staged since this report; 11 projected unresolved after both DOS probes. |
+| **Reported total** | | **26** | 16 more definitions staged since this report; 10 projected unresolved after both DOS probes. |
 
 ### Current DOS probe order
 
@@ -89,6 +90,14 @@ fixture independently checks AND/XOR/OR, clipping, both line orientations,
 and rectangle interiors with a 20-bit segmented-address model. These checks
 do not establish pixel-equivalence with every original 25d7/2621/2698
 callback, nor do they implement previously unobserved raster modes.
+
+The same resident stage now includes the VFX image blitter. Its DOS probe
+draws and XOR-restores two real mode-13h bytes, then reads back two colors
+from a four-plane mode-12h CA00 image. The host fixture independently
+checks mode-13h 2x2 source stride and copy/XOR plus distinct mode-12h
+plane contributions. The original VFX resident module and other display
+modes have not been decompiled; BIOS-per-pixel drawing is intentionally
+slower than its optimized native VGA-register loop.
 
 Once the linker reports zero missing names, the next milestone is *actual
 DOS execution* through the original intro sequence with deterministic
