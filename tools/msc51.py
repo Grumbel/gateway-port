@@ -531,7 +531,7 @@ def stage_launcher(output: Path) -> list[str]:
         "DATACHK.EXE > DATTEST.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
         "CL /AL /Od DATAREAL.C DATA.OBJ SEL.OBJ MEMORY.OBJ DOSFILE.OBJ /FeDATAREAL.EXE /link LLIBCR.LIB LIBH.LIB/NOD >> DATBUILD.LOG",
         "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST DATAREAL.EXE GOTO FAILED",
-        "IF EXIST E:\\GATE.EXE DATAREAL.EXE > DATREAL.LOG",
+        "IF EXIST E:\\GATE.RTL DATAREAL.EXE > DATREAL.LOG",
         "IF ERRORLEVEL 1 GOTO FAILED",
         f"ECHO {data_signature} > DATSIG.LOG",
         "ECHO DOS static EXE data copy probe passed > DATOK.LOG",
@@ -959,22 +959,22 @@ def validate_static_data_probe(output: Path, *, require_original: bool = False) 
         raise ValueError("DOS static data source changed since its test. "
                          "Run msc51-compile-data again.")
     result = locate_case_insensitive(output, "DATTEST.LOG")
-    if re.search(r"^Static EXE data probe: PASS \(5976 bytes at DS:3592h\)\s*$",
+    if re.search(r"^Static EXE/RTL data probe: PASS \(5976 \+ 13714 bytes\)\s*$",
                  result.read_text(), re.MULTILINE) is None:
-        raise ValueError("DOS static data copy log does not verify all 5976 bytes.")
+        raise ValueError("DOS static data copy log does not verify both source regions.")
     if require_original:
         real = locate_case_insensitive(output, "DATREAL.LOG")
         if (real is None or re.search(
-                r"^Original EXE data probe: PASS \(5976 bytes, matching disk image\)\s*$",
+                r"^Original EXE/RTL data probe: PASS \(5976 \+ 13714 bytes, matching disk images\)\s*$",
                 real.read_text(), re.MULTILINE) is None):
-            raise ValueError("DOS original GATE.EXE data test is missing or failed.")
+            raise ValueError("DOS original GATE.EXE/GATE.RTL data test is missing or failed.")
 
 
 def remove_static_data_outputs(output: Path) -> None:
     names = {"DATA.OBJ", "DATACHK.OBJ", "DATACHK.EXE", "DATAREAL.OBJ",
              "DATAREAL.EXE", "DATREAL.LOG", "DATSTART.LOG",
              "DATBUILD.LOG", "DATTEST.LOG", "DATOK.LOG", "DATFAIL.LOG", "DATSIG.LOG",
-             "DATASRC.BIN"}
+             "DATASRC.BIN", "DATARTL.BIN"}
     if output.is_dir():
         for entry in output.iterdir():
             if entry.is_file() and entry.name.upper() in names:
@@ -1410,7 +1410,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--floppy", type=Path, action="append", default=[],
                         help="one original floppy image, repeat in original disk order")
     parser.add_argument("--original-game-dir", type=Path,
-                        help="compile-data only: verify pinned GATE.EXE mounted read-only as drive E")
+                        help="compile-data only: verify pinned GATE.EXE/GATE.RTL mounted read-only as E")
     args = parser.parse_args(argv)
     if args.original_game_dir is not None and args.command != "compile-data":
         parser.error("--original-game-dir is supported only by compile-data")
@@ -1445,6 +1445,12 @@ def main(argv: list[str] | None = None) -> int:
             expected = "767ccbbacbd6b304a5bab072894a45ca426a2196ae369b2f11d02ef92bb7134b"
             if hashlib.sha256(original_exe.read_bytes()).hexdigest() != expected:
                 raise ValueError("GATE.EXE does not match the pinned original SHA-256")
+            original_rtl = locate_case_insensitive(original_game_dir, "GATE.RTL")
+            if original_rtl is None or not original_rtl.is_file():
+                raise ValueError(f"GATE.RTL not found in {original_game_dir}")
+            rtl_expected = "c187f5ee7be86482cff89e668d934dc961ac50e960df7baa98965910f1ea9566"
+            if hashlib.sha256(original_rtl.read_bytes()).hexdigest() != rtl_expected:
+                raise ValueError("GATE.RTL does not match the pinned original SHA-256")
         if args.command == "install":
             if args.install_dir is None:
                 parser.error("--install-dir is required for the install command")
@@ -1635,11 +1641,11 @@ def main(argv: list[str] | None = None) -> int:
                   file=sys.stderr)
             print_static_data_diagnostics(output)
             return 1
-        print("Microsoft C 5.1 verified a 5976-byte generated fixture can be copied "
-              "from original EXE offsets to runtime DS:3592"
-              + (" and confirmed the same copy against read-only GATE.EXE"
+        print("Microsoft C 5.1 verified generated EXE/RTL source images can be copied "
+              "into distinct original DS ranges"
+              + (" and confirmed both against read-only GATE.EXE/GATE.RTL"
                  if original_game_dir is not None else "")
-              + "; DATA.OBJ remains probe-only pending the rest of startup and RTLink fixups.")
+              + "; DATA.OBJ remains probe-only pending RTL fixups and the rest of startup.")
         return 0
     if args.command == "compile-dos-files":
         try:

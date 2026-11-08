@@ -10,6 +10,8 @@
 int gate_dos_bind_intro_aliases(uint16_t lower_segment, uint16_t paragraphs);
 int gate_dos_load_intro_static_data(uint16_t handle, uint16_t lower_segment,
                                     uint16_t paragraphs);
+int gate_dos_load_intro_rtl_data(uint16_t handle, uint16_t lower_segment,
+                                 uint16_t paragraphs);
 
 static uint8_t memory[0x100000];
 static uint16_t data_segment;
@@ -51,10 +53,12 @@ GateDosFileResult gate_dos_file_seek(uint16_t handle, uint16_t origin,
 {
     GateDosFileResult result;
     ++calls_seek;
-    if (handle != 7u || origin != 0u || offset != 0x41e6ul)
+    if (origin != 0u ||
+        !((handle == 7u && offset == 0x41e6ul) ||
+          (handle == 8u && offset == 0x29ul)))
         abort();
     result.carry = 0u;
-    result.ax = seek_bad ? 0u : 0x41e6u;
+    result.ax = seek_bad ? 0u : (uint16_t)offset;
     result.dx = 0u;
     return result;
 }
@@ -65,21 +69,24 @@ GateDosFileResult gate_dos_file_read(uint16_t handle, GateFarPtr target,
     GateDosFileResult result;
     unsigned int i;
     ++calls_read;
-    if (handle != 7u || target.segment != data_segment ||
-        target.offset != 0x3592u || length != 0x1758u)
+    if (target.segment != data_segment ||
+        !((handle == 7u && target.offset == 0x3592u && length == 0x1758u) ||
+          (handle == 8u && target.offset == 0u && length == 0x3592u)))
         abort();
     result.carry = (uint8_t)(read_bad != 0u);
     result.dx = 0u;
     result.ax = read_short ? length - 1u : length;
     for (i = 0u; i < result.ax && !read_bad; ++i)
         gate_far_set_byte(target.segment, (uint16_t)(target.offset + i),
-                         pattern(0x41e6u + i));
+                         (uint8_t)(pattern((handle == 7u ? 0x41e6u : 0x29u) + i) ^
+                                   (handle == 8u ? 0x5au : 0u)));
     return result;
 }
 
 int main(void)
 {
     unsigned int i;
+    uint8_t boundary;
     memset(memory, 0xc3, sizeof memory);
     if (gate_dos_bind_intro_aliases(0x2000u, 0x100au) != 0)
         abort();
@@ -101,18 +108,36 @@ int main(void)
         gate_ds_word(0x4d82u) != 0x2000u ||
         gate_ds_word(0x4d84u) != 0x200au)
         abort();
+    boundary = gate_far_byte(data_segment, 0x3592u);
+    if (gate_dos_load_intro_rtl_data(8u, 0x2000u, 0x1009u) != -1 ||
+        gate_dos_load_intro_rtl_data(8u, 0x2000u, 0x100au) != 0 ||
+        calls_seek != 2u || calls_read != 2u)
+        abort();
+    for (i = 0u; i < 0x3592u; ++i)
+        if (gate_far_byte(data_segment, (uint16_t)i) !=
+            (uint8_t)(pattern(0x29u + i) ^ 0x5au))
+            abort();
+    if (gate_far_byte(data_segment, 0x3592u) != boundary ||
+        gate_ds_word(0x4d82u) != 0x2000u ||
+        gate_ds_word(0x4d84u) != 0x200au)
+        abort();
     seek_bad = 1u;
     if (gate_dos_load_intro_static_data(7u, 0x2000u, 0x100au) != -2 ||
-        calls_read != 1u)
+        gate_dos_load_intro_rtl_data(8u, 0x2000u, 0x100au) != -2 ||
+        calls_read != 2u)
         abort();
     seek_bad = 0u;
     read_short = 1u;
     if (gate_dos_load_intro_static_data(7u, 0x2000u, 0x100au) != -3)
         abort();
+    if (gate_dos_load_intro_rtl_data(8u, 0x2000u, 0x100au) != -3)
+        abort();
     read_short = 0u;
     read_bad = 1u;
     if (gate_dos_load_intro_static_data(7u, 0x2000u, 0x100au) != -3)
         abort();
-    puts("static EXE copy host: PASS (boundaries/seek/short read/failure)");
+    if (gate_dos_load_intro_rtl_data(8u, 0x2000u, 0x100au) != -3)
+        abort();
+    puts("static EXE/RTL copy host: PASS (boundaries/seek/short read/failure)");
     return 0;
 }

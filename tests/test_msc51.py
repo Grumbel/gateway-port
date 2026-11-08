@@ -38,13 +38,14 @@ class MSC51Tests(unittest.TestCase):
             self.assertEqual(build.returncode, 0, build.stderr)
             probe = subprocess.run([str(executable)], capture_output=True, text=True)
             self.assertEqual(probe.returncode, 0, probe.stderr)
-            self.assertIn("static EXE copy host: PASS", probe.stdout)
+            self.assertIn("static EXE/RTL copy host: PASS", probe.stdout)
             batch = (output / "DATA.BAT").read_text()
             self.assertIn("CL /AL /Od /c DATA.C", batch)
             self.assertIn("DATACHK.C DATA.OBJ SEL.OBJ MEMORY.OBJ DOSFILE.OBJ", batch)
             self.assertIn("DATACHK.EXE > DATTEST.LOG", batch)
             self.assertIn("DATAREAL.C DATA.OBJ SEL.OBJ MEMORY.OBJ DOSFILE.OBJ", batch)
-            self.assertIn("IF EXIST E:\\GATE.EXE DATAREAL.EXE > DATREAL.LOG", batch)
+            self.assertIn("IF EXIST E:\\GATE.RTL DATAREAL.EXE > DATREAL.LOG", batch)
+            self.assertIn("gate_dos_load_intro_rtl_data", (output / "DATA.C").read_text())
             self.assertNotIn("DATA.OBJ", (output / "LINK.RSP").read_text())
             (output / "STDINT.H").write_text('#include <stdint.h>\n')
             for source in ("DATACHK.C", "DATAREAL.C"):
@@ -109,22 +110,22 @@ class MSC51Tests(unittest.TestCase):
                 for name in ("DATA.OBJ", "DATACHK.EXE", "DATAREAL.EXE", "DATSTART.LOG", "DATOK.LOG"):
                     (output / name).write_text("current")
                 (output / "DATTEST.LOG").write_text(
-                    "Static EXE data probe: PASS (5976 bytes at DS:3592h)\n")
+                    "Static EXE/RTL data probe: PASS (5976 + 13714 bytes)\n")
                 (output / "DATSIG.LOG").write_text(msc51.static_data_source_signature(output))
                 return mock.Mock(returncode=0)
 
             with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
                  mock.patch.object(msc51.subprocess, "run", side_effect=completed):
                 self.assertEqual(msc51.main(args), 0)
-            (output / "DATTEST.LOG").write_text("Static EXE data probe: PASS (old)\n")
+            (output / "DATTEST.LOG").write_text("Static EXE/RTL data probe: PASS (old)\n")
             with self.assertRaisesRegex(ValueError, "does not verify"):
                 msc51.validate_static_data_probe(output)
             (output / "DATTEST.LOG").write_text(
-                "Static EXE data probe: PASS (5976 bytes at DS:3592h)\n")
-            with self.assertRaisesRegex(ValueError, "original GATE.EXE data test"):
+                "Static EXE/RTL data probe: PASS (5976 + 13714 bytes)\n")
+            with self.assertRaisesRegex(ValueError, "original GATE.EXE/GATE.RTL data test"):
                 msc51.validate_static_data_probe(output, require_original=True)
             (output / "DATREAL.LOG").write_text(
-                "Original EXE data probe: PASS (5976 bytes, matching disk image)\n")
+                "Original EXE/RTL data probe: PASS (5976 + 13714 bytes, matching disk images)\n")
             msc51.validate_static_data_probe(output, require_original=True)
             (output / "DATA.C").write_text((output / "DATA.C").read_text() + "/* stale */\n")
             with self.assertRaisesRegex(ValueError, "source changed"):
@@ -141,6 +142,16 @@ class MSC51Tests(unittest.TestCase):
                                 "--output", str(Path(scratch) / "launcher")])
             self.assertIn("does not match the pinned original SHA-256",
                           diagnostic.getvalue())
+            pinned_exe = REPO.parent / "gateway-dos" / "GATE.EXE"
+            if pinned_exe.is_file():
+                shutil.copyfile(pinned_exe, game / "GATE.EXE")
+                (game / "GATE.RTL").write_bytes(b"untrusted RTL payload")
+                with redirect_stderr(io.StringIO()) as rtl_diagnostic:
+                    with self.assertRaises(SystemExit):
+                        msc51.main(["compile-data", "--original-game-dir", str(game),
+                                    "--output", str(Path(scratch) / "launcher")])
+                self.assertIn("GATE.RTL does not match the pinned original SHA-256",
+                              rtl_diagnostic.getvalue())
             commands = msc51.dosbox_commands(
                 Path("/compiler"), Path("/build"), True, "DATA.BAT", game)
             self.assertIn(f'mount e "{game}" -ro', commands)

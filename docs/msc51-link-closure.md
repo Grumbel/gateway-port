@@ -567,6 +567,40 @@ first prepared capture and 500ms. None of this yet proves the full
 words are RTLink relocations versus runtime changes. No unverified
 replacement bytes or extra data-copy routine have been added.
 
+**Observed RTL data-preimage comparison (user's genuine 063 report):**
+
+| Capture | Exact bytes / 13,714 | Source zero -> nonzero | Source nonzero -> zero | Other modified bytes |
+| --- | ---: | ---: | ---: | ---: |
+| 100–250ms | 13,454 | 181 | 64 | 15 |
+| 350–450ms | 13,340 | 277 | 16 | 81 |
+| 500ms | 13,278 | 323 | 16 | 97 |
+| 1500ms | 12,984 | 365 | 86 | 279 |
+
+At 100ms **98.1%** of `RTL:00029..035ba` matches runtime
+`DS:0000..3591`; the 260 nonmatching bytes are not random noise.
+The largest mismatch spans are `DS:0002+62`, `1538+32`, `0fb6+24`,
+and `33dc+20`. By 500ms the mismatch total grows to 436, and by
+1500ms to 730, demonstrating subsequent writes. The original guest
+also clears at least 3,556 previously nonzero data bytes between the
+first prepared and first settled capture; these cannot be inferred as BSS.
+
+The new `gate_dos_load_intro_rtl_data` stages a raw **13,714-byte RTL
+preimage only**, from a caller-opened `GATE.RTL` handle to `DS:0000`.
+It does not invent the 260 early changed bytes, nor overwrite the exact
+EXE-derived `DS:3592..4ce9` range. Both the synthetic DOS `DATACHK.EXE`
+and its native C89 host fixture now check the two bounded copies; the
+host fixture also covers seek, short-read, and failed-read paths. `DATAREAL.EXE`
+additionally opens `E:\GATE.RTL` after verifying/closing `GATE.EXE`,
+checks the RTL file size, and independently rereads every preimage byte;
+the host pins both original SHA-256 digests. This is a standalone DOS
+probe—not yet a startup initializer eligible for `LINK.RSP`.
+Its actual Microsoft C 5.1 run must be repeated after this change:
+
+```sh
+nix run -L .#msc51-compile-data -- --original-game-dir ../gateway-dos
+# Both DATTEST.LOG and DATREAL.LOG must pass; return DATBUILD.LOG on failure.
+```
+
 **Microsoft C 5.1 build correction:** The first user-side `DATA.BAT` run
 compiled `DATA.C` but stopped with `DATACHK.C(22): C2073` (an initialized
 automatic `char name[]`), so **neither test executable ran**. Both test

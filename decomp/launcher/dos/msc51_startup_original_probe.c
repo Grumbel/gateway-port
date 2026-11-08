@@ -1,8 +1,8 @@
 /* SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com> */
 /* SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception */
 
-/* Optional real-file test of the exact startup data copy. The original
- * GATE.EXE must be mounted read-only as E:\GATE.EXE by the caller. No
+/* Optional real-file test of both startup data image sources. Original
+ * GATE.EXE and GATE.RTL must be mounted read-only on E: by the caller. No
  * game bytes are shipped with this source or the generated DOS workspace.
  * This is a DOSBox probe, not the reconstructed launcher main(). */
 #include "GATEDOS.H"
@@ -14,13 +14,19 @@
 #define GATE_REAL_COPY_COUNT 0x1758u
 #define GATE_REAL_DEST 0x3592u
 #define GATE_REAL_PARAGRAPHS 0x100au
+#define GATE_REAL_RTL_BYTES 109193ul
+#define GATE_RTL_SOURCE 0x0029ul
+#define GATE_RTL_COUNT 0x3592u
 
 int gate_dos_bind_intro_aliases(uint16_t lower_segment, uint16_t paragraphs);
 int gate_dos_load_intro_static_data(uint16_t handle, uint16_t lower_segment,
                                     uint16_t paragraphs);
+int gate_dos_load_intro_rtl_data(uint16_t handle, uint16_t lower_segment,
+                                 uint16_t paragraphs);
 
 /* Avoid C2073 on Microsoft C 5.1: initialized arrays need static storage. */
 static char original_exe_name[] = "E:\\GATE.EXE";
+static char original_rtl_name[] = "E:\\GATE.RTL";
 
 int main(void)
 {
@@ -29,6 +35,7 @@ int main(void)
     uint16_t handle = 0u;
     uint16_t data_segment = 0u;
     uint16_t i, j, count;
+    uint8_t exe_first_byte = 0u;
     int good = 1;
     int have_allocation = 0;
     int have_handle = 0;
@@ -105,6 +112,67 @@ int main(void)
                  gate_ds_word(0x4d84u) != data_segment))
         good = 0;
 
+    if (good)
+        exe_first_byte = gate_far_byte(data_segment, GATE_REAL_DEST);
+
+    /* Close the EXE before opening the RTL to check the two independent
+     * source files and to exercise ownership of the caller's DOS handles. */
+    if (have_handle) {
+        result = gate_dos_file_close(handle);
+        have_handle = 0;
+        if (result.carry)
+            good = 0;
+    }
+
+    if (good) {
+        result = gate_dos_file_open(gate_stack_pointer(original_rtl_name), 0u, 0u);
+        if (result.carry)
+            good = 0;
+        else {
+            have_handle = 1;
+            handle = result.ax;
+        }
+    }
+
+    if (good) {
+        result = gate_dos_file_seek(handle, 2u, 0ul);
+        if (result.carry ||
+            ((uint32_t)result.dx << 16 | result.ax) != GATE_REAL_RTL_BYTES)
+            good = 0;
+    }
+
+    if (good && gate_dos_load_intro_rtl_data(handle, (uint16_t)allocated,
+                                             GATE_REAL_PARAGRAPHS) != 0)
+        good = 0;
+
+    /* The 13714-byte source image ends exactly where the separately
+     * verified EXE static data begins. No relocation fixups are applied. */
+    if (good) {
+        result = gate_dos_file_seek(handle, 0u, GATE_RTL_SOURCE);
+        if (result.carry || result.dx != 0u || result.ax != GATE_RTL_SOURCE)
+            good = 0;
+    }
+    for (i = 0u; good && i < GATE_RTL_COUNT; i = (uint16_t)(i + count)) {
+        count = (uint16_t)(GATE_RTL_COUNT - i);
+        if (count > sizeof buffer)
+            count = sizeof buffer;
+        result = gate_dos_file_read(handle, gate_stack_pointer(buffer), count);
+        if (result.carry || result.ax != count) {
+            good = 0;
+            break;
+        }
+        for (j = 0u; j < count; ++j) {
+            if (buffer[j] != gate_far_byte(data_segment, (uint16_t)(i + j))) {
+                good = 0;
+                break;
+            }
+        }
+    }
+    if (good && (gate_far_byte(data_segment, GATE_REAL_DEST) != exe_first_byte ||
+                 gate_ds_word(0x4d82u) != (uint16_t)allocated ||
+                 gate_ds_word(0x4d84u) != data_segment))
+        good = 0;
+
     if (have_handle) {
         result = gate_dos_file_close(handle);
         if (result.carry)
@@ -115,7 +183,7 @@ int main(void)
         if (_dos_freemem(allocated) != 0u)
             good = 0;
     }
-    puts(good ? "Original EXE data probe: PASS (5976 bytes, matching disk image)"
-              : "Original EXE data probe: FAIL");
+    puts(good ? "Original EXE/RTL data probe: PASS (5976 + 13714 bytes, matching disk images)"
+              : "Original EXE/RTL data probe: FAIL");
     return good ? 0 : 1;
 }
