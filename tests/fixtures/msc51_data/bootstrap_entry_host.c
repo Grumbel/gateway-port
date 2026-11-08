@@ -13,6 +13,7 @@
 
 static uint16_t words[0x8000];
 static unsigned startup_allocations;
+static unsigned no_music_calls;
 static unsigned callback_opens, callback_seeks, callback_reads, callback_closes;
 
 static void require(int condition)
@@ -26,6 +27,29 @@ static void require(int condition)
 uint16_t gate_ds_word(uint16_t offset)
 {
     return gate_far_word(MOCK_DATA_SEGMENT, offset);
+}
+
+uint16_t gate_ds_segment(void)
+{
+    return MOCK_DATA_SEGMENT;
+}
+
+uint8_t gate_far_byte(uint16_t segment, uint16_t offset)
+{
+    uint16_t value;
+    require(segment == MOCK_DATA_SEGMENT);
+    value = gate_far_word(segment, (uint16_t)(offset & 0xfffeu));
+    return (uint8_t)((offset & 1u) ? (value >> 8) : value);
+}
+
+/* The host fixture verifies linkage and call order. The guest build links
+ * RTLHW.OBJ itself, whose original no-music branch has a separate test. */
+void gate_linked_initialize_intro_services(void)
+{
+    require(gate_ds_segment() == MOCK_DATA_SEGMENT);
+    require((gate_far_byte(MOCK_DATA_SEGMENT, 0x0662u) & 0x06u) == 0u);
+    require(gate_ds_word(0x0660u) == 0x0401u);
+    ++no_music_calls;
 }
 
 uint16_t gate_far_word(uint16_t segment, uint16_t offset)
@@ -116,12 +140,18 @@ int gate_dos_boot_prepare(const GateDosBootConfig *config,
         words[selectors[i] / 2u] = MOCK_DATA_SEGMENT;
     if (getenv("TEST_BAD_SELECTOR") != 0)
         words[0x4e46u / 2u] = 0x3333u;
+    if (getenv("TEST_MUSIC_ENABLED") != 0)
+        words[0x0662u / 2u] = 0x0006u;
     return 0;
 }
 
 void gate_dos_boot_release(GateDosBootImage *image)
 {
     require(image != 0);
+    if (getenv("TEST_BAD_SELECTOR") == 0 &&
+        getenv("TEST_ALLOC_FAIL") == 0 &&
+        getenv("TEST_MUSIC_ENABLED") == 0)
+        require(no_music_calls == 1u);
     image->lower_segment = image->resident_segment = 0u;
 }
 

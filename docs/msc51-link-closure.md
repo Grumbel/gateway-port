@@ -180,7 +180,7 @@ callback preflight, including failures at either file close. This verifies
 the new ownership contract synthetically; no Microsoft C 5.1 or DOSBox
 runtime could be executed in this environment.
 
-**First executable reconstructed entry block (pending real DOS run):**
+**First executable reconstructed entry block (real DOS confirmed 2026-11-08):**
 `msc51-compile-data` also compiles and links an isolated `BOOTPREP.EXE`
 using the *actual* staged `gate_exe_intro_setup.c` (`Mxx.OBJ`) and
 `HEAP.OBJ`, together with the CRC-checked BOOT/DATA/SEL/MEMORY/DOSFILE
@@ -199,7 +199,28 @@ not `_main` or a playable intro. Its `BPREAL.LOG` must contain the exact
 `DOS intro C entry prologue: PASS` witness. A GCC C89 host test links the
 actual staged prologue and heap objects with synthetic DOS memory and
 checks success, invalid selectors and allocation failure; Microsoft C
-5.1/DOSBox still needs to run this new probe on the user's system.
+5.1/DOSBox originally needed to run this probe on the user's system.
+The user's 2026-11-08 23:57 run now confirms that the two full-image CRC
+witnesses, `BOOTCHK.EXE`, and the five original prologue writes all pass in
+Microsoft C 5.1/DOSBox. The workspace is observed, not executed.
+
+**Next original call: the guarded RTL audio initializer (DOS run pending).**
+Immediately after the five writes, the original `GATE.EXE:134c` invokes
+`GATE.RTL:c3bd..c3d8`. The 16-bit hardware adapter already contains its
+source-C no-music fast-return branch. The pinned original RTL data byte at
+`DS:0662` is zero before relocation, while the recovered prologue sets the
+configuration at `DS:0660` to `0401h`; thus the no-music branch should return
+without music records, IRQ installation or graphics. The isolated
+`BOOTPREP.EXE` now compiles and links the **real** `RTLHW.C` source into
+`RTLHW.OBJ` within `DATA.BAT`, then calls this initializer only after verifying
+the source flags, relocated DS and configuration. It checks those words again
+after return. Any enabled-music flag fails closed *before* the unimplemented
+IRQ path; a missing second `DOS intro C audio guard: PASS` line fails strict
+original-file log validation. Both hardware source and layout participate in
+the DOS batch fingerprint. The C89 host fixture tests the call order and
+rejection of an enabled-music image; the actual 16-bit linked path needs
+the user's next `msc51-compile-data` run. This still is not a functional
+launcher `_main` or an executed original resident bank.
 
 **Microsoft C 5.1 identifier compatibility:** The user's first real
 `DATA.BAT` run failed at `DATA.C` compilation, not during the probe:
@@ -222,7 +243,8 @@ nix run -L .#msc51-compile-data -- --original-game-dir ../gateway-dos
 
 `BOOTREAL.LOG` must contain the exact owner `PASS` line; `DATREAL.LOG` must
 also contain both original CRC witnesses; `BPREAL.LOG` must contain the
-five-write reconstructed entry probe witness. A failed or absent log is not a
+five-write reconstructed entry probe witness **and the new no-music return
+witness**. A failed or absent log is not a
 successful test. `BOOT.OBJ` is deliberately not included in `LINK.RSP` while
 no valid source-C `_main` can consume it.
 

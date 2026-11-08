@@ -2,7 +2,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception */
 
 /* Optional original-file DOS probe: execute the *reconstructed C* prologue
- * of GATE.EXE:1309..134b, not any unknown relocated resident code.
+ * of GATE.EXE:1309..134b and the no-music branch of RTL:c3bd..c3d8,
+ * not any unknown relocated resident code.
  * The five selector/target addresses are independently pinned by original
  * intro-entry RAM snapshots. No intro graphics/IRQ/RTLink callbacks run.
  * The BOOT image callback addresses here are deliberately nonexecutable. */
@@ -33,6 +34,7 @@ static char unused_exe_callback[32];
 /* The real reconstructed source object (Mxx.OBJ), not a test substitute,
  * supplies this function. Its original call requests 1000h DOS paragraphs. */
 void gate_exe_prepare_intro_globals(void);
+void gate_linked_initialize_intro_services(void);
 
 int main(void)
 {
@@ -89,6 +91,22 @@ int main(void)
         if (workspace == 0u || workspace == image.lower_segment ||
             workspace == image.resident_segment)
             good = 0;
+        /* The next original FAR call at GATE.EXE:134c enters the music/IRQ
+         * initializer. The first original RTL branch returns immediately
+         * if bits 1 and 2 of DS:0662 are clear. Check that condition and
+         * the bound DOS guest segment before executing the actual RTLHW
+         * source-C object. Do NOT run the unimplemented enabled branch. */
+        if (gate_ds_segment() != data_segment ||
+            (gate_far_byte(data_segment, 0x0662u) & 0x06u) != 0u ||
+            gate_ds_word(0x0660u) != 0x0401u)
+            good = 0;
+        if (good) {
+            gate_linked_initialize_intro_services();
+            if (gate_ds_segment() != data_segment ||
+                (gate_far_byte(data_segment, 0x0662u) & 0x06u) != 0u ||
+                gate_ds_word(0x0660u) != 0x0401u)
+                good = 0;
+        }
         /* Do not free a guessed segment if the prologue failed. The
          * original retains the allocation; DOS owns and reclaims it when
          * this one-shot probe exits. */
@@ -101,5 +119,6 @@ int main(void)
         return 1;
     }
     puts("DOS intro C entry prologue: PASS (five recovered writes, original data/CRC, workspace observed; no intro code entered)");
+    puts("DOS intro C audio guard: PASS (RTL:c3bd no-music return, configuration preserved; no IRQ installed)");
     return 0;
 }

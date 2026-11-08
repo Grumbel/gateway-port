@@ -234,7 +234,7 @@ SELECTOR_SOURCES = ("GATEMEM.H", "STDINT.H", "SEL.C", "SELCHK.C", "MEMORY.C")
 STATIC_DATA_SOURCES = ("GATEMEM.H", "GATEDOS.H", "STDINT.H", "DATA.C",
                        "DATACHK.C", "DATAREAL.C", "BOOT.H", "BOOTCB.H", "BOOT.C",
                        "BOOTCHK.C", "BOOTPREP.C", "BPREP.RSP", "DATNAMES.H", "HEAP.C",
-                       "SEL.C", "MEMORY.C", "DOSFILE.C")
+                       "SEL.C", "MEMORY.C", "DOSFILE.C", "RTLLAY.H", "RTLHW.C")
 DOS_FILE_SOURCES = ("GATEDOS.H", "GATEMEM.H", "STDINT.H", "DOSFILE.C", "FILECHK.C",
                     "MEMORY.C")
 RTL_STATE_SOURCES = ("RTLLAY.H", "RTLIMAC.H", "RTLSTATE.H", "GATEMEM.H", "STDINT.H",
@@ -560,7 +560,7 @@ def stage_launcher(output: Path) -> list[str]:
     entry_obj = aliases["gate_exe_intro_setup.c"].replace(".C", ".OBJ")
     entry_source = aliases["gate_exe_intro_setup.c"]
     prep_response = ["BOOTPREP.OBJ+", "BOOT.OBJ+", "DATA.OBJ+", "SEL.OBJ+",
-                     "MEMORY.OBJ+", "DOSFILE.OBJ+", "HEAP.OBJ+", entry_obj,
+                     "MEMORY.OBJ+", "DOSFILE.OBJ+", "HEAP.OBJ+", "RTLHW.OBJ+", entry_obj,
                      "BOOTPREP.EXE", "NUL.MAP", "LLIBCR.LIB LIBH.LIB /NOD", ";"]
     (output / "BPREP.RSP").write_text("\r\n".join(prep_response) + "\r\n")
     # HEAP.OBJ is also required by the standalone recovered C prologue.
@@ -570,6 +570,13 @@ def stage_launcher(output: Path) -> list[str]:
                              ("msc51_heap_probe.c", "HEAPCHK.C")):
         (output / staged).write_text(msc51_rename_identifiers(
             (source_dir / "dos" / original).read_text(), shortened))
+    # The isolated BOOTPREP executable now links the actual RTL no-music
+    # initializer. Stage it and its layout before fingerprinting DATA.BAT,
+    # so stale hardware C cannot satisfy an earlier original-file witness.
+    layout = msc51_enums_to_macros((source_dir / "gate_memory_layout.h").read_text())
+    (output / "RTLLAY.H").write_text(msc51_rename_identifiers(layout, shortened))
+    (output / "RTLHW.C").write_text(msc51_rename_identifiers(
+        (source_dir / "dos/msc51_hardware.c").read_text(), shortened))
     data_signature = static_data_source_signature(output)
     data_batch = [
         "@ECHO OFF", "ECHO MS C 5.1 original EXE static data copy > DATSTART.LOG",
@@ -592,12 +599,15 @@ def stage_launcher(output: Path) -> list[str]:
         "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST BOOTCHK.EXE GOTO FAILED",
         "IF EXIST E:\\GATE.RTL BOOTCHK.EXE > BOOTREAL.LOG",
         "IF ERRORLEVEL 1 GOTO FAILED",
-        # Only the recovered source-C GATE.EXE:1309 prologue is executed.
+        # Execute the recovered EXE:1309 writes and the original RTL:c3bd
+        # no-music early return, never the later IRQ or graphics branches.
         # Both DOS image callbacks remain nonexecutable and are never called.
         "CL /AL /Od /c HEAP.C >> DATBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
         "IF NOT EXIST HEAP.OBJ GOTO FAILED",
         f"CL /AL /Od /c {entry_source} >> DATBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
         f"IF NOT EXIST {entry_obj} GOTO FAILED",
+        "CL /AL /Od /c RTLHW.C >> DATBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        "IF NOT EXIST RTLHW.OBJ GOTO FAILED",
         "CL /AL /Od /c BOOTPREP.C >> DATBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
         "IF NOT EXIST BOOTPREP.OBJ GOTO FAILED",
         "C:\\BIN\\LINK.EXE @BPREP.RSP >> DATBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
@@ -630,8 +640,6 @@ def stage_launcher(output: Path) -> list[str]:
     # Keep the original/native accessor source as the single definition of
     # these RTL operations. Only the includes, C89 compound literals and
     # historical compiler symbol-length limit change for the DOS build.
-    layout = msc51_enums_to_macros((source_dir / "gate_memory_layout.h").read_text())
-    (output / "RTLLAY.H").write_text(msc51_rename_identifiers(layout, shortened))
     image_constants = msc51_enums_to_macros((source_dir / "gate_rtl_image.h").read_text())
     required_constants = ("GATE_RTL_VIDEO_MODE_OFFSET", "GATE_RTL_FILE_HANDLE_OFFSET",
                           "GATE_RTL_HEADER_OFFSET", "GATE_RTL_SIZE_TABLE_OFFSET",
@@ -678,10 +686,8 @@ def stage_launcher(output: Path) -> list[str]:
         ":DONE", "EXIT",
     ]
     (output / "RTLST.BAT").write_text("\r\n".join(rtl_batch) + "\r\n")
-    for original, staged in (("msc51_hardware.c", "RTLHW.C"),
-                             ("msc51_hardware_probe.c", "HWCHK.C")):
-        (output / staged).write_text(msc51_rename_identifiers(
-            (source_dir / "dos" / original).read_text(), shortened))
+    (output / "HWCHK.C").write_text(msc51_rename_identifiers(
+        (source_dir / "dos/msc51_hardware_probe.c").read_text(), shortened))
     hardware_signature = hardware_source_signature(output)
     hardware_batch = [
         "@ECHO OFF", "ECHO MS C 5.1 RTL hardware adapter > HWSTART.LOG",
@@ -1045,6 +1051,10 @@ def validate_static_data_probe(output: Path, *, require_original: bool = False) 
                 r"^DOS intro C entry prologue: PASS \(five recovered writes, original data/CRC, workspace observed; no intro code entered\)\s*$",
                 prepared.read_text(), re.MULTILINE) is None):
             raise ValueError("DOS source-C intro entry prologue verification is missing or failed.")
+        if re.search(
+                r"^DOS intro C audio guard: PASS \(RTL:c3bd no-music return, configuration preserved; no IRQ installed\)\s*$",
+                prepared.read_text(), re.MULTILINE) is None:
+            raise ValueError("DOS source-C intro audio early-return verification is missing or failed.")
 
 
 def remove_static_data_outputs(output: Path) -> None:
@@ -1756,7 +1766,8 @@ def main(argv: list[str] | None = None) -> int:
                  "; the full-bank original-file CRC check was not requested")
               + ("; BOOTCHK.EXE verified DOS allocation, CRC and cleanup, and "
                  "BOOTPREP.EXE executed the five recovered source-C entry "
-                 "writes without entering original resident code"
+                 "writes and the RTL no-music initializer return without "
+                 "entering original resident code or installing IRQs"
                  if original_game_dir is not None
                  else "; BOOT.OBJ was built but its original-file probes were not run")
               + ". DATA.OBJ/BOOT.OBJ remain probe-only until executable startup "

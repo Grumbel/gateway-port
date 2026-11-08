@@ -52,6 +52,9 @@ class MSC51Tests(unittest.TestCase):
         rtl = original.read_bytes()
         self.assertEqual(hashlib.sha256(rtl).hexdigest(),
                          "c187f5ee7be86482cff89e668d934dc961ac50e960df7baa98965910f1ea9566")
+        # The first live call after EXE:1309..134b is RTL:c3bd's music
+        # initializer. The original source data takes its no-music return.
+        self.assertEqual(rtl[0x29 + 0x0662] & 0x06, 0)
         ds_sites = (0x0fb8, 0x0fbc, 0x0fc0, 0x0fc4, 0x0fc8, 0x0fcc,
                     0x153a, 0x153e, 0x1542, 0x1546, 0x154a, 0x154e,
                     0x1552, 0x1556, 0x26d8, 0x2b78, 0x2c10, 0x3246,
@@ -135,10 +138,17 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("IF EXIST E:\\GATE.RTL BOOTCHK.EXE > BOOTREAL.LOG", batch)
             entry_object = msc51.launcher_source_alias(output, "gate_exe_intro_setup.c").replace(".C", ".OBJ")
             self.assertIn("CL /AL /Od /c HEAP.C", batch)
+            self.assertIn("CL /AL /Od /c RTLHW.C", batch)
             self.assertIn("CL /AL /Od /c " + entry_object.replace(".OBJ", ".C"), batch)
             self.assertIn("LINK.EXE @BPREP.RSP", batch)
             self.assertIn("IF EXIST E:\\GATE.RTL BOOTPREP.EXE > BPREAL.LOG", batch)
             self.assertIn(entry_object, (output / "BPREP.RSP").read_text())
+            self.assertIn("RTLHW.OBJ+", (output / "BPREP.RSP").read_text())
+            original_initializer = "gate_linked_initialize_intro_services"
+            alias = msc51.msc51_short_names([original_initializer]).get(
+                original_initializer, original_initializer)
+            self.assertIn(alias + "(", (output / "BOOTPREP.C").read_text())
+            self.assertIn(alias + "(", (output / "RTLHW.C").read_text())
             self.assertNotIn("BOOTPREP.OBJ", (output / "LINK.RSP").read_text())
             self.assertLessEqual(max(len(line) for line in batch.splitlines()), 127)
             data_aliases = dict(re.findall(
@@ -151,7 +161,7 @@ class MSC51Tests(unittest.TestCase):
             # names such as gate_dos_relocate_intro_resident_* otherwise
             # collide as distinct function bodies under C2084.
             for source in ("DATA.C", "DATACHK.C", "DATAREAL.C", "BOOT.H", "BOOTCB.H",
-                           "BOOT.C", "BOOTCHK.C", "BOOTPREP.C"):
+                           "BOOT.C", "BOOTCHK.C", "BOOTPREP.C", "RTLHW.C"):
                 ids = msc51.msc51_identifiers((output / source).read_text())
                 self.assertTrue(all(len(name) <= 31 for name in ids), source)
                 self.assertEqual(len(ids), len({name[:31] for name in ids}), source)
@@ -260,7 +270,10 @@ class MSC51Tests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("five recovered writes, original data/CRC, workspace observed",
                           result.stdout)
+            self.assertIn("RTL:c3bd no-music return, configuration preserved",
+                          result.stdout)
             for invalid in ("TEST_BAD_SELECTOR", "TEST_ALLOC_FAIL",
+                            "TEST_MUSIC_ENABLED",
                             "TEST_CALLBACK_OPEN_FAIL", "TEST_CALLBACK_SEEK_FAIL",
                             "TEST_CALLBACK_READ_FAIL", "TEST_CALLBACK_CLOSE_FAIL"):
                 with self.subTest(invalid=invalid):
@@ -354,6 +367,11 @@ class MSC51Tests(unittest.TestCase):
                 msc51.validate_static_data_probe(output, require_original=True)
             (output / "BPREAL.LOG").write_text(
                 "DOS intro C entry prologue: PASS (five recovered writes, original data/CRC, workspace observed; no intro code entered)\n")
+            with self.assertRaisesRegex(ValueError, "audio early-return verification"):
+                msc51.validate_static_data_probe(output, require_original=True)
+            (output / "BPREAL.LOG").write_text(
+                "DOS intro C entry prologue: PASS (five recovered writes, original data/CRC, workspace observed; no intro code entered)\n"
+                "DOS intro C audio guard: PASS (RTL:c3bd no-music return, configuration preserved; no IRQ installed)\n")
             msc51.validate_static_data_probe(output, require_original=True)
             (output / "DATA.C").write_text((output / "DATA.C").read_text() + "/* stale */\n")
             with self.assertRaisesRegex(ValueError, "source changed"):
