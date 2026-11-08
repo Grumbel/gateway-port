@@ -305,6 +305,30 @@ int main(void)
         if (gate_far_word(segment, gate_resident_small_offsets[i].site) !=
             (uint16_t)(gate_resident_small_offsets[i].original + 0x62dau))
             abort();
+    gate_far_set_byte(segment, 0x1a2bu, 0x2eu);
+    gate_far_set_byte(segment, 0x1a2cu, 0xffu);
+    gate_far_set_byte(segment, 0x1a2du, 0xa7u);
+    gate_far_set_word(segment, 0x1a2eu, 0x02feu);
+    for (i = 0u; i < sizeof gate_resident_dispatch_source_words /
+                      sizeof gate_resident_dispatch_source_words[0]; ++i)
+        gate_far_set_word(segment, (uint16_t)(0x1b66u + 2u * i),
+                          gate_resident_dispatch_source_words[i]);
+    if (gate_dos_relocate_intro_resident_dispatch_table(segment, 0x03cfu) != -1)
+        abort();
+    gate_far_set_word(segment, 0x1b90u, 0xffffu);
+    if (gate_dos_relocate_intro_resident_dispatch_table(segment, 0x03d0u) != -2 ||
+        gate_far_word(segment, 0x1a2eu) != 0x02feu ||
+        gate_far_word(segment, 0x1b66u) != 0x02ceu)
+        abort();
+    gate_far_set_word(segment, 0x1b90u, 0x02beu);
+    if (gate_dos_relocate_intro_resident_dispatch_table(segment, 0x03d0u) != 0 ||
+        gate_far_word(segment, 0x1a2eu) != 0x1b66u)
+        abort();
+    for (i = 0u; i < sizeof gate_resident_dispatch_source_words /
+                      sizeof gate_resident_dispatch_source_words[0]; ++i)
+        if (gate_far_word(segment, (uint16_t)(0x1b66u + 2u * i)) !=
+            (uint16_t)(gate_resident_dispatch_source_words[i] + 0x1868u))
+            abort();
     puts("98 self-calls, 7 DS loads, EXE call and 7 direct segments: PASS");
     return 0;
 }

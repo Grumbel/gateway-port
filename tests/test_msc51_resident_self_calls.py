@@ -89,7 +89,38 @@ def small_offset_manifest():
                        match.group(1))]
 
 
+def dispatch_table_words():
+    source = (ROOT / "decomp/launcher/dos/msc51_startup_static_data.c").read_text()
+    match = re.search(r"static const uint16_t "
+                      r"gate_resident_dispatch_source_words\[\] = \{(.*?)\n\};",
+                      source, re.DOTALL)
+    if match is None:
+        raise AssertionError("resident dispatch table missing")
+    return [int(value, 16) for value in re.findall(r"0x([0-9a-f]+)u", match.group(1))]
+
+
 class ResidentSelfCallTests(unittest.TestCase):
+    def test_original_resident_dispatch_table_relocation(self):
+        rtl_path = ROOT.parent / "gateway-dos/GATE.RTL"
+        captures = [ROOT / f"build/msc51-startup-fine/at-{ms}.bin"
+                    for ms in (125, 175, 250)]
+        captures.append(ROOT / "build/msc51-startup/at-500.bin")
+        if not rtl_path.exists() or not all(path.exists() for path in captures):
+            self.skipTest("Original RTL and settled DOS captures unavailable")
+        rtl = rtl_path.read_bytes()[0x56de:0x93de]
+        live = [path.read_bytes()[0x12a50:0x12a50 + len(rtl)] for path in captures]
+        words = dispatch_table_words()
+        self.assertEqual(len(words), 22)
+        self.assertEqual(rtl[0x1a2b:0x1a30], bytes.fromhex("2effa7fe02"))
+        for ram in live:
+            self.assertEqual(ram[0x1a2b:0x1a30], bytes.fromhex("2effa7661b"))
+        for i, source in enumerate(words):
+            offset = 0x1b66 + 2 * i
+            self.assertEqual(rtl[offset:offset + 2], source.to_bytes(2, "little"))
+            for ram in live:
+                self.assertEqual(ram[offset:offset + 2],
+                                 (source + 0x1868).to_bytes(2, "little"), hex(offset))
+
     def test_180_small_offset_fixups_against_original_ram(self):
         rtl_path = ROOT.parent / "gateway-dos/GATE.RTL"
         captures = [ROOT / f"build/msc51-startup-fine/at-{ms}.bin"

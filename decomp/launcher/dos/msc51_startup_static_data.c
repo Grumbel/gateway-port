@@ -491,6 +491,44 @@ int gate_dos_relocate_intro_resident_small_offsets(uint16_t resident_segment,
     return 0;
 }
 
+/* CS:1a2b's indirect JMP [BX+disp16] indexes this 22-WORD local near-
+ * target table. In the original RTL source it starts at bank +1b66 with
+ * word offsets in the 01c4..02de range, while all four settled DOS RAM
+ * captures contain the same entries plus 1868h. The JMP's displacement
+ * similarly changes from 02feh to the table address 1b66h. This is a
+ * separate near-control-flow fixup, not a DS-global pointer relocation. */
+static const uint16_t gate_resident_dispatch_source_words[] = {
+    0x02ceu, 0x01e2u, 0x02d4u, 0x02d4u, 0x02d4u, 0x02deu,
+    0x01e2u, 0x02deu, 0x02deu, 0x02deu, 0x02deu, 0x01c8u,
+    0x01f6u, 0x01fcu, 0x02deu, 0x02deu, 0x02c4u, 0x02deu,
+    0x01deu, 0x02deu, 0x02deu, 0x02beu
+};
+
+int gate_dos_relocate_intro_resident_dispatch_table(uint16_t resident_segment,
+                                                     uint16_t paragraphs)
+{
+    unsigned int i;
+    if (resident_segment == 0u || resident_segment > 0xfc30u ||
+        paragraphs < GATE_RESIDENT_PARAS)
+        return -1;
+    if (gate_far_byte(resident_segment, 0x1a2bu) != 0x2eu ||
+        gate_far_byte(resident_segment, 0x1a2cu) != 0xffu ||
+        gate_far_byte(resident_segment, 0x1a2du) != 0xa7u ||
+        gate_far_word(resident_segment, 0x1a2eu) != 0x02feu)
+        return -2;
+    for (i = 0u; i < sizeof gate_resident_dispatch_source_words /
+                      sizeof gate_resident_dispatch_source_words[0]; ++i)
+        if (gate_far_word(resident_segment, (uint16_t)(0x1b66u + 2u * i)) !=
+            gate_resident_dispatch_source_words[i])
+            return -2;
+    gate_far_set_word(resident_segment, 0x1a2eu, 0x1b66u);
+    for (i = 0u; i < sizeof gate_resident_dispatch_source_words /
+                      sizeof gate_resident_dispatch_source_words[0]; ++i)
+        gate_far_set_word(resident_segment, (uint16_t)(0x1b66u + 2u * i),
+                         (uint16_t)(gate_resident_dispatch_source_words[i] + 0x1868u));
+    return 0;
+}
+
 
 /* Stage the first reconstructed resident bank in the eventual DOS entry.
  * Unlike the data-only bootstrap below, this operation does not establish
@@ -499,7 +537,7 @@ int gate_dos_relocate_intro_resident_small_offsets(uint16_t resident_segment,
  * -1 bad arguments, -2 file load, -3 self calls, -4 DS loads,
  * -5 EXE callback, -6 direct segment operands, -7 paragraph carries,
  * -8 linked DS flag offsets, -9 additional state offsets,
- * -10 linked small data offsets. */
+ * -10 linked small data offsets, -11 CS-local dispatch table. */
 int gate_dos_prepare_intro_resident_bank(uint16_t rtl_handle,
                                          uint16_t resident_segment,
                                          uint16_t paragraphs,
@@ -538,6 +576,9 @@ int gate_dos_prepare_intro_resident_bank(uint16_t rtl_handle,
     if (gate_dos_relocate_intro_resident_small_offsets(resident_segment,
                                                        paragraphs) != 0)
         return -10;
+    if (gate_dos_relocate_intro_resident_dispatch_table(resident_segment,
+                                                        paragraphs) != 0)
+        return -11;
     return 0;
 }
 
