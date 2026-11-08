@@ -140,6 +140,53 @@ int main(void)
         gate_far_word(segment, 0x0a4eu) != external.offset ||
         gate_far_word(segment, 0x0a50u) != external.segment)
         abort();
-    puts("98 self-calls, 7 DS loads and one EXE CALL FAR: PASS");
+    for (i = 0u; i < sizeof gate_resident_cmp_ds /
+                      sizeof gate_resident_cmp_ds[0]; ++i) {
+        uint16_t site = gate_resident_cmp_ds[i];
+        gate_far_set_byte(segment, (uint16_t)(site - 3u), 0x81u);
+        gate_far_set_byte(segment, (uint16_t)(site - 2u), 0x7eu);
+        gate_far_set_byte(segment, (uint16_t)(site - 1u), 0x0au);
+        gate_far_set_word(segment, site, 0u);
+    }
+    for (i = 0u; i < sizeof gate_resident_mov_dx_ds /
+                      sizeof gate_resident_mov_dx_ds[0]; ++i) {
+        uint16_t site = gate_resident_mov_dx_ds[i];
+        gate_far_set_byte(segment, (uint16_t)(site - 4u), 0xb8u);
+        gate_far_set_byte(segment, (uint16_t)(site - 1u), 0xbau);
+        gate_far_set_word(segment, site, 0u);
+    }
+    gate_far_set_byte(segment, 0x09b8u, 0xbfu);
+    gate_far_set_word(segment, 0x09b9u, 0u);
+    gate_far_set_byte(segment, 0x09bbu, 0x8bu);
+    gate_far_set_byte(segment, 0x09bcu, 0x36u);
+    gate_far_set_byte(segment, 0x0197u, 0x26u);
+    gate_far_set_byte(segment, 0x0198u, 0xc7u);
+    gate_far_set_byte(segment, 0x0199u, 0x06u);
+    gate_far_set_word(segment, 0x019au, 0x0072u);
+    gate_far_set_word(segment, 0x019cu, 0u);
+    if (gate_dos_relocate_intro_resident_direct_segments(segment, 0x03cfu,
+                                                          0x200au) != -1)
+        abort();
+    gate_far_set_word(segment, 0x019cu, 1u);
+    if (gate_dos_relocate_intro_resident_direct_segments(segment, 0x03d0u,
+                                                          0x200au) != -2 ||
+        gate_far_word(segment, gate_resident_cmp_ds[0]) != 0u)
+        abort();
+    gate_far_set_word(segment, 0x019cu, 0u);
+    if (gate_dos_relocate_intro_resident_direct_segments(segment, 0x03d0u,
+                                                          0x200au) != 0)
+        abort();
+    for (i = 0u; i < sizeof gate_resident_cmp_ds /
+                      sizeof gate_resident_cmp_ds[0]; ++i)
+        if (gate_far_word(segment, gate_resident_cmp_ds[i]) != 0x200au)
+            abort();
+    for (i = 0u; i < sizeof gate_resident_mov_dx_ds /
+                      sizeof gate_resident_mov_dx_ds[0]; ++i)
+        if (gate_far_word(segment, gate_resident_mov_dx_ds[i]) != 0x200au)
+            abort();
+    if (gate_far_word(segment, 0x09b9u) != 0x200au ||
+        gate_far_word(segment, 0x019cu) != segment)
+        abort();
+    puts("98 self-calls, 7 DS loads, EXE call and 7 direct segments: PASS");
     return 0;
 }

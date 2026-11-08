@@ -35,6 +35,9 @@ int gate_dos_relocate_intro_resident_ds_loads(uint16_t resident_segment,
                                                uint16_t data_segment);
 int gate_dos_relocate_intro_exe_call(uint16_t resident_segment,
                                      uint16_t paragraphs, GateFarPtr target);
+int gate_dos_relocate_intro_resident_direct_segments(uint16_t resident_segment,
+                                                      uint16_t paragraphs,
+                                                      uint16_t data_segment);
 int gate_dos_clear_intro_rtl_prefix(uint16_t lower_segment, uint16_t paragraphs);
 int gate_dos_fix_intro_rtl_startup_words(uint16_t lower_segment, uint16_t paragraphs);
 int gate_dos_fix_intro_rtl_segs(uint16_t lower_segment, uint16_t paragraphs,
@@ -293,6 +296,15 @@ int main(void)
         good = 0;
     if (good && (gate_far_word((uint16_t)resident_allocated, 0x0a4eu) != 0x0030u ||
                  gate_far_word((uint16_t)resident_allocated, 0x0a50u) != 0x1234u))
+        good = 0;
+    if (good && gate_dos_relocate_intro_resident_direct_segments(
+                    (uint16_t)resident_allocated, 0x03d0u, data_segment) != 0)
+        good = 0;
+    if (good && (gate_far_word((uint16_t)resident_allocated, 0x14c8u) != data_segment ||
+                 gate_far_word((uint16_t)resident_allocated, 0x1502u) != data_segment ||
+                 gate_far_word((uint16_t)resident_allocated, 0x09b9u) != data_segment ||
+                 gate_far_word((uint16_t)resident_allocated, 0x019cu) !=
+                     (uint16_t)resident_allocated))
         good = 0;
     if (good && gate_dos_clear_intro_rtl_prefix((uint16_t)allocated,
                                                GATE_REAL_PARAGRAPHS) != 0)

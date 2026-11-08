@@ -36,6 +36,15 @@ def ds_load_manifest():
     return [int(value, 16) for value in re.findall(r"0x([0-9a-f]+)u", match.group(1))]
 
 
+def direct_segment_manifest(name):
+    source = (ROOT / "decomp/launcher/dos/msc51_startup_static_data.c").read_text()
+    match = re.search(r"static const uint16_t " + name +
+                      r"\[\] = \{(.*?)\};", source, re.DOTALL)
+    if match is None:
+        raise AssertionError(name + " manifest missing")
+    return [int(value, 16) for value in re.findall(r"0x([0-9a-f]+)u", match.group(1))]
+
+
 class ResidentSelfCallTests(unittest.TestCase):
     def test_synthetic_dos_adapter_and_fail_closed_preflight(self):
         if not shutil.which("gcc"):
@@ -54,7 +63,8 @@ class ResidentSelfCallTests(unittest.TestCase):
             self.assertEqual(compiled.returncode, 0, compiled.stderr)
             ran = subprocess.run([str(executable)], capture_output=True, text=True)
             self.assertEqual(ran.returncode, 0, ran.stderr)
-            self.assertIn("98 self-calls, 7 DS loads and one EXE CALL FAR: PASS", ran.stdout)
+            self.assertIn("98 self-calls, 7 DS loads, EXE call and 7 direct segments: PASS",
+                          ran.stdout)
 
     def test_original_source_and_four_stable_live_captures(self):
         rtl_path = ROOT.parent / "gateway-dos/GATE.RTL"
@@ -84,6 +94,26 @@ class ResidentSelfCallTests(unittest.TestCase):
         for snapshot in live:
             self.assertEqual(snapshot[0x0a4d:0x0a52],
                              b"\x9a\x30\x00\x00\x10")
+        cmp_sites = direct_segment_manifest("gate_resident_cmp_ds")
+        dx_sites = direct_segment_manifest("gate_resident_mov_dx_ds")
+        self.assertEqual(len(cmp_sites), 3)
+        self.assertEqual(len(dx_sites), 2)
+        for site in cmp_sites:
+            self.assertEqual(rtl[site - 3:site + 2], b"\x81\x7e\x0a\x00\x00")
+            for snapshot in live:
+                self.assertEqual(snapshot[site - 3:site + 2],
+                                 b"\x81\x7e\x0a\x7a\x2a", hex(site))
+        for site in dx_sites:
+            self.assertEqual(rtl[site - 4], 0xb8)
+            self.assertEqual(rtl[site - 1:site + 2], b"\xba\x00\x00")
+            for snapshot in live:
+                self.assertEqual(snapshot[site - 1:site + 2], b"\xba\x7a\x2a")
+        self.assertEqual(rtl[0x09b8:0x09bb], b"\xbf\x00\x00")
+        self.assertEqual(rtl[0x0197:0x019e], b"\x26\xc7\x06\x72\x00\x00\x00")
+        for snapshot in live:
+            self.assertEqual(snapshot[0x09b8:0x09bb], b"\xbf\x7a\x2a")
+            self.assertEqual(snapshot[0x0197:0x019e],
+                             b"\x26\xc7\x06\x72\x00\xa5\x12")
 
 
 if __name__ == "__main__":

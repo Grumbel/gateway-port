@@ -838,6 +838,18 @@ bytes (14 DS immediate bytes and two nonzero bytes in the EXE call), for
 not yet resolve other non-FAR-call relocations or establish the equivalent
 recompiled EXE callee.
 
+**Seven further direct segment operands:** Distinct opcode patterns identify
+three `CMP WORD PTR [BP+0a],imm16` instructions, two `MOV DX,imm16`, one
+`MOV DI,imm16`, and one `MOV ES:[0072],imm16` storing resident CS. All seven
+original immediates are zero, and all four 125–500ms snapshots agree that
+six become DS `2a7a` and the last becomes resident `12a5`. Added a
+guarded all-or-nothing C89 relocation routine accepting both *new* segment
+values, with original-binary/snapshot assertions and host plus `DATAREAL`
+probe checks. This accounts for **14 additional** changed bytes, bringing
+the verified first-bank subset to **422/1,660**. Other words coincidentally
+equaling these values are deliberately not classified without instruction
+evidence. The bank still cannot execute safely.
+
 **Follow-up: determine external allocation ownership from snapshots.**
 After the 167 verified initialization byte changes are excluded, the user's
 remainder report contains only ten clusters: a 63-byte zeroed prefix at

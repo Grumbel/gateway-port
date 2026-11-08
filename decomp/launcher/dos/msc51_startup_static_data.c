@@ -179,6 +179,65 @@ int gate_dos_relocate_intro_exe_call(uint16_t resident_segment,
     return 0;
 }
 
+/* Another seven stable startup operands are direct references to the linked
+ * data or resident segment, but not the MOV AX / MOV DS sequences above:
+ * three CMP WORD PTR [BP+0a],imm16, two MOV DX,imm16, one MOV DI,imm16,
+ * and a MOV ES:[0072],imm16 storing resident CS. Every surrounding opcode
+ * is verified in the original 125..500ms captures. This cluster does not
+ * classify unrelated words which happen to equal the same segment value. */
+static const uint16_t gate_resident_cmp_ds[] = {
+    0x14c8u, 0x14d6u, 0x14f7u
+};
+static const uint16_t gate_resident_mov_dx_ds[] = {
+    0x1502u, 0x150fu
+};
+
+int gate_dos_relocate_intro_resident_direct_segments(uint16_t resident_segment,
+                                                      uint16_t paragraphs,
+                                                      uint16_t data_segment)
+{
+    unsigned int i;
+    if (resident_segment == 0u || resident_segment > 0xfc30u ||
+        paragraphs < GATE_RESIDENT_PARAS || data_segment == 0u)
+        return -1;
+    for (i = 0u; i < sizeof gate_resident_cmp_ds /
+                      sizeof gate_resident_cmp_ds[0]; ++i) {
+        uint16_t site = gate_resident_cmp_ds[i];
+        if (gate_far_byte(resident_segment, (uint16_t)(site - 3u)) != 0x81u ||
+            gate_far_byte(resident_segment, (uint16_t)(site - 2u)) != 0x7eu ||
+            gate_far_byte(resident_segment, (uint16_t)(site - 1u)) != 0x0au ||
+            gate_far_word(resident_segment, site) != 0u)
+            return -2;
+    }
+    for (i = 0u; i < sizeof gate_resident_mov_dx_ds /
+                      sizeof gate_resident_mov_dx_ds[0]; ++i) {
+        uint16_t site = gate_resident_mov_dx_ds[i];
+        if (gate_far_byte(resident_segment, (uint16_t)(site - 1u)) != 0xbau ||
+            gate_far_byte(resident_segment, (uint16_t)(site - 4u)) != 0xb8u ||
+            gate_far_word(resident_segment, site) != 0u)
+            return -2;
+    }
+    if (gate_far_byte(resident_segment, 0x09b8u) != 0xbfu ||
+        gate_far_word(resident_segment, 0x09b9u) != 0u ||
+        gate_far_byte(resident_segment, 0x09bbu) != 0x8bu ||
+        gate_far_byte(resident_segment, 0x09bcu) != 0x36u ||
+        gate_far_byte(resident_segment, 0x0197u) != 0x26u ||
+        gate_far_byte(resident_segment, 0x0198u) != 0xc7u ||
+        gate_far_byte(resident_segment, 0x0199u) != 0x06u ||
+        gate_far_word(resident_segment, 0x019au) != 0x0072u ||
+        gate_far_word(resident_segment, 0x019cu) != 0u)
+        return -2;
+    for (i = 0u; i < sizeof gate_resident_cmp_ds /
+                      sizeof gate_resident_cmp_ds[0]; ++i)
+        gate_far_set_word(resident_segment, gate_resident_cmp_ds[i], data_segment);
+    for (i = 0u; i < sizeof gate_resident_mov_dx_ds /
+                      sizeof gate_resident_mov_dx_ds[0]; ++i)
+        gate_far_set_word(resident_segment, gate_resident_mov_dx_ds[i], data_segment);
+    gate_far_set_word(resident_segment, 0x09b9u, data_segment);
+    gate_far_set_word(resident_segment, 0x019cu, resident_segment);
+    return 0;
+}
+
 
 /* At 100, 125, 175 and 250ms the first 64 bytes after the two-byte
  * RTL data header are zero, whereas the raw RTL preimage contains resident
