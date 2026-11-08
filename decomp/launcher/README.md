@@ -1053,9 +1053,13 @@ numeric input pointer with `FP_SEG(digits) = segment` and
 requires a genuine DOSBox rerun.
 The DOS heap adapter now additionally implements the startup allocator's
 1000h-paragraph request with a real DOS segment, tested in `HEAPCHK.EXE`.
-The current predicted remainder is **26**; no new Microsoft LINK result has
-been run here. See [MSC51 link closure](../../docs/msc51-link-closure.md)
-for each outstanding symbol and its evidence requirement.
+The user's Microsoft LINK 3.65 run confirmed **26** missing names with all
+thirteen prior DOS objects in place (1 CRT entry, 10 original services, 15
+RTL/hardware services). The extended `RTLHW.C` now additionally binds the
+seven video state accessors and three-command BIOS text packet dispatcher,
+reducing the **predicted** remainder to **18**. The actual 5.1 compile/probe
+and new link result are still needed. See
+[MSC51 link closure](../../docs/msc51-link-closure.md) for the inventory.
 
 ## Immediate next functions
 

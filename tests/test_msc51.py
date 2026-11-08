@@ -125,6 +125,15 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("gate_ds_set_word(GATE_DS_DRAW_CLIP_LEFT, left)", hardware)
             self.assertIn("gate_ds_set_word(GATE_DS_DRAW_CLIPPING_ENABLED, enabled == 1 ? 1 : 0)", hardware)
             self.assertIn("GATE_DS_DRAW_CLIP_BOTTOM", (output / "HWCHK.C").read_text())
+            self.assertIn("gate_dos_bind_rtl_video_ds", hardware)
+            self.assertIn("gate_far_word(rtl_video_segment(), 0x030eu)", hardware)
+            self.assertIn("gate_far_word(rtl_video_segment(), 0x0004u)", hardware)
+            self.assertIn("gate_far_word(rtl_video_segment(), 0x0006u)", hardware)
+            self.assertIn("gate_far_word(rtl_video_segment(), 0x001au)", hardware)
+            self.assertIn("void gate_rtl_video_command(uint16_t function", hardware)
+            self.assertIn("int86(0x10, &in, &out)", hardware)
+            self.assertIn("text cursor column", (output / "HWCHK.C").read_text())
+            self.assertIn("RTL block cursor write", (output / "HWCHK.C").read_text())
             for name in ("RTLHW.C", "HWCHK.C"):
                 self.assertTrue(all(len(identifier) <= 31 for identifier in
                                     msc51.msc51_identifiers((output / name).read_text())), name)

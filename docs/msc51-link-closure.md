@@ -4,11 +4,12 @@
 # Microsoft C 5.1 launcher link closure
 
 This is the **remaining implementation/verification inventory**, not a list
-of functions already recovered. The last real Microsoft LINK 3.65 report
-supplied by the user had **55 unresolved names**; it predates the pending
-`RTLHW`, `RTFILE`, `RESSTATE`, `HEAP`, `INP`, `CLOCK` and `CRTENV` objects.
-If every pending stage compiles and its probe succeeds, **26** of those 55
-names should remain. This count is *arithmetic*, not a measured link result.
+of functions already recovered. The latest real Microsoft LINK 3.65 report
+supplied by the user on 2026-11-08 confirmed **26 unresolved names**, with
+`RTLHW`, `RTFILE`, `RESSTATE`, `HEAP`, `INP`, `CLOCK` and `CRTENV` linked.
+The extended `RTLHW` adapter now supplies eight original RTL text/video
+names, making **18 the predicted remainder if the modified hardware probe
+passes**; that number is not yet a measured Microsoft LINK result.
 Do not manufacture no-op definitions merely to obtain an executable.
 
 ## Remaining 26 link dependencies
@@ -16,7 +17,7 @@ Do not manufacture no-op definitions merely to obtain an executable.
 | Group | Original unresolved entry points | Count | Required work |
 | --- | --- | ---: | --- |
 | DOS entry point | `main` | 1 | Reconstruct actual DOS startup/relocation and bind live original linked DS, stack, initial descriptors, assets, CRT initialization and transfer to `gate_exe_play_intro`. An empty `main()` would produce a false success. |
-| RTL text/video state | `gate_rtl_video_inversion`, `gate_rtl_video_attribute`, `gate_rtl_video_columns`, `gate_rtl_video_rows`, `gate_rtl_video_tab_base`, `gate_rtl_video_block_mode`, `gate_rtl_video_set_block_mode`, `gate_rtl_video_command` | 8 | Recover the resident RTL **data segment** (not necessarily the linked EXE DS), its FAR dimensions, and 14-byte video-command packet dispatcher. See `gate_rtl_video.h`. Native text drawing cannot establish these variable addresses independently. |
+| RTL text/video state | `gate_rtl_video_inversion`, `gate_rtl_video_attribute`, `gate_rtl_video_columns`, `gate_rtl_video_rows`, `gate_rtl_video_tab_base`, `gate_rtl_video_block_mode`, `gate_rtl_video_set_block_mode`, `gate_rtl_video_command` | 8 | **Staged, DOS probe pending.** Original RTL disassembly verifies the seven RTL-DS offsets and pointer dereferences; the separate 16-bit DS must be bound during startup, not assumed to equal EXE DS. The 14-byte command adapter handles only original commands 2/3/9 through BIOS INT 10h. The underlying 12a5:2d8a dispatcher has not been decompiled, and unrecognized commands abort. |
 | Pixel and drawing primitives | `gate_rtl_plot_pixel`, `gate_rtl_background_rect`, `gate_rtl_resident_line_to` | 3 | Port bounded original resident raster operations, including clipping, VGA register state, line patterns and drawing modes; compare DOS VGA output against guest traces. |
 | Video adapter query | `gate_rtl_mode_query_adapter`, `gate_rtl_mode_svga_variant` | 2 | Recover hardware-visible `242a:000a` adapter/monitor subtype bytes and `241d:0004` SVGA variant response; test with real BIOS, not hardcoded VGA type 5. |
 | Original exception/stack state | `gate_rtl_file_divide_fault`, `gate_rtl_file_stack_word` | 2 | Trace original divide-fault exit and near-stack word reader; `0` or `abort()` substitute values would hide original behavior. |
@@ -49,6 +50,14 @@ are not end-to-end intro tests; in particular the resident clear probe only
 tests early return conditions, not visible VGA plane output. The original
 binary assets and GATE.EXE/GATE.RTL live guest snapshot remain necessary to
 recover and validate the listed core services.
+
+After updating to the extended `RTLHW.C`, rerun
+`nix run -L .#msc51-compile-hardware` before linking. Its probe now uses an
+independent 0x40-paragraph RTL data segment, three distinct FAR dimension
+segments, block-cursor state, real INT 10h text cursor get/set, and a
+non-visible character/attribute rewrite. **A passing probe does not
+initialize the RTL segment for `GATEWAY.EXE`**: that will require a real
+DOS startup entry and original RTL loader/relocator, currently unavailable.
 
 Once the linker reports zero missing names, the next milestone is *actual
 DOS execution* through the original intro sequence with deterministic
