@@ -3,6 +3,49 @@
 
 # Microsoft C 5.1 launcher link closure
 
+## DOS image owner for the future real entry point
+
+`decomp/launcher/dos/msc51_startup_bootstrap.c` now owns the first two
+independent DOS allocations for the rebuilt source-C entry: `100ah` paragraphs
+for the overlapping lower/data windows and `03d0h` paragraphs for the
+15,616-byte resident bank. `gate_dos_boot_prepare` opens caller-provided
+`GATE.EXE` and `GATE.RTL` paths read-only, composes the two already-verified
+images at the *actual* allocated segment addresses, checks their independent
+segment-normalized fingerprints `F332BF93` and `5A991491`, then closes both
+handles. Allocation, file-open, copy, relocation, checksum and close failures
+all discard the partial image and unbind guest DS. A second prepare on an
+owned image is rejected. The public release operation frees both allocations.
+
+`tools/msc51.py` stages `BOOT.C`, `BOOT.H` and a standalone `BOOTCHK.EXE` probe
+in the regular `msc51-compile-data` batch. When provided with pinned original
+files, the strict DOS log validation requires the new original-file owner
+success line **in addition** to both existing full-image CRC witnesses. The
+host C89 test exercises eleven allocation/file/CRC outcomes and the invalid
+callback preflight, including failures at either file close. This verifies
+the new ownership contract synthetically; no Microsoft C 5.1 or DOSBox
+runtime could be executed in this environment.
+
+On the user's NixOS/DOSBox setup, the relevant complete verification is:
+
+```sh
+nix run -L .#msc51-compile-data -- --original-game-dir ../gateway-dos
+```
+
+`BOOTREAL.LOG` must contain the exact owner `PASS` line; `DATREAL.LOG` must
+also contain both original CRC witnesses. A failed or absent log is not a
+successful test. `BOOT.OBJ` is deliberately not included in `LINK.RSP` while
+no valid source-C `_main` can consume it.
+
+The standalone DOS probe supplies **explicitly nonexecutable** FAR callback
+pointers and external segments solely to test code/data placement and CRC
+normalization. These are not wired executable entry points. The owner does
+not create the missing other resident banks, establish the recovered code
+services or handle original IRQ setup, so `_main` and the two remaining
+linker externals are *still unresolved* and `GATEWAY.EXE` is **not playable**.
+The original RTLink loader used a PSP-owned block rather than the separate
+allocations chosen for the new C startup; no claim of identical DOS MCB
+behavior is made.
+
 This is the **remaining implementation/verification inventory**, not a list
 of functions already recovered. The latest real Microsoft LINK 3.65 report
 supplied by the user on 2026-11-08 confirmed **three unresolved names**:

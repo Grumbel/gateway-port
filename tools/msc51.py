@@ -231,7 +231,8 @@ def msc51_rename_identifiers(source: str, names: dict[str, str]) -> str:
 MEMORY_SOURCES = ("GATEMEM.H", "STDINT.H", "MEMORY.C", "MEMCHK.C")
 SELECTOR_SOURCES = ("GATEMEM.H", "STDINT.H", "SEL.C", "SELCHK.C", "MEMORY.C")
 STATIC_DATA_SOURCES = ("GATEMEM.H", "GATEDOS.H", "STDINT.H", "DATA.C",
-                       "DATACHK.C", "DATAREAL.C", "SEL.C", "MEMORY.C", "DOSFILE.C")
+                       "DATACHK.C", "DATAREAL.C", "BOOT.H", "BOOT.C",
+                       "BOOTCHK.C", "SEL.C", "MEMORY.C", "DOSFILE.C")
 DOS_FILE_SOURCES = ("GATEDOS.H", "GATEMEM.H", "STDINT.H", "DOSFILE.C", "FILECHK.C",
                     "MEMORY.C")
 RTL_STATE_SOURCES = ("RTLLAY.H", "RTLIMAC.H", "RTLSTATE.H", "GATEMEM.H", "STDINT.H",
@@ -519,6 +520,10 @@ def stage_launcher(output: Path) -> list[str]:
                                   ("msc51_startup_static_data_probe.c", "DATACHK.C"),
                                   ("msc51_startup_original_probe.c", "DATAREAL.C")):
         (output / staged_name).write_text((source_dir / "dos" / dos_name).read_text())
+    for dos_name, staged_name in (("msc51_startup_bootstrap.h", "BOOT.H"),
+                                  ("msc51_startup_bootstrap.c", "BOOT.C"),
+                                  ("msc51_startup_bootstrap_probe.c", "BOOTCHK.C")):
+        (output / staged_name).write_text((source_dir / "dos" / dos_name).read_text())
     data_signature = static_data_source_signature(output)
     data_batch = [
         "@ECHO OFF", "ECHO MS C 5.1 original EXE static data copy > DATSTART.LOG",
@@ -532,6 +537,14 @@ def stage_launcher(output: Path) -> list[str]:
         "CL /AL /Od DATAREAL.C DATA.OBJ SEL.OBJ MEMORY.OBJ DOSFILE.OBJ /FeDATAREAL.EXE /link LLIBCR.LIB LIBH.LIB/NOD >> DATBUILD.LOG",
         "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST DATAREAL.EXE GOTO FAILED",
         "IF EXIST E:\\GATE.RTL DATAREAL.EXE > DATREAL.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED",
+        "CL /AL /Od /c BOOT.C >> DATBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        "IF NOT EXIST BOOT.OBJ GOTO FAILED",
+        # COMMAND.COM accepts at most 127 command-tail bytes. The default
+        # output name is BOOTCHK.EXE, so omit /Fe instead of overflowing it.
+        "CL /AL /Od BOOTCHK.C BOOT.OBJ DATA.OBJ SEL.OBJ MEMORY.OBJ DOSFILE.OBJ /link LLIBCR.LIB LIBH.LIB/NOD >> DATBUILD.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST BOOTCHK.EXE GOTO FAILED",
+        "IF EXIST E:\\GATE.RTL BOOTCHK.EXE > BOOTREAL.LOG",
         "IF ERRORLEVEL 1 GOTO FAILED",
         f"ECHO {data_signature} > DATSIG.LOG",
         "ECHO DOS static EXE data copy probe passed > DATOK.LOG",
@@ -968,11 +981,17 @@ def validate_static_data_probe(output: Path, *, require_original: bool = False) 
                 r"^Original EXE/RTL data probe: PASS \(5976 \+ 13714 bytes; 15616-byte resident CRC32 F332BF93; 19690-byte prepared data CRC32 5A991491\)\s*$",
                 real.read_text(), re.MULTILINE) is None):
             raise ValueError("DOS original GATE.EXE/GATE.RTL full-bank and data CRC tests are missing or failed.")
+        boot = locate_case_insensitive(output, "BOOTREAL.LOG")
+        if (boot is None or re.search(
+                r"^DOS intro image owner probe: PASS \(two allocated, CRC-checked images; no code executed\)\s*$",
+                boot.read_text(), re.MULTILINE) is None):
+            raise ValueError("DOS image owner allocation/CRC/cleanup probe is missing or failed.")
 
 
 def remove_static_data_outputs(output: Path) -> None:
     names = {"DATA.OBJ", "DATACHK.OBJ", "DATACHK.EXE", "DATAREAL.OBJ",
              "DATAREAL.EXE", "DATREAL.LOG", "DATSTART.LOG",
+             "BOOT.OBJ", "BOOTCHK.OBJ", "BOOTCHK.EXE", "BOOTREAL.LOG",
              "DATBUILD.LOG", "DATTEST.LOG", "DATOK.LOG", "DATFAIL.LOG", "DATSIG.LOG",
              "DATASRC.BIN", "DATARTL.BIN"}
     if output.is_dir():
@@ -982,7 +1001,7 @@ def remove_static_data_outputs(output: Path) -> None:
 
 
 def print_static_data_diagnostics(output: Path) -> None:
-    for name in ("DATFAIL.LOG", "DATBUILD.LOG", "DATTEST.LOG", "DATREAL.LOG", "DATOK.LOG"):
+    for name in ("DATFAIL.LOG", "DATBUILD.LOG", "DATTEST.LOG", "DATREAL.LOG", "BOOTREAL.LOG", "DATOK.LOG"):
         path = locate_case_insensitive(output, name)
         content = path.read_text(errors="replace") if path else "(not created)"
         print(f"--- {name} ---\n{content[-8_000:].rstrip()}", file=sys.stderr)
@@ -1649,7 +1668,10 @@ def main(argv: list[str] | None = None) -> int:
                  "data image passed segment-independent CRC32 witnesses"
                  if original_game_dir is not None else
                  "; the full-bank original-file CRC check was not requested")
-              + ". DATA.OBJ remains probe-only until executable startup "
+              + ("; BOOTCHK.EXE also verified DOS allocation, CRC and cleanup "
+                 "without executing any original code" if original_game_dir is not None
+                 else "; BOOT.OBJ was built but its original-file owner probe was not run")
+              + ". DATA.OBJ/BOOT.OBJ remain probe-only until executable startup "
               "and other resident banks are reconstructed.")
         return 0
     if args.command == "compile-dos-files":

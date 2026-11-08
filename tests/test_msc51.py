@@ -108,6 +108,10 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("DATACHK.EXE > DATTEST.LOG", batch)
             self.assertIn("DATAREAL.C DATA.OBJ SEL.OBJ MEMORY.OBJ DOSFILE.OBJ", batch)
             self.assertIn("IF EXIST E:\\GATE.RTL DATAREAL.EXE > DATREAL.LOG", batch)
+            self.assertIn("CL /AL /Od /c BOOT.C", batch)
+            self.assertIn("BOOTCHK.C BOOT.OBJ DATA.OBJ SEL.OBJ MEMORY.OBJ DOSFILE.OBJ", batch)
+            self.assertIn("IF EXIST E:\\GATE.RTL BOOTCHK.EXE > BOOTREAL.LOG", batch)
+            self.assertLessEqual(max(len(line) for line in batch.splitlines()), 127)
             self.assertIn("gate_dos_load_intro_rtl_data", (output / "DATA.C").read_text())
             self.assertIn("gate_dos_fix_intro_rtl_segs", (output / "DATA.C").read_text())
             self.assertIn("gate_dos_fix_intro_rtl_offs", (output / "DATA.C").read_text())
@@ -126,6 +130,7 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("gate_dos_prepare_intro_data", (output / "DATAREAL.C").read_text())
             self.assertIn("gate_dos_intro_data_crc32", (output / "DATAREAL.C").read_text())
             self.assertNotIn("DATA.OBJ", (output / "LINK.RSP").read_text())
+            self.assertNotIn("BOOT.OBJ", (output / "LINK.RSP").read_text())
             (output / "STDINT.H").write_text('#include <stdint.h>\n')
             for source in ("DATACHK.C", "DATAREAL.C"):
                 text = (output / source).read_text()
@@ -144,6 +149,32 @@ class MSC51Tests(unittest.TestCase):
                 self.assertEqual(syntax.returncode, 0, syntax.stderr)
             self.assertNotIn("GATE_STATIC_DATA_REQUIRED_PARAGRAPHS",
                              (output / "DATA.C").read_text())
+
+    def test_dos_intro_bootstrap_owns_resources_and_fails_closed(self):
+        if not shutil.which("gcc"):
+            self.skipTest("gcc needed for DOS image owner C89 fixture")
+        with tempfile.TemporaryDirectory() as scratch:
+            output = Path(scratch)
+            msc51.stage_launcher(output)
+            executable = output / "bootstrap-host"
+            built = subprocess.run(
+                ["gcc", "-x", "c", "-std=c89", "-Wall", "-Wextra", "-Werror",
+                 "-I", str(REPO / "tests/fixtures/msc51_data"),
+                 "-I", str(output), str(output / "BOOT.C"),
+                 str(REPO / "tests/fixtures/msc51_data/bootstrap_host.c"),
+                 "-o", str(executable)], capture_output=True, text=True)
+            self.assertEqual(built.returncode, 0, built.stderr)
+            ran = subprocess.run([str(executable)], capture_output=True, text=True)
+            self.assertEqual(ran.returncode, 0, ran.stderr)
+            self.assertIn("11 allocation/file/CRC outcomes", ran.stdout)
+            for source in ("BOOT.C", "BOOTCHK.C"):
+                syntax = subprocess.run(
+                    ["gcc", "-std=c89", "-Wall", "-Wextra", "-Werror",
+                     "-fsyntax-only", "-x", "c",
+                     "-I", str(REPO / "tests/fixtures/msc51_data"),
+                     "-I", str(output), str(output / source)],
+                    capture_output=True, text=True)
+                self.assertEqual(syntax.returncode, 0, syntax.stderr)
 
     def test_compile_data_requires_verified_dependencies_and_current_guest_log(self):
         with tempfile.TemporaryDirectory() as scratch:
@@ -213,6 +244,13 @@ class MSC51Tests(unittest.TestCase):
                 msc51.validate_static_data_probe(output, require_original=True)
             (output / "DATREAL.LOG").write_text(
                 "Original EXE/RTL data probe: PASS (5976 + 13714 bytes; 15616-byte resident CRC32 F332BF93; 19690-byte prepared data CRC32 5A991491)\n")
+            with self.assertRaisesRegex(ValueError, "image owner allocation/CRC/cleanup"):
+                msc51.validate_static_data_probe(output, require_original=True)
+            (output / "BOOTREAL.LOG").write_text("DOS intro image owner probe: PASS (old)\n")
+            with self.assertRaisesRegex(ValueError, "image owner allocation/CRC/cleanup"):
+                msc51.validate_static_data_probe(output, require_original=True)
+            (output / "BOOTREAL.LOG").write_text(
+                "DOS intro image owner probe: PASS (two allocated, CRC-checked images; no code executed)\n")
             msc51.validate_static_data_probe(output, require_original=True)
             (output / "DATA.C").write_text((output / "DATA.C").read_text() + "/* stale */\n")
             with self.assertRaisesRegex(ValueError, "source changed"):
