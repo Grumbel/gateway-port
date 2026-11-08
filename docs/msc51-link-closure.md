@@ -152,6 +152,25 @@ normalization and a deliberately wrong callback. Only a fresh DOSBox run can
 confirm whether this resolves the user's `-6` failure; no executable callback
 or independently playable `_main` has been added.
 
+**Next original-file result:** The user's rebuilt `BOOTREAL.LOG` now
+reports `-7`, so the resident bank and its original CRC witness pass.
+The data loader's final return-pointer fixup rejects an arbitrary FAR
+pointer: it requires the original surrounding instruction bytes (`IRET`,
+`RETF`, and the checked continuation). `DATAREAL.EXE` already supplies this
+by reading 40 bytes from `GATE.RTL:4bc8`, then passing the pointer to its
+second byte, but the two BOOT probes previously passed zero-filled data.
+Shared probe-only `BOOTCB.H` now performs that same exact read from the
+original file, with a checked seek, full read and close, before the owner
+allocates or prepares either image. Both standalone probes retain the
+nonexecuted EXE callback and never call the copied RTL instructions. The
+source-C owner retains its strict callback validation; the real launcher
+must eventually supply a genuinely executable, equivalently verified
+return routine. The owner now preserves each underlying data-loader status
+`-1..-11` in its outer result as `-71..-81` (including `-80` for a
+return-pointer context mismatch), so a future `BOOTREAL.LOG` can pinpoint
+another fault without obscuring cleanup. This is host-tested and still
+awaits DOSBox confirmation.
+
 `tools/msc51.py` stages `BOOT.C`, `BOOT.H` and a standalone `BOOTCHK.EXE` probe
 in the regular `msc51-compile-data` batch. When provided with pinned original
 files, the strict DOS log validation requires the new original-file owner

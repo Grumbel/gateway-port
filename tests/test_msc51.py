@@ -150,7 +150,7 @@ class MSC51Tests(unittest.TestCase):
             # Every compiler-visible identifier must be unique after staging;
             # names such as gate_dos_relocate_intro_resident_* otherwise
             # collide as distinct function bodies under C2084.
-            for source in ("DATA.C", "DATACHK.C", "DATAREAL.C", "BOOT.H",
+            for source in ("DATA.C", "DATACHK.C", "DATAREAL.C", "BOOT.H", "BOOTCB.H",
                            "BOOT.C", "BOOTCHK.C", "BOOTPREP.C"):
                 ids = msc51.msc51_identifiers((output / source).read_text())
                 self.assertTrue(all(len(name) <= 31 for name in ids), source)
@@ -181,6 +181,14 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("gate_dos_intro_data_crc32", (output / "DATA.C").read_text())
             self.assertIn("gate_dos_prepare_intro_data", (output / "DATAREAL.C").read_text())
             self.assertIn("gate_dos_intro_data_crc32", (output / "DATAREAL.C").read_text())
+            # The owner probes must supply a byte-validated return context
+            # from RTL:4bc8, not a zero-filled non-code placeholder.
+            callback_header = (output / "BOOTCB.H").read_text()
+            self.assertIn("gate_dos_file_seek(handle, 0u, 0x4bc8ul)", callback_header)
+            self.assertIn("gate_dos_file_read(handle,", callback_header)
+            for source in ("BOOTCHK.C", "BOOTPREP.C"):
+                self.assertIn('#include "BOOTCB.H"', (output / source).read_text())
+                self.assertIn("gate_probe_load_return_context(", (output / source).read_text())
             self.assertNotIn("DATA.OBJ", (output / "LINK.RSP").read_text())
             self.assertNotIn("BOOT.OBJ", (output / "LINK.RSP").read_text())
             (output / "STDINT.H").write_text('#include <stdint.h>\n')
@@ -252,7 +260,9 @@ class MSC51Tests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("five recovered writes, original data/CRC, workspace observed",
                           result.stdout)
-            for invalid in ("TEST_BAD_SELECTOR", "TEST_ALLOC_FAIL"):
+            for invalid in ("TEST_BAD_SELECTOR", "TEST_ALLOC_FAIL",
+                            "TEST_CALLBACK_OPEN_FAIL", "TEST_CALLBACK_SEEK_FAIL",
+                            "TEST_CALLBACK_READ_FAIL", "TEST_CALLBACK_CLOSE_FAIL"):
                 with self.subTest(invalid=invalid):
                     env = os.environ.copy()
                     env[invalid] = "1"

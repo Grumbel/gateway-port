@@ -13,6 +13,7 @@
 
 static uint16_t words[0x8000];
 static unsigned startup_allocations;
+static unsigned callback_opens, callback_seeks, callback_reads, callback_closes;
 
 static void require(int condition)
 {
@@ -48,6 +49,56 @@ GateFarPtr gate_stack_pointer(void *source)
     return result;
 }
 
+/* BOOTPREP now reads the same 40-byte original-file return context as
+ * DATAREAL. Stub only the DOS transport here; the guest preflight and
+ * authentic RTL bytes are verified by the original-file tests. */
+GateDosFileResult gate_dos_file_open(GateFarPtr path, uint16_t access,
+                                     uint16_t create)
+{
+    GateDosFileResult result = {0u, 0u, 0u};
+    require(path.segment == 0x5000u && access == 0u && create == 0u);
+    ++callback_opens;
+    result.ax = 0x0020u;
+    if (getenv("TEST_CALLBACK_OPEN_FAIL") != 0)
+        result.carry = 1u;
+    return result;
+}
+
+GateDosFileResult gate_dos_file_seek(uint16_t handle, uint16_t origin,
+                                     uint32_t offset)
+{
+    GateDosFileResult result = {0u, 0u, 0u};
+    require(handle == 0x0020u && origin == 0u && offset == 0x4bc8ul);
+    ++callback_seeks;
+    result.ax = 0x4bc8u;
+    if (getenv("TEST_CALLBACK_SEEK_FAIL") != 0)
+        result.carry = 1u;
+    return result;
+}
+
+GateDosFileResult gate_dos_file_read(uint16_t handle, GateFarPtr destination,
+                                     uint16_t count)
+{
+    GateDosFileResult result = {0u, 0u, 0u};
+    require(handle == 0x0020u && destination.segment == 0x5000u &&
+            count == 40u);
+    ++callback_reads;
+    result.ax = count;
+    if (getenv("TEST_CALLBACK_READ_FAIL") != 0)
+        result.carry = 1u;
+    return result;
+}
+
+GateDosFileResult gate_dos_file_close(uint16_t handle)
+{
+    GateDosFileResult result = {0u, 0u, 0u};
+    require(handle == 0x0020u);
+    ++callback_closes;
+    if (getenv("TEST_CALLBACK_CLOSE_FAIL") != 0)
+        result.carry = 1u;
+    return result;
+}
+
 int gate_dos_boot_prepare(const GateDosBootConfig *config,
                           GateDosBootImage *image)
 {
@@ -57,6 +108,8 @@ int gate_dos_boot_prepare(const GateDosBootConfig *config,
     unsigned i;
     require(config != 0 && image != 0);
     require(image->lower_segment == 0u && image->resident_segment == 0u);
+    require(callback_opens == 1u && callback_seeks == 1u &&
+            callback_reads == 1u && callback_closes == 1u);
     image->lower_segment = MOCK_LOWER_SEGMENT;
     image->resident_segment = MOCK_RESIDENT_SEGMENT;
     for (i = 0u; i < sizeof selectors / sizeof selectors[0]; ++i)

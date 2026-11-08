@@ -52,6 +52,7 @@ int gate_dos_boot_prepare(const GateDosBootConfig *config,
     uint16_t exe_handle = 0u, rtl_handle = 0u;
     int exe_open = 0, rtl_open = 0;
     int error = 0;
+    int data_status;
 
     if (image == 0 || image->lower_segment != 0u ||
         image->resident_segment != 0u)
@@ -112,11 +113,15 @@ int gate_dos_boot_prepare(const GateDosBootConfig *config,
         error = -9;
         goto fail;
     }
-    if (gate_dos_prepare_intro_data(exe_handle, rtl_handle,
+    data_status = gate_dos_prepare_intro_data(exe_handle, rtl_handle,
             image->lower_segment, GATE_BOOT_DATA_PARAGRAPHS,
             image->resident_segment, config->external_a_segment,
-            config->external_b_segment, config->return_callback) != 0) {
-        error = -7;
+            config->external_b_segment, config->return_callback);
+    if (data_status != 0) {
+        /* The data compositor has eleven distinct failure points.
+         * Surface its exact -1..-11 code as -71..-81 rather than the
+         * ambiguous -7, without changing cleanup or CRC handling. */
+        error = -70 + data_status;
         goto fail;
     }
     if (gate_dos_intro_data_crc32(image->lower_segment,

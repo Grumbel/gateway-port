@@ -232,7 +232,7 @@ def msc51_rename_identifiers(source: str, names: dict[str, str]) -> str:
 MEMORY_SOURCES = ("GATEMEM.H", "STDINT.H", "MEMORY.C", "MEMCHK.C")
 SELECTOR_SOURCES = ("GATEMEM.H", "STDINT.H", "SEL.C", "SELCHK.C", "MEMORY.C")
 STATIC_DATA_SOURCES = ("GATEMEM.H", "GATEDOS.H", "STDINT.H", "DATA.C",
-                       "DATACHK.C", "DATAREAL.C", "BOOT.H", "BOOT.C",
+                       "DATACHK.C", "DATAREAL.C", "BOOT.H", "BOOTCB.H", "BOOT.C",
                        "BOOTCHK.C", "BOOTPREP.C", "BPREP.RSP", "DATNAMES.H", "HEAP.C",
                        "SEL.C", "MEMORY.C", "DOSFILE.C")
 DOS_FILE_SOURCES = ("GATEDOS.H", "GATEMEM.H", "STDINT.H", "DOSFILE.C", "FILECHK.C",
@@ -538,6 +538,7 @@ def stage_launcher(output: Path) -> list[str]:
                        ("msc51_startup_static_data_probe.c", "DATACHK.C"),
                        ("msc51_startup_original_probe.c", "DATAREAL.C"),
                        ("msc51_startup_bootstrap.h", "BOOT.H"),
+                       ("msc51_startup_probe_callback.h", "BOOTCB.H"),
                        ("msc51_startup_bootstrap.c", "BOOT.C"),
                        ("msc51_startup_bootstrap_probe.c", "BOOTCHK.C"),
                        ("msc51_startup_entry_probe.c", "BOOTPREP.C"))

@@ -156,7 +156,7 @@ int main(void)
             require(result == -(stage == 1 ? 2 : stage == 2 ? 3 :
                                 stage == 3 ? 4 : stage == 4 ? 5 :
                                 stage == 5 ? 6 : stage == 6 ? 9 :
-                                stage == 7 ? 7 : stage == 8 ? 10 : 8));
+                                stage == 7 ? 74 : stage == 8 ? 10 : 8));
         }
         require(allocations == 0 && open_files == 0);
         require(image.lower_segment == 0u && image.resident_segment == 0u);

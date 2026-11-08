@@ -7,6 +7,7 @@
  * intro-entry RAM snapshots. No intro graphics/IRQ/RTLink callbacks run.
  * The BOOT image callback addresses here are deliberately nonexecutable. */
 #include "BOOT.H"
+#include "BOOTCB.H"
 #include <dos.h>
 #include <stdio.h>
 
@@ -27,7 +28,7 @@ static const GateStartupWord startup_words[] = {
 
 static char original_exe_name[] = "E:\\GATE.EXE";
 static char original_rtl_name[] = "E:\\GATE.RTL";
-static char unused_callbacks[32];
+static char unused_exe_callback[32];
 
 /* The real reconstructed source object (Mxx.OBJ), not a test substitute,
  * supplies this function. Its original call requests 1000h DOS paragraphs. */
@@ -47,8 +48,13 @@ int main(void)
     image.lower_segment = image.resident_segment = 0u;
     config.exe_path = gate_stack_pointer(original_exe_name);
     config.rtl_path = gate_stack_pointer(original_rtl_name);
-    config.exe_callback = gate_stack_pointer(unused_callbacks);
-    config.return_callback = gate_stack_pointer(unused_callbacks + 1);
+    config.exe_callback = gate_stack_pointer(unused_exe_callback);
+    status = gate_probe_load_return_context(config.rtl_path,
+                                            &config.return_callback);
+    if (status != 0) {
+        printf("DOS intro C entry prologue: FAIL return context=%d\n", status);
+        return 1;
+    }
     config.external_a_segment = 0x3333u;
     config.external_b_segment = 0x4444u;
     status = gate_dos_boot_prepare(&config, &image);

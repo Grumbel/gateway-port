@@ -29,6 +29,8 @@ typedef struct GateDosBootImage {
  * prepare on a live image is rejected without touching its ownership.
  * Return 0 only when both source images pass their full relocation-neutral
  * fingerprints. All failures after allocation release it and unbind DS.
+ * Data preparation errors -1..-11 map to owner statuses -71..-81, so
+ * original-file DOS probes can report the precise stage that failed.
  * The input files remain read-only and are closed before returning. */
 int gate_dos_boot_prepare(const GateDosBootConfig *config,
                           GateDosBootImage *image);

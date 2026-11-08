@@ -5,11 +5,12 @@
  * These FAR callbacks are TEST-ONLY nonexecutable pointers. No original
  * code is entered; a successful CRC must not be called a playable intro. */
 #include "BOOT.H"
+#include "BOOTCB.H"
 #include <stdio.h>
 
 static char original_exe_name[] = "E:\\GATE.EXE";
 static char original_rtl_name[] = "E:\\GATE.RTL";
-static char unused_callback[32];
+static char unused_exe_callback[32];
 
 int main(void)
 {
@@ -21,8 +22,13 @@ int main(void)
     image.resident_segment = 0u;
     config.exe_path = gate_stack_pointer(original_exe_name);
     config.rtl_path = gate_stack_pointer(original_rtl_name);
-    config.exe_callback = gate_stack_pointer(unused_callback);
-    config.return_callback = gate_stack_pointer(unused_callback + 1);
+    config.exe_callback = gate_stack_pointer(unused_exe_callback);
+    status = gate_probe_load_return_context(config.rtl_path,
+                                            &config.return_callback);
+    if (status != 0) {
+        printf("DOS intro image owner probe: FAIL return context=%d\n", status);
+        return 1;
+    }
     /* These are intentionally not executable external-code segments. The
      * checksums normalize them; the real DOS main needs actual bindings. */
     config.external_a_segment = 0x3333u;
