@@ -939,6 +939,22 @@ and regression-tested against the pinned original binaries. Neither the
 graphics loading algorithm nor the caller-side allocation and fixup sequence
 is implemented by this analysis.
 
+**Further opcode and table confirmation:** Every one of the 198 word sites
+now has an explicit local 8086 operand pattern checked against both file
+and linked memory. In particular, 23 more FAR calls have a changed segment
+word but leave their originally zero offset unchanged; the earlier 30-call
+count covered only changed offset/segment pairs. The remaining changes are
+register immediates, stack-local immediate stores, six direct-memory
+operands and one comparison immediate. The 22 words in eleven repeated
+`C7 47 0C`/`C7 47 0E` pairs initialize FAR pointers with a 20-byte stride
+from `BX=2a8fh`. All eleven resulting pointers match the original guest
+RAM at `DS:2a9b + 14h*index`, all pointing to segment `2621h`. The
+`far_pointer_tables` plan evidence includes a separate memory-match field
+for every entry; a deliberately corrupted synthetic capture disables the
+verified-table classification. This narrows the next reverse-engineering
+task to identifying the actual fixup records and DOS loader control flow,
+not guessing what these individual 16-bit operands mean.
+
 **Microsoft C 5.1 build correction:** The first user-side `DATA.BAT` run
 compiled `DATA.C` but stopped with `DATACHK.C(22): C2073` (an initialized
 automatic `char name[]`), so **neither test executable ran**. Both test

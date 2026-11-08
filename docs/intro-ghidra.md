@@ -185,18 +185,42 @@ python3 tools/prepare_intro_ghidra.py \
 | `25d7` | 134 | 245 | 0 |
 | **Total** | **198** | **371** | **0** |
 
-Opcode inspection independently identifies **30** `MOV AX,imm16; MOV DS,AX`
-and **one** `MOV AX,imm16; MOV ES,AX` sites, and **30 FAR CALLs** plus
-**three FAR JMPs** (66 offset/segment words). All 31 segment-load words
-contain `2a7ah` in this snapshot. The other **101 word sites** are not yet
-assigned instruction semantics. A one-byte substitution is classified as a
-word candidate only when the adjacent high byte was zero in *both* images.
+Local 8086 opcode inspection now assigns a specific **operand role to all
+198 word sites**, using unchanged opcode and addressing bytes in both the
+original RTL file and linked capture:
+
+| Verified local opcode context | Changed word sites | Interpretation |
+| --- | ---: | --- |
+| `MOV AX,imm16; MOV DS/ES,AX` | 31 | 30 DS loads, one ES load; all observed `2a7ah` |
+| `CALL FAR ptr16:16` | 83 | 53 changed segment words and 30 changed offset words; 23 calls retain a zero offset |
+| `JMP FAR ptr16:16` | 6 | Three changed segment/offset pairs |
+| `MOV r16,imm16` | 37 | Immediate operands for SI, DI and BX |
+| `MOV [BP+disp8],imm16` | 12 | Local stack data initialization |
+| `MOV [BX+disp8],imm16` | 22 | Eleven verified FAR-pointer table entries (two words each) |
+| Direct `[disp16]` references | 6 | Direct-memory addresses in `MOV`, `CMP`, or `MOV byte` |
+| `CMP AX,imm16` | 1 | Immediate comparison operand |
+| **Total** | **198** | **No residual site lacks a local opcode pattern** |
+
+In resident bank `25d7`, a `MOV BX,imm16` followed by eleven pairs of
+`C7 47 0C` and `C7 47 0E` stores, each ending with `ADD BX,14h`, writes an
+apparent FAR-pointer table. The captured DS=`2a7ah` contains exactly the
+eleven corresponding pointers at `DS:2a9b + 14h * index`, all targeting
+segment `2621h`. Every stored offset and segment matches the 22-second
+RAM image. The plan records the original instruction file offsets, live
+destinations, target words, stride, and per-entry memory validation under
+`far_pointer_tables`. A synthetic test deliberately corrupts one destination
+and checks that the report no longer labels the table as verified.
+
+A one-byte substitution is classified as a word candidate only when the
+adjacent high byte was zero in *both* images.
 
 **This is a classification of bytes, not a working relocation table.** An
 originally zero word becoming nonzero is not proof of why or when the linker
 wrote it. Runtime values can depend on allocations and load layout; the
-remaining sites need verified instruction context, and the nine code
-fragments still need a real DOS loader before a standalone EXE can use them.
+opcode patterns alone do not prove the bytes were executed, identify the
+original relocation records, or establish when the 11 table entries were
+written. The nine code fragments still need a real DOS loader before a
+standalone EXE can use them.
 
 The additional 22 seeded entries are recognized by matching the original
 Microsoft C function prologues (before the patched `DS` immediate), not by

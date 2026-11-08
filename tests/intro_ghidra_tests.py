@@ -120,6 +120,46 @@ class IntroGhidraTests(unittest.TestCase):
         self.assertEqual({entry['runtime_offset'] for entry
                           in report['unclassified']}, {24, 26})
 
+    def test_far_pointer_store_table_requires_matching_live_ds_memory(self):
+        bank = dict(segment=0x123, file_base=0x20, size=96)
+        rtl = bytearray(b'\x90' * 160)
+        # MOV AX,0000h; MOV DS,AX; MOV BX,0000h; then two unlinked
+        # C7 47 0C/0E FAR pointer stores with ADD BX,14h between them.
+        code = (b'\xb8\0\0\x8e\xd8\xbb\0\0' +
+                (b'\xc7\x47\x0c\0\0\xc7\x47\x0e\0\0'
+                 b'\x83\xc3\x14') * 2)
+        rtl[0x20:0x20 + len(code)] = code
+        ram = bytearray(0x100000)
+        start = (0x1000 + bank['segment']) * 16
+        ram[start:start + bank['size']] = rtl[0x20:0x20 + bank['size']]
+        for offset, value in ((1, 0x3031), (6, 0x0123),
+                              (11, 0x1122), (16, 0x2345),
+                              (24, 0x3344), (29, 0x2345)):
+            ram[start + offset:start + offset + 2] = value.to_bytes(2, 'little')
+        ds_start = 0x3031 * 16
+        ram[ds_start + 0x12f:ds_start + 0x133] = b'\x22\x11\x45\x23'
+        ram[ds_start + 0x143:ds_start + 0x147] = b'\x44\x33\x45\x23'
+        result = observed_zero_word_changes(bytes(rtl), bytes(ram), bank, 0x1000)
+        self.assertEqual(result['unclassified_bytes'], 0)
+        self.assertEqual(result['context_counts'], {
+            'far-table-offset-store': 2, 'far-table-segment-store': 2,
+            'mov-ax-ds': 1, 'mov-bx-immediate': 1})
+        self.assertEqual(len(result['far_pointer_tables']), 1)
+        table = result['far_pointer_tables'][0]
+        self.assertTrue(table['all_memory_matches'])
+        self.assertEqual((table['runtime_ds'], table['base_bx'],
+                          table['stride_bytes']), (0x3031, 0x0123, 0x14))
+        self.assertEqual([entry['destination_ds_offset']
+                          for entry in table['entries']], [0x12f, 0x143])
+
+        # The code is still structurally consistent, but cannot claim a
+        # verified table if one live destination no longer matches.
+        ram[ds_start + 0x143] ^= 1
+        bad = observed_zero_word_changes(bytes(rtl), bytes(ram), bank, 0x1000)
+        self.assertFalse(bad['far_pointer_tables'][0]['all_memory_matches'])
+        self.assertEqual(bad['context_counts']['mov-mem16-immediate'], 4)
+        self.assertNotIn('far-table-offset-store', bad['context_counts'])
+
     def test_missing_or_invalid_inputs(self):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
@@ -199,14 +239,33 @@ class RealGatewayIntroEvidence(unittest.TestCase):
                 contexts = data['context_counts']
                 if segment == 0x152c:
                     self.assertEqual(contexts, {
-                        'far-call-offset': 3, 'far-call-segment': 3,
+                        'far-call-offset': 3, 'far-call-segment': 14,
                         'mov-ax-ds': 18, 'mov-ax-es': 1,
-                        'unresolved-zero-word': 39})
+                        'mov-di-immediate': 1, 'mov-mem16-immediate': 12,
+                        'mov-si-immediate': 15})
+                    self.assertEqual(data['far_pointer_tables'], [])
                 else:
                     self.assertEqual(contexts, {
-                        'far-call-offset': 27, 'far-call-segment': 27,
+                        'cmp-ax-immediate': 1,
+                        'direct-memory-displacement': 6,
+                        'far-call-offset': 27, 'far-call-segment': 39,
                         'far-jump-offset': 3, 'far-jump-segment': 3,
-                        'mov-ax-ds': 12, 'unresolved-zero-word': 62})
+                        'far-table-offset-store': 11,
+                        'far-table-segment-store': 11,
+                        'mov-ax-ds': 12, 'mov-bx-immediate': 2,
+                        'mov-di-immediate': 1, 'mov-si-immediate': 18})
+                    self.assertEqual(len(data['far_pointer_tables']), 1)
+                    table = data['far_pointer_tables'][0]
+                    self.assertTrue(table['all_memory_matches'])
+                    self.assertEqual((table['runtime_ds'], table['base_bx'],
+                                      table['stride_bytes']),
+                                     (0x2a7a, 0x2a8f, 0x14))
+                    self.assertEqual(len(table['entries']), 11)
+                    self.assertEqual([entry['destination_ds_offset']
+                                      for entry in table['entries']],
+                                     [0x2a9b + 0x14 * i for i in range(11)])
+                    self.assertEqual({entry['far_segment']
+                                      for entry in table['entries']}, {0x2621})
                 # The plan never embeds the original instruction stream:
                 # each site is a tested on-disk zero word plus a live value.
                 for candidate in data['candidate_words']:

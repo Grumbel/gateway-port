@@ -305,6 +305,81 @@ def validate_bank(rtl, snapshot, bank, load_segment):
     return start, matches, verified
 
 
+def observed_far_pointer_stores(rtl, snapshot, bank, load_segment, candidates):
+    """Find repeated, snapshot-verified C7 47 far-pointer table stores.
+
+    This validates the *result* of nearby machine instructions in live DS.
+    It does not prove when they ran, or that the original linker initialized
+    their operands in the same way on another DOS memory layout.
+    """
+    ds_values = {item['observed_value'] for item in candidates
+                 if item['instruction_context'] == 'mov-ax-ds'}
+    if len(ds_values) != 1:
+        return []
+    ds = next(iter(ds_values))
+    by_offset = {item['runtime_offset']: item for item in candidates}
+    bank_start = (load_segment + bank['segment']) * 16
+    tables = []
+    for item in candidates:
+        first_site = item['runtime_offset']
+        base = by_offset.get(first_site - 5)
+        if (item['instruction_context'] != 'mov-mem16-immediate' or
+                base is None or base['instruction_context'] != 'mov-bx-immediate'):
+            continue
+        entries = []
+        site = first_site
+        while True:
+            offset_word = by_offset.get(site)
+            segment_word = by_offset.get(site + 5)
+            if (offset_word is None or segment_word is None or
+                    offset_word['instruction_context'] != 'mov-mem16-immediate' or
+                    segment_word['instruction_context'] != 'mov-mem16-immediate'):
+                break
+            span = source_span(bank, offset_word['rtl_file_offset'])
+            if span is None:
+                break
+            pos = offset_word['rtl_file_offset'] - span['file_base']
+            if pos < 3 or pos + 10 > span['size']:
+                break
+            original = rtl[span['file_base']:span['file_base'] + span['size']]
+            linked = snapshot[bank_start + span['offset']:
+                              bank_start + span['offset'] + span['size']]
+            if not (original[pos - 3:pos] == linked[pos - 3:pos] ==
+                    b'\xc7\x47\x0c' and
+                    original[pos + 2:pos + 5] == linked[pos + 2:pos + 5] ==
+                    b'\xc7\x47\x0e' and
+                    original[pos + 7:pos + 10] == linked[pos + 7:pos + 10] ==
+                    b'\x83\xc3\x14'):
+                break
+            ds_offset = base['observed_value'] + 0x0c + len(entries) * 0x14
+            if ds_offset + 4 > 0x10000:
+                break
+            physical = ds * 16 + ds_offset
+            observed = snapshot[physical:physical + 4]
+            expected = (offset_word['observed_value'].to_bytes(2, 'little') +
+                        segment_word['observed_value'].to_bytes(2, 'little'))
+            entries.append(dict(runtime_instruction_offset=site - 3,
+                                rtl_file_offset=offset_word['rtl_file_offset'] - 3,
+                                destination_ds_offset=ds_offset,
+                                far_offset=offset_word['observed_value'],
+                                far_segment=segment_word['observed_value'],
+                                memory_matches=observed == expected))
+            site += 13  # two C7 47 disp8 imm16 stores and ADD BX,14h
+        if len(entries) < 2:
+            continue
+        verified = all(entry['memory_matches'] for entry in entries)
+        tables.append(dict(runtime_ds=ds, base_bx=base['observed_value'],
+                           stride_bytes=0x14, entries=entries,
+                           all_memory_matches=verified))
+        if verified:
+            for index in range(len(entries)):
+                by_offset[first_site + 13 * index]['instruction_context'] = (
+                    'far-table-offset-store')
+                by_offset[first_site + 13 * index + 5]['instruction_context'] = (
+                    'far-table-segment-store')
+    return tables
+
+
 def observed_zero_word_changes(rtl, snapshot, bank, load_segment):
     """Classify changed code bytes WITHOUT asserting linker-fixup semantics.
 
@@ -364,12 +439,12 @@ def observed_zero_word_changes(rtl, snapshot, bank, load_segment):
     leftover = sum(item['length'] for item in unclassified)
     if candidate_bytes + leftover != changed:
         raise AssertionError('graphics word classification lost changed bytes')
-    # Only two instruction patterns are recognized here, both verifiable
-    # without guessing a function boundary or running a decompiler:
-    # B8 <word> 8E D8/C0 loads DS/ES; 9A/EA <off> <seg> calls/jumps FAR.
-    # A generic zero-word substitution remains unclassified even if its
-    # observed value resembles a segment address.
+    # Identify only operands in exact, locally unmodified 8086 opcode forms.
+    # Checking the neighboring bytes in BOTH images avoids mistaking a
+    # coincidental address value for a relocation or an instruction opcode.
+    # The byte patterns do not establish reachability or linker semantics.
     by_offset = {item['runtime_offset']: item for item in candidates}
+    registers = ('ax', 'cx', 'dx', 'bx', 'sp', 'bp', 'si', 'di')
     for item in candidates:
         site = item['runtime_offset']
         span = source_span(bank, item['rtl_file_offset'])
@@ -388,25 +463,50 @@ def observed_zero_word_changes(rtl, snapshot, bank, load_segment):
                 pos + 4 <= len(source) and
                 source[pos - 1] == live[pos - 1] and
                 source[pos - 1] in (0x9a, 0xea) and
-                site + 2 in by_offset):
+                (site + 2 in by_offset or
+                 source[pos + 2:pos + 4] == live[pos + 2:pos + 4])):
             kind = ('far-call-offset' if source[pos - 1] == 0x9a
                     else 'far-jump-offset')
         if (kind == 'unresolved-zero-word' and pos >= 3 and
                 source[pos - 3] == live[pos - 3] and
                 source[pos - 3] in (0x9a, 0xea) and
-                site - 2 in by_offset):
+                (site - 2 in by_offset or
+                 source[pos - 2:pos] == live[pos - 2:pos])):
             kind = ('far-call-segment' if source[pos - 3] == 0x9a
                     else 'far-jump-segment')
+        if (kind == 'unresolved-zero-word' and pos >= 3 and
+                source[pos - 3:pos] == live[pos - 3:pos] and
+                source[pos - 3] == 0xc7 and source[pos - 2] in (0x46, 0x47)):
+            # C7 /0, mod=01, disp8: MOV WORD PTR [BP/BX+disp8],imm16.
+            kind = 'mov-mem16-immediate'
+        if (kind == 'unresolved-zero-word' and pos >= 2 and
+                source[pos - 2:pos] == live[pos - 2:pos] and
+                source[pos - 2:pos] in (b'\x8b\x16', b'\x80\x3e',
+                                        b'\xc6\x06')):
+            # The operand is a direct DS-relative [disp16] address,
+            # not the immediate value stored there.
+            kind = 'direct-memory-displacement'
+        if (kind == 'unresolved-zero-word' and pos >= 1 and
+                source[pos - 1] == live[pos - 1] == 0x3d):
+            kind = 'cmp-ax-immediate'
+        if (kind == 'unresolved-zero-word' and pos >= 1 and
+                source[pos - 1] == live[pos - 1] and
+                0xb8 <= source[pos - 1] <= 0xbf):
+            kind = 'mov-%s-immediate' % registers[source[pos - 1] - 0xb8]
         item['instruction_context'] = kind
+    tables = observed_far_pointer_stores(rtl, snapshot, bank, load_segment,
+                                         candidates)
     return dict(covered_source_bytes=covered, equal_source_bytes=equal,
                 candidate_words=candidates, candidate_changed_bytes=candidate_bytes,
                 unclassified=unclassified, unclassified_bytes=leftover,
                 unmapped_live_bytes=bank['size'] - covered,
+                far_pointer_tables=tables,
                 context_counts=dict(sorted(Counter(
                     item['instruction_context'] for item in candidates).items())),
-                note='Zero-source 16-bit word changes only. DS/ES immediate '
-                     'and FAR transfer opcode contexts are verified; other '
-                     'operand and relocation semantics are not')
+                note='Zero-source 16-bit word changes only. Local 8086 opcode '
+                     'context is checked in source and linked bytes; '
+                     'instruction reachability and linker relocation '
+                     'semantics remain unverified')
 
 
 def staged_unlinked_copy(rtl, snapshot, load_segment):
@@ -524,6 +624,12 @@ def main():
                 print('    opcode contexts: %s' % ', '.join(
                     '%s=%d' % (name, count) for name, count
                     in change['context_counts'].items()))
+                for table in change['far_pointer_tables']:
+                    print('    FAR-pointer stores: DS=%04x BX=%04x, '
+                          'stride=%04x, entries=%d, live matches=%s' % (
+                              table['runtime_ds'], table['base_bx'],
+                              table['stride_bytes'], len(table['entries']),
+                              table['all_memory_matches']))
     except (OSError, ValueError) as error:
         parser.exit(1, 'prepare_intro_ghidra: %s\n' % error)
 
