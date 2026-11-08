@@ -7,9 +7,10 @@
  *   DS:0000..3591, with several long exact spans and modified words.
  *
  * The second routine stages only the *unmodified RTL preimage*: the
- * mismatched 260 bytes at 100ms are partly reconstructed: 27 source-zero
- * segment words, 24 independently observed offset words, and two externally
- * segmented FAR-pointer tables below. Original DOS MCB captures establish
+ * mismatched 260 bytes at 100ms are now reproduced as observed: 27 source-zero
+ * segment words, 24 independently observed offset words, two externally
+ * segmented FAR-pointer tables and the remaining early initializers below.
+ * This does not identify the original loader's implementation. Original DOS MCB captures establish
  * that both targets lie INSIDE the existing PSP-owned program block, not in
  * separately allocated DOS blocks. The caller must supply their actual
  * segment placement in the rebuilt program layout. No game data is embedded.
@@ -491,6 +492,36 @@ int gate_dos_fix_intro_rtl_startup_words(uint16_t lower_segment,
     return 0;
 }
 
+/* All five original DOS captures at 100,125,175,250 and 500ms agree on
+ * this initialized state, while RTL:+0541 and +0570..057f are zero in the
+ * verified source image. The eight words have NOT been identified as mode
+ * values, callbacks or pointers; reproducing them establishes only the
+ * observed early bytes, not their original initialization mechanism. */
+static const uint16_t gate_rtl_early_words[] = {
+    0x00e0u, 0x00efu, 0x020bu, 0x020bu,
+    0x0203u, 0x010bu, 0x00feu, 0x011du
+};
+
+int gate_dos_fix_intro_early_bytes(uint16_t lower_segment, uint16_t paragraphs)
+{
+    unsigned int i;
+    if (lower_segment == 0u || lower_segment > 0xfff5u ||
+        paragraphs < GATE_DATA_MIN_PARAS ||
+        gate_ds_segment() != (uint16_t)(lower_segment + 0x000au))
+        return -1;
+    if (gate_far_byte(gate_ds_segment(), 0x0518u) != 0u)
+        return -2;
+    for (i = 0u; i < sizeof gate_rtl_early_words /
+                      sizeof gate_rtl_early_words[0]; ++i)
+        if (gate_ds_word((uint16_t)(0x0547u + i * 2u)) != 0u)
+            return -2;
+    gate_far_set_byte(gate_ds_segment(), 0x0518u, 0x15u);
+    for (i = 0u; i < sizeof gate_rtl_early_words /
+                      sizeof gate_rtl_early_words[0]; ++i)
+        gate_ds_set_word((uint16_t)(0x0547u + i * 2u), gate_rtl_early_words[i]);
+    return 0;
+}
+
 /* The authentic 125ms DS:049d FAR pointer targets the single RETF opcode
  * at original RTL:4bc9, immediately after an IRET and before a MOV. The
  * original file-to-memory identity is confirmed by the adjacent relocated
@@ -596,9 +627,10 @@ int gate_dos_fix_intro_rtl_external(uint16_t lower_segment, uint16_t paragraphs,
  * resident-code placement, never from original captured absolute addresses.
  * File handles and allocated memory remain caller-owned. On any error the
  * data allocation is partially initialized and MUST be discarded; no game
- * entry may run. The 14 still-unrecovered early data bytes and resident
- * driver/interrupt setup are intentionally not fabricated here.
- * Return 0 success, -1 bad layout, -2..-10 failure at the indicated step. */
+ * entry may run. The early data bytes are restored as observed, but their
+ * actual initialization mechanism and resident driver/interrupt setup
+ * remain unknown.
+ * Return 0 success, -1 bad layout, -2..-11 failure at the indicated step. */
 int gate_dos_prepare_intro_data(uint16_t exe_handle, uint16_t rtl_handle,
                                 uint16_t lower_segment, uint16_t paragraphs,
                                 uint16_t resident_segment,
@@ -634,5 +666,7 @@ int gate_dos_prepare_intro_data(uint16_t exe_handle, uint16_t rtl_handle,
     if (gate_dos_fix_intro_return_pointer(lower_segment, paragraphs,
                                           return_callback) != 0)
         return -10;
+    if (gate_dos_fix_intro_early_bytes(lower_segment, paragraphs) != 0)
+        return -11;
     return 0;
 }

@@ -46,6 +46,25 @@ def direct_segment_manifest(name):
 
 
 class ResidentSelfCallTests(unittest.TestCase):
+    def test_early_data_words_against_original_ram_captures(self):
+        rtl_path = ROOT.parent / "gateway-dos/GATE.RTL"
+        captures = [ROOT / "build/msc51-startup/at-100.bin",
+                    ROOT / "build/msc51-startup-fine/at-125.bin",
+                    ROOT / "build/msc51-startup-fine/at-175.bin",
+                    ROOT / "build/msc51-startup-fine/at-250.bin",
+                    ROOT / "build/msc51-startup/at-500.bin"]
+        if not rtl_path.exists() or not all(p.exists() for p in captures):
+            self.skipTest("Original RTL and five DOS RAM captures unavailable")
+        source = rtl_path.read_bytes()
+        self.assertEqual(source[0x29 + 0x518], 0)
+        self.assertEqual(source[0x29 + 0x547:0x29 + 0x557], bytes(16))
+        expected = bytes.fromhex("e000ef000b020b0203020b01fe001d01")
+        for path in captures:
+            ram = path.read_bytes()
+            base = 0x2a7a0
+            self.assertEqual(ram[base + 0x518], 0x15, path.name)
+            self.assertEqual(ram[base + 0x547:base + 0x557], expected, path.name)
+
     def test_synthetic_dos_adapter_and_fail_closed_preflight(self):
         if not shutil.which("gcc"):
             self.skipTest("GCC needed for the C89 host relocator test")

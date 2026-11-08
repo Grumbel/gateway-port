@@ -25,6 +25,7 @@ int gate_dos_load_intro_static_data(uint16_t handle, uint16_t lower_segment,
                                     uint16_t paragraphs);
 int gate_dos_load_intro_rtl_data(uint16_t handle, uint16_t lower_segment,
                                  uint16_t paragraphs);
+int gate_dos_fix_intro_early_bytes(uint16_t lower_segment, uint16_t paragraphs);
 int gate_dos_load_intro_resident_bank(uint16_t rtl_handle,
                                       uint16_t resident_segment,
                                       uint16_t paragraphs);
@@ -97,6 +98,10 @@ static const uint16_t observed_cs_sites[] = {
 /* Avoid C2073 on Microsoft C 5.1: initialized arrays need static storage. */
 static char original_exe_name[] = "E:\\GATE.EXE";
 static char original_rtl_name[] = "E:\\GATE.RTL";
+static const uint16_t observed_early_words[8] = {
+    0x00e0u, 0x00efu, 0x020bu, 0x020bu,
+    0x0203u, 0x010bu, 0x00feu, 0x011du
+};
 
 int main(void)
 {
@@ -359,6 +364,14 @@ int main(void)
                               sizeof external_b[0]; ++i)
         if (gate_ds_word(external_b[i].site) != external_b[i].expected ||
             gate_ds_word((uint16_t)(external_b[i].site + 2u)) != 0x4444u)
+            good = 0;
+    if (good && gate_dos_fix_intro_early_bytes((uint16_t)allocated,
+                                               GATE_REAL_PARAGRAPHS) != 0)
+        good = 0;
+    if (good && gate_far_byte(data_segment, 0x0518u) != 0x15u)
+        good = 0;
+    for (i = 0u; good && i < 8u; ++i)
+        if (gate_ds_word((uint16_t)(0x0547u + 2u * i)) != observed_early_words[i])
             good = 0;
     if (good && (gate_far_byte(data_segment, GATE_REAL_DEST) != exe_first_byte ||
                  gate_ds_word(0x4d82u) != (uint16_t)allocated ||

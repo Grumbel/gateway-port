@@ -385,6 +385,23 @@ def rtl_preimage_remainder(rtl, samples, runtime_ds, image_load,
         known[2:66] = bytes([1]) * 64
         cleared_bytes = sum(source[i] != 0 for i in range(2, 66))
 
+    # Two previously unexplained clusters are now staged as observed early
+    # initialization, without attributing an unverified loader mechanism.
+    early_words = (0x00e0, 0x00ef, 0x020b, 0x020b,
+                   0x0203, 0x010b, 0x00fe, 0x011d)
+    early_image = b"".join(value.to_bytes(2, "little") for value in early_words)
+    expected_early = ((0x0518, b"\x15"), (0x0547, early_image))
+    observed_early_bytes = 0
+    for offset, expected in expected_early:
+        end = offset + len(expected)
+        if (source[offset:end] == bytes(len(expected)) and
+                all(sample[offset:end] == expected for sample in early) and
+                all(sample[offset:end] == expected for sample in late)):
+            if any(known[offset:end]):
+                raise ValueError("overlapping observed early initialization")
+            known[offset:end] = b"\x01" * len(expected)
+            observed_early_bytes += sum(value != 0 for value in expected)
+
     residual = [i for i in range(size) if source[i] != first[i] and not known[i]]
     # Each disjoint cluster has one or more truly changed bytes. The raw
     # hex samples are emitted only at runtime, never stored in source files.
@@ -450,8 +467,10 @@ def rtl_preimage_remainder(rtl, samples, runtime_ds, image_load,
         "verified_external_pointers": 19,
         "verified_external_bytes": verified_external_bytes,
         "verified_cleared_prefix_bytes": cleared_bytes,
+        "observed_early_initialized_bytes": observed_early_bytes,
         "observed_external_tables": external,
         "verified_total_bytes": 114 + verified_external_bytes + cleared_bytes +
+                                observed_early_bytes +
                                 (4 if verified_return_pointer else 0),
         "remaining_changed_bytes": len(residual),
         "source_zero_to_nonzero": sum(source[i] == 0 for i in residual),
@@ -1309,17 +1328,18 @@ def main():
             remaining = report["runtime_data_remainder"]
             print("RTL preimage changes excluding 27 segment, 24 offset, "
                   "6 startup words, 19 external-pointer fixes, return pointer "
-                  "and prefix clearing:")
+                  "prefix clearing and observed early initialization:")
             print("  %d initial changed bytes - %d segment bytes - %d offset bytes "
                   "- %d startup-word bytes - %d external-pointer bytes "
                   "- %d return-pointer bytes "
-                  "- %d cleared-prefix bytes = "
+                  "- %d cleared-prefix bytes - %d early-init bytes = "
                   "%d unclassified bytes" % (
                 remaining["initial_changed_bytes"], remaining["verified_segment_bytes"],
                 remaining["verified_offset_bytes"], remaining["verified_startup_word_bytes"],
                 remaining["verified_external_bytes"],
                 remaining["verified_return_pointer_bytes"],
                 remaining["verified_cleared_prefix_bytes"],
+                remaining["observed_early_initialized_bytes"],
                 remaining["remaining_changed_bytes"]))
             for entry in remaining["observed_external_tables"]:
                 print("  %s: %d FAR pointers, observed segment=%04x "

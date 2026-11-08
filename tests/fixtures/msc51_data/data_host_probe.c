@@ -16,6 +16,7 @@ int gate_dos_fix_intro_rtl_segs(uint16_t lower_segment, uint16_t paragraphs,
                                 uint16_t resident_segment);
 int gate_dos_clear_intro_rtl_prefix(uint16_t lower_segment, uint16_t paragraphs);
 int gate_dos_fix_intro_rtl_startup_words(uint16_t lower_segment, uint16_t paragraphs);
+int gate_dos_fix_intro_early_bytes(uint16_t lower_segment, uint16_t paragraphs);
 int gate_dos_fix_intro_return_pointer(uint16_t lower_segment,
                                       uint16_t paragraphs, GateFarPtr target);
 int gate_dos_prepare_intro_data(uint16_t exe_handle, uint16_t rtl_handle,
@@ -170,6 +171,9 @@ GateDosFileResult gate_dos_file_read(uint16_t handle, GateFarPtr target,
         }
         gate_ds_set_word(0x049du, 0u);
         gate_ds_set_word(0x049fu, 0u);
+        gate_far_set_byte(data_segment, 0x0518u, 0u);
+        for (i = 0u; i < 16u; ++i)
+            gate_far_set_byte(data_segment, (uint16_t)(0x0547u + i), 0u);
     }
     return result;
 }
@@ -264,6 +268,22 @@ int main(void)
         gate_ds_word(0x2bc6u) != 0x2b76u ||
         gate_ds_word(0x2c0eu) != 0x2c12u ||
         gate_ds_word(0x2c24u) != 0x65f0u)
+        abort();
+    /* Every initialized early byte must be zero before an atomic update. */
+    gate_far_set_byte(data_segment, 0x0518u, 0u);
+    for (i = 0u; i < 16u; ++i)
+        gate_far_set_byte(data_segment, (uint16_t)(0x0547u + i), 0u);
+    gate_ds_set_word(0x0555u, 1u);
+    if (gate_dos_fix_intro_early_bytes(0x2000u, 0x100au) != -2 ||
+        gate_far_byte(data_segment, 0x0518u) != 0u ||
+        gate_ds_word(0x0547u) != 0u)
+        abort();
+    gate_ds_set_word(0x0555u, 0u);
+    if (gate_dos_fix_intro_early_bytes(0x2000u, 0x1009u) != -1 ||
+        gate_dos_fix_intro_early_bytes(0x2000u, 0x100au) != 0 ||
+        gate_far_byte(data_segment, 0x0518u) != 0x15u ||
+        gate_ds_word(0x0547u) != 0x00e0u ||
+        gate_ds_word(0x0555u) != 0x011du)
         abort();
     /* Synthetic file bytes are not zero at every observed source-word
      * site. Turn only those exact words into a zero-source relocation
@@ -375,6 +395,10 @@ int main(void)
         gate_ds_word(0x2c24u) != 0x65f0u ||
         gate_ds_word(0x4d82u) != 0x2000u ||
         gate_ds_word(0x4d84u) != 0x200au ||
+        gate_far_byte(data_segment, 0x0518u) != 0x15u ||
+        gate_ds_word(0x0547u) != 0x00e0u ||
+        gate_ds_word(0x0549u) != 0x00efu ||
+        gate_ds_word(0x0555u) != 0x011du ||
         gate_far_byte(data_segment, 0x3592u) != pattern(0x41e6u))
         abort();
     if (gate_dos_load_intro_resident_bank(8u, 0x3000u, 0x03cfu) != -1 ||
