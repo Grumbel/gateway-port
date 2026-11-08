@@ -448,6 +448,21 @@ def main():
         parser.error('--write-trace requires --ds')
     if args.vfx_ds is not None and not args.vfx_state:
         parser.error('--vfx-ds requires --vfx-state')
+    if not args.ram.is_file():
+        parser.error(
+            f'guest RAM snapshot not found: {args.ram}\n'
+            'Generate one with the original probe, for example:\n'
+            '  python3 tools/run_walkthrough.py run '
+            'tests/fixtures/gateway-opening.walk '
+            '--probe result/bin/gateway-probe --data ../gateway-dos '
+            '--output build/vfx-replay --capture-labels\n'
+            'Then use --ram build/vfx-replay/checkpoint-book_taken.bin')
+    if args.ram.stat().st_size != 0x100000:
+        parser.error(f'guest RAM snapshot must be exactly 1048576 bytes: {args.ram}')
+    for label, path in (('GATEMAIN.OVL', args.ovl), ('GATE.EXE', args.exe),
+                        ('GATE.RTL', args.rtl)):
+        if not path.is_file():
+            parser.error(f'original {label} file not found: {path}')
     try:
         rtl, ram = args.rtl.read_bytes(), args.ram.read_bytes()
         rows = inspect_animation_calls(args.ovl.read_bytes(), args.exe.read_bytes(),

@@ -145,16 +145,39 @@ sites** in these two routines against `GATE.RTL` and the live relocated RAM
 image (including one-byte `MOV AX,[imm16]` opcodes), checks consistent shared
 flags, width and height offsets, reports cursor offsets, and resolves eight
 additional FAR call targets.
-With an original scene snapshot and the game's files outside Git:
+The old `build/rgn-scenes-v026/before.bin` path was a private research
+checkpoint, **not** an artifact created by `nix build` or the Microsoft
+compiler probes. It may not exist in a fresh checkout. Generate a new
+scene-specific capture from the original game instead (build the normal
+`gateway` package first if the probe is missing):
+
+```sh
+nix build . -L
+python3 tools/run_walkthrough.py run \
+  tests/fixtures/gateway-opening.walk \
+  --probe result/bin/gateway-probe \
+  --data ../gateway-dos \
+  --output build/vfx-replay --capture-labels
+```
+
+The walkthrough records the unmodified game after it reaches Your Quarters.
+It produces `checkpoint-book_taken.bin`, `checkpoint-book_dropped.bin` and
+`checkpoint-opening_complete.bin`, each a 1 MiB guest-memory capture.
+Inspect any of these snapshots with the game's original files outside Git:
 
 ```sh
 python3 tools/inspect_rtl_animation.py \
   --ovl ../gateway-dos/GATEMAIN.OVL \
   --exe ../gateway-dos/GATE.EXE \
   --rtl ../gateway-dos/GATE.RTL \
-  --ram build/rgn-scenes-v026/before.bin \
+  --ram build/vfx-replay/checkpoint-book_taken.bin \
   --vfx-state --json
 ```
+
+The inspector explicitly reports a missing `--ram` file and this replay
+recipe instead of propagating an uncaught `FileNotFoundError`. A RAM capture
+from the early 22-second intro is **not interchangeable**: it may precede
+loading the animation and VFX code bank needed to resolve these FAR calls.
 
 If a VFX entry trace independently establishes the live DS segment, supply
 it with `--vfx-ds HEX` to inspect the flag WORD at that **capture time**;

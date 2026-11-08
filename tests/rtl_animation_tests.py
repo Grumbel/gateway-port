@@ -10,6 +10,7 @@ import re
 import struct
 import subprocess
 import sys
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,6 +26,25 @@ from prepare_intro_ghidra import RTL_SHA256
 
 
 class AnimationServiceTests(unittest.TestCase):
+    def test_missing_snapshot_has_reproducible_capture_instructions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot = Path(directory) / 'missing.bin'
+            command = [sys.executable, str(ROOT / 'tools/inspect_rtl_animation.py'),
+                       '--ovl', 'unused.ovl', '--exe', 'unused.exe',
+                       '--rtl', 'unused.rtl', '--ram', str(snapshot), '--vfx-state']
+            missing = subprocess.run(command, text=True, capture_output=True,
+                                     check=False)
+            self.assertEqual(missing.returncode, 2)
+            self.assertIn('guest RAM snapshot not found:', missing.stderr)
+            self.assertIn('--capture-labels', missing.stderr)
+            self.assertIn('checkpoint-book_taken.bin', missing.stderr)
+            self.assertNotIn('Traceback', missing.stderr)
+            snapshot.write_bytes(b'not a RAM image')
+            invalid = subprocess.run(command, text=True, capture_output=True,
+                                     check=False)
+            self.assertEqual(invalid.returncode, 2)
+            self.assertIn('must be exactly 1048576 bytes', invalid.stderr)
+
     def test_vfx_save_restore_relocation_evidence_and_branch_selection(self):
         """Synthetic RTL and RAM: never embed the proprietary routine bytes."""
         rtl = bytearray(0x19000)
