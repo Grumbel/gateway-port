@@ -8,24 +8,25 @@ of functions already recovered. The latest real Microsoft LINK 3.65 report
 supplied by the user on 2026-11-08 confirmed **26 unresolved names**, with
 `RTLHW`, `RTFILE`, `RESSTATE`, `HEAP`, `INP`, `CLOCK` and `CRTENV` linked.
 The extended `RTLHW` adapter supplies eight RTL text/video names, and
-`RESSTATE` supplies three bounded raster names: **15 is the predicted
+`RESSTATE` supplies three bounded raster names. The adapter also now stages
+two original BIOS/chipset detection entry points: **13 is the predicted
 remainder if both modified DOS probes pass**. This is not yet a measured
 Microsoft LINK result.
 Do not manufacture no-op definitions merely to obtain an executable.
 
-## Remaining 26 link dependencies
+## The 26 names in the last confirmed LINK report
 
 | Group | Original unresolved entry points | Count | Required work |
 | --- | --- | ---: | --- |
 | DOS entry point | `main` | 1 | Reconstruct actual DOS startup/relocation and bind live original linked DS, stack, initial descriptors, assets, CRT initialization and transfer to `gate_exe_play_intro`. An empty `main()` would produce a false success. |
 | RTL text/video state | `gate_rtl_video_inversion`, `gate_rtl_video_attribute`, `gate_rtl_video_columns`, `gate_rtl_video_rows`, `gate_rtl_video_tab_base`, `gate_rtl_video_block_mode`, `gate_rtl_video_set_block_mode`, `gate_rtl_video_command` | 8 | **Staged, DOS probe pending.** Original RTL disassembly verifies the seven RTL-DS offsets and pointer dereferences; the separate 16-bit DS must be bound during startup, not assumed to equal EXE DS. The 14-byte command adapter handles only original commands 2/3/9 through BIOS INT 10h. The underlying 12a5:2d8a dispatcher has not been decompiled, and unrecognized commands abort. |
 | Pixel and drawing primitives | `gate_rtl_plot_pixel`, `gate_rtl_background_rect`, `gate_rtl_resident_line_to` | 3 | **Staged, DOS probe pending.** The native host's bounded pixel modes 1/2/3, raster operations and clipping are implemented over real DOS VGA. Mode 13h uses A000 linear memory and modes 1/2 use BIOS INT 10h pixel reads/writes, with test pixels/lines/opaque rectangles. Unmodeled modes, diagonal lines and patterned fills abort; the DOSBox test and guest trace comparison remain outstanding. |
-| Video adapter query | `gate_rtl_mode_query_adapter`, `gate_rtl_mode_svga_variant` | 2 | Recover hardware-visible `242a:000a` adapter/monitor subtype bytes and `241d:0004` SVGA variant response; test with real BIOS, not hardcoded VGA type 5. |
+| Video adapter query | `gate_rtl_mode_query_adapter`, `gate_rtl_mode_svga_variant` | 2 | **Staged, DOS probe pending.** Original `GATE.RTL:17c95..17d79` maps INT 10h/AX=1a00 active/alternate display codes to type/monitor pairs; `17b4f..17c24` tests AH=6fh, ROM signatures and bank/CRTC ports for SVGA variant 0–5. The old-BIOS fallback and exotic adapter-switch helpers remain outside the supported boundary; unsupported display BIOS requests abort. |
 | Original exception/stack state | `gate_rtl_file_divide_fault`, `gate_rtl_file_stack_word` | 2 | Trace original divide-fault exit and near-stack word reader; `0` or `abort()` substitute values would hide original behavior. |
 | Runtime calendar sample | `gate_linked_read_runtime_time_sample` | 1 | Reconstruct `12a5:34d8` ten-byte sample and its date/time, timezone/DST dependencies, then compare against the already recovered `gate_rtl_elapsed_milliseconds`. The pending DOS clock is an intentionally approximate live substitute. |
 | VFX/picture pipeline | `gate_linked_decompress_picture_pixels`, `gate_linked_blit_vfx_picture`, `gate_linked_transform_picture_palette_indexed`, `gate_linked_transform_picture_palette_rgb`, `gate_linked_save_vfx_draw_state`, `gate_linked_restore_vfx_draw_state` | 6 | Recover decompression, destination pixel layout, palette translation and saved drawing-state lifetime. Native host counterparts only prove bounded visible behavior; they are not yet DOS ABI ports. |
 | Intro services and diagnostics | `gate_linked_initialize_intro_services`, `gate_linked_handle_control_key`, `gate_linked_print_intro_diagnostic` | 3 | Reconstruct the original music/IRQ8 setup, Ctrl-Break branch and resident diagnostic destination/format from the EXE and RTL. Silent success and dummy output are not valid equivalents. |
-| **Total** | | **26** | |
+| **Reported total** | | **26** | 13 more definitions staged since this report; 13 projected unresolved after both DOS probes. |
 
 ### Current DOS probe order
 
@@ -47,8 +48,8 @@ nix run .#msc51-link-report -- --json build/msc51-link-report.json
 
 The linker refuses stale compiled objects, missing probe successes and
 changed source fingerprints before attempting a link. The probe executables
-are not end-to-end intro tests; in particular the resident clear probe only
-tests early return conditions, not visible VGA plane output. The original
+are not end-to-end intro tests; the resident raster probe now exercises
+real VGA pixels, but not full original image reproduction. The original
 binary assets and GATE.EXE/GATE.RTL live guest snapshot remain necessary to
 recover and validate the listed core services.
 
@@ -59,6 +60,17 @@ segments, block-cursor state, real INT 10h text cursor get/set, and a
 non-visible character/attribute rewrite. **A passing probe does not
 initialize the RTL segment for `GATEWAY.EXE`**: that will require a real
 DOS startup entry and original RTL loader/relocator, currently unavailable.
+
+It additionally probes the VGA BIOS display-combination response and checks
+the original adapter-pair encoding when the BIOS reports color VGA. The SVGA
+variant probe reads/writes video banking and CRTC test registers, restoring
+their prior state after each detection attempt. On a BIOS without AX=1a00,
+adapter detection deliberately aborts: the original fallback through other
+chipset/monitor queries is not recovered, so returning a fabricated adapter
+would lead the source C down the wrong graphics mode branch. The host fixture
+tests all five nonzero SVGA outcomes, variant zero, monochrome handling,
+active/alternate adapters and register restoration; Microsoft C and an
+authentic DOSBox video BIOS still need to verify these paths.
 
 The extended `RESSTATE.C` also requires
 `nix run -L .#msc51-compile-resident-state` before linking. It exercises

@@ -131,3 +131,108 @@ void gate_rtl_mode_pen(uint16_t enabled)
 {
     gate_ds_set_word(GATE_DS_DRAW_CLIPPING_ENABLED, enabled == 1 ? 1 : 0);
 }
+
+/* Original resident GATE.RTL:17c95..17d79 (the primary display-combination
+ * probe called by 242a:000a). AX=1a00 returns BL=active/BH=alternate
+ * display codes. Each maps to a two-byte (adapter, monitor) pair. The
+ * caller's four first bytes hold both pairs; the other four are untouched.
+ * An old BIOS without AX=1a00 takes several chipset-specific probes in
+ * the original RTL; we must not silently claim its unknown result is VGA. */
+static void write_display_pair(uint8_t *pair, uint8_t display)
+{
+    pair[0] = 0u;
+    pair[1] = 0u;
+    switch (display) {
+    case 0u: break;
+    case 1u: pair[0] = 1u; pair[1] = 1u; break;
+    case 2u: pair[0] = 2u; pair[1] = 2u; break;
+    case 4u: pair[0] = 3u; pair[1] = 3u; break;
+    case 5u: pair[0] = 3u; pair[1] = 1u; break;
+    case 7u: pair[0] = 5u; pair[1] = 4u; break;
+    case 8u: pair[0] = 5u; pair[1] = 5u; break;
+    case 10u: pair[0] = 4u; pair[1] = 3u; break;
+    case 11u: pair[0] = 4u; pair[1] = 4u; break;
+    case 12u: pair[0] = 4u; pair[1] = 5u; break;
+    default: break;
+    }
+}
+
+void gate_rtl_mode_query_adapter(uint8_t *adapter)
+{
+    union REGS in, out;
+    if (adapter == 0)
+        abort();
+    in.x.ax = 0x1a00u;
+    in.x.bx = 0u;
+    in.x.cx = 0u;
+    in.x.dx = 0u;
+    int86(0x10, &in, &out);
+    if (out.h.al != 0x1au)
+        abort(); /* old BIOS detection requires the unported RTL fallback */
+    write_display_pair(adapter, out.h.bl);
+    write_display_pair(adapter + 2, out.h.bh);
+
+    /* Original 17d5f..17d78 rejects the monochrome code when either
+     * video pair has type 1, by clearing precisely that WORD. */
+    if (adapter[0] == 1u)
+        adapter[0] = adapter[1] = 0u;
+    else if (adapter[2] == 1u)
+        adapter[2] = adapter[3] = 0u;
+}
+
+/* GATE.RTL:17b4f..17c24, resident 241d:0004. Detects a known SVGA
+ * extension from the BIOS query, option-ROM signatures or bank/CRTC ports.
+ * Unlike the original failed probes, every port write is restored so the
+ * test does not leave the user's current display in a different bank. */
+uint16_t gate_rtl_mode_svga_variant(void)
+{
+    union REGS in, out;
+    uint8_t old_bank, old_crtc_index, old_crtc_data;
+    uint8_t sample;
+    uint16_t result = 0u;
+
+    in.x.ax = 0x6f00u;
+    in.x.bx = 0u;
+    in.x.cx = 0u;
+    in.x.dx = 0u;
+    int86(0x10, &in, &out);
+    if (out.x.bx == 0x5637u)
+        return 3u;
+    if (gate_far_byte(0xc000u, 0x007du) == 'V' &&
+        gate_far_byte(0xc000u, 0x007eu) == 'G' &&
+        gate_far_byte(0xc000u, 0x007fu) == 'A' &&
+        gate_far_byte(0xc000u, 0x0080u) == '=')
+        return 2u;
+
+    old_bank = (uint8_t)inp(0x03cdu);
+    (void)outp(0x03cdu, 0xaau);
+    sample = (uint8_t)inp(0x03cdu);
+    if (sample == 0xaau) {
+        (void)outp(0x03cdu, 0x55u);
+        if ((uint8_t)inp(0x03cdu) == 0x55u)
+            result = 1u;
+    }
+    (void)outp(0x03cdu, old_bank);
+    if (result != 0u) {
+        old_crtc_index = (uint8_t)inp(0x03d4u);
+        (void)outp(0x03d4u, 0x33u);
+        old_crtc_data = (uint8_t)inp(0x03d5u);
+        (void)outp(0x03d5u, 0x0au);
+        (void)outp(0x03d4u, 0x33u);
+        if (((uint8_t)inp(0x03d5u) & 0x0fu) == 0x0au) {
+            (void)outp(0x03d5u, 0x05u);
+            (void)outp(0x03d4u, 0x33u);
+            if (((uint8_t)inp(0x03d5u) & 0x0fu) == 0x05u)
+                result = 5u;
+        }
+        (void)outp(0x03d4u, 0x33u);
+        (void)outp(0x03d5u, old_crtc_data);
+        (void)outp(0x03d4u, old_crtc_index);
+        return result;
+    }
+
+    if (gate_far_byte(0xc000u, 0x0040u) == '3' &&
+        gate_far_byte(0xc000u, 0x0041u) == '1')
+        return 4u;
+    return 0u;
+}

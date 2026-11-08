@@ -59,6 +59,11 @@ int int86(int number, union REGS *input, union REGS *output);
 static unsigned char memory[0x100000ul];
 static unsigned int calls;
 static unsigned int bios_set_x, bios_set_y, bios_character, bios_attribute, bios_count;
+static unsigned char bios_display = 8u, bios_secondary = 0u;
+static unsigned char bios_display_combination = 1u;
+static unsigned char bios_svga_signature = 0u;
+static unsigned char bank_port = 0x12u, crtc_index = 0x21u, crtc_33 = 0x83u;
+static unsigned char bank_writable = 0u, crtc_writable = 0u;
 
 uint8_t gate_far_byte(uint16_t segment, uint16_t offset)
 {
@@ -84,8 +89,33 @@ void gate_ds_set_word(uint16_t offset, uint16_t value)
 {
     gate_far_set_word(0x4000u, offset, value);
 }
-int inp(unsigned int port) { (void)port; return 0x08; }
-int outp(unsigned int port, int value) { (void)port; return value; }
+int inp(unsigned int port)
+{
+    switch (port) {
+    case 0x03cdu: return bank_port;
+    case 0x03d4u: return crtc_index;
+    case 0x03d5u: return crtc_33;
+    default: return 0x08;
+    }
+}
+int outp(unsigned int port, int value)
+{
+    switch (port) {
+    case 0x03cdu:
+        if (bank_writable || (unsigned char)value == 0x12u)
+            bank_port = (unsigned char)value;
+        break;
+    case 0x03d4u:
+        crtc_index = (unsigned char)value;
+        break;
+    case 0x03d5u:
+        assert(crtc_index == 0x33u);
+        if (crtc_writable || (unsigned char)value == 0x83u)
+            crtc_33 = (unsigned char)value;
+        break;
+    }
+    return value;
+}
 
 int int86(int number, union REGS *input, union REGS *output)
 {
@@ -106,6 +136,16 @@ int int86(int number, union REGS *input, union REGS *output)
         bios_attribute = input->h.bl;
         bios_count = input->x.cx;
         break;
+    case 0x1a:
+        assert(input->h.al == 0u);
+        output->h.al = bios_display_combination ? 0x1au : 0u;
+        output->h.bl = bios_display;
+        output->h.bh = bios_secondary;
+        break;
+    case 0x6f:
+        assert(input->h.al == 0u);
+        output->x.bx = bios_svga_signature ? 0x5637u : 0u;
+        break;
     default: assert(0);
     }
     return 0;
@@ -120,6 +160,8 @@ int16_t gate_rtl_video_tab_base(void);
 uint16_t gate_rtl_video_block_mode(void);
 void gate_rtl_video_set_block_mode(uint16_t mode);
 void gate_rtl_video_command(uint16_t function, uint8_t *input, uint8_t *output);
+void gate_rtl_mode_query_adapter(uint8_t *adapter);
+uint16_t gate_rtl_mode_svga_variant(void);
 
 int main(void)
 {
@@ -163,6 +205,46 @@ int main(void)
     assert(bios_attribute == 0x87u);
     assert(bios_count == 0x1234u);
     assert(calls == 3u);
+
+    /* Original INT 10h 1a00 active and alternate adapter mappings. */
+    memset(packet, 0x9au, sizeof packet);
+    gate_rtl_mode_query_adapter(packet);
+    assert(packet[0] == 5u && packet[1] == 5u);
+    assert(packet[2] == 0u && packet[3] == 0u);
+    assert(packet[4] == 0x9au);
+    bios_display = 7u;
+    bios_secondary = 0x0cu;
+    gate_rtl_mode_query_adapter(packet);
+    assert(packet[0] == 5u && packet[1] == 4u);
+    assert(packet[2] == 4u && packet[3] == 5u);
+    bios_display = 1u;
+    bios_secondary = 8u;
+    gate_rtl_mode_query_adapter(packet);
+    assert(packet[0] == 0u && packet[1] == 0u);
+    assert(packet[2] == 5u && packet[3] == 5u);
+
+    bios_svga_signature = 1u;
+    assert(gate_rtl_mode_svga_variant() == 3u);
+    bios_svga_signature = 0u;
+    gate_far_set_byte(0xc000u, 0x007du, 'V');
+    gate_far_set_byte(0xc000u, 0x007eu, 'G');
+    gate_far_set_byte(0xc000u, 0x007fu, 'A');
+    gate_far_set_byte(0xc000u, 0x0080u, '=');
+    assert(gate_rtl_mode_svga_variant() == 2u);
+    gate_far_set_byte(0xc000u, 0x007du, 0u);
+    bank_writable = 1u;
+    crtc_writable = 1u;
+    assert(gate_rtl_mode_svga_variant() == 5u);
+    assert(bank_port == 0x12u && crtc_33 == 0x83u && crtc_index == 0x21u);
+    crtc_writable = 0u;
+    assert(gate_rtl_mode_svga_variant() == 1u);
+    assert(bank_port == 0x12u && crtc_33 == 0x83u && crtc_index == 0x21u);
+    bank_writable = 0u;
+    gate_far_set_byte(0xc000u, 0x0040u, '3');
+    gate_far_set_byte(0xc000u, 0x0041u, '1');
+    assert(gate_rtl_mode_svga_variant() == 4u);
+    gate_far_set_byte(0xc000u, 0x0040u, 0u);
+    assert(gate_rtl_mode_svga_variant() == 0u);
     return 0;
 }
 ''')

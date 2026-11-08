@@ -1058,8 +1058,10 @@ thirteen prior DOS objects in place (1 CRT entry, 10 original services, 15
 RTL/hardware services). The extended `RTLHW.C` binds the seven video state
 accessors and three-command BIOS text packet dispatcher; the extended
 `RESSTATE.C` implements the three bounded raster primitives using DOS mode
-13h A000 memory and INT 10h planar pixels. This reduces the **predicted**
-remainder to **15**. Both 5.1 compile/probes and the new link result are
+13h A000 memory and INT 10h planar pixels. `RTLHW.C` now also supplies the
+two resident display adapter probes using original INT 10h display-combination
+codes, SVGA BIOS/ROM signatures, and restored video port tests. This reduces
+the **predicted** remainder to **13**. Both 5.1 compile/probes and the new link result are
 still needed. See
 [MSC51 link closure](../../docs/msc51-link-closure.md) for the inventory.
 

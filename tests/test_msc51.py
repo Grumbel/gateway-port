@@ -134,6 +134,10 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("int86(0x10, &in, &out)", hardware)
             self.assertIn("text cursor column", (output / "HWCHK.C").read_text())
             self.assertIn("RTL block cursor write", (output / "HWCHK.C").read_text())
+            self.assertIn("gate_rtl_mode_query_adapter", hardware)
+            self.assertIn("gate_rtl_mode_svga_variant", hardware)
+            self.assertIn("VGA color monitor subtype", (output / "HWCHK.C").read_text())
+            self.assertIn("SVGA variant range", (output / "HWCHK.C").read_text())
             for name in ("RTLHW.C", "HWCHK.C"):
                 self.assertTrue(all(len(identifier) <= 31 for identifier in
                                     msc51.msc51_identifiers((output / name).read_text())), name)

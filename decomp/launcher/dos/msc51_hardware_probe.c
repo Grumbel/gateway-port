@@ -24,6 +24,8 @@ int16_t gate_rtl_video_tab_base(void);
 uint16_t gate_rtl_video_block_mode(void);
 void gate_rtl_video_set_block_mode(uint16_t mode);
 void gate_rtl_video_command(uint16_t function, uint8_t *input, uint8_t *output);
+void gate_rtl_mode_query_adapter(uint8_t *adapter);
+uint16_t gate_rtl_mode_svga_variant(void);
 
 static int check(uint16_t actual, uint16_t expected, const char *label)
 {
@@ -40,7 +42,9 @@ int main(void)
     unsigned int segment = 0;
     uint8_t status;
     uint8_t packet[14];
+    uint8_t adapter[8];
     union REGS in, out;
+    uint16_t svga;
     unsigned int rtl_segment = 0;
     int valid = 1;
 
@@ -100,6 +104,25 @@ int main(void)
     packet[5] = 0u;
     packet[1] = 9u;
     gate_rtl_video_command(0x10u, packet, packet);
+
+    /* This system has a VGA BIOS under DOSBox. Test the actual AX=1a00
+     * display-combination query, including the original active/alternate
+     * pair layout, without forcing a specific DOSBox video-card model. */
+    memset(adapter, 0x5au, sizeof adapter);
+    gate_rtl_mode_query_adapter(adapter);
+    valid &= check(adapter[4], 0x5au, "untouched adapter packet tail");
+    in.x.ax = 0x1a00u;
+    in.x.bx = in.x.cx = in.x.dx = 0u;
+    int86(0x10, &in, &out);
+    valid &= check(out.h.al, 0x1au, "VGA display-combination BIOS");
+    if (out.h.bl == 8u) {
+        valid &= check(adapter[0], 5u, "VGA color adapter type");
+        valid &= check(adapter[1], 5u, "VGA color monitor subtype");
+    }
+    svga = gate_rtl_mode_svga_variant();
+    valid &= check(svga <= 5u ? 1u : 0u, 1u, "SVGA variant range");
+    printf("Hardware probe: adapter %u/%u, alternate %u/%u, SVGA %u\n",
+           adapter[0], adapter[1], adapter[2], adapter[3], svga);
 
     gate_rtl_mode_clip(199u, 319u, 12u, 7u);
     valid &= check(gate_ds_word(GATE_DS_DRAW_CLIP_LEFT), 7u, "clip left");
