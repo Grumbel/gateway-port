@@ -6,11 +6,14 @@
 #include <stdio.h>
 
 int gate_dos_probe_interrupt_1c(uint16_t *observed);
+int gate_dos_probe_pit_calibration(uint16_t *iterations_per_tick,
+                                   uint16_t *observed);
 
 int main(void)
 {
     void (interrupt far *previous)(void);
     uint16_t ticks = 0u;
+    uint16_t iterations = 0u;
     int status;
 
     previous = _dos_getvect(0x1cu);
@@ -20,5 +23,15 @@ int main(void)
         return 1;
     }
     printf("INT 1Ch probe: PASS ticks=%u, prior vector restored\n", ticks);
+    ticks = 0u;
+    status = gate_dos_probe_pit_calibration(&iterations, &ticks);
+    if (status != 0 || ticks < 8u || iterations == 0u ||
+        _dos_getvect(0x1cu) != previous) {
+        printf("PIT 60Hz probe: FAIL status=%d ticks=%u loops=%u\n",
+               status, ticks, iterations);
+        return 1;
+    }
+    printf("PIT 60Hz probe: PASS ticks=%u loops_per_tick=%u, "
+           "prior vector restored, PIT reset to FFFFh\n", ticks, iterations);
     return 0;
 }

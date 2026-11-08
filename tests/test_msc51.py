@@ -46,7 +46,7 @@ class MSC51Tests(unittest.TestCase):
             self.assertEqual(build.returncode, 0, build.stderr)
             result = subprocess.run([str(executable)], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("callback/timeout/restoration: PASS", result.stdout)
+            self.assertIn("callback/timeout/restoration and PIT writes: PASS", result.stdout)
 
     def test_staged_clock_calendar_and_dst_on_host(self):
         """Execute staged calendar logic with deterministic DOS interrupt replies.
@@ -332,6 +332,7 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("CL /AL /Od /c TIMER.C", clock_batch)
             self.assertIn("TMRCHK.C TIMER.OBJ", clock_batch)
             self.assertIn("TMRCHK.EXE > TMRTEST.LOG", clock_batch)
+            self.assertIn("gate_dos_probe_pit_calibration", (output / "TMRCHK.C").read_text())
             self.assertIn("CLKSIG.LOG", clock_batch)
             self.assertIn("CLKOK.LOG", clock_batch)
             self.assertNotIn("IF ERRORLEVEL 1 ECHO", clock_batch)

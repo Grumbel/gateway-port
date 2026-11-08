@@ -375,6 +375,33 @@ vector. The unresolved `_main`, control-key handler and text printer
 remain unrelated blockers to a linked executable; the probe does not
 silently define them.
 
+**PIT calibration follow-up (bundle 053):** The user's actual Microsoft
+LINK 3.65 `CLKBUILD.LOG` compiled and linked both `CLOCK.OBJ` and
+`TIMER.OBJ` without diagnostics. Its `TMRTEST.LOG` confirms
+`INT 1Ch probe: PASS ticks=2, prior vector restored`, so the interrupt
+ABI is now verified under that DOSBox configuration. We retain the
+original no-PIT test as the first phase of `TMRCHK.EXE` and add a second
+phase that explicitly programs PIT channel 0 (`43h` command `34h`, `40h`
+LSB `aeh`, MSB `4dh`), waits for eight IRQs, and returns the PIT to the
+original snapshot's observed `ffffh` restore divisor. Both successful
+and timed-out paths reset the PIT and restore the previous INT 1Ch vector.
+The new phase reports a C busy-loop average for diagnostics; it is
+**not** the original `RTL:5806` IMUL-cycle calibration constant and is
+not linked into `GATEWAY.EXE`. Host I/O fixtures verify both exact six-
+write PIT sequences, callback delivery and restoration on timeout. The
+next required guest evidence is a new `TMRTEST.LOG`, plus `CLKBUILD.LOG`
+if the Microsoft compiler fails. No original executable bytes are staged.
+
+The original setup/cleanup pair also saves/restores DOS date/time around
+PIT reprogramming and protects raw vector/PIT writes with CLI/STI. This
+first controlled DOSBox test uses Microsoft C's `_dos_setvect` and
+ordinary `outp` calls instead; it neither snapshots an arbitrary caller's
+PIT mode/divisor nor sets the DOS clock back. It must therefore **not** be
+called from the shipped/native launcher or used on real hardware without
+further state-preservation work. The `ffffh` reset divisor is an explicit
+assumption taken from the supplied original run, not a verified general
+restore of a machine's previous PIT configuration.
+
 The third call is now identified as `rtl:10da1..10dc6`, a bounded FAR
 routine (preceded and terminated by `RETF`). It starts with `push cs; call
 near rtl:11078`, tests bits `0x0c` of a relocated DS byte, conditionally
