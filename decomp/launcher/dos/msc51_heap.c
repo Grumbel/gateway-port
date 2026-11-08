@@ -45,13 +45,14 @@ GateFarPtr gate_linked_allocate_vfx_pixels(uint32_t bytes)
     return far_heap_allocate(bytes);
 }
 
-/* Native boundary and observed linked free distinguish invalid pointers
- * with the original -28 return; never call DOS free on segment zero. */
+/* Original 253a:0048 loads ES from the FAR pointer, ignores its offset,
+ * invokes INT 21h/AH=49h and returns 0 or -25 (ffe7h) by carry flag.
+ * Protect the DOS program's low memory by rejecting a null segment here. */
 uint16_t gate_linked_release_vfx_pixels(GateFarPtr pointer)
 {
-    if (pointer.segment == 0 || pointer.offset != 0)
-        return 0xffe4u;
-    return _dos_freemem(pointer.segment) == 0 ? 0u : 0xffe4u;
+    if (pointer.segment == 0)
+        return 0xffe7u;
+    return _dos_freemem(pointer.segment) == 0 ? 0u : 0xffe7u;
 }
 
 /* GATE.EXE startup requests 1000h DOS paragraphs and uses the returned

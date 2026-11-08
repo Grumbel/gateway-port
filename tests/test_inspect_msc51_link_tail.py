@@ -204,10 +204,9 @@ class LinkTailTests(unittest.TestCase):
         _, seg, off, _, _ = TAIL_ENTRIES[1]
         ram[(0x1000 + seg) * 16 + off:((0x1000 + seg) * 16 + off) + length] = linked
 
-        (relative_segment, callee_offset), (source_offset, size, fars,
-                                            words, pairs) = \
-            next(iter(RELOCATED_CALLEE_ENTRIES.items()))
-        self.assertEqual((relative_segment, callee_offset), (0x0e48, 0x0202))
+        relative_segment, callee_offset = (0x0e48, 0x0202)
+        source_offset, size, fars, words, pairs = \
+            RELOCATED_CALLEE_ENTRIES[relative_segment, callee_offset]
         callee_original = bytearray((index * 11 + 31) & 255 for index in range(size))
         for start in fars:
             callee_original[start:start + 5] = b'\x9a\x00\x00\x00\x00'
@@ -274,6 +273,10 @@ class LinkTailTests(unittest.TestCase):
 
     def test_relative_word_relocations_preserve_original_delta(self):
         for key, (entry, length, calls, words, pairs) in RELOCATED_CALLEE_ENTRIES.items():
+            if len({position for pair in pairs for position in pair}) < 2 * len(pairs):
+                # Shared WORD operands require consistent transitive deltas;
+                # the first Ctrl-Break cleanup has a dedicated group test.
+                continue
             original = bytearray((index * 3 + 17) & 255 for index in range(length))
             for start in calls:
                 original[start:start + 5] = b'\x9a\x00\x00\x00\x00'
@@ -352,8 +355,18 @@ class LinkTailTests(unittest.TestCase):
         physical = (0x1000 + 0x145d) * 16 + 0x016c
         ram[physical:physical + size] = linked
 
+        heap_source, heap_size, heap_fars, heap_words, heap_pairs = \
+            RELOCATED_CALLEE_ENTRIES[0x153a, 0x0048]
+        self.assertEqual((heap_source, heap_size, heap_fars, heap_words, heap_pairs),
+                         (0x18f23, 49, (), (11,), ()))
+        heap_original = bytearray((index * 17 + 9) & 255
+                                  for index in range(heap_size))
+        heap_original[11:13] = b'\x00\x00'
+        rtl[heap_source:heap_source + heap_size] = heap_original
+        heap_linked = bytearray(heap_original)
+        heap_linked[11:13] = b'\x7a\x2a'
         heap_physical = (0x1000 + 0x153a) * 16 + 0x0048
-        ram[heap_physical:heap_physical + 48] = bytes(range(48))
+        ram[heap_physical:heap_physical + heap_size] = heap_linked
         row = inspect(exe, rtl, ram)[1]
         helper_calls = row['relocated_far_calls'][2]['callee_far_calls']
         self.assertEqual(len(helper_calls), 2)
@@ -365,7 +378,71 @@ class LinkTailTests(unittest.TestCase):
             heap = call['callee_far_calls'][0]
             self.assertEqual(heap['existing_port_symbol'],
                              'gate_linked_release_vfx_pixels')
-            self.assertEqual(heap['live_entry_hex'], bytes(range(48)).hex())
+            self.assertEqual(heap['relocated_source_match']['offset'], heap_source)
+            self.assertEqual(heap['relocated_source_match']['matched_nonrelocated_bytes'],
+                             47)
+            self.assertEqual(heap['callee_far_calls'], [])
+
+        # Do not label a modified heap body as an original RTL source. The
+        # known port name may be reported independently of byte identity.
+        ram[heap_physical + 19] ^= 1
+        row = inspect(exe, rtl, ram)[1]
+        for helper in row['relocated_far_calls'][2]['callee_far_calls']:
+            heap = helper['callee_far_calls'][0]
+            self.assertEqual(heap['existing_port_symbol'],
+                             'gate_linked_release_vfx_pixels')
+            self.assertNotIn('relocated_source_match', heap)
+            self.assertEqual(heap['live_entry_hex'],
+                             ram[heap_physical:heap_physical + 48].hex())
+
+    def test_first_control_cleanup_matches_two_distinct_ds_relocations(self):
+        exe = b'MZ' + bytes(100)
+        rtl = bytearray(0x1b000)
+        ram = bytearray(1 << 20)
+        source, length, fars, words, pairs = RELOCATED_CALLEE_ENTRIES[0x121b, 0x021f]
+        self.assertEqual((source, length), (0x15706, 36))
+        original = bytearray((index * 23 + 7) & 255 for index in range(length))
+        original[15:20] = b'\x9a\x00\x00\x00\x00'
+        for index, value in ((2, 0x0016), (25, 0x0016), (31, 0x0018),
+                             (9, 0x0004), (13, 0x0002)):
+            original[index:index + 2] = value.to_bytes(2, 'little')
+        rtl[source:source + length] = original
+        relocated = bytearray(original)
+        relocated[15:20] = b'\x9a\x62\x0f\xa5\x12'
+        for index, value in ((2, 0x156e), (25, 0x156e), (31, 0x1570),
+                             (9, 0x6152), (13, 0x6150)):
+            relocated[index:index + 2] = value.to_bytes(2, 'little')
+        self.assertTrue(match_relocated_far_entry(original, relocated, fars,
+                                                  length, words, pairs))
+
+        control_source, control_length, control_calls = RELOCATED_RTL_ENTRIES['control_key']
+        control = bytearray((index * 11 + 13) & 255 for index in range(control_length))
+        for start in control_calls:
+            control[start:start + 5] = b'\x9a\x00\x00\x00\x00'
+        rtl[control_source:control_source + control_length] = control
+        linked_control = bytearray(control)
+        for start in control_calls:
+            linked_control[start + 1:start + 5] = b'\x01\x00\xa5\x12'
+        linked_control[control_calls[0] + 1:control_calls[0] + 5] = \
+            b'\x1f\x02\x1b\x22'
+        _, segment, offset, _, _ = TAIL_ENTRIES[1]
+        control_physical = (0x1000 + segment) * 16 + offset
+        ram[control_physical:control_physical + control_length] = linked_control
+        callee_physical = (0x1000 + 0x121b) * 16 + 0x021f
+        ram[callee_physical:callee_physical + length] = relocated
+
+        cleanup = inspect(exe, rtl, ram)[1]['relocated_far_calls'][0]
+        self.assertEqual(cleanup['relocated_source_match']['offset'], source)
+        self.assertEqual(cleanup['relocated_source_match']['matched_nonrelocated_bytes'],
+                         22)  # Shared DS:0016 is counted only once.
+        self.assertEqual(cleanup['callee_far_calls'][0]['target_offset'], 0x0f62)
+
+        # The adjacent flag word must keep the original +2 delta.
+        ram[callee_physical + 31] ^= 1
+        cleanup = inspect(exe, rtl, ram)[1]['relocated_far_calls'][0]
+        self.assertNotIn('relocated_source_match', cleanup)
+        self.assertEqual(cleanup['live_entry_hex'],
+                         ram[callee_physical:callee_physical + 48].hex())
 
     def test_full_diagnostic_five_call_signature_falls_back_to_verified_prefix(self):
         exe = b'MZ' + bytes(100)

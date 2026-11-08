@@ -78,7 +78,7 @@ The **eleven directly observed relocated FAR operands** are:
 
 | Original call site | Linked target (22-second runtime) | RTL source projection | Evidence/status |
 | --- | --- | --- | --- |
-| `rtl:157b8` | `221b:021f` | Unknown | Bank not yet identified; raw `rtl:15793` window falls in data, not a callee entry |
+| `rtl:157b8` | `221b:021f` | `rtl:15706` | Newly matched 36-byte FAR cleanup, five relocated DS words in two groups and one FAR call |
 | `rtl:157bd` | `1a46:01c0` | `rtl:c391` | Existing bank `0a46` projects here |
 | `rtl:157c2` | `1e48:0202` | `rtl:10da1` | Entry-anchored, two FAR and four WORD relocations; matches user's live 48-byte entry |
 | `rtl:157c7` | `1c4d:008b` | `rtl:e771` | Existing bank `0c4d` projects here |
@@ -101,13 +101,21 @@ one exists). It does not promote a mere interior byte-window match into
 a verified function identity.
 
 The first call's raw `rtl:15793` byte-window match is misleading: static
-disassembly places it in a data region. It must remain unknown until its
-original file location and resident bank can be identified independently.
-The 48 live bytes do reveal a bounded branch: it compares signed
-`DS:156e` to zero and, when nonnegative, pushes `DS:6152` and `DS:6150`,
-calls resident `12a5:0f62`, sets `DS:156e=ffff` and `DS:1570=0000`,
-then returns FAR. This is an observed runtime code skeleton, **not** a
-validated original source identity or a sufficient ABI specification.
+disassembly places it in a data region. Comparing the *actual instruction
+skeleton* against the pinned RTL, ignoring only relocatable DS references
+and the FAR target, instead identifies **exact original entry `rtl:15706`**.
+Its 36-byte body ends in `RETF` just before a `NOP` and embedded data. All
+22 invariant bytes match the user's 48-byte live prefix. The original
+compares signed `DS:0016` against zero; the runtime references to this
+word and its `0018` neighbor become `DS:156e/1570`, a consistent `+1558h`
+shift. The separate original arguments at `DS:0004/0002` become
+`DS:6152/6150`, with a **different** shift of `+614eh`; treating every
+DS address as one uniform relocation would be incorrect. When the flag
+is nonnegative, the routine pushes those two words, calls resident
+`12a5:0f62`, sets the relocated flag to `ffffh` and neighbor to zero, and
+returns FAR. The inspector now checks the complete bounded function and
+exposes this nested FAR call on success. The nested callee's semantics
+and the overall shutdown ABI remain unverified.
 
 The third call is now identified as `rtl:10da1..10dc6`, a bounded FAR
 routine (preceded and terminated by `RETF`). It starts with `push cs; call
@@ -144,11 +152,32 @@ FAR-call target. The original bounded routine ends with `RETF 4` at
 
 The invoked `253a:0048` is already named
 `gate_linked_release_vfx_pixels` and has a bounded real-mode DOS heap
-adapter in `decomp/launcher/dos/msc51_heap.c`. The inspector reports that
-existing port symbol separately from any original file-source match and
-descends another FAR level to expose the live allocator-entry bytes. This
-does **not** establish that the complete Ctrl-Break cleanup is implemented:
-other shutdown calls and the original startup state bindings are missing.
+adapter in `decomp/launcher/dos/msc51_heap.c`. The latest user's 22-second
+snapshot exposes its **48-byte live entry**, identifying the original
+`RTL:18f23..18f53` by an exact entry-anchored comparison after masking the
+sole relocated `mov ax,imm16` DS-segment operand. The 46 unrelocated bytes
+in the supplied prefix agree with the source; its final `RETF 4` byte still
+requires a 49-byte snapshot comparison. The inspector now performs that
+whole-body comparison (**47 invariant bytes**) and reports the original
+source only on success. The segment's neighboring allocator at
+`RTL:18edf..18f22` is 68 bytes earlier, exactly matching the original
+linked offsets `253a:0004` and `253a:0048`; this is strong *static* bank
+evidence, **not** an independent live allocation-entry comparison.
+
+The recovered release body loads the caller's FAR segment into `ES`,
+passes it to DOS `INT 21h/AH=49h`, and ignores the FAR offset in `DI`.
+It returns `0000h` on clear carry and **`ffe7h` (-25)** on set carry,
+irrespective of the DOS error code in `AX`. The earlier DOS adapter
+incorrectly returned `ffe4h` (-28, the *image signature* error) and
+rejected a nonzero FAR offset. It now preserves the original offset-ignored
+semantics and reports `ffe7h` on a DOS failure; a zero-segment guard remains
+as a host safety condition. The DOS heap probe now tests freeing a block
+with a nonzero offset. Its revised *authentic Microsoft C 5.1* build/run is
+pending a user-side `msc51-compile-heap` rerun.
+
+This does **not** establish that the complete Ctrl-Break cleanup is
+implemented: other shutdown calls and original startup state bindings are
+missing.
 
 Three additional diagnostic callees now have strong original entry
 boundaries, not merely byte-window guesses:
@@ -179,8 +208,8 @@ does **not** validate every byte in the intervening bank or prove all
 possible callee entries there.
 
 For other unmatched FAR targets, the inspector now includes 48 live entry
-bytes as `live_entry_hex`, allowing analysis of the unknown `221b:021f`
-callee without treating a file-wide byte-window match as proof of identity.
+bytes as `live_entry_hex` for still-unmatched callees, without treating a
+file-wide byte-window match as proof of identity.
 Unknown nested targets are similarly reported with their live bytes. This
 does not read past a 1-MiB RAM capture, and does not claim that byte strings
 are disassembled or executable entry points.
@@ -191,8 +220,8 @@ two records; `rtl:11e5f` reads a device descriptor and dispatches at least
 two numbered requests; `rtl:621e` performs multiple near calls; `rtl:f827`
 branches on a resident mode selector; `rtl:8aca` initializes a FAR buffer
 descriptor and passes it to another formatter. Actual DOS side effects,
-the original source for `221b:021f`, and the remaining diagnostic
-input-polling behavior have yet to be established. None of these
+the downstream behavior of the now source-matched `221b:021f` branch, and
+the remaining diagnostic input-polling behavior have yet to be established. None of these
 observations justifies replacing
 the Ctrl-Break or diagnostic routines with a stub.
 

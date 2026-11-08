@@ -48,11 +48,15 @@ int main(void)
     valid &= check(gate_far_byte(pixels.segment, 0xffffu), 0xadu, "last byte before boundary");
     valid &= check(gate_far_byte((uint16_t)(pixels.segment + 0x1000u), 0u),
                    0xbcu, "first byte past boundary");
-    valid &= check(gate_linked_release_vfx_pixels(pixels), 0u, "release VFX block");
+    /* Original free loads ES from the FAR pointer, but does not inspect DI:
+     * the block is freed even if the passed offset is nonzero. */
+    pixels.offset = 1;
+    valid &= check(gate_linked_release_vfx_pixels(pixels), 0u,
+                   "release VFX block with nonzero offset");
 
     invalid.segment = 0;
     invalid.offset = 0;
-    valid &= check(gate_linked_release_vfx_pixels(invalid), 0xffe4u,
+    valid &= check(gate_linked_release_vfx_pixels(invalid), 0xffe7u,
                    "reject null VFX pointer");
     {
         uint16_t startup = gate_linked_allocate_intro_memory(0x1000u);

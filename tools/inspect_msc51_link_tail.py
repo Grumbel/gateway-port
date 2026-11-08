@@ -53,22 +53,30 @@ EXTENDED_RTL_ENTRIES = {
 # 1139d and 10573 follow RETF instructions; 1054d ends at its own RETF,
 # and its exact target offset selects it after the bank's initial records.
 # The 10573 check uses only its first 48 bytes of a longer function.
+# The first Ctrl-Break callee 15706..15729 precedes a RETF/NOOP/data boundary.
+# Its repeated flag references and two call argument offsets relocate under
+# different DS deltas, so validate them as two independent WORD-pair groups.
 # At 145d:016c the complete 86-byte CA00 image destructor has one relocated
 # DS-segment immediate and one FAR call to the already named pixel allocator.
+# The final 153a:0048 DOS heap release has a single relocated DS immediate;
+# its 49-byte body is adjacent to the heap allocator at RTL:18edf.
 # (relative segment, offset) -> original entry, length, FAR calls, zero WORDs,
 #                                pairs of WORDs preserving their delta
 RELOCATED_CALLEE_ENTRIES = {
+    (0x121b, 0x021f): (0x15706, 36, (15,), (), ((2, 25), (25, 31), (9, 13))),
     (0x0e48, 0x0202): (0x10da1, 38, (16, 26), (), ((6, 33), (12, 22))),
     (0x0e48, 0x07fe): (0x1139d, 48, (41,), (13,), ()),
     (0x0df2, 0x000a): (0x1054d, 38, (4,), (), ((18, 25),)),
     (0x0df2, 0x0030): (0x10573, 48, (41,), (), ((8, 15),)),
     (0x145d, 0x016c): (0x180fe, 86, (43,), (11,), ()),
+    (0x153a, 0x0048): (0x18f23, 49, (), (11,), ()),
 }
 
 # These are names already grounded in decomp/launcher/symbol-names.tsv and
 # backed by the existing bounded DOS heap adapter. A name does not imply
 # that the original resident entry is independently source-matched.
 KNOWN_LINKED_PORT_NAMES = {
+    (0x153a, 0x0004): 'gate_linked_allocate_vfx_pixels',
     (0x153a, 0x0048): 'gate_linked_release_vfx_pixels',
 }
 
@@ -118,6 +126,19 @@ def read_linked_far_calls(live, source_offset, call_offsets):
          'target_segment': int.from_bytes(live[start + 3:start + 5], 'little')}
         for start in call_offsets
     ]
+
+
+def nonrelocated_byte_count(length, call_offsets, word_offsets, word_pairs):
+    """Count unique unaffected bytes (WORD pairs may share one operand)."""
+    relocated = set()
+    for start in call_offsets:
+        relocated.update(range(start + 1, start + 5))
+    for start in word_offsets:
+        relocated.update(range(start, start + 2))
+    for first, second in word_pairs:
+        relocated.update(range(first, first + 2))
+        relocated.update(range(second, second + 2))
+    return length - len(relocated)
 
 
 def project_verified_bank_call(call, bank, rtl, ram, load_segment):
@@ -187,9 +208,8 @@ def annotate_relocated_callees(rows, exe, rtl, ram, load_segment):
                     call['relocated_source_match'] = {
                         'file': 'rtl', 'offset': source_offset,
                         'via': 'entry-anchored-relocated-operands',
-                        'matched_nonrelocated_bytes': (length - 4 * len(far_offsets)
-                                                      - 2 * len(word_offsets)
-                                                      - 4 * len(word_pairs)),
+                        'matched_nonrelocated_bytes': nonrelocated_byte_count(
+                            length, far_offsets, word_offsets, word_pairs),
                         'relocated_word_pairs': [
                             {'source_offsets': [source_offset + first,
                                                 source_offset + second],
