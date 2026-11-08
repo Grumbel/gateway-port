@@ -468,15 +468,19 @@ class LinkTailTests(unittest.TestCase):
             RELOCATED_CALLEE_ENTRIES[0x02a5, 0x2686]
         self.assertEqual((writer_source, writer_length, writer_fars,
                           writer_words, writer_pairs),
-                         (0x7d64, 100, (89,), (11,), ()))
+                         (0x7d64, 100, (89,), (11,), ((24, 42),)))
         writer_original = bytearray((index * 17 + 3) & 255
                                     for index in range(writer_length))
         writer_original[writer_fars[0]:writer_fars[0] + 5] = \
             b'\x9a\x00\x00\x00\x00'
         writer_original[writer_words[0]:writer_words[0] + 2] = b'\x00\x00'
+        for index in writer_pairs[0]:
+            writer_original[index:index + 2] = b'\x00\x00'
         rtl[writer_source:writer_source + writer_length] = writer_original
         writer_linked = bytearray(writer_original)
-        writer_linked[writer_words[0]:writer_words[0] + 2] = b'\x7b\x20'
+        writer_linked[writer_words[0]:writer_words[0] + 2] = b'\xee\x2b'
+        for index in writer_pairs[0]:
+            writer_linked[index:index + 2] = b'\xf0\x2b'
         writer_linked[writer_fars[0]:writer_fars[0] + 5] = \
             b'\x9a\x77\x55\x22\x44'
         writer_physical = (0x1000 + 0x02a5) * 16 + 0x2686
@@ -505,10 +509,21 @@ class LinkTailTests(unittest.TestCase):
         writer = flush['callee_far_calls'][0]
         self.assertEqual(writer['relocated_source_match']['offset'], writer_source)
         self.assertEqual(writer['relocated_source_match']['matched_nonrelocated_bytes'],
-                         94)
+                         90)
+        self.assertEqual(writer['relocated_source_match']['relocated_word_pairs'][0]
+                         ['runtime_values'], [0x2bf0, 0x2bf0])
         self.assertEqual(writer['callee_far_calls'][0]['original_call_offset'],
                          writer_source + writer_fars[0])
         self.assertEqual(writer['callee_far_calls'][0]['target_offset'], 0x5577)
+
+        # Two references to the same descriptor flag field must remain
+        # equal after LINK; masking them independently would be too weak.
+        ram[writer_physical + writer_pairs[0][1]] ^= 1
+        writer = inspect(exe, rtl, ram)[1]['relocated_far_calls'][0] \
+            ['callee_far_calls'][0]['callee_far_calls'][0]['callee_far_calls'][0]
+        self.assertNotIn('relocated_source_match', writer)
+        self.assertNotIn('callee_far_calls', writer)
+        ram[writer_physical + writer_pairs[0][1]] ^= 1
 
         # A stable instruction changed beyond the 48-byte raw entry window
         # rejects the longer CRT writer signature and its nested FAR call.

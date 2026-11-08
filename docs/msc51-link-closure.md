@@ -155,12 +155,17 @@ writer must **not** be conflated with the already reconstructed raw DOS
 file-write wrapper `gate_linked_dos_file_write`.
 
 The inspector now offers a **100-byte entry-anchored prefix check** at
-`RTL:7d64`, masking only the DS descriptor-bound WORD at `RTL:7d6f` and the
-FAR target operand at `RTL:7dbd`: **94 invariant bytes**. Only on success
-does it expose that helper's relocated FAR target. The authentic snapshot
-currently validates an 11-byte raw entry prefix; a fresh run is needed to
-validate the stronger 100-byte check. Neither this inspection nor a plausible
-CRT library identity implements the unresolved Ctrl-Break wrapper.
+`RTL:7d64`. The user's subsequent capture exposed two additional relocated
+flag-field WORD operands: original `RTL:7d7c/7d8e` both link to live
+`DS:2bf0`, while the bound at `RTL:7d6f` becomes `DS:2bee`.
+The initial 94-byte signature rejected the actual runtime entry correctly
+because those two operands were still treated as unchanged instructions.
+The revised check masks the descriptor-bound WORD, validates the equality
+of the two flag-field WORDs, and masks the FAR target at `RTL:7dbd`:
+**90 invariant bytes**. Only on success does it expose that helper's
+relocated FAR target. The 100-byte check awaits a fresh authentic rerun;
+neither this inspection nor the CRT identity implements the unresolved
+Ctrl-Break wrapper.
 
 The third call is now identified as `rtl:10da1..10dc6`, a bounded FAR
 routine (preceded and terminated by `RETF`). It starts with `push cs; call
