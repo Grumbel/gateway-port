@@ -459,6 +459,104 @@ def runtime_data_remainder(rtl, captures, runtime_ds, image_load):
         runtime_ds, image_load)
 
 
+def dos_mcb_chain(ram, first_mcb_segment, *, conventional_end=0xa000):
+    """Walk serialized DOS memory-control blocks, without scanning for guesses.
+
+    A DOS MCB has type M/Z, owner PSP at +1, and paragraph count at +3.
+    Each next MCB begins at current_segment + 1 + paragraphs. A malformed
+    header *ends* the scan: unrelated conventional-memory bytes must never
+    be reinterpreted as an allocation chain.
+    """
+    if len(ram) != RAM_SIZE:
+        raise ValueError("expected a complete 1 MiB DOS RAM snapshot")
+    if not (0x0050 <= first_mcb_segment < conventional_end <= 0x10000):
+        raise ValueError("invalid first MCB or conventional memory limit")
+    blocks = []
+    segment = first_mcb_segment
+    for _ in range(4096):
+        address = segment * 16
+        kind = ram[address]
+        if kind not in (ord("M"), ord("Z")):
+            return {"complete": False, "error": "invalid MCB type at %04x" % segment,
+                    "blocks": blocks}
+        paragraphs = word(ram, address + 3)
+        next_mcb = segment + 1 + paragraphs
+        if next_mcb > conventional_end:
+            return {"complete": False, "error": "MCB %04x exceeds conventional memory" %
+                    segment, "blocks": blocks}
+        blocks.append({"mcb_segment": segment, "data_segment": segment + 1,
+                       "paragraphs": paragraphs, "owner_psp": word(ram, address + 1),
+                       "terminal": kind == ord("Z")})
+        if kind == ord("Z"):
+            return {"complete": True, "error": None, "blocks": blocks}
+        if next_mcb >= conventional_end:
+            return {"complete": False, "error": "missing terminal MCB after %04x" %
+                    segment, "blocks": blocks}
+        segment = next_mcb
+    return {"complete": False, "error": "MCB walk exceeded 4096 blocks",
+            "blocks": blocks}
+
+
+def mcb_target_owner(blocks, segment, offsets):
+    """Attribute all FAR targets to one MCB data region, if possible."""
+    addresses = [segment * 16 + offset for offset in offsets]
+    for block in blocks:
+        start = block["data_segment"] * 16
+        end = start + block["paragraphs"] * 16
+        if addresses and all(start <= address < end for address in addresses):
+            return {"mcb_segment": block["mcb_segment"],
+                    "data_segment": block["data_segment"],
+                    "paragraphs": block["paragraphs"],
+                    "owner_psp": block["owner_psp"],
+                    "segment_delta": segment - block["data_segment"],
+                    "starts_at_block": segment == block["data_segment"]}
+    return None
+
+
+def runtime_mcb_owners(captures, runtime_ds, image_load, *, first_mcb=None):
+    """Resolve observed external FAR table segments against *real* DOS MCBs.
+
+    The initial MZ load segment is one PSP (10h paragraphs) after the PSP;
+    its process-owned MCB is at PSP-1. The caller may supply a different
+    known starting MCB, but this report never guesses by scanning RAM.
+    A valid MCB proves block ownership, NOT which allocation call made it.
+    """
+    if runtime_ds is None or image_load < 0x11:
+        raise ValueError("need original image load and eventual runtime DS")
+    if runtime_ds * 16 + RTL_DATA_IMAGE_END > RAM_SIZE:
+        raise ValueError("runtime data segment outside conventional RAM")
+    psp_segment = image_load - 0x10
+    start_mcb = psp_segment - 1 if first_mcb is None else first_mcb
+    reports = []
+    for milliseconds, _, ram in captures:
+        chain = dos_mcb_chain(ram, start_mcb)
+        tables = []
+        if milliseconds >= 100:
+            data_start = runtime_ds * 16
+            for name, entries in KNOWN_RTL_EXTERNAL_POINTERS:
+                observed_segments = {
+                    word(ram, data_start + site + 2) for site, _ in entries}
+                offsets_match = all(word(ram, data_start + site) == offset
+                                    for site, offset in entries)
+                segment = (next(iter(observed_segments))
+                           if len(observed_segments) == 1 else None)
+                initialized = offsets_match and segment not in (None, 0)
+                owner = (mcb_target_owner(chain["blocks"], segment,
+                                          [offset for _, offset in entries])
+                         if initialized and chain["complete"] else None)
+                tables.append({"name": name, "initialized": initialized,
+                               "segment": segment, "owner": owner})
+            data_owner = (mcb_target_owner(chain["blocks"], runtime_ds, [0])
+                          if chain["complete"] else None)
+        else:
+            data_owner = None
+        reports.append({"milliseconds": milliseconds,
+                        "mcb_chain": chain, "external_tables": tables,
+                        "runtime_ds_owner": data_owner})
+    return {"psp_segment": psp_segment, "first_mcb_segment": start_mcb,
+            "snapshots": reports}
+
+
 def runtime_data_layout(exe, rtl, captures, segment, *, minimum=DATA_MATCH_MINIMUM):
     """Report EXE/RTL exact matches and zero spans in the *eventual* DS.
 
@@ -859,7 +957,11 @@ def main():
     parser.add_argument("--runtime-data-fixups", action="store_true",
                         help="report unverified candidate segment-word fixups in the early RTL preimage")
     parser.add_argument("--runtime-data-remainder", action="store_true",
-                        help="inspect early RTL preimage changes after 27 segment + 19 offset fixes")
+                        help="inspect early RTL preimage changes after staged pointer fixes")
+    parser.add_argument("--runtime-mcb-owners", action="store_true",
+                        help="walk DOS MCBs to identify owners of the two external pointer tables")
+    parser.add_argument("--mcb-start", type=lambda value: int(value, 0),
+                        help="first known MCB segment (default: initial PSP minus one paragraph)")
     args = parser.parse_args()
     try:
         exe = args.exe.read_bytes()
@@ -877,6 +979,11 @@ def main():
             report["runtime_data_remainder"] = runtime_data_remainder(
                 rtl, captures, report["observed_runtime_data_segment"],
                 report["original_exe"]["image_load_segment"])
+        if args.runtime_mcb_owners:
+            report["runtime_mcb_owners"] = runtime_mcb_owners(
+                captures, report["observed_runtime_data_segment"],
+                report["original_exe"]["image_load_segment"],
+                first_mcb=args.mcb_start)
     except (ValueError, OSError) as error:
         parser.error(str(error))
     if args.json:
@@ -1039,6 +1146,42 @@ def main():
             if remaining["cluster_count"] > 48:
                 print("    ... %d more clusters (use --json for all)" %
                       (remaining["cluster_count"] - 48))
+        if args.runtime_mcb_owners:
+            mcb = report["runtime_mcb_owners"]
+            print("DOS MCB ownership from PSP=%04x, first MCB=%04x "
+                  "(no guessed header scans):" % (
+                      mcb["psp_segment"], mcb["first_mcb_segment"]))
+            for sample in mcb["snapshots"]:
+                chain = sample["mcb_chain"]
+                if not chain["complete"]:
+                    print(" %4dms: invalid/incomplete chain: %s "
+                          "(%d preceding blocks)" % (
+                              sample["milliseconds"], chain["error"],
+                              len(chain["blocks"])))
+                else:
+                    print(" %4dms: %d MCB blocks, terminal Z confirmed" % (
+                        sample["milliseconds"], len(chain["blocks"])))
+                for entry in sample["external_tables"]:
+                    if not entry["initialized"]:
+                        print("       %s: FAR table not consistently initialized" %
+                              entry["name"])
+                    elif entry["owner"] is None:
+                        print("       %s: segment=%04x, block owner unknown" % (
+                            entry["name"], entry["segment"]))
+                    else:
+                        owner = entry["owner"]
+                        print("       %s: segment=%04x, block=%04x owner=%04x "
+                              "paragraphs=%04x delta=%04x%s" % (
+                                  entry["name"], entry["segment"],
+                                  owner["data_segment"], owner["owner_psp"],
+                                  owner["paragraphs"], owner["segment_delta"],
+                                  " at-start" if owner["starts_at_block"] else ""))
+                owner = sample["runtime_ds_owner"]
+                if owner is not None:
+                    print("       eventual DS block=%04x owner=%04x "
+                          "paragraphs=%04x delta=%04x" % (
+                              owner["data_segment"], owner["owner_psp"],
+                              owner["paragraphs"], owner["segment_delta"]))
 
 
 if __name__ == "__main__":

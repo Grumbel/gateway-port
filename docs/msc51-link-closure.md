@@ -745,6 +745,39 @@ These five fields explain **10 more changed bytes**, bringing coverage
 to **167 of 260** early changes and leaving **93**. Microsoft C 5.1/DOSBox
 verification of this updated helper remains pending on the user's host.
 
+**Follow-up: determine external allocation ownership from snapshots.**
+After the 167 verified initialization byte changes are excluded, the user's
+remainder report contains only ten clusters: a 63-byte zeroed prefix at
+`DS:0002` (56 later-mutated bytes), a 16-byte initialization table at
+`DS:0547` (13 actual changed bytes), a four-byte FAR-looking value at
+`DS:049d`, one changed byte at `DS:0518`, and six two-byte sites at
+`DS:0525`, `26d6`, `2b74`, `2bc6`, `2c0e`, and `2c24`. Only the `2c0e`
+word is later mutated in the two-byte group. It would be premature to
+call the cleared prefix BSS or to hardcode `DS:049d` as a FAR pointer
+without identifying its runtime segment.
+
+`inspect_msc51_startup.py --runtime-mcb-owners` now walks *actual*
+DOS MCB headers at each original RAM snapshot, beginning at the MCB
+immediately before the original observed PSP (`0ff0`, hence MCB `0fef`)
+unless `--mcb-start 0xSEG` explicitly overrides it. It validates the
+`M`/`Z` marker, owner PSP, paragraph count and sequential chain bounds;
+malformed chains stop rather than attempting a byte-pattern scan. It
+compares all pointer offsets/segment halves at each settled sample and
+reports the MCB enclosing their full FAR target ranges, whether the
+segment equals the allocated block's data start, and the block owning
+the eventual runtime DS. A valid MCB identifies the memory block, *not*
+the allocation call which created it. This analysis does not write the
+guest or embed original bytes. Synthetic positive, free-block and corrupt
+chain cases pass locally. To obtain the missing original-DOS evidence:
+
+```sh
+python3 tools/inspect_msc51_startup.py \
+  --exe ../gateway-dos/GATE.EXE --rtl ../gateway-dos/GATE.RTL \
+  --snapshot-dir build/msc51-startup \
+  --snapshot-dir build/msc51-startup-fine \
+  --runtime-mcb-owners
+```
+
 **Microsoft C 5.1 build correction:** The first user-side `DATA.BAT` run
 compiled `DATA.C` but stopped with `DATACHK.C(22): C2073` (an initialized
 automatic `char name[]`), so **neither test executable ran**. Both test

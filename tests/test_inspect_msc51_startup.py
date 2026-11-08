@@ -24,6 +24,13 @@ def put_word(data, offset, value):
     data[offset:offset + 2] = value.to_bytes(2, "little")
 
 
+def put_mcb(ram, segment, marker, owner, paragraphs):
+    base = segment * 16
+    ram[base] = ord(marker)
+    put_word(ram, base + 1, owner)
+    put_word(ram, base + 3, paragraphs)
+
+
 def fixture():
     exe = bytearray(0x620)
     exe[:2] = b"MZ"
@@ -47,6 +54,72 @@ def regs(cs, ip, ds, ss, sp):
 
 
 class StartupSnapshotTests(unittest.TestCase):
+    def test_mcb_chain_assigns_external_pointer_targets_without_guessing(self):
+        data_segment = 0x2a7a
+        raw = bytearray(startup.RAM_SIZE)
+        # Four synthetic DOS-owned blocks, with two external allocations
+        # between the initial process block and the eventual data segment.
+        for mcb_segment, marker, paragraphs in (
+                (0x0fef, "M", 0x153b), (0x252b, "M", 0x00aa),
+                (0x25d6, "M", 0x04a2), (0x2a79, "Z", 0x100a)):
+            put_mcb(raw, mcb_segment, marker, 0x0ff0, paragraphs)
+        for group_index, (_, entries) in enumerate(startup.KNOWN_RTL_EXTERNAL_POINTERS):
+            for site, offset in entries:
+                put_word(raw, data_segment * 16 + site, offset)
+                put_word(raw, data_segment * 16 + site + 2,
+                         (0x252c, 0x25d7)[group_index])
+        first = bytes(raw)
+        released = bytearray(raw)
+        put_word(released, 0x252b * 16 + 1, 0)  # Simulate DOS freeing first block.
+        captures = [
+            (100, regs(0x3259, 0x103c, 0x348a, 0x3229, 0x3c4), first),
+            (500, regs(0x12a5, 0x3570, data_segment, data_segment, 0x7a1a),
+             bytes(released)),
+        ]
+        report = startup.runtime_mcb_owners(captures, data_segment, 0x1000)
+        self.assertEqual((report["psp_segment"], report["first_mcb_segment"]),
+                         (0x0ff0, 0x0fef))
+        early, late = report["snapshots"]
+        self.assertTrue(early["mcb_chain"]["complete"])
+        self.assertEqual(len(early["mcb_chain"]["blocks"]), 4)
+        self.assertEqual([entry["segment"] for entry in early["external_tables"]],
+                         [0x252c, 0x25d7])
+        self.assertTrue(all(entry["initialized"] for entry in early["external_tables"]))
+        self.assertEqual([entry["owner"]["owner_psp"]
+                          for entry in early["external_tables"]], [0x0ff0, 0x0ff0])
+        self.assertTrue(all(entry["owner"]["starts_at_block"]
+                            for entry in early["external_tables"]))
+        self.assertEqual(early["runtime_ds_owner"]["data_segment"], data_segment)
+        self.assertEqual(late["external_tables"][0]["owner"]["owner_psp"], 0)
+
+        damaged = bytearray(first)
+        damaged[0x252b * 16] = ord("Q")
+        chain = startup.dos_mcb_chain(bytes(damaged), 0x0fef)
+        self.assertFalse(chain["complete"])
+        self.assertEqual(len(chain["blocks"]), 1)
+        self.assertIn("252b", chain["error"])
+        fallback = startup.runtime_mcb_owners(
+            [(100, captures[0][1], bytes(damaged))], data_segment, 0x1000)
+        self.assertIsNone(fallback["snapshots"][0]["external_tables"][0]["owner"])
+        self.assertIsNone(fallback["snapshots"][0]["runtime_ds_owner"])
+
+        not_initialized = bytearray(first)
+        put_word(not_initialized, data_segment * 16 + 0x2acf + 2, 0)
+        check = startup.runtime_mcb_owners(
+            [(100, captures[0][1], bytes(not_initialized))], data_segment, 0x1000)
+        self.assertFalse(check["snapshots"][0]["external_tables"][1]["initialized"])
+        self.assertIsNone(check["snapshots"][0]["external_tables"][1]["owner"])
+
+        bad_extent = bytearray(first)
+        put_word(bad_extent, 0x0fef * 16 + 3, 0xffff)
+        chain = startup.dos_mcb_chain(bytes(bad_extent), 0x0fef)
+        self.assertFalse(chain["complete"])
+        self.assertIn("exceeds conventional memory", chain["error"])
+        with self.assertRaisesRegex(ValueError, "complete 1 MiB"):
+            startup.dos_mcb_chain(bytes(10), 0x0fef)
+        with self.assertRaisesRegex(ValueError, "invalid first MCB"):
+            startup.dos_mcb_chain(first, 0xa000)
+
     def test_rtl_remainder_known_sites_match_dos_initializer_tables(self):
         source = (REPO / "decomp/launcher/dos/msc51_startup_static_data.c").read_text()
         for identifier, expected in (

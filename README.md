@@ -470,6 +470,27 @@ samples, byte-change frequencies, and repeated 16-bit transformations.
 Use `--json` for complete, untruncated clusters. Neither repeated words
 nor stable changes are automatically classified as relocations.
 
+For the two external FAR-pointer tables, determine whether their observed
+segments `252c` and `25d7` are separate DOS allocations or addresses
+inside larger blocks. This optional diagnostic reads serialized MCBs
+from the existing original startup RAM snapshots (it does not modify
+them or infer ownership from arbitrary M/Z bytes):
+
+```sh
+python3 tools/inspect_msc51_startup.py \
+  --exe ../gateway-dos/GATE.EXE --rtl ../gateway-dos/GATE.RTL \
+  --snapshot-dir build/msc51-startup \
+  --snapshot-dir build/msc51-startup-fine \
+  --runtime-mcb-owners
+```
+
+It begins at the DOS MCB immediately preceding the observed initial PSP
+(`0ff0`), verifies sequential block headers and reports the owner, size,
+and start offset for the external pointer targets and the eventual runtime
+data segment. An incomplete chain is reported as such; `--mcb-start 0xSEG`
+allows a separately verified first MCB. This establishes which blocks
+were present, not the original `_dos_allocmem` call sequence.
+
 The user's follow-up Microsoft LINK run consumed `MEMORY.OBJ` and reduced
 the unresolved-symbol count **from 108 to 100**, exactly removing those
 eight segmented-memory names. This verifies linkage, not the launcher
