@@ -161,6 +161,13 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("int86(0x10, &in, &out)", (output / "RESSTATE.C").read_text())
             self.assertIn("fill_vga_planes", (output / "RESSTATE.C").read_text())
             self.assertIn("clear rejects mismatched descriptor", (output / "RESCHK.C").read_text())
+            self.assertIn("void gate_rtl_plot_pixel(uint16_t color", (output / "RESSTATE.C").read_text())
+            self.assertIn("in.h.ah = 0x0du", (output / "RESSTATE.C").read_text())
+            self.assertIn("in.h.ah = 0x0cu", (output / "RESSTATE.C").read_text())
+            self.assertIn("void gate_rtl_resident_line_to(uint16_t x", (output / "RESSTATE.C").read_text())
+            self.assertIn("void gate_rtl_background_rect(uint16_t style", (output / "RESSTATE.C").read_text())
+            self.assertIn("mode-13 pixel XOR", (output / "RESCHK.C").read_text())
+            self.assertIn("planar VGA pixel", (output / "RESCHK.C").read_text())
             for name in ("RESSTATE.C", "RESCHK.C"):
                 self.assertTrue(all(len(identifier) <= 31 for identifier in
                                     msc51.msc51_identifiers((output / name).read_text())), name)

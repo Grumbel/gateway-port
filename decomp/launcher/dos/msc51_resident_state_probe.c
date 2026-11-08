@@ -13,6 +13,10 @@ void gate_rtl_background_setup(uint16_t pattern, uint16_t color, uint16_t transp
 uint16_t gate_rtl_mode_set_bios(uint16_t mode);
 uint16_t gate_rtl_mode_start(uint16_t enabled);
 uint16_t gate_linked_clear_resident_display(uint16_t page, uint16_t color);
+void gate_rtl_plot_pixel(uint16_t color, uint16_t y, uint16_t x);
+void gate_rtl_resident_line_to(uint16_t x, uint16_t y);
+void gate_rtl_background_rect(uint16_t style, uint16_t bottom,
+                              uint16_t right, uint16_t top, uint16_t left);
 
 static int check(uint16_t actual, uint16_t expected, const char *label)
 {
@@ -72,6 +76,67 @@ int main(void)
     in.h.ah = 0x0fu;
     int86(0x10, &in, &out);
     valid &= check(out.h.al, original_bios_mode, "BIOS mode unchanged");
+
+    /* The mode-13 path writes genuine A000 bytes. The original 25d7
+     * dispatch mode is set independently of the BIOS mode, so set both. */
+    in.x.ax = 0x0013u;
+    int86(0x10, &in, &out);
+    gate_ds_set_word(GATE_DS_RENDERER_MODE, 3u);
+    gate_ds_set_word(GATE_DS_DRAW_CLIPPING_ENABLED, 0u);
+    gate_ds_set_word(GATE_DS_DRAW_OPERATION, 0u);
+    gate_rtl_plot_pixel(0x42u, 4u, 9u);
+    valid &= check(gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                                 (uint16_t)(4u * 320u + 9u)),
+                   0x42u, "mode-13 pixel copy");
+    gate_ds_set_word(GATE_DS_DRAW_OPERATION, 3u);
+    gate_rtl_plot_pixel(0x0fu, 4u, 9u);
+    valid &= check(gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                                 (uint16_t)(4u * 320u + 9u)),
+                   0x4du, "mode-13 pixel XOR");
+    gate_ds_set_word(GATE_DS_DRAW_OPERATION, 0u);
+    gate_ds_set_word(GATE_DS_DRAW_LINE_WIDTH, 1u);
+    gate_ds_set_word(GATE_DS_DRAW_LINE_MASK, 0xffffu);
+    gate_rtl_resident_set_pen_color(0x0au);
+    gate_rtl_resident_move_to(12u, 12u);
+    gate_rtl_resident_line_to(15u, 12u);
+    valid &= check(gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                                 (uint16_t)(12u * 320u + 13u)),
+                   0x0au, "horizontal line interior");
+    valid &= check(gate_ds_word(GATE_DS_DRAW_X), 15u, "line updates pen X");
+    gate_rtl_background_setup(0u, 0x20u, 0u);
+    gate_rtl_background_rect(2u, 18u, 18u, 16u, 16u);
+    valid &= check(gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                                 (uint16_t)(17u * 320u + 17u)),
+                   0x20u, "solid rectangle interior");
+    valid &= check(gate_ds_word(GATE_DS_DRAW_COLOR), 0x0au,
+                   "rectangle restores pen color");
+    valid &= check(gate_ds_word(GATE_DS_DRAW_LINE_MASK), 0xffffu,
+                   "rectangle restores line mask");
+    gate_rtl_background_rect(1u, 22u, 22u, 20u, 20u);
+    valid &= check(gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                                 (uint16_t)(20u * 320u + 21u)),
+                   0x0au, "outline top edge");
+    valid &= check(gate_ds_word(GATE_DS_DRAW_X), 15u,
+                   "outline restores pen X");
+    valid &= check(gate_ds_word(GATE_DS_DRAW_Y), 12u,
+                   "outline restores pen Y");
+
+    /* The 640x480 branch uses real BIOS planar pixels rather than treating
+     * A000 as a linear 4-bit buffer. Test only one pixel to avoid replacing
+     * the original resident rasterizer's fast path with a slow bulk test. */
+    in.x.ax = 0x0012u;
+    int86(0x10, &in, &out);
+    gate_ds_set_word(GATE_DS_RENDERER_MODE, 2u);
+    gate_rtl_plot_pixel(0x0bu, 4u, 5u);
+    in.x.ax = 0x0d00u;
+    in.x.bx = 0u;
+    in.x.cx = 5u;
+    in.x.dx = 4u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 0x0bu, "planar VGA pixel");
+
+    in.x.ax = original_bios_mode;
+    int86(0x10, &in, &out);
 
     if (_dos_freemem(segment) != 0) {
         puts("Resident state probe: DOS memory free failed");

@@ -23,6 +23,155 @@ void gate_rtl_resident_move_to(uint16_t x, uint16_t y)
     gate_ds_set_word(GATE_DS_DRAW_Y, y);
 }
 
+/* The original resident 25d7:0004 dispatches modes 1/2 to a VGA planar
+ * pixel operation and mode 3 to a linear 320x200 pixel operation. This DOS
+ * boundary uses BIOS INT 10h/0c/0d for planar pixels and the real A000
+ * aperture for mode 13h. The original clipping and raster operations are
+ * reconstructed in src/intro_host_rtl_pixel.c; uncommon modes 0 and 4
+ * remain unimplemented and must not silently draw as mode 13h. */
+void gate_rtl_plot_pixel(uint16_t color, uint16_t y, uint16_t x)
+{
+    uint16_t mode, operation;
+    uint8_t incoming, old, result;
+    if (gate_ds_word(GATE_DS_DRAW_CLIPPING_ENABLED) == 1u) {
+        if ((int16_t)x < (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_LEFT) ||
+            (int16_t)y < (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_TOP) ||
+            (int16_t)x > (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_RIGHT) ||
+            (int16_t)y > (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_BOTTOM))
+            return;
+    }
+    mode = gate_ds_word(GATE_DS_RENDERER_MODE);
+    if (mode != 1u && mode != 2u && mode != 3u)
+        abort();
+    if (((mode == 1u || mode == 2u) &&
+         (x >= 640u || y >= (mode == 1u ? 350u : 480u))) ||
+        (mode == 3u && (x >= 320u || y >= 200u)))
+        return;
+
+    operation = (uint16_t)(gate_ds_word(GATE_DS_DRAW_OPERATION) & 0xffu);
+    incoming = (uint8_t)(mode == 3u ? color : (color & 15u));
+    if (mode == 3u) {
+        uint16_t offset = (uint16_t)(320ul * y + x);
+        old = gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT, offset);
+        switch (operation) {
+        case 0u: result = incoming; break;
+        case 1u: result = (uint8_t)(old & incoming); break;
+        case 3u: result = (uint8_t)(old ^ incoming); break;
+        default: result = (uint8_t)(old | incoming); break;
+        }
+        gate_far_set_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT, offset, result);
+    } else {
+        union REGS in, out;
+        in.x.ax = 0u;
+        in.x.bx = 0u;
+        in.x.cx = x;
+        in.x.dx = y;
+        in.h.ah = 0x0du;
+        int86(0x10, &in, &out);
+        old = (uint8_t)(out.h.al & 0x0fu);
+        switch (operation) {
+        case 0u: result = incoming; break;
+        case 1u: result = (uint8_t)(old & incoming); break;
+        case 3u: result = (uint8_t)(old ^ incoming); break;
+        default: result = (uint8_t)(old | incoming); break;
+        }
+        /* BIOS pixel write's high bit can mean XOR in planar modes; all
+         * our explicitly combined colors are <= 0x0f (copy only). */
+        in.h.ah = 0x0cu;
+        in.h.al = result;
+        int86(0x10, &in, &out);
+    }
+}
+
+/* Original 2621:003e first updates the remembered pen, then rasterizes
+ * from its prior position. The intro's recovered calls use axis-aligned
+ * single-pixel-wide, unmasked edges; diagonal/masked paths are not yet
+ * reconstructed and abort instead of drawing an invented line. */
+void gate_rtl_resident_line_to(uint16_t x, uint16_t y)
+{
+    int32_t old_x = (int16_t)gate_ds_word(GATE_DS_DRAW_X);
+    int32_t old_y = (int16_t)gate_ds_word(GATE_DS_DRAW_Y);
+    int32_t next_x = (int16_t)x;
+    int32_t next_y = (int16_t)y;
+    int32_t cursor, step;
+    uint16_t color = gate_ds_word(GATE_DS_DRAW_COLOR);
+    gate_rtl_resident_move_to(x, y);
+    if (gate_ds_word(GATE_DS_DRAW_LINE_WIDTH) != 1u ||
+        gate_ds_word(GATE_DS_DRAW_LINE_MASK) != 0xffffu)
+        abort();
+    if (old_x == next_x) {
+        step = old_y <= next_y ? 1 : -1;
+        for (cursor = old_y;; cursor += step) {
+            gate_rtl_plot_pixel(color, (uint16_t)cursor, x);
+            if (cursor == next_y)
+                break;
+        }
+    } else if (old_y == next_y) {
+        step = old_x <= next_x ? 1 : -1;
+        for (cursor = old_x;; cursor += step) {
+            gate_rtl_plot_pixel(color, y, (uint16_t)cursor);
+            if (cursor == next_x)
+                break;
+        }
+    } else {
+        abort();
+    }
+}
+
+/* Resident 2698:0006's bounded style-1 outline and opaque style-2 solid
+ * fill. These are the branches recovered in the native host and used by
+ * the launcher. Patterned, transparent and reversed-endpoint paths remain
+ * explicit missing behavior. */
+void gate_rtl_background_rect(uint16_t style, uint16_t bottom,
+                              uint16_t right, uint16_t top, uint16_t left)
+{
+    uint16_t saved_color, saved_mask, saved_width;
+    uint16_t y;
+    if ((style != 1u && style != 2u) ||
+        gate_ds_word(GATE_DS_DRAW_FILL_PATTERN) != 0u ||
+        gate_ds_word(GATE_DS_DRAW_FILL_TRANSPARENT) != 0u)
+        abort();
+    if (style == 1u) {
+        uint16_t previous_x = gate_ds_word(GATE_DS_DRAW_X);
+        uint16_t previous_y = gate_ds_word(GATE_DS_DRAW_Y);
+        if (gate_ds_word(GATE_DS_DRAW_LINE_WIDTH) != 1u)
+            abort();
+        gate_ds_set_word(GATE_DS_DRAW_RECT_STATE, 0u);
+        gate_rtl_resident_move_to(left, bottom);
+        gate_rtl_resident_line_to(left, top);
+        gate_rtl_resident_line_to(right, top);
+        gate_rtl_resident_line_to(right, bottom);
+        gate_rtl_resident_line_to(left, bottom);
+        gate_rtl_resident_move_to(previous_x, previous_y);
+        gate_ds_set_word(GATE_DS_DRAW_RECT_STATE, 1u);
+        return;
+    }
+    if ((int16_t)(uint16_t)(bottom - top) <= 0)
+        return;
+    if ((int16_t)right < (int16_t)left)
+        abort();
+
+    saved_color = gate_ds_word(GATE_DS_DRAW_COLOR);
+    saved_mask = gate_ds_word(GATE_DS_DRAW_LINE_MASK);
+    saved_width = gate_ds_word(GATE_DS_DRAW_LINE_WIDTH);
+    gate_ds_set_word(GATE_DS_DRAW_COLOR, gate_ds_word(GATE_DS_DRAW_FILL_COLOR));
+    gate_ds_set_word(GATE_DS_DRAW_LINE_MASK, 0xffffu);
+    gate_ds_set_word(GATE_DS_DRAW_LINE_WIDTH, 1u);
+    for (y = top;; ++y) {
+        uint16_t x;
+        for (x = left;; ++x) {
+            gate_rtl_plot_pixel(gate_ds_word(GATE_DS_DRAW_COLOR), y, x);
+            if (x == right)
+                break;
+        }
+        if (y == bottom)
+            break;
+    }
+    gate_ds_set_word(GATE_DS_DRAW_COLOR, saved_color);
+    gate_ds_set_word(GATE_DS_DRAW_LINE_MASK, saved_mask);
+    gate_ds_set_word(GATE_DS_DRAW_LINE_WIDTH, saved_width);
+}
+
 /* 25a3:0002 accepts pattern 0..11 and records color and strict binary
  * transparency. Unknown patterns are not approximated as pattern zero. */
 void gate_rtl_background_setup(uint16_t pattern, uint16_t color,

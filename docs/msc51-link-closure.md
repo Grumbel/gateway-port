@@ -7,9 +7,10 @@ This is the **remaining implementation/verification inventory**, not a list
 of functions already recovered. The latest real Microsoft LINK 3.65 report
 supplied by the user on 2026-11-08 confirmed **26 unresolved names**, with
 `RTLHW`, `RTFILE`, `RESSTATE`, `HEAP`, `INP`, `CLOCK` and `CRTENV` linked.
-The extended `RTLHW` adapter now supplies eight original RTL text/video
-names, making **18 the predicted remainder if the modified hardware probe
-passes**; that number is not yet a measured Microsoft LINK result.
+The extended `RTLHW` adapter supplies eight RTL text/video names, and
+`RESSTATE` supplies three bounded raster names: **15 is the predicted
+remainder if both modified DOS probes pass**. This is not yet a measured
+Microsoft LINK result.
 Do not manufacture no-op definitions merely to obtain an executable.
 
 ## Remaining 26 link dependencies
@@ -18,7 +19,7 @@ Do not manufacture no-op definitions merely to obtain an executable.
 | --- | --- | ---: | --- |
 | DOS entry point | `main` | 1 | Reconstruct actual DOS startup/relocation and bind live original linked DS, stack, initial descriptors, assets, CRT initialization and transfer to `gate_exe_play_intro`. An empty `main()` would produce a false success. |
 | RTL text/video state | `gate_rtl_video_inversion`, `gate_rtl_video_attribute`, `gate_rtl_video_columns`, `gate_rtl_video_rows`, `gate_rtl_video_tab_base`, `gate_rtl_video_block_mode`, `gate_rtl_video_set_block_mode`, `gate_rtl_video_command` | 8 | **Staged, DOS probe pending.** Original RTL disassembly verifies the seven RTL-DS offsets and pointer dereferences; the separate 16-bit DS must be bound during startup, not assumed to equal EXE DS. The 14-byte command adapter handles only original commands 2/3/9 through BIOS INT 10h. The underlying 12a5:2d8a dispatcher has not been decompiled, and unrecognized commands abort. |
-| Pixel and drawing primitives | `gate_rtl_plot_pixel`, `gate_rtl_background_rect`, `gate_rtl_resident_line_to` | 3 | Port bounded original resident raster operations, including clipping, VGA register state, line patterns and drawing modes; compare DOS VGA output against guest traces. |
+| Pixel and drawing primitives | `gate_rtl_plot_pixel`, `gate_rtl_background_rect`, `gate_rtl_resident_line_to` | 3 | **Staged, DOS probe pending.** The native host's bounded pixel modes 1/2/3, raster operations and clipping are implemented over real DOS VGA. Mode 13h uses A000 linear memory and modes 1/2 use BIOS INT 10h pixel reads/writes, with test pixels/lines/opaque rectangles. Unmodeled modes, diagonal lines and patterned fills abort; the DOSBox test and guest trace comparison remain outstanding. |
 | Video adapter query | `gate_rtl_mode_query_adapter`, `gate_rtl_mode_svga_variant` | 2 | Recover hardware-visible `242a:000a` adapter/monitor subtype bytes and `241d:0004` SVGA variant response; test with real BIOS, not hardcoded VGA type 5. |
 | Original exception/stack state | `gate_rtl_file_divide_fault`, `gate_rtl_file_stack_word` | 2 | Trace original divide-fault exit and near-stack word reader; `0` or `abort()` substitute values would hide original behavior. |
 | Runtime calendar sample | `gate_linked_read_runtime_time_sample` | 1 | Reconstruct `12a5:34d8` ten-byte sample and its date/time, timezone/DST dependencies, then compare against the already recovered `gate_rtl_elapsed_milliseconds`. The pending DOS clock is an intentionally approximate live substitute. |
@@ -58,6 +59,15 @@ segments, block-cursor state, real INT 10h text cursor get/set, and a
 non-visible character/attribute rewrite. **A passing probe does not
 initialize the RTL segment for `GATEWAY.EXE`**: that will require a real
 DOS startup entry and original RTL loader/relocator, currently unavailable.
+
+The extended `RESSTATE.C` also requires
+`nix run -L .#msc51-compile-resident-state` before linking. It exercises
+copy/XOR in mode 13h, single-width horizontal lines, opaque fill and outline,
+state restoration, and one mode-12h planar pixel through real BIOS. The host
+fixture independently checks AND/XOR/OR, clipping, both line orientations,
+and rectangle interiors with a 20-bit segmented-address model. These checks
+do not establish pixel-equivalence with every original 25d7/2621/2698
+callback, nor do they implement previously unobserved raster modes.
 
 Once the linker reports zero missing names, the next milestone is *actual
 DOS execution* through the original intro sequence with deterministic

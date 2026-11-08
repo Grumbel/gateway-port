@@ -1055,10 +1055,12 @@ The DOS heap adapter now additionally implements the startup allocator's
 1000h-paragraph request with a real DOS segment, tested in `HEAPCHK.EXE`.
 The user's Microsoft LINK 3.65 run confirmed **26** missing names with all
 thirteen prior DOS objects in place (1 CRT entry, 10 original services, 15
-RTL/hardware services). The extended `RTLHW.C` now additionally binds the
-seven video state accessors and three-command BIOS text packet dispatcher,
-reducing the **predicted** remainder to **18**. The actual 5.1 compile/probe
-and new link result are still needed. See
+RTL/hardware services). The extended `RTLHW.C` binds the seven video state
+accessors and three-command BIOS text packet dispatcher; the extended
+`RESSTATE.C` implements the three bounded raster primitives using DOS mode
+13h A000 memory and INT 10h planar pixels. This reduces the **predicted**
+remainder to **15**. Both 5.1 compile/probes and the new link result are
+still needed. See
 [MSC51 link closure](../../docs/msc51-link-closure.md) for the inventory.
 
 ## Immediate next functions
