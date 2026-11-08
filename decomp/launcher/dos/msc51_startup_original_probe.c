@@ -42,7 +42,10 @@ static const ExpectedOffset expected_offsets[] = {
     {0x1550u, 0x0049u, 0x1529u}, {0x1554u, 0x004eu, 0x152eu},
     {0x33dcu, 0x0000u, 0x0c02u}, {0x33e0u, 0x0000u, 0x0c02u},
     {0x33e4u, 0x0000u, 0x0c02u}, {0x33e8u, 0x0000u, 0x0c02u},
-    {0x33ecu, 0x0000u, 0x0c02u}
+    {0x33ecu, 0x0000u, 0x0c02u},
+    {0x3244u, 0x0000u, 0x2c44u}, {0x324au, 0x0000u, 0x2c44u},
+    {0x33acu, 0x06e4u, 0x3328u}, {0x353eu, 0x0000u, 0x3530u},
+    {0x3542u, 0x0004u, 0x3534u}
 };
 static const ExpectedOffset external_a[] = {
     {0x2814u, 0u, 0x000au}, {0x2852u, 0u, 0x0032u},
@@ -272,7 +275,7 @@ int main(void)
         if (_dos_freemem(allocated) != 0u)
             good = 0;
     }
-    puts(good ? "Original EXE/RTL data probe: PASS (5976 + 13714 bytes, 27 seg + 19 off + 19 external pointers)"
+    puts(good ? "Original EXE/RTL data probe: PASS (5976 + 13714 bytes, 27 seg + 24 off + 19 external pointers)"
               : "Original EXE/RTL data probe: FAIL");
     return good ? 0 : 1;
 }

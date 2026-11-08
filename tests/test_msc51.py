@@ -52,12 +52,24 @@ class MSC51Tests(unittest.TestCase):
             (0x33dc, 0x0000, 0x0c02), (0x33e0, 0x0000, 0x0c02),
             (0x33e4, 0x0000, 0x0c02), (0x33e8, 0x0000, 0x0c02),
             (0x33ec, 0x0000, 0x0c02),
+            (0x3244, 0x0000, 0x2c44), (0x324a, 0x0000, 0x2c44),
+            (0x33ac, 0x06e4, 0x3328), (0x353e, 0x0000, 0x3530),
+            (0x3542, 0x0004, 0x3534),
         )
-        self.assertEqual(len(offset_sites), 19)
+        self.assertEqual(len(offset_sites), 24)
         for index, (site, source, observed) in enumerate(offset_sites):
             self.assertEqual(int.from_bytes(rtl[0x29 + site:0x2b + site], "little"),
                              source, f"unexpected RTL offset field at {site:04x}")
-            addend = 0x0f92 if index < 6 else 0x14e0 if index < 14 else 0x0c02
+            if index < 6:
+                addend = 0x0f92
+            elif index < 14:
+                addend = 0x14e0
+            elif index < 19:
+                addend = 0x0c02
+            elif index < 22:
+                addend = 0x2c44
+            else:
+                addend = 0x3530
             self.assertEqual((observed - source) & 0xffff, addend)
         external_tables = (
             ((0x2814, 0x000a), (0x2852, 0x0032), (0x2890, 0x0032),
@@ -89,7 +101,7 @@ class MSC51Tests(unittest.TestCase):
             self.assertEqual(build.returncode, 0, build.stderr)
             probe = subprocess.run([str(executable)], capture_output=True, text=True)
             self.assertEqual(probe.returncode, 0, probe.stderr)
-            self.assertIn("static EXE/RTL copy, 27 seg + 19 off + 19 external pointers host: PASS", probe.stdout)
+            self.assertIn("static EXE/RTL copy, 27 seg + 24 off + 19 external pointers host: PASS", probe.stdout)
             batch = (output / "DATA.BAT").read_text()
             self.assertIn("CL /AL /Od /c DATA.C", batch)
             self.assertIn("DATACHK.C DATA.OBJ SEL.OBJ MEMORY.OBJ DOSFILE.OBJ", batch)
@@ -164,7 +176,7 @@ class MSC51Tests(unittest.TestCase):
                 for name in ("DATA.OBJ", "DATACHK.EXE", "DATAREAL.EXE", "DATSTART.LOG", "DATOK.LOG"):
                     (output / name).write_text("current")
                 (output / "DATTEST.LOG").write_text(
-                    "Static EXE/RTL data probe: PASS (5976 + 13714 bytes; 27 seg + 19 off + 19 external pointers)\n")
+                    "Static EXE/RTL data probe: PASS (5976 + 13714 bytes; 27 seg + 24 off + 19 external pointers)\n")
                 (output / "DATSIG.LOG").write_text(msc51.static_data_source_signature(output))
                 return mock.Mock(returncode=0)
 
@@ -175,11 +187,11 @@ class MSC51Tests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "does not verify"):
                 msc51.validate_static_data_probe(output)
             (output / "DATTEST.LOG").write_text(
-                "Static EXE/RTL data probe: PASS (5976 + 13714 bytes; 27 seg + 19 off + 19 external pointers)\n")
+                "Static EXE/RTL data probe: PASS (5976 + 13714 bytes; 27 seg + 24 off + 19 external pointers)\n")
             with self.assertRaisesRegex(ValueError, "original GATE.EXE/GATE.RTL data test"):
                 msc51.validate_static_data_probe(output, require_original=True)
             (output / "DATREAL.LOG").write_text(
-                "Original EXE/RTL data probe: PASS (5976 + 13714 bytes, 27 seg + 19 off + 19 external pointers)\n")
+                "Original EXE/RTL data probe: PASS (5976 + 13714 bytes, 27 seg + 24 off + 19 external pointers)\n")
             msc51.validate_static_data_probe(output, require_original=True)
             (output / "DATA.C").write_text((output / "DATA.C").read_text() + "/* stale */\n")
             with self.assertRaisesRegex(ValueError, "source changed"):

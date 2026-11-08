@@ -31,7 +31,10 @@ static const ExpectedOffset expected_offsets[] = {
     {0x1550u, 0x0049u, 0x1529u}, {0x1554u, 0x004eu, 0x152eu},
     {0x33dcu, 0x0000u, 0x0c02u}, {0x33e0u, 0x0000u, 0x0c02u},
     {0x33e4u, 0x0000u, 0x0c02u}, {0x33e8u, 0x0000u, 0x0c02u},
-    {0x33ecu, 0x0000u, 0x0c02u}
+    {0x33ecu, 0x0000u, 0x0c02u},
+    {0x3244u, 0x0000u, 0x2c44u}, {0x324au, 0x0000u, 0x2c44u},
+    {0x33acu, 0x06e4u, 0x3328u}, {0x353eu, 0x0000u, 0x3530u},
+    {0x3542u, 0x0004u, 0x3534u}
 };
 static const ExpectedOffset external_a[] = {
     {0x2814u, 0u, 0x000au}, {0x2852u, 0u, 0x0032u},
@@ -214,10 +217,10 @@ int main(void)
     }
     for (i = 0u; i < sizeof expected_offsets / sizeof expected_offsets[0]; ++i)
         gate_ds_set_word(expected_offsets[i].site, expected_offsets[i].source);
-    gate_ds_set_word(expected_offsets[18].site, 0x9876u);
+    gate_ds_set_word(expected_offsets[23].site, 0x9876u);
     good &= gate_dos_fix_intro_rtl_offs((uint16_t)allocated, 0x100au) == -2;
     good &= gate_ds_word(expected_offsets[0].site) == expected_offsets[0].source;
-    gate_ds_set_word(expected_offsets[18].site, expected_offsets[18].source);
+    gate_ds_set_word(expected_offsets[23].site, expected_offsets[23].source);
     good &= gate_dos_fix_intro_rtl_offs((uint16_t)allocated, 0x1009u) == -1;
     good &= gate_dos_fix_intro_rtl_offs((uint16_t)allocated, 0x100au) == 0;
     for (i = 0u; i < sizeof expected_offsets / sizeof expected_offsets[0]; ++i)
@@ -234,7 +237,7 @@ int main(void)
         good = 0;
     if (remove(rtl_source_name) != 0)
         good = 0;
-    puts(good ? "Static EXE/RTL data probe: PASS (5976 + 13714 bytes; 27 seg + 19 off + 19 external pointers)"
+    puts(good ? "Static EXE/RTL data probe: PASS (5976 + 13714 bytes; 27 seg + 24 off + 19 external pointers)"
               : "Static EXE/RTL data probe: FAIL");
     return good ? 0 : 1;
 }

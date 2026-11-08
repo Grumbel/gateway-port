@@ -730,6 +730,21 @@ near `DS:3244`, `DS:33ac`, and `DS:353e`. Do not label these BSS or stage
 them without separate analysis. `DATA.OBJ` remains probe-only; it is not
 a working launcher or a proof of how those two segments are allocated.
 
+**Follow-up: five further internal FAR offsets.** In the user's same
+original startup remainder, `DS:3244`, `324a`, and `33ac` become `2c44`,
+`2c44`, and `3328` respectively, each rebased from its original RTL word
+by `+2c44h` (`0000`, `0000`, `06e4`). Similarly `DS:353e` and `3542`
+become `3530` and `3534`, both rebased by `+3530h` from `0000` and
+`0004`. All five corresponding FAR segment halves were among the 22
+known DS segment replacements, and all five values were unchanged across
+100..250ms and through the late samples. Their original source words were
+checked directly in the pinned RTL. They extend the same all-or-nothing
+`gate_dos_fix_intro_rtl_offs` preflight (now **24 offset words**), and the
+synthetic/real DOS probes and the Python remainder inspector test them.
+These five fields explain **10 more changed bytes**, bringing coverage
+to **167 of 260** early changes and leaving **93**. Microsoft C 5.1/DOSBox
+verification of this updated helper remains pending on the user's host.
+
 **Microsoft C 5.1 build correction:** The first user-side `DATA.BAT` run
 compiled `DATA.C` but stopped with `DATACHK.C(22): C2073` (an initialized
 automatic `char name[]`), so **neither test executable ran**. Both test

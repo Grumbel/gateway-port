@@ -8,7 +8,7 @@
  *
  * The second routine stages only the *unmodified RTL preimage*: the
  * mismatched 260 bytes at 100ms are partly reconstructed: 27 source-zero
- * segment words, 19 independently observed offset words, and two externally
+ * segment words, 24 independently observed offset words, and two externally
  * segmented FAR-pointer tables below. The external tables require segment
  * values from actual caller-owned allocations; the original observations
  * cannot establish those allocations. No original data is embedded.
@@ -141,12 +141,14 @@ typedef struct GateIntroOffsetFixup {
     uint16_t addend;
 } GateIntroOffsetFixup;
 
-/* The user's actual 100..250ms RAM captures show these 19 offset words
+/* The user's actual 100..250ms RAM captures show these 24 offset words
  * after the raw RTL +0029h preimage is initialized. Their source values
  * are independently checked in the original file. The first six are
  * rebased by 0f92h, the next eight by 14e0h, and five FAR code-pointer
  * offsets change from zero to 0c02h (their CS words are among the 27
- * segment replacements above). These are offsets, not DOS segments.
+ * segment replacements above). Five more DS FAR-pointer offsets, whose
+ * segment words were already staged above, use addends 2c44h (three
+ * fields) or 3530h (two fields). These are offsets, not DOS segments.
  */
 static const GateIntroOffsetFixup gate_rtl_offset_fixups[] = {
     {0x0fb6u, 0x0000u, 0x0f92u}, {0x0fbau, 0x0004u, 0x0f92u},
@@ -158,10 +160,13 @@ static const GateIntroOffsetFixup gate_rtl_offset_fixups[] = {
     {0x1550u, 0x0049u, 0x14e0u}, {0x1554u, 0x004eu, 0x14e0u},
     {0x33dcu, 0x0000u, 0x0c02u}, {0x33e0u, 0x0000u, 0x0c02u},
     {0x33e4u, 0x0000u, 0x0c02u}, {0x33e8u, 0x0000u, 0x0c02u},
-    {0x33ecu, 0x0000u, 0x0c02u}
+    {0x33ecu, 0x0000u, 0x0c02u},
+    {0x3244u, 0x0000u, 0x2c44u}, {0x324au, 0x0000u, 0x2c44u},
+    {0x33acu, 0x06e4u, 0x2c44u}, {0x353eu, 0x0000u, 0x3530u},
+    {0x3542u, 0x0004u, 0x3530u}
 };
 
-/* Apply the 19 observed near-offset fixes with the same no-partial-write
+/* Apply the 24 observed near-offset fixes with the same no-partial-write
  * contract as the segment fixer. Run after copying the raw RTL preimage,
  * before or after segment-word replacements. This does not discover the
  * original loader's relocation table, or initialize unrelated data.

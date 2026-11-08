@@ -115,12 +115,13 @@ class StartupSnapshotTests(unittest.TestCase):
         put_word(late, 0x2c10, 0)  # Original game also later mutates this site.
         samples = [(100, bytes(first)), (125, bytes(first)), (500, bytes(late))]
         remainder = startup.rtl_preimage_remainder(bytes(rtl), samples, 0x2a7a, 0x1000)
-        self.assertEqual(remainder["initial_changed_bytes"], 165)
+        self.assertEqual(remainder["initial_changed_bytes"], 175)
         self.assertEqual(remainder["verified_segment_bytes"], 54)
-        self.assertEqual(remainder["verified_offset_bytes"], 38)
+        self.assertEqual(remainder["verified_offset_words"], 24)
+        self.assertEqual(remainder["verified_offset_bytes"], 48)
         self.assertEqual(remainder["verified_external_pointers"], 19)
         self.assertEqual(remainder["verified_external_bytes"], 65)
-        self.assertEqual(remainder["verified_total_bytes"], 157)
+        self.assertEqual(remainder["verified_total_bytes"], 167)
         self.assertEqual([entry["observed_segment"]
                           for entry in remainder["observed_external_tables"]],
                          [0x252c, 0x25d7])

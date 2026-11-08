@@ -59,6 +59,9 @@ KNOWN_RTL_OFFSET_FIXUPS = (
     (0x33dc, 0x0000, 0x0c02), (0x33e0, 0x0000, 0x0c02),
     (0x33e4, 0x0000, 0x0c02), (0x33e8, 0x0000, 0x0c02),
     (0x33ec, 0x0000, 0x0c02),
+    (0x3244, 0x0000, 0x2c44), (0x324a, 0x0000, 0x2c44),
+    (0x33ac, 0x06e4, 0x3328), (0x353e, 0x0000, 0x3530),
+    (0x3542, 0x0004, 0x3534),
 )
 # The offsets, not the target segment values, are stable in the original
 # capture. The two segment values are sampled independently at runtime and
@@ -291,7 +294,7 @@ def rtl_preimage_fixup_candidates(rtl, samples, runtime_ds, image_load):
 
 
 def rtl_preimage_remainder(rtl, samples, runtime_ds, image_load):
-    """Describe bytes outside 46 known words and 19 external FAR pointers.
+    """Describe bytes outside 51 known words and 19 external FAR pointers.
 
     A known word is excluded only if its source value, observed value and
     all early snapshots agree. The remaining bytes are deliberately kept as
@@ -326,8 +329,8 @@ def rtl_preimage_remainder(rtl, samples, runtime_ds, image_load):
         if known[offset] or known[offset + 1]:
             raise ValueError("overlapping known RTL offset word at DS:%04x" % offset)
         known[offset:offset + 2] = b"\x01\x01"
-    if sum(known) != 92:
-        raise ValueError("expected 92 bytes at 46 known word sites")
+    if sum(known) != 102:
+        raise ValueError("expected 102 bytes at 51 known word sites")
 
     external = []
     verified_external_bytes = 0
@@ -412,12 +415,12 @@ def rtl_preimage_remainder(rtl, samples, runtime_ds, image_load):
         "initial_changed_bytes": fixups["changed_bytes"],
         "verified_segment_words": 27,
         "verified_segment_bytes": 54,
-        "verified_offset_words": 19,
-        "verified_offset_bytes": 38,
+        "verified_offset_words": 24,
+        "verified_offset_bytes": 48,
         "verified_external_pointers": 19,
         "verified_external_bytes": verified_external_bytes,
         "observed_external_tables": external,
-        "verified_total_bytes": 92 + verified_external_bytes,
+        "verified_total_bytes": 102 + verified_external_bytes,
         "remaining_changed_bytes": len(residual),
         "source_zero_to_nonzero": sum(source[i] == 0 for i in residual),
         "source_nonzero_to_zero": sum(first[i] == 0 for i in residual),
@@ -992,7 +995,7 @@ def main():
                       (fixups["candidate_word_count"] - 80))
         if args.runtime_data_remainder:
             remaining = report["runtime_data_remainder"]
-            print("RTL preimage changes excluding 27 segment, 19 offset, "
+            print("RTL preimage changes excluding 27 segment, 24 offset, "
                   "and 19 external-pointer fixes:")
             print("  %d initial changed bytes - %d segment bytes - %d offset bytes "
                   "- %d external-pointer bytes = "

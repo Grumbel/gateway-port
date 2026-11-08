@@ -435,8 +435,10 @@ two as-yet-unidentified allocations. The
 `gate_dos_fix_intro_rtl_external(lower, paras, first_seg, second_seg)`
 helper now accepts these segments from its caller, with all-site source
 preflight; it never hardcodes the original-run `252c` and `25d7` values.
-Together the three helpers account for **157 of 260 early changed bytes**;
-**103 remain unexplained**, so `DATA.OBJ` stays outside the launcher link.
+Five further internal pointer offsets are rebased by `0x2c44` or `0x3530`,
+expanding `gate_dos_fix_intro_rtl_offs` to 24 guarded entries. Together
+the three helpers account for **167 of 260 early changed bytes**;
+**93 remain unexplained**, so `DATA.OBJ` stays outside the launcher link.
 Add `--json` to inspect all reported candidate words.
 
 After updating this source, rerun the Microsoft C test, including both
@@ -446,8 +448,8 @@ real original files:
 nix run -L .#msc51-compile-data -- --original-game-dir ../gateway-dos
 ```
 
-Once both probes pass with the 27 segment words, 19 offset words and
-19 external pointers, investigate the **remaining 103** first-prepared
+Once both probes pass with the 27 segment words, 24 offset words and
+19 external pointers, investigate the **remaining 93** first-prepared
 changed bytes with:
 
 ```sh
@@ -458,11 +460,11 @@ python3 tools/inspect_msc51_startup.py \
   --runtime-data-remainder
 ```
 
-The remainder report first checks that all 46 internal word sites and
+The remainder report first checks that all 51 internal word sites and
 19 external pointer entries have their original RTL source words and
 independently observed target values in every 100–250ms capture. It
 also checks that each external table shares one nonzero observed segment.
-It then excludes only the 157 changed bytes they explain and
+It then excludes only the 167 changed bytes they explain and
 prints clusters of remaining changes with short original/observed hex
 samples, byte-change frequencies, and repeated 16-bit transformations.
 Use `--json` for complete, untruncated clusters. Neither repeated words

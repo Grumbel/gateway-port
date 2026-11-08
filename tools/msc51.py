@@ -959,13 +959,13 @@ def validate_static_data_probe(output: Path, *, require_original: bool = False) 
         raise ValueError("DOS static data source changed since its test. "
                          "Run msc51-compile-data again.")
     result = locate_case_insensitive(output, "DATTEST.LOG")
-    if re.search(r"^Static EXE/RTL data probe: PASS \(5976 \+ 13714 bytes; 27 seg \+ 19 off \+ 19 external pointers\)\s*$",
+    if re.search(r"^Static EXE/RTL data probe: PASS \(5976 \+ 13714 bytes; 27 seg \+ 24 off \+ 19 external pointers\)\s*$",
                  result.read_text(), re.MULTILINE) is None:
-        raise ValueError("DOS static data log does not verify the source copies and 65 fixes.")
+        raise ValueError("DOS static data log does not verify the source copies and 70 fixes.")
     if require_original:
         real = locate_case_insensitive(output, "DATREAL.LOG")
         if (real is None or re.search(
-                r"^Original EXE/RTL data probe: PASS \(5976 \+ 13714 bytes, 27 seg \+ 19 off \+ 19 external pointers\)\s*$",
+                r"^Original EXE/RTL data probe: PASS \(5976 \+ 13714 bytes, 27 seg \+ 24 off \+ 19 external pointers\)\s*$",
                 real.read_text(), re.MULTILINE) is None):
             raise ValueError("DOS original GATE.EXE/GATE.RTL data test is missing or failed.")
 
@@ -1642,10 +1642,10 @@ def main(argv: list[str] | None = None) -> int:
             print_static_data_diagnostics(output)
             return 1
         print("Microsoft C 5.1 verified EXE/RTL source-image copies, 27 segment, "
-              "19 internal-offset, and 19 caller-segment FAR-pointer fixes"
+              "24 internal-offset, and 19 caller-segment FAR-pointer fixes"
               + (" against read-only GATE.EXE/GATE.RTL"
                  if original_game_dir is not None else "")
-              + "; DATA.OBJ remains probe-only pending the other 103 changed bytes "
+              + "; DATA.OBJ remains probe-only pending the other 93 changed bytes "
               "and allocation/startup reconstruction.")
         return 0
     if args.command == "compile-dos-files":
