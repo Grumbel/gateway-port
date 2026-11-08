@@ -20,12 +20,31 @@ from inspect_rtl_animation import (
     inspect_animation_calls, inspect_vfx_state,
     inspect_animation_draw_calls, inspect_animation_state,
     mode3_rasterizer_addresses, relocated_displacement,
-    resolve_animation_draw_origins, summarize_deadline_trace,
+    resolve_animation_draw_origins, resolve_vfx_far_sources,
+    summarize_deadline_trace,
     summarize_mode3_trace)
 from prepare_intro_ghidra import RTL_SHA256
 
 
 class AnimationServiceTests(unittest.TestCase):
+    def test_vfx_callback_origin_matching_refuses_uninitialized_memory(self):
+        rtl = bytearray(0x19000)
+        ram = bytearray(1 << 20)
+        source = 0x184e8
+        segment, offset = 0x2a1c, 0x000c
+        code = bytes((i * 13 + 17) & 255 for i in range(16))
+        rtl[source:source + 16] = code
+        ram[segment * 16 + offset:segment * 16 + offset + 16] = code
+        calls = {'draw': {'segment': segment, 'offset': offset},
+                 'unknown': {'segment': 0x2500, 'offset': 0x003e},
+                 'duplicate': {'segment': segment, 'offset': offset}}
+        resolved = resolve_vfx_far_sources(b'MZ' + bytes(100), rtl, ram, calls)
+        self.assertEqual(resolved['draw']['file'], 'rtl')
+        self.assertEqual(resolved['draw']['offset'], source)
+        self.assertEqual(resolved['draw']['matched_bytes'], 16)
+        self.assertEqual(resolved['draw'], resolved['duplicate'])
+        self.assertIsNone(resolved['unknown'])
+
     def test_missing_snapshot_has_reproducible_capture_instructions(self):
         with tempfile.TemporaryDirectory() as directory:
             snapshot = Path(directory) / 'missing.bin'

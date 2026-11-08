@@ -171,6 +171,28 @@ def inspect_vfx_state(rtl, ram, drawing, ds=None):
     return result
 
 
+def resolve_vfx_far_sources(exe, rtl, ram, calls, load_segment=0x1000):
+    """Match VFX state callbacks to source offsets where evidence permits.
+
+    A live FAR target can be relocated, copied or overwritten. Unknown
+    matches are represented by None rather than given a guessed identity.
+    """
+    targets = set()
+    for target in calls.values():
+        if target['segment'] < load_segment:
+            continue
+        linear = target['segment'] * 16 + target['offset']
+        if (0 <= linear <= len(ram) - 16 and
+                any(ram[linear:linear + 16])):
+            targets.add((target['segment'] - load_segment, target['offset']))
+    matches = resolve_linked_origins(targets, ram, exe, rtl, load_segment)
+    results = {}
+    for name, target in calls.items():
+        key = (target['segment'] - load_segment, target['offset'])
+        results[name] = matches.get(key)
+    return results
+
+
 def inspect_animation_calls(ovl, exe, rtl, ram, load_segment=0x1000):
     """Return linked-to-file matches, rejecting changed or unresolved calls."""
     if not 0 <= load_segment <= 0xffff:
@@ -464,17 +486,20 @@ def main():
         if not path.is_file():
             parser.error(f'original {label} file not found: {path}')
     try:
-        rtl, ram = args.rtl.read_bytes(), args.ram.read_bytes()
-        rows = inspect_animation_calls(args.ovl.read_bytes(), args.exe.read_bytes(),
+        rtl, ram, exe = args.rtl.read_bytes(), args.ram.read_bytes(), args.exe.read_bytes()
+        rows = inspect_animation_calls(args.ovl.read_bytes(), exe,
                                        rtl, ram, args.load_segment)
         drawing = (resolve_animation_draw_origins(
-            args.exe.read_bytes(), rtl, ram,
+            exe, rtl, ram,
             inspect_animation_draw_calls(rtl, ram, rows, args.load_segment),
             args.load_segment)
                    if args.draw_calls or args.draw_trace or args.vfx_state else None)
         branches = mode3_rasterizer_addresses(rtl, drawing) if drawing is not None else None
         vfx = (inspect_vfx_state(rtl, ram, drawing, args.vfx_ds)
                if args.vfx_state else None)
+        if vfx is not None:
+            vfx['resident_far_sources'] = resolve_vfx_far_sources(
+                exe, rtl, ram, vfx['resident_far_calls'], args.load_segment)
         raster_trace = None
         if args.draw_trace is not None:
             with args.draw_trace.open() as stream:
@@ -551,7 +576,12 @@ def main():
                 print(f'  {name:<24} DS:{offset:04x}')
             print('RTL VFX state resident FAR calls:')
             for name, target in vfx['resident_far_calls'].items():
-                print(f'  {name:<24} {target["segment"]:04x}:{target["offset"]:04x}')
+                source = vfx['resident_far_sources'][name]
+                evidence = (f'{source["file"]}:0x{source["offset"]:05x} '
+                            f'({source["matched_bytes"]}-byte match)'
+                            if source is not None else 'unresolved source')
+                print(f'  {name:<24} {target["segment"]:04x}:{target["offset"]:04x}'
+                      f' -> {evidence}')
             if 'flags_at_capture' in vfx:
                 print(f'VFX service DS={vfx["ds"]:04x}, flags at capture='
                       f'{vfx["flags_at_capture"]:04x}; '

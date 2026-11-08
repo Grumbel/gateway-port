@@ -179,6 +179,35 @@ recipe instead of propagating an uncaught `FileNotFoundError`. A RAM capture
 from the early 22-second intro is **not interchangeable**: it may precede
 loading the animation and VFX code bank needed to resolve these FAR calls.
 
+The user's original 2026-11-08 `checkpoint-book_taken.bin` report confirms
+that **all 27 relocated DS operands agree**, and supplies these load-specific
+addresses. These are not unrelocated offsets in the original `GATE.RTL`:
+
+| Original field | Linked memory offset |
+| --- | --- |
+| VFX flags and mode masks | `DS:13d2` |
+| Width/height segment pointers | `DS:8c86`, `DS:8c88` |
+| Clipped width/height | `DS:9f9c`, `DS:9f9e` |
+| Cursor X/Y | `DS:9f34`, `DS:9f36` |
+
+The same live scene maps eight original VFX service call sites to four unique
+FAR entries. Their identities and downstream semantics must remain distinct:
+
+| Call-site group | Captured FAR target | State of evidence |
+| --- | --- | --- |
+| Save/restore prepare | `2251:032a` | Unclassified resident service |
+| Both request-`0x33` paths | `1805:2d84` | Unclassified resident request dispatcher |
+| Save/restore draw | `2a1c:000c` | Already matched independently to original `RTL:184e8` VFX drawing service |
+| Two restore rectangle operations | `2a71:0004` | Unclassified resident service |
+
+The extended inspector includes `resident_far_sources` for each call, matched
+from its actual 16-byte guest entry to an original RTL/EXE offset whenever
+unambiguous; a missing/overwritten entry is emitted as `null`, not guessed.
+This additional step is necessary before confidently dispatching mode-mask
+`0x30` or `0x0c` from new C functions. A separately observed VFX-entry DS
+can be passed with `--vfx-ds HEX` for flags at capture time; animation entry
+traces for neighboring routines are not by themselves proof of that DS.
+
 If a VFX entry trace independently establishes the live DS segment, supply
 it with `--vfx-ds HEX` to inspect the flag WORD at that **capture time**;
 the analyzer does not assume the screenshot's DS is the service's DS, or
