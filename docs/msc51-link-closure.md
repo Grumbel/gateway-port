@@ -13,7 +13,9 @@ two original BIOS/chipset detection entry points and two exact relocated
 RTL palette transforms. The intro's mode-12h/13h VFX blitter is also staged
 with bounded host behavior. A new C89 DCL decoder additionally stages the
 compressed-picture service, with host-verified buffered DOS input and planar
-output. **9 is the predicted remainder if all updated DOS probes pass.**
+output. The original resource file wrappers now stage their raw BP-2 stack
+slots and unguarded CPU division without two external host-test callbacks.
+**7 is the predicted remainder if all updated DOS probes pass.**
 This is not yet a measured Microsoft LINK result.
 Do not manufacture no-op definitions merely to obtain an executable.
 
@@ -25,11 +27,11 @@ Do not manufacture no-op definitions merely to obtain an executable.
 | RTL text/video state | `gate_rtl_video_inversion`, `gate_rtl_video_attribute`, `gate_rtl_video_columns`, `gate_rtl_video_rows`, `gate_rtl_video_tab_base`, `gate_rtl_video_block_mode`, `gate_rtl_video_set_block_mode`, `gate_rtl_video_command` | 8 | **Staged, DOS probe pending.** Original RTL disassembly verifies the seven RTL-DS offsets and pointer dereferences; the separate 16-bit DS must be bound during startup, not assumed to equal EXE DS. The 14-byte command adapter handles only original commands 2/3/9 through BIOS INT 10h. The underlying 12a5:2d8a dispatcher has not been decompiled, and unrecognized commands abort. |
 | Pixel and drawing primitives | `gate_rtl_plot_pixel`, `gate_rtl_background_rect`, `gate_rtl_resident_line_to` | 3 | **Staged, DOS probe pending.** The native host's bounded pixel modes 1/2/3, raster operations and clipping are implemented over real DOS VGA. Mode 13h uses A000 linear memory and modes 1/2 use BIOS INT 10h pixel reads/writes, with test pixels/lines/opaque rectangles. Unmodeled modes, diagonal lines and patterned fills abort; the DOSBox test and guest trace comparison remain outstanding. |
 | Video adapter query | `gate_rtl_mode_query_adapter`, `gate_rtl_mode_svga_variant` | 2 | **Staged, DOS probe pending.** Original `GATE.RTL:17c95..17d79` maps INT 10h/AX=1a00 active/alternate display codes to type/monitor pairs; `17b4f..17c24` tests AH=6fh, ROM signatures and bank/CRTC ports for SVGA variant 0–5. The old-BIOS fallback and exotic adapter-switch helpers remain outside the supported boundary; unsupported display BIOS requests abort. |
-| Original exception/stack state | `gate_rtl_file_divide_fault`, `gate_rtl_file_stack_word` | 2 | Trace original divide-fault exit and near-stack word reader; `0` or `abort()` substitute values would hide original behavior. |
+| Original exception/stack state | `gate_rtl_file_divide_fault`, `gate_rtl_file_stack_word` | 2 | **Staged without external services, DOS compile pending.** Original `RTL:e59b..e5e2` uses an uninitialized WORD at BP-2 for both reads. `e5fc..e61d` and `e669..e68a` use unguarded unsigned `DIV`, which raises INT 0 for a zero divisor. Staged Microsoft `/Od` code preserves raw automatic stack slots and division; host tests retain their seeded stack/fault callbacks. Microsoft code generation and live stack history remain unverified. |
 | Runtime calendar sample | `gate_linked_read_runtime_time_sample` | 1 | Reconstruct `12a5:34d8` ten-byte sample and its date/time, timezone/DST dependencies, then compare against the already recovered `gate_rtl_elapsed_milliseconds`. The pending DOS clock is an intentionally approximate live substitute. |
 | VFX/picture pipeline | `gate_linked_decompress_picture_pixels`, `gate_linked_blit_vfx_picture`, `gate_linked_transform_picture_palette_indexed`, `gate_linked_transform_picture_palette_rgb`, `gate_linked_save_vfx_draw_state`, `gate_linked_restore_vfx_draw_state` | 6 | The two palette transforms are **staged and host-tested** against original RTL `f4df`/`f579`. The VFX blitter is **staged as a bounded DOS adapter**, not an instruction-for-instruction reconstruction of resident `24a7:000c`: modes 2/3 interpret original CA00 image records and render four-plane mode 12h through BIOS pixels or mode 13h through A000 bytes, with original raster operators and clipping. A bounded C89 streaming DCL decoder is staged and host-tested against a reference stream, mode-12h plane packing, 64KiB rollover and file-position preservation. DOS probes are still pending; saved drawing-state lifetime remains unresolved. |
 | Intro services and diagnostics | `gate_linked_initialize_intro_services`, `gate_linked_handle_control_key`, `gate_linked_print_intro_diagnostic` | 3 | Reconstruct the original music/IRQ8 setup, Ctrl-Break branch and resident diagnostic destination/format from the EXE and RTL. Silent success and dummy output are not valid equivalents. |
-| **Reported total** | | **26** | 17 more definitions staged since this report; 9 projected unresolved after DOS probes. |
+| **Reported total** | | **26** | 17 more definitions and two original-stack/fault call-site replacements staged since this report; 7 projected unresolved after DOS probes. |
 
 ### Current DOS probe order
 
@@ -56,6 +58,14 @@ are not end-to-end intro tests; the resident raster probe now exercises
 real VGA pixels, but not full original image reproduction. The original
 binary assets and GATE.EXE/GATE.RTL live guest snapshot remain necessary to
 recover and validate the listed core services.
+
+The file-wrapper changes require rerunning `msc51-compile-launcher` so
+`M11.C` compiles with `GATE_MSC51_ORIGINAL_FILE_ABI`. The checked-in source
+C continues using explicit host callbacks for deterministic tests. A GCC
+C89 `-O0` compile and `nm -u` check confirms that the DOS-staged `M11.C` no
+longer references either artificial helper. That check is not a substitute
+for disassembling the resulting Microsoft 5.1 `M11.OBJ` or verifying the
+original DOS exception handler and stack history.
 
 After updating to the extended `RTLHW.C`, rerun
 `nix run -L .#msc51-compile-hardware` before linking. Its probe now uses an

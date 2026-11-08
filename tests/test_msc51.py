@@ -5,6 +5,8 @@
 
 import importlib.util
 import io
+import shutil
+import subprocess
 from contextlib import redirect_stderr
 from pathlib import Path
 import tempfile
@@ -20,6 +22,26 @@ SPEC.loader.exec_module(msc51)
 
 
 class MSC51Tests(unittest.TestCase):
+    def test_dos_resource_file_abi_uses_stack_slot_and_cpu_divide_fault(self):
+        """Source-level host assembly check, not a Microsoft C 5.1 verification."""
+        if not shutil.which("gcc") or not shutil.which("nm"):
+            self.skipTest("gcc and nm needed to inspect staged DOS C89 symbols")
+        with tempfile.TemporaryDirectory() as scratch:
+            output = Path(scratch)
+            msc51.stage_launcher(output)
+            mapping = (output / "SOURCE.MAP").read_text().splitlines()
+            staged_file = next(line.split()[0] for line in mapping
+                               if line.endswith("gate_rtl_file.c"))
+            obj = output / "FILEABI.OBJ"
+            subprocess.run(["gcc", "-x", "c", "-std=c89", "-O0", "-c",
+                            str(output / staged_file), "-o", str(obj)], check=True,
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            undefined = subprocess.run(["nm", "-u", str(obj)], check=True,
+                                       capture_output=True, text=True).stdout
+            self.assertNotIn("gate_rtl_file_stack_word", undefined)
+            self.assertNotIn("gate_rtl_file_divide_fault", undefined)
+            self.assertIn("gate_linked_dos_file_read", undefined)
+
     def test_stages_all_launcher_modules_as_dos_c89_sources(self):
         with tempfile.TemporaryDirectory() as scratch:
             output = Path(scratch)
@@ -48,6 +70,12 @@ class MSC51Tests(unittest.TestCase):
             clock = (output / "M00.C").read_text()
             self.assertIn("GateFarPtr value;", clock)
             self.assertIn("memset(sample, 0, sizeof sample);", clock)
+            rtl_file_source = expected.index(REPO / "decomp/launcher/gate_rtl_file.c")
+            rtl_file = (output / f"M{rtl_file_source:02d}.C").read_text()
+            self.assertIn("#define GATE_MSC51_ORIGINAL_FILE_ABI 1", rtl_file)
+            self.assertIn("#ifdef GATE_MSC51_ORIGINAL_FILE_ABI", rtl_file)
+            self.assertIn("#ifndef GATE_MSC51_ORIGINAL_FILE_ABI", rtl_file)
+            self.assertEqual(rtl_file.count("uint16_t value;"), 2)
             self.assertIn("typedef unsigned long uint32_t;", (output / "STDINT.H").read_text())
             batch = (output / "COMPILE.BAT").read_text()
             self.assertEqual(batch.count("CL /AL /Od /c M"), len(expected))

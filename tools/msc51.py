@@ -380,6 +380,11 @@ def stage_launcher(output: Path) -> list[str]:
     rewritten = []
     for path in [*headers, *sources]:
         content = path.read_text()
+        if path.name == "gate_rtl_file.c":
+            # DOS /Od must preserve the original uninitialized BP-2 stack
+            # word and execute a real DIV on zero; the host differential
+            # tests retain their explicit stack/fault oracle callbacks.
+            content = "#define GATE_MSC51_ORIGINAL_FILE_ABI 1\n" + content
         content = include_pattern.sub(rewrite_includes, content)
         content = re.sub(r"(?m)^#include\s*<stdint\.h>", '#include "STDINT.H"', content)
         if path.suffix == ".h":

@@ -56,7 +56,15 @@ void gate_rtl_seek_resource_file(uint16_t handle, uint32_t offset)
  * If the underlying call returns zero, the result is explicitly -1. */
 uint16_t gate_rtl_read_resource_byte(uint16_t handle)
 {
+#ifdef GATE_MSC51_ORIGINAL_FILE_ABI
+    /* RTL:e59e..e5b9 allocates one WORD at BP-2 and passes SS:BP-2 to
+     * the one-byte DOS read without initializing the other byte.  In the
+     * real /Od DOS build, keep the automatic slot exactly as it was; the
+     * host oracle instead seeds that unknown stack word explicitly. */
+    uint16_t value;
+#else
     uint16_t value = gate_rtl_file_stack_word();
+#endif
     if (gate_linked_dos_file_read(handle, gate_stack_pointer(&value), 1) != 0)
         return value;
     return GATE_RESOURCE_FILE_BYTE_READ_FAILURE;
@@ -66,7 +74,13 @@ uint16_t gate_rtl_read_resource_byte(uint16_t handle)
  * returns the original stack WORD unconditionally, even if read fails. */
 uint16_t gate_rtl_read_resource_word(uint16_t handle)
 {
+#ifdef GATE_MSC51_ORIGINAL_FILE_ABI
+    /* RTL:e5c8..e5dc uses the same uninitialized BP-2 slot, and returns
+     * it even if the DOS read does not fill both bytes. */
+    uint16_t value;
+#else
     uint16_t value = gate_rtl_file_stack_word();
+#endif
     (void)gate_linked_dos_file_read(handle, gate_stack_pointer(&value), 2);
     return value;
 }
@@ -86,8 +100,13 @@ uint16_t gate_rtl_read_resource_elements(uint16_t handle, GateFarPtr destination
 {
     uint16_t bytes = (uint16_t)(element_size * count);
     uint16_t result = gate_linked_dos_file_read(handle, destination, bytes);
+    /* RTL:e617..e61c executes DIV with the original divisor directly.
+     * In real mode this naturally raises INT 0 when it is zero.  The
+     * host comparator keeps its explicit exception callback instead. */
+#ifndef GATE_MSC51_ORIGINAL_FILE_ABI
     if (element_size == 0)
         gate_rtl_file_divide_fault();
+#endif
     return (uint16_t)(result / element_size);
 }
 
@@ -116,8 +135,11 @@ uint16_t gate_rtl_write_resource_elements(uint16_t handle, GateFarPtr source,
 {
     uint16_t bytes = (uint16_t)(element_size * count);
     uint16_t result = gate_linked_dos_file_write(handle, source, bytes);
+    /* RTL:e684..e689 uses the same native 8086 DIV fault semantics. */
+#ifndef GATE_MSC51_ORIGINAL_FILE_ABI
     if (element_size == 0)
         gate_rtl_file_divide_fault();
+#endif
     return (uint16_t)(result / element_size);
 }
 

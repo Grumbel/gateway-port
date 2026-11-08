@@ -1090,6 +1090,17 @@ the **projected** unresolved total to **9**. This decoder does not claim to
 reproduce the original DOS resident decompression routine instruction by
 instruction.
 
+The original RTL resource byte/word readers (`RTL:e59b/e5c5`) do not
+initialize their two-byte BP-2 stack slot. The element-count wrappers
+(`RTL:e5fc/e669`) execute unsigned `DIV` with their element-size parameter
+and raise the CPU exception when that divisor is zero. The generated DOS
+`M11.C` now enables `GATE_MSC51_ORIGINAL_FILE_ABI` to preserve those original
+operations without external stack-word/exception callbacks, while the
+source C host tests retain explicit seeded-stack and fault injection.
+GCC C89 at `-O0` eliminates both references from the generated object; the
+actual MSC 5.1 code and guest stack history still need checking. Predicted
+remaining unresolved names fall **9 to 7**, pending real Microsoft LINK.
+
 ## Immediate next functions
 
 1. Connect the existing verified native video, font, picture and caption
