@@ -48,12 +48,22 @@ class MSC51Tests(unittest.TestCase):
             self.assertNotIn("DATA.OBJ", (output / "LINK.RSP").read_text())
             (output / "STDINT.H").write_text('#include <stdint.h>\n')
             for source in ("DATACHK.C", "DATAREAL.C"):
+                text = (output / source).read_text()
+                # MS C 5.1 emits C2073 for an initialized automatic array
+                # inside main(), even though host GCC accepts the C89 code.
+                self.assertNotRegex(
+                    text.split("int main(void)", 1)[1],
+                    r"\b(?:char|uint8_t|uint16_t)\s+\w+\s*\[[^]]*\]\s*=",
+                )
+                self.assertRegex(text, r"static char \w+\[\] = \".*\";")
                 syntax = subprocess.run(
                     ["gcc", "-std=c89", "-Wall", "-Wextra", "-Werror", "-fsyntax-only",
                      "-I", str(REPO / "tests/fixtures/msc51_data"),
                      "-I", str(output), "-x", "c", str(output / source)],
                     capture_output=True, text=True)
                 self.assertEqual(syntax.returncode, 0, syntax.stderr)
+            self.assertNotIn("GATE_STATIC_DATA_REQUIRED_PARAGRAPHS",
+                             (output / "DATA.C").read_text())
 
     def test_compile_data_requires_verified_dependencies_and_current_guest_log(self):
         with tempfile.TemporaryDirectory() as scratch:

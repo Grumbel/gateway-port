@@ -19,9 +19,11 @@ int gate_dos_bind_intro_aliases(uint16_t lower_segment, uint16_t paragraphs);
 int gate_dos_load_intro_static_data(uint16_t handle, uint16_t lower_segment,
                                     uint16_t paragraphs);
 
+/* Avoid C2073 on Microsoft C 5.1: initialized arrays need static storage. */
+static char original_exe_name[] = "E:\\GATE.EXE";
+
 int main(void)
 {
-    const char filename[] = "E:\\GATE.EXE";
     uint8_t buffer[128];
     unsigned int allocated = 0u;
     uint16_t handle = 0u;
@@ -45,7 +47,7 @@ int main(void)
     }
 
     if (good) {
-        result = gate_dos_file_open(gate_stack_pointer((void *)filename), 0u, 0u);
+        result = gate_dos_file_open(gate_stack_pointer(original_exe_name), 0u, 0u);
         if (result.carry)
             good = 0;
         else {

@@ -11,6 +11,11 @@ int gate_dos_bind_intro_aliases(uint16_t lower_segment, uint16_t paragraphs);
 int gate_dos_load_intro_static_data(uint16_t handle, uint16_t lower_segment,
                                     uint16_t paragraphs);
 
+/* MS C 5.1 rejects automatic array initialization in a function (C2073).
+ * Keep this filename in static storage; gate_stack_pointer() obtains its
+ * actual segment and offset, regardless of the storage segment. */
+static char source_name[] = "DATASRC.BIN";
+
 static uint8_t pattern(unsigned int index)
 {
     return (uint8_t)(((index & 0xffu) ^ ((index >> 8) * 17u)) & 0xffu);
@@ -19,7 +24,6 @@ static uint8_t pattern(unsigned int index)
 int main(void)
 {
     unsigned int allocated = 0u;
-    const char name[] = "DATASRC.BIN";
     uint8_t block[128];
     unsigned int i;
     FILE *file;
@@ -27,7 +31,7 @@ int main(void)
     GateDosFileResult closed;
     int good = 1;
 
-    file = fopen(name, "wb");
+    file = fopen(source_name, "wb");
     if (file == 0) {
         puts("Static EXE data probe: FAIL cannot create fixture");
         return 1;
@@ -47,7 +51,7 @@ int main(void)
     if (fclose(file) != 0)
         good = 0;
     if (!good || _dos_allocmem(0x100au, &allocated) != 0) {
-        remove(name);
+        remove(source_name);
         puts("Static EXE data probe: FAIL fixture or memory allocation");
         return 1;
     }
@@ -55,7 +59,7 @@ int main(void)
     gate_ds_set_word(0x3590u, 0x1133u);
     gate_ds_set_word(0x4ceau, 0x7799u);
 
-    opened = gate_dos_file_open(gate_stack_pointer((void *)name), 0u, 0u);
+    opened = gate_dos_file_open(gate_stack_pointer(source_name), 0u, 0u);
     if (opened.carry)
         good = 0;
     else {
@@ -81,7 +85,7 @@ int main(void)
     gate_dos_bind_ds(0u);
     if (_dos_freemem(allocated) != 0)
         good = 0;
-    if (remove(name) != 0)
+    if (remove(source_name) != 0)
         good = 0;
     puts(good ? "Static EXE data probe: PASS (5976 bytes at DS:3592h)"
               : "Static EXE data probe: FAIL");

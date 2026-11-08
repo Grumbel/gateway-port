@@ -15,7 +15,7 @@
 #define GATE_STATIC_EXE_SOURCE 0x000041e6ul
 #define GATE_STATIC_DATA_OFFSET 0x3592u
 #define GATE_STATIC_DATA_BYTES 0x1758u
-#define GATE_STATIC_DATA_REQUIRED_PARAGRAPHS 0x100au
+#define GATE_DATA_MIN_PARAS 0x100au
 
 /* -1 invalid allocation/binding, -2 failed/inexact seek, -3 read error
  * or short read. On a short read, the destination may be partly written;
@@ -28,7 +28,7 @@ int gate_dos_load_intro_static_data(uint16_t handle, uint16_t lower_segment,
     GateFarPtr target;
 
     if (lower_segment == 0u || lower_segment > 0xfff5u ||
-        paragraphs < GATE_STATIC_DATA_REQUIRED_PARAGRAPHS ||
+        paragraphs < GATE_DATA_MIN_PARAS ||
         gate_ds_segment() != (uint16_t)(lower_segment + 0x000au))
         return -1;
 

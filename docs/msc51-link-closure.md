@@ -517,6 +517,20 @@ success marker before the host accepts the result; the default synthetic
 and memory-placement validation, not a substitute for the missing full
 startup BSS/relocations or three linker definitions.
 
+**Microsoft C 5.1 build correction:** The first user-side `DATA.BAT` run
+compiled `DATA.C` but stopped with `DATACHK.C(22): C2073` (an initialized
+automatic `char name[]`), so **neither test executable ran**. Both test
+filenames now use file-scope static arrays compatible with this compiler;
+the original probe's filename needed the same correction. The over-31-character
+minimum-paragraph macro in `DATA.C` was shortened to eliminate C4011
+truncation warnings. Host C89 compilation is not a replacement for the
+Microsoft C run. Rebuild and inspect both result logs:
+
+```sh
+nix run -L .#msc51-compile-data -- --original-game-dir ../gateway-dos
+# DATBUILD.LOG, DATTEST.LOG and DATREAL.LOG under build/msc51-launcher/
+```
+
 The third call is now identified as `rtl:10da1..10dc6`, a bounded FAR
 routine (preceded and terminated by `RETF`). It starts with `push cs; call
 near rtl:11078`, tests bits `0x0c` of a relocated DS byte, conditionally
