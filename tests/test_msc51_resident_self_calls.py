@@ -99,7 +99,82 @@ def dispatch_table_words():
     return [int(value, 16) for value in re.findall(r"0x([0-9a-f]+)u", match.group(1))]
 
 
+def early_offset_manifest():
+    source = (ROOT / "decomp/launcher/dos/msc51_startup_static_data.c").read_text()
+    match = re.search(r"static const GateResidentEarlyOffsetFixup "
+                      r"gate_resident_early_offsets\[\] = \{(.*?)\n\};",
+                      source, re.DOTALL)
+    if match is None:
+        raise AssertionError("resident early offsets missing")
+    return [tuple(int(value, 16) for value in entry) for entry in
+            re.findall(r"\{0x([0-9a-f]+)u, 0x([0-9a-f]+)u, 0x([0-9a-f]+)u\}",
+                       match.group(1))]
+
+
 class ResidentSelfCallTests(unittest.TestCase):
+    def test_relocation_tables_cover_disjoint_changed_bytes(self):
+        rtl_path = ROOT.parent / "gateway-dos/GATE.RTL"
+        capture = ROOT / "build/msc51-startup-fine/at-125.bin"
+        if not rtl_path.exists() or not capture.exists():
+            self.skipTest("Original RTL and settled DOS RAM capture unavailable")
+        rtl = rtl_path.read_bytes()[0x56de:0x93de]
+        live = capture.read_bytes()[0x12a50:0x12a50 + len(rtl)]
+        occupied = set()
+
+        def claim(offset, length):
+            sites = set(range(offset, offset + length))
+            self.assertFalse(sites & occupied, hex(offset))
+            occupied.update(sites)
+
+        for site, _ in manifest():
+            claim(site + 1, 4)
+        for site in ds_load_manifest():
+            claim(site, 2)
+        claim(0x0a4e, 4)
+        for site in (0x14c8, 0x14d6, 0x14f7, 0x1502, 0x150f,
+                     0x09b9, 0x019c):
+            claim(site, 2)
+        for site, _ in paragraph_manifest():
+            claim(site, 2)
+        for site, _ in flag_offset_manifest():
+            claim(site, 2)
+        for name in ("gate_resident_state_3244", "gate_resident_state_3334"):
+            for site, _ in state_offset_manifest(name):
+                claim(site, 2)
+        for site, _, _ in small_offset_manifest():
+            claim(site, 2)
+        claim(0x1a2e, 2)
+        claim(0x1b66, 2 * len(dispatch_table_words()))
+        for site, _, _ in early_offset_manifest():
+            claim(site, 2)
+
+        changed = {i for i, (source, settled) in enumerate(zip(rtl, live))
+                   if source != settled}
+        self.assertEqual(len(changed), 1660)
+        self.assertEqual(len(changed & occupied), 1225)
+        self.assertEqual(len(changed - occupied), 435)
+
+    def test_138_early_data_offsets_against_original_ram(self):
+        rtl_path = ROOT.parent / "gateway-dos/GATE.RTL"
+        captures = [ROOT / f"build/msc51-startup-fine/at-{ms}.bin"
+                    for ms in (125, 175, 250)]
+        captures.append(ROOT / "build/msc51-startup/at-500.bin")
+        if not rtl_path.exists() or not all(path.exists() for path in captures):
+            self.skipTest("Original RTL and settled DOS captures unavailable")
+        rtl = rtl_path.read_bytes()[0x56de:0x93de]
+        live = [path.read_bytes()[0x12a50:0x12a50 + len(rtl)] for path in captures]
+        entries = early_offset_manifest()
+        self.assertEqual(len(entries), 138)
+        self.assertEqual([site for site, _, _ in entries],
+                         sorted(set(site for site, _, _ in entries)))
+        for site, target, prefix in entries:
+            self.assertEqual(rtl[site - 2:site], prefix.to_bytes(2, "little"), hex(site))
+            self.assertEqual(rtl[site:site + 2], bytes(2), hex(site))
+            self.assertTrue(0x0500 <= target < 0x0600)
+            for ram in live:
+                self.assertEqual(ram[site:site + 2], target.to_bytes(2, "little"),
+                                 hex(site))
+
     def test_original_resident_dispatch_table_relocation(self):
         rtl_path = ROOT.parent / "gateway-dos/GATE.RTL"
         captures = [ROOT / f"build/msc51-startup-fine/at-{ms}.bin"

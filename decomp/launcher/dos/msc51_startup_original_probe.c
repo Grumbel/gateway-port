@@ -335,6 +335,10 @@ int main(void)
                  gate_far_word((uint16_t)resident_allocated, 0x1b66u) != 0x1b36u ||
                  gate_far_word((uint16_t)resident_allocated, 0x1b90u) != 0x1b26u))
         good = 0;
+    if (good && (gate_far_word((uint16_t)resident_allocated, 0x002du) != 0x05abu ||
+                 gate_far_word((uint16_t)resident_allocated, 0x0116u) != 0x05aau ||
+                 gate_far_word((uint16_t)resident_allocated, 0x09a2u) != 0x05d3u))
+        good = 0;
     if (good && gate_dos_clear_intro_rtl_prefix((uint16_t)allocated,
                                                GATE_REAL_PARAGRAPHS) != 0)
         good = 0;
