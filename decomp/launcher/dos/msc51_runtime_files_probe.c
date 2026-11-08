@@ -13,6 +13,7 @@ void gate_linked_format_resource_filename(GateFarPtr output, GateFarPtr format,
 uint16_t gate_linked_open_runtime_path(GateFarPtr name, uint16_t mode);
 GateFarPtr gate_linked_copy_runtime_string(GateFarPtr destination,
                                            GateFarPtr source, uint16_t length);
+void gate_linked_print_intro_diagnostic(GateFarPtr message);
 
 static GateFarPtr pointer(uint16_t segment, uint16_t offset)
 {
@@ -73,6 +74,9 @@ int main(void)
     suffix = pointer((uint16_t)segment, 0x1300u);
     put_string(format, "%s_%03d.%s");
     put_string(base, "GATE");
+    /* A literal percent sign must not be treated as a CRT format string. */
+    put_string(output, "DOS diagnostic: 100% literal\n");
+    gate_linked_print_intro_diagnostic(output);
     put_string(suffix, "RS");
     gate_linked_format_resource_filename(output, format, base, 7u, suffix);
     valid &= check(equals_string(output, "GATE_007.RS"), 1u, "resource filename");

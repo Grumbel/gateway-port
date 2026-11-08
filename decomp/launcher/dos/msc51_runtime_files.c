@@ -26,6 +26,22 @@ static int guest_string(GateFarPtr source, char *destination, uint16_t capacity)
     return 0;
 }
 
+/* GATE.RTL's intro error paths pass a NUL-terminated message in a FAR
+ * resource-data segment (not the EXE's DS). Emit it via the real DOS CRT;
+ * never interpret '%' in game data as a printf format directive. Bound the
+ * traversal so a missing terminator cannot run around the 64KiB segment. */
+void gate_linked_print_intro_diagnostic(GateFarPtr message)
+{
+    uint32_t i;
+    for (i = 0u; i < 65536ul; ++i) {
+        uint8_t ch = gate_far_byte(message.segment,
+                                   (uint16_t)(message.offset + (uint16_t)i));
+        if (ch == 0u)
+            return;
+        putchar((int)ch);
+    }
+}
+
 /* Observed original linked CRT sprintf call at 12a5:3366. The only
  * recovered caller passes the literal "%s_%03d.%s". Unbounded original
  * sprintf overflow is guarded at the 80-byte stack destination boundary. */
