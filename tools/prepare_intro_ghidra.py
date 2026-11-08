@@ -62,6 +62,16 @@ RTL_CORE_BANKS = (
 # source-file identity. B ends before seven observed zeroed source bytes.
 # All file_base values identify original GATE.RTL bytes (not embedded data).
 RTL_GRAPHICS_BANKS = (
+    # Eleven previously external FAR calls target resident 2409.  Its
+    # source-mapped content begins at +0008, after an unsourced return tail;
+    # the original RTL also has a post-RETF byte at runtime +0143.
+    dict(segment=0x1409, file_base=0x179d9, size=0x0430,
+         spans=(
+             dict(offset=0x0008, file_base=0x179d9, size=0x013b),
+             dict(offset=0x0144, file_base=0x17b4f, size=0x00d6),
+             dict(offset=0x021a, file_base=0x17c30, size=0x0216),
+         ),
+         witnesses=(0x179d9, 0x17b4f, 0x17c30)),
     # The FAR CALL segment 244ch is used by both neighboring graphics banks.
     # These six fragments occupy the entire physical window immediately
     # before resident 252c, except two unmapped post-RETF boundary bytes.
@@ -122,6 +132,9 @@ RTL_CANDIDATES = {
     0xfc37: 'linked-far-entry-candidate',
     0xff99: 'linked-far-entry-candidate',
     0x130ab: 'animation-entry-candidate',
+    0x179d9: 'linked-graphics-entry',
+    0x17b4f: 'linked-graphics-entry',
+    0x17c30: 'linked-graphics-entry',
     0x17e6d: 'linked-graphics-far-target',
     0x17f98: 'linked-graphics-entry',
     0x18187: 'linked-graphics-entry',

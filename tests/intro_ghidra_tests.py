@@ -42,7 +42,8 @@ class IntroGhidraTests(unittest.TestCase):
     def test_graphics_banks_are_bounded_and_snapshot_verified(self):
         self.assertEqual([(bank['segment'], bank['file_base'], bank['size'])
                           for bank in RTL_GRAPHICS_BANKS],
-                         [(0x144c, 0x17e6d, 0x0e00),
+                         [(0x1409, 0x179d9, 0x0430),
+                          (0x144c, 0x17e6d, 0x0e00),
                           (0x152c, 0x18e00, 0x0ab0),
                           (0x15d7, 0x19997, 0x0d79)])
         rtl = bytes((i * 23 + i // 11) % 251 for i in range(0x21000))
@@ -67,17 +68,21 @@ class IntroGhidraTests(unittest.TestCase):
                                 for offset in bank['witnesses']))
 
         # Gaps at code fragment boundaries do not get invented source IDs.
-        earlier = RTL_GRAPHICS_BANKS[0]
+        preceding = RTL_GRAPHICS_BANKS[0]
+        self.assertIsNone(source_span(preceding, 0x17b14))
+        self.assertEqual(source_span(preceding, 0x17b4f)['offset'], 0x0144)
+        self.assertEqual(source_span(preceding, 0x17c30)['offset'], 0x021a)
+        earlier = RTL_GRAPHICS_BANKS[1]
         self.assertIsNone(source_span(earlier, 0x17f82))
         self.assertIsNone(source_span(earlier, 0x18a2f))
         self.assertEqual(source_span(earlier, 0x17f98)['offset'], 0x0116)
         self.assertEqual(source_span(earlier, 0x18a95)['offset'], 0x0b04)
-        b = RTL_GRAPHICS_BANKS[2]
+        b = RTL_GRAPHICS_BANKS[3]
         self.assertIsNone(source_span(b, 0x19ec1))
         self.assertIsNone(source_span(b, 0x1a6ed))
         self.assertEqual(source_span(b, 0x19ec2)['offset'], 0x04ae)
         self.assertEqual(source_span(b, 0x1a6ee)['offset'], 0x0c16)
-        self.assertEqual(source_span(RTL_GRAPHICS_BANKS[1], 0x194d7)['offset'],
+        self.assertEqual(source_span(RTL_GRAPHICS_BANKS[2], 0x194d7)['offset'],
                          0x0668)
 
         # Segment immediates in one synthetic bank differ from the source;
@@ -156,10 +161,14 @@ class IntroGhidraTests(unittest.TestCase):
             banks, 0x1000, 0x25b7, 0x0000)['linked_segment'], 0x152c)
         self.assertIsNone(resolve_linked_far_target(
             banks, 0x1000, 0x245d, 0x0005))
-        self.assertIsNone(resolve_linked_far_target(
-            banks, 0x1000, 0x2409, 0x00e8))
-        self.assertIsNone(original_at_runtime_offset(banks[0], 0x0115))
-        self.assertIsNone(original_at_runtime_offset(banks[0], 0x0b03))
+        self.assertEqual(resolve_linked_far_target(
+            banks, 0x1000, 0x2409, 0x00e8),
+            dict(linked_segment=0x1409, linked_offset=0x00e8,
+                 rtl_file_offset=0x179d9 + 0x00e8 - 0x0008))
+        self.assertIsNone(original_at_runtime_offset(banks[0], 0x0007))
+        self.assertIsNone(original_at_runtime_offset(banks[0], 0x0143))
+        self.assertIsNone(original_at_runtime_offset(banks[1], 0x0115))
+        self.assertIsNone(original_at_runtime_offset(banks[1], 0x0b03))
 
     def test_far_pointer_store_table_requires_matching_live_ds_memory(self):
         bank = dict(segment=0x123, file_base=0x20, size=96)
@@ -246,13 +255,12 @@ class RealGatewayIntroEvidence(unittest.TestCase):
             plan_file, plan = prepare(self.exe, self.rtl, self.snapshot, output)
             self.assertEqual(json.loads(plan_file.read_text()), plan)
             self.assertEqual(len(plan['sections']), len(RTL_BANKS))
-            self.assertEqual(plan['graphics_far_targets']['total'], 78)
-            self.assertEqual(plan['graphics_far_targets']['mapped'], 67)
-            self.assertEqual({entry['observed_target_segment'] for entry in
-                              plan['graphics_far_targets']['transfers']
-                              if entry['mapped_target'] is None}, {0x2409})
+            self.assertEqual(plan['graphics_far_targets']['total'], 86)
+            self.assertEqual(plan['graphics_far_targets']['mapped'], 86)
+            self.assertFalse(any(entry['mapped_target'] is None for entry in
+                                 plan['graphics_far_targets']['transfers']))
             self.assertEqual(sum(len(s['entries']) for s in plan['sections']),
-                             107)
+                             110)
             self.assertEqual({e['file_offset'] for e in plan['exe_labels']},
                              set(EXE_ENTRIES))
             self.assertGreaterEqual(sum(len(s['entries']) for s in plan['sections']), 44)
@@ -265,8 +273,10 @@ class RealGatewayIntroEvidence(unittest.TestCase):
             self.assertTrue(any(e['name'] == 'gate_rtl_play_preloaded_picture_sequence'
                                 for s in plan['sections'] for e in s['entries']))
             graphics = {s['segment']: s for s in plan['sections']
-                        if s['segment'] in (0x144c, 0x152c, 0x15d7)}
-            self.assertEqual(set(graphics), {0x144c, 0x152c, 0x15d7})
+                        if s['segment'] in (0x1409, 0x144c, 0x152c, 0x15d7)}
+            self.assertEqual(set(graphics), {0x1409, 0x144c, 0x152c, 0x15d7})
+            self.assertEqual((graphics[0x1409]['exact_byte_matches'],
+                              graphics[0x1409]['size']), (1003, 0x0430))
             self.assertEqual((graphics[0x144c]['exact_byte_matches'],
                               graphics[0x144c]['size']), (3383, 0x0e00))
             self.assertEqual((graphics[0x152c]['exact_byte_matches'],
@@ -276,6 +286,7 @@ class RealGatewayIntroEvidence(unittest.TestCase):
             rtl = self.rtl.read_bytes()
             ram = self.snapshot.read_bytes()
             for segment, covered, sites, changed, unmapped in (
+                    (0x1409, 1063, 31, 60, 9),
                     (0x144c, 3582, 109, 199, 2),
                     (0x152c, 2726, 64, 126, 10),
                     (0x15d7, 3443, 134, 245, 6)):
@@ -288,7 +299,14 @@ class RealGatewayIntroEvidence(unittest.TestCase):
                 self.assertEqual(data['unclassified_bytes'], 0)
                 self.assertEqual(data['unmapped_live_bytes'], unmapped)
                 contexts = data['context_counts']
-                if segment == 0x144c:
+                if segment == 0x1409:
+                    self.assertEqual(contexts, {
+                        'direct-memory-displacement': 5,
+                        'far-call-offset': 8, 'far-call-segment': 8,
+                        'mov-ax-ds': 6, 'mov-ax-es': 1,
+                        'mov-di-immediate': 1, 'unresolved-zero-word': 2})
+                    self.assertEqual(data['far_pointer_tables'], [])
+                elif segment == 0x144c:
                     self.assertEqual(contexts, {
                         'direct-memory-displacement': 9,
                         'far-call-offset': 21, 'far-call-segment': 22,
@@ -333,17 +351,21 @@ class RealGatewayIntroEvidence(unittest.TestCase):
                     self.assertEqual(int.from_bytes(ram[live:live + 2], 'little'),
                                      candidate['observed_value'])
             self.assertEqual({entry['file_offset'] for entry
-                              in graphics[0x144c]['entries']},
+                              in graphics[0x1409]['entries']},
                              {off for off in RTL_CANDIDATES
                               if source_span(RTL_GRAPHICS_BANKS[0], off)})
             self.assertEqual({entry['file_offset'] for entry
-                              in graphics[0x152c]['entries']},
+                              in graphics[0x144c]['entries']},
                              {off for off in RTL_CANDIDATES
                               if source_span(RTL_GRAPHICS_BANKS[1], off)})
             self.assertEqual({entry['file_offset'] for entry
-                              in graphics[0x15d7]['entries']},
+                              in graphics[0x152c]['entries']},
                              {off for off in RTL_CANDIDATES
                               if source_span(RTL_GRAPHICS_BANKS[2], off)})
+            self.assertEqual({entry['file_offset'] for entry
+                              in graphics[0x15d7]['entries']},
+                             {off for off in RTL_CANDIDATES
+                              if source_span(RTL_GRAPHICS_BANKS[3], off)})
             for section in graphics.values():
                 for entry in section['entries']:
                     source = entry['file_offset']

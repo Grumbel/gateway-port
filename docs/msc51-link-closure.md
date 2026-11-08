@@ -971,6 +971,21 @@ paragraph-alias and per-fragment file identity resolution now maps 67 of
 target resident `2409`, not yet mapped. These numbers describe candidate
 code bytes in one captured layout, not the original loader's control flow.
 
+**Closing the `2409` graphics FAR-target gap (22-second RAM):** The verified
+resident code window `2409:0000..042f` immediately precedes `244c`. Three
+separate source fragments map runtime offsets `+0008..0142`, `+0144..0219`
+and `+021a..042f` to original RTL offsets `179d9..17b13`, `17b4f..17c24`
+and `17c30..17e45`, respectively. Of 1063 source-mapped bytes, 1003 match
+the pinned original unchanged. All other 60 differ only at 31 originally
+zero words; two of those words have no yet-proven local opcode role. Eight
+leading bytes and one post-RETF boundary byte remain unmapped, and cannot
+be assigned a file identity by assumption. Three independently matching
+Microsoft C function entry prefixes seed Ghidra. With relative bank `1409`
+imported, all **86 of 86** identified graphics FAR CALL/JMP targets map
+physically to verified original RTL spans, including the earlier 11 missing
+`2409` targets and eight additional calls from this bank. This establishes
+code provenance in one snapshot, **not** DOS loader/fixup semantics.
+
 **Microsoft C 5.1 build correction:** The first user-side `DATA.BAT` run
 compiled `DATA.C` but stopped with `DATACHK.C(22): C2073` (an initialized
 automatic `char name[]`), so **neither test executable ran**. Both test

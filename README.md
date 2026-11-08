@@ -195,17 +195,17 @@ exports preliminary C-like listings to `build/ghidra/pseudocode.txt`.
 adds labels for the **696 mapped object/event handlers** from a native snapshot.
 See [Ghidra workflow and limitations](docs/ghidra.md).
 The separate [intro Ghidra workflow](docs/intro-ghidra.md) imports
-`GATE.EXE` and nine linked `GATE.RTL` sections (including mapped graphics
+`GATE.EXE` and ten linked `GATE.RTL` sections (including mapped graphics
 fragments with verified original-file identities) from the original 22-second
-RAM capture, including the `244c` FAR-call services, `252c` coordinate helpers
-and `25d7` graphics dispatch. It also preserves readable C symbol names from
+RAM capture, including `2409`/`244c` FAR-call services, `252c` coordinate
+helpers and `25d7` graphics dispatch. It also preserves readable C symbol names from
 `decomp/launcher/symbol-names.tsv` without losing the original file offsets.
-An optional `--graphics-word-changes` preparation report identifies 307
+An optional `--graphics-word-changes` preparation report identifies 338
 originally zero word sites differing in the linked graphics image, including
-all locally recognizable 8086 operand forms and an 11-entry FAR-pointer
-table cross-checked against guest RAM. Physical FAR-target analysis resolves
-67 of 78 graphics transfers to verified source offsets; the remaining 11
-all target not-yet-imported segment `2409`. These remain snapshot
+29 of 31 locally recognizable opcode contexts in the new `2409` bank and an
+11-entry FAR-pointer table cross-checked against guest RAM. Physical FAR-target
+analysis resolves all 86 identified graphics transfers to verified source
+offsets, including the earlier 11 missing `2409` targets. These remain snapshot
 observations, not a reconstructed DOS relocation table.
 
 ### Historical Microsoft C 5.1 toolchain (optional)

@@ -9,7 +9,7 @@ original recovered source nor a playable native executable.
 The raw `GATE.RTL` has unresolved relocation placeholders. **Do not import it
 as if its on-disk bytes were linked machine code.** This pipeline uses a
 specific 22-second 1 MiB guest-memory snapshot and verifies its segment/file
-identities against both SHA-256-pinned DOS binaries. It imports nine
+identities against both SHA-256-pinned DOS binaries. It imports ten
 independently established resident RTL segments, not the complete RTL file,
 and preserves their potentially overlapping addresses using Ghidra overlay
 spaces. The newly added `0c33` file-service bank has four independent entry
@@ -21,8 +21,9 @@ were observed to load between 250 and 350ms and remain unchanged through
 reference, without asserting that they were already loaded at 350ms. The
 windows contain **nine independently verified source-file fragments**: six
 in the first window and three in the second. A newly mapped preceding
-`244c` window has six more verified fragments, for **15 graphics fragments**
-in three contiguous resident windows. Their mappings account for metadata
+`244c` window has six more verified fragments, and the `2409` window has
+three, for **18 graphics fragments** in four contiguous resident windows.
+Their mappings account for metadata
 gaps in the original RTL file. Every fragment is reverified on each import.
 
 ## Capture the reference snapshot
@@ -114,7 +115,7 @@ near calls whose original targets are inside the same verified RTL overlay,
 and enumerates all functions Ghidra finds in those blocks. This is intended to produce large
 batches for inspection instead of manually translating six functions per turn.
 
-**Current coverage limitation:** the nine verified RTL banks are
+**Current coverage limitation:** the ten verified RTL banks are
 `0a46:0000..0a7f`, `0c33:0000..01a9`, `0c4d:0000..08ff`, `0cdc:0000..10ff`, and
 `0f10:0000..1aff`, plus EXE-relative `02a5:0000..3cff` (resident
 `12a5:0000..3cff`) in the captured load layout. The latter maps
@@ -122,15 +123,17 @@ batches for inspection instead of manually translating six functions per turn.
 generator. Its verified start is based on the on-disk/linked byte correlation;
 its end deliberately stops before the next region overwrites memory near
 `RTL:9480`. A newly established EXE-relative graphics window
-`144c:0000..0dff` (resident `244c:0000..0dff`) immediately precedes the
+`1409:0000..042f` (resident `2409:0000..042f`) precedes
+`144c:0000..0dff` (resident `244c:0000..0dff`), which immediately precedes the
 two previously mapped graphics windows `152c:0000..0aaf`
 (resident `252c:0000..0aaf`) and `15d7:0000..0d78` (resident
 `25d7:0000..0d78`). The first A fragment starts at runtime `+000a`
 (`RTL:18e00`); the first B fragment at `+0004` (`RTL:19997`).
-Direct comparison with the pinned 22-second guest RAM verifies **3383/3582**
-covered source bytes unchanged in `244c`, **2600/2726**
+Direct comparison with the pinned 22-second guest RAM verifies **1003/1063**
+covered source bytes unchanged in `2409`, **3383/3582** in `244c`, **2600/2726**
 covered source bytes unchanged in A and **3198/3443** in B, each with
 multiple independent witnesses. Ten leading A bytes, four leading B bytes,
+eight leading `2409` bytes and its post-RETF boundary `+0143`,
 two `244c` post-return boundary bytes `+0115` and `+0b03`, and B's
 single-byte boundaries `+04ad` and `+0c15` lack verified RTL file
 identities. Seven trailing B bytes from an earlier proposed mapping were
@@ -146,14 +149,14 @@ side effects are correct.
 The source-name lookup also follows `decomp/launcher/symbol-names.tsv`: the
 original file-offset identities remain intact even though reconstructed C
 functions have readable names. The pinned 22-second preparation check now
-produces **nine linked sections, 107 source RTL entry labels, and zero
+produces **ten linked sections, 110 source RTL entry labels, and zero
 unmapped known RTL entry labels**. This does not mean the RTL's complete
 function set or cross-bank calls have been recovered.
 
 The 22-second capture's identified graphics `CALL/JMP FAR` operands account
-for **78 static transfers**. Their physical 20-bit addresses map **67**
-unambiguously into the three verified graphics banks; the other **11** all
-target resident segment `2409`, which is not yet imported. `244c` is a
+for **86 static transfers**. Their physical 20-bit addresses all map
+unambiguously into the four verified graphics banks. The earlier 11 unresolved
+targets in resident `2409` are now source-mapped. `244c` is a
 direct bank base, while `25b7` aliases an offset in `252c` and `2621`
 aliases `25d7` (starting at linked offset `04a0`). The plan's
 `graphics_far_targets` records each observed segment/offset pair and its
@@ -169,6 +172,9 @@ Relative offsets are not interchangeable across fragments:
 
 | Runtime graphics window | Runtime offset range | Original RTL file range |
 | --- | --- | --- |
+| `2409` | `0008..0142` | `179d9..17b13` |
+| `2409` | `0144..0219` | `17b4f..17c24` |
+| `2409` | `021a..042f` | `17c30..17e45` |
 | `244c` | `0000..0114` | `17e6d..17f81` |
 | `244c` | `0116..02d1` | `17f98..18153` |
 | `244c` | `02d2..03c9` | `18187..1827e` |
@@ -204,10 +210,17 @@ python3 tools/prepare_intro_ghidra.py \
 
 | Linked window | Originally zero word sites | Changed bytes accounted for | Changed covered bytes unexplained |
 | --- | ---: | ---: | ---: |
+| `2409` | 31 | 60 | 0 |
 | `244c` | 109 | 199 | 0 |
 | `252c` | 64 | 126 | 0 |
 | `25d7` | 134 | 245 | 0 |
-| **Total** | **307** | **570** | **0** |
+| **Total** | **338** | **630** | **0** |
+
+The new `2409` bank has 31 zero-word candidates. Twenty-nine match a
+conservative local opcode pattern: eight FAR-call offsets, eight FAR-call
+segments, seven DS/ES segment loads, five direct-memory displacements and one
+DI immediate. **Two candidate words have unresolved opcode contexts**;
+zero-source correspondence alone does not establish their relocation purpose.
 
 The newly recovered `244c` bank contributes 109 word sites: nine DS loads,
 43 words within 22 FAR calls, 48 16-bit memory immediates, and nine direct
@@ -248,7 +261,7 @@ originally zero word becoming nonzero is not proof of why or when the linker
 wrote it. Runtime values can depend on allocations and load layout; the
 opcode patterns alone do not prove the bytes were executed, identify the
 original relocation records, or establish when the 11 table entries were
-written. The nine code fragments still need a real DOS loader before a
+written. The eighteen graphics code fragments still need a real DOS loader before a
 standalone EXE can use them.
 
 The additional 22 seeded entries are recognized by matching the original
