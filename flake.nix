@@ -161,6 +161,15 @@
                 --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
             '';
           };
+          msc51-compile-picture-dcl = pkgs.writeShellApplication {
+            name = "gateway-msc51-compile-picture-dcl";
+            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
+            text = ''
+              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
+              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py compile-picture-dcl \
+                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
+            '';
+          };
           msc51-compile-resident-state = pkgs.writeShellApplication {
             name = "gateway-msc51-compile-resident-state";
             runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
@@ -411,6 +420,11 @@
           program = "${self.packages.${system}.msc51-compile-runtime-files}/bin/gateway-msc51-compile-runtime-files";
           meta.description = "Compile and probe three reconstructed FAR string, DOS access, and resource path services with Microsoft C 5.1";
         };
+        msc51-compile-picture-dcl = {
+          type = "app";
+          program = "${self.packages.${system}.msc51-compile-picture-dcl}/bin/gateway-msc51-compile-picture-dcl";
+          meta.description = "Compile and verify streaming PKWARE DCL image decoding with Microsoft C 5.1";
+        };
         msc51-compile-resident-state = {
           type = "app";
           program = "${self.packages.${system}.msc51-compile-resident-state}/bin/gateway-msc51-compile-resident-state";
@@ -605,6 +619,7 @@ except Exception:
                          self.packages.${system}.msc51-compile-rtl-state
                          self.packages.${system}.msc51-compile-hardware
                          self.packages.${system}.msc51-compile-runtime-files
+                         self.packages.${system}.msc51-compile-picture-dcl
                          self.packages.${system}.msc51-compile-resident-state
                          self.packages.${system}.msc51-compile-heap
                          self.packages.${system}.msc51-compile-input

@@ -237,6 +237,9 @@ RTL_STATE_SOURCES = ("RTLLAY.H", "RTLIMAC.H", "RTLSTATE.H", "GATEMEM.H", "STDINT
 HARDWARE_SOURCES = ("RTLLAY.H", "GATEMEM.H", "STDINT.H", "RTLHW.C", "HWCHK.C",
                     "MEMORY.C")
 RUNTIME_FILE_SOURCES = ("GATEMEM.H", "STDINT.H", "RTFILE.C", "RTFCHK.C", "MEMORY.C")
+PICTURE_DCL_SOURCES = ("GATEMEM.H", "GATEDOS.H", "STDINT.H",
+                       "RTLIMAC.H", "RTLLAY.H", "PICTDCL.C", "PICCHK.C",
+                       "DOSFILE.C", "RTLIMG.C", "MEMORY.C")
 RESIDENT_STATE_SOURCES = ("GATEMEM.H", "STDINT.H", "RTLLAY.H", "RESSTATE.C",
                           "RESCHK.C", "MEMORY.C")
 HEAP_SOURCES = ("GATEMEM.H", "STDINT.H", "HEAP.C", "HEAPCHK.C", "MEMORY.C")
@@ -280,6 +283,13 @@ def hardware_source_signature(output: Path) -> str:
 def runtime_file_source_signature(output: Path) -> str:
     digest = hashlib.sha256(b"MS C 5.1 /AL /Od runtime file services v1\n")
     for name in RUNTIME_FILE_SOURCES:
+        digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
+    return digest.hexdigest()[:16]
+
+
+def picture_dcl_source_signature(output: Path) -> str:
+    digest = hashlib.sha256(b"MS C 5.1 /AL /Od streamed DCL picture adapter v1\n")
+    for name in PICTURE_DCL_SOURCES:
         digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
     return digest.hexdigest()[:16]
 
@@ -486,7 +496,8 @@ def stage_launcher(output: Path) -> list[str]:
     layout = msc51_enums_to_macros((source_dir / "gate_memory_layout.h").read_text())
     (output / "RTLLAY.H").write_text(msc51_rename_identifiers(layout, shortened))
     image_constants = msc51_enums_to_macros((source_dir / "gate_rtl_image.h").read_text())
-    required_constants = ("GATE_RTL_VIDEO_MODE_OFFSET", "GATE_RTL_SIZE_TABLE_OFFSET",
+    required_constants = ("GATE_RTL_VIDEO_MODE_OFFSET", "GATE_RTL_FILE_HANDLE_OFFSET",
+                          "GATE_RTL_HEADER_OFFSET", "GATE_RTL_SIZE_TABLE_OFFSET",
                           "GATE_RTL_TRANSFORM_OFFSET", "GATE_PREPARE_STATUS_WORD")
     image_defines = []
     for name in required_constants:
@@ -572,6 +583,27 @@ def stage_launcher(output: Path) -> list[str]:
         ":DONE", "EXIT",
     ]
     (output / "RTFILE.BAT").write_text("\r\n".join(runtime_file_batch) + "\r\n")
+    for original, staged in (("msc51_picture_dcl.c", "PICTDCL.C"),
+                             ("msc51_picture_dcl_probe.c", "PICCHK.C")):
+        (output / staged).write_text(msc51_rename_identifiers(
+            (source_dir / "dos" / original).read_text(), shortened))
+    picture_signature = picture_dcl_source_signature(output)
+    picture_batch = [
+        "@ECHO OFF", "ECHO MS C 5.1 streaming DCL decoder > PICSTART.LOG",
+        "SET PATH=C:\\BIN;C:\\", "SET INCLUDE=C:\\INCLUDE;C:\\",
+        "SET LIB=C:\\LIB;C:\\", "SET TEMP=D:\\", "SET TMP=D:\\",
+        "CL /AL /Od /c PICTDCL.C > PICBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        "IF NOT EXIST PICTDCL.OBJ GOTO FAILED",
+        "CL /AL /Od PICCHK.C PICTDCL.OBJ DOSFILE.OBJ RTLIMG.OBJ MEMORY.OBJ /FePICCHK.EXE /link LLIBCR.LIB LIBH.LIB/NOD >> PICBUILD.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST PICCHK.EXE GOTO FAILED",
+        "PICCHK.EXE > PICTEST.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        f"ECHO {picture_signature} > PICSIG.LOG",
+        "ECHO Real-mode picture decoder probe passed > PICOK.LOG",
+        "GOTO DONE", ":FAILED",
+        "ECHO Real-mode picture decoder probe failed > PICFAIL.LOG",
+        ":DONE", "EXIT",
+    ]
+    (output / "PICTDCL.BAT").write_text("\r\n".join(picture_batch) + "\r\n")
     for original, staged in (("msc51_resident_state.c", "RESSTATE.C"),
                              ("msc51_resident_state_probe.c", "RESCHK.C")):
         (output / staged).write_text(msc51_rename_identifiers(
@@ -697,7 +729,7 @@ def stage_launcher(output: Path) -> list[str]:
     response = ([f"{name}+" for name in objects] + ["MEMORY.OBJ+", "DOSFILE.OBJ+",
                 "RTLIMG.OBJ+", "RTLTEXT.OBJ+", "RTLPAL.OBJ+", "RTLGR.OBJ+",
                 "RTLHW.OBJ+", "RTFILE.OBJ+", "RESSTATE.OBJ+", "HEAP.OBJ+",
-                "INP.OBJ+", "CLOCK.OBJ+", "CRTENV.OBJ",
+                "INP.OBJ+", "CLOCK.OBJ+", "CRTENV.OBJ+", "PICTDCL.OBJ",
                 "GATEWAY.EXE", "GATEWAY.MAP", "LLIBCR.LIB LIBH.LIB /NOD", ";"])
     (output / "LINK.RSP").write_text("\r\n".join(response) + "\r\n")
     link_batch = [
@@ -897,6 +929,35 @@ def print_runtime_file_diagnostics(output: Path) -> None:
         content = path.read_text(errors="replace") if path else "(not created)"
         print(f"--- {name} ---\n{content[-8_000:].rstrip()}", file=sys.stderr)
     print(f"Runtime FAR string/file workspace: {output}", file=sys.stderr)
+
+
+def validate_picture_dcl_adapter(output: Path) -> None:
+    if (any(locate_case_insensitive(output, name) is None
+            for name in ("PICTDCL.OBJ", "PICSTART.LOG", "PICOK.LOG")) or
+            locate_case_insensitive(output, "PICFAIL.LOG") is not None):
+        raise ValueError("Cannot link launcher: DCL picture decoder is unverified. "
+                         "Run msc51-compile-picture-dcl first.")
+    signature = locate_case_insensitive(output, "PICSIG.LOG")
+    if signature is None or signature.read_text().strip() != picture_dcl_source_signature(output):
+        raise ValueError("Cannot link launcher: DCL picture decoder source has changed "
+                         "since its test. Run msc51-compile-picture-dcl again.")
+
+
+def remove_picture_dcl_outputs(output: Path) -> None:
+    names = {"PICSTART.LOG", "PICOK.LOG", "PICFAIL.LOG", "PICBUILD.LOG",
+             "PICSIG.LOG", "PICTEST.LOG", "PICTDCL.OBJ", "PICCHK.EXE", "PICCHK.OBJ"}
+    if output.is_dir():
+        for entry in output.iterdir():
+            if entry.is_file() and entry.name.upper() in names:
+                entry.unlink()
+
+
+def print_picture_dcl_diagnostics(output: Path) -> None:
+    for name in ("PICFAIL.LOG", "PICBUILD.LOG", "PICTEST.LOG", "PICOK.LOG"):
+        path = locate_case_insensitive(output, name)
+        content = path.read_text(errors="replace") if path else "(not created)"
+        print(f"--- {name} ---\n{content[-8_000:].rstrip()}", file=sys.stderr)
+    print(f"DCL picture decoder workspace: {output}", file=sys.stderr)
 
 
 def validate_resident_state_adapter(output: Path) -> None:
@@ -1129,6 +1190,7 @@ def main(argv: list[str] | None = None) -> int:
                                             "compile-memory", "compile-dos-files",
                                             "compile-rtl-state", "compile-hardware",
                                             "compile-runtime-files",
+                                            "compile-picture-dcl",
                                             "compile-resident-state",
                                             "compile-heap",
                                             "compile-input",
@@ -1148,7 +1210,8 @@ def main(argv: list[str] | None = None) -> int:
     launcher = args.command in ("prepare-launcher", "compile-launcher",
                                 "compile-memory", "compile-dos-files",
                                 "compile-rtl-state", "compile-hardware",
-                                "compile-runtime-files", "compile-resident-state",
+                                "compile-runtime-files", "compile-picture-dcl",
+                                "compile-resident-state",
                                 "compile-heap",
                                 "compile-input",
                                 "compile-clock",
@@ -1176,6 +1239,7 @@ def main(argv: list[str] | None = None) -> int:
                 validate_launcher_objects(output, objects)
             if args.command in ("compile-dos-files", "compile-rtl-state",
                                 "compile-hardware", "compile-runtime-files",
+                                "compile-picture-dcl",
                                 "compile-resident-state",
                                 "compile-heap",
                                 "compile-input",
@@ -1183,11 +1247,15 @@ def main(argv: list[str] | None = None) -> int:
                                 "compile-crt",
                                 "link-launcher"):
                 validate_memory_adapter(output)
+            if args.command == "compile-picture-dcl":
+                validate_dos_file_adapter(output)
+                validate_rtl_state_adapter(output)
             if args.command == "link-launcher":
                 validate_dos_file_adapter(output)
                 validate_rtl_state_adapter(output)
                 validate_hardware_adapter(output)
                 validate_runtime_file_adapter(output)
+                validate_picture_dcl_adapter(output)
                 validate_resident_state_adapter(output)
                 validate_heap_adapter(output)
                 validate_input_adapter(output)
@@ -1201,6 +1269,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.command in ("probe", "compile-launcher", "compile-memory",
                                  "compile-dos-files", "compile-rtl-state",
                                  "compile-hardware", "compile-runtime-files",
+                                 "compile-picture-dcl",
                                  "compile-resident-state",
                                  "compile-heap",
                                  "compile-input",
@@ -1212,6 +1281,7 @@ def main(argv: list[str] | None = None) -> int:
                  "RTLST.BAT" if args.command == "compile-rtl-state" else
                  "RTLHW.BAT" if args.command == "compile-hardware" else
                  "RTFILE.BAT" if args.command == "compile-runtime-files" else
+                 "PICTDCL.BAT" if args.command == "compile-picture-dcl" else
                  "RESST.BAT" if args.command == "compile-resident-state" else
                  "HEAP.BAT" if args.command == "compile-heap" else
                  "INPUT.BAT" if args.command == "compile-input" else
@@ -1254,6 +1324,10 @@ def main(argv: list[str] | None = None) -> int:
         remove_runtime_file_outputs(output)
         remove_launcher_link_outputs(output)
         command.append("--exit")
+    elif args.command == "compile-picture-dcl":
+        remove_picture_dcl_outputs(output)
+        remove_launcher_link_outputs(output)
+        command.append("--exit")
     elif args.command == "compile-resident-state":
         remove_resident_state_outputs(output)
         remove_launcher_link_outputs(output)
@@ -1294,6 +1368,8 @@ def main(argv: list[str] | None = None) -> int:
             print_hardware_diagnostics(output)
         elif args.command == "compile-runtime-files":
             print_runtime_file_diagnostics(output)
+        elif args.command == "compile-picture-dcl":
+            print_picture_dcl_diagnostics(output)
         elif args.command == "compile-resident-state":
             print_resident_state_diagnostics(output)
         elif args.command == "compile-heap":
@@ -1359,6 +1435,17 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print("Microsoft C 5.1 verified FAR strncpy, resource formatting and DOS path access; "
               "RTFILE.OBJ is ready for the launcher link.")
+        return 0
+    if args.command == "compile-picture-dcl":
+        try:
+            validate_picture_dcl_adapter(output)
+        except ValueError:
+            print("Microsoft C did not compile and verify the streaming picture decoder.",
+                  file=sys.stderr)
+            print_picture_dcl_diagnostics(output)
+            return 1
+        print("Microsoft C 5.1 verified DCL decoding and mode-12h/13h segmented pixels; "
+              "PICTDCL.OBJ is ready for the launcher link.")
         return 0
     if args.command == "compile-resident-state":
         try:

@@ -56,13 +56,14 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("ECHO All reconstructed launcher objects compiled > SUCCESS.LOG", batch)
             self.assertNotIn("/Fe", batch)  # No complete DOS executable yet.
             response = (output / "LINK.RSP").read_text().splitlines()
-            self.assertEqual(response[:41],
+            self.assertEqual(response[:42],
                              [f"M{index:02d}.OBJ+" for index in range(28)] +
                              ["MEMORY.OBJ+", "DOSFILE.OBJ+", "RTLIMG.OBJ+",
                               "RTLTEXT.OBJ+", "RTLPAL.OBJ+", "RTLGR.OBJ+",
                               "RTLHW.OBJ+", "RTFILE.OBJ+", "RESSTATE.OBJ+",
-                              "HEAP.OBJ+", "INP.OBJ+", "CLOCK.OBJ+", "CRTENV.OBJ"])
-            self.assertEqual(response[41:], ["GATEWAY.EXE", "GATEWAY.MAP",
+                              "HEAP.OBJ+", "INP.OBJ+", "CLOCK.OBJ+", "CRTENV.OBJ+",
+                              "PICTDCL.OBJ"])
+            self.assertEqual(response[42:], ["GATEWAY.EXE", "GATEWAY.MAP",
                                              "LLIBCR.LIB LIBH.LIB /NOD", ";"])
             memory_batch = (output / "MEMORY.BAT").read_text()
             self.assertIn("CL /AL /Od /c MEMORY.C", memory_batch)
@@ -154,6 +155,17 @@ class MSC51Tests(unittest.TestCase):
             self.assertNotIn("IF ERRORLEVEL 1 ECHO", runtime_batch)
             self.assertIn("access(pathname, 4)", (output / "RTFILE.C").read_text())
             self.assertIn("strncpy padding", (output / "RTFCHK.C").read_text())
+            picture_batch = (output / "PICTDCL.BAT").read_text()
+            self.assertIn("CL /AL /Od /c PICTDCL.C", picture_batch)
+            self.assertIn("PICCHK.C PICTDCL.OBJ DOSFILE.OBJ RTLIMG.OBJ MEMORY.OBJ", picture_batch)
+            self.assertIn("PICCHK.EXE > PICTEST.LOG", picture_batch)
+            self.assertIn("PICSIG.LOG", picture_batch)
+            self.assertIn("mode-12 decode", (output / "PICCHK.C").read_text())
+            self.assertIn("GATE_RTL_FILE_HANDLE_OFFSET", (output / "RTLIMAC.H").read_text())
+            self.assertIn("GATE_RTL_HEADER_OFFSET", (output / "RTLIMAC.H").read_text())
+            for name in ("PICTDCL.C", "PICCHK.C"):
+                self.assertTrue(all(len(identifier) <= 31 for identifier in
+                                    msc51.msc51_identifiers((output / name).read_text())), name)
             for name in ("RTFILE.C", "RTFCHK.C"):
                 self.assertTrue(all(len(identifier) <= 31 for identifier in
                                     msc51.msc51_identifiers((output / name).read_text())), name)
@@ -410,6 +422,17 @@ class MSC51Tests(unittest.TestCase):
             (output / "rtfstart.log").write_text("tested")
             (output / "rtfok.log").write_text("passed")
             (output / "rtfsig.log").write_text(msc51.runtime_file_source_signature(output))
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run") as run, \
+                 redirect_stderr(io.StringIO()) as error:
+                with self.assertRaises(SystemExit):
+                    msc51.main(args)
+                run.assert_not_called()
+            self.assertIn("msc51-compile-picture-dcl first", error.getvalue())
+            (output / "pictdcl.obj").write_bytes(b"real picture decoder")
+            (output / "picstart.log").write_text("tested")
+            (output / "picok.log").write_text("passed")
+            (output / "picsig.log").write_text(msc51.picture_dcl_source_signature(output))
             with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
                  mock.patch.object(msc51.subprocess, "run") as run, \
                  redirect_stderr(io.StringIO()) as error:
@@ -800,6 +823,81 @@ class MSC51Tests(unittest.TestCase):
             (output / "RTFILE.C").write_text((output / "RTFILE.C").read_text() + "/* changed */\n")
             with self.assertRaisesRegex(ValueError, "source has changed"):
                 msc51.validate_runtime_file_adapter(output)
+
+    def test_compile_picture_dcl_requires_fresh_dos_file_and_rtl_probes(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            compiler = root / "compiler"
+            for directory in ("BIN", "LIB", "INCLUDE"):
+                (compiler / directory).mkdir(parents=True)
+            for name in ("CL.EXE", "C1.EXE", "C1L.EXE", "C2.EXE", "C3.EXE", "LINK.EXE"):
+                (compiler / "BIN" / name).touch()
+            for name in ("LLIBCR.LIB", "LIBH.LIB"):
+                (compiler / "LIB" / name).touch()
+            (compiler / "INCLUDE" / "STDIO.H").touch()
+            output = root / "launcher"
+            msc51.stage_launcher(output)
+            args = ["compile-picture-dcl", "--compiler", str(compiler),
+                    "--output", str(output)]
+            (output / "memory.obj").write_bytes(b"memory")
+            (output / "memstart.log").write_text("tested")
+            (output / "memok.log").write_text("passed")
+            (output / "memsig.log").write_text(msc51.memory_source_signature(output))
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run") as run, \
+                 redirect_stderr(io.StringIO()) as error:
+                with self.assertRaises(SystemExit):
+                    msc51.main(args)
+                run.assert_not_called()
+            self.assertIn("msc51-compile-dos-files first", error.getvalue())
+            (output / "dosfile.obj").write_bytes(b"dos files")
+            (output / "filstart.log").write_text("tested")
+            (output / "filok.log").write_text("passed")
+            (output / "filsig.log").write_text(msc51.dos_file_source_signature(output))
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run") as run, \
+                 redirect_stderr(io.StringIO()) as error:
+                with self.assertRaises(SystemExit):
+                    msc51.main(args)
+                run.assert_not_called()
+            self.assertIn("msc51-compile-rtl-state first", error.getvalue())
+            for name in ("rtlimg", "rtltext", "rtlpal", "rtlgr"):
+                (output / f"{name}.obj").write_bytes(b"state")
+            (output / "rtlstart.log").write_text("tested")
+            (output / "rtlok.log").write_text("passed")
+            (output / "rtlsig.log").write_text(msc51.rtl_state_source_signature(output))
+
+            def failed_probe(command, check):
+                self.assertIn("PICTDCL.BAT", command)
+                self.assertFalse(check)
+                (output / "PICSTART.LOG").write_text("started")
+                (output / "PICTDCL.OBJ").write_bytes(b"compiled")
+                (output / "PICFAIL.LOG").write_text("DCL probe bad")
+                return mock.Mock(returncode=0)
+
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run", side_effect=failed_probe), \
+                 redirect_stderr(io.StringIO()) as error:
+                self.assertEqual(msc51.main(args), 1)
+            self.assertIn("DCL probe bad", error.getvalue())
+
+            def successful_probe(command, check):
+                self.assertIn("PICTDCL.BAT", command)
+                self.assertFalse((output / "PICFAIL.LOG").exists())
+                self.assertFalse((output / "PICTDCL.OBJ").exists())
+                (output / "PICSTART.LOG").write_text("started")
+                (output / "PICTDCL.OBJ").write_bytes(b"compiled")
+                (output / "PICOK.LOG").write_text("passed")
+                (output / "PICTEST.LOG").write_text("DCL probe: PASS")
+                (output / "PICSIG.LOG").write_text(msc51.picture_dcl_source_signature(output))
+                return mock.Mock(returncode=0)
+
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run", side_effect=successful_probe):
+                self.assertEqual(msc51.main(args), 0)
+            (output / "PICTDCL.C").write_text((output / "PICTDCL.C").read_text() + "/* changed */\n")
+            with self.assertRaisesRegex(ValueError, "source has changed"):
+                msc51.validate_picture_dcl_adapter(output)
 
     def test_compile_resident_state_guards_fresh_bios_and_memory_probe(self):
         with tempfile.TemporaryDirectory() as scratch:

@@ -11,8 +11,10 @@ The extended `RTLHW` adapter supplies eight RTL text/video names, and
 `RESSTATE` supplies three bounded raster names. The adapter also now stages
 two original BIOS/chipset detection entry points and two exact relocated
 RTL palette transforms. The intro's mode-12h/13h VFX blitter is also staged
-with bounded host behavior. **10 is the predicted remainder if both modified
-DOS probes pass.** This is not yet a measured Microsoft LINK result.
+with bounded host behavior. A new C89 DCL decoder additionally stages the
+compressed-picture service, with host-verified buffered DOS input and planar
+output. **9 is the predicted remainder if all updated DOS probes pass.**
+This is not yet a measured Microsoft LINK result.
 Do not manufacture no-op definitions merely to obtain an executable.
 
 ## The 26 names in the last confirmed LINK report
@@ -25,9 +27,9 @@ Do not manufacture no-op definitions merely to obtain an executable.
 | Video adapter query | `gate_rtl_mode_query_adapter`, `gate_rtl_mode_svga_variant` | 2 | **Staged, DOS probe pending.** Original `GATE.RTL:17c95..17d79` maps INT 10h/AX=1a00 active/alternate display codes to type/monitor pairs; `17b4f..17c24` tests AH=6fh, ROM signatures and bank/CRTC ports for SVGA variant 0–5. The old-BIOS fallback and exotic adapter-switch helpers remain outside the supported boundary; unsupported display BIOS requests abort. |
 | Original exception/stack state | `gate_rtl_file_divide_fault`, `gate_rtl_file_stack_word` | 2 | Trace original divide-fault exit and near-stack word reader; `0` or `abort()` substitute values would hide original behavior. |
 | Runtime calendar sample | `gate_linked_read_runtime_time_sample` | 1 | Reconstruct `12a5:34d8` ten-byte sample and its date/time, timezone/DST dependencies, then compare against the already recovered `gate_rtl_elapsed_milliseconds`. The pending DOS clock is an intentionally approximate live substitute. |
-| VFX/picture pipeline | `gate_linked_decompress_picture_pixels`, `gate_linked_blit_vfx_picture`, `gate_linked_transform_picture_palette_indexed`, `gate_linked_transform_picture_palette_rgb`, `gate_linked_save_vfx_draw_state`, `gate_linked_restore_vfx_draw_state` | 6 | The two palette transforms are **staged and host-tested** against original RTL `f4df`/`f579`. The VFX blitter is **staged as a bounded DOS adapter**, not an instruction-for-instruction reconstruction of resident `24a7:000c`: modes 2/3 interpret original CA00 image records and render four-plane mode 12h through BIOS pixels or mode 13h through A000 bytes, with original raster operators and clipping. All three still need DOS probes. Decompression and saved drawing-state lifetime remain unresolved. |
+| VFX/picture pipeline | `gate_linked_decompress_picture_pixels`, `gate_linked_blit_vfx_picture`, `gate_linked_transform_picture_palette_indexed`, `gate_linked_transform_picture_palette_rgb`, `gate_linked_save_vfx_draw_state`, `gate_linked_restore_vfx_draw_state` | 6 | The two palette transforms are **staged and host-tested** against original RTL `f4df`/`f579`. The VFX blitter is **staged as a bounded DOS adapter**, not an instruction-for-instruction reconstruction of resident `24a7:000c`: modes 2/3 interpret original CA00 image records and render four-plane mode 12h through BIOS pixels or mode 13h through A000 bytes, with original raster operators and clipping. A bounded C89 streaming DCL decoder is staged and host-tested against a reference stream, mode-12h plane packing, 64KiB rollover and file-position preservation. DOS probes are still pending; saved drawing-state lifetime remains unresolved. |
 | Intro services and diagnostics | `gate_linked_initialize_intro_services`, `gate_linked_handle_control_key`, `gate_linked_print_intro_diagnostic` | 3 | Reconstruct the original music/IRQ8 setup, Ctrl-Break branch and resident diagnostic destination/format from the EXE and RTL. Silent success and dummy output are not valid equivalents. |
-| **Reported total** | | **26** | 16 more definitions staged since this report; 10 projected unresolved after both DOS probes. |
+| **Reported total** | | **26** | 17 more definitions staged since this report; 9 projected unresolved after DOS probes. |
 
 ### Current DOS probe order
 
@@ -38,6 +40,7 @@ nix run -L .#msc51-compile-dos-files
 nix run -L .#msc51-compile-rtl-state
 nix run -L .#msc51-compile-hardware
 nix run -L .#msc51-compile-runtime-files
+nix run -L .#msc51-compile-picture-dcl
 nix run -L .#msc51-compile-resident-state
 nix run -L .#msc51-compile-heap
 nix run -L .#msc51-compile-input
@@ -98,6 +101,20 @@ checks mode-13h 2x2 source stride and copy/XOR plus distinct mode-12h
 plane contributions. The original VFX resident module and other display
 modes have not been decompiled; BIOS-per-pixel drawing is intentionally
 slower than its optimized native VGA-register loop.
+
+The new `msc51-compile-picture-dcl` stage builds `PICTDCL.OBJ` from a
+streaming, bounded C89 translation of the repository's independently tested
+PKWARE DCL decoder (`src/pic.cpp`). It uses a 4096-byte static history
+window, reads up to 256 bytes per DOS call and rewinds any unread portion
+after the DCL end marker, retaining the resource selector's file position.
+The output goes straight to the caller-allocated extended FAR buffer, either
+as mode-13h bytes or mode-12h interleaved four-plane rows. The host fixture
+tests the reference stream, 64KiB segment rollover, planar colors, read-ahead
+rollback and truncated/error paths. The independent DOS probe reads a file
+with trailing bytes and checks DOS's actual seek position. This is a
+bounded replacement, **not** a reconstructed copy of the original DOS codec.
+The `RTLIMAC.H` staging header now includes the original file-handle/header
+offset macros, so rerun `msc51-compile-rtl-state` before this new probe.
 
 Once the linker reports zero missing names, the next milestone is *actual
 DOS execution* through the original intro sequence with deterministic

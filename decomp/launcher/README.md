@@ -1079,6 +1079,17 @@ place of resident register-optimized drawing. Host and DOS probe fixtures
 check both modes; these are **not** proof of instruction-equivalent VFX
 behavior. One further projected symbol is removed, leaving **10**.
 
+The independent `msc51-compile-picture-dcl` stage now provides a bounded
+streaming version of the image decompression service from the tested native
+PKWARE DCL codec. `PICTDCL.OBJ` reads the original DOS resource handle,
+restores its position after buffered read-ahead, and writes mode-12h/13h
+picture data to the caller's extended FAR image buffer. A host C89 test
+passes for a reference compressed stream in both modes; the DOS probe is
+staged but must still run under Microsoft C 5.1. Its success would reduce
+the **projected** unresolved total to **9**. This decoder does not claim to
+reproduce the original DOS resident decompression routine instruction by
+instruction.
+
 ## Immediate next functions
 
 1. Connect the existing verified native video, font, picture and caption
