@@ -43,7 +43,27 @@ The strict `msc51-compile-data --original-game-dir ...` log validator now
 requires this full-bank witness and rejects the older sample-only success
 line. A GCC C89 host run verifies the same checksum with a different
 resident/DS/EXE-callback segment placement and rejects corruption outside
-the mask. This is a stronger staging gate, **not** yet a verified DOSBox
+the mask.
+
+The complete `gate_dos_prepare_intro_data` entry point now has the same
+kind of independent end-to-end check. The original 125/175/250ms captures
+contain an exactly identical **19,690-byte** prepared data image (RTL
+prefix plus EXE static data). The reconstructed C89 loader reproduces
+every byte in all three captures, including all earlier initialization
+fixups. At 500ms the running game has changed 237 of these bytes, so that
+late snapshot is not an initialization oracle. For differently allocated
+DOS segments, the new `gate_dos_intro_data_crc32` masks 48 variable WORDs
+(the 27 DS/CS, 19 external bank segments, and two callback pointer words),
+and checks the other **19,594 bytes**. All three early original snapshots
+give CRC32 **`5A991491`**. The host tests verify that value at two memory
+layouts and catch changed bytes outside those 96 masked bytes.
+
+`DATAREAL.EXE` now checks both *composed* images against their original
+fingerprints. The callback needed by the data composition is sourced from
+the original RTL code into a DOS stack buffer, **never called**. The strict
+original-file log validator rejects prior success strings containing only
+the bank CRC or representative checks. This is a stronger staging gate,
+**not** yet a verified DOSBox
 result in this environment or a completed rebuilt executable: `_main`,
 two diagnostic/cleanup services, the other resident banks and the
 executable's service wiring are still missing.

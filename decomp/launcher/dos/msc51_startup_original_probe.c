@@ -39,6 +39,14 @@ int gate_dos_overlay_intro_resident_exe_tail(uint16_t exe_handle,
                                               uint16_t paragraphs);
 uint32_t gate_dos_intro_resident_crc32(uint16_t resident_segment,
                                        uint16_t paragraphs);
+uint32_t gate_dos_intro_data_crc32(uint16_t lower_segment,
+                                   uint16_t paragraphs);
+int gate_dos_prepare_intro_data(uint16_t exe_handle, uint16_t rtl_handle,
+                                uint16_t lower_segment, uint16_t paragraphs,
+                                uint16_t resident_segment,
+                                uint16_t external_a_segment,
+                                uint16_t external_b_segment,
+                                GateFarPtr return_callback);
 int gate_dos_relocate_intro_resident_self_calls(uint16_t resident_segment,
                                                 uint16_t paragraphs);
 int gate_dos_relocate_intro_resident_ds_loads(uint16_t resident_segment,
@@ -266,6 +274,7 @@ int main(void)
                  gate_ds_word(0x4d82u) != (uint16_t)allocated ||
                  gate_ds_word(0x4d84u) != data_segment))
         good = 0;
+
     /* Source-image comparison only: this raw code has NOT been relocated
      * and must not be called. Verify all bytes via a second DOS file read. */
     if (good && _dos_allocmem(0x03d0u, &resident_allocated) != 0u)
@@ -491,6 +500,54 @@ int main(void)
                  gate_ds_word(0x4d84u) != data_segment))
         good = 0;
 
+    /* Recompose the complete prepared DS image through its production
+     * entry point, rather than assuming the individually exercised stages
+     * also work in their prescribed order. The callback guard uses 40
+     * bytes copied from the original RTL:4bc8; no code is executed. Its
+     * actual DOS stack segment is intentionally *not* the historical
+     * callback segment from the original game's memory layout. */
+    if (good) {
+        GateDosFileResult callback_result;
+        GateFarPtr callback;
+        uint16_t exe_handle = 0u;
+        int have_exe = 0;
+        callback_result = gate_dos_file_seek(handle, 0u, 0x4bc8ul);
+        if (callback_result.carry || callback_result.ax != 0x4bc8u ||
+            callback_result.dx != 0u)
+            good = 0;
+        if (good) {
+            callback_result = gate_dos_file_read(handle,
+                                                gate_stack_pointer(buffer), 40u);
+            if (callback_result.carry || callback_result.ax != 40u)
+                good = 0;
+        }
+        if (good) {
+            callback_result = gate_dos_file_open(
+                gate_stack_pointer(original_exe_name), 0u, 0u);
+            if (callback_result.carry)
+                good = 0;
+            else {
+                have_exe = 1;
+                exe_handle = callback_result.ax;
+            }
+        }
+        if (good) {
+            callback = gate_stack_pointer(buffer + 1u);
+            if (gate_dos_prepare_intro_data(exe_handle, handle,
+                    (uint16_t)allocated, GATE_REAL_PARAGRAPHS,
+                    (uint16_t)resident_allocated, 0x3333u, 0x4444u,
+                    callback) != 0 ||
+                gate_dos_intro_data_crc32((uint16_t)allocated,
+                                          GATE_REAL_PARAGRAPHS) != 0x5a991491ul)
+                good = 0;
+        }
+        if (have_exe) {
+            callback_result = gate_dos_file_close(exe_handle);
+            if (callback_result.carry)
+                good = 0;
+        }
+    }
+
     if (have_handle) {
         result = gate_dos_file_close(handle);
         if (result.carry)
@@ -503,7 +560,7 @@ int main(void)
         if (_dos_freemem(allocated) != 0u)
             good = 0;
     }
-    puts(good ? "Original EXE/RTL data probe: PASS (5976 + 13714 bytes; 15616-byte normalized resident CRC32 F332BF93)"
+    puts(good ? "Original EXE/RTL data probe: PASS (5976 + 13714 bytes; 15616-byte resident CRC32 F332BF93; 19690-byte prepared data CRC32 5A991491)"
               : "Original EXE/RTL data probe: FAIL");
     return good ? 0 : 1;
 }

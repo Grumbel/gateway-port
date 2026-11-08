@@ -122,6 +122,9 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("gate_dos_relocate_intro_resident_direct_segments", (output / "DATA.C").read_text())
             self.assertIn("gate_dos_intro_resident_crc32", (output / "DATA.C").read_text())
             self.assertIn("gate_dos_intro_resident_crc32", (output / "DATAREAL.C").read_text())
+            self.assertIn("gate_dos_intro_data_crc32", (output / "DATA.C").read_text())
+            self.assertIn("gate_dos_prepare_intro_data", (output / "DATAREAL.C").read_text())
+            self.assertIn("gate_dos_intro_data_crc32", (output / "DATAREAL.C").read_text())
             self.assertNotIn("DATA.OBJ", (output / "LINK.RSP").read_text())
             (output / "STDINT.H").write_text('#include <stdint.h>\n')
             for source in ("DATACHK.C", "DATAREAL.C"):
@@ -198,14 +201,18 @@ class MSC51Tests(unittest.TestCase):
                 msc51.validate_static_data_probe(output)
             (output / "DATTEST.LOG").write_text(
                 "Static EXE/RTL data probe: PASS (5976 + 13714 bytes; 27 seg + 24 off + 19 external pointers)\n")
-            with self.assertRaisesRegex(ValueError, "original GATE.EXE/GATE.RTL full-bank CRC test"):
+            with self.assertRaisesRegex(ValueError, "original GATE.EXE/GATE.RTL full-bank and data CRC tests"):
                 msc51.validate_static_data_probe(output, require_original=True)
             (output / "DATREAL.LOG").write_text(
                 "Original EXE/RTL data probe: PASS (5976 + 13714 bytes, 27 seg + 24 off + 19 external pointers)\n")
-            with self.assertRaisesRegex(ValueError, "full-bank CRC test"):
+            with self.assertRaisesRegex(ValueError, "full-bank and data CRC tests"):
                 msc51.validate_static_data_probe(output, require_original=True)
             (output / "DATREAL.LOG").write_text(
                 "Original EXE/RTL data probe: PASS (5976 + 13714 bytes; 15616-byte normalized resident CRC32 F332BF93)\n")
+            with self.assertRaisesRegex(ValueError, "full-bank and data CRC tests"):
+                msc51.validate_static_data_probe(output, require_original=True)
+            (output / "DATREAL.LOG").write_text(
+                "Original EXE/RTL data probe: PASS (5976 + 13714 bytes; 15616-byte resident CRC32 F332BF93; 19690-byte prepared data CRC32 5A991491)\n")
             msc51.validate_static_data_probe(output, require_original=True)
             (output / "DATA.C").write_text((output / "DATA.C").read_text() + "/* stale */\n")
             with self.assertRaisesRegex(ValueError, "source changed"):

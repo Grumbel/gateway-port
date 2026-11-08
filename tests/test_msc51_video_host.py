@@ -32,6 +32,7 @@ typedef signed short int16_t;
 typedef signed char int8_t;
 typedef struct GateFarPtr { uint16_t segment, offset; } GateFarPtr;
 uint16_t gate_ds_segment(void);
+uint16_t gate_ds_word(uint16_t offset);
 uint8_t gate_far_byte(uint16_t segment, uint16_t offset);
 uint16_t gate_far_word(uint16_t segment, uint16_t offset);
 void gate_far_set_byte(uint16_t segment, uint16_t offset, uint8_t value);
@@ -45,6 +46,9 @@ void gate_ds_set_word(uint16_t offset, uint16_t value);
 #define GATE_DS_DRAW_CLIP_BOTTOM (0x29feu)
 #define GATE_DS_DRAW_CLIPPING_ENABLED (0x29f6u)
 #define GATE_DS_PALETTE_WORK_BASE (0x0fceu)
+#define GATE_DS_MUSIC_STARTUP_CONFIG (0x0660u)
+#define GATE_DS_MUSIC_STARTUP_FLAGS (0x0662u)
+#define GATE_STARTUP_MUSIC_TRIGGER_FLAGS_MASK (0x06u)
 """)
             (scratch / "conio.h").write_text("int inp(unsigned int port);\nint outp(unsigned int port, int value);\n")
             (scratch / "dos.h").write_text("""
@@ -81,6 +85,10 @@ uint16_t gate_far_word(uint16_t segment, uint16_t offset)
 {
     return (uint16_t)(gate_far_byte(segment, offset) |
                       ((uint16_t)gate_far_byte(segment, (uint16_t)(offset + 1u)) << 8));
+}
+uint16_t gate_ds_word(uint16_t offset)
+{
+    return gate_far_word(gate_ds_segment(), offset);
 }
 void gate_far_set_byte(uint16_t segment, uint16_t offset, uint8_t value)
 {

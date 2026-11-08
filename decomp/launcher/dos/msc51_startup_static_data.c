@@ -1664,3 +1664,56 @@ int gate_dos_prepare_intro_data(uint16_t exe_handle, uint16_t rtl_handle,
         return -11;
     return 0;
 }
+
+/* All 19,690 bytes of the prepared data image DS:0000..4ce9 match the
+ * authentic original DOS 125/175/250ms RAM captures in their layout.
+ * A rebuilt DOS entry cannot reuse their segment values, so exclude only
+ * its 27 internal segment words, the 19 external-table segment words and
+ * the two return-callback pointer words. Every other data byte contributes
+ * to a standard CRC-32. The three original captures yield 5A991491.
+ * At 500ms the original program has mutated this region: it is not an
+ * appropriate initialization oracle. This function does not execute code
+ * or identify what initialized each of the observed bytes. */
+uint32_t gate_dos_intro_data_crc32(uint16_t lower_segment,
+                                   uint16_t paragraphs)
+{
+    static uint8_t mutable_bytes[(GATE_STATIC_DATA_OFFSET +
+                                 GATE_STATIC_DATA_BYTES + 7u) / 8u];
+    uint32_t crc = 0xfffffffful;
+    uint16_t offset;
+    unsigned int i, bit;
+
+    if (lower_segment == 0u || lower_segment > 0xfff5u ||
+        paragraphs < GATE_DATA_MIN_PARAS ||
+        gate_ds_segment() != (uint16_t)(lower_segment + 0x000au))
+        return 0ul;
+    for (i = 0u; i < sizeof mutable_bytes; ++i)
+        mutable_bytes[i] = 0u;
+    for (i = 0u; i < sizeof gate_rtl_ds_seg_fixups /
+                      sizeof gate_rtl_ds_seg_fixups[0]; ++i)
+        gate_resident_mask_word(mutable_bytes, gate_rtl_ds_seg_fixups[i]);
+    for (i = 0u; i < sizeof gate_rtl_cs_seg_fixups /
+                      sizeof gate_rtl_cs_seg_fixups[0]; ++i)
+        gate_resident_mask_word(mutable_bytes, gate_rtl_cs_seg_fixups[i]);
+    for (i = 0u; i < sizeof gate_rtl_external_a /
+                      sizeof gate_rtl_external_a[0]; ++i)
+        gate_resident_mask_word(mutable_bytes,
+            (uint16_t)(gate_rtl_external_a[i].site + 2u));
+    for (i = 0u; i < sizeof gate_rtl_external_b /
+                      sizeof gate_rtl_external_b[0]; ++i)
+        gate_resident_mask_word(mutable_bytes,
+            (uint16_t)(gate_rtl_external_b[i].site + 2u));
+    gate_resident_mask_word(mutable_bytes, 0x049du);
+    gate_resident_mask_word(mutable_bytes, 0x049fu);
+
+    for (offset = 0u; offset < GATE_STATIC_DATA_OFFSET + GATE_STATIC_DATA_BYTES;
+         ++offset) {
+        uint8_t value = (mutable_bytes[offset >> 3] &
+                         (uint8_t)(1u << (offset & 7u))) != 0u ?
+                        0u : gate_far_byte(gate_ds_segment(), offset);
+        crc ^= (uint32_t)value;
+        for (bit = 0u; bit < 8u; ++bit)
+            crc = (crc >> 1) ^ ((crc & 1ul) != 0ul ? 0xedb88320ul : 0ul);
+    }
+    return crc ^ 0xfffffffful;
+}

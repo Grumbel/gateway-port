@@ -41,12 +41,6 @@ void gate_ds_set_word(uint16_t offset, uint16_t value)
 {
     gate_far_set_word(data_segment, offset, value);
 }
-int gate_dos_bind_intro_aliases(uint16_t lower_segment, uint16_t paragraphs)
-{
-    (void)lower_segment;
-    (void)paragraphs;
-    return -1;
-}
 GateDosFileResult gate_dos_file_seek(uint16_t handle, uint16_t origin, uint32_t offset)
 {
     GateDosFileResult result;
@@ -694,6 +688,46 @@ int main(int argc, char **argv)
                           (uint8_t)(gate_far_byte(0x3000u, 0x3cffu) ^ 1u));
         if (gate_dos_intro_resident_crc32(0x3000u, 0x03d0u) == 0xf332bf93ul)
             abort();
+        {
+            unsigned long mismatches = 0ul;
+            int data_result;
+            if (fseek(ram_file, 0x17ec0l, SEEK_SET) != 0 ||
+                fread(memory + 0x17ec0u, 1, 0x200u, ram_file) != 0x200u)
+                abort();
+            external.segment = 0x17ecu;
+            external.offset = 0x013fu;
+            data_result = gate_dos_prepare_intro_data(2u, 1u, 0x2a70u, 0x100au,
+                             0x12a5u, 0x252cu, 0x25d7u, external);
+            if (data_result != 0 ||
+                gate_dos_intro_data_crc32(0x2a70u, 0x100au) != 0x5a991491ul) {
+                fprintf(stderr, "full data compose/check failed: %d\n", data_result);
+                abort();
+            }
+            if (fseek(ram_file, 0x2a7a0l, SEEK_SET) != 0)
+                abort();
+            for (i = 0u; i < 0x4ceau; ++i) {
+                int expected = fgetc(ram_file);
+                if (expected != gate_far_byte(0x2a7au, (uint16_t)i)) {
+                    ++mismatches;
+                }
+            }
+            /* The running game has already changed 237 data bytes at 500ms;
+             * all three 125..250ms captures match the initial image exactly. */
+            if (mismatches != 0ul && mismatches != 237ul)
+                abort();
+            if (gate_dos_prepare_intro_data(2u, 1u, 0x4000u, 0x100au,
+                             0x3000u, 0x5555u, 0x6666u, external) != 0 ||
+                gate_dos_intro_data_crc32(0x4000u, 0x100au) != 0x5a991491ul ||
+                gate_dos_intro_data_crc32(0x4000u, 0x1009u) != 0ul)
+                abort();
+            gate_far_set_byte(0x400au, 0x0fb8u, 0x19u);
+            if (gate_dos_intro_data_crc32(0x4000u, 0x100au) != 0x5a991491ul)
+                abort();
+            gate_far_set_byte(0x400au, 0x4ce9u,
+                              (uint8_t)(gate_far_byte(0x400au, 0x4ce9u) ^ 1u));
+            if (gate_dos_intro_data_crc32(0x4000u, 0x100au) == 0x5a991491ul)
+                abort();
+        }
         if (fclose(real_rtl_file) != 0 || fclose(real_exe_file) != 0 ||
             fclose(ram_file) != 0)
             abort();

@@ -234,6 +234,44 @@ def linked_word_manifest():
 
 
 class ResidentSelfCallTests(unittest.TestCase):
+    def test_full_prepared_intro_data_crc_from_original_startup_captures(self):
+        captures = [ROOT / f"build/msc51-startup-fine/at-{ms}.bin"
+                    for ms in (125, 175, 250)]
+        later = ROOT / "build/msc51-startup/at-500.bin"
+        if not all(path.is_file() for path in [*captures, later]):
+            self.skipTest("Authentic original DOS RAM captures unavailable")
+        source = (ROOT / "decomp/launcher/dos/msc51_startup_static_data.c").read_text()
+        words = []
+        for name in ("gate_rtl_ds_seg_fixups", "gate_rtl_cs_seg_fixups"):
+            match = re.search(r"static const uint16_t " + name +
+                              r"\[\] = \{(.*?)\};", source, re.DOTALL)
+            self.assertIsNotNone(match, name)
+            words.extend(int(value, 16) for value in
+                         re.findall(r"0x([0-9a-f]+)u", match.group(1)))
+        for name in ("gate_rtl_external_a", "gate_rtl_external_b"):
+            match = re.search(r"static const GateIntroExternalPtr " + name +
+                              r"\[\] = \{(.*?)\};", source, re.DOTALL)
+            self.assertIsNotNone(match, name)
+            words.extend(int(site, 16) + 2 for site in
+                         re.findall(r"\{0x([0-9a-f]+)u,", match.group(1)))
+        words.extend((0x049d, 0x049f))
+        self.assertEqual(len(words), 48)
+        self.assertEqual(len(set(words)), 48)
+        masked = {offset for site in words for offset in (site, site + 1)}
+        self.assertEqual(len(masked), 96)
+
+        for capture in [*captures, later]:
+            bank = bytearray(capture.read_bytes()[0x2a7a0:0x2a7a0 + 0x4cea])
+            self.assertEqual(len(bank), 0x4cea)
+            for offset in masked:
+                bank[offset] = 0
+            if capture == later:
+                self.assertNotEqual(zlib.crc32(bank), 0x5a991491)
+                continue  # The running original has already modified data.
+            self.assertEqual(zlib.crc32(bank), 0x5a991491, capture.name)
+            bank[0x4ce9] ^= 1
+            self.assertNotEqual(zlib.crc32(bank), 0x5a991491)
+
     def test_full_bank_crc_masks_only_caller_segment_words(self):
         captures = [ROOT / f"build/msc51-startup-fine/at-{ms}.bin"
                     for ms in (125, 175, 250)]
@@ -703,9 +741,10 @@ class ResidentSelfCallTests(unittest.TestCase):
             msc51.stage_launcher(out)
             executable = out / "resident-self-calls-host"
             compiled = subprocess.run(
-                ["gcc", "-std=c89", "-Wall", "-Wextra", "-Werror",
+                ["gcc", "-x", "c", "-std=c89", "-Wall", "-Wextra", "-Werror",
                  "-I", str(out),
                  str(ROOT / "tests/fixtures/msc51_data/resident_self_calls_host.c"),
+                 str(out / "SEL.C"),
                  "-o", str(executable)], capture_output=True, text=True)
             self.assertEqual(compiled.returncode, 0, compiled.stderr)
             ran = subprocess.run([str(executable)], capture_output=True, text=True)

@@ -407,17 +407,23 @@ nix run -L .#msc51-compile-data -- --original-game-dir ../gateway-dos
 This optional mode verifies both original files' pinned SHA-256 *on the host*,
 mounts its directory **read-only** as DOSBox drive `E:`, and builds a separate
 `DATAREAL.EXE` to compare the 5,976-byte EXE region and 13,714-byte raw RTL
-preimage against independent second DOS reads. It checks the EXE copy
-boundaries and that the RTL copy does not overwrite the following EXE data
-or the selector aliases. The generated-data `DATACHK.EXE` still runs first; an absent,
-stale or failing `DATREAL.LOG` fails the optional mode. Without this flag,
-the test needs no original game files and does not mount drive `E:`.
+preimage against independent second DOS reads. It then composes the first
+15,616-byte resident code bank, including its 22 relocation stages and ten
+inherited original EXE bytes, and validates a segment-independent CRC32
+against four original DOS startup captures. Finally, it reruns the complete
+19,690-byte prepared-data bootstrap and checks a second, segment-independent
+CRC32 against the original 125–250ms startup state. The generated-data
+`DATACHK.EXE` still runs first; an absent, stale or failing `DATREAL.LOG`
+fails the optional mode. Without this flag, the test needs no original
+game files and does not mount drive `E:`.
 
-`DATA.OBJ` is not yet in `LINK.RSP`: the RTL region is only an unmodified
-*preimage*, not the runtime's relocated version, and this does not fill
-BSS, relocate RTL resident banks, or recreate `_main`. The probe does
-not bundle or copy original game bytes; the eventual loader must be
-given separate handles to the user's original `GATE.EXE` and `GATE.RTL`.
+`DATA.OBJ` is not yet in `LINK.RSP`. The first resident bank and prepared
+data image now have complete host-verified initial-byte reconstructions,
+but this does not rebuild **other** resident banks, establish the original
+DOS memory/interrupt/driver initialization, or recreate `_main`. No guest
+code is executed by the original-file probe. It does not bundle or ship
+game bytes; the eventual loader needs handles to the user's original
+`GATE.EXE` and `GATE.RTL`.
 
 After both original-file probes pass, the next task is to identify the
 initialization differences within the RTL preimage. With the original
