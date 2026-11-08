@@ -229,6 +229,7 @@ def msc51_rename_identifiers(source: str, names: dict[str, str]) -> str:
 
 
 MEMORY_SOURCES = ("GATEMEM.H", "STDINT.H", "MEMORY.C", "MEMCHK.C")
+SELECTOR_SOURCES = ("GATEMEM.H", "STDINT.H", "SEL.C", "SELCHK.C", "MEMORY.C")
 DOS_FILE_SOURCES = ("GATEDOS.H", "GATEMEM.H", "STDINT.H", "DOSFILE.C", "FILECHK.C",
                     "MEMORY.C")
 RTL_STATE_SOURCES = ("RTLLAY.H", "RTLIMAC.H", "RTLSTATE.H", "GATEMEM.H", "STDINT.H",
@@ -254,6 +255,13 @@ def memory_source_signature(output: Path) -> str:
     """Reject a stale DOS memory object after an adapter/staging change."""
     digest = hashlib.sha256(b"MS C 5.1 /AL /Od memory adapter v1\n")
     for name in MEMORY_SOURCES:
+        digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
+    return digest.hexdigest()[:16]
+
+
+def selector_source_signature(output: Path) -> str:
+    digest = hashlib.sha256(b"MS C 5.1 /AL /Od original startup selector windows v1\n")
+    for name in SELECTOR_SOURCES:
         digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
     return digest.hexdigest()[:16]
 
@@ -464,6 +472,25 @@ def stage_launcher(output: Path) -> list[str]:
         ":DONE", "EXIT",
     ]
     (output / "MEMORY.BAT").write_text("\r\n".join(memory_batch) + "\r\n")
+    for dos_name, staged_name in (("msc51_startup_selectors.c", "SEL.C"),
+                                  ("msc51_startup_selectors_probe.c", "SELCHK.C")):
+        (output / staged_name).write_text((source_dir / "dos" / dos_name).read_text())
+    selector_signature = selector_source_signature(output)
+    selector_batch = [
+        "@ECHO OFF", "ECHO MS C 5.1 startup segment aliases > SELSTART.LOG",
+        "SET PATH=C:\\BIN;C:\\", "SET INCLUDE=C:\\INCLUDE;C:\\",
+        "SET LIB=C:\\LIB;C:\\", "SET TEMP=D:\\", "SET TMP=D:\\",
+        "CL /AL /Od /c SEL.C > SELBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        "IF NOT EXIST SEL.OBJ GOTO FAILED",
+        "CL /AL /Od SELCHK.C SEL.OBJ MEMORY.OBJ /FeSELCHK.EXE /link LLIBCR.LIB LIBH.LIB/NOD >> SELBUILD.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST SELCHK.EXE GOTO FAILED",
+        "SELCHK.EXE > SELTEST.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        f"ECHO {selector_signature} > SELSIG.LOG",
+        "ECHO DOS startup selector alias probe passed > SELOK.LOG",
+        "GOTO DONE", ":FAILED", "ECHO DOS startup selector alias probe failed > SELFAIL.LOG",
+        ":DONE", "EXIT",
+    ]
+    (output / "SELECT.BAT").write_text("\r\n".join(selector_batch) + "\r\n")
     (output / "GATEDOS.H").write_text(
         "/* Microsoft C 5.1 DOS file adapter; not original game code. */\n"
         '#include "GATEMEM.H"\n'
@@ -854,6 +881,39 @@ def print_memory_diagnostics(output: Path) -> None:
     print(f"Memory adapter workspace: {output}", file=sys.stderr)
 
 
+def validate_selector_probe(output: Path) -> None:
+    if (any(locate_case_insensitive(output, name) is None
+            for name in ("SEL.OBJ", "SELCHK.EXE", "SELSTART.LOG", "SELOK.LOG",
+                         "SELTEST.LOG")) or
+            locate_case_insensitive(output, "SELFAIL.LOG") is not None):
+        raise ValueError("Microsoft DOS startup selector probe failed. "
+                         "Run msc51-compile-selectors again.")
+    signature = locate_case_insensitive(output, "SELSIG.LOG")
+    if signature is None or signature.read_text().strip() != selector_source_signature(output):
+        raise ValueError("DOS selector source changed since its test. "
+                         "Run msc51-compile-selectors again.")
+    result = locate_case_insensitive(output, "SELTEST.LOG")
+    if "Selector alias probe: PASS (12 data, 33 lower, 160-byte overlap)" not in result.read_text():
+        raise ValueError("DOS selector test did not verify both overlapping windows.")
+
+
+def remove_selector_outputs(output: Path) -> None:
+    names = {"SEL.OBJ", "SELCHK.OBJ", "SELCHK.EXE", "SELSTART.LOG", "SELBUILD.LOG",
+             "SELTEST.LOG", "SELOK.LOG", "SELFAIL.LOG", "SELSIG.LOG"}
+    if output.is_dir():
+        for entry in output.iterdir():
+            if entry.is_file() and entry.name.upper() in names:
+                entry.unlink()
+
+
+def print_selector_diagnostics(output: Path) -> None:
+    for name in ("SELFAIL.LOG", "SELBUILD.LOG", "SELTEST.LOG", "SELOK.LOG"):
+        path = locate_case_insensitive(output, name)
+        content = path.read_text(errors="replace") if path else "(not created)"
+        print(f"--- {name} ---\n{content[-8_000:].rstrip()}", file=sys.stderr)
+    print(f"DOS selector workspace: {output}", file=sys.stderr)
+
+
 def validate_dos_file_adapter(output: Path) -> None:
     """Require a successful DOS INT 21h file-operations round trip."""
     if (locate_case_insensitive(output, "DOSFILE.OBJ") is None or
@@ -1103,6 +1163,22 @@ def validate_clock_adapter(output: Path) -> None:
     if signature is None or signature.read_text().strip() != clock_source_signature(output):
         raise ValueError("Cannot link launcher: clock adapter source has changed "
                          "since its test. Run msc51-compile-clock again.")
+    # CLKSIG.LOG is written by CLOCK.BAT, not by TMRCHK.EXE. A stale probe
+    # binary can therefore exit successfully and let the batch mark a new
+    # source revision as verified. Check the guest's actual output contract:
+    # bundle 054 adds DOS date/time restoration after the PIT/vector reset.
+    timer_log = locate_case_insensitive(output, "TMRTEST.LOG")
+    timer_text = timer_log.read_text(errors="replace") if timer_log else ""
+    if (re.search(r"^INT 1Ch probe: PASS ticks=[0-9]+, prior vector restored\s*$",
+                  timer_text, re.MULTILINE) is None or
+            re.search(r"^PIT 60Hz probe: PASS ticks=[0-9]+ "
+                      r"loops_per_tick=[0-9]+, prior vector restored, "
+                      r"PIT reset to FFFFh, DOS date/time restored\s*$",
+                      timer_text, re.MULTILINE) is None):
+        raise ValueError("Cannot link launcher: TMRTEST.LOG does not confirm "
+                         "the current PIT, interrupt-vector and DOS date/time "
+                         "restoration probe. Run msc51-compile-clock from "
+                         "the current bundle and inspect CLKBUILD.LOG.")
 
 
 def remove_clock_outputs(output: Path) -> None:
@@ -1235,7 +1311,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("probe", "shell", "prepare", "install",
                                             "prepare-launcher", "compile-launcher",
-                                            "compile-memory", "compile-dos-files",
+                                            "compile-memory", "compile-selectors",
+                                            "compile-dos-files",
                                             "compile-rtl-state", "compile-hardware",
                                             "compile-runtime-files",
                                             "compile-picture-dcl",
@@ -1256,7 +1333,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="one original floppy image, repeat in original disk order")
     args = parser.parse_args(argv)
     launcher = args.command in ("prepare-launcher", "compile-launcher",
-                                "compile-memory", "compile-dos-files",
+                                "compile-memory", "compile-selectors",
+                                "compile-dos-files",
                                 "compile-rtl-state", "compile-hardware",
                                 "compile-runtime-files", "compile-picture-dcl",
                                 "compile-resident-state",
@@ -1285,7 +1363,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             if args.command == "link-launcher":
                 validate_link_prerequisites(output, objects)
-            if args.command in ("compile-dos-files", "compile-rtl-state",
+            if args.command in ("compile-selectors", "compile-dos-files", "compile-rtl-state",
                                 "compile-hardware", "compile-runtime-files",
                                 "compile-picture-dcl",
                                 "compile-resident-state",
@@ -1303,6 +1381,7 @@ def main(argv: list[str] | None = None) -> int:
             commands = dosbox_commands(
                 compiler, output,
                 args.command in ("probe", "compile-launcher", "compile-memory",
+                                 "compile-selectors",
                                  "compile-dos-files", "compile-rtl-state",
                                  "compile-hardware", "compile-runtime-files",
                                  "compile-picture-dcl",
@@ -1313,6 +1392,7 @@ def main(argv: list[str] | None = None) -> int:
                                  "compile-crt",
                                  "link-launcher"),
                 ("LINK.BAT" if args.command == "link-launcher" else
+                 "SELECT.BAT" if args.command == "compile-selectors" else
                  "DOSFILE.BAT" if args.command == "compile-dos-files" else
                  "RTLST.BAT" if args.command == "compile-rtl-state" else
                  "RTLHW.BAT" if args.command == "compile-hardware" else
@@ -1343,6 +1423,9 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "compile-memory":
         remove_memory_outputs(output)
         remove_launcher_link_outputs(output)
+        command.append("--exit")
+    elif args.command == "compile-selectors":
+        remove_selector_outputs(output)
         command.append("--exit")
     elif args.command == "compile-dos-files":
         remove_dos_file_outputs(output)
@@ -1396,6 +1479,8 @@ def main(argv: list[str] | None = None) -> int:
             print_launcher_diagnostics(output)
         elif args.command == "compile-memory":
             print_memory_diagnostics(output)
+        elif args.command == "compile-selectors":
+            print_selector_diagnostics(output)
         elif args.command == "compile-dos-files":
             print_dos_file_diagnostics(output)
         elif args.command == "compile-rtl-state":
@@ -1428,6 +1513,18 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print("Microsoft C 5.1 verified DOS memory access, DS binding and stack pointers; "
               "MEMORY.OBJ can now be linked with the 28 launcher objects.")
+        return 0
+    if args.command == "compile-selectors":
+        try:
+            validate_selector_probe(output)
+        except ValueError as error:
+            print(f"Microsoft C did not verify startup selector aliases: {error}",
+                  file=sys.stderr)
+            print_selector_diagnostics(output)
+            return 1
+        print("Microsoft C 5.1 verified 45 original startup selector bindings "
+              "over two overlapping 64KiB windows; SEL.OBJ remains probe-only "
+              "until data loading and relocation are reconstructed.")
         return 0
     if args.command == "compile-dos-files":
         try:

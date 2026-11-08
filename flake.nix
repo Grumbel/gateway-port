@@ -125,6 +125,15 @@
                 --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
             '';
           };
+          msc51-compile-selectors = pkgs.writeShellApplication {
+            name = "gateway-msc51-compile-selectors";
+            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
+            text = ''
+              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
+              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py compile-selectors \
+                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
+            '';
+          };
           msc51-compile-dos-files = pkgs.writeShellApplication {
             name = "gateway-msc51-compile-dos-files";
             runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
@@ -405,6 +414,11 @@
           program = "${self.packages.${system}.msc51-compile-memory}/bin/gateway-msc51-compile-memory";
           meta.description = "Compile and verify the Gateway DOS segmented-memory adapter with Microsoft C 5.1";
         };
+        msc51-compile-selectors = {
+          type = "app";
+          program = "${self.packages.${system}.msc51-compile-selectors}/bin/gateway-msc51-compile-selectors";
+          meta.description = "Probe two overlapping DOS segment windows and 45 startup selector bindings with Microsoft C 5.1";
+        };
         msc51-compile-dos-files = {
           type = "app";
           program = "${self.packages.${system}.msc51-compile-dos-files}/bin/gateway-msc51-compile-dos-files";
@@ -620,6 +634,7 @@ except Exception:
                          self.packages.${system}.msc51-prepare-launcher
                          self.packages.${system}.msc51-compile-launcher
                          self.packages.${system}.msc51-compile-memory
+                         self.packages.${system}.msc51-compile-selectors
                          self.packages.${system}.msc51-compile-dos-files
                          self.packages.${system}.msc51-compile-rtl-state
                          self.packages.${system}.msc51-compile-hardware

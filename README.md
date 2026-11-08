@@ -214,6 +214,7 @@ nix run .#msc51-prepare                       # prepare C89 source only (no down
 nix run .#msc51-prepare-launcher              # stage all 28 recovered launcher modules
 nix run -L .#msc51-compile-launcher            # compile all 28 with Microsoft C 5.1
 nix run -L .#msc51-compile-memory              # compile and test real DOS memory adapter
+nix run -L .#msc51-compile-selectors           # test original loader's 45 overlapping segment selectors
 nix run -L .#msc51-compile-dos-files           # compile and test real DOS file operations
 nix run -L .#msc51-compile-rtl-state           # compile and test 40 recovered RTL state functions
 nix run -L .#msc51-compile-hardware            # compile/probe real DOS port I/O and clipping state
@@ -349,6 +350,20 @@ source fingerprint in `MEMSIG.LOG`, rejecting outdated adapter objects; errors
 are reported from `MEMBUILD.LOG` and `MEMTEST.LOG`. The adapter requires an
 explicit `gate_dos_bind_ds(segment)` before game DS access. It does not
 reconstruct the original game's data-segment allocation/initialization.
+
+`msc51-compile-selectors` is the next isolated startup experiment. The
+original 100ms startup RAM shows 45 FAR selectors with two segment values:
+12 use the eventual data DS and 33 use DS minus 10 paragraphs (160 bytes).
+The staged `SEL.C` binds these words into a caller-owned allocation of at
+least `100Ah` paragraphs, and `SELCHK.EXE` checks representative selectors
+and the overlap between the windows in real DOS. This test uses `MEMORY.OBJ`
+from `msc51-compile-memory`; it does not create a launcher `_main` or load
+original code, image data or the initialized mode descriptors. After running:
+
+```sh
+nix run -L .#msc51-compile-selectors
+# If it fails, inspect build/msc51-launcher/SELBUILD.LOG and SELTEST.LOG.
+```
 
 The user's follow-up Microsoft LINK run consumed `MEMORY.OBJ` and reduced
 the unresolved-symbol count **from 108 to 100**, exactly removing those

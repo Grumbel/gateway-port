@@ -5,6 +5,7 @@
 
 import importlib.util
 import io
+import re
 import shutil
 import subprocess
 from contextlib import redirect_stderr
@@ -22,6 +23,117 @@ SPEC.loader.exec_module(msc51)
 
 
 class MSC51Tests(unittest.TestCase):
+    def test_staged_startup_selectors_match_snapshot_layout_and_run_on_host(self):
+        if not shutil.which("gcc"):
+            self.skipTest("gcc needed for C89 selector alias fixture")
+        with tempfile.TemporaryDirectory() as scratch:
+            output = Path(scratch)
+            msc51.stage_launcher(output)
+            source = (output / "SEL.C").read_text()
+            header = (REPO / "decomp/launcher/gate_memory_layout.h").read_text()
+            selector_fields = {
+                name: int(value, 16)
+                for name, value in re.findall(
+                    r"^\s*(GATE_DS_[A-Z0-9_]+_SEGMENT)\s*=\s*(0x[0-9a-fA-F]+)\s*,",
+                    header, re.MULTILINE)
+                if 0x4d82 <= int(value, 16) <= 0x4e4e
+            }
+            self.assertEqual(len(selector_fields), 45)
+            groups = []
+            for name in ("gate_intro_lower_selectors", "gate_intro_data_selectors"):
+                match = re.search(r"\b%s\[\]\s*=\s*\{([^}]+)\}" % name, source)
+                self.assertIsNotNone(match)
+                groups.append({int(value, 16) for value in
+                               re.findall(r"0x([0-9a-fA-F]+)u", match.group(1))})
+            lower, data = groups
+            self.assertEqual((len(lower), len(data)), (33, 12))
+            self.assertFalse(lower & data)
+            self.assertEqual(lower | data, set(selector_fields.values()))
+            self.assertEqual(data, {
+                selector_fields[name] for name in (
+                    "GATE_DS_FONT_RESOURCE_MODE_SEGMENT",
+                    "GATE_DS_IMAGE_MODE_SEGMENT",
+                    "GATE_DS_RESOURCE_SIZE_TABLE_SEGMENT",
+                    "GATE_DS_IMAGE_TRANSFORM_SEGMENT",
+                    "GATE_DS_CLOCK_SAMPLE_STATUS_SEGMENT",
+                    "GATE_DS_INTRO_MODE_SEGMENT",
+                    "GATE_DS_INTRO_PALETTE_SEGMENT",
+                    "GATE_DS_STARTUP_CONFIG_FIRST_SEGMENT",
+                    "GATE_DS_STARTUP_CONFIG_SECOND_SEGMENT",
+                    "GATE_DS_STARTUP_CONFIG_THIRD_SEGMENT",
+                    "GATE_DS_STARTUP_CONFIG_FOURTH_SEGMENT",
+                    "GATE_DS_STARTUP_CONFIG_FIFTH_SEGMENT")
+            })
+            batch = (output / "SELECT.BAT").read_text()
+            self.assertIn("CL /AL /Od /c SEL.C", batch)
+            self.assertIn("SELCHK.C SEL.OBJ MEMORY.OBJ", batch)
+            self.assertIn("SELCHK.EXE > SELTEST.LOG", batch)
+            self.assertNotIn("SEL.OBJ", (output / "LINK.RSP").read_text())
+            executable = output / "selector-host-probe"
+            build = subprocess.run(
+                ["gcc", "-x", "c", "-std=c89", "-Wall", "-Wextra", "-Werror",
+                 "-I", str(output), str(output / "SEL.C"),
+                 str(REPO / "tests/fixtures/msc51_selectors/selector_host_probe.c"),
+                 "-o", str(executable)], capture_output=True, text=True)
+            self.assertEqual(build.returncode, 0, build.stderr)
+            probe = subprocess.run([str(executable)], capture_output=True, text=True)
+            self.assertEqual(probe.returncode, 0, probe.stderr)
+            self.assertIn("startup selector alias host: PASS", probe.stdout)
+
+    def test_compile_selectors_requires_current_dos_probe(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            compiler = root / "compiler"
+            for directory in ("BIN", "LIB", "INCLUDE"):
+                (compiler / directory).mkdir(parents=True)
+            for name in ("CL.EXE", "C1.EXE", "C1L.EXE", "C2.EXE", "C3.EXE", "LINK.EXE"):
+                (compiler / "BIN" / name).touch()
+            for name in ("LLIBCR.LIB", "LIBH.LIB"):
+                (compiler / "LIB" / name).touch()
+            (compiler / "INCLUDE" / "STDIO.H").touch()
+            output = root / "launcher"
+            msc51.stage_launcher(output)
+            args = ["compile-selectors", "--compiler", str(compiler),
+                    "--output", str(output)]
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run") as run, \
+                 redirect_stderr(io.StringIO()) as error:
+                with self.assertRaises(SystemExit):
+                    msc51.main(args)
+                run.assert_not_called()
+            self.assertIn("msc51-compile-memory first", error.getvalue())
+            (output / "memory.obj").write_bytes(b"memory")
+            (output / "memstart.log").write_text("tested")
+            (output / "memok.log").write_text("passed")
+            (output / "memsig.log").write_text(msc51.memory_source_signature(output))
+            for name in ("SEL.OBJ", "SELCHK.EXE", "SELTEST.LOG", "SELOK.LOG"):
+                (output / name).write_text("stale")
+
+            def completed(command, check):
+                self.assertIn("SELECT.BAT", command)
+                self.assertFalse(check)
+                self.assertFalse((output / "SELCHK.EXE").exists())
+                (output / "SEL.OBJ").write_bytes(b"compiled")
+                (output / "SELCHK.EXE").write_bytes(b"compiled")
+                (output / "SELSTART.LOG").write_text("started")
+                (output / "SELOK.LOG").write_text("passed")
+                (output / "SELTEST.LOG").write_text(
+                    "Selector alias probe: PASS (12 data, 33 lower, 160-byte overlap)\n")
+                (output / "SELSIG.LOG").write_text(msc51.selector_source_signature(output))
+                return mock.Mock(returncode=0)
+
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run", side_effect=completed):
+                self.assertEqual(msc51.main(args), 0)
+            (output / "SELTEST.LOG").write_text("Old probe: PASS\n")
+            with self.assertRaisesRegex(ValueError, "did not verify"):
+                msc51.validate_selector_probe(output)
+            (output / "SELTEST.LOG").write_text(
+                "Selector alias probe: PASS (12 data, 33 lower, 160-byte overlap)\n")
+            (output / "SEL.C").write_text((output / "SEL.C").read_text() + "/* changed */\n")
+            with self.assertRaisesRegex(ValueError, "source changed"):
+                msc51.validate_selector_probe(output)
+
     def test_staged_int1c_handler_restores_vector_on_success_and_timeout(self):
         """Host fake IRQs exercise both paths; DOSBox still has to verify the ABI."""
         if not shutil.which("gcc"):
@@ -587,7 +699,11 @@ class MSC51Tests(unittest.TestCase):
             (output / "clock.obj").write_bytes(b"DOS clock")
             (output / "timer.obj").write_bytes(b"INT 1Ch check")
             (output / "tmrchk.exe").write_bytes(b"INT 1Ch probe")
-            (output / "tmrtest.log").write_text("INT 1Ch probe: PASS")
+            (output / "tmrtest.log").write_text(
+                "INT 1Ch probe: PASS ticks=2, prior vector restored\n"
+                "PIT 60Hz probe: PASS ticks=8 loops_per_tick=3654, "
+                "prior vector restored, PIT reset to FFFFh, "
+                "DOS date/time restored\n")
             (output / "clkstart.log").write_text("tested")
             (output / "clkok.log").write_text("passed")
             (output / "clksig.log").write_text(msc51.clock_source_signature(output))
@@ -1274,7 +1390,11 @@ class MSC51Tests(unittest.TestCase):
                 (output / "CLOCK.OBJ").write_bytes(b"compiled")
                 (output / "TIMER.OBJ").write_bytes(b"compiled")
                 (output / "TMRCHK.EXE").write_bytes(b"compiled")
-                (output / "TMRTEST.LOG").write_text("INT 1Ch probe: PASS")
+                (output / "TMRTEST.LOG").write_text(
+                    "INT 1Ch probe: PASS ticks=2, prior vector restored\n"
+                    "PIT 60Hz probe: PASS ticks=8 loops_per_tick=3654, "
+                    "prior vector restored, PIT reset to FFFFh, "
+                    "DOS date/time restored\n")
                 (output / "CLKOK.LOG").write_text("passed")
                 (output / "CLKTEST.LOG").write_text("Clock probe: PASS")
                 (output / "CLKSIG.LOG").write_text(msc51.clock_source_signature(output))
@@ -1283,6 +1403,12 @@ class MSC51Tests(unittest.TestCase):
             with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
                  mock.patch.object(msc51.subprocess, "run", side_effect=successful_probe):
                 self.assertEqual(msc51.main(args), 0)
+            (output / "TMRTEST.LOG").write_text(
+                "INT 1Ch probe: PASS ticks=2, prior vector restored\n"
+                "PIT 60Hz probe: PASS ticks=8 loops_per_tick=3654, "
+                "prior vector restored, PIT reset to FFFFh\n")
+            with self.assertRaisesRegex(ValueError, "DOS date/time restoration probe"):
+                msc51.validate_clock_adapter(output)
             (output / "CLOCK.C").write_text((output / "CLOCK.C").read_text() + "/* changed */\n")
             with self.assertRaisesRegex(ValueError, "source has changed"):
                 msc51.validate_clock_adapter(output)

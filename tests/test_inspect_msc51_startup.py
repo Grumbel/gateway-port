@@ -46,6 +46,64 @@ def regs(cs, ip, ds, ss, sp):
 
 
 class StartupSnapshotTests(unittest.TestCase):
+    def test_selector_windows_are_overlapping_and_initialized_before_handoff(self):
+        exe, rtl = fixture()
+        selectors = startup.intro_segment_selectors(
+            (REPO / "decomp/launcher/gate_memory_layout.h").read_text())
+        self.assertEqual(len(selectors), 45)
+        same_ds = {
+            "GATE_DS_FONT_RESOURCE_MODE_SEGMENT",
+            "GATE_DS_IMAGE_MODE_SEGMENT",
+            "GATE_DS_RESOURCE_SIZE_TABLE_SEGMENT",
+            "GATE_DS_IMAGE_TRANSFORM_SEGMENT",
+            "GATE_DS_CLOCK_SAMPLE_STATUS_SEGMENT",
+            "GATE_DS_INTRO_MODE_SEGMENT",
+            "GATE_DS_INTRO_PALETTE_SEGMENT",
+            "GATE_DS_STARTUP_CONFIG_FIRST_SEGMENT",
+            "GATE_DS_STARTUP_CONFIG_SECOND_SEGMENT",
+            "GATE_DS_STARTUP_CONFIG_THIRD_SEGMENT",
+            "GATE_DS_STARTUP_CONFIG_FOURTH_SEGMENT",
+            "GATE_DS_STARTUP_CONFIG_FIFTH_SEGMENT",
+        }
+        initial = bytearray(startup.RAM_SIZE)
+        initial[0x10000:0x10600] = exe[0x20:]
+        prepared = bytearray(initial)
+        prepared[0x12a50:0x16750] = rtl[0x56de:0x93de]
+        for name, off in selectors.items():
+            put_word(prepared, 0x2a7a0 + off,
+                     0x2a7a if name in same_ds else 0x2a70)
+        self.assertEqual([len(startup.segment_selector_groups(prepared, 0x2a7a,
+                                                              selectors)[group])
+                          for group in ("data", "data_minus_000a", "other")],
+                         [12, 33, 0])
+
+        captures = [
+            (0, regs(0x102c, 0x71, 0xff0, 0x3229, 0x400), bytes(initial)),
+            (100, regs(0x3259, 0x103c, 0x348a, 0x3229, 0x3c4), bytes(prepared)),
+            (500, regs(0x12a5, 0x3570, 0x2a7a, 0x2a7a, 0x7a1a), bytes(prepared)),
+        ]
+        report = startup.analyze(exe, rtl, captures, selectors)
+        self.assertEqual(report["first_complete_segment_selectors"]["milliseconds"],
+                         100)
+        self.assertEqual(set(report["first_complete_segment_selectors"]["data"]),
+                         same_ds)
+        self.assertEqual(report["snapshots"][0]["runtime_segment_selector_counts"],
+                         {"data": 0, "data_minus_000a": 0, "other": 45})
+        self.assertEqual(report["snapshots"][1]["runtime_segment_selector_counts"],
+                         {"data": 12, "data_minus_000a": 33, "other": 0})
+
+        # One corrupt selector makes the 100ms table incomplete, even if
+        # the resident code bank has already been independently validated.
+        bad = bytearray(prepared)
+        put_word(bad, 0x2a7a0 + selectors["GATE_DS_INTRO_PALETTE_SEGMENT"],
+                 0x2a71)
+        captures[1] = (100, captures[1][1], bytes(bad))
+        report = startup.analyze(exe, rtl, captures, selectors)
+        self.assertEqual(report["first_complete_segment_selectors"]["milliseconds"],
+                         500)
+        self.assertEqual(report["snapshots"][1]["runtime_segment_selector_counts"],
+                         {"data": 11, "data_minus_000a": 33, "other": 1})
+
     def test_phase_transitions_and_source_identity(self):
         exe, rtl = fixture()
         initial = bytearray(startup.RAM_SIZE)

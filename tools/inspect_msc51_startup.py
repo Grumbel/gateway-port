@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 
 from prepare_intro_ghidra import RTL_BANKS, validate_bank
 
@@ -26,6 +27,44 @@ CALIBRATION_ENTRY = (0x5806, 58, (14, 29, 50))
 TIMING_SETUP_ENTRY = (0x5840, 86, (12, 19, 27, 31, 39, 43, 51, 58))
 TIMING_RESTORE_ENTRY = (0x5896, 76, (11, 18, 33, 50, 54, 62, 66))
 TICK_CALLBACK_ENTRY = (0x58e2, 28, (10, 16))
+
+
+def intro_segment_selectors(header):
+    """Return the resident FAR selector words named in our C layout.
+
+    These are relocated DS words, not independent allocation handles. The
+    original startup's two segment windows overlap by ten paragraphs; only
+    the observed runtime values can establish which alias a selector uses.
+    """
+    selectors = {}
+    for match in re.finditer(
+            r"^\s*(GATE_DS_[A-Z0-9_]+_SEGMENT)\s*=\s*(0x[0-9a-fA-F]+)\s*,",
+            header, re.MULTILINE):
+        name, offset = match.group(1), int(match.group(2), 16)
+        if 0x4d82 <= offset <= 0x4e4e:
+            if name in selectors or offset in selectors.values():
+                raise ValueError("duplicate intro segment selector %s" % name)
+            selectors[name] = offset
+    if not selectors:
+        raise ValueError("no intro segment selectors in layout header")
+    return selectors
+
+
+def segment_selector_groups(memory, segment, selectors):
+    """Classify the original two observed overlapping real-mode windows."""
+    start = segment * 16
+    if start + 0x10000 > len(memory):
+        raise ValueError("runtime segment outside snapshot")
+    groups = {"data": [], "data_minus_000a": [], "other": []}
+    for name, offset in selectors.items():
+        value = word(memory, start + offset)
+        if value == segment:
+            groups["data"].append(name)
+        elif value == ((segment - 10) & 0xffff):
+            groups["data_minus_000a"].append(name)
+        else:
+            groups["other"].append(name)
+    return groups
 
 
 def word(data, offset):
@@ -128,7 +167,10 @@ def relocated_timing_entry(original, ram, original_offset, length,
     }
 
 
-def analyze(exe, rtl, captures):
+def analyze(exe, rtl, captures, selector_fields=None):
+    if selector_fields is None:
+        source = Path(__file__).resolve().parent.parent / "decomp/launcher/gate_memory_layout.h"
+        selector_fields = intro_segment_selectors(source.read_text())
     header = mz_image(exe)
     relative = header["relative_cs"]
     image_load = (captures[0][1]["CS"] - relative) & 0xffff
@@ -169,6 +211,8 @@ def analyze(exe, rtl, captures):
             "length": bank_size,
         },
         "observed_runtime_data_segment": runtime_data_segment,
+        "intro_segment_selector_offsets": selector_fields,
+        "first_complete_segment_selectors": None,
         "snapshots": [],
     }
     prev_ram = None
@@ -249,6 +293,16 @@ def analyze(exe, rtl, captures):
         runtime_words = ({"%04x" % offset: word(runtime_data, offset)
                           for offset in DATA_WORDS}
                          if len(runtime_data) == 0x10000 else {})
+        selector_groups = (segment_selector_groups(ram, runtime_data_segment,
+                                                   selector_fields)
+                           if runtime_data_segment is not None else None)
+        if (selector_groups is not None and not selector_groups["other"]
+                and result["first_complete_segment_selectors"] is None):
+            result["first_complete_segment_selectors"] = {
+                "milliseconds": time,
+                "data": selector_groups["data"],
+                "data_minus_000a": selector_groups["data_minus_000a"],
+            }
         timing_words = ({"%04x" % offset: word(runtime_data, offset)
                          for offset in (0x05ba, 0x05bc, 0x05be)}
                         if len(runtime_data) == 0x10000 else {})
@@ -285,6 +339,9 @@ def analyze(exe, rtl, captures):
             "data_stack_same_segment": regs["DS"] == regs["SS"],
             "selected_ds_words": selected_words,
             "selected_runtime_data_words": runtime_words,
+            "runtime_segment_selector_counts": (
+                {key: len(names) for key, names in selector_groups.items()}
+                if selector_groups is not None else None),
             "changed_memory_bytes": changed,
         })
         prev_ram = ram
@@ -331,6 +388,13 @@ def main():
                           item["timing_tick_callback_installed"],
                           item["timing_runtime_words"].get("05ba"),
                           item["timing_runtime_flag_byte"]))
+        layout = report["first_complete_segment_selectors"]
+        if layout is not None:
+            print("Segment selectors complete by %dms: %d same-DS, "
+                  "%d DS-minus-10-paragraphs (160 bytes); "
+                  "the windows overlap" % (
+                      layout["milliseconds"], len(layout["data"]),
+                      len(layout["data_minus_000a"])))
 
 
 if __name__ == "__main__":

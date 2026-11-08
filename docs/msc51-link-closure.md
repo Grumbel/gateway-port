@@ -419,6 +419,50 @@ Microsoft C / DOSBox run is still required; setting the guest DOS clock
 is an intentional observable side effect and must not be enabled in a
 native launcher until the full hardware lifecycle is verified.
 
+**Newest timer result and guest-proof guard (bundle 055):** The user's
+`TMRTEST(2).LOG` still prints the *earlier* PIT success line ending in
+`PIT reset to FFFFh`, with **no** `DOS date/time restored` clause. The
+current `TMRCHK.C` prints that latter clause on success; therefore this
+log is not evidence that the new date/time setter calls ran. We cannot
+distinguish an older bundle from an older staged DOS binary with this log
+alone. `validate_clock_adapter` now checks the actual guest output as well
+as the `CLKSIG.LOG` source signature, so an old passing executable cannot
+accidentally mark the latest source verified. Re-run
+`nix run -L .#msc51-compile-clock` with the latest bundle and return the
+new `TMRTEST.LOG` (plus `CLKBUILD.LOG` if the output is still old).
+
+**Startup selector mapping (bundle 055):** Independent of the timer phase,
+the original 100ms RAM capture shows a fully initialized table of **45**
+selectors at runtime `DS:4d82..4e4e`, already stable while the CPU remains
+in its earlier loader segment. Of those observed words, 12 equal the
+eventual `DS=2a7a` and 33 equal `DS-000ah=2a70`. Both are overlapping
+64KiB real-mode address windows over one region, shifted by 160 bytes.
+At 0ms these 45 words are zero; at 10ms they are not yet a valid two-window
+table. The snapshot inspector now reports group counts and their first
+complete millisecond, rejecting any unclassified entry. The 45-selector
+set is only the named range; the later `DS:54c4/54cc` FAR pointer fields
+and the rest of the original data initialization are **not** covered.
+
+An independent `SEL.C` DOS adapter sets those 33/12 selectors after the
+caller reserves at least `100ah` contiguous DOS paragraphs, with the data
+DS pointing ten paragraphs above the allocation base. `SELCHK.EXE` is a
+bounded real-mode test: it allocates that memory, checks several selectors
+from both sets, performs two writes through the overlapping windows, and
+frees it. The C89 host fixture tests all 45 writes and both invalid-input
+guards. Run:
+
+```sh
+nix run -L .#msc51-compile-memory      # if MEMORY.OBJ is not current
+nix run -L .#msc51-compile-selectors
+# Return SELBUILD.LOG and SELTEST.LOG if the guest test fails.
+```
+
+`SEL.OBJ` is deliberately **not in `LINK.RSP`**. It neither fabricates the
+CRT `_main` nor loads the original data, relocates the RTL, initializes
+video/music/resources, or makes `GATEWAY.EXE` playable. The next startup
+work is reproducing the data-image initialization and relocation into
+these observed windows before calling `gate_exe_play_intro`.
+
 The third call is now identified as `rtl:10da1..10dc6`, a bounded FAR
 routine (preceded and terminated by `RETF`). It starts with `push cs; call
 near rtl:11078`, tests bits `0x0c` of a relocated DS byte, conditionally
