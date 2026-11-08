@@ -575,9 +575,10 @@ def observed_zero_word_changes(rtl, snapshot, bank, load_segment):
         if (kind == 'unresolved-zero-word' and pos >= 2 and
                 source[pos - 2:pos] == live[pos - 2:pos] and
                 source[pos - 2:pos] in (b'\x8b\x16', b'\x80\x3e',
-                                        b'\xc6\x06')):
+                                        b'\xc6\x06', b'\xc7\x06')):
             # The operand is a direct DS-relative [disp16] address,
-            # not the immediate value stored there.
+            # not the immediate value stored there. C7 06 stores a 16-bit
+            # immediate through the same direct-address ModR/M form.
             kind = 'direct-memory-displacement'
         if (kind == 'unresolved-zero-word' and pos >= 1 and
                 source[pos - 1] == live[pos - 1] and

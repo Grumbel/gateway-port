@@ -216,11 +216,12 @@ python3 tools/prepare_intro_ghidra.py \
 | `25d7` | 134 | 245 | 0 |
 | **Total** | **338** | **630** | **0** |
 
-The new `2409` bank has 31 zero-word candidates. Twenty-nine match a
-conservative local opcode pattern: eight FAR-call offsets, eight FAR-call
-segments, seven DS/ES segment loads, five direct-memory displacements and one
-DI immediate. **Two candidate words have unresolved opcode contexts**;
-zero-source correspondence alone does not establish their relocation purpose.
+The new `2409` bank has 31 zero-word candidates, **all with checked local
+8086 opcode patterns**: eight FAR-call offsets, eight FAR-call segments,
+seven DS/ES segment loads, seven direct-memory displacements and one DI
+immediate. Two of the direct-memory operands are `C7 06 disp16 imm16`
+(`MOV word ptr [disp16], imm16`) addresses, both observed as `15d0h` in
+linked RAM. This does not by itself establish their relocation purpose.
 
 The newly recovered `244c` bank contributes 109 word sites: nine DS loads,
 43 words within 22 FAR calls, 48 16-bit memory immediates, and nine direct

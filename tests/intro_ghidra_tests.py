@@ -147,6 +147,26 @@ class IntroGhidraTests(unittest.TestCase):
         self.assertEqual(changed['context_counts'], {})
         self.assertEqual(changed['unclassified_bytes'], 3)
 
+    def test_mov_word_at_absolute_address_is_not_an_unresolved_word(self):
+        bank = dict(segment=0x123, file_base=0x20, size=32)
+        rtl = bytearray(b'\x90' * 80)
+        rtl[0x23:0x29] = b'\xc7\x06\x00\x00\x00\x00'
+        ram = bytearray(0x100000)
+        start = (0x1000 + bank['segment']) * 16
+        ram[start:start + 32] = rtl[0x20:0x40]
+        ram[start + 5:start + 7] = b'\xd0\x15'
+        verified = observed_zero_word_changes(bytes(rtl), bytes(ram),
+                                              bank, 0x1000)
+        self.assertEqual(verified['context_counts'],
+                         {'direct-memory-displacement': 1})
+        self.assertEqual(verified['candidate_words'][0]['runtime_offset'], 5)
+        ram[start + 3] = 0x90  # No longer the original C7 /0 opcode.
+        damaged = observed_zero_word_changes(bytes(rtl), bytes(ram),
+                                             bank, 0x1000)
+        self.assertEqual(damaged['context_counts'],
+                         {'unresolved-zero-word': 1})
+        self.assertEqual(damaged['unclassified_bytes'], 1)
+
     def test_far_target_physical_alias_respects_verified_fragment_gaps(self):
         banks = RTL_GRAPHICS_BANKS
         before = resolve_linked_far_target(banks, 0x1000, 0x244c, 0x0000)
@@ -301,10 +321,10 @@ class RealGatewayIntroEvidence(unittest.TestCase):
                 contexts = data['context_counts']
                 if segment == 0x1409:
                     self.assertEqual(contexts, {
-                        'direct-memory-displacement': 5,
+                        'direct-memory-displacement': 7,
                         'far-call-offset': 8, 'far-call-segment': 8,
                         'mov-ax-ds': 6, 'mov-ax-es': 1,
-                        'mov-di-immediate': 1, 'unresolved-zero-word': 2})
+                        'mov-di-immediate': 1})
                     self.assertEqual(data['far_pointer_tables'], [])
                 elif segment == 0x144c:
                     self.assertEqual(contexts, {

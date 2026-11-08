@@ -202,7 +202,7 @@ helpers and `25d7` graphics dispatch. It also preserves readable C symbol names 
 `decomp/launcher/symbol-names.tsv` without losing the original file offsets.
 An optional `--graphics-word-changes` preparation report identifies 338
 originally zero word sites differing in the linked graphics image, including
-29 of 31 locally recognizable opcode contexts in the new `2409` bank and an
+all 31 locally recognizable opcode contexts in the new `2409` bank and an
 11-entry FAR-pointer table cross-checked against guest RAM. Physical FAR-target
 analysis resolves all 86 identified graphics transfers to verified source
 offsets, including the earlier 11 missing `2409` targets. These remain snapshot

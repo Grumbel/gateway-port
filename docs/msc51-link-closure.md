@@ -986,6 +986,14 @@ physically to verified original RTL spans, including the earlier 11 missing
 `2409` targets and eight additional calls from this bank. This establishes
 code provenance in one snapshot, **not** DOS loader/fixup semantics.
 
+**Follow-up opcode identification:** The two remaining `2409` source-zero
+word candidates are now identified as `C7 06 disp16 imm16` direct DS-memory
+address operands, both changing to `15d0h` in the live image. The exact
+`C7 06` prefix matches in the source and linked code; synthetic tests reject
+the classification when the source/live opcode bytes diverge. All 31
+source-zero sites in this bank now have a conservative local 8086 opcode
+role, but their original fixup records and execution order are still unknown.
+
 **Microsoft C 5.1 build correction:** The first user-side `DATA.BAT` run
 compiled `DATA.C` but stopped with `DATACHK.C(22): C2073` (an initialized
 automatic `char name[]`), so **neither test executable ran**. Both test
