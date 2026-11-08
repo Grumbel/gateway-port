@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
@@ -147,6 +148,42 @@ class LinkTailTests(unittest.TestCase):
         self.assertEqual(music['independent_original_entry']['offset'], 0xc3bd)
         self.assertFalse(music['independent_original_entry']['matches_live_16_bytes'])
         self.assertIsNone(music['live_source_match'])
+
+    def test_callee_origin_requires_validated_resident_bank(self):
+        exe = b'MZ' + bytes(100)
+        rtl = bytearray(0x1b000)
+        ram = bytearray(1 << 20)
+        bank = dict(segment=0x0c4d, file_base=0xe000, size=128,
+                    witnesses=(0xe020,))
+        bank_bytes = bytes((i * 17 + 7) & 255 for i in range(128))
+        rtl[0xe000:0xe080] = bank_bytes
+        bank_physical = (0x1000 + bank['segment']) * 16
+        ram[bank_physical:bank_physical + 128] = bank_bytes
+
+        entry, length, calls = RELOCATED_RTL_ENTRIES['control_key']
+        original = bytearray((i * 11 + 23) & 255 for i in range(length))
+        for start in calls:
+            original[start:start + 5] = bytes([0x9a, 0, 0, 0, 0])
+        rtl[entry:entry + length] = original
+        linked = bytearray(original)
+        linked[1:5] = bytes([0x20, 0, 0x4d, 0x1c])
+        for start in calls[1:]:
+            linked[start + 1:start + 5] = bytes([1, 2, 3, 4])
+        _, segment, offset, _, _ = TAIL_ENTRIES[1]
+        physical = (0x1000 + segment) * 16 + offset
+        ram[physical:physical + length] = linked
+
+        with patch('inspect_msc51_link_tail.RTL_BANKS', (bank,)):
+            row = inspect(exe, rtl, ram)[1]
+        call = row['relocated_far_calls'][0]
+        projection = call['original_source_projection']
+        self.assertEqual(projection['offset'], 0xe020)
+        self.assertEqual(projection['matching_entry_prefix_bytes'], 16)
+
+        ram[bank_physical:bank_physical + 128] = bytes(128)
+        with patch('inspect_msc51_link_tail.RTL_BANKS', (bank,)):
+            row = inspect(exe, rtl, ram)[1]
+        self.assertNotIn('original_source_projection', row['relocated_far_calls'][0])
 
     def test_invalid_snapshot_is_reported_without_a_traceback(self):
         with self.assertRaisesRegex(ValueError, '1-MiB'):

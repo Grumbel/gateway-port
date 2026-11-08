@@ -65,8 +65,40 @@ For diagnostics it compares the first 45 bytes (37 invariant bytes, two FAR
 calls). On a successful check, `entry_status=relocated_original_entry` and
 `relocated_far_calls` lists their actual linked call operands. This verifies
 code identity, **not** the callees' behavior, arguments or DOS-equivalent
-implementation. A user-side rerun with the 22-second snapshot is required
-to validate all 45 bytes and recover the linked call operands.
+implementation. The user's 22-second rerun succeeded on 2026-11-08:
+both relocated entries validated against all 45 bytes.
+The **eight directly observed relocated FAR operands** are:
+
+| Original call site | Linked target (22-second runtime) | RTL source projection | Evidence/status |
+| --- | --- | --- | --- |
+| `rtl:157b8` | `221b:021f` | Unknown | Bank not yet identified |
+| `rtl:157bd` | `1a46:01c0` | `rtl:c391` | Existing bank `0a46` projects here |
+| `rtl:157c2` | `1e48:0202` | Unknown | Bank not yet identified |
+| `rtl:157c7` | `1c4d:008b` | `rtl:e771` | Existing bank `0c4d` projects here |
+| `rtl:157d0` | `1f10:035a` | `rtl:11e5f` | Existing bank `0f10` projects here |
+| `rtl:157dc` | `12a5:0b40` | `rtl:621e` | Existing bank `02a5` projects here |
+| `rtl:170ce` | `1cdc:06de` | `rtl:f827` | Existing bank `0cdc` projects here |
+| `rtl:170e4` | `12a5:33ec` | `rtl:8aca` | Existing bank `02a5` projects here |
+
+The six file offsets are **bank-base projections**, not independently
+verified callee entry matches. Existing Ghidra preparation validates each
+bank with aggregate matches and independent witnesses on the intro snapshot.
+The inspector now performs those checks again before returning an
+`original_source_projection` per call, including the exact prefix-match
+count at that *callee*. If the bank validation fails or the call points
+outside known bank bounds, it reports only a `raw_source_candidate` (when
+one exists). It does not promote a mere interior byte-window match into
+a verified function identity.
+
+Static disassembly gives leads, **not completed services**: `rtl:c391`
+tests a music/device flag and calls a same-bank helper; `rtl:e771` iterates
+two records; `rtl:11e5f` reads a device descriptor and dispatches at least
+two numbered requests; `rtl:621e` performs multiple near calls; `rtl:f827`
+branches on a resident mode selector; `rtl:8aca` initializes a FAR buffer
+descriptor and passes it to another formatter. Actual DOS side effects,
+the unknown `221b`/`1e48` banks and the remaining three diagnostic FAR
+calls have yet to be traced. None of these observations justifies replacing
+the Ctrl-Break or diagnostic routines with a stub.
 
 Capture an **earlier** original 22-second intro image (the same canonical
 snapshot described in [intro-ghidra.md](intro-ghidra.md)). The `probe`

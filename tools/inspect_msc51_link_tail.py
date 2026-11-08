@@ -16,6 +16,7 @@ from pathlib import Path
 import sys
 
 from rank_engine_services import resolve_linked_origins
+from prepare_intro_ghidra import RTL_BANKS, validate_bank
 
 
 TAIL_ENTRIES = (
@@ -61,6 +62,58 @@ def read_linked_far_calls(live, source_offset, call_offsets):
          'target_segment': int.from_bytes(live[start + 3:start + 5], 'little')}
         for start in call_offsets
     ]
+
+
+def project_verified_bank_call(call, bank, rtl, ram, load_segment):
+    """Project a FAR target only through an independently validated RTL bank."""
+    relative_segment = call['target_segment'] - load_segment
+    offset = call['target_offset']
+    if relative_segment != bank['segment'] or not 0 <= offset < bank['size']:
+        return None
+    original = bank['file_base'] + offset
+    physical = (call['target_segment'] << 4) + offset
+    prefix = entry_prefix_bytes(rtl[original:original + 16],
+                                ram[physical:physical + 16])
+    return {'file': 'rtl', 'offset': original,
+            'via': 'independently-validated-resident-bank',
+            'bank_relative_segment': relative_segment,
+            'matching_entry_prefix_bytes': prefix}
+
+
+def annotate_relocated_callees(rows, exe, rtl, ram, load_segment):
+    """Keep validated bank projections separate from weak window guesses."""
+    calls = [call for row in rows for call in row.get('relocated_far_calls', ())]
+    if not calls:
+        return
+    verified_banks = {}
+    for bank in RTL_BANKS:
+        try:
+            validate_bank(rtl, ram, bank, load_segment)
+        except ValueError:
+            continue  # Other checkpoints may have replaced resident banks.
+        verified_banks[bank['segment']] = bank
+    targets = {(call['target_segment'] - load_segment, call['target_offset'])
+               for call in calls if call['target_segment'] >= load_segment}
+    candidates = resolve_linked_origins(targets, ram, exe, rtl, load_segment)
+    for call in calls:
+        segment = call['target_segment'] - load_segment
+        offset = call['target_offset']
+        bank = verified_banks.get(segment)
+        if bank is not None:
+            projection = project_verified_bank_call(call, bank, rtl, ram,
+                                                     load_segment)
+            if projection is not None:
+                call['original_source_projection'] = projection
+                continue
+        candidate = candidates.get((segment, offset))
+        if candidate is not None:
+            image = {'rtl': rtl, 'exe': exe}[candidate['file']]
+            physical = (call['target_segment'] << 4) + offset
+            prefix = entry_prefix_bytes(
+                image[candidate['offset']:candidate['offset'] + 16],
+                ram[physical:physical + 16])
+            call['raw_source_candidate'] = {**candidate,
+                                            'entry_prefix_bytes': prefix}
 
 
 def entry_prefix_bytes(original, live):
@@ -161,6 +214,7 @@ def inspect(exe, rtl, ram, load_segment=0x1000):
             row['entry_status'] = 'entry_unmapped_or_relocated'
             row['live_source_match'] = None
         rows.append(row)
+    annotate_relocated_callees(rows, exe, rtl, ram, load_segment)
     return rows
 
 
