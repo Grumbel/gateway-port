@@ -1207,6 +1207,67 @@ int gate_dos_prepare_intro_resident_bank_with_exe(uint16_t rtl_handle,
     return 0;
 }
 
+/* Check the whole first bank independently of its DOS paragraph placement.
+ * The 113 caller-dependent segment operands are masked bytewise; every
+ * other byte, including all relocated offsets and the inherited EXE tail,
+ * contributes to the standard CRC-32. The original 125..500ms captures
+ * yield F332BF93 with exactly these 226 masked bytes. This fingerprint is
+ * a diagnostic, NOT an instruction to execute the bank: later resident
+ * banks and the original EXE callback remain unresolved.
+ *
+ * Keep the mask derived from the SAME relocation site tables that patch
+ * the first bank. This permits real DOS allocations to use different
+ * segments without copying any original byte or address layout into it. */
+static void gate_resident_mask_word(uint8_t *mask, uint16_t offset)
+{
+    mask[offset >> 3] = (uint8_t)(mask[offset >> 3] |
+                                  (uint8_t)(1u << (offset & 7u)));
+    ++offset;
+    mask[offset >> 3] = (uint8_t)(mask[offset >> 3] |
+                                  (uint8_t)(1u << (offset & 7u)));
+}
+
+uint32_t gate_dos_intro_resident_crc32(uint16_t resident_segment,
+                                       uint16_t paragraphs)
+{
+    static uint8_t mutable_bytes[GATE_RESIDENT_BYTES / 8u];
+    uint32_t crc = 0xfffffffful;
+    uint16_t offset;
+    unsigned int i, bit;
+
+    if (resident_segment == 0u || resident_segment > 0xfc30u ||
+        paragraphs < GATE_RESIDENT_PARAS)
+        return 0ul;
+    for (i = 0u; i < sizeof mutable_bytes; ++i)
+        mutable_bytes[i] = 0u;
+    for (i = 0u; i < sizeof gate_resident_self_calls /
+                      sizeof gate_resident_self_calls[0]; ++i)
+        gate_resident_mask_word(mutable_bytes,
+            (uint16_t)(gate_resident_self_calls[i].site + 3u));
+    for (i = 0u; i < sizeof gate_resident_ds_loads /
+                      sizeof gate_resident_ds_loads[0]; ++i)
+        gate_resident_mask_word(mutable_bytes, gate_resident_ds_loads[i]);
+    for (i = 0u; i < sizeof gate_resident_cmp_ds /
+                      sizeof gate_resident_cmp_ds[0]; ++i)
+        gate_resident_mask_word(mutable_bytes, gate_resident_cmp_ds[i]);
+    for (i = 0u; i < sizeof gate_resident_mov_dx_ds /
+                      sizeof gate_resident_mov_dx_ds[0]; ++i)
+        gate_resident_mask_word(mutable_bytes, gate_resident_mov_dx_ds[i]);
+    gate_resident_mask_word(mutable_bytes, 0x0a50u); /* EXE callback CS */
+    gate_resident_mask_word(mutable_bytes, 0x09b9u); /* MOV DI,DS */
+    gate_resident_mask_word(mutable_bytes, 0x019cu); /* MOV ES:[72],CS */
+
+    for (offset = 0u; offset < GATE_RESIDENT_BYTES; ++offset) {
+        uint8_t value = (mutable_bytes[offset >> 3] &
+                         (uint8_t)(1u << (offset & 7u))) != 0u ?
+                        0u : gate_far_byte(resident_segment, offset);
+        crc ^= (uint32_t)value;
+        for (bit = 0u; bit < 8u; ++bit)
+            crc = (crc >> 1) ^ ((crc & 1ul) != 0ul ? 0xedb88320ul : 0ul);
+    }
+    return crc ^ 0xfffffffful;
+}
+
 
 /* At 100, 125, 175 and 250ms the first 64 bytes after the two-byte
  * RTL data header are zero, whereas the raw RTL preimage contains resident

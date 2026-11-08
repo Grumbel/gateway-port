@@ -965,9 +965,9 @@ def validate_static_data_probe(output: Path, *, require_original: bool = False) 
     if require_original:
         real = locate_case_insensitive(output, "DATREAL.LOG")
         if (real is None or re.search(
-                r"^Original EXE/RTL data probe: PASS \(5976 \+ 13714 bytes, 27 seg \+ 24 off \+ 19 external pointers\)\s*$",
+                r"^Original EXE/RTL data probe: PASS \(5976 \+ 13714 bytes; 15616-byte normalized resident CRC32 F332BF93\)\s*$",
                 real.read_text(), re.MULTILINE) is None):
-            raise ValueError("DOS original GATE.EXE/GATE.RTL data test is missing or failed.")
+            raise ValueError("DOS original GATE.EXE/GATE.RTL full-bank CRC test is missing or failed.")
 
 
 def remove_static_data_outputs(output: Path) -> None:
@@ -1641,12 +1641,16 @@ def main(argv: list[str] | None = None) -> int:
                   file=sys.stderr)
             print_static_data_diagnostics(output)
             return 1
-        print("Microsoft C 5.1 verified EXE/RTL source-image copies, 27 segment, "
-              "24 internal-offset, and 19 caller-segment FAR-pointer fixes"
+        print("Microsoft C 5.1 verified the EXE/RTL source-image copies "
+              "and staged original startup data relocations"
               + (" against read-only GATE.EXE/GATE.RTL"
                  if original_game_dir is not None else "")
-              + "; DATA.OBJ remains probe-only pending 14 other changed bytes "
-              "and allocation/startup reconstruction.")
+              + ("; the full first 15,616-byte resident bank passed its "
+                 "segment-independent CRC32 witness"
+                 if original_game_dir is not None else
+                 "; the full-bank original-file CRC check was not requested")
+              + ". DATA.OBJ remains probe-only until executable startup "
+              "and other resident banks are reconstructed.")
         return 0
     if args.command == "compile-dos-files":
         try:

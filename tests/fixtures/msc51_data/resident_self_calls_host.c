@@ -678,6 +678,22 @@ int main(int argc, char **argv)
                 abort();
             }
         }
+        if (gate_dos_intro_resident_crc32(0x12a5u, 0x03d0u) != 0xf332bf93ul)
+            abort();
+        /* Rebuild at unrelated DOS paragraph addresses: the full-byte
+         * fingerprint must mask ONLY caller-controlled segment operands. */
+        external.segment = 0x4242u;
+        if (gate_dos_prepare_intro_resident_bank_with_exe(1u, 2u,
+                    0x3000u, 0x03d0u, 0x200au, external) != 0 ||
+            gate_dos_intro_resident_crc32(0x3000u, 0x03d0u) != 0xf332bf93ul)
+            abort();
+        gate_far_set_byte(0x3000u, 0x09d9u, 0x01u);
+        if (gate_dos_intro_resident_crc32(0x3000u, 0x03d0u) != 0xf332bf93ul)
+            abort();
+        gate_far_set_byte(0x3000u, 0x3cffu,
+                          (uint8_t)(gate_far_byte(0x3000u, 0x3cffu) ^ 1u));
+        if (gate_dos_intro_resident_crc32(0x3000u, 0x03d0u) == 0xf332bf93ul)
+            abort();
         if (fclose(real_rtl_file) != 0 || fclose(real_exe_file) != 0 ||
             fclose(ram_file) != 0)
             abort();

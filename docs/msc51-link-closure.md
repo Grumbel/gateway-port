@@ -26,6 +26,28 @@ The two VFX state definitions now cover only the verified state-flag and
 mouse-cursor paths; the video-buffer path explicitly aborts. Do not
 manufacture no-op definitions merely to obtain an executable.
 
+## Whole-bank DOS diagnostic after the source-exact reconstruction
+
+The first 15,616-byte resident bank matches all four authentic
+125/175/250/500ms original RAM captures byte for byte when reconstructed
+at their observed layout. `DATAREAL.EXE` now also checks **the entire
+relocated bank on actual DOS**, not just representative call/data operands,
+by calculating standard CRC-32 over its contents. Exactly 113
+caller-selected segment WORDs (226 bytes) are normalized to zero; the
+other 15,390 bytes include original-file code/data, fixed relocation
+targets, and the ten-byte `GATE.EXE` continuation. The independently
+measured original-run CRC-32 is **`F332BF93`** in each capture. The DOS
+implementation derives the mask directly from its relocation tables.
+
+The strict `msc51-compile-data --original-game-dir ...` log validator now
+requires this full-bank witness and rejects the older sample-only success
+line. A GCC C89 host run verifies the same checksum with a different
+resident/DS/EXE-callback segment placement and rejects corruption outside
+the mask. This is a stronger staging gate, **not** yet a verified DOSBox
+result in this environment or a completed rebuilt executable: `_main`,
+two diagnostic/cleanup services, the other resident banks and the
+executable's service wiring are still missing.
+
 ## The three names in the latest confirmed LINK report
 
 | Original unresolved name | Source reference | Current work |

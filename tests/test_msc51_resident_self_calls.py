@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zlib
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -233,6 +234,29 @@ def linked_word_manifest():
 
 
 class ResidentSelfCallTests(unittest.TestCase):
+    def test_full_bank_crc_masks_only_caller_segment_words(self):
+        captures = [ROOT / f"build/msc51-startup-fine/at-{ms}.bin"
+                    for ms in (125, 175, 250)]
+        captures.append(ROOT / "build/msc51-startup/at-500.bin")
+        if not all(path.is_file() for path in captures):
+            self.skipTest("Authentic original DOS RAM captures unavailable")
+        words = ([site + 3 for site, _ in manifest()] + ds_load_manifest() +
+                 direct_segment_manifest("gate_resident_cmp_ds") +
+                 direct_segment_manifest("gate_resident_mov_dx_ds") +
+                 [0x0a50, 0x09b9, 0x019c])
+        self.assertEqual(len(words), 113)
+        self.assertEqual(len(set(words)), 113)
+        masked = {offset for site in words for offset in (site, site + 1)}
+        self.assertEqual(len(masked), 226)
+        for capture in captures:
+            bank = bytearray(capture.read_bytes()[0x12a50:0x16750])
+            self.assertEqual(len(bank), 0x3d00)
+            for offset in masked:
+                bank[offset] = 0
+            self.assertEqual(zlib.crc32(bank), 0xf332bf93, capture.name)
+            bank[0x3cff] ^= 1
+            self.assertNotEqual(zlib.crc32(bank), 0xf332bf93)
+
     def test_relocation_tables_cover_disjoint_changed_bytes(self):
         rtl_path = ROOT.parent / "gateway-dos/GATE.RTL"
         capture = ROOT / "build/msc51-startup-fine/at-125.bin"

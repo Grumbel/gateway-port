@@ -37,6 +37,8 @@ int gate_dos_prepare_intro_resident_bank(uint16_t rtl_handle,
 int gate_dos_overlay_intro_resident_exe_tail(uint16_t exe_handle,
                                               uint16_t resident_segment,
                                               uint16_t paragraphs);
+uint32_t gate_dos_intro_resident_crc32(uint16_t resident_segment,
+                                       uint16_t paragraphs);
 int gate_dos_relocate_intro_resident_self_calls(uint16_t resident_segment,
                                                 uint16_t paragraphs);
 int gate_dos_relocate_intro_resident_ds_loads(uint16_t resident_segment,
@@ -147,6 +149,13 @@ int main(void)
             handle = result.ax;
         }
     }
+    /* CRC-32 covers all 15,616 resident bytes, masking only 113 segment
+     * words that necessarily differ when DOS chooses new paragraphs. The
+     * expected value comes from four independent original 125..500ms RAM
+     * captures. A successful sample-word check alone is insufficient. */
+    if (good && gate_dos_intro_resident_crc32((uint16_t)resident_allocated,
+                                              0x03d0u) != 0xf332bf93ul)
+        good = 0;
 
     /* Check the DOS-visible file length independently of the data-copy
      * function. The host also verifies the full pinned SHA-256 before
@@ -494,7 +503,7 @@ int main(void)
         if (_dos_freemem(allocated) != 0u)
             good = 0;
     }
-    puts(good ? "Original EXE/RTL data probe: PASS (5976 + 13714 bytes, 27 seg + 24 off + 19 external pointers)"
+    puts(good ? "Original EXE/RTL data probe: PASS (5976 + 13714 bytes; 15616-byte normalized resident CRC32 F332BF93)"
               : "Original EXE/RTL data probe: FAIL");
     return good ? 0 : 1;
 }
