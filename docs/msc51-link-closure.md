@@ -77,6 +77,14 @@ The missing public does not justify inserting a no-op diagnostic body.
 The two other names have no definitions in the staged C sources and
 remain real reconstruction tasks.
 
+The user subsequently reran the object audit after recompiling: **42/42**
+input objects parse, and `RTFILE.OBJ` now exports all four required names,
+including `_gate_linked_print_intr_b006848b`. Thus the earlier missing
+diagnostic was a stale or otherwise incompletely rebuilt DOS object; it
+is **not a remaining source or linker export problem**. There is no new
+Microsoft LINK result yet proving the final unresolved count, but `_main`
+and `_gate_linked_handle_control_key` remain unimplemented.
+
 The historical Microsoft C 5.1 compiler recognizes 31-character C names
 and decorates them with an underscore, giving a **32-character OMF public**;
 the [Microsoft KB Q70249](https://jeffpar.github.io/kbarchive/kb/070/Q70249/)
@@ -85,6 +93,15 @@ name, not that two C translation units cannot share it. We therefore
 cannot infer a truncation bug merely from this unresolved name.
 
 ## DOS image owner for the future real entry point
+
+The optional original-file `DATAREAL.EXE` probe previously attempted the
+full resident CRC before allocating or populating the resident bank;
+`resident_allocated` was still zero. Its CRC check now runs after all
+resident relocation passes and after overlaying the ten continuation
+bytes from the original `GATE.EXE`, before the separate data-image
+composition. A source-order regression check prevents this early-call
+regression. This correction needs a fresh `msc51-compile-data` DOSBox
+run to confirm the actual original-file witness.
 
 `decomp/launcher/dos/msc51_startup_bootstrap.c` now owns the first two
 independent DOS allocations for the rebuilt source-C entry: `100ah` paragraphs

@@ -157,14 +157,6 @@ int main(void)
             handle = result.ax;
         }
     }
-    /* CRC-32 covers all 15,616 resident bytes, masking only 113 segment
-     * words that necessarily differ when DOS chooses new paragraphs. The
-     * expected value comes from four independent original 125..500ms RAM
-     * captures. A successful sample-word check alone is insufficient. */
-    if (good && gate_dos_intro_resident_crc32((uint16_t)resident_allocated,
-                                              0x03d0u) != 0xf332bf93ul)
-        good = 0;
-
     /* Check the DOS-visible file length independently of the data-copy
      * function. The host also verifies the full pinned SHA-256 before
      * launching this guest; this is not a substitute for that check. */
@@ -431,6 +423,14 @@ int main(void)
                 good = 0;
         }
     }
+    /* CRC-32 covers the entire 15,616-byte composed resident bank, not
+     * the uninitialized segment zero. Run only AFTER the RTL relocation
+     * passes and the ten final EXE continuation bytes have been overlaid.
+     * Exactly 113 layout-dependent segment WORDs are masked, yielding the
+     * same fingerprint across four original 125..500ms RAM captures. */
+    if (good && gate_dos_intro_resident_crc32((uint16_t)resident_allocated,
+                                              0x03d0u) != 0xf332bf93ul)
+        good = 0;
     if (good && gate_dos_clear_intro_rtl_prefix((uint16_t)allocated,
                                                GATE_REAL_PARAGRAPHS) != 0)
         good = 0;

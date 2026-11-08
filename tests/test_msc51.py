@@ -145,7 +145,15 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("gate_dos_relocate_intro_exe_call", (output / "DATA.C").read_text())
             self.assertIn("gate_dos_relocate_intro_resident_direct_segments", (output / "DATA.C").read_text())
             self.assertIn("gate_dos_intro_resident_crc32", (output / "DATA.C").read_text())
-            self.assertIn("gate_dos_intro_resident_crc32", (output / "DATAREAL.C").read_text())
+            real_probe = (output / "DATAREAL.C").read_text()
+            self.assertIn("gate_dos_intro_resident_crc32", real_probe)
+            # A previous source check accidentally ran the resident CRC at
+            # segment zero, before allocating the bank. The 10 EXE tail
+            # bytes must be overlaid before any full-bank fingerprint.
+            self.assertLess(real_probe.index("gate_dos_overlay_intro_resident_exe_tail(exe_tail_handle"),
+                            real_probe.index("if (good && gate_dos_intro_resident_crc32("))
+            self.assertLess(real_probe.index("if (good && gate_dos_intro_resident_crc32("),
+                            real_probe.index("gate_dos_prepare_intro_data(exe_handle"))
             self.assertIn("gate_dos_intro_data_crc32", (output / "DATA.C").read_text())
             self.assertIn("gate_dos_prepare_intro_data", (output / "DATAREAL.C").read_text())
             self.assertIn("gate_dos_intro_data_crc32", (output / "DATAREAL.C").read_text())
