@@ -6,7 +6,9 @@
  * DOSBox-only test installs the same interrupt handler, programs PIT
  * channel 0 to the original 4DAEh divisor, measures eight callbacks,
  * and restores both the prior vector and the original RTL's observed
- * FFFFh restore divisor. No production launcher function calls these
+ * FFFFh restore divisor. The original timer setup also saves DOS date
+ * and time and restores both in cleanup; the second probe tests those
+ * DOS calls as well. No production launcher function calls these
  * probes, and the sampled C loop is not an instruction-identical port
  * of the original signed-IMUL calibration body. */
 #include "GATEMEM.H"
@@ -26,6 +28,13 @@
 static volatile uint16_t gate_timer_callback_count;
 static volatile uint8_t gate_timer_remaining;
 
+typedef struct GateTimerDosClock {
+    uint16_t date_cx;
+    uint16_t date_dx;
+    uint16_t time_cx;
+    uint16_t time_dx;
+} GateTimerDosClock;
+
 static void interrupt far gate_timer_callback(void)
 {
     if (gate_timer_callback_count != 0xffffu)
@@ -41,6 +50,45 @@ static uint32_t gate_timer_dos_milliseconds(void)
     int86(0x21, &input, &output);
     return (((uint32_t)output.h.ch * 60ul + (uint32_t)output.h.cl) * 60ul +
             (uint32_t)output.h.dh) * 1000ul + (uint32_t)output.h.dl * 10ul;
+}
+
+/* RTL:5855..586c saves the raw CX and DX words from DOS date/time.
+ * Keep the DOS register representation without converting calendar
+ * fields: CX is year for 2Ah and hour/minute for 2Ch; DX similarly
+ * carries month/day or second/hundredths. */
+static void gate_timer_save_dos_clock(GateTimerDosClock *saved)
+{
+    union REGS input, output;
+    input.h.ah = 0x2au;
+    int86(0x21, &input, &output);
+    saved->date_cx = output.x.cx;
+    saved->date_dx = output.x.dx;
+
+    input.h.ah = 0x2cu;
+    int86(0x21, &input, &output);
+    saved->time_cx = output.x.cx;
+    saved->time_dx = output.x.dx;
+}
+
+/* RTL:58c4..58db issues AH=2Bh followed by AH=2Dh. Unlike the original,
+ * the diagnostic checks AL=00h after each call and reports a failure
+ * rather than silently accepting an unsupported DOS clock setter. */
+static int gate_timer_restore_dos_clock(const GateTimerDosClock *saved)
+{
+    union REGS input, output;
+    int date_failed, time_failed;
+    input.h.ah = 0x2bu;
+    input.x.cx = saved->date_cx;
+    input.x.dx = saved->date_dx;
+    int86(0x21, &input, &output);
+    date_failed = output.h.al != 0u;
+
+    input.h.ah = 0x2du;
+    input.x.cx = saved->time_cx;
+    input.x.dx = saved->time_dx;
+    int86(0x21, &input, &output);
+    time_failed = output.h.al != 0u;
+    return date_failed || time_failed ? -1 : 0;
 }
 
 /* Returns 0 on two observed ticks; -1 on timeout or missing IRQs, -2
@@ -101,7 +149,8 @@ static void gate_timer_program_pit(uint16_t divisor)
 }
 
 /* Out parameter is a C-loop count / eight, NOT the original RTL:5836
- * 16-bit result. Returns the same status codes as the INT 1Ch test.
+ * 16-bit result. Returns the same status codes as the INT 1Ch test,
+ * or -4 if DOS rejects the date/time restoration after PIT reset.
  * As with original RTL:5840..58e1, the restored PIT divisor is FFFFh;
  * the original may have recorded it separately before this routine.
  * Both interrupt vector and PIT are restored on timeout, too. */
@@ -111,6 +160,8 @@ int gate_dos_probe_pit_calibration(uint16_t *iterations_per_tick,
     void (interrupt far *previous)(void);
     uint32_t start, now, loops;
     uint16_t count;
+    GateTimerDosClock saved_clock;
+    int clock_restore_status;
 
     if (iterations_per_tick == 0 || observed == 0)
         return -1;
@@ -122,6 +173,7 @@ int gate_dos_probe_pit_calibration(uint16_t *iterations_per_tick,
 
     gate_timer_callback_count = 0u;
     gate_timer_remaining = 8u;
+    gate_timer_save_dos_clock(&saved_clock);
     start = gate_timer_dos_milliseconds();
     _dos_setvect(GATE_TIMER_VECTOR, gate_timer_callback);
     gate_timer_program_pit(GATE_TIMER_CALIBRATION_DIVISOR);
@@ -143,10 +195,13 @@ int gate_dos_probe_pit_calibration(uint16_t *iterations_per_tick,
      * These DOSBox probe calls are not a hardware-safe CLI/IVT clone. */
     _dos_setvect(GATE_TIMER_VECTOR, previous);
     gate_timer_program_pit(GATE_TIMER_RESTORE_DIVISOR);
+    clock_restore_status = gate_timer_restore_dos_clock(&saved_clock);
     count = gate_timer_callback_count;
     *observed = count;
     *iterations_per_tick = (uint16_t)(loops >> 3);
     if (_dos_getvect(GATE_TIMER_VECTOR) != previous)
         return -3;
+    if (clock_restore_status != 0)
+        return -4;
     return count >= 8u && *iterations_per_tick != 0u ? 0 : -1;
 }

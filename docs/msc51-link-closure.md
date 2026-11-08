@@ -402,6 +402,23 @@ further state-preservation work. The `ffffh` reset divisor is an explicit
 assumption taken from the supplied original run, not a verified general
 restore of a machine's previous PIT configuration.
 
+**DOS clock restoration follow-up (bundle 054):** The user's actual
+`TMRTEST(1).LOG` passed the new calibration with **eight INT 1Ch ticks**
+and a C measurement of `3654` iterations per tick, with the prior vector
+restored and PIT reset to `ffffh`. The measured C iterations are not
+comparable to the original `DS:05ba=35f3h` because the loops differ.
+The next isolated probe addition now saves DOS INT 21h/AH=2Ah date
+`CX:DX` and AH=2Ch time `CX:DX` immediately before calibration, then
+issues the original AH=2Bh set-date and AH=2Dh set-time calls **after**
+the vector and PIT reset on both successful and timed-out paths.
+Unlike the original, this probe rejects a nonzero AL result from either
+DOS setter (`status=-4`) while still restoring the vector and PIT first.
+The deterministic host fixture checks the exact saved/restored register
+words, the call order and a deliberately failed time setter. An actual
+Microsoft C / DOSBox run is still required; setting the guest DOS clock
+is an intentional observable side effect and must not be enabled in a
+native launcher until the full hardware lifecycle is verified.
+
 The third call is now identified as `rtl:10da1..10dc6`, a bounded FAR
 routine (preceded and terminated by `RETF`). It starts with `push cs; call
 near rtl:11078`, tests bits `0x0c` of a relocated DS byte, conditionally

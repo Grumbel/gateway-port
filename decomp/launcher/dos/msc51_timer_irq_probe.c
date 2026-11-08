@@ -32,6 +32,7 @@ int main(void)
         return 1;
     }
     printf("PIT 60Hz probe: PASS ticks=%u loops_per_tick=%u, "
-           "prior vector restored, PIT reset to FFFFh\n", ticks, iterations);
+           "prior vector restored, PIT reset to FFFFh, "
+           "DOS date/time restored\n", ticks, iterations);
     return 0;
 }

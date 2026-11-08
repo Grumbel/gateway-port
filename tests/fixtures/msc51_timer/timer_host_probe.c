@@ -16,6 +16,12 @@ static unsigned int inject_ticks;
 static unsigned int pit_write_count;
 static unsigned int pit_write_ports[6];
 static unsigned int pit_write_values[6];
+static unsigned int date_reads, date_sets, time_sets;
+static unsigned int clock_save_next;
+static unsigned int invalid_restore;
+static unsigned int reject_time_set;
+static uint16_t saved_date_cx, saved_date_dx;
+static uint16_t saved_time_cx, saved_time_dx;
 static void legacy_handler(void) {}
 static void (*current_handler)(void) = legacy_handler;
 
@@ -58,16 +64,50 @@ static int pit_write_sequence_valid(void)
 int int86(int number, union REGS *input, union REGS *output)
 {
     uint32_t secs;
-    if (number != 0x21 || input->h.ah != 0x2cu)
+    if (number != 0x21)
         return -1;
-    clock_ms += 10ul;
-    if (inject_ticks && (clock_ms % 50ul) == 0ul)
-        current_handler();
-    secs = clock_ms / 1000ul;
-    output->h.ch = (unsigned char)(secs / 3600ul);
-    output->h.cl = (unsigned char)((secs / 60ul) % 60ul);
-    output->h.dh = (unsigned char)(secs % 60ul);
-    output->h.dl = (unsigned char)((clock_ms % 1000ul) / 10ul);
+    if (input->h.ah == 0x2au) {
+        if (pit_write_count != 0u || current_handler != legacy_handler)
+            ++invalid_restore;
+        ++date_reads;
+        clock_save_next = 1u;
+        saved_date_cx = 2026u;
+        saved_date_dx = 0x0b08u;
+        output->x.cx = saved_date_cx;
+        output->x.dx = saved_date_dx;
+    } else if (input->h.ah == 0x2cu) {
+        clock_ms += 10ul;
+        if (inject_ticks && (clock_ms % 50ul) == 0ul)
+            current_handler();
+        secs = clock_ms / 1000ul;
+        output->h.ch = (unsigned char)(secs / 3600ul);
+        output->h.cl = (unsigned char)((secs / 60ul) % 60ul);
+        output->h.dh = (unsigned char)(secs % 60ul);
+        output->h.dl = (unsigned char)((clock_ms % 1000ul) / 10ul);
+        if (clock_save_next != 0u) {
+            saved_time_cx = output->x.cx;
+            saved_time_dx = output->x.dx;
+            clock_save_next = 0u;
+        }
+    } else if (input->h.ah == 0x2bu) {
+        ++date_sets;
+        if (input->x.cx != saved_date_cx || input->x.dx != saved_date_dx)
+            ++invalid_restore;
+        if (pit_write_count != 6u || current_handler != legacy_handler ||
+            date_sets != time_sets + 1u)
+            ++invalid_restore;
+        output->h.al = 0u;
+    } else if (input->h.ah == 0x2du) {
+        ++time_sets;
+        if (input->x.cx != saved_time_cx || input->x.dx != saved_time_dx)
+            ++invalid_restore;
+        if (pit_write_count != 6u || current_handler != legacy_handler ||
+            time_sets != date_sets)
+            ++invalid_restore;
+        output->h.al = reject_time_set ? 0xffu : 0u;
+    } else {
+        return -1;
+    }
     return 0;
 }
 
@@ -87,7 +127,8 @@ int main(void)
     rc = gate_dos_probe_pit_calibration(&iterations, &count);
     if (rc != 0 || count < 8u || iterations == 0u ||
         current_handler != legacy_handler || vector_installs != 4u ||
-        !pit_write_sequence_valid()) {
+        !pit_write_sequence_valid() || date_reads != 1u || date_sets != 1u ||
+        time_sets != 1u || invalid_restore != 0u) {
         fprintf(stderr, "PIT 60Hz host success path failed: %d %u %u\n",
                 rc, count, iterations);
         return 1;
@@ -106,6 +147,21 @@ int main(void)
         fprintf(stderr, "PIT 60Hz host timeout path failed: %d %u\n", rc, count);
         return 1;
     }
-    puts("INT 1Ch host callback/timeout/restoration and PIT writes: PASS");
+    if (date_reads != 2u || date_sets != 2u || time_sets != 2u ||
+        invalid_restore != 0u) {
+        fputs("DOS date/time restore on timeout failed\n", stderr);
+        return 1;
+    }
+    inject_ticks = 1u;
+    reject_time_set = 1u;
+    pit_write_count = 0u;
+    rc = gate_dos_probe_pit_calibration(&iterations, &count);
+    if (rc != -4 || current_handler != legacy_handler ||
+        vector_installs != 10u || !pit_write_sequence_valid() ||
+        date_sets != 3u || time_sets != 3u || invalid_restore != 0u) {
+        fputs("DOS clock setter failure was not reported safely\n", stderr);
+        return 1;
+    }
+    puts("INT 1Ch host callback/timeout/PIT/clock restoration: PASS");
     return 0;
 }

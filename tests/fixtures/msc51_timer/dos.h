@@ -8,7 +8,10 @@
 
 union REGS {
     struct {
-        unsigned char ah, ch, cl, dh, dl;
+        uint16_t ax, bx, cx, dx;
+    } x;
+    struct {
+        unsigned char al, ah, bl, bh, cl, ch, dl, dh;
     } h;
 };
 
