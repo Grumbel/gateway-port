@@ -36,10 +36,15 @@ class MSC51Tests(unittest.TestCase):
             # The real DOS typedef is 'unsigned long' (32-bit on MSC 5.1).
             # On 64-bit Linux use stdint's exact widths for this host probe.
             (output / "STDINT.H").write_text('#include <stdint.h>\n')
+            fixtures = REPO / "tests/fixtures/msc51_clock"
+            check = subprocess.run(["gcc", "-x", "c", "-std=c89", "-Wall", "-Wextra",
+                                    "-Werror", "-fsyntax-only", "-I", str(fixtures),
+                                    "-I", str(output), str(output / "CLKCHK.C")],
+                                   capture_output=True, text=True)
+            self.assertEqual(check.returncode, 0, check.stderr)
             shortened = {original: alias for alias, original in
                          (line.split() for line in
                           (output / "SYMBOL.MAP").read_text().splitlines()[1:])}
-            fixtures = REPO / "tests/fixtures/msc51_clock"
             (output / "CLKHOST.C").write_text(msc51.msc51_rename_identifiers(
                 (fixtures / "clock_host_probe.c").read_text(), shortened))
             executable = output / "clock-host-probe"
@@ -299,6 +304,10 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("input.h.ah = 0x2au", (output / "CLOCK.C").read_text())
             self.assertIn("gate_rtl_graphics_delay(20ul)",
                           (output / "CLKCHK.C").read_text())
+            clock_probe = (output / "CLKCHK.C").read_text()
+            self.assertIn("GateFarPtr destination;", clock_probe)
+            self.assertIn("destination = gate_stack_pointer(sample);", clock_probe)
+            self.assertNotIn("GateFarPtr destination = gate_stack_pointer(sample)", clock_probe)
             for name in ("CLOCK.C", "CLKCHK.C"):
                 self.assertTrue(all(len(identifier) <= 31 for identifier in
                                     msc51.msc51_identifiers((output / name).read_text())), name)

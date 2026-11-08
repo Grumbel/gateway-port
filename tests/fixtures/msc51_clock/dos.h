@@ -18,5 +18,7 @@ union REGS {
 };
 
 int int86(int interrupt, union REGS *input, union REGS *output);
+unsigned int _dos_allocmem(unsigned int paragraphs, unsigned int *segment);
+unsigned int _dos_freemem(unsigned int segment);
 
 #endif

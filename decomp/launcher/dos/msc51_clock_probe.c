@@ -34,8 +34,11 @@ int main(void)
     uint32_t end;
     uint32_t zero_zone, one_hour_zone;
     uint8_t sample[10];
-    GateFarPtr destination = gate_stack_pointer(sample);
+    GateFarPtr destination;
     unsigned int segment = 0;
+    /* Microsoft C 5.1 rejects initializing a struct local from a return
+     * value (C2074), but supports ordinary struct assignment. */
+    destination = gate_stack_pointer(sample);
     if (_dos_allocmem(0x0400u, &segment) != 0) {
         puts("Clock probe: guest DS allocation failed");
         return 1;
