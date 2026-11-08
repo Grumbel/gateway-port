@@ -16,6 +16,8 @@ int gate_dos_fix_intro_rtl_segs(uint16_t lower_segment, uint16_t paragraphs,
                                 uint16_t resident_segment);
 int gate_dos_clear_intro_rtl_prefix(uint16_t lower_segment, uint16_t paragraphs);
 int gate_dos_fix_intro_rtl_startup_words(uint16_t lower_segment, uint16_t paragraphs);
+int gate_dos_fix_intro_return_pointer(uint16_t lower_segment,
+                                      uint16_t paragraphs, GateFarPtr target);
 int gate_dos_fix_intro_rtl_offs(uint16_t lower_segment, uint16_t paragraphs);
 int gate_dos_fix_intro_rtl_external(uint16_t lower_segment, uint16_t paragraphs,
                                     uint16_t first_segment, uint16_t second_segment);
@@ -137,6 +139,7 @@ int main(void)
 {
     unsigned int i;
     uint8_t boundary;
+    GateFarPtr callback;
     memset(memory, 0xc3, sizeof memory);
     if (gate_dos_bind_intro_aliases(0x2000u, 0x100au) != 0)
         abort();
@@ -180,6 +183,29 @@ int main(void)
             abort();
     if (gate_far_byte(data_segment, 1u) != (uint8_t)(pattern(0x2au) ^ 0x5au) ||
         gate_far_byte(data_segment, 66u) != (uint8_t)(pattern(0x6bu) ^ 0x5au))
+        abort();
+    callback.segment = data_segment;
+    callback.offset = 0x6001u;
+    gate_far_set_byte(data_segment, 0x6000u, 0xcfu);
+    gate_far_set_byte(data_segment, 0x6001u, 0xcbu);
+    gate_far_set_byte(data_segment, 0x6002u, 0x8bu);
+    gate_far_set_byte(data_segment, 0x601eu, 0xfau);
+    gate_far_set_byte(data_segment, 0x601fu, 0x8bu);
+    gate_far_set_byte(data_segment, 0x6020u, 0x46u);
+    gate_far_set_byte(data_segment, 0x6021u, 0x06u);
+    gate_far_set_byte(data_segment, 0x6022u, 0xa3u);
+    gate_ds_set_word(0x049du, 0u);
+    gate_ds_set_word(0x049fu, 0u);
+    if (gate_dos_fix_intro_return_pointer(0x2000u, 0x1009u, callback) != -1)
+        abort();
+    gate_far_set_byte(data_segment, 0x6002u, 0x90u);
+    if (gate_dos_fix_intro_return_pointer(0x2000u, 0x100au, callback) != -2 ||
+        gate_ds_word(0x049du) != 0u)
+        abort();
+    gate_far_set_byte(data_segment, 0x6002u, 0x8bu);
+    if (gate_dos_fix_intro_return_pointer(0x2000u, 0x100au, callback) != 0 ||
+        gate_ds_word(0x049du) != callback.offset ||
+        gate_ds_word(0x049fu) != callback.segment)
         abort();
     gate_ds_set_word(0x0525u, 0u);
     gate_ds_set_word(0x26d6u, 0u);

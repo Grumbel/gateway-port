@@ -332,6 +332,27 @@ class StartupSnapshotTests(unittest.TestCase):
             self.assertEqual(tuple((int(site, 16), int(off, 16))
                                    for site, off in pairs), entries)
 
+    def test_return_pointer_requires_original_and_two_live_code_anchors(self):
+        rtl = bytearray(0x5000)
+        rtl[0x4bc8:0x4bcb] = b"\xcf\xcb\x8b"
+        rtl[0x4be6:0x4beb] = b"\xfa\x8b\x46\x06\xa3"
+        ram = bytearray(startup.RAM_SIZE)
+        ds = 0x2a7a
+        target = 0x17fff
+        put_word(ram, ds * 16 + 0x049d, 0x013f)
+        put_word(ram, ds * 16 + 0x049f, 0x17ec)
+        ram[target - 1:target + 2] = rtl[0x4bc8:0x4bcb]
+        ram[target + 0x1d:target + 0x22] = rtl[0x4be6:0x4beb]
+        captures = [(t, None, bytes(ram)) for t in (100, 125, 175, 250)]
+        self.assertTrue(startup.verify_rtl_return_pointer(rtl, captures, ds))
+        damaged = bytearray(ram)
+        damaged[target + 0x1e] ^= 1
+        self.assertFalse(startup.verify_rtl_return_pointer(
+            rtl, captures[:2] + [(175, None, bytes(damaged))] + captures[3:], ds))
+        damaged = bytearray(rtl)
+        damaged[0x4bc9] ^= 1
+        self.assertFalse(startup.verify_rtl_return_pointer(damaged, captures, ds))
+
     def test_rtl_remainder_excludes_only_confirmed_word_sites(self):
         length = startup.RTL_DATA_IMAGE_END
         rtl = bytearray(b"\x55" * (0x29 + length))
@@ -379,6 +400,7 @@ class StartupSnapshotTests(unittest.TestCase):
         self.assertEqual(remainder["verified_external_pointers"], 19)
         self.assertEqual(remainder["verified_external_bytes"], 65)
         self.assertEqual(remainder["verified_cleared_prefix_bytes"], 0)
+        self.assertEqual(remainder["verified_return_pointer_bytes"], 0)
         self.assertEqual(remainder["verified_startup_word_bytes"], 12)
         self.assertEqual(remainder["verified_total_bytes"], 179)
         self.assertEqual([entry["observed_segment"]

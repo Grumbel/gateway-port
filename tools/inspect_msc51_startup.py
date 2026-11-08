@@ -298,7 +298,8 @@ def rtl_preimage_fixup_candidates(rtl, samples, runtime_ds, image_load):
     }
 
 
-def rtl_preimage_remainder(rtl, samples, runtime_ds, image_load):
+def rtl_preimage_remainder(rtl, samples, runtime_ds, image_load,
+                           verified_return_pointer=False):
     """Describe bytes outside 51 known words and 19 external FAR pointers.
 
     A known word is excluded only if its source value, observed value and
@@ -336,6 +337,10 @@ def rtl_preimage_remainder(rtl, samples, runtime_ds, image_load):
         known[offset:offset + 2] = b"\x01\x01"
     if sum(known) != 102:
         raise ValueError("expected 102 bytes at 51 known word sites")
+    if verified_return_pointer:
+        if any(source[0x049d:0x04a1]) or any(known[0x049d:0x04a1]):
+            raise ValueError("original RTL return pointer source is not zero")
+        known[0x049d:0x04a1] = b"\x01" * 4
     for offset, observed in KNOWN_RTL_STARTUP_WORDS:
         if (word(source, offset) != 0 or
                 any(word(sample, offset) != observed for sample in early) or
@@ -441,11 +446,13 @@ def rtl_preimage_remainder(rtl, samples, runtime_ds, image_load):
         "verified_offset_words": 24,
         "verified_offset_bytes": 48,
         "verified_startup_word_bytes": 12,
+        "verified_return_pointer_bytes": 4 if verified_return_pointer else 0,
         "verified_external_pointers": 19,
         "verified_external_bytes": verified_external_bytes,
         "verified_cleared_prefix_bytes": cleared_bytes,
         "observed_external_tables": external,
-        "verified_total_bytes": 114 + verified_external_bytes + cleared_bytes,
+        "verified_total_bytes": 114 + verified_external_bytes + cleared_bytes +
+                                (4 if verified_return_pointer else 0),
         "remaining_changed_bytes": len(residual),
         "source_zero_to_nonzero": sum(source[i] == 0 for i in residual),
         "source_nonzero_to_zero": sum(first[i] == 0 for i in residual),
@@ -472,6 +479,33 @@ def runtime_data_fixups(rtl, captures, runtime_ds, image_load):
         runtime_ds, image_load)
 
 
+def verify_rtl_return_pointer(rtl, captures, runtime_ds):
+    """Match DS:049d to the relocated RETF at original RTL:4bc9.
+
+    Merely observing a FAR-looking word is insufficient. Check the original
+    code neighborhood, the live IRET/RETF/MOV bytes, and a separate invariant
+    instruction run beyond the relocated operands in every early snapshot.
+    """
+    if (rtl[0x4bc8:0x4bcb] != b"\xcf\xcb\x8b" or
+            rtl[RTL_DATA_IMAGE_FILE_OFFSET + 0x049d:
+                RTL_DATA_IMAGE_FILE_OFFSET + 0x04a1] != bytes(4)):
+        return False
+    early = [(time, ram) for time, _, ram in captures if 100 <= time <= 250]
+    if not early:
+        return False
+    for _, ram in early:
+        base = runtime_ds * 16
+        offset = word(ram, base + 0x049d)
+        segment = word(ram, base + 0x049f)
+        target = segment * 16 + offset
+        if (not segment or not offset or target < 1 or
+                target + 0x22 >= len(ram) or
+                ram[target - 1:target + 2] != rtl[0x4bc8:0x4bcb] or
+                ram[target + 0x1d:target + 0x22] != rtl[0x4be6:0x4beb]):
+            return False
+    return True
+
+
 def runtime_data_remainder(rtl, captures, runtime_ds, image_load):
     """Inspect only early deviations not covered by observed segment words."""
     if runtime_ds is None:
@@ -481,7 +515,8 @@ def runtime_data_remainder(rtl, captures, runtime_ds, image_load):
         raise ValueError("runtime data segment outside conventional RAM")
     return rtl_preimage_remainder(
         rtl, [(time, ram[start:start + 0x10000]) for time, _, ram in captures],
-        runtime_ds, image_load)
+        runtime_ds, image_load,
+        verified_return_pointer=verify_rtl_return_pointer(rtl, captures, runtime_ds))
 
 
 def dos_mcb_chain(ram, first_mcb_segment, *, conventional_end=0xa000):
@@ -1273,14 +1308,17 @@ def main():
         if args.runtime_data_remainder:
             remaining = report["runtime_data_remainder"]
             print("RTL preimage changes excluding 27 segment, 24 offset, "
-                  "6 startup words, 19 external-pointer fixes and prefix clearing:")
+                  "6 startup words, 19 external-pointer fixes, return pointer "
+                  "and prefix clearing:")
             print("  %d initial changed bytes - %d segment bytes - %d offset bytes "
                   "- %d startup-word bytes - %d external-pointer bytes "
+                  "- %d return-pointer bytes "
                   "- %d cleared-prefix bytes = "
                   "%d unclassified bytes" % (
                 remaining["initial_changed_bytes"], remaining["verified_segment_bytes"],
                 remaining["verified_offset_bytes"], remaining["verified_startup_word_bytes"],
                 remaining["verified_external_bytes"],
+                remaining["verified_return_pointer_bytes"],
                 remaining["verified_cleared_prefix_bytes"],
                 remaining["remaining_changed_bytes"]))
             for entry in remaining["observed_external_tables"]:

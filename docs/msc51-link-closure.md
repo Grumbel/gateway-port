@@ -768,6 +768,21 @@ cover these sites. With their 12 bytes classified, **242 of 260** early
 changes are accounted for; **18** remain in only three clusters
 (`DS:049d`, `0518`, `0547`). Real DOS compiler/runtime verification is pending.
 
+**Relocated one-instruction callback at `DS:049d`:** The user's authentic
+100–250ms RAM proves this FAR pointer targets physical `17fffh` in the
+observed load, a `RETF` byte corresponding to original `GATE.RTL:4bc9`.
+The byte immediately before it is `IRET`, and an independent five-byte
+unchanged instruction run at original `RTL:4be6` matches the live code
+at the corresponding offset after relocation. A new DOS helper takes a
+caller-supplied FAR target, checks the `IRET/RETF/MOV` neighborhood and
+the two originally zero pointer words, then writes its offset and segment.
+It deliberately does not embed `17ec:013f`: the rebuilt executable must
+derive the bank's address from its own loader. The snapshot inspector only
+classifies these four bytes when *all* early RAM captures match both code
+anchors and the original source pointer is zero. This leaves **14 of 260**
+initial changes: `DS:0518` (one byte) and `0547` (13 changed bytes within
+a 16-byte table). No independent DOS `_main` is implemented yet.
+
 **Follow-up: determine external allocation ownership from snapshots.**
 After the 167 verified initialization byte changes are excluded, the user's
 remainder report contains only ten clusters: a 63-byte zeroed prefix at

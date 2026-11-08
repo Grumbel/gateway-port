@@ -1645,7 +1645,7 @@ def main(argv: list[str] | None = None) -> int:
               "24 internal-offset, and 19 caller-segment FAR-pointer fixes"
               + (" against read-only GATE.EXE/GATE.RTL"
                  if original_game_dir is not None else "")
-              + "; DATA.OBJ remains probe-only pending 18 other changed bytes "
+              + "; DATA.OBJ remains probe-only pending 14 other changed bytes "
               "and allocation/startup reconstruction.")
         return 0
     if args.command == "compile-dos-files":

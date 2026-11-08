@@ -243,6 +243,36 @@ int gate_dos_fix_intro_rtl_startup_words(uint16_t lower_segment,
     return 0;
 }
 
+/* The authentic 125ms DS:049d FAR pointer targets the single RETF opcode
+ * at original RTL:4bc9, immediately after an IRET and before a MOV. The
+ * original file-to-memory identity is confirmed by the adjacent relocated
+ * code at RTL:4bca..4bf0. The standalone DOS loader must pass the *new*
+ * code address; original runtime 17ec:013f is not a portable constant.
+ * Refuse a missing/incorrect bank or a previously initialized pointer.
+ * -1 invalid layout/target, -2 wrong code or nonzero source pointer. */
+int gate_dos_fix_intro_return_pointer(uint16_t lower_segment,
+                                      uint16_t paragraphs, GateFarPtr target)
+{
+    if (lower_segment == 0u || lower_segment > 0xfff5u ||
+        paragraphs < GATE_DATA_MIN_PARAS ||
+        gate_ds_segment() != (uint16_t)(lower_segment + 0x000au) ||
+        target.segment == 0u || target.offset == 0u || target.offset > 0xffdeu)
+        return -1;
+    if (gate_ds_word(0x049du) != 0u || gate_ds_word(0x049fu) != 0u ||
+        gate_far_byte(target.segment, (uint16_t)(target.offset - 1u)) != 0xcfu ||
+        gate_far_byte(target.segment, target.offset) != 0xcbu ||
+        gate_far_byte(target.segment, (uint16_t)(target.offset + 1u)) != 0x8bu ||
+        gate_far_byte(target.segment, (uint16_t)(target.offset + 0x1du)) != 0xfau ||
+        gate_far_byte(target.segment, (uint16_t)(target.offset + 0x1eu)) != 0x8bu ||
+        gate_far_byte(target.segment, (uint16_t)(target.offset + 0x1fu)) != 0x46u ||
+        gate_far_byte(target.segment, (uint16_t)(target.offset + 0x20u)) != 0x06u ||
+        gate_far_byte(target.segment, (uint16_t)(target.offset + 0x21u)) != 0xa3u)
+        return -2;
+    gate_ds_set_word(0x049du, target.offset);
+    gate_ds_set_word(0x049fu, target.segment);
+    return 0;
+}
+
 typedef struct GateIntroExternalPtr {
     uint16_t site;
     uint16_t offset;

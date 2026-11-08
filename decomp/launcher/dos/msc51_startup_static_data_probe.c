@@ -17,6 +17,8 @@ int gate_dos_fix_intro_rtl_segs(uint16_t lower_segment, uint16_t paragraphs,
                                 uint16_t resident_segment);
 int gate_dos_fix_intro_rtl_offs(uint16_t lower_segment, uint16_t paragraphs);
 int gate_dos_fix_intro_rtl_startup_words(uint16_t lower_segment, uint16_t paragraphs);
+int gate_dos_fix_intro_return_pointer(uint16_t lower_segment,
+                                      uint16_t paragraphs, GateFarPtr target);
 int gate_dos_fix_intro_rtl_external(uint16_t lower_segment, uint16_t paragraphs,
                                     uint16_t first_segment, uint16_t second_segment);
 
@@ -109,6 +111,7 @@ int main(void)
     unsigned int i;
     GateDosFileResult opened;
     GateDosFileResult closed;
+    GateFarPtr callback;
     int good;
 
     good = write_fixture(source_name, 0x593eu, 0u);
@@ -218,6 +221,29 @@ int main(void)
     good &= gate_ds_word(0x2bc6u) == 0x2b76u;
     good &= gate_ds_word(0x2c0eu) == 0x2c12u;
     good &= gate_ds_word(0x2c24u) == 0x65f0u;
+    callback.segment = gate_ds_segment();
+    callback.offset = 0x6001u;
+    gate_far_set_byte(callback.segment, 0x6000u, 0xcfu);
+    gate_far_set_byte(callback.segment, 0x6001u, 0xcbu);
+    gate_far_set_byte(callback.segment, 0x6002u, 0x8bu);
+    gate_far_set_byte(callback.segment, 0x601eu, 0xfau);
+    gate_far_set_byte(callback.segment, 0x601fu, 0x8bu);
+    gate_far_set_byte(callback.segment, 0x6020u, 0x46u);
+    gate_far_set_byte(callback.segment, 0x6021u, 0x06u);
+    gate_far_set_byte(callback.segment, 0x6022u, 0xa3u);
+    gate_ds_set_word(0x049du, 0u);
+    gate_ds_set_word(0x049fu, 0u);
+    good &= gate_dos_fix_intro_return_pointer((uint16_t)allocated, 0x1009u,
+                                               callback) == -1;
+    gate_far_set_byte(callback.segment, 0x6000u, 0x90u);
+    good &= gate_dos_fix_intro_return_pointer((uint16_t)allocated, 0x100au,
+                                               callback) == -2;
+    good &= gate_ds_word(0x049du) == 0u;
+    gate_far_set_byte(callback.segment, 0x6000u, 0xcfu);
+    good &= gate_dos_fix_intro_return_pointer((uint16_t)allocated, 0x100au,
+                                               callback) == 0;
+    good &= gate_ds_word(0x049du) == callback.offset;
+    good &= gate_ds_word(0x049fu) == callback.segment;
     for (i = 0u; i < sizeof external_a / sizeof external_a[0]; ++i) {
         gate_ds_set_word(external_a[i].site, 0u);
         gate_ds_set_word((uint16_t)(external_a[i].site + 2u), 0u);
