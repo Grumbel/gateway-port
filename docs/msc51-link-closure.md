@@ -823,6 +823,21 @@ cluster accounts for 392 operand bytes. Some targets are beyond the copied
 `3d00h` region, and other relocations remain unexplained. The bank must
 still **not execute** until the rest of the linker is reconstructed.
 
+**DS-load immediates and EXE call boundary:** Seven source-zero immediate
+WORDs in the same bank are each enclosed by the exact instruction sequence
+`MOV AX,imm16; MOV DS,AX` and resolve to original DS `2a7a` in all four
+early captures. A separate C89 relocator preflights these seven complete
+five-byte sequences and inserts the new DOS data segment. The last
+zero-operand `CALL FAR` in this bank targets `1000:0030` in the original
+EXE load; it is **not** a resident self-call. Its own guarded relocator
+takes a caller-supplied equivalent EXE function pointer (the original
+address cannot be reused in the recompiled executable). Host and original
+RAM tests validate all eight sites. They explain 16 additional differing
+bytes (14 DS immediate bytes and two nonzero bytes in the EXE call), for
+**408 of 1,660** bank differences now reconstructed. These functions do
+not yet resolve other non-FAR-call relocations or establish the equivalent
+recompiled EXE callee.
+
 **Follow-up: determine external allocation ownership from snapshots.**
 After the 167 verified initialization byte changes are excluded, the user's
 remainder report contains only ten clusters: a 63-byte zeroed prefix at

@@ -64,6 +64,7 @@ int main(void)
 {
     unsigned int i;
     uint16_t segment = 0x3000u;
+    GateFarPtr external;
     uint16_t first_site = gate_resident_self_calls[0].site;
     uint16_t last_site = gate_resident_self_calls[
         sizeof gate_resident_self_calls / sizeof gate_resident_self_calls[0] - 1u].site;
@@ -101,6 +102,44 @@ int main(void)
     if (gate_far_byte(segment, (uint16_t)(first_site - 1u)) != 0x90u ||
         gate_far_byte(segment, (uint16_t)(last_site + 5u)) != 0x90u)
         abort();
-    puts("98 resident self CALL FAR relocations: PASS");
+    for (i = 0u; i < sizeof gate_resident_ds_loads /
+                      sizeof gate_resident_ds_loads[0]; ++i) {
+        uint16_t site = gate_resident_ds_loads[i];
+        gate_far_set_byte(segment, (uint16_t)(site - 1u), 0xb8u);
+        gate_far_set_word(segment, site, 0u);
+        gate_far_set_byte(segment, (uint16_t)(site + 2u), 0x8eu);
+        gate_far_set_byte(segment, (uint16_t)(site + 3u), 0xd8u);
+    }
+    if (sizeof gate_resident_ds_loads / sizeof gate_resident_ds_loads[0] != 7u ||
+        gate_dos_relocate_intro_resident_ds_loads(segment, 0x03cfu, 0x200au) != -1)
+        abort();
+    gate_far_set_byte(segment, (uint16_t)(gate_resident_ds_loads[6] + 3u), 0x90u);
+    if (gate_dos_relocate_intro_resident_ds_loads(segment, 0x03d0u, 0x200au) != -2 ||
+        gate_far_word(segment, gate_resident_ds_loads[0]) != 0u)
+        abort();
+    gate_far_set_byte(segment, (uint16_t)(gate_resident_ds_loads[6] + 3u), 0xd8u);
+    if (gate_dos_relocate_intro_resident_ds_loads(segment, 0x03d0u, 0x200au) != 0)
+        abort();
+    for (i = 0u; i < sizeof gate_resident_ds_loads /
+                      sizeof gate_resident_ds_loads[0]; ++i)
+        if (gate_far_word(segment, gate_resident_ds_loads[i]) != 0x200au)
+            abort();
+    external.segment = 0x4242u;
+    external.offset = 0x0030u;
+    gate_far_set_byte(segment, 0x0a4du, 0x9au);
+    gate_far_set_word(segment, 0x0a4eu, 0u);
+    gate_far_set_word(segment, 0x0a50u, 0u);
+    if (gate_dos_relocate_intro_exe_call(segment, 0x03cfu, external) != -1)
+        abort();
+    gate_far_set_byte(segment, 0x0a4du, 0x90u);
+    if (gate_dos_relocate_intro_exe_call(segment, 0x03d0u, external) != -2 ||
+        gate_far_word(segment, 0x0a4eu) != 0u)
+        abort();
+    gate_far_set_byte(segment, 0x0a4du, 0x9au);
+    if (gate_dos_relocate_intro_exe_call(segment, 0x03d0u, external) != 0 ||
+        gate_far_word(segment, 0x0a4eu) != external.offset ||
+        gate_far_word(segment, 0x0a50u) != external.segment)
+        abort();
+    puts("98 self-calls, 7 DS loads and one EXE CALL FAR: PASS");
     return 0;
 }

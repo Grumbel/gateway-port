@@ -128,6 +128,57 @@ int gate_dos_relocate_intro_resident_self_calls(uint16_t resident_segment,
     return 0;
 }
 
+/* Seven original MOV AX,0000 / MOV DS,AX sequences are linked with the
+ * original data segment (2a7ah in the captured run). The replacement DOS
+ * executable needs the freshly allocated data segment, not that address.
+ * Sites name the immediate WORD, one byte after the B8 opcode. */
+static const uint16_t gate_resident_ds_loads[] = {
+    0x020eu, 0x0339u, 0x037cu, 0x059du, 0x05e0u, 0x07c8u, 0x0a59u
+};
+
+int gate_dos_relocate_intro_resident_ds_loads(uint16_t resident_segment,
+                                               uint16_t paragraphs,
+                                               uint16_t data_segment)
+{
+    unsigned int i;
+    if (resident_segment == 0u || resident_segment > 0xfc30u ||
+        paragraphs < GATE_RESIDENT_PARAS || data_segment == 0u)
+        return -1;
+    for (i = 0u; i < sizeof gate_resident_ds_loads /
+                      sizeof gate_resident_ds_loads[0]; ++i) {
+        uint16_t site = gate_resident_ds_loads[i];
+        if (gate_far_byte(resident_segment, (uint16_t)(site - 1u)) != 0xb8u ||
+            gate_far_word(resident_segment, site) != 0u ||
+            gate_far_byte(resident_segment, (uint16_t)(site + 2u)) != 0x8eu ||
+            gate_far_byte(resident_segment, (uint16_t)(site + 3u)) != 0xd8u)
+            return -2;
+    }
+    for (i = 0u; i < sizeof gate_resident_ds_loads /
+                      sizeof gate_resident_ds_loads[0]; ++i)
+        gate_far_set_word(resident_segment, gate_resident_ds_loads[i], data_segment);
+    return 0;
+}
+
+/* The one remaining zero-operand CALL FAR in this bank is at +0a4d and
+ * targets original load-segment:0030 (1000:0030 in the observed run).
+ * It is an EXE-side boundary, not a resident self-call. The replacement
+ * executable must supply its OWN equivalent FAR routine address; original
+ * 1000h/0030h is not valid for the rebuilt Microsoft C image. */
+int gate_dos_relocate_intro_exe_call(uint16_t resident_segment,
+                                     uint16_t paragraphs, GateFarPtr target)
+{
+    if (resident_segment == 0u || resident_segment > 0xfc30u ||
+        paragraphs < GATE_RESIDENT_PARAS || target.segment == 0u)
+        return -1;
+    if (gate_far_byte(resident_segment, 0x0a4du) != 0x9au ||
+        gate_far_word(resident_segment, 0x0a4eu) != 0u ||
+        gate_far_word(resident_segment, 0x0a50u) != 0u)
+        return -2;
+    gate_far_set_word(resident_segment, 0x0a4eu, target.offset);
+    gate_far_set_word(resident_segment, 0x0a50u, target.segment);
+    return 0;
+}
+
 
 /* At 100, 125, 175 and 250ms the first 64 bytes after the two-byte
  * RTL data header are zero, whereas the raw RTL preimage contains resident
