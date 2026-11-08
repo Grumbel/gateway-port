@@ -49,6 +49,8 @@ void gate_linked_initialize_intro_services(void)
     require(gate_ds_segment() == MOCK_DATA_SEGMENT);
     require((gate_far_byte(MOCK_DATA_SEGMENT, 0x0662u) & 0x06u) == 0u);
     require(gate_ds_word(0x0660u) == 0x0401u);
+    if (getenv("TEST_VIDEO_MUTATED_BY_AUDIO") != 0)
+        words[0x0fceu / 2u] = 3u;
     ++no_music_calls;
 }
 
@@ -138,6 +140,10 @@ int gate_dos_boot_prepare(const GateDosBootConfig *config,
     image->resident_segment = MOCK_RESIDENT_SEGMENT;
     for (i = 0u; i < sizeof selectors / sizeof selectors[0]; ++i)
         words[selectors[i] / 2u] = MOCK_DATA_SEGMENT;
+    words[0x4e2au / 2u] = MOCK_DATA_SEGMENT;
+    words[0x0fceu / 2u] = getenv("TEST_VIDEO_PREINITIALIZED") != 0 ? 3u : 0xffffu;
+    if (getenv("TEST_BAD_VIDEO_SELECTOR") != 0)
+        words[0x4e2au / 2u] = 0x3333u;
     if (getenv("TEST_BAD_SELECTOR") != 0)
         words[0x4e46u / 2u] = 0x3333u;
     if (getenv("TEST_MUSIC_ENABLED") != 0)
@@ -150,7 +156,9 @@ void gate_dos_boot_release(GateDosBootImage *image)
     require(image != 0);
     if (getenv("TEST_BAD_SELECTOR") == 0 &&
         getenv("TEST_ALLOC_FAIL") == 0 &&
-        getenv("TEST_MUSIC_ENABLED") == 0)
+        getenv("TEST_MUSIC_ENABLED") == 0 &&
+        getenv("TEST_VIDEO_PREINITIALIZED") == 0 &&
+        getenv("TEST_BAD_VIDEO_SELECTOR") == 0)
         require(no_music_calls == 1u);
     image->lower_segment = image->resident_segment = 0u;
 }

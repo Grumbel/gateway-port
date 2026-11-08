@@ -1055,6 +1055,10 @@ def validate_static_data_probe(output: Path, *, require_original: bool = False) 
                 r"^DOS intro C audio guard: PASS \(RTL:c3bd no-music return, configuration preserved; no IRQ installed\)\s*$",
                 prepared.read_text(), re.MULTILINE) is None:
             raise ValueError("DOS source-C intro audio early-return verification is missing or failed.")
+        if re.search(
+                r"^DOS intro C video preflight: PASS \(DS:0fce=ffff invalid; hardware mode setup still required\)\s*$",
+                prepared.read_text(), re.MULTILINE) is None:
+            raise ValueError("DOS source-C intro video preflight verification is missing or failed.")
 
 
 def remove_static_data_outputs(output: Path) -> None:

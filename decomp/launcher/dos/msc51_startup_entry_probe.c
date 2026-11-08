@@ -43,6 +43,7 @@ int main(void)
     uint16_t data_segment;
     uint16_t fifth_segment = 0u;
     uint16_t workspace = 0u;
+    uint16_t video_mode_before = 0u;
     uint16_t i;
     int status;
     int good = 1;
@@ -91,6 +92,19 @@ int main(void)
         if (workspace == 0u || workspace == image.lower_segment ||
             workspace == image.resident_segment)
             good = 0;
+        /* The prepared RTL data still contains mode FFFFh at DS:0fce.
+         * Original RTL:f14d sets this invalid marker on entry and only
+         * stores a valid mode after successful hardware initialization.
+         * The DOS image owner has NOT run that initializer. Confirm both
+         * the alias and the uninitialized word before running any more
+         * source-C code; never dispatch picture/VGA routines here. */
+        if (gate_ds_word(0x4e2au) != data_segment)
+            good = 0;
+        if (good) {
+            video_mode_before = gate_far_word(data_segment, 0x0fceu);
+            if (video_mode_before != 0xffffu)
+                good = 0;
+        }
         /* The next original FAR call at GATE.EXE:134c enters the music/IRQ
          * initializer. The first original RTL branch returns immediately
          * if bits 1 and 2 of DS:0662 are clear. Check that condition and
@@ -104,7 +118,8 @@ int main(void)
             gate_linked_initialize_intro_services();
             if (gate_ds_segment() != data_segment ||
                 (gate_far_byte(data_segment, 0x0662u) & 0x06u) != 0u ||
-                gate_ds_word(0x0660u) != 0x0401u)
+                gate_ds_word(0x0660u) != 0x0401u ||
+                gate_far_word(data_segment, 0x0fceu) != video_mode_before)
                 good = 0;
         }
         /* Do not free a guessed segment if the prologue failed. The
@@ -120,5 +135,6 @@ int main(void)
     }
     puts("DOS intro C entry prologue: PASS (five recovered writes, original data/CRC, workspace observed; no intro code entered)");
     puts("DOS intro C audio guard: PASS (RTL:c3bd no-music return, configuration preserved; no IRQ installed)");
+    puts("DOS intro C video preflight: PASS (DS:0fce=ffff invalid; hardware mode setup still required)");
     return 0;
 }

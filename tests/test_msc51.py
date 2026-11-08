@@ -272,8 +272,11 @@ class MSC51Tests(unittest.TestCase):
                           result.stdout)
             self.assertIn("RTL:c3bd no-music return, configuration preserved",
                           result.stdout)
+            self.assertIn("DS:0fce=ffff invalid; hardware mode setup still required",
+                          result.stdout)
             for invalid in ("TEST_BAD_SELECTOR", "TEST_ALLOC_FAIL",
-                            "TEST_MUSIC_ENABLED",
+                            "TEST_MUSIC_ENABLED", "TEST_VIDEO_PREINITIALIZED",
+                            "TEST_BAD_VIDEO_SELECTOR", "TEST_VIDEO_MUTATED_BY_AUDIO",
                             "TEST_CALLBACK_OPEN_FAIL", "TEST_CALLBACK_SEEK_FAIL",
                             "TEST_CALLBACK_READ_FAIL", "TEST_CALLBACK_CLOSE_FAIL"):
                 with self.subTest(invalid=invalid):
@@ -283,6 +286,15 @@ class MSC51Tests(unittest.TestCase):
                                               capture_output=True, text=True)
                     self.assertEqual(rejected.returncode, 1, rejected.stderr)
                     self.assertIn("DOS intro C entry prologue: FAIL", rejected.stdout)
+
+    def test_original_rtl_video_mode_needs_hardware_initialization(self):
+        rtl = REPO.parent / "gateway-dos" / "GATE.RTL"
+        if not rtl.is_file():
+            self.skipTest("user-owned original GATE.RTL is not present")
+        # RTL's original data preimage starts at file offset 0x29. Its
+        # initial DS:0fce word is an invalid mode, not a usable VGA setup.
+        self.assertEqual(rtl.read_bytes()[0x29 + 0x0fce:0x29 + 0x0fd0],
+                         b"\xff\xff")
 
     def test_compile_data_requires_verified_dependencies_and_current_guest_log(self):
         with tempfile.TemporaryDirectory() as scratch:
@@ -372,6 +384,12 @@ class MSC51Tests(unittest.TestCase):
             (output / "BPREAL.LOG").write_text(
                 "DOS intro C entry prologue: PASS (five recovered writes, original data/CRC, workspace observed; no intro code entered)\n"
                 "DOS intro C audio guard: PASS (RTL:c3bd no-music return, configuration preserved; no IRQ installed)\n")
+            with self.assertRaisesRegex(ValueError, "video preflight verification"):
+                msc51.validate_static_data_probe(output, require_original=True)
+            (output / "BPREAL.LOG").write_text(
+                "DOS intro C entry prologue: PASS (five recovered writes, original data/CRC, workspace observed; no intro code entered)\n"
+                "DOS intro C audio guard: PASS (RTL:c3bd no-music return, configuration preserved; no IRQ installed)\n"
+                "DOS intro C video preflight: PASS (DS:0fce=ffff invalid; hardware mode setup still required)\n")
             msc51.validate_static_data_probe(output, require_original=True)
             (output / "DATA.C").write_text((output / "DATA.C").read_text() + "/* stale */\n")
             with self.assertRaisesRegex(ValueError, "source changed"):

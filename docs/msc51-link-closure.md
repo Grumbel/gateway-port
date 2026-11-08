@@ -204,7 +204,7 @@ The user's 2026-11-08 23:57 run now confirms that the two full-image CRC
 witnesses, `BOOTCHK.EXE`, and the five original prologue writes all pass in
 Microsoft C 5.1/DOSBox. The workspace is observed, not executed.
 
-**Next original call: the guarded RTL audio initializer (DOS run pending).**
+**Next original call: the guarded RTL audio initializer (DOS-verified).**
 Immediately after the five writes, the original `GATE.EXE:134c` invokes
 `GATE.RTL:c3bd..c3d8`. The 16-bit hardware adapter already contains its
 source-C no-music fast-return branch. The pinned original RTL data byte at
@@ -218,9 +218,26 @@ after return. Any enabled-music flag fails closed *before* the unimplemented
 IRQ path; a missing second `DOS intro C audio guard: PASS` line fails strict
 original-file log validation. Both hardware source and layout participate in
 the DOS batch fingerprint. The C89 host fixture tests the call order and
-rejection of an enabled-music image; the actual 16-bit linked path needs
-the user's next `msc51-compile-data` run. This still is not a functional
-launcher `_main` or an executed original resident bank.
+rejection of an enabled-music image. The user's 2026-11-09 00:20:53
+Microsoft C/DOSBox run passed the real `RTLHW.OBJ` no-music return.
+The subsequent run with bundle 079 retained all the original-data,
+allocation, prologue and no-music passes at the faster dynamic CPU setting.
+
+**Next graphics initialization boundary (DOS run pending).** The read-only
+original `GATE.RTL` data preimage has WORD `ffffh` at file offset `0ff7h`,
+the source for `DS:0fce` in the prepared image. Original
+`GATE.RTL:f14d` begins its video-mode initializer by writing exactly this
+invalid sentinel, and replaces it with a valid mode only after hardware
+setup succeeds. The isolated `BOOTPREP.EXE` now checks that selector
+`DS:4e2a` resolves to the allocated data window, that `DS:0fce` still
+contains `ffffh` following image preparation, and that the no-music call
+leaves the value unchanged. It prints an additional strict success witness,
+and the synthetic host test rejects a preinitialized mode, mismatched
+selector and a video-state write by the audio initializer. These checks
+confirm **why we cannot yet enter intro graphics**: the real video-mode
+initializer, resident hardware preparation and mode descriptors have not
+been executed by this DOS owner. The checks do not initialize VGA, prove a
+call to `gate_exe_play_intro`, or produce a functional launcher `_main`.
 
 **Microsoft C 5.1 identifier compatibility:** The user's first real
 `DATA.BAT` run failed at `DATA.C` compilation, not during the probe:
