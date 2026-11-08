@@ -580,9 +580,24 @@ def pointer_entry_source_map(exe, rtl, window, pointer_offsets, copies):
                 limit = min(16, len(window) - offset, len(source) - start)
                 while prefix < limit and window[offset + prefix] == source[start + prefix]:
                     prefix += 1
+            # Microsoft C large-model code often initializes DS with
+            # `mov ax, imm16; mov ds, ax` immediately after its prologue.
+            # Diagnose the operand separately; identical first 11 bytes do
+            # not mean the source code was copied without relocation.
+            ds_load = None
+            if start >= 0 and start + 15 <= len(source) and offset + 15 <= len(window):
+                expected = source[start + 10:start + 15]
+                actual = window[offset + 10:offset + 15]
+                if (expected[0] == actual[0] == 0xb8 and
+                        expected[3:] == actual[3:] == b"\x8e\xd8" and
+                        expected[1:3] != actual[1:3]):
+                    ds_load = {"operand_offset": 11,
+                               "original_immediate": word(source, start + 11),
+                               "runtime_immediate": word(window, offset + 11)}
             entries.append({"target_offset": offset,
                             "file_offset": start if 0 <= start < len(source) else None,
-                            "exact_prefix_bytes": prefix})
+                            "exact_prefix_bytes": prefix,
+                            "mov_ax_ds_load_fixup": ds_load})
         supported = sum(entry["exact_prefix_bytes"] >= 8 for entry in entries)
         if not supported:
             continue
@@ -597,9 +612,29 @@ def pointer_entry_source_map(exe, rtl, window, pointer_offsets, copies):
     if len(candidates) > 1 and candidates[0][0] == candidates[1][0]:
         return None
     score, kind, origin, entries = candidates[0]
+    supporting = sum(copy["length"] for copy in copies
+                     if copy["source"] == kind and
+                     copy["source_file_offset"] - copy["runtime_ds_offset"] == origin)
+    total = sum(copy["length"] for copy in copies)
+    # Never extend a short local mapping across a packed/shifted code bank.
+    # In the original trace A has multiple deltas; B has five independent
+    # long source runs sharing a single delta.
+    linear = None
+    source = files[kind]
+    if (total and supporting * 5 >= total * 4 and origin >= 0 and
+            origin + len(window) <= len(source)):
+        original = source[origin:origin + len(window)]
+        linear = {"window_bytes": len(window),
+                  "equal_bytes": sum(a == b for a, b in zip(original, window)),
+                  "source_zero_to_nonzero": sum(a == 0 and b != 0
+                                                for a, b in zip(original, window)),
+                  "source_nonzero_to_zero": sum(a != 0 and b == 0
+                                                for a, b in zip(original, window))}
     return {"source": kind, "source_base_file_offset": origin,
             "verified_entry_prefixes": score[0], "unique_entry_count": len(entries),
-            "entries": entries}
+            "supporting_exact_copy_bytes": supporting,
+            "total_exact_copy_bytes": total,
+            "linear_window_check": linear, "entries": entries}
 
 
 def runtime_pointer_sources(exe, rtl, captures, runtime_ds, *, minimum=64):
@@ -614,6 +649,7 @@ def runtime_pointer_sources(exe, rtl, captures, runtime_ds, *, minimum=64):
         raise ValueError("runtime data segment outside conventional RAM")
     index = source_window_index(exe, rtl)
     first_windows = {}
+    previous_windows = {}
     samples = []
     for milliseconds, _, ram in captures:
         if milliseconds < 100:
@@ -637,13 +673,19 @@ def runtime_pointer_sources(exe, rtl, captures, runtime_ds, *, minimum=64):
             if start + size > RAM_SIZE:
                 raise ValueError("FAR target %s exceeds conventional RAM" % name)
             window = ram[start:start + size]
-            first_windows.setdefault((name, segment), window)
+            key = (name, segment)
+            first_windows.setdefault(key, window)
+            previous = previous_windows.get(key)
+            previous_windows[key] = window
             matches = exact_source_copies(window, index, minimum=minimum)
             entries_report.append({
                 "name": name, "initialized": True, "segment": segment,
                 "window_bytes": size, "nonzero_bytes": size - window.count(0),
                 "changed_from_first": sum(a != b for a, b in
                                           zip(first_windows[name, segment], window)),
+                "changed_from_previous": (
+                    sum(a != b for a, b in zip(previous, window))
+                    if previous is not None else None),
                 "entry_source_map": pointer_entry_source_map(
                     exe, rtl, window, [offset for _, offset in entries], matches),
                 "exact_file_copies": [{"source": entry["source"],
@@ -1303,9 +1345,11 @@ def main():
                                            entry["observed_segments"])))
                         continue
                     print("       %s at %04x:0000 +%04x: %d nonzero, "
-                          "%d bytes changed since first sample; %d source copies" % (
+                          "%d changed since first, %s since preceding; "
+                          "%d source copies" % (
                               entry["name"], entry["segment"], entry["window_bytes"],
                               entry["nonzero_bytes"], entry["changed_from_first"],
+                              entry["changed_from_previous"],
                               len(entry["exact_file_copies"])))
                     for match in entry["exact_file_copies"][:8]:
                         print("         %s:%05x -> %04x:%04x +%d bytes" % (
@@ -1337,6 +1381,21 @@ def main():
                                           entry["segment"], entry_point["target_offset"],
                                           mapped["source"], entry_point["file_offset"],
                                           entry_point["exact_prefix_bytes"]))
+                                fixup = entry_point["mov_ax_ds_load_fixup"]
+                                if fixup is not None:
+                                    print("             MOV AX,imm16; MOV DS,AX: "
+                                          "file %04x -> live %04x at +%02x" % (
+                                              fixup["original_immediate"],
+                                              fixup["runtime_immediate"],
+                                              fixup["operand_offset"]))
+                        linear = mapped["linear_window_check"]
+                        if linear is not None:
+                            print("         linear source check: %d/%d bytes exact, "
+                                  "%d zero->nonzero, %d nonzero->zero "
+                                  "(hypothesis, not full relocation proof)" % (
+                                      linear["equal_bytes"], linear["window_bytes"],
+                                      linear["source_zero_to_nonzero"],
+                                      linear["source_nonzero_to_zero"]))
 
 
 if __name__ == "__main__":

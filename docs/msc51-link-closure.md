@@ -861,6 +861,31 @@ instruction. The next genuine report will establish those per-entry
 prefixes. Do not apply the A base delta to its later code chunks:
 some A source runs show different offsets after loader fixups/packing.
 
+**Original entry-prefix verification (subsequently supplied):** At 350ms
+all four distinct entries in `252c` match **16/16** leading source bytes
+and all seven distinct entries in `25d7` match **11/16**. The same
+results persist through the later captures. The eleven candidate RTL
+entry offsets in the table above are therefore now independently
+supported by *live instruction prefixes*, not just nearby copied runs.
+The seven B functions share the Microsoft C-style prologue containing
+`MOV AX,imm16; MOV DS,AX`: the first likely patched byte lies at
+function-relative `+0bh`, immediately after the `MOV AX` opcode.
+The exact runtime immediate values have **not** yet been reported.
+
+The read-only `--runtime-pointer-sources` report now classifies that
+specific immediate-word change if the surrounding instructions still
+match the original source. It reports original and runtime words per
+function, but does not assume they all equal the eventual DS. When a
+single source delta is supported by at least 80% of the unambiguous
+source-copy run lengths, it also compares the *full* target window
+against that linear source candidate, reporting exact byte coverage and
+zero/nonzero transitions. This can establish whether the `25d7` bank
+can be represented by one loaded image plus bounded relocations; the
+multi-delta `252c` window must not be flattened into one copy.
+The consecutive-snapshot byte-difference count also tests whether the
+regions *actually stay unchanged* after loading, rather than merely
+containing the same number of nonzero bytes at different times.
+
 **Microsoft C 5.1 build correction:** The first user-side `DATA.BAT` run
 compiled `DATA.C` but stopped with `DATACHK.C(22): C2073` (an initialized
 automatic `char name[]`), so **neither test executable ran**. Both test

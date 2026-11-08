@@ -121,6 +121,10 @@ class StartupSnapshotTests(unittest.TestCase):
                       first_b["exact_file_copies"])
         self.assertEqual([item["changed_from_first"] for item in
                           report["snapshots"][1]["tables"]], [1, 0])
+        self.assertEqual([item["changed_from_previous"] for item in
+                          report["snapshots"][0]["tables"]], [None, None])
+        self.assertEqual([item["changed_from_previous"] for item in
+                          report["snapshots"][1]["tables"]], [1, 0])
 
         inconsistent = bytearray(raw)
         put_word(inconsistent, data_segment * 16 + 0x2acf + 2, 0)
@@ -153,12 +157,16 @@ class StartupSnapshotTests(unittest.TestCase):
         captures = [(100, regs(0x3259, 0x103c, 0x348a, 0x3229, 0x3c4),
                      bytes(empty)),
                     (350, regs(0x12a5, 0x013b, data_segment, data_segment, 0x7a4a),
+                     bytes(loaded)),
+                    (450, regs(0x12a5, 0x0140, data_segment, data_segment, 0x7a4a),
                      bytes(loaded))]
         report = startup.runtime_pointer_sources(exe, bytes(rtl), captures,
                                                  data_segment)
         self.assertTrue(all(table["entry_source_map"] is None for table in
                             report["snapshots"][0]["tables"]))
         first, second = report["snapshots"][1]["tables"]
+        self.assertEqual([entry["changed_from_previous"] for entry in
+                          report["snapshots"][2]["tables"]], [0, 0])
         for table, file_base, unique in ((first, 0x7000, 4),
                                          (second, 0x8000, 7)):
             mapping = table["entry_source_map"]
@@ -184,6 +192,47 @@ class StartupSnapshotTests(unittest.TestCase):
                  "runtime_ds_offset": 0, "length": 0x100},
             ])
         self.assertIsNone(ambiguous)
+
+    def test_pointer_entry_map_reconstructs_mov_ds_segment_operands(self):
+        rng = random.Random(445)
+        rtl = bytearray(rng.randbytes(0x400))
+        first = 0x100
+        offsets = (0x10, 0x60)
+        for offset in offsets:
+            rtl[first + offset + 10:first + offset + 15] = b"\xb8\x00\x00\x8e\xd8"
+        window = bytearray(rtl[first:first + 0x160])
+        for offset in offsets:
+            put_word(window, offset + 11, 0x2a7a)
+        copies = [{"source": "rtl", "source_file_offset": first + 0x80,
+                   "runtime_ds_offset": 0x80, "length": 0x80}]
+        mapping = startup.pointer_entry_source_map(
+            b"", bytes(rtl), bytes(window), offsets, copies)
+        self.assertIsNotNone(mapping)
+        self.assertEqual(mapping["source_base_file_offset"], first)
+        self.assertEqual(mapping["verified_entry_prefixes"], 2)
+        self.assertEqual([entry["exact_prefix_bytes"] for entry in
+                          mapping["entries"]], [11, 11])
+        for entry in mapping["entries"]:
+            self.assertEqual(entry["mov_ax_ds_load_fixup"], {
+                "operand_offset": 11, "original_immediate": 0,
+                "runtime_immediate": 0x2a7a})
+        self.assertEqual(mapping["linear_window_check"]["equal_bytes"],
+                         len(window) - 4)
+        self.assertEqual(mapping["linear_window_check"]["source_zero_to_nonzero"], 4)
+
+        # A packed source bank with unrelated runs must not be flattened
+        # into a single naive source-file-to-RAM mapping.
+        packed_window = bytearray(window)
+        packed_window[0xe0:0x160] = rtl[first + 0xf0:first + 0x170]
+        packed = startup.pointer_entry_source_map(
+            b"", bytes(rtl), bytes(packed_window), offsets, [
+                {"source": "rtl", "source_file_offset": first + 0x80,
+                 "runtime_ds_offset": 0x80, "length": 0x60},
+                {"source": "rtl", "source_file_offset": first + 0xf0,
+                 "runtime_ds_offset": 0xe0, "length": 0x80},
+            ])
+        self.assertIsNotNone(packed)
+        self.assertIsNone(packed["linear_window_check"])
 
     def test_mcb_chain_assigns_external_pointer_targets_without_guessing(self):
         data_segment = 0x2a7a

@@ -524,6 +524,12 @@ assuming every entry follows the same source offset. The already recovered
 VFX tests identify `252c:0032`/`0053` as coordinate helpers and
 `25d7:00d6`/`0133` as pixel-operation handlers. Use `--json` for all exact
 copy records, not just the first eight printed per table.
+The next genuine report verified **16/16 bytes at all four distinct**
+`252c` entry points and **11/16 at all seven distinct** `25d7` entries.
+The inspector now prints candidate Microsoft C `MOV AX,imm16; MOV DS,AX`
+relocations at these entries, and tests whether a common source-file
+delta can explain the entire target window. It never treats the packed
+first bank's multiple source deltas as one unverified relocation model.
 
 The user's follow-up Microsoft LINK run consumed `MEMORY.OBJ` and reduced
 the unresolved-symbol count **from 108 to 100**, exactly removing those
