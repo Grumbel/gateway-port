@@ -280,6 +280,31 @@ int main(void)
                       sizeof gate_resident_state_3334[0]; ++i)
         if (gate_far_word(segment, gate_resident_state_3334[i].site) != 0x3334u)
             abort();
+    /* Some opcode prefixes overlap the previous operand's high byte;
+     * first lay down original words, then the checked instruction prefixes. */
+    for (i = 0u; i < sizeof gate_resident_small_offsets /
+                      sizeof gate_resident_small_offsets[0]; ++i)
+        gate_far_set_word(segment, gate_resident_small_offsets[i].site,
+                          gate_resident_small_offsets[i].original);
+    for (i = 0u; i < sizeof gate_resident_small_offsets /
+                      sizeof gate_resident_small_offsets[0]; ++i)
+        gate_far_set_word(segment,
+                          (uint16_t)(gate_resident_small_offsets[i].site - 2u),
+                          gate_resident_small_offsets[i].prefix);
+    if (gate_dos_relocate_intro_resident_small_offsets(segment, 0x03cfu) != -1)
+        abort();
+    gate_far_set_word(segment, 0x223au, 0xffffu);
+    if (gate_dos_relocate_intro_resident_small_offsets(segment, 0x03d0u) != -2 ||
+        gate_far_word(segment, 0x1874u) != 0x0034u)
+        abort();
+    gate_far_set_word(segment, 0x223au, 0x0194u);
+    if (gate_dos_relocate_intro_resident_small_offsets(segment, 0x03d0u) != 0)
+        abort();
+    for (i = 0u; i < sizeof gate_resident_small_offsets /
+                      sizeof gate_resident_small_offsets[0]; ++i)
+        if (gate_far_word(segment, gate_resident_small_offsets[i].site) !=
+            (uint16_t)(gate_resident_small_offsets[i].original + 0x62dau))
+            abort();
     puts("98 self-calls, 7 DS loads, EXE call and 7 direct segments: PASS");
     return 0;
 }
