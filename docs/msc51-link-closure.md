@@ -34,18 +34,43 @@ manufacture no-op definitions merely to obtain an executable.
 | `_gate_linked_handle_control_key` | Linked `123f:0004`, called on input key `0x0003` | The original Ctrl-C/Break resident path is not independently mapped or characterized; do not conflate it with ordinary keyboard flushing. |
 | `_gate_linked_print_intr_b006848b` | Linked `1258:172e`, called by image sequence failure paths | The original output destination and calling convention require confirmation; a no-op diagnostic would hide loader failures. |
 
-The `tools/inspect_msc51_link_tail.py` command independently matches these
-three live FAR targets against the original binary images in a captured
-conventional RAM snapshot. It annotates the previously proven audio entry
-(`RTL:c3bd`) but reports an unknown or overwritten target as **unmapped**.
-This is code-identity evidence, not a reconstruction of the callback behavior.
+The `tools/inspect_msc51_link_tail.py` command inspects these three live
+FAR targets against the original binary images in a captured conventional
+RAM snapshot. **The 39-second `checkpoint-book_taken.bin` capture is too
+late for these startup identities.** Its music target contains an unrelated
+RTL stream reader at `RTL:7ce0` (the alleged entry starts *inside* a JNE
+instruction, and the original `RTL:c3bd` music-guard relocations are absent).
+Its control-key candidate at `RTL:eeba` likewise begins inside the operand
+of the original FAR CALL at `RTL:eeb6`; the first byte at the purported entry
+does not match. The diagnostic target has no match. They are *unverified code
+windows*, not original routine identities, and the tool now excludes them
+from `live_source_match`. A later RAM capture can contain valid code but no
+longer contain the code that the startup FAR calls originally reached.
+
+Capture an **earlier** original 22-second intro image (the same canonical
+snapshot described in [intro-ghidra.md](intro-ghidra.md)):
+
+```sh
+mkdir -p build/intro-analysis
+build/local-probe/gateway-probe ../gateway-dos/GATE.EXE \
+  --headless --read-only --deterministic-clock --milliseconds 24000 \
+  --dump-at 22000:build/intro-analysis/at-22000
+```
+
+Then run the improved inspector on this earlier snapshot:
 
 ```sh
 python3 tools/inspect_msc51_link_tail.py \
   --exe ../gateway-dos/GATE.EXE \
   --rtl ../gateway-dos/GATE.RTL \
-  --ram build/vfx-replay/checkpoint-book_taken.bin --json
+  --ram build/intro-analysis/at-22000.bin --json
 ```
+
+Only `original_music_entry` certifies the original music entry's *two
+independently verified relocated DS operands*; a `source_candidate` records
+an internal byte-window match but does **not** certify function identity.
+The control and diagnostic endpoints still require original-entry traces
+and calling-convention evidence before adding linker definitions.
 
 ## Historical 26-name LINK report (superseded)
 
