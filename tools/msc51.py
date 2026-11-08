@@ -246,7 +246,7 @@ HEAP_SOURCES = ("GATEMEM.H", "STDINT.H", "HEAP.C", "HEAPCHK.C", "MEMORY.C")
 INPUT_SOURCES = ("GATEMEM.H", "STDINT.H", "RTLLAY.H", "INP.C", "INPCHK.C",
                  "MEMORY.C")
 CLOCK_SOURCES = ("GATEMEM.H", "STDINT.H", "RTLLAY.H", "CLOCK.C",
-                 "CLKCHK.C", "MEMORY.C")
+                 "CLKCHK.C", "TIMER.C", "TMRCHK.C", "MEMORY.C")
 CRT_SOURCES = ("GATEMEM.H", "STDINT.H", "CRTENV.C", "CRTCHK.C", "MEMORY.C")
 
 
@@ -317,7 +317,7 @@ def input_source_signature(output: Path) -> str:
 
 
 def clock_source_signature(output: Path) -> str:
-    digest = hashlib.sha256(b"MS C 5.1 /AL /Od DOS calendar and wait services v2\n")
+    digest = hashlib.sha256(b"MS C 5.1 /AL /Od DOS clock and INT 1Ch probe v3\n")
     for name in CLOCK_SOURCES:
         digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
     return digest.hexdigest()[:16]
@@ -672,7 +672,9 @@ def stage_launcher(output: Path) -> list[str]:
     ]
     (output / "INPUT.BAT").write_text("\r\n".join(input_batch) + "\r\n")
     for original, staged in (("msc51_clock.c", "CLOCK.C"),
-                             ("msc51_clock_probe.c", "CLKCHK.C")):
+                             ("msc51_clock_probe.c", "CLKCHK.C"),
+                             ("msc51_timer_irq.c", "TIMER.C"),
+                             ("msc51_timer_irq_probe.c", "TMRCHK.C")):
         (output / staged).write_text(msc51_rename_identifiers(
             (source_dir / "dos" / original).read_text(), shortened))
     clock_signature = clock_source_signature(output)
@@ -685,6 +687,11 @@ def stage_launcher(output: Path) -> list[str]:
         "CL /AL /Od CLKCHK.C CLOCK.OBJ MEMORY.OBJ /FeCLKCHK.EXE /link LLIBCR.LIB LIBH.LIB/NOD >> CLKBUILD.LOG",
         "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST CLKCHK.EXE GOTO FAILED",
         "CLKCHK.EXE > CLKTEST.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        "CL /AL /Od /c TIMER.C >> CLKBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        "IF NOT EXIST TIMER.OBJ GOTO FAILED",
+        "CL /AL /Od TMRCHK.C TIMER.OBJ /FeTMRCHK.EXE /link LLIBCR.LIB LIBH.LIB/NOD >> CLKBUILD.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST TMRCHK.EXE GOTO FAILED",
+        "TMRCHK.EXE > TMRTEST.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
         f"ECHO {clock_signature} > CLKSIG.LOG",
         "ECHO Real-mode DOS clock probe passed > CLKOK.LOG",
         "GOTO DONE", ":FAILED", "ECHO Real-mode DOS clock probe failed > CLKFAIL.LOG",
@@ -1087,7 +1094,8 @@ def print_input_diagnostics(output: Path) -> None:
 
 def validate_clock_adapter(output: Path) -> None:
     if (any(locate_case_insensitive(output, name) is None
-            for name in ("CLOCK.OBJ", "CLKSTART.LOG", "CLKOK.LOG")) or
+            for name in ("CLOCK.OBJ", "TIMER.OBJ", "TMRCHK.EXE",
+                         "TMRTEST.LOG", "CLKSTART.LOG", "CLKOK.LOG")) or
             locate_case_insensitive(output, "CLKFAIL.LOG") is not None):
         raise ValueError("Cannot link launcher: DOS clock services are unverified. "
                          "Run msc51-compile-clock first.")
@@ -1099,7 +1107,8 @@ def validate_clock_adapter(output: Path) -> None:
 
 def remove_clock_outputs(output: Path) -> None:
     names = {"CLKSTART.LOG", "CLKOK.LOG", "CLKFAIL.LOG", "CLKBUILD.LOG",
-             "CLKSIG.LOG", "CLKTEST.LOG", "CLOCK.OBJ", "CLKCHK.EXE", "CLKCHK.OBJ"}
+             "CLKSIG.LOG", "CLKTEST.LOG", "TMRTEST.LOG", "CLOCK.OBJ",
+             "CLKCHK.EXE", "CLKCHK.OBJ", "TIMER.OBJ", "TMRCHK.EXE", "TMRCHK.OBJ"}
     if output.is_dir():
         for entry in output.iterdir():
             if entry.is_file() and entry.name.upper() in names:
@@ -1107,7 +1116,8 @@ def remove_clock_outputs(output: Path) -> None:
 
 
 def print_clock_diagnostics(output: Path) -> None:
-    for name in ("CLKFAIL.LOG", "CLKBUILD.LOG", "CLKTEST.LOG", "CLKOK.LOG"):
+    for name in ("CLKFAIL.LOG", "CLKBUILD.LOG", "CLKTEST.LOG",
+                 "TMRTEST.LOG", "CLKOK.LOG"):
         path = locate_case_insensitive(output, name)
         content = path.read_text(errors="replace") if path else "(not created)"
         print(f"--- {name} ---\n{content[-8_000:].rstrip()}", file=sys.stderr)
@@ -1510,12 +1520,13 @@ def main(argv: list[str] | None = None) -> int:
         try:
             validate_clock_adapter(output)
         except ValueError:
-            print("Microsoft C did not compile and verify DOS clock/wait services.",
+            print("Microsoft C did not verify DOS clock/wait and INT 1Ch services.",
                   file=sys.stderr)
             print_clock_diagnostics(output)
             return 1
-        print("Microsoft C 5.1 verified DOS elapsed time and a bounded delay; "
-              "CLOCK.OBJ is ready for the launcher link.")
+        print("Microsoft C 5.1 verified DOS clock/waits and the standalone "
+              "INT 1Ch callback probe; CLOCK.OBJ is ready for the launcher link. "
+              "TIMER.OBJ is still probe-only.")
         return 0
     if args.command == "compile-crt":
         try:

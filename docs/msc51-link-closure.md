@@ -349,6 +349,32 @@ this evidence now supplies a bounded timing/interrupt initialization
 step. It does not by itself initialize the graphics, input, or intro
 resources, and the three unresolved Microsoft LINK names remain.
 
+**DOS INT 1Ch ABI probe (bundle 052):** `msc51-compile-clock` now also
+stages `TIMER.C` and compiles/runs `TMRCHK.EXE`. This deliberately does
+**not** yet reproduce the original PIT-divisor `4daeh` calibration. Instead
+it installs a minimal MS C 5.1 `interrupt far` handler via `_dos_getvect`
+and `_dos_setvect`, observes two BIOS timer callbacks at the existing PIT
+rate, and restores the previous INT 1Ch vector on both success and timeout.
+It uses the DOS time-of-day service for a two-second deadline, plus a hard
+spin bound in case the DOS clock stops. `TMRTEST.LOG` identifies the result;
+`CLKOK.LOG` and the clock source fingerprint are withheld if it fails.
+Host tests inject IRQs and suppress them to check both restoration paths.
+The handler makes no DOS calls and does not chain the prior vector. It is
+only used by the standalone probe; **`TIMER.OBJ` is not added to
+`LINK.RSP`,** because neither calling convention nor behavior has yet
+been verified under the original Microsoft C compiler in DOSBox. Run:
+
+```sh
+nix run -L .#msc51-compile-clock
+# Return CLKBUILD.LOG, TMRTEST.LOG, CLKFAIL.LOG or CLKOK.LOG.
+```
+
+After the DOS probe succeeds, the next step is an opt-in calibration that
+programs and then restores PIT channel 0 while retaining the saved INT 1Ch
+vector. The unresolved `_main`, control-key handler and text printer
+remain unrelated blockers to a linked executable; the probe does not
+silently define them.
+
 The third call is now identified as `rtl:10da1..10dc6`, a bounded FAR
 routine (preceded and terminated by `RETF`). It starts with `push cs; call
 near rtl:11078`, tests bits `0x0c` of a relocated DS byte, conditionally

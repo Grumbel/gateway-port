@@ -22,6 +22,32 @@ SPEC.loader.exec_module(msc51)
 
 
 class MSC51Tests(unittest.TestCase):
+    def test_staged_int1c_handler_restores_vector_on_success_and_timeout(self):
+        """Host fake IRQs exercise both paths; DOSBox still has to verify the ABI."""
+        if not shutil.which("gcc"):
+            self.skipTest("gcc needed for deterministic DOS timer fixture")
+        with tempfile.TemporaryDirectory() as scratch:
+            output = Path(scratch)
+            msc51.stage_launcher(output)
+            (output / "STDINT.H").write_text('#include <stdint.h>\n')
+            fixtures = REPO / "tests/fixtures/msc51_timer"
+            syntax = subprocess.run(["gcc", "-std=c89", "-Wall", "-Wextra", "-Werror",
+                                     "-fsyntax-only", "-I", str(fixtures),
+                                     "-I", str(output), "-x", "c",
+                                     str(output / "TMRCHK.C")],
+                                    capture_output=True, text=True)
+            self.assertEqual(syntax.returncode, 0, syntax.stderr)
+            executable = output / "timer-host-probe"
+            build = subprocess.run(["gcc", "-std=c89", "-Wall", "-Wextra", "-Werror",
+                                    "-I", str(fixtures), "-I", str(output),
+                                    "-x", "c", str(output / "TIMER.C"),
+                                    str(fixtures / "timer_host_probe.c"),
+                                    "-o", str(executable)], capture_output=True, text=True)
+            self.assertEqual(build.returncode, 0, build.stderr)
+            result = subprocess.run([str(executable)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("callback/timeout/restoration: PASS", result.stdout)
+
     def test_staged_clock_calendar_and_dst_on_host(self):
         """Execute staged calendar logic with deterministic DOS interrupt replies.
 
@@ -303,6 +329,9 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("CL /AL /Od /c CLOCK.C", clock_batch)
             self.assertIn("CLKCHK.C CLOCK.OBJ MEMORY.OBJ", clock_batch)
             self.assertIn("CLKCHK.EXE > CLKTEST.LOG", clock_batch)
+            self.assertIn("CL /AL /Od /c TIMER.C", clock_batch)
+            self.assertIn("TMRCHK.C TIMER.OBJ", clock_batch)
+            self.assertIn("TMRCHK.EXE > TMRTEST.LOG", clock_batch)
             self.assertIn("CLKSIG.LOG", clock_batch)
             self.assertIn("CLKOK.LOG", clock_batch)
             self.assertNotIn("IF ERRORLEVEL 1 ECHO", clock_batch)
@@ -316,7 +345,7 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("GateFarPtr destination;", clock_probe)
             self.assertIn("destination = gate_stack_pointer(sample);", clock_probe)
             self.assertNotIn("GateFarPtr destination = gate_stack_pointer(sample)", clock_probe)
-            for name in ("CLOCK.C", "CLKCHK.C"):
+            for name in ("CLOCK.C", "CLKCHK.C", "TIMER.C", "TMRCHK.C"):
                 self.assertTrue(all(len(identifier) <= 31 for identifier in
                                     msc51.msc51_identifiers((output / name).read_text())), name)
             crt_batch = (output / "CRT.BAT").read_text()
@@ -555,6 +584,9 @@ class MSC51Tests(unittest.TestCase):
                 run.assert_not_called()
             self.assertIn("msc51-compile-clock first", error.getvalue())
             (output / "clock.obj").write_bytes(b"DOS clock")
+            (output / "timer.obj").write_bytes(b"INT 1Ch check")
+            (output / "tmrchk.exe").write_bytes(b"INT 1Ch probe")
+            (output / "tmrtest.log").write_text("INT 1Ch probe: PASS")
             (output / "clkstart.log").write_text("tested")
             (output / "clkok.log").write_text("passed")
             (output / "clksig.log").write_text(msc51.clock_source_signature(output))
@@ -1213,13 +1245,15 @@ class MSC51Tests(unittest.TestCase):
             (output / "memstart.log").write_text("tested")
             (output / "memok.log").write_text("passed")
             (output / "memsig.log").write_text(msc51.memory_source_signature(output))
-            for name in ("CLOCK.OBJ", "CLKSTART.LOG", "CLKOK.LOG", "CLKSIG.LOG"):
+            for name in ("CLOCK.OBJ", "TIMER.OBJ", "TMRCHK.EXE", "TMRTEST.LOG",
+                         "CLKSTART.LOG", "CLKOK.LOG", "CLKSIG.LOG"):
                 (output / name).write_text("stale")
 
             def failed_probe(command, check):
                 self.assertIn("CLOCK.BAT", command)
                 self.assertFalse(check)
                 self.assertFalse((output / "CLOCK.OBJ").exists())
+                self.assertFalse((output / "TIMER.OBJ").exists())
                 (output / "CLKSTART.LOG").write_text("started")
                 (output / "CLOCK.OBJ").write_bytes(b"compiled")
                 (output / "CLKFAIL.LOG").write_text("DOS clock did not advance")
@@ -1237,6 +1271,9 @@ class MSC51Tests(unittest.TestCase):
                 self.assertFalse((output / "CLOCK.OBJ").exists())
                 (output / "CLKSTART.LOG").write_text("started")
                 (output / "CLOCK.OBJ").write_bytes(b"compiled")
+                (output / "TIMER.OBJ").write_bytes(b"compiled")
+                (output / "TMRCHK.EXE").write_bytes(b"compiled")
+                (output / "TMRTEST.LOG").write_text("INT 1Ch probe: PASS")
                 (output / "CLKOK.LOG").write_text("passed")
                 (output / "CLKTEST.LOG").write_text("Clock probe: PASS")
                 (output / "CLKSIG.LOG").write_text(msc51.clock_source_signature(output))
