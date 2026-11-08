@@ -81,9 +81,28 @@ The user subsequently reran the object audit after recompiling: **42/42**
 input objects parse, and `RTFILE.OBJ` now exports all four required names,
 including `_gate_linked_print_intr_b006848b`. Thus the earlier missing
 diagnostic was a stale or otherwise incompletely rebuilt DOS object; it
-is **not a remaining source or linker export problem**. There is no new
-Microsoft LINK result yet proving the final unresolved count, but `_main`
-and `_gate_linked_handle_control_key` remain unimplemented.
+is **not a remaining source or linker export problem**. A subsequent real
+Microsoft LINK 3.65 run supplied by the user on 2026-11-08 confirmed
+**exactly two** `L2029` unresolved externals: `_main` from
+`LLIBCR.LIB(dos/crt0.asm)` and `_gate_linked_handle_control_key` from
+`M04.OBJ(M04.C)`. `LINKDONE.LOG` was absent. This is a linker-closure
+milestone, **not** a linked or playable DOS executable.
+
+The new optional checkpoint validates the *fresh* `LINK.LOG` and actual
+OMF objects for exactly those two errors:
+
+```sh
+python3 tools/msc51_object_symbols.py \
+  --stage build/msc51-launcher \
+  --expect-unresolved _main \
+  --expect-unresolved _gate_linked_handle_control_key
+```
+
+It rejects unexpected or missing unresolved names, stale `L2029` reports
+for now-exported publics, other Microsoft LINK errors and missing or
+malformed objects. When either missing routine is finally implemented,
+update/remove this two-name checkpoint; it is not a substitute for the
+implementations.
 
 The historical Microsoft C 5.1 compiler recognizes 31-character C names
 and decorates them with an underscore, giving a **32-character OMF public**;
@@ -146,8 +165,9 @@ behavior is made.
 
 This is the **remaining implementation/verification inventory**, not a list
 of functions already recovered. The latest real Microsoft LINK 3.65 report
-supplied by the user on 2026-11-08 confirmed **three unresolved names**:
-the CRT `_main`, the original Ctrl-Break handler and the diagnostic. An earlier LINK run
+supplied by the user on 2026-11-08 confirmed **two unresolved names**:
+the CRT `_main` and the original Ctrl-Break handler. The preceding LINK run
+reported three names including the now-exported diagnostic. An earlier LINK run
 confirmed **26 names**, with
 `RTLHW`, `RTFILE`, `RESSTATE`, `HEAP`, `INP`, `CLOCK` and `CRTENV` linked.
 The extended `RTLHW` adapter supplies eight RTL text/video names, and
@@ -158,7 +178,7 @@ with bounded host behavior. A new C89 DCL decoder additionally stages the
 compressed-picture service, with host-verified buffered DOS input and planar
 output. The original resource file wrappers now stage their raw BP-2 stack
 slots and unguarded CPU division without two external host-test callbacks.
-**Three is now the measured LINK result**, not a prediction: the original
+**Two is now the measured LINK result**, not a prediction: the original
 music-init external is no longer listed. The bounded audio startup guard
 in `RTLHW.OBJ` covers the proven no-music branches, but its enabled-music
 branch still aborts rather than silently omitting the original IRQ 8
@@ -206,16 +226,16 @@ original-file log validator rejects prior success strings containing only
 the bank CRC or representative checks. This is a stronger staging gate,
 **not** yet a verified DOSBox
 result in this environment or a completed rebuilt executable: `_main`,
-two diagnostic/cleanup services, the other resident banks and the
+the Ctrl-Break cleanup service, the other resident banks and the
 executable's service wiring are still missing.
 
-## The three names in the latest confirmed LINK report
+## The names in the latest confirmed LINK reports
 
 | Original unresolved name | Source reference | Current work |
 | --- | --- | --- |
 | `_main` | Microsoft 5.1 `LLIBCR.LIB(dos/crt0.asm)` | No working real-mode original startup yet. It must allocate and bind the original EXE/RTL data segments, initialize and relocate resident driver tables and assets, and transfer to `gate_exe_play_intro`. A placeholder `main()` would make LINK succeed but not create a working Gateway launcher. |
 | `_gate_linked_handle_control_key` | `GATE.RTL:157b8..157e4`, linked `123f:0004`, called on input key `0x0003` | The full six-call entry is verified. Its video-state branch reaches `RTL:10da1` and the already reconstructed VFX image destructor `RTL:180fe`; several other shutdown services and the original state binding still require verification. Do not conflate Ctrl-C/Break cleanup with ordinary keyboard flushing. |
-| `_gate_linked_print_intr_b006848b` | `GATE.RTL:170c7..1712d`, linked `1258:172e`, called by image sequence failure paths | The complete five-call entry is verified; it formats into a 258-byte local buffer, calls resident output, and polls both mouse and keyboard helpers. The full callee ABI, output behavior and failure paths are not yet restored; a no-op would hide loader failures. |
+| `_gate_linked_print_intr_b006848b` (resolved in latest LINK) | `GATE.RTL:170c7..1712d`, linked `1258:172e`, called by image sequence failure paths | The staged bounded implementation now has a confirmed `PUBDEF` in `RTFILE.OBJ`. The original five-call formatter/input-loop behavior is not completely restored; linking alone is not full runtime equivalence. |
 
 The `tools/inspect_msc51_link_tail.py` command inspects these three live
 FAR targets against the original binary images in a captured conventional

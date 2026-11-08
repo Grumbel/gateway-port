@@ -5,7 +5,7 @@
 """Exercise real OMF record grammar without shipping proprietary objects."""
 
 import importlib.util
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 import io
 from pathlib import Path
 import tempfile
@@ -130,6 +130,49 @@ class OMFSymbolTests(unittest.TestCase):
             self.assertIn("similar: " + truncated + " (RTFILE.OBJ)",
                           stdout.getvalue())
             self.assertIn("RTFILE.OBJ: 2 PUBDEF exports", stdout.getvalue())
+
+    def test_exact_two_name_link_checkpoint_rejects_stale_and_extra_errors(self):
+        control = "_gate_linked_handle_control_key"
+        diagnostic = "_gate_linked_print_intr_b006848b"
+        with tempfile.TemporaryDirectory() as directory:
+            stage = Path(directory)
+            (stage / "LINK.RSP").write_text("M04.OBJ+\nRTFILE.OBJ\nGATEWAY.EXE\n;\n")
+            (stage / "M04.OBJ").write_bytes(omf_object("M04.C"))
+            (stage / "RTFILE.OBJ").write_bytes(omf_object("RTFILE.C", (diagnostic,)))
+            log = ("Microsoft (R) Overlay Linker Version 3.65\n"
+                   "LINK : error L2029: Unresolved externals:\n\n"
+                   "_main in file(s):\n C:\\LIB\\LLIBCR.LIB(dos\\crt0.asm)\n"
+                   f"{control} in file(s):\n M04.OBJ(M04.C)\n"
+                   "There were 2 errors detected\n")
+            (stage / "LINK.LOG").write_text(log)
+            expected = ["--stage", str(stage), "--expect-unresolved", "_main",
+                        "--expect-unresolved", control]
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                self.assertEqual(objects.main(expected), 0)
+            self.assertIn("checkpoint: 2 observed, 2 expected (PASS)", stdout.getvalue())
+            report = objects.audit_stage(stage, [], log)
+            self.assertEqual(report["link_unresolved"], ["_main", control])
+            self.assertEqual(report["link_error_codes"], ["L2029"])
+
+            (stage / "LINK.LOG").write_text(log +
+                f"{diagnostic} in file(s):\n M04.OBJ(M04.C)\n")
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                self.assertEqual(objects.main(expected), 1)
+            self.assertIn("unexpected: " + diagnostic, stdout.getvalue())
+            self.assertIn("reported but exported: " + diagnostic, stdout.getvalue())
+
+            (stage / "LINK.LOG").write_text(log +
+                "LINK : error L2040: Stack plus data exceeds 64K\n")
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                self.assertEqual(objects.main(expected), 1)
+            self.assertIn("other linker error: L2040", stdout.getvalue())
+
+            (stage / "LINK.LOG").unlink()
+            with self.assertRaises(SystemExit), redirect_stderr(io.StringIO()):
+                objects.main(expected)
 
     def test_source_has_matching_dos_alias_but_does_not_prove_obj_export(self):
         # This proves the generated source contract. PUBDEF must be checked

@@ -18,6 +18,7 @@ import re
 
 OBJECT_NAME = re.compile(r"\b([A-Z][A-Z0-9_]*)\.OBJ\b", re.IGNORECASE)
 LINK_UNRESOLVED = re.compile(r"^\s*([_A-Za-z][_A-Za-z0-9@$?]*) in file\(s\):\s*$", re.MULTILINE)
+LINK_ERROR_CODE = re.compile(r"\bLINK\s*:\s*error\s+(L\d{4})\s*:", re.IGNORECASE)
 
 
 def omf_index(data: bytes, pos: int, end: int) -> tuple[int, int]:
@@ -151,6 +152,9 @@ def audit_stage(stage: Path, symbols: list[str], link_log: str = "",
     return {"objects_in_response": len(inputs),
             "objects_read": len(inputs) - len(missing) - len(malformed),
             "missing_objects": missing, "malformed_objects": malformed,
+            "link_unresolved": unresolved,
+            "link_error_codes": sorted({code.upper() for code in
+                                        LINK_ERROR_CODE.findall(link_log)}),
             "symbols": entries,
             "object_exports": {name: object_publics[name]
                                for name in requested_objects if name in object_publics},
@@ -165,6 +169,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--object", action="append", default=[],
                         help="show every PUBDEF export from this LINK.RSP object (repeatable)")
     parser.add_argument("--log", type=Path, help="LINK.LOG to cross-check (default: stage/LINK.LOG if present)")
+    parser.add_argument("--expect-unresolved", action="append", default=[],
+                        help="require exactly these Microsoft LINK unresolved names (repeatable); "
+                             "also reject stale exported names and other LINK errors")
     parser.add_argument("--json", type=Path, help="optional report output")
     args = parser.parse_args(argv)
     if not (args.stage / "LINK.RSP").is_file():
@@ -172,6 +179,8 @@ def main(argv: list[str] | None = None) -> int:
     log = args.log or args.stage / "LINK.LOG"
     if args.log and not log.is_file():
         parser.error(f"LINK.LOG not found: {log}")
+    if args.expect_unresolved and not log.is_file():
+        parser.error(f"cannot check unresolved names without LINK.LOG: {log}")
     result = audit_stage(args.stage, args.symbol,
                          log.read_text(errors="replace") if log.is_file() else "",
                          inspect_objects=args.object)
@@ -192,11 +201,31 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  missing object: {name}")
     for name, error in result["malformed_objects"].items():
         print(f"  malformed object: {name}: {error}")
+    expected_fail = False
+    if args.expect_unresolved:
+        expected = set(args.expect_unresolved)
+        observed = set(result["link_unresolved"])
+        missing = sorted(expected - observed)
+        extra = sorted(observed - expected)
+        stale = sorted(item["symbol"] for item in result["symbols"]
+                       if item["status"] == "reported_unresolved_but_exported")
+        other_errors = [code for code in result["link_error_codes"] if code != "L2029"]
+        expected_fail = bool(missing or extra or stale or other_errors or
+                             "L2029" not in result["link_error_codes"])
+        print(f"  LINK unresolved checkpoint: {len(observed)} observed, "
+              f"{len(expected)} expected ({'FAIL' if expected_fail else 'PASS'})")
+        for label, values in (("not reported", missing), ("unexpected", extra),
+                              ("reported but exported", stale),
+                              ("other linker error", other_errors)):
+            for value in values:
+                print(f"    {label}: {value}")
+        if "L2029" not in result["link_error_codes"]:
+            print("    missing Microsoft LINK L2029 error header")
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)
         args.json.write_text(json.dumps(result, indent=2) + "\n")
     return 1 if (result["missing_objects"] or result["malformed_objects"]
-                 or result["unknown_objects"]) else 0
+                 or result["unknown_objects"] or expected_fail) else 0
 
 
 if __name__ == "__main__":
