@@ -696,6 +696,47 @@ int gate_dos_relocate_intro_resident_service_offsets(uint16_t resident_segment,
     return 0;
 }
 
+/* Resident memory/allocator bookkeeping: 23 original source-zero operands
+ * in the +27fc..+2b36 service cluster. Their DS offsets in the original
+ * settled captures are stable but must not be confused with segment words.
+ * Prefixes are checked before any write, with no overlapping guard bytes. */
+static const GateResidentEarlyOffsetFixup gate_resident_allocator_offsets[] = {
+    {0x27fcu, 0x33c6u, 0xbb57u}, {0x2816u, 0x33c6u, 0xa3feu},
+    {0x282au, 0x33ccu, 0x3689u}, {0x2863u, 0x33d0u, 0x3e83u},
+    {0x286eu, 0x33d0u, 0xa312u}, {0x28bfu, 0x33d2u, 0x1687u},
+    {0x28c6u, 0x33d8u, 0x063bu}, {0x28cbu, 0x33d8u, 0xa303u},
+    {0x2909u, 0x33d4u, 0x1e8eu}, {0x296bu, 0x33d4u, 0x1e8cu},
+    {0x2974u, 0x33dau, 0x06c6u}, {0x29afu, 0x33dau, 0x0efeu},
+    {0x29beu, 0x33d0u, 0x1e8eu}, {0x29f1u, 0x33d4u, 0xa326u},
+    {0x2a0fu, 0x33d6u, 0x163bu}, {0x2a87u, 0x2b76u, 0xbf38u},
+    {0x2a9bu, 0x2bc6u, 0x368bu}, {0x2ab6u, 0x2bc6u, 0xfe81u},
+    {0x2addu, 0x2bc6u, 0x3689u}, {0x2af7u, 0x2bc6u, 0xfe81u},
+    {0x2b0eu, 0x2b70u, 0x1e39u}, {0x2b24u, 0x2be7u, 0xa1d9u},
+    {0x2b36u, 0x2b70u, 0x1689u}
+};
+
+int gate_dos_relocate_intro_resident_allocator_offsets(uint16_t resident_segment,
+                                                        uint16_t paragraphs)
+{
+    unsigned int i;
+    if (resident_segment == 0u || resident_segment > 0xfc30u ||
+        paragraphs < GATE_RESIDENT_PARAS)
+        return -1;
+    for (i = 0u; i < sizeof gate_resident_allocator_offsets /
+                      sizeof gate_resident_allocator_offsets[0]; ++i) {
+        uint16_t site = gate_resident_allocator_offsets[i].site;
+        if (gate_far_word(resident_segment, (uint16_t)(site - 2u)) !=
+                gate_resident_allocator_offsets[i].prefix ||
+            gate_far_word(resident_segment, site) != 0u)
+            return -2;
+    }
+    for (i = 0u; i < sizeof gate_resident_allocator_offsets /
+                      sizeof gate_resident_allocator_offsets[0]; ++i)
+        gate_far_set_word(resident_segment, gate_resident_allocator_offsets[i].site,
+                         gate_resident_allocator_offsets[i].target);
+    return 0;
+}
+
 /* Stage the first reconstructed resident bank in the eventual DOS entry.
  * Unlike the data-only bootstrap below, this operation does not establish
  * the remaining resident banks, interrupt vectors, or an executable entry.
@@ -705,7 +746,7 @@ int gate_dos_relocate_intro_resident_service_offsets(uint16_t resident_segment,
  * -8 linked DS flag offsets, -9 additional state offsets,
  * -10 linked small data offsets, -11 CS-local dispatch table,
  * -12 early DS-state offsets, -13 early resident CS-state offsets,
- * -14 runtime-service DS offsets. */
+ * -14 runtime-service DS offsets, -15 allocator DS offsets. */
 int gate_dos_prepare_intro_resident_bank(uint16_t rtl_handle,
                                          uint16_t resident_segment,
                                          uint16_t paragraphs,
@@ -756,6 +797,9 @@ int gate_dos_prepare_intro_resident_bank(uint16_t rtl_handle,
     if (gate_dos_relocate_intro_resident_service_offsets(resident_segment,
                                                          paragraphs) != 0)
         return -14;
+    if (gate_dos_relocate_intro_resident_allocator_offsets(resident_segment,
+                                                           paragraphs) != 0)
+        return -15;
     return 0;
 }
 
