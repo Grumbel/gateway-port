@@ -26,6 +26,8 @@ void gate_rtl_video_set_block_mode(uint16_t mode);
 void gate_rtl_video_command(uint16_t function, uint8_t *input, uint8_t *output);
 void gate_rtl_mode_query_adapter(uint8_t *adapter);
 uint16_t gate_rtl_mode_svga_variant(void);
+GateFarPtr gate_linked_transform_picture_palette_rgb(GateFarPtr source);
+GateFarPtr gate_linked_transform_picture_palette_indexed(GateFarPtr source);
 
 static int check(uint16_t actual, uint16_t expected, const char *label)
 {
@@ -45,6 +47,8 @@ int main(void)
     uint8_t adapter[8];
     union REGS in, out;
     uint16_t svga;
+    GateFarPtr original_palette, rgb_palette, indexed_palette;
+    uint16_t i;
     unsigned int rtl_segment = 0;
     int valid = 1;
 
@@ -123,6 +127,31 @@ int main(void)
     valid &= check(svga <= 5u ? 1u : 0u, 1u, "SVGA variant range");
     printf("Hardware probe: adapter %u/%u, alternate %u/%u, SVGA %u\n",
            adapter[0], adapter[1], adapter[2], adapter[3], svga);
+
+    /* Both CRT functions are byte-level conversions, not palette I/O.
+     * The first expands 16 packed colors to 48 RGB bytes at linked
+     * DS:0fd8; the inverse repacks them to linked DS:1008. */
+    original_palette.segment = (uint16_t)(segment + 0x10u);
+    original_palette.offset = 0x0400u;
+    for (i = 0u; i < 16u; ++i)
+        gate_far_set_byte(original_palette.segment,
+            (uint16_t)(original_palette.offset + i),
+            (uint8_t)((i * 5u) & 63u));
+    rgb_palette = gate_linked_transform_picture_palette_rgb(original_palette);
+    valid &= check(rgb_palette.segment, (uint16_t)segment,
+                   "RGB palette output segment");
+    valid &= check(rgb_palette.offset,
+                   (uint16_t)(GATE_DS_PALETTE_WORK_BASE + 0x000au),
+                   "RGB palette output offset");
+    indexed_palette = gate_linked_transform_picture_palette_indexed(rgb_palette);
+    valid &= check(indexed_palette.offset,
+                   (uint16_t)(GATE_DS_PALETTE_WORK_BASE + 0x003au),
+                   "packed palette output offset");
+    for (i = 0u; i < 16u; ++i)
+        valid &= check(gate_far_byte(indexed_palette.segment,
+                         (uint16_t)(indexed_palette.offset + i)),
+                       (uint16_t)((i * 5u) & 63u),
+                       "RGB/palette conversion round trip");
 
     gate_rtl_mode_clip(199u, 319u, 12u, 7u);
     valid &= check(gate_ds_word(GATE_DS_DRAW_CLIP_LEFT), 7u, "clip left");

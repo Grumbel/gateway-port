@@ -138,6 +138,10 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("gate_rtl_mode_svga_variant", hardware)
             self.assertIn("VGA color monitor subtype", (output / "HWCHK.C").read_text())
             self.assertIn("SVGA variant range", (output / "HWCHK.C").read_text())
+            original_hardware = (REPO / "decomp/launcher/dos/msc51_hardware.c").read_text()
+            self.assertIn("gate_linked_transform_picture_palette_rgb", original_hardware)
+            self.assertIn("gate_linked_transform_picture_palette_indexed", original_hardware)
+            self.assertIn("RGB/palette conversion round trip", (output / "HWCHK.C").read_text())
             for name in ("RTLHW.C", "HWCHK.C"):
                 self.assertTrue(all(len(identifier) <= 31 for identifier in
                                     msc51.msc51_identifiers((output / name).read_text())), name)

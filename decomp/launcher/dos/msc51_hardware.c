@@ -132,6 +132,58 @@ void gate_rtl_mode_pen(uint16_t enabled)
     gate_ds_set_word(GATE_DS_DRAW_CLIPPING_ENABLED, enabled == 1 ? 1 : 0);
 }
 
+/* GATE.RTL:f4df..f577 / linked 0cdc:0396: expand sixteen packed
+ * six-bit color indices to 48 VGA DAC bytes, each channel scaled 0,21,42,63.
+ * The original uses DS:[000a..0039] after the RTL's data relocation by
+ * 0fce. Its FAR pointer is returned in DX:AX. Source offsets wrap within
+ * their original segment, just as the 8086 LDS/INC SI sequence does. */
+GateFarPtr gate_linked_transform_picture_palette_rgb(GateFarPtr source)
+{
+    GateFarPtr output;
+    uint16_t i;
+    output.segment = gate_ds_segment();
+    output.offset = (uint16_t)(GATE_DS_PALETTE_WORK_BASE + 0x000au);
+    for (i = 0u; i < 16u; ++i) {
+        uint8_t value = gate_far_byte(source.segment,
+                                       (uint16_t)(source.offset + i));
+        uint16_t target = (uint16_t)(output.offset + 3u * i);
+        gate_far_set_byte(output.segment, target,
+             (uint8_t)(21u * (((value >> 1) & 2u) | ((value >> 5) & 1u))));
+        gate_far_set_byte(output.segment, (uint16_t)(target + 1u),
+             (uint8_t)(21u * (((value >> 4) & 1u) | (value & 2u))));
+        gate_far_set_byte(output.segment, (uint16_t)(target + 2u),
+             (uint8_t)(21u * (((value >> 3) & 1u) | ((value << 1) & 2u))));
+    }
+    return output;
+}
+
+/* GATE.RTL:f579..f619 / linked 0cdc:0430: inverse palette packing.
+ * The three RGB source bytes are EACH signed-IDIVed by 16, then individual
+ * bits of the quotients are placed into the original 6-bit index order.
+ * This is not an identity FAR pointer or a simple RGB332 converter. */
+GateFarPtr gate_linked_transform_picture_palette_indexed(GateFarPtr source)
+{
+    GateFarPtr output;
+    uint16_t i;
+    output.segment = gate_ds_segment();
+    output.offset = (uint16_t)(GATE_DS_PALETTE_WORK_BASE + 0x003au);
+    for (i = 0u; i < 16u; ++i) {
+        uint16_t position = (uint16_t)(source.offset + 3u * i);
+        uint8_t red = (uint8_t)((int16_t)(int8_t)
+            gate_far_byte(source.segment, position) / 16);
+        uint8_t green = (uint8_t)((int16_t)(int8_t)
+            gate_far_byte(source.segment, (uint16_t)(position + 1u)) / 16);
+        uint8_t blue = (uint8_t)((int16_t)(int8_t)
+            gate_far_byte(source.segment, (uint16_t)(position + 2u)) / 16);
+        uint8_t value = (uint8_t)(((blue >> 1) & 1u) |
+            ((red << 1) & 4u) | ((blue << 3) & 8u) |
+            ((green << 4) & 16u) | ((red << 5) & 32u) | (green & 2u));
+        gate_far_set_byte(output.segment,
+            (uint16_t)(output.offset + i), value);
+    }
+    return output;
+}
+
 /* Original resident GATE.RTL:17c95..17d79 (the primary display-combination
  * probe called by 242a:000a). AX=1a00 returns BL=active/BH=alternate
  * display codes. Each maps to a two-byte (adapter, monitor) pair. The

@@ -29,8 +29,12 @@ class MSC51VideoHostTests(unittest.TestCase):
 typedef unsigned char uint8_t;
 typedef unsigned short uint16_t;
 typedef signed short int16_t;
+typedef signed char int8_t;
+typedef struct GateFarPtr { uint16_t segment, offset; } GateFarPtr;
+uint16_t gate_ds_segment(void);
 uint8_t gate_far_byte(uint16_t segment, uint16_t offset);
 uint16_t gate_far_word(uint16_t segment, uint16_t offset);
+void gate_far_set_byte(uint16_t segment, uint16_t offset, uint8_t value);
 void gate_far_set_word(uint16_t segment, uint16_t offset, uint16_t value);
 void gate_ds_set_word(uint16_t offset, uint16_t value);
 """)
@@ -40,6 +44,7 @@ void gate_ds_set_word(uint16_t offset, uint16_t value);
 #define GATE_DS_DRAW_CLIP_RIGHT (0x29fcu)
 #define GATE_DS_DRAW_CLIP_BOTTOM (0x29feu)
 #define GATE_DS_DRAW_CLIPPING_ENABLED (0x29f6u)
+#define GATE_DS_PALETTE_WORK_BASE (0x0fceu)
 """)
             (scratch / "conio.h").write_text("int inp(unsigned int port);\nint outp(unsigned int port, int value);\n")
             (scratch / "dos.h").write_text("""
@@ -64,6 +69,8 @@ static unsigned char bios_display_combination = 1u;
 static unsigned char bios_svga_signature = 0u;
 static unsigned char bank_port = 0x12u, crtc_index = 0x21u, crtc_33 = 0x83u;
 static unsigned char bank_writable = 0u, crtc_writable = 0u;
+
+uint16_t gate_ds_segment(void) { return 0x4000u; }
 
 uint8_t gate_far_byte(uint16_t segment, uint16_t offset)
 {
@@ -162,10 +169,14 @@ void gate_rtl_video_set_block_mode(uint16_t mode);
 void gate_rtl_video_command(uint16_t function, uint8_t *input, uint8_t *output);
 void gate_rtl_mode_query_adapter(uint8_t *adapter);
 uint16_t gate_rtl_mode_svga_variant(void);
+GateFarPtr gate_linked_transform_picture_palette_rgb(GateFarPtr source);
+GateFarPtr gate_linked_transform_picture_palette_indexed(GateFarPtr source);
 
 int main(void)
 {
     uint8_t packet[14];
+    GateFarPtr source, colors, indices;
+    uint16_t i;
     gate_dos_bind_rtl_video_ds(0x5000u);
     gate_far_set_word(0x5000u, 0x0000u, 0x2031u);
     gate_far_set_byte(0x5000u, 0x0002u, 0x7au);
@@ -245,6 +256,43 @@ int main(void)
     assert(gate_rtl_mode_svga_variant() == 4u);
     gate_far_set_byte(0xc000u, 0x0040u, 0u);
     assert(gate_rtl_mode_svga_variant() == 0u);
+
+    /* Two original palette functions at RTL:f4df/f579, with wrapped FAR
+     * input offsets, 48-byte RGB output and 16-byte packed output. */
+    source.segment = 0x5100u;
+    source.offset = 0xfff8u;
+    for (i = 0; i < 16u; ++i)
+        gate_far_set_byte(source.segment, (uint16_t)(source.offset + i),
+                          (uint8_t)((i * 5u) & 63u));
+    colors = gate_linked_transform_picture_palette_rgb(source);
+    assert(colors.segment == 0x4000u && colors.offset == 0x0fd8u);
+    assert(gate_far_byte(colors.segment, colors.offset) == 0u);
+    assert(gate_far_byte(colors.segment, (uint16_t)(colors.offset + 2u)) == 0u);
+    indices = gate_linked_transform_picture_palette_indexed(colors);
+    assert(indices.segment == 0x4000u && indices.offset == 0x1008u);
+    for (i = 0; i < 16u; ++i)
+        assert(gate_far_byte(indices.segment, (uint16_t)(indices.offset + i)) ==
+               (uint8_t)((i * 5u) & 63u));
+    gate_far_set_byte(source.segment, source.offset, 63u);
+    colors = gate_linked_transform_picture_palette_rgb(source);
+    assert(gate_far_byte(colors.segment, colors.offset) == 63u);
+    assert(gate_far_byte(colors.segment, (uint16_t)(colors.offset + 1u)) == 63u);
+    assert(gate_far_byte(colors.segment, (uint16_t)(colors.offset + 2u)) == 63u);
+    gate_far_set_byte(source.segment, source.offset, 0x01u);
+    colors = gate_linked_transform_picture_palette_rgb(source);
+    assert(gate_far_byte(colors.segment, colors.offset) == 0u);
+    assert(gate_far_byte(colors.segment, (uint16_t)(colors.offset + 1u)) == 0u);
+    assert(gate_far_byte(colors.segment, (uint16_t)(colors.offset + 2u)) == 42u);
+    gate_far_set_byte(source.segment, source.offset, 0x20u);
+    colors = gate_linked_transform_picture_palette_rgb(source);
+    assert(gate_far_byte(colors.segment, colors.offset) == 21u);
+    assert(gate_far_byte(colors.segment, (uint16_t)(colors.offset + 1u)) == 0u);
+    assert(gate_far_byte(colors.segment, (uint16_t)(colors.offset + 2u)) == 0u);
+    gate_far_set_byte(colors.segment, colors.offset, 63u);
+    gate_far_set_byte(colors.segment, (uint16_t)(colors.offset + 1u), 21u);
+    gate_far_set_byte(colors.segment, (uint16_t)(colors.offset + 2u), 42u);
+    indices = gate_linked_transform_picture_palette_indexed(colors);
+    assert(gate_far_byte(indices.segment, indices.offset) == 0x35u);
     return 0;
 }
 ''')

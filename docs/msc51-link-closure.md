@@ -9,9 +9,9 @@ supplied by the user on 2026-11-08 confirmed **26 unresolved names**, with
 `RTLHW`, `RTFILE`, `RESSTATE`, `HEAP`, `INP`, `CLOCK` and `CRTENV` linked.
 The extended `RTLHW` adapter supplies eight RTL text/video names, and
 `RESSTATE` supplies three bounded raster names. The adapter also now stages
-two original BIOS/chipset detection entry points: **13 is the predicted
-remainder if both modified DOS probes pass**. This is not yet a measured
-Microsoft LINK result.
+two original BIOS/chipset detection entry points and two exact relocated
+RTL palette transforms. **11 is the predicted remainder if both modified
+DOS probes pass.** This is not yet a measured Microsoft LINK result.
 Do not manufacture no-op definitions merely to obtain an executable.
 
 ## The 26 names in the last confirmed LINK report
@@ -24,9 +24,9 @@ Do not manufacture no-op definitions merely to obtain an executable.
 | Video adapter query | `gate_rtl_mode_query_adapter`, `gate_rtl_mode_svga_variant` | 2 | **Staged, DOS probe pending.** Original `GATE.RTL:17c95..17d79` maps INT 10h/AX=1a00 active/alternate display codes to type/monitor pairs; `17b4f..17c24` tests AH=6fh, ROM signatures and bank/CRTC ports for SVGA variant 0–5. The old-BIOS fallback and exotic adapter-switch helpers remain outside the supported boundary; unsupported display BIOS requests abort. |
 | Original exception/stack state | `gate_rtl_file_divide_fault`, `gate_rtl_file_stack_word` | 2 | Trace original divide-fault exit and near-stack word reader; `0` or `abort()` substitute values would hide original behavior. |
 | Runtime calendar sample | `gate_linked_read_runtime_time_sample` | 1 | Reconstruct `12a5:34d8` ten-byte sample and its date/time, timezone/DST dependencies, then compare against the already recovered `gate_rtl_elapsed_milliseconds`. The pending DOS clock is an intentionally approximate live substitute. |
-| VFX/picture pipeline | `gate_linked_decompress_picture_pixels`, `gate_linked_blit_vfx_picture`, `gate_linked_transform_picture_palette_indexed`, `gate_linked_transform_picture_palette_rgb`, `gate_linked_save_vfx_draw_state`, `gate_linked_restore_vfx_draw_state` | 6 | Recover decompression, destination pixel layout, palette translation and saved drawing-state lifetime. Native host counterparts only prove bounded visible behavior; they are not yet DOS ABI ports. |
+| VFX/picture pipeline | `gate_linked_decompress_picture_pixels`, `gate_linked_blit_vfx_picture`, `gate_linked_transform_picture_palette_indexed`, `gate_linked_transform_picture_palette_rgb`, `gate_linked_save_vfx_draw_state`, `gate_linked_restore_vfx_draw_state` | 6 | The two palette transforms are **staged and host-tested**, DOS probe pending: linked `0cdc:0396`/`:0430` map exactly to original RTL `f4df`/`f579`; sixteen packed 6-bit colors expand into 48 RGB bytes scaled by 21, and the inverse uses signed byte division by 16. Four other VFX services still require decompression, destination pixel layout, and saved drawing-state reconstruction. |
 | Intro services and diagnostics | `gate_linked_initialize_intro_services`, `gate_linked_handle_control_key`, `gate_linked_print_intro_diagnostic` | 3 | Reconstruct the original music/IRQ8 setup, Ctrl-Break branch and resident diagnostic destination/format from the EXE and RTL. Silent success and dummy output are not valid equivalents. |
-| **Reported total** | | **26** | 13 more definitions staged since this report; 13 projected unresolved after both DOS probes. |
+| **Reported total** | | **26** | 15 more definitions staged since this report; 11 projected unresolved after both DOS probes. |
 
 ### Current DOS probe order
 
@@ -71,6 +71,15 @@ would lead the source C down the wrong graphics mode branch. The host fixture
 tests all five nonzero SVGA outcomes, variant zero, monochrome handling,
 active/alternate adapters and register restoration; Microsoft C and an
 authentic DOSBox video BIOS still need to verify these paths.
+
+The same `RTLHW.OBJ` probe also exercises the two palette transforms.
+Their original return FAR offsets are linked `DS:0fd8` (RGB triplets) and
+`DS:1008` (packed indices), derived from the relocated palette work base
+`DS:0fce` plus the RTL entry's 0x0a / 0x3a offsets. Both source pointers
+wrap their offsets without carrying into the segment. The independent host
+fixture checks all 16 round-tripped color indices, 0/21/42/63 DAC channels,
+specific channel-to-bit ordering and input offset wrap. The DOS probe checks
+the output addresses and all 16 round trips against Microsoft C 5.1 memory.
 
 The extended `RESSTATE.C` also requires
 `nix run -L .#msc51-compile-resident-state` before linking. It exercises

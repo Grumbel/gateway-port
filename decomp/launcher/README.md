@@ -1061,7 +1061,12 @@ accessors and three-command BIOS text packet dispatcher; the extended
 13h A000 memory and INT 10h planar pixels. `RTLHW.C` now also supplies the
 two resident display adapter probes using original INT 10h display-combination
 codes, SVGA BIOS/ROM signatures, and restored video port tests. This reduces
-the **predicted** remainder to **13**. Both 5.1 compile/probes and the new link result are
+the **predicted** remainder to **13**. Additionally, the original linked
+`0cdc:0396` and `0cdc:0430` palette transformations map precisely to RTL
+`f4df`/`f579`. Their 16-color indexed/RGB conversions are now implemented
+in `RTLHW.C` with original relocated DS output offsets `0fd8` / `1008`,
+signed byte quotient semantics and host round-trip tests, reducing the
+**projected** remainder further to **11**. Both 5.1 compile/probes and the new link result are
 still needed. See
 [MSC51 link closure](../../docs/msc51-link-closure.md) for the inventory.
 
