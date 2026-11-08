@@ -213,6 +213,36 @@ int gate_dos_fix_intro_rtl_offs(uint16_t lower_segment, uint16_t paragraphs)
     return 0;
 }
 
+/* Six further zero-source words become constant offsets in every supplied
+ * 100..250ms original snapshot. These are recorded as an observed initial
+ * state, not assigned to an unproven relocation rule. In particular the
+ * field at 2c0e is later modified; this is its *startup* value only.
+ * The source must still contain all six zero words before any are written. */
+static const GateIntroOffsetFixup gate_rtl_startup_words[] = {
+    {0x0525u, 0u, 0x0527u}, {0x26d6u, 0u, 0x16d4u},
+    {0x2b74u, 0u, 0x0b57u}, {0x2bc6u, 0u, 0x2b76u},
+    {0x2c0eu, 0u, 0x2c12u}, {0x2c24u, 0u, 0x65f0u}
+};
+
+int gate_dos_fix_intro_rtl_startup_words(uint16_t lower_segment,
+                                         uint16_t paragraphs)
+{
+    unsigned int i;
+    if (lower_segment == 0u || lower_segment > 0xfff5u ||
+        paragraphs < GATE_DATA_MIN_PARAS ||
+        gate_ds_segment() != (uint16_t)(lower_segment + 0x000au))
+        return -1;
+    for (i = 0u; i < sizeof gate_rtl_startup_words /
+                      sizeof gate_rtl_startup_words[0]; ++i)
+        if (gate_ds_word(gate_rtl_startup_words[i].site) != 0u)
+            return -2;
+    for (i = 0u; i < sizeof gate_rtl_startup_words /
+                      sizeof gate_rtl_startup_words[0]; ++i)
+        gate_ds_set_word(gate_rtl_startup_words[i].site,
+                         gate_rtl_startup_words[i].addend);
+    return 0;
+}
+
 typedef struct GateIntroExternalPtr {
     uint16_t site;
     uint16_t offset;

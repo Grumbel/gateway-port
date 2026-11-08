@@ -757,6 +757,17 @@ This is an observed bounded initialization operation, not proof of the
 original loader's algorithm or a complete startup; Microsoft C 5.1/DOSBox
 execution of the revised probe remains pending.
 
+**Next six startup words:** The same four early captures also agree on six
+zero-source 16-bit offsets at `DS:0525`, `26d6`, `2b74`, `2bc6`, `2c0e` and
+`2c24`. They remain unchanged through 250ms; `2c0e` is subsequently
+modified. A separate bounded DOS initializer now checks *all* six source
+zeros before storing their observed startup offsets. This does not assert
+the loader's relocation formula or that every field is a pointer. Synthetic
+and original-file DOS probes, the host fixture and the snapshot inspector
+cover these sites. With their 12 bytes classified, **242 of 260** early
+changes are accounted for; **18** remain in only three clusters
+(`DS:049d`, `0518`, `0547`). Real DOS compiler/runtime verification is pending.
+
 **Follow-up: determine external allocation ownership from snapshots.**
 After the 167 verified initialization byte changes are excluded, the user's
 remainder report contains only ten clusters: a 63-byte zeroed prefix at

@@ -341,6 +341,8 @@ class StartupSnapshotTests(unittest.TestCase):
             put_word(source, offset, 0)
         for offset, old, _ in startup.KNOWN_RTL_OFFSET_FIXUPS:
             put_word(source, offset, old)
+        for offset, _ in startup.KNOWN_RTL_STARTUP_WORDS:
+            put_word(source, offset, 0)
         for _, entries in startup.KNOWN_RTL_EXTERNAL_POINTERS:
             for offset, _ in entries:
                 source[offset:offset + 4] = bytes(4)
@@ -353,6 +355,8 @@ class StartupSnapshotTests(unittest.TestCase):
         for offset in startup.KNOWN_RTL_CS_SEG_WORDS:
             put_word(first, offset, 0x12a5)
         for offset, _, observed in startup.KNOWN_RTL_OFFSET_FIXUPS:
+            put_word(first, offset, observed)
+        for offset, observed in startup.KNOWN_RTL_STARTUP_WORDS:
             put_word(first, offset, observed)
         for index, (_, entries) in enumerate(startup.KNOWN_RTL_EXTERNAL_POINTERS):
             for offset, observed_offset in entries:
@@ -368,14 +372,15 @@ class StartupSnapshotTests(unittest.TestCase):
         put_word(late, 0x2c10, 0)  # Original game also later mutates this site.
         samples = [(100, bytes(first)), (125, bytes(first)), (500, bytes(late))]
         remainder = startup.rtl_preimage_remainder(bytes(rtl), samples, 0x2a7a, 0x1000)
-        self.assertEqual(remainder["initial_changed_bytes"], 175)
+        self.assertEqual(remainder["initial_changed_bytes"], 187)
         self.assertEqual(remainder["verified_segment_bytes"], 54)
         self.assertEqual(remainder["verified_offset_words"], 24)
         self.assertEqual(remainder["verified_offset_bytes"], 48)
         self.assertEqual(remainder["verified_external_pointers"], 19)
         self.assertEqual(remainder["verified_external_bytes"], 65)
         self.assertEqual(remainder["verified_cleared_prefix_bytes"], 0)
-        self.assertEqual(remainder["verified_total_bytes"], 167)
+        self.assertEqual(remainder["verified_startup_word_bytes"], 12)
+        self.assertEqual(remainder["verified_total_bytes"], 179)
         self.assertEqual([entry["observed_segment"]
                           for entry in remainder["observed_external_tables"]],
                          [0x252c, 0x25d7])
@@ -389,7 +394,7 @@ class StartupSnapshotTests(unittest.TestCase):
                          (125, bytes(cleared_early)),
                          (500, bytes(cleared_late))], 0x2a7a, 0x1000)
         self.assertEqual(cleared["verified_cleared_prefix_bytes"], 64)
-        self.assertEqual(cleared["verified_total_bytes"], 231)
+        self.assertEqual(cleared["verified_total_bytes"], 243)
         self.assertEqual(cleared["remaining_changed_bytes"], 8)
         self.assertEqual((remainder["source_zero_to_nonzero"],
                           remainder["source_nonzero_to_zero"],

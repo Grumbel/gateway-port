@@ -63,6 +63,10 @@ KNOWN_RTL_OFFSET_FIXUPS = (
     (0x33ac, 0x06e4, 0x3328), (0x353e, 0x0000, 0x3530),
     (0x3542, 0x0004, 0x3534),
 )
+KNOWN_RTL_STARTUP_WORDS = (
+    (0x0525, 0x0527), (0x26d6, 0x16d4), (0x2b74, 0x0b57),
+    (0x2bc6, 0x2b76), (0x2c0e, 0x2c12), (0x2c24, 0x65f0),
+)
 # The offsets, not the target segment values, are stable in the original
 # capture. The two segment values are sampled independently at runtime and
 # must not be used as compile-time program-image layout addresses. The MCB
@@ -332,6 +336,13 @@ def rtl_preimage_remainder(rtl, samples, runtime_ds, image_load):
         known[offset:offset + 2] = b"\x01\x01"
     if sum(known) != 102:
         raise ValueError("expected 102 bytes at 51 known word sites")
+    for offset, observed in KNOWN_RTL_STARTUP_WORDS:
+        if (word(source, offset) != 0 or
+                any(word(sample, offset) != observed for sample in early) or
+                any(known[offset:offset + 2])):
+            raise ValueError("observed startup word at DS:%04x does not match "
+                             "the original early samples" % offset)
+        known[offset:offset + 2] = b"\x01\x01"
 
     external = []
     verified_external_bytes = 0
@@ -429,11 +440,12 @@ def rtl_preimage_remainder(rtl, samples, runtime_ds, image_load):
         "verified_segment_bytes": 54,
         "verified_offset_words": 24,
         "verified_offset_bytes": 48,
+        "verified_startup_word_bytes": 12,
         "verified_external_pointers": 19,
         "verified_external_bytes": verified_external_bytes,
         "verified_cleared_prefix_bytes": cleared_bytes,
         "observed_external_tables": external,
-        "verified_total_bytes": 102 + verified_external_bytes + cleared_bytes,
+        "verified_total_bytes": 114 + verified_external_bytes + cleared_bytes,
         "remaining_changed_bytes": len(residual),
         "source_zero_to_nonzero": sum(source[i] == 0 for i in residual),
         "source_nonzero_to_zero": sum(first[i] == 0 for i in residual),
@@ -1261,12 +1273,14 @@ def main():
         if args.runtime_data_remainder:
             remaining = report["runtime_data_remainder"]
             print("RTL preimage changes excluding 27 segment, 24 offset, "
-                  "19 external-pointer fixes and verified prefix clearing:")
+                  "6 startup words, 19 external-pointer fixes and prefix clearing:")
             print("  %d initial changed bytes - %d segment bytes - %d offset bytes "
-                  "- %d external-pointer bytes - %d cleared-prefix bytes = "
+                  "- %d startup-word bytes - %d external-pointer bytes "
+                  "- %d cleared-prefix bytes = "
                   "%d unclassified bytes" % (
                 remaining["initial_changed_bytes"], remaining["verified_segment_bytes"],
-                remaining["verified_offset_bytes"], remaining["verified_external_bytes"],
+                remaining["verified_offset_bytes"], remaining["verified_startup_word_bytes"],
+                remaining["verified_external_bytes"],
                 remaining["verified_cleared_prefix_bytes"],
                 remaining["remaining_changed_bytes"]))
             for entry in remaining["observed_external_tables"]:

@@ -16,6 +16,7 @@ int gate_dos_clear_intro_rtl_prefix(uint16_t lower_segment, uint16_t paragraphs)
 int gate_dos_fix_intro_rtl_segs(uint16_t lower_segment, uint16_t paragraphs,
                                 uint16_t resident_segment);
 int gate_dos_fix_intro_rtl_offs(uint16_t lower_segment, uint16_t paragraphs);
+int gate_dos_fix_intro_rtl_startup_words(uint16_t lower_segment, uint16_t paragraphs);
 int gate_dos_fix_intro_rtl_external(uint16_t lower_segment, uint16_t paragraphs,
                                     uint16_t first_segment, uint16_t second_segment);
 
@@ -199,6 +200,24 @@ int main(void)
         good &= gate_ds_word(observed_ds_sites[i]) == (uint16_t)(allocated + 10u);
     for (i = 0u; i < sizeof observed_cs_sites / sizeof observed_cs_sites[0]; ++i)
         good &= gate_ds_word(observed_cs_sites[i]) == 0x1234u;
+    /* Six separately observed zero-source startup words. */
+    gate_ds_set_word(0x0525u, 0u);
+    gate_ds_set_word(0x26d6u, 0u);
+    gate_ds_set_word(0x2b74u, 0u);
+    gate_ds_set_word(0x2bc6u, 0u);
+    gate_ds_set_word(0x2c0eu, 0u);
+    gate_ds_set_word(0x2c24u, 1u);
+    good &= gate_dos_fix_intro_rtl_startup_words((uint16_t)allocated, 0x100au) == -2;
+    good &= gate_ds_word(0x0525u) == 0u;
+    gate_ds_set_word(0x2c24u, 0u);
+    good &= gate_dos_fix_intro_rtl_startup_words((uint16_t)allocated, 0x1009u) == -1;
+    good &= gate_dos_fix_intro_rtl_startup_words((uint16_t)allocated, 0x100au) == 0;
+    good &= gate_ds_word(0x0525u) == 0x0527u;
+    good &= gate_ds_word(0x26d6u) == 0x16d4u;
+    good &= gate_ds_word(0x2b74u) == 0x0b57u;
+    good &= gate_ds_word(0x2bc6u) == 0x2b76u;
+    good &= gate_ds_word(0x2c0eu) == 0x2c12u;
+    good &= gate_ds_word(0x2c24u) == 0x65f0u;
     for (i = 0u; i < sizeof external_a / sizeof external_a[0]; ++i) {
         gate_ds_set_word(external_a[i].site, 0u);
         gate_ds_set_word((uint16_t)(external_a[i].site + 2u), 0u);
