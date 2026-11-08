@@ -13,11 +13,12 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 
-from inspect_msc51_link_tail import TAIL_ENTRIES, inspect
+from inspect_msc51_link_tail import (TAIL_ENTRIES, RELOCATED_RTL_ENTRIES, inspect,
+                                     match_relocated_far_entry)
 
 
 class LinkTailTests(unittest.TestCase):
-    def test_resident_targets_have_independent_live_source_matches(self):
+    def test_resident_targets_have_raw_window_candidates(self):
         exe = bytearray(b'MZ' + bytes(512))
         rtl = bytearray(0x1b000)
         ram = bytearray(1 << 20)
@@ -40,9 +41,11 @@ class LinkTailTests(unittest.TestCase):
             if row['name'] == 'music_init':
                 self.assertIsNone(match)  # No independent relocated guard.
             else:
-                self.assertEqual(match['file'], 'rtl')
+                # A generic byte-window candidate cannot establish the
+                # known original FAR entry's relocated CALL operands.
+                self.assertEqual(row['entry_status'],
+                                 'source_entry_candidate_not_semantically_verified')
                 self.assertEqual(match['offset'], originals[row['name']])
-                self.assertEqual(match['matched_bytes'], 16)
             self.assertEqual(candidate['entry_prefix_bytes'], 16)
         self.assertTrue(rows[0]['independent_original_entry']['matches_live_16_bytes'])
         self.assertEqual(rows[0]['entry_status'],
@@ -95,6 +98,55 @@ class LinkTailTests(unittest.TestCase):
         self.assertEqual(row['source_candidate']['entry_prefix_bytes'], 0)
         self.assertIsNone(row['live_source_match'])
         self.assertEqual(row['entry_status'], 'entry_unmapped_or_relocated')
+
+    def test_known_relocated_far_entries_are_matched_at_original_boundary(self):
+        exe = b'MZ' + bytes(100)
+        rtl = bytearray(0x1b000)
+        ram = bytearray(1 << 20)
+        for name in ('control_key', 'intro_diagnostic'):
+            entry_offset, length, calls = RELOCATED_RTL_ENTRIES[name]
+            original = bytearray((i * 13 + 29) & 255 for i in range(length))
+            for start in calls:
+                original[start:start + 5] = bytes([0x9a, 0, 0, 0, 0])
+            rtl[entry_offset:entry_offset + length] = original
+            linked = bytearray(original)
+            for index, start in enumerate(calls):
+                linked[start + 1:start + 5] = bytes([index + 1, 2, 3, 4])
+            _, segment, offset, _, _ = next(entry for entry in TAIL_ENTRIES
+                                            if entry[0] == name)
+            physical = (0x1000 + segment) * 16 + offset
+            ram[physical:physical + length] = linked
+            row = next(item for item in inspect(exe, rtl, ram) if item['name'] == name)
+            self.assertTrue(row['relocated_original_entry']['matched'])
+            self.assertEqual(row['live_source_match']['offset'], entry_offset)
+            self.assertEqual(row['entry_status'], 'relocated_original_entry')
+            self.assertEqual(len(row['relocated_far_calls']), len(calls))
+            self.assertEqual(row['relocated_far_calls'][0]['target_offset'], 0x0201)
+            self.assertEqual(row['relocated_far_calls'][0]['target_segment'], 0x0403)
+            linked[0 if calls[0] != 0 else length - 1] ^= 1
+            self.assertFalse(match_relocated_far_entry(original, linked, calls, length))
+            linked[0 if calls[0] != 0 else length - 1] ^= 1
+            linked[calls[0] + 1] ^= 1
+            self.assertTrue(match_relocated_far_entry(original, linked, calls, length))
+            linked[calls[0]] ^= 1
+            self.assertFalse(match_relocated_far_entry(original, linked, calls, length))
+
+    def test_music_independent_identity_is_not_overwritten_by_candidate(self):
+        exe = b'MZ' + bytes(100)
+        rtl = bytearray(0x1b000)
+        ram = bytearray(1 << 20)
+        rtl[0xc3bd:0xc3cd] = bytes(range(1, 17))
+        source = 0x7ce0
+        signature = bytes((i * 17 + 51) & 255 for i in range(32))
+        rtl[source:source + 32] = signature
+        _, segment, offset, _, _ = TAIL_ENTRIES[0]
+        physical = (0x1000 + segment) * 16 + offset
+        ram[physical:physical + 32] = signature
+        music = inspect(exe, rtl, ram)[0]
+        self.assertEqual(music['source_candidate']['offset'], source)
+        self.assertEqual(music['independent_original_entry']['offset'], 0xc3bd)
+        self.assertFalse(music['independent_original_entry']['matches_live_16_bytes'])
+        self.assertIsNone(music['live_source_match'])
 
     def test_invalid_snapshot_is_reported_without_a_traceback(self):
         with self.assertRaisesRegex(ValueError, '1-MiB'):

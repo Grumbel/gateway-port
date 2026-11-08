@@ -24,6 +24,44 @@ TAIL_ENTRIES = (
     ('intro_diagnostic', 0x1258, 0x172e, None, None),
 )
 
+# The original resident entry boundaries are identifiable by their code
+# shape, despite the LINK-generated four-byte FAR target operands. No other
+# bytes are skipped: these templates are much stronger than a coincidental
+# 16-byte *internal* match. The diagnostic uses only its first 45 bytes;
+# later branches and stack arguments are still under investigation.
+# (original RTL entry, length to compare, FAR CALL opcode offsets)
+RELOCATED_RTL_ENTRIES = {
+    'control_key': (0x157b8, 45, (0, 5, 10, 15, 24, 36)),
+    'intro_diagnostic': (0x170c7, 45, (7, 29)),
+}
+
+
+def match_relocated_far_entry(original, live, call_offsets, length):
+    """Compare a specific original entry, masking *only* FAR CALL operands."""
+    if len(original) < length or len(live) < length:
+        return False
+    ignored = set()
+    for start in call_offsets:
+        if start < 0 or start + 5 > length:
+            return False
+        if original[start:start + 5] != b'\x9a\x00\x00\x00\x00':
+            return False
+        if live[start] != 0x9a:
+            return False
+        ignored.update(range(start + 1, start + 5))
+    return all(original[index] == live[index]
+               for index in range(length) if index not in ignored)
+
+
+def read_linked_far_calls(live, source_offset, call_offsets):
+    """Report relocated FAR operands without presuming callee semantics."""
+    return [
+        {'original_call_offset': source_offset + start,
+         'target_offset': int.from_bytes(live[start + 1:start + 3], 'little'),
+         'target_segment': int.from_bytes(live[start + 3:start + 5], 'little')}
+        for start in call_offsets
+    ]
+
 
 def entry_prefix_bytes(original, live):
     """Number of identical bytes at the two entry addresses (max 16)."""
@@ -50,8 +88,9 @@ def inspect(exe, rtl, ram, load_segment=0x1000):
         prefix = 0
         if candidate is not None:
             original = {'exe': exe, 'rtl': rtl}[candidate['file']]
-            source_offset = candidate['offset']
-            prefix = entry_prefix_bytes(original[source_offset:source_offset + 16], live)
+            candidate_offset = candidate['offset']
+            prefix = entry_prefix_bytes(original[candidate_offset:candidate_offset + 16],
+                                        live)
         row = {
             'name': name,
             'load_relative_target': {'segment': segment, 'offset': offset},
@@ -86,6 +125,32 @@ def inspect(exe, rtl, ram, load_segment=0x1000):
             row['live_source_match'] = (
                 {'file': 'rtl', 'offset': 0xc3bd, 'via': 'relocated-original-guard'}
                 if row['relocated_music_guard'] else None)
+        elif name in RELOCATED_RTL_ENTRIES:
+            entry_offset, length, call_offsets = RELOCATED_RTL_ENTRIES[name]
+            original = rtl[entry_offset:entry_offset + length]
+            relocated = ram[physical:physical + length]
+            matched = match_relocated_far_entry(original, relocated,
+                                                call_offsets, length)
+            row['relocated_original_entry'] = {
+                'file': 'rtl',
+                'offset': entry_offset,
+                'matched': matched,
+                'compared_nonrelocated_bytes': length - 4 * len(call_offsets),
+                'far_call_count': len(call_offsets),
+            }
+            row['entry_status'] = ('relocated_original_entry' if matched
+                                   else 'entry_unmapped_or_relocated')
+            row['live_source_match'] = (
+                {'file': 'rtl', 'offset': entry_offset,
+                 'via': 'relocated-original-far-calls',
+                 'matched_nonrelocated_bytes': length - 4 * len(call_offsets)}
+                if matched else None)
+            if matched:
+                row['relocated_far_calls'] = read_linked_far_calls(
+                    relocated, entry_offset, call_offsets)
+            elif candidate is not None and prefix >= 8:
+                row['entry_status'] = 'source_entry_candidate_not_semantically_verified'
+                row['live_source_match'] = candidate
         elif candidate is not None and prefix >= 8:
             # Matching the beginning as well as an internal code window
             # avoids the observed false matches at RTL:7ce0/eeba. Even an

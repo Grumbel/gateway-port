@@ -31,8 +31,8 @@ manufacture no-op definitions merely to obtain an executable.
 | --- | --- | --- |
 | `_main` | Microsoft 5.1 `LLIBCR.LIB(dos/crt0.asm)` | No working real-mode original startup yet. It must allocate and bind the original EXE/RTL data segments, initialize and relocate resident driver tables and assets, and transfer to `gate_exe_play_intro`. A placeholder `main()` would make LINK succeed but not create a working Gateway launcher. |
 | `_gate_linked_initialize_c306ca35` | `GATE.RTL:c3bd..c6fe`, linked `0a46:01ec` | **Staged as a bounded guard in `RTLHW.OBJ`.** Verified original flags/config early exits are preserved. Enabled music requires `GATE_004.MUS` and an IRQ 8 handler, so the substitute aborts on that branch. The changed `msc51-compile-hardware` DOS probe must pass before re-linking. |
-| `_gate_linked_handle_control_key` | Linked `123f:0004`, called on input key `0x0003` | The original Ctrl-C/Break resident path is not independently mapped or characterized; do not conflate it with ordinary keyboard flushing. |
-| `_gate_linked_print_intr_b006848b` | Linked `1258:172e`, called by image sequence failure paths | The original output destination and calling convention require confirmation; a no-op diagnostic would hide loader failures. |
+| `_gate_linked_handle_control_key` | `GATE.RTL:157b8..157e4`, linked `123f:0004`, called on input key `0x0003` | The *entry* is now identified as six relocated FAR calls followed by `RETF`, but their destinations and side effects must be checked; do not conflate Ctrl-C/Break cleanup with ordinary keyboard flushing. |
+| `_gate_linked_print_intr_b006848b` | `GATE.RTL:170c7..1712d`, linked `1258:172e`, called by image sequence failure paths | The *entry* is now located; it formats into a 258-byte local buffer, calls a resident display helper and polls for input. Its actual destination, callee ABI and failure behavior still require confirmation; a no-op would hide loader failures. |
 
 The `tools/inspect_msc51_link_tail.py` command inspects these three live
 FAR targets against the original binary images in a captured conventional
@@ -46,6 +46,27 @@ does not match. The diagnostic target has no match. They are *unverified code
 windows*, not original routine identities, and the tool now excludes them
 from `live_source_match`. A later RAM capture can contain valid code but no
 longer contain the code that the startup FAR calls originally reached.
+
+The user's **22-second** capture instead exposes both original resident
+entries. At linked `123f:0004`, the first 32 live bytes match 12 of 12
+*non-relocated* bytes of `RTL:157b8` (four consecutive FAR calls, followed
+by `mov ax,1; push ax; call far; add sp,2`; one more FAR call and `RETF`
+follow). At linked `1258:172e`, the first 32 bytes match 26 of 26 stable
+bytes at `RTL:170c7`: `push bp; mov bp,sp; sub sp,102h`, a relocated FAR
+call, and arguments prepared for a second FAR call. The raw prefix matcher
+reported only 1 and 8 bytes respectively because the FAR-call target
+operands are linked by the DOS loader. Neither is evidence that the later
+39-second occupants are the same functions.
+
+The inspector now separately verifies **entry-anchored** signatures by
+skipping *only* known four-byte FAR-call relocation operands. For control
+it compares the full 45-byte function (21 invariant bytes, six FAR calls).
+For diagnostics it compares the first 45 bytes (37 invariant bytes, two FAR
+calls). On a successful check, `entry_status=relocated_original_entry` and
+`relocated_far_calls` lists their actual linked call operands. This verifies
+code identity, **not** the callees' behavior, arguments or DOS-equivalent
+implementation. A user-side rerun with the 22-second snapshot is required
+to validate all 45 bytes and recover the linked call operands.
 
 Capture an **earlier** original 22-second intro image (the same canonical
 snapshot described in [intro-ghidra.md](intro-ghidra.md)). The `probe`
@@ -68,11 +89,12 @@ python3 tools/inspect_msc51_link_tail.py \
   --ram build/intro-analysis/at-22000.bin --json
 ```
 
-Only `original_music_entry` certifies the original music entry's *two
-independently verified relocated DS operands*; a `source_candidate` records
-an internal byte-window match but does **not** certify function identity.
-The control and diagnostic endpoints still require original-entry traces
-and calling-convention evidence before adding linker definitions.
+`original_music_entry` certifies the original music entry's *two
+independently verified relocated DS operands*; `relocated_original_entry`
+certifies a known control/diagnostic entry's stable instruction skeleton.
+A `source_candidate` is only an internal byte-window match and does **not**
+certify function identity. The control and diagnostic routines still require
+callee traces and calling-convention evidence before adding linker definitions.
 
 ## Historical 26-name LINK report (superseded)
 
