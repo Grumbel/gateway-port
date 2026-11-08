@@ -72,22 +72,25 @@ more FAR calls at `rtl:17103`, `1710c`, and `17115`. The inspector now
 separately checks that full 103-byte body (83 invariant bytes, five FAR
 calls), returning `complete_original_entry.matched` and all five target
 operands only if the longer check succeeds. If it fails, the established
-45-byte/two-call result remains intact. The user has **not yet run** this
-longer validation on original guest RAM.
-The **eight directly observed relocated FAR operands** are:
+45-byte/two-call result remains intact. The user's 22-second guest snapshot
+**passed the complete 103-byte check**, including all 83 invariant bytes.
+The **eleven directly observed relocated FAR operands** are:
 
 | Original call site | Linked target (22-second runtime) | RTL source projection | Evidence/status |
 | --- | --- | --- | --- |
 | `rtl:157b8` | `221b:021f` | Unknown | Bank not yet identified; raw `rtl:15793` window falls in data, not a callee entry |
 | `rtl:157bd` | `1a46:01c0` | `rtl:c391` | Existing bank `0a46` projects here |
-| `rtl:157c2` | `1e48:0202` | Candidate `rtl:10da1` | Entry lies after a `RETF`; dedicated relocatable-opcode check is staged, awaiting the user's live RAM rerun |
+| `rtl:157c2` | `1e48:0202` | `rtl:10da1` | Entry-anchored, two FAR and four WORD relocations; matches user's live 48-byte entry |
 | `rtl:157c7` | `1c4d:008b` | `rtl:e771` | Existing bank `0c4d` projects here |
 | `rtl:157d0` | `1f10:035a` | `rtl:11e5f` | Existing bank `0f10` projects here |
 | `rtl:157dc` | `12a5:0b40` | `rtl:621e` | Existing bank `02a5` projects here |
 | `rtl:170ce` | `1cdc:06de` | `rtl:f827` | Existing bank `0cdc` projects here |
 | `rtl:170e4` | `12a5:33ec` | `rtl:8aca` | Existing bank `02a5` projects here |
+| `rtl:17103` | `1e48:07fe` | `rtl:1139d` | New entry-anchored VFX/mouse-state routine, original flag WORD relocated |
+| `rtl:1710c` | `1df2:000a` | `rtl:1054d` | New bounded 38-byte FAR routine, DS counter WORDs relocated |
+| `rtl:17115` | `1df2:0030` | `rtl:10573` | New 48-byte entry prefix, DS counter WORDs relocated |
 
-The six file offsets are **bank-base projections**, not independently
+The six *older* file offsets are **bank-base projections**, not independently
 verified callee entry matches. Existing Ghidra preparation validates each
 bank with aggregate matches and independent witnesses on the intro snapshot.
 The inspector now performs those checks again before returning an
@@ -99,22 +102,59 @@ a verified function identity.
 
 The first call's raw `rtl:15793` byte-window match is misleading: static
 disassembly places it in a data region. It must remain unknown until its
-runtime code and resident bank can be identified independently.
+original file location and resident bank can be identified independently.
+The 48 live bytes do reveal a bounded branch: it compares signed
+`DS:156e` to zero and, when nonnegative, pushes `DS:6152` and `DS:6150`,
+calls resident `12a5:0f62`, sets `DS:156e=ffff` and `DS:1570=0000`,
+then returns FAR. This is an observed runtime code skeleton, **not** a
+validated original source identity or a sufficient ABI specification.
 
-The third call is more promising. `rtl:10da1..10dc6` is a bounded FAR
+The third call is now identified as `rtl:10da1..10dc6`, a bounded FAR
 routine (preceded and terminated by `RETF`). It starts with `push cs; call
 near rtl:11078`, tests bits `0x0c` of a relocated DS byte, conditionally
-passes two FAR pointers (`DS:0000` and `DS:0080`) to separate FAR callees,
+passes two FAR pointers (originally `DS:0000` and `DS:0080`) to FAR callees,
 then clears the same relocated DS word and returns. Its original 38 bytes
-contain two FAR calls with relocated target operands and two relocated DS
-word offsets. The new inspector verifies **all 26 invariant bytes**, that
-both call opcodes remain intact, and that the two DS references still name
-the same word. Only if this passes on the user's actual 22-second snapshot
-does it emit `relocated_source_match`, `relocated_ds_word` and
-`callee_far_calls` (two nested targets); those nested calls are resolved
-through independently validated resident banks where possible. This is
-still *identity* evidence, not an implementation of the call's video-state
-effects. No 22-second validation of this nested entry has yet been supplied.
+contain **six relocated operands**: two FAR targets, two references to the
+same DS word, and two immediate buffer addresses. In the user's live bytes,
+these become `DS:13d2` twice and `DS:555c`/`DS:55dc`; the address
+difference remains `0080h`. The 26-invariant-byte initial matcher was too
+strict because it did not account for those buffer-address relocations.
+The revised check compares **22 truly invariant bytes**, preserves the
+original DS-word equality and buffer-address difference, and checks both
+FAR opcodes. Rechecking the actual 48 live bytes supplied by the user
+against the pinned original `GATE.RTL` now succeeds. Both nested FAR calls
+target the same observed runtime entry, `245d:016c`; that callee's source
+identity and behavior remain unresolved until the new inspector emits its
+live bytes. The original 38-byte body and these specific operand
+relationships are verified; its video-state semantics are not yet ported.
+
+Three additional diagnostic callees now have strong original entry
+boundaries, not merely byte-window guesses:
+
+- `1e48:07fe` maps to `rtl:1139d`, immediately after `RETF` at `rtl:1139c`.
+  It tests flags `& 28h`, calls a same-segment helper and submits an
+  `AX=0033h` resident request. The live 48-byte prefix matches 42
+  invariant bytes after the DS operand and FAR target are excluded.
+- `1df2:000a` maps to full FAR routine `rtl:1054d..10572`, which sends a
+  request with argument `1` and tests two relocated DS counters. The linked
+  counter offsets are `1340h` and `133eh`, preserving their original
+  two-byte difference. Its 30 invariant bytes match.
+- `1df2:0030` maps to `rtl:10573`, immediately following that `RETF`.
+  Its opening branch decrements `DS:133e` and submits `AX=0021h`; the
+  48-byte inspected prefix has 40 invariant bytes. The remainder of this
+  function is not yet verified.
+
+These entry pairs independently imply consistent resident bank mappings:
+
+| Resident segment (load-relative) | Original file base | Verified entry anchors |
+| --- | --- | --- |
+| `0e48` | `rtl:10b9f` | `0202 → 10da1`, `07fe → 1139d` |
+| `0df2` | `rtl:10543` | `000a → 1054d`, `0030 → 10573` |
+
+The inspector now reports `corroborated_resident_bank` only when two
+distinct entry-anchored matches imply the same base within a segment. This
+does **not** validate every byte in the intervening bank or prove all
+possible callee entries there.
 
 For other unmatched FAR targets, the inspector now includes 48 live entry
 bytes as `live_entry_hex`, allowing analysis of the unknown `221b:021f`
@@ -129,8 +169,9 @@ two records; `rtl:11e5f` reads a device descriptor and dispatches at least
 two numbered requests; `rtl:621e` performs multiple near calls; `rtl:f827`
 branches on a resident mode selector; `rtl:8aca` initializes a FAR buffer
 descriptor and passes it to another formatter. Actual DOS side effects,
-the unknown `221b`/`1e48` banks and the remaining three diagnostic FAR
-calls have yet to be traced. None of these observations justifies replacing
+the original source for `221b:021f` and `245d:016c`, and the remaining
+diagnostic input-polling behavior have yet to be established. None of
+these observations justifies replacing
 the Ctrl-Break or diagnostic routines with a stub.
 
 Capture an **earlier** original 22-second intro image (the same canonical

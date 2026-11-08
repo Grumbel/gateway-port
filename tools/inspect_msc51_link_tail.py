@@ -11,6 +11,7 @@ functions, and an exact window may begin in the middle of an instruction.
 """
 
 import argparse
+from collections import defaultdict
 import json
 from pathlib import Path
 import sys
@@ -44,17 +45,26 @@ EXTENDED_RTL_ENTRIES = {
     'intro_diagnostic': (0x170c7, 103, (7, 29, 60, 69, 78)),
 }
 
-# The third control-key call leads to a complete, independently bounded RTL
-# routine: previous RETF at 10da0, entry at 10da1, next entry at 10dc7.
-# Its DS word at offsets 6 and 33 is relocated twice, and its two FAR CALL
-# operands are relocated. The 16-bit values must agree after relocation.
-# (relative segment, target offset) -> (file entry, bytes, FARs, DS words)
+# These original source entries can be checked without treating an internal
+# byte-window match as a function boundary. The control-key video cleanup
+# routine 10da1..10dc6 has two repeated DS operands AND two absolute buffer
+# immediates: 0000/0080 -> 555c/55dc in the user's 22-second live snapshot.
+# Both pairs preserve their original WORD differences after relocation.
+# 1139d and 10573 follow RETF instructions; 1054d ends at its own RETF,
+# and its exact target offset selects it after the bank's initial records.
+# The 10573 check uses only its first 48 bytes of a longer function.
+# (relative segment, offset) -> original entry, length, FAR calls, zero WORDs,
+#                                pairs of WORDs preserving their delta
 RELOCATED_CALLEE_ENTRIES = {
-    (0x0e48, 0x0202): (0x10da1, 38, (16, 26), (6, 33)),
+    (0x0e48, 0x0202): (0x10da1, 38, (16, 26), (), ((6, 33), (12, 22))),
+    (0x0e48, 0x07fe): (0x1139d, 48, (41,), (13,), ()),
+    (0x0df2, 0x000a): (0x1054d, 38, (4,), (), ((18, 25),)),
+    (0x0df2, 0x0030): (0x10573, 48, (41,), (), ((8, 15),)),
 }
 
 
-def match_relocated_far_entry(original, live, call_offsets, length, word_offsets=()):
+def match_relocated_far_entry(original, live, call_offsets, length,
+                              word_offsets=(), word_pairs=()):
     """Compare an original entry, masking only known relocated operand slots."""
     if len(original) < length or len(live) < length:
         return False
@@ -73,6 +83,19 @@ def match_relocated_far_entry(original, live, call_offsets, length, word_offsets
         if original[start:start + 2] != b'\x00\x00':
             return False
         ignored.update(range(start, start + 2))
+    for first, second in word_pairs:
+        if first < 0 or second < 0 or first + 2 > length or second + 2 > length:
+            return False
+        if abs(first - second) < 2:
+            return False
+        source_delta = (int.from_bytes(original[second:second + 2], 'little') -
+                        int.from_bytes(original[first:first + 2], 'little')) & 0xffff
+        linked_delta = (int.from_bytes(live[second:second + 2], 'little') -
+                        int.from_bytes(live[first:first + 2], 'little')) & 0xffff
+        if source_delta != linked_delta:
+            return False
+        ignored.update(range(first, first + 2))
+        ignored.update(range(second, second + 2))
     return all(original[index] == live[index]
                for index in range(length) if index not in ignored)
 
@@ -141,24 +164,26 @@ def annotate_relocated_callees(rows, exe, rtl, ram, load_segment):
                     continue
             special = RELOCATED_CALLEE_ENTRIES.get((segment, offset))
             if special is not None:
-                source_offset, length, far_offsets, word_offsets = special
+                source_offset, length, far_offsets, word_offsets, word_pairs = special
                 physical = (call['target_segment'] << 4) + offset
                 linked = ram[physical:physical + length]
                 source = rtl[source_offset:source_offset + length]
                 matched = match_relocated_far_entry(
-                    source, linked, far_offsets, length, word_offsets)
-                # Both instructions in this particular function reference
-                # the same DS word, so relocation must preserve equality.
-                matched = matched and linked[word_offsets[0]:word_offsets[0] + 2] == \
-                    linked[word_offsets[1]:word_offsets[1] + 2]
+                    source, linked, far_offsets, length, word_offsets, word_pairs)
                 if matched:
                     call['relocated_source_match'] = {
                         'file': 'rtl', 'offset': source_offset,
-                        'via': 'entry-anchored-far-and-ds-relocations',
+                        'via': 'entry-anchored-relocated-operands',
                         'matched_nonrelocated_bytes': (length - 4 * len(far_offsets)
-                                                      - 2 * len(word_offsets)),
-                        'relocated_ds_word': int.from_bytes(
-                            linked[word_offsets[0]:word_offsets[0] + 2], 'little')}
+                                                      - 2 * len(word_offsets)
+                                                      - 4 * len(word_pairs)),
+                        'relocated_word_pairs': [
+                            {'source_offsets': [source_offset + first,
+                                                source_offset + second],
+                             'runtime_values': [int.from_bytes(
+                                 linked[index:index + 2], 'little')
+                                 for index in (first, second)]}
+                            for first, second in word_pairs]}
                     call['callee_far_calls'] = read_linked_far_calls(
                         linked, source_offset, far_offsets)
                     nested.extend(call['callee_far_calls'])
@@ -176,6 +201,33 @@ def annotate_relocated_callees(rows, exe, rtl, ram, load_segment):
             call['live_entry_hex'] = (ram[physical:physical + 48].hex()
                                       if 0 <= physical < len(ram) else None)
         calls = nested
+
+    # Two independently matched function boundaries in the same runtime
+    # segment establish a shared original file base. This does not license
+    # projecting arbitrary unverified entries elsewhere in that segment.
+    bases = defaultdict(list)
+    for row in rows:
+        for call in row.get('relocated_far_calls', ()):
+            match = call.get('relocated_source_match')
+            if match is None:
+                continue
+            relative = call['target_segment'] - load_segment
+            file_base = match['offset'] - call['target_offset']
+            if file_base >= 0:
+                bases[relative, file_base].append(call)
+    for (relative, file_base), group in bases.items():
+        entries = {call['target_offset'] for call in group}
+        if len(entries) < 2:
+            continue
+        if any(other_relative == relative and other_base != file_base
+               for other_relative, other_base in bases):
+            continue
+        evidence = {'file': 'rtl', 'file_base': file_base,
+                    'bank_relative_segment': relative,
+                    'via': 'two-entry-anchored-relocation-matches',
+                    'linked_entry_offsets': sorted(entries)}
+        for call in group:
+            call['corroborated_resident_bank'] = evidence
 
 
 def entry_prefix_bytes(original, live):

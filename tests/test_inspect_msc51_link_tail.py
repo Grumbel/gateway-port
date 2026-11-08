@@ -204,7 +204,8 @@ class LinkTailTests(unittest.TestCase):
         _, seg, off, _, _ = TAIL_ENTRIES[1]
         ram[(0x1000 + seg) * 16 + off:((0x1000 + seg) * 16 + off) + length] = linked
 
-        (relative_segment, callee_offset), (source_offset, size, fars, words) = \
+        (relative_segment, callee_offset), (source_offset, size, fars,
+                                            words, pairs) = \
             next(iter(RELOCATED_CALLEE_ENTRIES.items()))
         self.assertEqual((relative_segment, callee_offset), (0x0e48, 0x0202))
         callee_original = bytearray((index * 11 + 31) & 255 for index in range(size))
@@ -212,12 +213,21 @@ class LinkTailTests(unittest.TestCase):
             callee_original[start:start + 5] = b'\x9a\x00\x00\x00\x00'
         for start in words:
             callee_original[start:start + 2] = b'\x00\x00'
+        for first, second in pairs:
+            callee_original[first:first + 2] = b'\x00\x00'
+            callee_original[second:second + 2] = (b'\x00\x00' if first == 6
+                                                  else b'\x80\x00')
         rtl[source_offset:source_offset + size] = callee_original
         callee_linked = bytearray(callee_original)
         for index, start in enumerate(fars):
             callee_linked[start + 1:start + 5] = bytes((index + 7, 0, 0x11, 0x22))
         for start in words:
             callee_linked[start:start + 2] = b'\x44\x06'
+        for first, second in pairs:
+            callee_linked[first:first + 2] = (b'\x44\x06' if first == 6
+                                               else b'\x5c\x55')
+            callee_linked[second:second + 2] = (b'\x44\x06' if first == 6
+                                                 else b'\xdc\x55')
         physical = (0x1000 + relative_segment) * 16 + callee_offset
         ram[physical:physical + size] = callee_linked
 
@@ -234,8 +244,11 @@ class LinkTailTests(unittest.TestCase):
             row = inspect(exe, rtl, ram)[1]
         call = row['relocated_far_calls'][2]
         self.assertEqual(call['relocated_source_match']['offset'], source_offset)
-        self.assertEqual(call['relocated_source_match']['matched_nonrelocated_bytes'], 26)
-        self.assertEqual(call['relocated_source_match']['relocated_ds_word'], 0x0644)
+        self.assertEqual(call['relocated_source_match']['matched_nonrelocated_bytes'], 22)
+        self.assertEqual(call['relocated_source_match']['relocated_word_pairs'][0]
+                         ['runtime_values'], [0x0644, 0x0644])
+        self.assertEqual(call['relocated_source_match']['relocated_word_pairs'][1]
+                         ['runtime_values'], [0x555c, 0x55dc])
         self.assertEqual(len(call['callee_far_calls']), 2)
         self.assertEqual(call['callee_far_calls'][0]['original_call_offset'],
                          source_offset + fars[0])
@@ -254,10 +267,38 @@ class LinkTailTests(unittest.TestCase):
         ram[physical + 11] ^= 1
         # Both DS references point to one original word; different relocated
         # addresses are not consistent with this exact callee template.
-        ram[physical + words[1]] ^= 1
+        ram[physical + pairs[0][1]] ^= 1
         with patch('inspect_msc51_link_tail.RTL_BANKS', (bank,)):
             call = inspect(exe, rtl, ram)[1]['relocated_far_calls'][2]
         self.assertNotIn('relocated_source_match', call)
+
+    def test_relative_word_relocations_preserve_original_delta(self):
+        for key, (entry, length, calls, words, pairs) in RELOCATED_CALLEE_ENTRIES.items():
+            original = bytearray((index * 3 + 17) & 255 for index in range(length))
+            for start in calls:
+                original[start:start + 5] = b'\x9a\x00\x00\x00\x00'
+            for start in words:
+                original[start:start + 2] = b'\x00\x00'
+            for pair_index, (first, second) in enumerate(pairs):
+                original[first:first + 2] = (0x40 * pair_index).to_bytes(2, 'little')
+                original[second:second + 2] = (
+                    0x40 * pair_index + (0x80 if pair_index else 0)).to_bytes(2, 'little')
+            linked = bytearray(original)
+            for start in calls:
+                linked[start + 1:start + 5] = b'\x07\x00\x11\x22'
+            for start in words:
+                linked[start:start + 2] = b'\x33\x12'
+            for pair_index, (first, second) in enumerate(pairs):
+                base = 0x133e + 0x100 * pair_index
+                linked[first:first + 2] = base.to_bytes(2, 'little')
+                linked[second:second + 2] = (
+                    base + (0x80 if pair_index else 0)).to_bytes(2, 'little')
+            self.assertTrue(match_relocated_far_entry(original, linked, calls,
+                                                      length, words, pairs), hex(entry))
+            if pairs:
+                linked[pairs[-1][1]] ^= 1
+                self.assertFalse(match_relocated_far_entry(original, linked, calls,
+                                                           length, words, pairs), hex(entry))
 
     def test_full_diagnostic_five_call_signature_falls_back_to_verified_prefix(self):
         exe = b'MZ' + bytes(100)
@@ -288,6 +329,59 @@ class LinkTailTests(unittest.TestCase):
         self.assertTrue(row['relocated_original_entry']['matched'])
         self.assertFalse(row['complete_original_entry']['matched'])
         self.assertEqual(len(row['relocated_far_calls']), 2)
+
+    def test_full_diagnostic_resolves_three_new_verified_callee_entries(self):
+        exe = b'MZ' + bytes(100)
+        rtl = bytearray(0x1b000)
+        ram = bytearray(1 << 20)
+        entry, length, calls = EXTENDED_RTL_ENTRIES['intro_diagnostic']
+        original = bytearray((index * 17 + 13) & 255 for index in range(length))
+        linked = bytearray(original)
+        targets = [(0x0e48, 0x07fe), (0x0df2, 0x000a), (0x0df2, 0x0030)]
+        for index, start in enumerate(calls):
+            original[start:start + 5] = b'\x9a\x00\x00\x00\x00'
+            rel_seg, off = targets[index - 2] if index >= 2 else (0x02a5, 0x003e)
+            linked[start:start + 5] = (b'\x9a' + off.to_bytes(2, 'little') +
+                                        (0x1000 + rel_seg).to_bytes(2, 'little'))
+        rtl[entry:entry + length] = original
+        _, seg, off, _, _ = TAIL_ENTRIES[2]
+        physical = (0x1000 + seg) * 16 + off
+        ram[physical:physical + length] = linked
+
+        for rel_seg, callee_off in targets:
+            source_offset, size, fars, words, pairs = \
+                RELOCATED_CALLEE_ENTRIES[rel_seg, callee_off]
+            original = bytearray((index * 7 + 5) & 255 for index in range(size))
+            for start in fars:
+                original[start:start + 5] = b'\x9a\x00\x00\x00\x00'
+            for start in words:
+                original[start:start + 2] = b'\x00\x00'
+            for first, second in pairs:
+                original[first:first + 2] = b'\x02\x00'
+                original[second:second + 2] = b'\x00\x00'
+            rtl[source_offset:source_offset + size] = original
+            relocated = bytearray(original)
+            for start in fars:
+                relocated[start + 1:start + 5] = b'\x01\x00\xa5\x12'
+            for start in words:
+                relocated[start:start + 2] = b'\xd2\x13'
+            for first, second in pairs:
+                relocated[first:first + 2] = b'\x40\x13'
+                relocated[second:second + 2] = b'\x3e\x13'
+            target_physical = (0x1000 + rel_seg) * 16 + callee_off
+            ram[target_physical:target_physical + size] = relocated
+
+        row = inspect(exe, rtl, ram)[2]
+        self.assertTrue(row['complete_original_entry']['matched'])
+        for call, (rel_seg, callee_off) in zip(row['relocated_far_calls'][2:], targets):
+            self.assertEqual(call['relocated_source_match']['offset'],
+                             RELOCATED_CALLEE_ENTRIES[rel_seg, callee_off][0])
+            self.assertEqual(len(call['callee_far_calls']), 1)
+        bank = row['relocated_far_calls'][3]['corroborated_resident_bank']
+        self.assertEqual(bank['file_base'], 0x10543)
+        self.assertEqual(bank['bank_relative_segment'], 0x0df2)
+        self.assertEqual(bank['linked_entry_offsets'], [0x000a, 0x0030])
+        self.assertNotIn('corroborated_resident_bank', row['relocated_far_calls'][2])
 
     def test_relocated_operand_mask_requires_source_placeholders(self):
         original = bytearray(b'\x90\x9a\x00\x00\x00\x00\x90\x00\x00\xcb')
