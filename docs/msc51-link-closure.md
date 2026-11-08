@@ -907,6 +907,20 @@ to the standard **snapshot-validated** intro Ghidra import. This gives
 Ghidra relocated code bytes for further inspection without claiming
 the original binary can yet be rebuilt from only those file offsets.
 
+**Later packed-code correction (22-second snapshot):** The raw file's
+single-offset comparison was misleading beyond the first function group.
+Distinct `GATE.RTL` metadata gaps separate six fragments occupying
+`252c:0000..0aaf` and three occupying `25d7:0000..0d7f` in RAM. Every
+fragment has 90–96% individually identical bytes against its own source
+file range, and distinctive original Microsoft C function prologues
+anchor the transitions. The mapping explains the apparent 489-byte
+one-delta discrepancy in the first B window, without pretending the
+remaining relocation operands are understood. The complete source-span
+table and 22 new Ghidra entry candidates are in [intro-ghidra.md](intro-ghidra.md).
+The original 350–1500ms trace sampled only the first `0600h`/`0640h`
+bytes; the expanded later regions are presently proven at 22 seconds,
+not claimed to have been resident at 350ms.
+
 **Microsoft C 5.1 build correction:** The first user-side `DATA.BAT` run
 compiled `DATA.C` but stopped with `DATACHK.C(22): C2073` (an initialized
 automatic `char name[]`), so **neither test executable ran**. Both test

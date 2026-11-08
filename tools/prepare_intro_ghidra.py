@@ -50,20 +50,33 @@ RTL_CORE_BANKS = (
          witnesses=(0x8298, 0x91d8, 0x91ea)),
 )
 
-# Source-to-resident mappings from the original 350ms startup
-# captures. The 252c bank has *multiple* source deltas: import only its
-# independently verified initial 0x00e4 bytes, not a fictitious continuous
-# code image. The 25d7 window has five matching runs under one file delta,
-# but 489/1600 raw bytes differ. Both banks were independently checked
-# against the private 22-second reference RAM: 219/228 and 1111/1600
-# unchanged bytes, respectively, with all listed witness runs verified.
-# Every import revalidates these against its selected snapshot.
-# These are GATE.RTL original file offsets, not embedded executable bytes.
+# Reconstructed physical code windows from original startup snapshots. The
+# original RTL file inserts metadata between linked code fragments, so a
+# single file offset delta cannot explain either entire window. Every span
+# below is independently checked against the 22-second capture (90-96% exact
+# bytes), with function-entry witnesses. The B window contains unresolved
+# single-byte gaps at offsets 04ad and 0c15; do not assign RTL source offsets.
+# All file_base values identify original GATE.RTL bytes (not embedded data).
 RTL_GRAPHICS_BANKS = (
-    dict(segment=0x152c, file_base=0x18df6, size=0x00e4,
-         witnesses=(0x18e00, 0x18e28, 0x18e49, 0x18e5b)),
-    dict(segment=0x15d7, file_base=0x19993, size=0x0640,
-         witnesses=(0x19a20, 0x19ae6, 0x19b9d, 0x19c2c, 0x19dfa)),
+    dict(segment=0x152c, file_base=0x18df6, size=0x0ab0,
+         spans=(
+             dict(offset=0x0000, file_base=0x18df6, size=0x00e4),
+             dict(offset=0x00e4, file_base=0x18edf, size=0x009e),
+             dict(offset=0x0182, file_base=0x18f8c, size=0x04e6),
+             dict(offset=0x0668, file_base=0x194d7, size=0x010a),
+             dict(offset=0x0772, file_base=0x19606, size=0x0146),
+             dict(offset=0x08b8, file_base=0x19777, size=0x01f8),
+         ),
+         witnesses=(0x18e00, 0x18e28, 0x18e49, 0x18e5b, 0x18edf,
+                    0x18f8c, 0x194d7, 0x19606, 0x19777)),
+    dict(segment=0x15d7, file_base=0x19993, size=0x0d80,
+         spans=(
+             dict(offset=0x0000, file_base=0x19993, size=0x04ad),
+             dict(offset=0x04ae, file_base=0x19ec2, size=0x0767),
+             dict(offset=0x0c16, file_base=0x1a6ee, size=0x016a),
+         ),
+         witnesses=(0x19a20, 0x19ae6, 0x19b9d, 0x19c2c, 0x19dfa,
+                    0x19ec2, 0x19ef2, 0x19f2d, 0x1a6ee)),
 )
 RTL_BANKS = RTL_CORE_BANKS + RTL_GRAPHICS_BANKS
 
@@ -95,6 +108,24 @@ RTL_CANDIDATES = {
     0x18e28: 'linked-graphics-coordinate-entry',
     0x18e49: 'linked-graphics-coordinate-entry',
     0x18e5b: 'linked-graphics-helper-entry',
+    0x18edf: 'linked-graphics-entry',
+    0x18f23: 'linked-graphics-entry',
+    0x18f54: 'linked-graphics-entry',
+    0x18f8c: 'linked-graphics-entry',
+    0x194d7: 'linked-graphics-entry',
+    0x1953c: 'linked-graphics-entry',
+    0x19599: 'linked-graphics-entry',
+    0x19606: 'linked-graphics-entry',
+    0x19658: 'linked-graphics-entry',
+    0x19688: 'linked-graphics-entry',
+    0x196b2: 'linked-graphics-entry',
+    0x196d5: 'linked-graphics-entry',
+    0x196ff: 'linked-graphics-entry',
+    0x19722: 'linked-graphics-entry',
+    0x19777: 'linked-graphics-entry',
+    0x197a9: 'linked-graphics-entry',
+    0x1980c: 'linked-graphics-entry',
+    0x19997: 'linked-graphics-entry',
     0x199fe: 'linked-graphics-entry',
     0x19a69: 'linked-graphics-pixel-entry',
     0x19ac6: 'linked-graphics-pixel-entry',
@@ -102,6 +133,10 @@ RTL_CANDIDATES = {
     0x19b76: 'linked-graphics-entry',
     0x19c05: 'linked-graphics-entry',
     0x19dd3: 'linked-graphics-entry',
+    0x19ec2: 'linked-graphics-entry',
+    0x19ef2: 'linked-graphics-entry',
+    0x19f2d: 'linked-graphics-entry',
+    0x1a6ee: 'linked-graphics-entry',
 }
 
 # The 0x1000 base is added only for *relative* RTL banks. The physical
@@ -201,38 +236,66 @@ def mz_relocations(exe):
     return header_bytes, relocations
 
 
+def source_spans(bank):
+    """Return the bounded file-to-RAM fragments (not guessed linker gaps)."""
+    return bank.get('spans', (dict(offset=0, file_base=bank['file_base'],
+                                   size=bank['size']),))
+
+
+def source_span(bank, file_offset):
+    return next((span for span in source_spans(bank)
+                 if span['file_base'] <= file_offset <
+                 span['file_base'] + span['size']), None)
+
+
 def source_bank(banks, offset):
-    return next((bank for bank in banks
-                 if bank['file_base'] <= offset < bank['file_base'] + bank['size']), None)
+    return next((bank for bank in banks if source_span(bank, offset)), None)
 
 
 def validate_bank(rtl, snapshot, bank, load_segment):
     segment = bank['segment']
     start = (load_segment + segment) * 16
-    original = bank['file_base']
     size = bank['size']
-    if original + size > len(rtl) or start + size > len(snapshot):
+    spans = source_spans(bank)
+    if start + size > len(snapshot) or not spans:
         raise ValueError('truncated RTL bank 0x%04x' % segment)
-    # Relocations necessarily differ.  A high *aggregate* match and several
-    # individually matched instruction windows establish the bank identity;
-    # never demand that a relocated RTL is equal to the on-disk file.
-    matches = sum(a == b for a, b in zip(rtl[original:original + size],
-                                         snapshot[start:start + size]))
-    if matches < size * 0.60:
+    # File metadata between fragments is NOT part of the running image.
+    # Validate every fragment independently; a strong match on one cannot
+    # disguise a bad or accidentally overlapping mapping on another.
+    matches = 0
+    total = 0
+    last_end = 0
+    for span in spans:
+        off, original, length = (span['offset'], span['file_base'], span['size'])
+        if (off < last_end or length < 16 or off + length > size or
+                original < 0 or original + length > len(rtl)):
+            raise ValueError('invalid RTL bank source span 0x%04x' % segment)
+        last_end = off + length
+        exact = sum(a == b for a, b in zip(
+            rtl[original:original + length],
+            snapshot[start + off:start + off + length]))
+        if exact < length * 0.60:
+            raise ValueError('snapshot does not contain RTL bank 0x%04x '
+                             'source span +0x%x (%.1f%% match)' %
+                             (segment, off, exact * 100.0 / length))
+        matches += exact
+        total += length
+    if matches < total * 0.60:
         raise ValueError('snapshot does not contain RTL bank 0x%04x (%.1f%% match)' %
-                         (segment, matches * 100.0 / size))
+                         (segment, matches * 100.0 / total))
     verified = []
     for offset in bank['witnesses']:
-        relative = offset - original
-        if not 0 <= relative < size - 16:
+        span = source_span(bank, offset)
+        if span is None or offset + 16 > span['file_base'] + span['size']:
             raise ValueError('witness outside RTL bank: 0x%x' % offset)
+        relative = span['offset'] + offset - span['file_base']
         # Some dense routines contain segment fixups in almost every 12-byte
         # interval. Allow at most two altered operand bytes per witness; the
         # whole bank must independently pass the aggregate check above.
         if max(sum(a == b for a, b in zip(
                    rtl[offset + i:offset + i + 12],
                    snapshot[start + relative + i:start + relative + i + 12]))
-               for i in range(0, 49)) < 10:
+               for i in range(0, min(49, span['file_base'] + span['size'] - offset - 11))) < 10:
             raise ValueError('RTL 0x%x does not match live bank 0x%04x' %
                              (offset, segment))
         verified.append(offset)
@@ -281,14 +344,16 @@ def prepare(exe_path, rtl_path, snapshot_path, output, load_segment=0x1000,
         path.write_bytes(image)
         entries = [dict(name=aliases.get('gate_rtl_%x' % off,
                                        'gate_rtl_%x' % off), file_offset=off,
-                        offset=off - file_base,
+                        offset=(source_span(bank, off)['offset'] + off -
+                                source_span(bank, off)['file_base']),
                         role=('source-reconstructed' if off in
                               reconstructed_rtl_entries else
                               RTL_CANDIDATES.get(off, 'source-reconstructed')))
                    for off in sorted(rtl_entries)
-                   if file_base <= off < file_base + size]
+                   if source_span(bank, off)]
         sections.append(dict(name='INTRO_RTL_%04X' % segment, segment=segment,
                              file_base=file_base, size=size,
+                             source_spans=list(source_spans(bank)),
                              relocated_file=str(path.resolve()),
                              relocated_sha256=sha256(image),
                              exact_byte_matches=matches, witnesses=verified,

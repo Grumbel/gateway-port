@@ -15,11 +15,14 @@ and preserves their potentially overlapping addresses using Ghidra overlay
 spaces. The newly added `0c33` file-service bank has four independent entry
 signatures and five known far-entry targets. A linked far-call destination
 outside these segments remains unresolved, not a guessed function.
-The two additional graphics windows are loaded by the original DOS startup
-between 250 and 350ms and persist into this 22-second snapshot. The first
-is bounded to 228 bytes because its later RTL source offsets are packed
-nonlinearly; the second requires relocation-aware analysis and is imported
-from live RAM, not from the raw RTL file. Both are verified on every import.
+The first `0600h`/`0640h` bytes of the two additional graphics windows
+were observed to load between 250 and 350ms and remain unchanged through
+1500ms. The longer portions are independently verified in the 22-second
+reference, without asserting that they were already loaded at 350ms. The
+windows contain **nine independently verified source-file fragments**: six
+in the first window and three in the second. Their mappings account for
+metadata gaps in the original RTL file. Both contiguous runtime windows are
+imported from linked RAM, with every fragment reverified on each import.
 
 ## Capture the reference snapshot
 
@@ -117,15 +120,19 @@ batches for inspection instead of manually translating six functions per turn.
 `GATE.RTL:56de..93dd`, including linked `strlen` and the C runtime random
 generator. Its verified start is based on the on-disk/linked byte correlation;
 its end deliberately stops before the next region overwrites memory near
-`RTL:9480`. Two more EXE-relative graphics spans are `152c:0000..00e3`
-(resident `252c:0000..00e3`, first copied RTL file base `18df6`) and
-`15d7:0000..063f` (resident `25d7:0000..063f`, RTL file base `19993`).
-Direct comparison with the pinned 22-second guest RAM verified **219/228**
-and **1111/1600** exact source bytes, respectively, plus four and five
-independent witness runs. The latter's **489 changed bytes** make it unsafe
-to reconstruct as just the seven already verified `MOV AX,imm16` segment
-fixups. The first span deliberately stops before subsequent source chunks
-change their source-to-target mapping. Other unverified sections and external
+`RTL:9480`. Two more EXE-relative graphics spans are `152c:0000..0aaf`
+(resident `252c:0000..0aaf`, first copied RTL file base `18df6`) and
+`15d7:0000..0d7f` (resident `25d7:0000..0d7f`, RTL file base `19993`).
+Direct comparison with the pinned 22-second guest RAM verified **2601/2736**
+source bytes in A and **3198/3454** covered source bytes in B, each with
+multiple independent witnesses. The uncovered B bytes at `+04ad` and
+`+0c15` are not assigned original file offsets. Of B's previously reported
+489 differences against a *single* 1600-byte linear source, most resulted
+from wrongly projecting that file mapping beyond `+04ad`. Within the same
+first 1600 runtime bytes, only **154** mismatches remain across the verified
+fragments. Across the full extended B window, 256 differing covered bytes
+include relocation operands and have not all been explained. Other
+unverified sections and external
 service segments remain excluded. All missing calls must be mapped/verified before the intro is
 complete. An imported label or successful pseudocode export is not evidence
 that the original calling convention, signedness, data structure or guest
@@ -134,9 +141,31 @@ side effects are correct.
 The source-name lookup also follows `decomp/launcher/symbol-names.tsv`: the
 original file-offset identities remain intact even though reconstructed C
 functions have readable names. The pinned 22-second preparation check now
-produces **eight linked sections, 79 source RTL entry labels, and zero
+produces **eight linked sections, 101 source RTL entry labels, and zero
 unmapped known RTL entry labels**. This does not mean the RTL's complete
 function set or cross-bank calls have been recovered.
+
+The reconstructed graphics-fragment mapping is explicitly recorded in each
+Ghidra plan section's `source_spans`. `offset` is the runtime offset *inside*
+the bank; `file_base` is the first corresponding original RTL file byte.
+Relative offsets are not interchangeable across fragments:
+
+| Runtime graphics window | Runtime offset range | Original RTL file range |
+| --- | --- | --- |
+| `252c` | `0000..00e3` | `18df6..18ed9` |
+| `252c` | `00e4..0181` | `18edf..18f7c` |
+| `252c` | `0182..0667` | `18f8c..19471` |
+| `252c` | `0668..0771` | `194d7..195e0` |
+| `252c` | `0772..08b7` | `19606..1974b` |
+| `252c` | `08b8..0aaf` | `19777..1996e` |
+| `25d7` | `0000..04ac` | `19993..19e3f` |
+| `25d7` | `04ae..0c14` | `19ec2..1a628` |
+| `25d7` | `0c16..0d7f` | `1a6ee..1a857` |
+
+The additional 22 seeded entries are recognized by matching the original
+Microsoft C function prologues (before the patched `DS` immediate), not by
+guessing every function inside these source ranges. They are analysis
+candidates until their calls and semantics are independently verified.
 
 The newly mapped `0a46` span is anchored by the first startup FAR call in
 `GATE.EXE:134c`: original `0a46:01ec` appears at resident `1a46:01ec`

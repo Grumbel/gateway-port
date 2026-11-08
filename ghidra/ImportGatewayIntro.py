@@ -113,9 +113,13 @@ for section in plan['sections']:
     block.setRead(True)
     block.setWrite(False)
     block.setExecute(True)
-    block.setComment('One captured GATE.RTL segment, source base 0x%x; '
-                     'relocated bytes from DOS guest at 22s; NOT entire RTL' %
-                     section['file_base'])
+    spans = section.get('source_spans', [dict(offset=0,
+                                            file_base=section['file_base'],
+                                            size=section['size'])])
+    block.setComment('Captured GATE.RTL segment with %d verified source '
+                     'fragments, starting at RTL:0x%x; linker metadata '
+                     'gaps are not resident code; NOT entire RTL' %
+                     (len(spans), section['file_base']))
     for entry in section['entries']:
         annotate(block.getStart().add(entry['offset']), entry['name'],
                  'GATE.RTL:0x%x linked %04x:%04x' %

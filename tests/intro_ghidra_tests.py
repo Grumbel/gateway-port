@@ -16,7 +16,8 @@ from prepare_intro_ghidra import (EXE_SHA256, RTL_SHA256, EXE_ENTRIES,
                                   RTL_BANKS, RTL_CORE_BANKS, RTL_GRAPHICS_BANKS,
                                   RTL_CANDIDATES,
                                   RAW_COPY_CANDIDATE, find_source_entries,
-                                  source_bank, validate_bank,
+                                  source_bank, source_span, source_spans,
+                                  validate_bank,
                                   mz_relocations, prepare, staged_unlinked_copy)
 from run_intro_ghidra import command, run
 
@@ -39,39 +40,62 @@ class IntroGhidraTests(unittest.TestCase):
     def test_graphics_banks_are_bounded_and_snapshot_verified(self):
         self.assertEqual([(bank['segment'], bank['file_base'], bank['size'])
                           for bank in RTL_GRAPHICS_BANKS],
-                         [(0x152c, 0x18df6, 0x00e4),
-                          (0x15d7, 0x19993, 0x0640)])
+                         [(0x152c, 0x18df6, 0x0ab0),
+                          (0x15d7, 0x19993, 0x0d80)])
         rtl = bytes((i * 23 + i // 11) % 251 for i in range(0x21000))
         ram = bytearray(0x100000)
         original_segments = {(0x1000 + bank['segment']) for bank in RTL_CORE_BANKS}
         self.assertEqual(RTL_BANKS, RTL_CORE_BANKS + RTL_GRAPHICS_BANKS)
+        self.assertEqual((RTL_GRAPHICS_BANKS[0]['segment'] * 16 +
+                          RTL_GRAPHICS_BANKS[0]['size']),
+                         RTL_GRAPHICS_BANKS[1]['segment'] * 16)
         for bank in RTL_GRAPHICS_BANKS:
             self.assertNotIn(0x1000 + bank['segment'], original_segments)
             start = (0x1000 + bank['segment']) * 16
-            base = bank['file_base']
-            end = base + bank['size']
-            ram[start:start + bank['size']] = rtl[base:end]
-            self.assertTrue(all(base <= witness < end - 16 for witness
+            for span in source_spans(bank):
+                base = span['file_base']
+                end = base + span['size']
+                offset = span['offset']
+                ram[start + offset:start + offset + span['size']] = rtl[base:end]
+                self.assertIs(source_bank(RTL_GRAPHICS_BANKS, base), bank)
+            self.assertTrue(all(source_span(bank, witness) is not None for witness
                                 in bank['witnesses']))
             self.assertTrue(all(source_bank(RTL_GRAPHICS_BANKS, offset) == bank
                                 for offset in bank['witnesses']))
 
+        # The file has metadata gaps which are not executable in RAM. In B
+        # the two single-byte gaps have no verified source-file identities.
+        b = RTL_GRAPHICS_BANKS[1]
+        self.assertIsNone(source_span(b, 0x19ec1))
+        self.assertIsNone(source_span(b, 0x1a6ed))
+        self.assertEqual(source_span(b, 0x19ec2)['offset'], 0x04ae)
+        self.assertEqual(source_span(b, 0x1a6ee)['offset'], 0x0c16)
+        self.assertEqual(source_span(RTL_GRAPHICS_BANKS[0], 0x194d7)['offset'],
+                         0x0668)
+
         # Segment immediates in one synthetic bank differ from the source;
         # preserve successful validation using separate invariant witnesses.
-        b = RTL_GRAPHICS_BANKS[1]
         b_start = (0x1000 + b['segment']) * 16
-        for offset in (0x006b, 0x00d6, 0x0133, 0x0189, 0x01e3, 0x0272, 0x0440):
+        for offset in (0x0004, 0x006b, 0x00d6, 0x0133, 0x0189, 0x01e3,
+                       0x0272, 0x0440, 0x04ae, 0x04de, 0x0519, 0x0c16):
             ram[b_start + offset + 11:b_start + offset + 13] = b'\x7a\x2a'
-            self.assertIn(b['file_base'] + offset, RTL_CANDIDATES)
+            span = next(s for s in source_spans(b)
+                        if s['offset'] <= offset < s['offset'] + s['size'])
+            self.assertIn(span['file_base'] + offset - span['offset'], RTL_CANDIDATES)
         for bank in RTL_GRAPHICS_BANKS:
             start, matches, witnesses = validate_bank(rtl, bytes(ram), bank, 0x1000)
             self.assertEqual(start, (0x1000 + bank['segment']) * 16)
-            self.assertGreater(matches, bank['size'] * 0.6)
+            self.assertGreater(matches, sum(span['size'] for span
+                                            in source_spans(bank)) * 0.6)
             self.assertEqual(witnesses, list(bank['witnesses']))
 
         damaged = bytearray(ram)
-        damaged[b_start:b_start + b['size']] = bytes(b['size'])
-        with self.assertRaisesRegex(ValueError, 'does not contain RTL bank'):
+        # A separate fragment must fail validation even if the rest of the
+        # same bank still matches the source extremely well.
+        later = source_spans(b)[1]
+        damaged[b_start + later['offset']:b_start + later['offset'] + later['size']] = (
+            bytes(later['size']))
+        with self.assertRaisesRegex(ValueError, 'source span'):
             validate_bank(rtl, bytes(damaged), b, 0x1000)
 
     def test_missing_or_invalid_inputs(self):
@@ -134,14 +158,29 @@ class RealGatewayIntroEvidence(unittest.TestCase):
                         if s['segment'] in (0x152c, 0x15d7)}
             self.assertEqual(set(graphics), {0x152c, 0x15d7})
             self.assertEqual((graphics[0x152c]['exact_byte_matches'],
-                              graphics[0x15d7]['exact_byte_matches']), (219, 1111))
+                              graphics[0x15d7]['exact_byte_matches']), (2601, 3198))
+            self.assertEqual((graphics[0x152c]['size'],
+                              graphics[0x15d7]['size']), (0x0ab0, 0x0d80))
             self.assertEqual({entry['file_offset'] for entry
                               in graphics[0x152c]['entries']},
-                             {0x18e00, 0x18e28, 0x18e49, 0x18e5b})
+                             {off for off in RTL_CANDIDATES
+                              if source_span(RTL_GRAPHICS_BANKS[0], off)})
             self.assertEqual({entry['file_offset'] for entry
                               in graphics[0x15d7]['entries']},
-                             {0x199fe, 0x19a69, 0x19ac6, 0x19b1c,
-                              0x19b76, 0x19c05, 0x19dd3})
+                             {off for off in RTL_CANDIDATES
+                              if source_span(RTL_GRAPHICS_BANKS[1], off)})
+            rtl = self.rtl.read_bytes()
+            ram = self.snapshot.read_bytes()
+            for section in graphics.values():
+                for entry in section['entries']:
+                    source = entry['file_offset']
+                    if rtl[source:source + 3] != b'\x55\x8b\xec':
+                        continue
+                    live = ((0x1000 + section['segment']) * 16 +
+                            entry['offset'])
+                    self.assertEqual(rtl[source:source + 11],
+                                     ram[live:live + 11],
+                                     'original C prologue at RTL:%05x' % source)
             file_services = next(section for section in plan['sections']
                                  if section['segment'] == 0x0c33)
             self.assertEqual({item['file_offset'] for item in file_services['entries']},
@@ -162,8 +201,11 @@ class RealGatewayIntroEvidence(unittest.TestCase):
                     self.assertGreater(section['exact_byte_matches'],
                                        section['size'] * 0.60)
                     for entry in section['entries']:
-                        self.assertEqual(entry['offset'],
-                                         entry['file_offset'] - section['file_base'])
+                        span = next(s for s in section['source_spans']
+                                    if s['file_base'] <= entry['file_offset'] <
+                                    s['file_base'] + s['size'])
+                        self.assertEqual(entry['offset'], span['offset'] +
+                                         entry['file_offset'] - span['file_base'])
             linked_strlen = next(s for s in plan['sections']
                                  if s['segment'] == 0x02a5)
             self.assertEqual(linked_strlen['file_base'], 0x56de)
