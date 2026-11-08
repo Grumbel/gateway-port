@@ -43,13 +43,14 @@ With the original DOS assets in `../gateway-dos`:
 
 ```sh
 mkdir -p build/intro-analysis
-build/local-probe/gateway-probe ../gateway-dos/GATE.EXE \
+nix run -L .#probe -- ../gateway-dos/GATE.EXE \
   --headless --read-only --deterministic-clock --milliseconds 24000 \
   --dump-at 22000:build/intro-analysis/at-22000
 ```
 
-If the local probe has not been built, build it through the normal CMake or
-Nix workflow first. `at-22000.bin` is a private 1 MiB guest-memory image,
+The `probe` app builds itself through Nix; `build/local-probe/gateway-probe`
+exists only after the separate static-Unicorn ZIP build. `at-22000.bin` is
+a private 1 MiB guest-memory image,
 not a file to commit or package. The host currently expects DS `0x2a7a` and
 mode 3 from this capture; it will reject incompatible mode settings.
 

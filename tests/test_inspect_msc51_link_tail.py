@@ -105,6 +105,7 @@ class LinkTailTests(unittest.TestCase):
                        '--exe', 'unused.exe', '--rtl', 'unused.rtl', '--ram', str(missing)]
             run = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(run.returncode, 2)
+            self.assertIn('nix run -L .#probe --', run.stderr)
             self.assertIn('--dump-at 22000:', run.stderr)
             self.assertIn('at-22000.bin', run.stderr)
             self.assertNotIn('Traceback', run.stderr)

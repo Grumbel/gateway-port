@@ -112,7 +112,7 @@ def main(argv=None):
         if not args.ram.exists():
             raise ValueError(f'guest RAM snapshot not found: {args.ram}\n'
                              'Capture the early original intro (see docs/intro-ghidra.md):\n'
-                             '  build/local-probe/gateway-probe ../gateway-dos/GATE.EXE '
+                             '  nix run -L .#probe -- ../gateway-dos/GATE.EXE '
                              '--headless --read-only --deterministic-clock '
                              '--milliseconds 24000 '
                              '--dump-at 22000:build/intro-analysis/at-22000\n'

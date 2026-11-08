@@ -325,6 +325,11 @@
           program = "${self.packages.${system}.default}/bin/gateway";
           meta.description = "Run the original Gateway DOS game through the SDL3/Unicorn port";
         };
+        probe = {
+          type = "app";
+          program = "${self.packages.${system}.default}/bin/gateway-probe";
+          meta.description = "Capture deterministic headless DOS execution and conventional RAM snapshots with Unicorn";
+        };
         intro = {
           type = "app";
           program = "${self.packages.${system}.default}/bin/gateway-intro";

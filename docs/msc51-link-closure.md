@@ -48,11 +48,13 @@ from `live_source_match`. A later RAM capture can contain valid code but no
 longer contain the code that the startup FAR calls originally reached.
 
 Capture an **earlier** original 22-second intro image (the same canonical
-snapshot described in [intro-ghidra.md](intro-ghidra.md)):
+snapshot described in [intro-ghidra.md](intro-ghidra.md)). The `probe`
+Nix app builds the executable as needed; do not assume the special
+`build/local-probe/` manual build exists:
 
 ```sh
 mkdir -p build/intro-analysis
-build/local-probe/gateway-probe ../gateway-dos/GATE.EXE \
+nix run -L .#probe -- ../gateway-dos/GATE.EXE \
   --headless --read-only --deterministic-clock --milliseconds 24000 \
   --dump-at 22000:build/intro-analysis/at-22000
 ```

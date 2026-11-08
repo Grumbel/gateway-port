@@ -18,15 +18,23 @@ outside these segments remains unresolved, not a guessed function.
 
 ## Capture the reference snapshot
 
-Given the original game in `../gateway-dos`, build the original Unicorn probe.
-For example, the native/static probe can produce the necessary snapshot:
+Given the original game in `../gateway-dos`, run the probe through the
+Nix flake. It builds the probe automatically; no `build/local-probe/`
+executable is expected in a normal checkout:
 
 ```sh
 mkdir -p build/intro-analysis
-build/local-probe/gateway-probe ../gateway-dos/GATE.EXE \
+nix run -L .#probe -- ../gateway-dos/GATE.EXE \
   --headless --read-only --deterministic-clock --milliseconds 24000 \
   --dump-at 22000:build/intro-analysis/at-22000
 ```
+
+Alternatively, `nix build -L .#default` installs the same binary at
+`result/bin/gateway-probe`. In `nix develop`, `gateway-build` puts the
+binary at `$GATEWAY_BUILD_DIR/gateway-probe` (normally
+`/tmp/gateway-port-build/gateway-probe`). The `build/local-probe/` path is
+**only** created by the manual static-Unicorn ZIP recipe in
+[workspace-setup.md](workspace-setup.md).
 
 `at-22000.bin` must be exactly 1 MiB, and the probe's guest layout must use
 the default relative load segment `0x1000`. The preparer validates the actual
