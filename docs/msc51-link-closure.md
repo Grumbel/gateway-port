@@ -114,8 +114,17 @@ DS address as one uniform relocation would be incorrect. When the flag
 is nonnegative, the routine pushes those two words, calls resident
 `12a5:0f62`, sets the relocated flag to `ffffh` and neighbor to zero, and
 returns FAR. The inspector now checks the complete bounded function and
-exposes this nested FAR call on success. The nested callee's semantics
-and the overall shutdown ABI remain unverified.
+exposes this nested FAR call on success. The latest user rerun confirms
+all **22 invariant bytes**, reporting that target as `12a5:0f62`.
+Its source is `RTL:6640` by an independently validated `02a5` resident
+bank, with 16 matching entry-prefix bytes. The original function starts
+with a FAR descriptor and bit tests on byte offset `0ah`, then calls a
+helper using its FAR pointer. To avoid treating the entire long function
+as verified on a 16-byte prefix, the inspector now checks **only its first
+48 bytes** after masking a single FAR call at `RTL:6663` (44 invariant
+bytes). On success it will expose that call's live target; the rest of the
+function, nested callee behavior, and overall shutdown ABI remain
+unverified.
 
 The third call is now identified as `rtl:10da1..10dc6`, a bounded FAR
 routine (preceded and terminated by `RETF`). It starts with `push cs; call
@@ -156,10 +165,10 @@ adapter in `decomp/launcher/dos/msc51_heap.c`. The latest user's 22-second
 snapshot exposes its **48-byte live entry**, identifying the original
 `RTL:18f23..18f53` by an exact entry-anchored comparison after masking the
 sole relocated `mov ax,imm16` DS-segment operand. The 46 unrelocated bytes
-in the supplied prefix agree with the source; its final `RETF 4` byte still
-requires a 49-byte snapshot comparison. The inspector now performs that
-whole-body comparison (**47 invariant bytes**) and reports the original
-source only on success. The segment's neighboring allocator at
+in the supplied prefix agree with the source. The latest user rerun now
+**confirms the entire 49-byte body, all 47 invariant bytes**, including
+the final `RETF 4` immediate; the inspector reports the original source
+only on that successful check. The segment's neighboring allocator at
 `RTL:18edf..18f22` is 68 bytes earlier, exactly matching the original
 linked offsets `253a:0004` and `253a:0048`; this is strong *static* bank
 evidence, **not** an independent live allocation-entry comparison.

@@ -56,6 +56,9 @@ EXTENDED_RTL_ENTRIES = {
 # The first Ctrl-Break callee 15706..15729 precedes a RETF/NOOP/data boundary.
 # Its repeated flag references and two call argument offsets relocate under
 # different DS deltas, so validate them as two independent WORD-pair groups.
+# Its nested 02a5:0f62 target projects through an independently validated
+# bank to RTL:6640. Only its first 48 bytes (and first FAR call) are known
+# well enough to match before the rest of its long, relocated body is read.
 # At 145d:016c the complete 86-byte CA00 image destructor has one relocated
 # DS-segment immediate and one FAR call to the already named pixel allocator.
 # The final 153a:0048 DOS heap release has a single relocated DS immediate;
@@ -64,6 +67,7 @@ EXTENDED_RTL_ENTRIES = {
 #                                pairs of WORDs preserving their delta
 RELOCATED_CALLEE_ENTRIES = {
     (0x121b, 0x021f): (0x15706, 36, (15,), (), ((2, 25), (25, 31), (9, 13))),
+    (0x02a5, 0x0f62): (0x6640, 48, (35,), (), ()),
     (0x0e48, 0x0202): (0x10da1, 38, (16, 26), (), ((6, 33), (12, 22))),
     (0x0e48, 0x07fe): (0x1139d, 48, (41,), (13,), ()),
     (0x0df2, 0x000a): (0x1054d, 38, (4,), (), ((18, 25),)),
@@ -173,8 +177,8 @@ def annotate_relocated_callees(rows, exe, rtl, ram, load_segment):
         except ValueError:
             continue  # Other checkpoints may have replaced resident banks.
         verified_banks[bank['segment']] = bank
-    # Depth 0: control/diagnostic calls; depth 1: VFX state helper calls;
-    # depth 2: image destructor's heap call. Never guess arbitrary code.
+    # Depth 0: control/diagnostic calls; depth 1: their verified helpers;
+    # depth 2: verified helpers' own callees. Never guess arbitrary code.
     for _depth in range(3):
         pending = calls
         if not pending:
@@ -189,13 +193,6 @@ def annotate_relocated_callees(rows, exe, rtl, ram, load_segment):
             known_name = KNOWN_LINKED_PORT_NAMES.get((segment, offset))
             if known_name is not None:
                 call['existing_port_symbol'] = known_name
-            bank = verified_banks.get(segment)
-            if bank is not None:
-                projection = project_verified_bank_call(call, bank, rtl, ram,
-                                                         load_segment)
-                if projection is not None:
-                    call['original_source_projection'] = projection
-                    continue
             special = RELOCATED_CALLEE_ENTRIES.get((segment, offset))
             if special is not None:
                 source_offset, length, far_offsets, word_offsets, word_pairs = special
@@ -220,6 +217,19 @@ def annotate_relocated_callees(rows, exe, rtl, ram, load_segment):
                     call['callee_far_calls'] = read_linked_far_calls(
                         linked, source_offset, far_offsets)
                     nested.extend(call['callee_far_calls'])
+                    continue
+            bank = verified_banks.get(segment)
+            if bank is not None:
+                projection = project_verified_bank_call(call, bank, rtl, ram,
+                                                         load_segment)
+                if projection is not None:
+                    call['original_source_projection'] = projection
+                    # A bank projection alone never verifies the relocated
+                    # operands of a known entry. Preserve its live window
+                    # when the stronger entry check failed.
+                    if special is not None:
+                        physical = (call['target_segment'] << 4) + offset
+                        call['live_entry_hex'] = ram[physical:physical + 48].hex()
                     continue
             candidate = candidates.get((segment, offset))
             if candidate is not None:

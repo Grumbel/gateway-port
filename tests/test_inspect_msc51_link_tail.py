@@ -431,11 +431,41 @@ class LinkTailTests(unittest.TestCase):
         callee_physical = (0x1000 + 0x121b) * 16 + 0x021f
         ram[callee_physical:callee_physical + length] = relocated
 
+        nested_source, nested_length, nested_fars, nested_words, nested_pairs = \
+            RELOCATED_CALLEE_ENTRIES[0x02a5, 0x0f62]
+        self.assertEqual((nested_source, nested_length), (0x6640, 48))
+        nested_original = bytearray((index * 13 + 21) & 255
+                                    for index in range(nested_length))
+        nested_original[nested_fars[0]:nested_fars[0] + 5] = \
+            b'\x9a\x00\x00\x00\x00'
+        rtl[nested_source:nested_source + nested_length] = nested_original
+        nested_linked = bytearray(nested_original)
+        nested_linked[nested_fars[0]:nested_fars[0] + 5] = \
+            b'\x9a\x22\x01\x01\x26'
+        nested_physical = (0x1000 + 0x02a5) * 16 + 0x0f62
+        ram[nested_physical:nested_physical + nested_length] = nested_linked
+
         cleanup = inspect(exe, rtl, ram)[1]['relocated_far_calls'][0]
         self.assertEqual(cleanup['relocated_source_match']['offset'], source)
         self.assertEqual(cleanup['relocated_source_match']['matched_nonrelocated_bytes'],
                          22)  # Shared DS:0016 is counted only once.
         self.assertEqual(cleanup['callee_far_calls'][0]['target_offset'], 0x0f62)
+        deeper = cleanup['callee_far_calls'][0]
+        self.assertEqual(deeper['relocated_source_match']['offset'], nested_source)
+        self.assertEqual(deeper['relocated_source_match']['matched_nonrelocated_bytes'],
+                         44)
+        self.assertEqual(deeper['callee_far_calls'][0]['original_call_offset'],
+                         nested_source + nested_fars[0])
+        self.assertEqual(deeper['callee_far_calls'][0]['target_segment'], 0x2601)
+
+        # An unchanged first-48-byte instruction must still agree even when
+        # the known bank independently projects the original entry.
+        ram[nested_physical + 24] ^= 1
+        deeper = inspect(exe, rtl, ram)[1]['relocated_far_calls'][0]['callee_far_calls'][0]
+        self.assertNotIn('relocated_source_match', deeper)
+        self.assertEqual(deeper['live_entry_hex'],
+                         ram[nested_physical:nested_physical + 48].hex())
+        ram[nested_physical + 24] ^= 1
 
         # The adjacent flag word must keep the original +2 delta.
         ram[callee_physical + 31] ^= 1
