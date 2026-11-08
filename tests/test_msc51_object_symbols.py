@@ -5,6 +5,8 @@
 """Exercise real OMF record grammar without shipping proprietary objects."""
 
 import importlib.util
+from contextlib import redirect_stdout
+import io
 from pathlib import Path
 import tempfile
 import unittest
@@ -100,6 +102,34 @@ class OMFSymbolTests(unittest.TestCase):
             (stage / "INP.OBJ").write_bytes(b"not OMF")
             report = objects.audit_stage(stage, [], log)
             self.assertIn("INP.OBJ", report["malformed_objects"])
+
+    def test_object_export_listing_and_nearby_truncated_name(self):
+        # An actual OMF public can differ from the source-derived linker
+        # spelling. Report the real spelling; never infer a missing body.
+        expected = "_gate_linked_print_intr_b006848b"
+        truncated = expected[:-1]
+        with tempfile.TemporaryDirectory() as directory:
+            stage = Path(directory)
+            (stage / "LINK.RSP").write_text("RTFILE.OBJ\nGATEWAY.EXE\n;\n")
+            (stage / "RTFILE.OBJ").write_bytes(
+                omf_object("RTFILE.C", (truncated, "_gate_linked_other")))
+            report = objects.audit_stage(stage, [expected],
+                                         inspect_objects=["rtfile.obj", "bogus.obj"])
+            self.assertEqual(report["symbols"][0]["status"],
+                             "no_export_in_staged_objects")
+            self.assertEqual(report["symbols"][0]["similar_exports"],
+                             [{"name": truncated, "providers": ["RTFILE.OBJ"]}])
+            self.assertEqual(report["object_exports"],
+                             {"RTFILE.OBJ": sorted([truncated, "_gate_linked_other"])})
+            self.assertEqual(report["unknown_objects"], ["BOGUS.OBJ"])
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = objects.main(["--stage", str(stage), "--symbol", expected,
+                                     "--object", "RTFILE.OBJ"])
+            self.assertEqual(code, 0)
+            self.assertIn("similar: " + truncated + " (RTFILE.OBJ)",
+                          stdout.getvalue())
+            self.assertIn("RTFILE.OBJ: 2 PUBDEF exports", stdout.getvalue())
 
     def test_source_has_matching_dos_alias_but_does_not_prove_obj_export(self):
         # This proves the generated source contract. PUBDEF must be checked

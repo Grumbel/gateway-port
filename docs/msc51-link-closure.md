@@ -33,8 +33,34 @@ that a new function implementation is needed. Missing objects and invalid
 OMF records are reported explicitly. The four synthetic unit tests cover
 32-byte decorated symbols, PUBDEF/PUB386 encodings, malformed records,
 multi-module inputs and the missing-versus-exported distinction. There
-are no real DOS `.OBJ` files in this environment, so the result for the
-user's latest LINK run remains to be collected.
+are no real DOS `.OBJ` files in this environment, so object contents
+cannot be inspected here without additional user-side output.
+
+The user's first real object audit on 2026-11-08 inspected **42/42**
+linker inputs successfully and found **no exact `PUBDEF`** for any of
+`_main`, `_gate_linked_handle_control_key`, or
+`_gate_linked_print_intr_b006848b`. This rules out the earlier hypothesis
+that the fully spelled diagnostic was already present in a linked object.
+However, it does **not** distinguish a stale `RTFILE.OBJ` from a compiler
+name spelling difference, and it does not expose whether any related
+diagnostic routine was exported. The audit now suggests similar OMF
+publics and can show every public exported by one input object. Run on
+the **same** staged objects, without rebuilding first:
+
+```sh
+python3 tools/msc51_object_symbols.py \
+  --stage build/msc51-launcher \
+  --symbol _gate_linked_print_intr_b006848b \
+  --object RTFILE.OBJ
+```
+
+If the expected public is absent from `RTFILE.OBJ`, compare its printed
+exports with the regenerated `RTFILE.C` source and `RTFBUILD.LOG`. A
+different public spelling points to a naming/linkage bug; no related
+public at all points to an old, incompatible or otherwise wrongly built
+object. Neither case justifies inserting a no-op diagnostic body. The
+two other names have no definitions in the staged C sources and remain
+real reconstruction tasks.
 
 The historical Microsoft C 5.1 compiler recognizes 31-character C names
 and decorates them with an underscore, giving a **32-character OMF public**;
