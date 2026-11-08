@@ -808,6 +808,21 @@ re-reads the original file independently). This **does not execute** the
 bank: its original runtime bytes differ at relocation operands, and a
 reconstructed linker/relocator and actual `_main` are still required.
 
+**First verified resident relocation class:** In the original 125, 175,
+250 and 500ms captures, 98 five-byte `CALL FAR` instructions in the `02a5`
+bank have source operands `0000:0000` and linked targets in the same
+resident segment. The four samples agree on every target offset. Added a
+bounded DOS relocator that checks *all* 98 original `9A 00 00 00 00`
+instructions before writing the captured target offsets and the **new
+caller-supplied resident segment**. A C89 host test verifies atomic failure
+on a corrupt last call and all 98 patched operands; original-source/live
+tests independently check every site. `DATAREAL` also probes representative
+targets after testing the raw bank copy. This is only one relocation class:
+the bank has 1,660 changed bytes relative to the raw file, of which this
+cluster accounts for 392 operand bytes. Some targets are beyond the copied
+`3d00h` region, and other relocations remain unexplained. The bank must
+still **not execute** until the rest of the linker is reconstructed.
+
 **Follow-up: determine external allocation ownership from snapshots.**
 After the 167 verified initialization byte changes are excluded, the user's
 remainder report contains only ten clusters: a 63-byte zeroed prefix at

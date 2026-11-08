@@ -28,6 +28,8 @@ int gate_dos_load_intro_rtl_data(uint16_t handle, uint16_t lower_segment,
 int gate_dos_load_intro_resident_bank(uint16_t rtl_handle,
                                       uint16_t resident_segment,
                                       uint16_t paragraphs);
+int gate_dos_relocate_intro_resident_self_calls(uint16_t resident_segment,
+                                                uint16_t paragraphs);
 int gate_dos_clear_intro_rtl_prefix(uint16_t lower_segment, uint16_t paragraphs);
 int gate_dos_fix_intro_rtl_startup_words(uint16_t lower_segment, uint16_t paragraphs);
 int gate_dos_fix_intro_rtl_segs(uint16_t lower_segment, uint16_t paragraphs,
@@ -256,6 +258,20 @@ int main(void)
                 break;
             }
     }
+    /* All 98 zero-operand CALL FAR sites are checked atomically by the
+     * relocator. Include an out-of-copy-range target to ensure it keeps
+     * the target offset even when later banks are not yet installed. */
+    if (good && gate_dos_relocate_intro_resident_self_calls(
+                    (uint16_t)resident_allocated, 0x03d0u) != 0)
+        good = 0;
+    if (good && (gate_far_word((uint16_t)resident_allocated, 0x09d7u) != 0x0bdeu ||
+                 gate_far_word((uint16_t)resident_allocated, 0x09d9u) !=
+                     (uint16_t)resident_allocated ||
+                 gate_far_word((uint16_t)resident_allocated, 0x1307u) != 0x3d60u ||
+                 gate_far_word((uint16_t)resident_allocated, 0x1309u) !=
+                     (uint16_t)resident_allocated ||
+                 gate_far_word((uint16_t)resident_allocated, 0x3b1du) != 0x3c5cu))
+        good = 0;
     if (good && gate_dos_clear_intro_rtl_prefix((uint16_t)allocated,
                                                GATE_REAL_PARAGRAPHS) != 0)
         good = 0;

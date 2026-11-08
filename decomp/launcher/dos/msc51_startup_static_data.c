@@ -55,6 +55,80 @@ int gate_dos_load_intro_resident_bank(uint16_t rtl_handle,
     return 0;
 }
 
+/* These 98 CALL FAR instructions have original source operands 0000:0000
+ * and independently match the same resident segment in 125, 175, 250 and
+ * 500ms snapshots. Only the target *offsets* are fixed; the caller supplies
+ * the new linked resident segment. A few targets extend beyond this raw
+ * 3d00h bank, so this does not make the bank safe to execute by itself. */
+typedef struct GateResidentSelfCall {
+    uint16_t site;
+    uint16_t target;
+} GateResidentSelfCall;
+static const GateResidentSelfCall gate_resident_self_calls[] = {
+    {0x09d6u, 0x0bdeu}, {0x09deu, 0x0ea1u}, {0x0a26u, 0x0a7cu},
+    {0x0a2du, 0x0dfau}, {0x0a32u, 0x0c52u}, {0x0a53u, 0x0b40u},
+    {0x0a68u, 0x0bdeu}, {0x0a6du, 0x0ea1u}, {0x0b6cu, 0x0c2cu},
+    {0x0be5u, 0x0ea1u}, {0x0bf9u, 0x0ea1u}, {0x0c3fu, 0x0bdeu},
+    {0x0c48u, 0x0ea1u}, {0x0ea8u, 0x0e76u}, {0x0f85u, 0x17dau},
+    {0x0fb0u, 0x15f4u}, {0x0fc1u, 0x2352u}, {0x0fddu, 0x2b84u},
+    {0x1002u, 0x2b3eu}, {0x101cu, 0x2c92u}, {0x1029u, 0x3b74u},
+    {0x1068u, 0x17dau}, {0x1092u, 0x22c2u}, {0x10b1u, 0x16c2u},
+    {0x10d5u, 0x3c5cu}, {0x1109u, 0x2e12u}, {0x1152u, 0x133cu},
+    {0x1190u, 0x2e12u}, {0x1208u, 0x3a22u}, {0x1254u, 0x133cu},
+    {0x12deu, 0x133cu}, {0x1306u, 0x3d60u}, {0x13ebu, 0x259cu},
+    {0x14ddu, 0x2d66u}, {0x1590u, 0x2686u}, {0x15b1u, 0x2372u},
+    {0x15d6u, 0x2686u}, {0x1610u, 0x283cu}, {0x165fu, 0x2851u},
+    {0x1764u, 0x23ecu}, {0x1831u, 0x2686u}, {0x186eu, 0x0c08u},
+    {0x1cf1u, 0x2caeu}, {0x1d06u, 0x2bbau}, {0x1f9eu, 0x1436u},
+    {0x1fdcu, 0x1436u}, {0x2048u, 0x1436u}, {0x20dfu, 0x2bbau},
+    {0x2345u, 0x1436u}, {0x26dfu, 0x27d0u}, {0x2882u, 0x27f6u},
+    {0x28aeu, 0x2a7au}, {0x2a66u, 0x2a7au}, {0x2cf6u, 0x2bbau},
+    {0x2d1bu, 0x2bbau}, {0x2d44u, 0x2bfcu}, {0x2dfau, 0x0f2eu},
+    {0x2ea4u, 0x3158u}, {0x2ebdu, 0x17dau}, {0x2ee0u, 0x2372u},
+    {0x2f49u, 0x2372u}, {0x2fbbu, 0x2372u}, {0x2fd5u, 0x2372u},
+    {0x303du, 0x3c90u}, {0x307cu, 0x3bc0u}, {0x3083u, 0x3c5cu},
+    {0x30dau, 0x2372u}, {0x3103u, 0x259cu}, {0x3183u, 0x2372u},
+    {0x32aau, 0x2372u}, {0x331cu, 0x2372u}, {0x33afu, 0x1868u},
+    {0x33dbu, 0x1436u}, {0x342eu, 0x1868u}, {0x3459u, 0x1436u},
+    {0x34a5u, 0x0f2eu}, {0x34dfu, 0x35dau}, {0x34f2u, 0x3bc0u},
+    {0x350cu, 0x346au}, {0x3563u, 0x346au}, {0x359au, 0x37a0u},
+    {0x35bbu, 0x36beu}, {0x35f6u, 0x2cd0u}, {0x3625u, 0x2bd2u},
+    {0x363du, 0x2c38u}, {0x3647u, 0x3c5cu}, {0x3697u, 0x2bd2u},
+    {0x37c7u, 0x3c5cu}, {0x37fau, 0x3c5cu}, {0x3816u, 0x3c5cu},
+    {0x383eu, 0x3c5cu}, {0x3871u, 0x35dau}, {0x38a2u, 0x36beu},
+    {0x38dau, 0x34d8u}, {0x38f8u, 0x3c5cu}, {0x3921u, 0x34d8u},
+    {0x3972u, 0x2e12u}, {0x3b1cu, 0x3c5cu}
+};
+
+/* All 98 original zero-operand instructions must match before any write.
+ * -1 invalid destination, -2 mismatched/unrelocated source instruction. */
+int gate_dos_relocate_intro_resident_self_calls(uint16_t resident_segment,
+                                                uint16_t paragraphs)
+{
+    unsigned int i;
+    if (resident_segment == 0u || resident_segment > 0xfc30u ||
+        paragraphs < GATE_RESIDENT_PARAS)
+        return -1;
+    for (i = 0u; i < sizeof gate_resident_self_calls /
+                      sizeof gate_resident_self_calls[0]; ++i) {
+        uint16_t site = gate_resident_self_calls[i].site;
+        if (gate_far_byte(resident_segment, site) != 0x9au ||
+            gate_far_word(resident_segment, (uint16_t)(site + 1u)) != 0u ||
+            gate_far_word(resident_segment, (uint16_t)(site + 3u)) != 0u)
+            return -2;
+    }
+    for (i = 0u; i < sizeof gate_resident_self_calls /
+                      sizeof gate_resident_self_calls[0]; ++i) {
+        uint16_t site = gate_resident_self_calls[i].site;
+        gate_far_set_word(resident_segment, (uint16_t)(site + 1u),
+                         gate_resident_self_calls[i].target);
+        gate_far_set_word(resident_segment, (uint16_t)(site + 3u),
+                         resident_segment);
+    }
+    return 0;
+}
+
+
 /* At 100, 125, 175 and 250ms the first 64 bytes after the two-byte
  * RTL data header are zero, whereas the raw RTL preimage contains resident
  * instructions there. This is an observed early initialization boundary,
