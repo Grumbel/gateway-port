@@ -233,7 +233,8 @@ MEMORY_SOURCES = ("GATEMEM.H", "STDINT.H", "MEMORY.C", "MEMCHK.C")
 SELECTOR_SOURCES = ("GATEMEM.H", "STDINT.H", "SEL.C", "SELCHK.C", "MEMORY.C")
 STATIC_DATA_SOURCES = ("GATEMEM.H", "GATEDOS.H", "STDINT.H", "DATA.C",
                        "DATACHK.C", "DATAREAL.C", "BOOT.H", "BOOT.C",
-                       "BOOTCHK.C", "SEL.C", "MEMORY.C", "DOSFILE.C")
+                       "BOOTCHK.C", "BOOTPREP.C", "BPREP.RSP", "HEAP.C",
+                       "SEL.C", "MEMORY.C", "DOSFILE.C")
 DOS_FILE_SOURCES = ("GATEDOS.H", "GATEMEM.H", "STDINT.H", "DOSFILE.C", "FILECHK.C",
                     "MEMORY.C")
 RTL_STATE_SOURCES = ("RTLLAY.H", "RTLIMAC.H", "RTLSTATE.H", "GATEMEM.H", "STDINT.H",
@@ -272,9 +273,25 @@ def selector_source_signature(output: Path) -> str:
 
 def static_data_source_signature(output: Path) -> str:
     digest = hashlib.sha256(b"MS C 5.1 /AL /Od original EXE static data v1\n")
-    for name in STATIC_DATA_SOURCES:
+    # The standalone original entry-prologue probe links one recovered Mxx
+    # source, not the whole launcher. Include its generated C and headers
+    # so a changed or renumbered source cannot pass a stale DOS test.
+    additional = tuple(launcher_source_alias(output, name) for name in
+                       ("gate_exe_intro_setup.c", "gate_exe.h",
+                        "gate_memory_layout.h"))
+    for name in (*STATIC_DATA_SOURCES, *additional, "SOURCE.MAP"):
         digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
     return digest.hexdigest()[:16]
+
+
+def launcher_source_alias(output: Path, filename: str) -> str:
+    """Resolve a staged Mxx/Hxx name from the generated source manifest."""
+    matches = [line.split(None, 1)[0] for line in
+               (output / "SOURCE.MAP").read_text().splitlines()
+               if line.endswith("/" + filename)]
+    if len(matches) != 1:
+        raise ValueError(f"Ambiguous or missing staged launcher file: {filename}")
+    return matches[0]
 
 
 def dos_file_source_signature(output: Path) -> str:
@@ -523,8 +540,22 @@ def stage_launcher(output: Path) -> list[str]:
         (output / staged_name).write_text((source_dir / "dos" / dos_name).read_text())
     for dos_name, staged_name in (("msc51_startup_bootstrap.h", "BOOT.H"),
                                   ("msc51_startup_bootstrap.c", "BOOT.C"),
-                                  ("msc51_startup_bootstrap_probe.c", "BOOTCHK.C")):
+                                  ("msc51_startup_bootstrap_probe.c", "BOOTCHK.C"),
+                                  ("msc51_startup_entry_probe.c", "BOOTPREP.C")):
         (output / staged_name).write_text((source_dir / "dos" / dos_name).read_text())
+    entry_obj = aliases["gate_exe_intro_setup.c"].replace(".C", ".OBJ")
+    entry_source = aliases["gate_exe_intro_setup.c"]
+    prep_response = ["BOOTPREP.OBJ+", "BOOT.OBJ+", "DATA.OBJ+", "SEL.OBJ+",
+                     "MEMORY.OBJ+", "DOSFILE.OBJ+", "HEAP.OBJ+", entry_obj,
+                     "BOOTPREP.EXE", "NUL.MAP", "LLIBCR.LIB LIBH.LIB /NOD", ";"]
+    (output / "BPREP.RSP").write_text("\r\n".join(prep_response) + "\r\n")
+    # HEAP.OBJ is also required by the standalone recovered C prologue.
+    # Stage it before hashing the DATA batch; the separate heap adapter
+    # batch below uses the exact same source and short-name mapping.
+    for original, staged in (("msc51_heap.c", "HEAP.C"),
+                             ("msc51_heap_probe.c", "HEAPCHK.C")):
+        (output / staged).write_text(msc51_rename_identifiers(
+            (source_dir / "dos" / original).read_text(), shortened))
     data_signature = static_data_source_signature(output)
     data_batch = [
         "@ECHO OFF", "ECHO MS C 5.1 original EXE static data copy > DATSTART.LOG",
@@ -546,6 +577,18 @@ def stage_launcher(output: Path) -> list[str]:
         "CL /AL /Od BOOTCHK.C BOOT.OBJ DATA.OBJ SEL.OBJ MEMORY.OBJ DOSFILE.OBJ /link LLIBCR.LIB LIBH.LIB/NOD >> DATBUILD.LOG",
         "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST BOOTCHK.EXE GOTO FAILED",
         "IF EXIST E:\\GATE.RTL BOOTCHK.EXE > BOOTREAL.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED",
+        # Only the recovered source-C GATE.EXE:1309 prologue is executed.
+        # Both DOS image callbacks remain nonexecutable and are never called.
+        "CL /AL /Od /c HEAP.C >> DATBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        "IF NOT EXIST HEAP.OBJ GOTO FAILED",
+        f"CL /AL /Od /c {entry_source} >> DATBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        f"IF NOT EXIST {entry_obj} GOTO FAILED",
+        "CL /AL /Od /c BOOTPREP.C >> DATBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        "IF NOT EXIST BOOTPREP.OBJ GOTO FAILED",
+        "C:\\BIN\\LINK.EXE @BPREP.RSP >> DATBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        "IF NOT EXIST BOOTPREP.EXE GOTO FAILED",
+        "IF EXIST E:\\GATE.RTL BOOTPREP.EXE > BPREAL.LOG",
         "IF ERRORLEVEL 1 GOTO FAILED",
         f"ECHO {data_signature} > DATSIG.LOG",
         "ECHO DOS static EXE data copy probe passed > DATOK.LOG",
@@ -705,10 +748,6 @@ def stage_launcher(output: Path) -> list[str]:
         ":DONE", "EXIT",
     ]
     (output / "RESST.BAT").write_text("\r\n".join(resident_state_batch) + "\r\n")
-    for original, staged in (("msc51_heap.c", "HEAP.C"),
-                             ("msc51_heap_probe.c", "HEAPCHK.C")):
-        (output / staged).write_text(msc51_rename_identifiers(
-            (source_dir / "dos" / original).read_text(), shortened))
     heap_signature = heap_source_signature(output)
     heap_batch = [
         "@ECHO OFF", "ECHO MS C 5.1 real DOS conventional heap > HEAPSTRT.LOG",
@@ -964,7 +1003,7 @@ def print_selector_diagnostics(output: Path) -> None:
 def validate_static_data_probe(output: Path, *, require_original: bool = False) -> None:
     if (any(locate_case_insensitive(output, name) is None
             for name in ("DATA.OBJ", "DATACHK.EXE", "DATAREAL.EXE", "DATSTART.LOG",
-                         "DATOK.LOG", "DATTEST.LOG")) or
+                         "BOOTPREP.EXE", "DATOK.LOG", "DATTEST.LOG")) or
             locate_case_insensitive(output, "DATFAIL.LOG") is not None):
         raise ValueError("DOS static EXE data copy probe failed. "
                          "Run msc51-compile-data again.")
@@ -987,12 +1026,18 @@ def validate_static_data_probe(output: Path, *, require_original: bool = False) 
                 r"^DOS intro image owner probe: PASS \(two allocated, CRC-checked images; no code executed\)\s*$",
                 boot.read_text(), re.MULTILINE) is None):
             raise ValueError("DOS image owner allocation/CRC/cleanup probe is missing or failed.")
+        prepared = locate_case_insensitive(output, "BPREAL.LOG")
+        if (prepared is None or re.search(
+                r"^DOS intro C entry prologue: PASS \(five recovered writes, original data/CRC, workspace observed; no intro code entered\)\s*$",
+                prepared.read_text(), re.MULTILINE) is None):
+            raise ValueError("DOS source-C intro entry prologue verification is missing or failed.")
 
 
 def remove_static_data_outputs(output: Path) -> None:
     names = {"DATA.OBJ", "DATACHK.OBJ", "DATACHK.EXE", "DATAREAL.OBJ",
              "DATAREAL.EXE", "DATREAL.LOG", "DATSTART.LOG",
              "BOOT.OBJ", "BOOTCHK.OBJ", "BOOTCHK.EXE", "BOOTREAL.LOG",
+             "BOOTPREP.OBJ", "BOOTPREP.EXE", "BPREAL.LOG",
              "DATBUILD.LOG", "DATTEST.LOG", "DATOK.LOG", "DATFAIL.LOG", "DATSIG.LOG",
              "DATASRC.BIN", "DATARTL.BIN"}
     if output.is_dir():
@@ -1002,7 +1047,8 @@ def remove_static_data_outputs(output: Path) -> None:
 
 
 def print_static_data_diagnostics(output: Path) -> None:
-    for name in ("DATFAIL.LOG", "DATBUILD.LOG", "DATTEST.LOG", "DATREAL.LOG", "BOOTREAL.LOG", "DATOK.LOG"):
+    for name in ("DATFAIL.LOG", "DATBUILD.LOG", "DATTEST.LOG", "DATREAL.LOG",
+                 "BOOTREAL.LOG", "BPREAL.LOG", "DATOK.LOG"):
         path = locate_case_insensitive(output, name)
         content = path.read_text(errors="replace") if path else "(not created)"
         print(f"--- {name} ---\n{content[-8_000:].rstrip()}", file=sys.stderr)
@@ -1694,9 +1740,11 @@ def main(argv: list[str] | None = None) -> int:
                  "data image passed segment-independent CRC32 witnesses"
                  if original_game_dir is not None else
                  "; the full-bank original-file CRC check was not requested")
-              + ("; BOOTCHK.EXE also verified DOS allocation, CRC and cleanup "
-                 "without executing any original code" if original_game_dir is not None
-                 else "; BOOT.OBJ was built but its original-file owner probe was not run")
+              + ("; BOOTCHK.EXE verified DOS allocation, CRC and cleanup, and "
+                 "BOOTPREP.EXE executed the five recovered source-C entry "
+                 "writes without entering original resident code"
+                 if original_game_dir is not None
+                 else "; BOOT.OBJ was built but its original-file probes were not run")
               + ". DATA.OBJ/BOOT.OBJ remain probe-only until executable startup "
               "and other resident banks are reconstructed.")
         return 0

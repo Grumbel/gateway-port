@@ -142,6 +142,27 @@ callback preflight, including failures at either file close. This verifies
 the new ownership contract synthetically; no Microsoft C 5.1 or DOSBox
 runtime could be executed in this environment.
 
+**First executable reconstructed entry block (pending real DOS run):**
+`msc51-compile-data` also compiles and links an isolated `BOOTPREP.EXE`
+using the *actual* staged `gate_exe_intro_setup.c` (`Mxx.OBJ`) and
+`HEAP.OBJ`, together with the CRC-checked BOOT/DATA/SEL/MEMORY/DOSFILE
+objects. It binds and validates all five relocated startup selectors,
+poisons the five destinations **after** verifying the full original-file
+images, then invokes the recovered `GATE.EXE:1309..134b`
+`gate_exe_prepare_intro_globals` C function. It checks the original
+`0401h`, `007fh`, `0001h`, `0000h` startup words and the fifth returned
+`1000h`-paragraph DOS workspace segment minus `12b2h`, before releasing
+the two image allocations. The extra workspace belongs to the one-shot
+DOS process and is reclaimed at exit; it must not be freed from a guessed
+segment if allocation or the prologue fails. The test deliberately uses
+nonexecutable BOOT callback addresses and **never** calls them. This is
+the first source-C startup side-effect check after image preparation,
+not `_main` or a playable intro. Its `BPREAL.LOG` must contain the exact
+`DOS intro C entry prologue: PASS` witness. A GCC C89 host test links the
+actual staged prologue and heap objects with synthetic DOS memory and
+checks success, invalid selectors and allocation failure; Microsoft C
+5.1/DOSBox still needs to run this new probe on the user's system.
+
 On the user's NixOS/DOSBox setup, the relevant complete verification is:
 
 ```sh
@@ -149,7 +170,8 @@ nix run -L .#msc51-compile-data -- --original-game-dir ../gateway-dos
 ```
 
 `BOOTREAL.LOG` must contain the exact owner `PASS` line; `DATREAL.LOG` must
-also contain both original CRC witnesses. A failed or absent log is not a
+also contain both original CRC witnesses; `BPREAL.LOG` must contain the
+five-write reconstructed entry probe witness. A failed or absent log is not a
 successful test. `BOOT.OBJ` is deliberately not included in `LINK.RSP` while
 no valid source-C `_main` can consume it.
 

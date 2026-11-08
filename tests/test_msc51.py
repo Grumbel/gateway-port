@@ -6,6 +6,7 @@
 import importlib.util
 import hashlib
 import io
+import os
 import re
 import shutil
 import subprocess
@@ -131,6 +132,13 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("CL /AL /Od /c BOOT.C", batch)
             self.assertIn("BOOTCHK.C BOOT.OBJ DATA.OBJ SEL.OBJ MEMORY.OBJ DOSFILE.OBJ", batch)
             self.assertIn("IF EXIST E:\\GATE.RTL BOOTCHK.EXE > BOOTREAL.LOG", batch)
+            entry_object = msc51.launcher_source_alias(output, "gate_exe_intro_setup.c").replace(".C", ".OBJ")
+            self.assertIn("CL /AL /Od /c HEAP.C", batch)
+            self.assertIn("CL /AL /Od /c " + entry_object.replace(".OBJ", ".C"), batch)
+            self.assertIn("LINK.EXE @BPREP.RSP", batch)
+            self.assertIn("IF EXIST E:\\GATE.RTL BOOTPREP.EXE > BPREAL.LOG", batch)
+            self.assertIn(entry_object, (output / "BPREP.RSP").read_text())
+            self.assertNotIn("BOOTPREP.OBJ", (output / "LINK.RSP").read_text())
             self.assertLessEqual(max(len(line) for line in batch.splitlines()), 127)
             self.assertIn("gate_dos_load_intro_rtl_data", (output / "DATA.C").read_text())
             self.assertIn("gate_dos_fix_intro_rtl_segs", (output / "DATA.C").read_text())
@@ -160,7 +168,7 @@ class MSC51Tests(unittest.TestCase):
             self.assertNotIn("DATA.OBJ", (output / "LINK.RSP").read_text())
             self.assertNotIn("BOOT.OBJ", (output / "LINK.RSP").read_text())
             (output / "STDINT.H").write_text('#include <stdint.h>\n')
-            for source in ("DATACHK.C", "DATAREAL.C"):
+            for source in ("DATACHK.C", "DATAREAL.C", "BOOTPREP.C"):
                 text = (output / source).read_text()
                 # MS C 5.1 emits C2073 for an initialized automatic array
                 # inside main(), even though host GCC accepts the C89 code.
@@ -204,6 +212,35 @@ class MSC51Tests(unittest.TestCase):
                     capture_output=True, text=True)
                 self.assertEqual(syntax.returncode, 0, syntax.stderr)
 
+    def test_recovered_source_c_intro_prologue_in_boot_image(self):
+        if not shutil.which("gcc"):
+            self.skipTest("gcc needed for synthetic recovered DOS entry fixture")
+        with tempfile.TemporaryDirectory() as scratch:
+            output = Path(scratch)
+            msc51.stage_launcher(output)
+            intro_source = msc51.launcher_source_alias(output, "gate_exe_intro_setup.c")
+            executable = output / "startup-entry-host"
+            built = subprocess.run(
+                ["gcc", "-x", "c", "-std=c89", "-Wall", "-Wextra", "-Werror",
+                 "-I", str(REPO / "tests/fixtures/msc51_data"),
+                 "-I", str(output), str(output / "BOOTPREP.C"),
+                 str(output / intro_source), str(output / "HEAP.C"),
+                 str(REPO / "tests/fixtures/msc51_data/bootstrap_entry_host.c"),
+                 "-o", str(executable)], capture_output=True, text=True)
+            self.assertEqual(built.returncode, 0, built.stderr)
+            result = subprocess.run([str(executable)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("five recovered writes, original data/CRC, workspace observed",
+                          result.stdout)
+            for invalid in ("TEST_BAD_SELECTOR", "TEST_ALLOC_FAIL"):
+                with self.subTest(invalid=invalid):
+                    env = os.environ.copy()
+                    env[invalid] = "1"
+                    rejected = subprocess.run([str(executable)], env=env,
+                                              capture_output=True, text=True)
+                    self.assertEqual(rejected.returncode, 1, rejected.stderr)
+                    self.assertIn("DOS intro C entry prologue: FAIL", rejected.stdout)
+
     def test_compile_data_requires_verified_dependencies_and_current_guest_log(self):
         with tempfile.TemporaryDirectory() as scratch:
             root = Path(scratch)
@@ -245,7 +282,8 @@ class MSC51Tests(unittest.TestCase):
                 self.assertIn("DATA.BAT", command)
                 self.assertFalse(check)
                 self.assertFalse((output / "DATACHK.EXE").exists())
-                for name in ("DATA.OBJ", "DATACHK.EXE", "DATAREAL.EXE", "DATSTART.LOG", "DATOK.LOG"):
+                for name in ("DATA.OBJ", "DATACHK.EXE", "DATAREAL.EXE",
+                             "BOOTPREP.EXE", "DATSTART.LOG", "DATOK.LOG"):
                     (output / name).write_text("current")
                 (output / "DATTEST.LOG").write_text(
                     "Static EXE/RTL data probe: PASS (5976 + 13714 bytes; 27 seg + 24 off + 19 external pointers)\n")
@@ -279,6 +317,13 @@ class MSC51Tests(unittest.TestCase):
                 msc51.validate_static_data_probe(output, require_original=True)
             (output / "BOOTREAL.LOG").write_text(
                 "DOS intro image owner probe: PASS (two allocated, CRC-checked images; no code executed)\n")
+            with self.assertRaisesRegex(ValueError, "source-C intro entry prologue verification"):
+                msc51.validate_static_data_probe(output, require_original=True)
+            (output / "BPREAL.LOG").write_text("DOS intro C entry prologue: PASS (old)\n")
+            with self.assertRaisesRegex(ValueError, "source-C intro entry prologue verification"):
+                msc51.validate_static_data_probe(output, require_original=True)
+            (output / "BPREAL.LOG").write_text(
+                "DOS intro C entry prologue: PASS (five recovered writes, original data/CRC, workspace observed; no intro code entered)\n")
             msc51.validate_static_data_probe(output, require_original=True)
             (output / "DATA.C").write_text((output / "DATA.C").read_text() + "/* stale */\n")
             with self.assertRaisesRegex(ValueError, "source changed"):
