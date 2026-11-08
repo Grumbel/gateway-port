@@ -8,7 +8,8 @@
 #include <string.h>
 
 /* Linked 12a5:34d8 (RTL:8bb6) fills a time sample through an SS:offset
- * pointer. Its calendar conversion is not reconstructed here. */
+ * pointer. The DOS build now supplies its calendar conversion in CLOCK.C;
+ * native source tests continue to inject deterministic time samples. */
 void gate_linked_read_runtime_time_sample(GateFarPtr destination);
 
 /* Microsoft-style FAR C runtime imports at linked 12a5:2cd0, :2bd2 and

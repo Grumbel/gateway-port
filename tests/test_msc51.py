@@ -22,6 +22,36 @@ SPEC.loader.exec_module(msc51)
 
 
 class MSC51Tests(unittest.TestCase):
+    def test_staged_clock_calendar_and_dst_on_host(self):
+        """Execute staged calendar logic with deterministic DOS interrupt replies.
+
+        This is a host regression only; Microsoft C 5.1's own CLOCK.BAT
+        remains the mandatory verification before linking the launcher.
+        """
+        if not shutil.which("gcc"):
+            self.skipTest("gcc needed for deterministic DOS clock fixture")
+        with tempfile.TemporaryDirectory() as scratch:
+            output = Path(scratch)
+            msc51.stage_launcher(output)
+            # The real DOS typedef is 'unsigned long' (32-bit on MSC 5.1).
+            # On 64-bit Linux use stdint's exact widths for this host probe.
+            (output / "STDINT.H").write_text('#include <stdint.h>\n')
+            shortened = {original: alias for alias, original in
+                         (line.split() for line in
+                          (output / "SYMBOL.MAP").read_text().splitlines()[1:])}
+            fixtures = REPO / "tests/fixtures/msc51_clock"
+            (output / "CLKHOST.C").write_text(msc51.msc51_rename_identifiers(
+                (fixtures / "clock_host_probe.c").read_text(), shortened))
+            executable = output / "clock-host-probe"
+            build = subprocess.run(["gcc", "-x", "c", "-std=c89", "-Wall", "-Wextra", "-Werror",
+                                    "-I", str(fixtures), "-I", str(output),
+                                    str(output / "CLOCK.C"), str(output / "CLKHOST.C"),
+                                    "-o", str(executable)], capture_output=True, text=True)
+            self.assertEqual(build.returncode, 0, build.stderr)
+            result = subprocess.run([str(executable)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("calendar/DST/timezone: PASS", result.stdout)
+
     def test_dos_resource_file_abi_uses_stack_slot_and_cpu_divide_fault(self):
         """Source-level host assembly check, not a Microsoft C 5.1 verification."""
         if not shutil.which("gcc") or not shutil.which("nm"):
@@ -255,12 +285,15 @@ class MSC51Tests(unittest.TestCase):
                                     msc51.msc51_identifiers((output / name).read_text())), name)
             clock_batch = (output / "CLOCK.BAT").read_text()
             self.assertIn("CL /AL /Od /c CLOCK.C", clock_batch)
-            self.assertIn("CLKCHK.C CLOCK.OBJ", clock_batch)
+            self.assertIn("CLKCHK.C CLOCK.OBJ MEMORY.OBJ", clock_batch)
             self.assertIn("CLKCHK.EXE > CLKTEST.LOG", clock_batch)
             self.assertIn("CLKSIG.LOG", clock_batch)
             self.assertIn("CLKOK.LOG", clock_batch)
             self.assertNotIn("IF ERRORLEVEL 1 ECHO", clock_batch)
             self.assertIn("input.h.ah = 0x2cu", (output / "CLOCK.C").read_text())
+            self.assertIn("void gate_linked_read_runti_94f6de12(GateFarPtr destination)",
+                          (output / "CLOCK.C").read_text())
+            self.assertIn("input.h.ah = 0x2au", (output / "CLOCK.C").read_text())
             self.assertIn("gate_rtl_graphics_delay(20ul)",
                           (output / "CLKCHK.C").read_text())
             for name in ("CLOCK.C", "CLKCHK.C"):

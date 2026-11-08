@@ -448,14 +448,17 @@ path is not yet independently recovered, so this stage is a functional
 DOS input adapter, not proof of identical behavior. Assuming it compiles
 and links, **32** missing symbols would remain.
 
-`msc51-compile-clock` stages four more timing services for the EXE and
-picture-animator call sites. It reads real MS-DOS time with INT 21h/AH=2Ch,
-shares an initial-process baseline, and waits for actual DOS time to advance.
-The probe requires at least 20 ms of clock progress. This is a functional
-10-ms-resolution substitute, **not** the recovered RTL 12a5:38c4 time
-sampler (which includes a ten-byte calendar sample and original DS baseline).
-Midnight/DST transitions and original animation wait side effects are not
-yet equivalent. After the input stage, **28** unresolved symbols are predicted.
+`msc51-compile-clock` stages the DOS clock services and the original
+`12a5:34d8` ten-byte calendar sample. The sampler uses INT 21h/AH=2Ah and
+2Ch for date/time, reconstructs the 1980-based epoch and linked timezone
+state, and reproduces the historical DST cutoff arithmetic (including the
+different hour/second fields used by the two original DST calls). A
+deterministic host fixture tests date conversion, negative timezone offsets,
+DST boundaries, and FAR output wrapping; the DOS probe checks the live
+sample layout and timezone offset. The other four timing services still use
+a process-local 10-ms-resolution clock approximation; midnight rollover,
+multi-day delays and animation wait side effects are not yet equivalent.
+Microsoft C 5.1 and DOSBox verification remain required for this adapter.
 
 `msc51-compile-crt` resolves the two original linked `getenv` and `atol`
 entry points with Microsoft C 5.1's own large-model C runtime. The probe

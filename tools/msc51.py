@@ -245,7 +245,8 @@ RESIDENT_STATE_SOURCES = ("GATEMEM.H", "STDINT.H", "RTLLAY.H", "RESSTATE.C",
 HEAP_SOURCES = ("GATEMEM.H", "STDINT.H", "HEAP.C", "HEAPCHK.C", "MEMORY.C")
 INPUT_SOURCES = ("GATEMEM.H", "STDINT.H", "RTLLAY.H", "INP.C", "INPCHK.C",
                  "MEMORY.C")
-CLOCK_SOURCES = ("STDINT.H", "CLOCK.C", "CLKCHK.C")
+CLOCK_SOURCES = ("GATEMEM.H", "STDINT.H", "RTLLAY.H", "CLOCK.C",
+                 "CLKCHK.C", "MEMORY.C")
 CRT_SOURCES = ("GATEMEM.H", "STDINT.H", "CRTENV.C", "CRTCHK.C", "MEMORY.C")
 
 
@@ -316,7 +317,7 @@ def input_source_signature(output: Path) -> str:
 
 
 def clock_source_signature(output: Path) -> str:
-    digest = hashlib.sha256(b"MS C 5.1 /AL /Od DOS clock and wait services v1\n")
+    digest = hashlib.sha256(b"MS C 5.1 /AL /Od DOS calendar and wait services v2\n")
     for name in CLOCK_SOURCES:
         digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
     return digest.hexdigest()[:16]
@@ -681,7 +682,7 @@ def stage_launcher(output: Path) -> list[str]:
         "SET LIB=C:\\LIB;C:\\", "SET TEMP=D:\\", "SET TMP=D:\\",
         "CL /AL /Od /c CLOCK.C > CLKBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
         "IF NOT EXIST CLOCK.OBJ GOTO FAILED",
-        "CL /AL /Od CLKCHK.C CLOCK.OBJ /FeCLKCHK.EXE /link LLIBCR.LIB LIBH.LIB/NOD >> CLKBUILD.LOG",
+        "CL /AL /Od CLKCHK.C CLOCK.OBJ MEMORY.OBJ /FeCLKCHK.EXE /link LLIBCR.LIB LIBH.LIB/NOD >> CLKBUILD.LOG",
         "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST CLKCHK.EXE GOTO FAILED",
         "CLKCHK.EXE > CLKTEST.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
         f"ECHO {clock_signature} > CLKSIG.LOG",
