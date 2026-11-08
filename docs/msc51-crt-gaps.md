@@ -5,11 +5,21 @@
 
 The Microsoft C 5.1 `LLIBCR.LIB` relocation-aware public-symbol comparison
 identified 11,761 bytes across 70 CODE-class candidate spans, with 1,056
-bytes in 26 intervening gaps (first cross-record host run, 2026-11-07).
+bytes in 26 intervening gaps (confirmed by the user's 2026-11-08 host run).
 These are **gaps between matching fingerprints**, not established function
 boundaries, nor proof that their contents are game code. In particular, the
 scanner requires a uniquely attributable original OMF `PUBDEF`; CRT code
 with an unrecognized or absent public may remain unmatched.
+
+The new report also verifies the class-restricted matching correction: **75
+relocation-aware public candidates** (69 CODE, six DATA), compared with 70
+exact-prefix candidates. The union is 76 distinct entries: 69 appear in
+both scans, six only in the relocation-aware scan, and one only in the exact
+scan. In particular, `_file.c:__iob` at `RTL:0x0326d` and
+`_file.c:__iob2` at `RTL:0x0335d` are both present again. The single
+exact-only entry, `__amsg_exit` at `RTL:0x06145`, fails the relocation-aware
+opening threshold (ten fixed bytes out of the first twenty); the public
+symbol itself is not disputed by this result.
 
 ## Static disassembly observations
 
@@ -28,10 +38,46 @@ file. Names below describe observed behavior, not verified export symbols.
 
 The first three gaps total **755 bytes**, and the first four total **823
 bytes**. Their contents are inconsistent with interpreting all 1,056
-unmatched bytes as Gateway-specific story logic. The remaining 21 gaps
-(201 bytes after accounting for all five rows) have not yet been individually
-classified. They may include alignment, branch tails, linker-specific code,
-different CRT revisions and actual unmatched routines.
+unmatched bytes as Gateway-specific story logic.
+
+## Audit of the other 21 gaps
+
+The uploaded full-gap JSON identifies each interval's neighboring matched
+publics. The following observations are from the **pinned original binary**;
+disassembly at the bounds was checked against neighboring instruction flows.
+An observed entry prologue or `RETF` is *not* an independently verified
+OMF public or a proven live call target.
+
+| RTL file offsets (end exclusive) | Bytes | Observed contents |
+| --- | ---: | --- |
+| `0x06136..06145` | 15 | Tail of startup/error-exit sequence; resets `DS` and writes via `SS` before the adjacent `__amsg_exit` entry |
+| `0x06159..0615a` | 1 | Zero separator |
+| `0x0621e..06235` | 23 | Separate exit/cleanup prologue, two calls to shared `RTL:0x062a9` helper, then a jump into `__exit`'s body; function name unverified |
+| `0x062e0..062e6` | 6 | Loads error code 2 and jumps to `__amsg_exit` |
+| `0x06553..06554` | 1 | Zero separator |
+| `0x07a30..07a50` | 32 | Complete-looking DOS file-descriptor close wrapper (`INT 21h`, AH=`3eh`), with descriptor bound/state checks and a jump to shared error handling at `RTL:0x065ec` |
+| `0x07aca..07ad2` | 8 | Prologue and initial local-variable setup for the open helper that continues at the matched `__copensub` entry |
+| `0x07ead..07eae` | 1 | Zero separator |
+| `0x08157..08158` | 1 | Zero separator |
+| `0x082af..082b0` | 1 | Zero separator |
+| `0x08315..0831a` | 5 | Zero byte, a near jump over one byte, then another zero; precedes `__catox` |
+| `0x0838c..08396` | 10 | Integer-to-text alternate-entry thunk, which jumps into shared conversion at `RTL:0x0915e`; adjacent `_itoa` has a different parameter setup |
+| `0x08467..08468` | 1 | Zero separator |
+| `0x0851a..0851e` | 4 | `RETF 8` and one zero byte; appears to terminate the preceding FAR arithmetic helper |
+| `0x08cb8..08cc8` | 16 | Checks an initialization flag, calls `RTL:0x08cc8` only once, increments the flag and returns; a probable time-zone initialization guard |
+| `0x08ffa..09008` | 14 | FAR-call wrapper passing a zero offset and current `DS`; target is unresolved in the raw file |
+| `0x09035..09036` | 1 | Zero separator |
+| `0x0915e..0916b` | 13 | Shared 32-bit integer-to-text argument setup; reached directly by the earlier `RTL:0x08393` jump and falls into matched `__cxtoa` |
+| `0x091c1..091c2` | 1 | Zero separator |
+| `0x09212..09230` | 30 | Complete-looking 32-bit rotate-left helper: masks shift count with `1fh`, rotates `DX:AX` left and reinserts carry into AX, then FAR-returns |
+| `0x09251..09262` | 17 | Two zero separators surrounding a DOS delete-file wrapper (`INT 21h`, AH=`41h`) that jumps to shared error handling |
+
+Eight of these are **single-byte zero-only** intervals. Several others
+contain recognizable helper entry points or shared tails, but the report
+still does not justify claiming an exact count of *unrecovered CRT routines*.
+These classifications account for the remaining **201 bytes** as static
+observations without changing the original conservative gap/coverage
+metrics.
 
 To reproduce a bounded disassembly without copying binary contents into the
 repository:
@@ -54,16 +100,15 @@ nix run -L .#msc51-compare -- \
 The JSON always includes `public_prefix_candidate_span_summary.all_unmatched_gaps`
 in original-file order, with neighboring known public names, as well as the
 largest eight intervals by size. Existing `--scan-relocations` behavior and
-the separate exact-prefix baseline remain unchanged. The class-restricted
-DATA matching correction made after the previous host run still requires
-user-side confirmation.
+the separate exact-prefix baseline remain unchanged. The user's new report
+confirms the class-restricted DATA matching correction.
 
 ## Next validation
 
-1. Verify the ordered gaps with the actual `LLIBCR.LIB` report and check if
-   the class-restricted scan restores distinct `__iob` and `__iob2` entries.
-2. For the large remaining intervals, identify entry starts and callers
-   using relocated runtime addresses or OMF module candidates. Treat an
-   unlinked raw `RETF` as a boundary hint, not proof.
+1. For the largest intervals, identify entry starts and callers using
+   relocated runtime addresses or OMF module candidates. Treat an unlinked
+   raw `RETF` as a boundary hint, not proof.
+2. Map the demonstrated close/delete/rotation wrappers to actual OMF publics
+   or original runtime call sites, rather than assuming names from behavior.
 3. Only assign a definite source symbol after independent OMF or runtime
    evidence; do not expand CRT attribution solely from proximity.
