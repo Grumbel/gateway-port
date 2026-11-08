@@ -137,10 +137,30 @@ service, sets error flag `20h` and returns `ffffh` on a short write, and
 resets the stream's current pointer to its base even when no write occurs.
 It is 142 bytes long with just one relocated FAR call at `RTL:6f0f`
 and two independent immediate WORD relocations at `RTL:6ed8/6eea`.
-The inspector now checks this **whole bounded function (134 invariant
-bytes)** and exposes the write service only after a successful match. The
-16-byte projected prefix is not evidence that the whole function matches
-until the next genuine snapshot.
+The user's subsequent 22-second output **passed the complete check of 134
+invariant bytes**. The verified FAR call at original `RTL:6f0f` targets
+`12a5:2686` in that live run, independently projecting through the validated
+`02a5` bank to `RTL:7d64` (decimal 32100). This is no longer just a
+16-byte flush entry projection; the whole bounded flush body is confirmed.
+
+Static original-byte disassembly places `RTL:7d64` at the start of a
+DOS/CRT-style **file-descriptor write routine**. Its prologue takes the
+descriptor at `[BP+6]`, checks a relocated DS descriptor bound, tests the
+descriptor's `20h` append and `80h` text-mode flags, optionally seeks to end
+with INT 21h/AX=4202h, and processes newline conversion on the text-mode
+path before issuing INT 21h/AH=40h writes. The original body reaches
+`RTL:7eab` and branches to an epilogue elsewhere; its complete
+argument/flag/error semantics remain unverified. This CRT-style descriptor
+writer must **not** be conflated with the already reconstructed raw DOS
+file-write wrapper `gate_linked_dos_file_write`.
+
+The inspector now offers a **100-byte entry-anchored prefix check** at
+`RTL:7d64`, masking only the DS descriptor-bound WORD at `RTL:7d6f` and the
+FAR target operand at `RTL:7dbd`: **94 invariant bytes**. Only on success
+does it expose that helper's relocated FAR target. The authentic snapshot
+currently validates an 11-byte raw entry prefix; a fresh run is needed to
+validate the stronger 100-byte check. Neither this inspection nor a plausible
+CRT library identity implements the unresolved Ctrl-Break wrapper.
 
 The third call is now identified as `rtl:10da1..10dc6`, a bounded FAR
 routine (preceded and terminated by `RETF`). It starts with `push cs; call

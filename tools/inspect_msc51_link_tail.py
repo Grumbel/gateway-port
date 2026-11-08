@@ -61,7 +61,10 @@ EXTENDED_RTL_ENTRIES = {
 # well enough to match before the rest of its long, relocated body is read.
 # The 02a5:17da target of that call is a complete 142-byte buffered stream
 # flush at RTL:6eb8..6f45, with one FAR write call and two independent DS
-# table addresses; the new snapshot confirms its first 16 source bytes.
+# table addresses; the 22-second snapshot confirms its 134 invariant bytes.
+# Its call to 02a5:2686 projects to RTL:7d64, a DOS/CRT descriptor writer.
+# Only the first 100 bytes of that longer routine are checked, masking its
+# relocated DS table bound and one FAR call, before any deeper call is shown.
 # At 145d:016c the complete 86-byte CA00 image destructor has one relocated
 # DS-segment immediate and one FAR call to the already named pixel allocator.
 # The final 153a:0048 DOS heap release has a single relocated DS immediate;
@@ -72,6 +75,7 @@ RELOCATED_CALLEE_ENTRIES = {
     (0x121b, 0x021f): (0x15706, 36, (15,), (), ((2, 25), (25, 31), (9, 13))),
     (0x02a5, 0x0f62): (0x6640, 48, (35,), (), ()),
     (0x02a5, 0x17da): (0x6eb8, 142, (87,), (32, 50), ()),
+    (0x02a5, 0x2686): (0x7d64, 100, (89,), (11,), ()),
     (0x0e48, 0x0202): (0x10da1, 38, (16, 26), (), ((6, 33), (12, 22))),
     (0x0e48, 0x07fe): (0x1139d, 48, (41,), (13,), ()),
     (0x0df2, 0x000a): (0x1054d, 38, (4,), (), ((18, 25),)),
@@ -182,9 +186,9 @@ def annotate_relocated_callees(rows, exe, rtl, ram, load_segment):
             continue  # Other checkpoints may have replaced resident banks.
         verified_banks[bank['segment']] = bank
     # Depth 0: control/diagnostic calls; depth 1/2: validated helper chains;
-    # depth 3: the stream flush's bounded write call (or the VFX heap leaf).
+    # depth 3: the flush's FAR target; depth 4: the DOS/CRT write prefix.
     # Never recurse through mere bank projections or unknown code windows.
-    for _depth in range(4):
+    for _depth in range(5):
         pending = calls
         if not pending:
             break

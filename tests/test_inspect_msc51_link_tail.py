@@ -460,9 +460,27 @@ class LinkTailTests(unittest.TestCase):
         flush_linked[flush_words[0]:flush_words[0] + 2] = b'\x11\x31'
         flush_linked[flush_words[1]:flush_words[1] + 2] = b'\x77\x31'
         flush_linked[flush_fars[0]:flush_fars[0] + 5] = \
-            b'\x9a\x34\x12\x01\x26'
+            b'\x9a\x86\x26\xa5\x12'
         flush_physical = (0x1000 + 0x02a5) * 16 + 0x17da
         ram[flush_physical:flush_physical + flush_length] = flush_linked
+
+        writer_source, writer_length, writer_fars, writer_words, writer_pairs = \
+            RELOCATED_CALLEE_ENTRIES[0x02a5, 0x2686]
+        self.assertEqual((writer_source, writer_length, writer_fars,
+                          writer_words, writer_pairs),
+                         (0x7d64, 100, (89,), (11,), ()))
+        writer_original = bytearray((index * 17 + 3) & 255
+                                    for index in range(writer_length))
+        writer_original[writer_fars[0]:writer_fars[0] + 5] = \
+            b'\x9a\x00\x00\x00\x00'
+        writer_original[writer_words[0]:writer_words[0] + 2] = b'\x00\x00'
+        rtl[writer_source:writer_source + writer_length] = writer_original
+        writer_linked = bytearray(writer_original)
+        writer_linked[writer_words[0]:writer_words[0] + 2] = b'\x7b\x20'
+        writer_linked[writer_fars[0]:writer_fars[0] + 5] = \
+            b'\x9a\x77\x55\x22\x44'
+        writer_physical = (0x1000 + 0x02a5) * 16 + 0x2686
+        ram[writer_physical:writer_physical + writer_length] = writer_linked
 
         cleanup = inspect(exe, rtl, ram)[1]['relocated_far_calls'][0]
         self.assertEqual(cleanup['relocated_source_match']['offset'], source)
@@ -483,7 +501,25 @@ class LinkTailTests(unittest.TestCase):
         self.assertEqual(len(flush['callee_far_calls']), 1)
         self.assertEqual(flush['callee_far_calls'][0]['original_call_offset'],
                          flush_source + flush_fars[0])
-        self.assertEqual(flush['callee_far_calls'][0]['target_segment'], 0x2601)
+        self.assertEqual(flush['callee_far_calls'][0]['target_segment'], 0x12a5)
+        writer = flush['callee_far_calls'][0]
+        self.assertEqual(writer['relocated_source_match']['offset'], writer_source)
+        self.assertEqual(writer['relocated_source_match']['matched_nonrelocated_bytes'],
+                         94)
+        self.assertEqual(writer['callee_far_calls'][0]['original_call_offset'],
+                         writer_source + writer_fars[0])
+        self.assertEqual(writer['callee_far_calls'][0]['target_offset'], 0x5577)
+
+        # A stable instruction changed beyond the 48-byte raw entry window
+        # rejects the longer CRT writer signature and its nested FAR call.
+        ram[writer_physical + 60] ^= 1
+        writer = inspect(exe, rtl, ram)[1]['relocated_far_calls'][0] \
+            ['callee_far_calls'][0]['callee_far_calls'][0]['callee_far_calls'][0]
+        self.assertNotIn('relocated_source_match', writer)
+        self.assertNotIn('callee_far_calls', writer)
+        self.assertEqual(writer['live_entry_hex'],
+                         ram[writer_physical:writer_physical + 48].hex())
+        ram[writer_physical + 60] ^= 1
 
         # A differing, non-relocated stream instruction must reject the
         # whole flush identity without inventing a downstream target.
