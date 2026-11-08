@@ -116,6 +116,7 @@ class MSC51Tests(unittest.TestCase):
             executable = output / "static-data-host-probe"
             build = subprocess.run(
                 ["gcc", "-x", "c", "-std=c89", "-Wall", "-Wextra", "-Werror",
+                 "-include", str(output / "DATNAMES.H"),
                  "-I", str(output), str(output / "DATA.C"), str(output / "SEL.C"),
                  str(REPO / "tests/fixtures/msc51_data/data_host_probe.c"),
                  "-o", str(executable)], capture_output=True, text=True)
@@ -140,25 +141,40 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn(entry_object, (output / "BPREP.RSP").read_text())
             self.assertNotIn("BOOTPREP.OBJ", (output / "LINK.RSP").read_text())
             self.assertLessEqual(max(len(line) for line in batch.splitlines()), 127)
+            data_aliases = dict(re.findall(
+                r"^#define (\w+) (\w+)$", (output / "DATNAMES.H").read_text(), re.MULTILINE))
+            def staged_name(original):
+                return data_aliases.get(original, original)
+
+            # Microsoft C 5.1 uses only the first 31 identifier characters.
+            # Every compiler-visible identifier must be unique after staging;
+            # names such as gate_dos_relocate_intro_resident_* otherwise
+            # collide as distinct function bodies under C2084.
+            for source in ("DATA.C", "DATACHK.C", "DATAREAL.C", "BOOT.H",
+                           "BOOT.C", "BOOTCHK.C", "BOOTPREP.C"):
+                ids = msc51.msc51_identifiers((output / source).read_text())
+                self.assertTrue(all(len(name) <= 31 for name in ids), source)
+                self.assertEqual(len(ids), len({name[:31] for name in ids}), source)
+            self.assertGreater(len(data_aliases), 10)
             self.assertIn("gate_dos_load_intro_rtl_data", (output / "DATA.C").read_text())
             self.assertIn("gate_dos_fix_intro_rtl_segs", (output / "DATA.C").read_text())
             self.assertIn("gate_dos_fix_intro_rtl_offs", (output / "DATA.C").read_text())
             self.assertIn("gate_dos_fix_intro_rtl_external", (output / "DATA.C").read_text())
-            self.assertIn("gate_dos_fix_intro_rtl_startup_words", (output / "DATA.C").read_text())
-            self.assertIn("gate_dos_fix_intro_return_pointer", (output / "DATA.C").read_text())
+            self.assertIn(staged_name("gate_dos_fix_intro_rtl_startup_words"), (output / "DATA.C").read_text())
+            self.assertIn(staged_name("gate_dos_fix_intro_return_pointer"), (output / "DATA.C").read_text())
             self.assertIn("gate_dos_prepare_intro_data", (output / "DATA.C").read_text())
-            self.assertIn("gate_dos_load_intro_resident_bank", (output / "DATA.C").read_text())
-            self.assertIn("gate_dos_relocate_intro_resident_self_calls", (output / "DATA.C").read_text())
-            self.assertIn("gate_dos_relocate_intro_resident_ds_loads", (output / "DATA.C").read_text())
-            self.assertIn("gate_dos_relocate_intro_exe_call", (output / "DATA.C").read_text())
-            self.assertIn("gate_dos_relocate_intro_resident_direct_segments", (output / "DATA.C").read_text())
+            self.assertIn(staged_name("gate_dos_load_intro_resident_bank"), (output / "DATA.C").read_text())
+            self.assertIn(staged_name("gate_dos_relocate_intro_resident_self_calls"), (output / "DATA.C").read_text())
+            self.assertIn(staged_name("gate_dos_relocate_intro_resident_ds_loads"), (output / "DATA.C").read_text())
+            self.assertIn(staged_name("gate_dos_relocate_intro_exe_call"), (output / "DATA.C").read_text())
+            self.assertIn(staged_name("gate_dos_relocate_intro_resident_direct_segments"), (output / "DATA.C").read_text())
             self.assertIn("gate_dos_intro_resident_crc32", (output / "DATA.C").read_text())
             real_probe = (output / "DATAREAL.C").read_text()
             self.assertIn("gate_dos_intro_resident_crc32", real_probe)
             # A previous source check accidentally ran the resident CRC at
             # segment zero, before allocating the bank. The 10 EXE tail
             # bytes must be overlaid before any full-bank fingerprint.
-            self.assertLess(real_probe.index("gate_dos_overlay_intro_resident_exe_tail(exe_tail_handle"),
+            self.assertLess(real_probe.index(staged_name("gate_dos_overlay_intro_resident_exe_tail") + "(exe_tail_handle"),
                             real_probe.index("if (good && gate_dos_intro_resident_crc32("))
             self.assertLess(real_probe.index("if (good && gate_dos_intro_resident_crc32("),
                             real_probe.index("gate_dos_prepare_intro_data(exe_handle"))
@@ -179,6 +195,7 @@ class MSC51Tests(unittest.TestCase):
                 self.assertRegex(text, r"static char \w+\[\] = \".*\";")
                 syntax = subprocess.run(
                     ["gcc", "-std=c89", "-Wall", "-Wextra", "-Werror", "-fsyntax-only",
+                     "-include", str(output / "DATNAMES.H"),
                      "-I", str(REPO / "tests/fixtures/msc51_data"),
                      "-I", str(output), "-x", "c", str(output / source)],
                     capture_output=True, text=True)
@@ -195,6 +212,7 @@ class MSC51Tests(unittest.TestCase):
             executable = output / "bootstrap-host"
             built = subprocess.run(
                 ["gcc", "-x", "c", "-std=c89", "-Wall", "-Wextra", "-Werror",
+                 "-include", str(output / "DATNAMES.H"),
                  "-I", str(REPO / "tests/fixtures/msc51_data"),
                  "-I", str(output), str(output / "BOOT.C"),
                  str(REPO / "tests/fixtures/msc51_data/bootstrap_host.c"),
@@ -207,6 +225,7 @@ class MSC51Tests(unittest.TestCase):
                 syntax = subprocess.run(
                     ["gcc", "-std=c89", "-Wall", "-Wextra", "-Werror",
                      "-fsyntax-only", "-x", "c",
+                     "-include", str(output / "DATNAMES.H"),
                      "-I", str(REPO / "tests/fixtures/msc51_data"),
                      "-I", str(output), str(output / source)],
                     capture_output=True, text=True)
@@ -222,6 +241,7 @@ class MSC51Tests(unittest.TestCase):
             executable = output / "startup-entry-host"
             built = subprocess.run(
                 ["gcc", "-x", "c", "-std=c89", "-Wall", "-Wextra", "-Werror",
+                 "-include", str(output / "DATNAMES.H"),
                  "-I", str(REPO / "tests/fixtures/msc51_data"),
                  "-I", str(output), str(output / "BOOTPREP.C"),
                  str(output / intro_source), str(output / "HEAP.C"),

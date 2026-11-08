@@ -742,6 +742,7 @@ class ResidentSelfCallTests(unittest.TestCase):
             executable = out / "resident-self-calls-host"
             compiled = subprocess.run(
                 ["gcc", "-x", "c", "-std=c89", "-Wall", "-Wextra", "-Werror",
+                 "-include", str(out / "DATNAMES.H"),
                  "-I", str(out),
                  str(ROOT / "tests/fixtures/msc51_data/resident_self_calls_host.c"),
                  str(out / "SEL.C"),

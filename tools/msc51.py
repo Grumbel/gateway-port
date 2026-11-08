@@ -233,7 +233,7 @@ MEMORY_SOURCES = ("GATEMEM.H", "STDINT.H", "MEMORY.C", "MEMCHK.C")
 SELECTOR_SOURCES = ("GATEMEM.H", "STDINT.H", "SEL.C", "SELCHK.C", "MEMORY.C")
 STATIC_DATA_SOURCES = ("GATEMEM.H", "GATEDOS.H", "STDINT.H", "DATA.C",
                        "DATACHK.C", "DATAREAL.C", "BOOT.H", "BOOT.C",
-                       "BOOTCHK.C", "BOOTPREP.C", "BPREP.RSP", "HEAP.C",
+                       "BOOTCHK.C", "BOOTPREP.C", "BPREP.RSP", "DATNAMES.H", "HEAP.C",
                        "SEL.C", "MEMORY.C", "DOSFILE.C")
 DOS_FILE_SOURCES = ("GATEDOS.H", "GATEMEM.H", "STDINT.H", "DOSFILE.C", "FILECHK.C",
                     "MEMORY.C")
@@ -534,15 +534,28 @@ def stage_launcher(output: Path) -> list[str]:
     for dos_name, staged_name in (("msc51_dos_file.c", "DOSFILE.C"),
                                   ("msc51_dos_file_probe.c", "FILECHK.C")):
         (output / staged_name).write_text((source_dir / "dos" / dos_name).read_text())
-    for dos_name, staged_name in (("msc51_startup_static_data.c", "DATA.C"),
-                                  ("msc51_startup_static_data_probe.c", "DATACHK.C"),
-                                  ("msc51_startup_original_probe.c", "DATAREAL.C")):
-        (output / staged_name).write_text((source_dir / "dos" / dos_name).read_text())
-    for dos_name, staged_name in (("msc51_startup_bootstrap.h", "BOOT.H"),
-                                  ("msc51_startup_bootstrap.c", "BOOT.C"),
-                                  ("msc51_startup_bootstrap_probe.c", "BOOTCHK.C"),
-                                  ("msc51_startup_entry_probe.c", "BOOTPREP.C")):
-        (output / staged_name).write_text((source_dir / "dos" / dos_name).read_text())
+    startup_sources = (("msc51_startup_static_data.c", "DATA.C"),
+                       ("msc51_startup_static_data_probe.c", "DATACHK.C"),
+                       ("msc51_startup_original_probe.c", "DATAREAL.C"),
+                       ("msc51_startup_bootstrap.h", "BOOT.H"),
+                       ("msc51_startup_bootstrap.c", "BOOT.C"),
+                       ("msc51_startup_bootstrap_probe.c", "BOOTCHK.C"),
+                       ("msc51_startup_entry_probe.c", "BOOTPREP.C"))
+    startup_contents = [(staged, (source_dir / "dos" / original).read_text())
+                        for original, staged in startup_sources]
+    # MSC 5.1 compares only 31 identifier characters. The resident
+    # relocators deliberately have descriptive shared prefixes; compiling
+    # their unmodified source produces C2084 duplicate function bodies.
+    # Use one token-aware mapping across all startup callers, not the
+    # compiler's lossy truncation. The host-only map lets unmodified host
+    # fixtures call the *same* shortened exports with GCC.
+    startup_names = msc51_short_names([contents for _, contents in startup_contents])
+    for staged, contents in startup_contents:
+        (output / staged).write_text(msc51_rename_identifiers(contents, startup_names))
+    (output / "DATNAMES.H").write_text(
+        "/* Host-test aliases for the staged Microsoft C startup symbols. */\n"
+        + "".join(f"#define {name} {alias}\n"
+                  for name, alias in sorted(startup_names.items())))
     entry_obj = aliases["gate_exe_intro_setup.c"].replace(".C", ".OBJ")
     entry_source = aliases["gate_exe_intro_setup.c"]
     prep_response = ["BOOTPREP.OBJ+", "BOOT.OBJ+", "DATA.OBJ+", "SEL.OBJ+",

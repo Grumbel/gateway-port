@@ -163,6 +163,19 @@ actual staged prologue and heap objects with synthetic DOS memory and
 checks success, invalid selectors and allocation failure; Microsoft C
 5.1/DOSBox still needs to run this new probe on the user's system.
 
+**Microsoft C 5.1 identifier compatibility:** The user's first real
+`DATA.BAT` run failed at `DATA.C` compilation, not during the probe:
+the compiler sees only 31 identifier characters and treats distinct
+`gate_dos_relocate_intro_resident_*` function names as duplicate bodies
+(C4011 followed by C2084). The generated startup group now applies one
+deterministic, collision-free token-level shortening map to `DATA.C`,
+`DATACHK.C`, `DATAREAL.C`, `BOOT.H`, `BOOT.C`, `BOOTCHK.C` and
+`BOOTPREP.C`; `DATNAMES.H` records the full-to-short mapping for host
+fixture compilation. Strings and original-address comments are unchanged.
+The map is included in the DOS data source signature. Synthetic C89
+compilation and an explicit staged-identifier uniqueness check pass; a
+successful Microsoft C 5.1 rebuild is **not** yet established.
+
 On the user's NixOS/DOSBox setup, the relevant complete verification is:
 
 ```sh
