@@ -95,10 +95,44 @@ class StartupSnapshotTests(unittest.TestCase):
         layout = startup.runtime_data_layout(bytes(exe), bytes(rtl), captures, segment)
         self.assertEqual(layout["runtime_data_segment"], segment)
         self.assertEqual(len(layout["snapshots"]), 2)
+        self.assertIsNone(layout["snapshots"][0]["rtl_preimage"])
         self.assertEqual(layout["stable_zero_regions_from_500ms"],
                          [{"runtime_ds_offset": 0x1100, "length": 0x160}])
+        self.assertEqual(layout["nonzero_at_first_prepared_to_zero_by_500ms"], 0x50)
+        self.assertEqual(layout["largest_cleared_regions_by_500ms"],
+                         [{"runtime_ds_offset": 0x1300, "length": 0x50}])
         with self.assertRaisesRegex(ValueError, "before original DS"):
             startup.runtime_data_layout(bytes(exe), bytes(rtl), captures, None)
+
+    def test_rtl_preimage_shift_and_transient_loader_segment_alias(self):
+        rtl = bytearray((i * 29 + i // 19) % 251 for i in range(0x4000))
+        length = startup.RTL_DATA_IMAGE_END
+        image = bytearray(rtl[0x29:0x29 + length])
+        source_zero = next(i for i, byte in enumerate(image) if byte == 0)
+        source_nonzero = next(i for i, byte in enumerate(image) if byte != 0)
+        image[source_zero] = 0x5a
+        image[source_nonzero] = 0
+        third = next(i for i, byte in enumerate(image)
+                     if byte not in (0, 0x77, 0x5a))
+        image[third] = 0x77
+        comparison = startup.rtl_preimage_comparison(bytes(rtl), image)
+        self.assertEqual(comparison["length"], length)
+        self.assertEqual(comparison["equal_bytes"], length - 3)
+        self.assertEqual(comparison["source_zero_to_nonzero"], 1)
+        self.assertEqual(comparison["source_nonzero_to_zero"], 1)
+        self.assertEqual(comparison["changed_nonzero_bytes"], 1)
+
+        exe, _ = fixture()
+        ram = bytearray(b"\xb4" * startup.RAM_SIZE)
+        segment = 0x2a7a
+        ram[segment * 16:segment * 16 + length] = image
+        captures = [(100, regs(0x3259, 0x103c, 0x348a, 0x3229, 0x3c4), bytes(ram)),
+                    (500, regs(0x12a5, 0x3570, segment, segment, 0x7a1a), bytes(ram))]
+        layout = startup.runtime_data_layout(exe, bytes(rtl), captures, segment)
+        self.assertEqual(layout["snapshots"][0]["loader_ds_alias_offset"], 0xa100)
+        self.assertIsNone(layout["snapshots"][1]["loader_ds_alias_offset"])
+        self.assertEqual(layout["snapshots"][0]["rtl_preimage"]["equal_bytes"],
+                         length - 3)
 
     def test_static_exe_data_is_exact_and_present_before_resident_handoff(self):
         base_exe, rtl = fixture()

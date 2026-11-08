@@ -540,8 +540,32 @@ static data. Reported long matches can still include coincidental adjacent
 equal bytes, so boundaries must be checked across multiple captures before
 adding any new loader copy. **Stable zeros do not prove BSS**: they could
 be explicit clearing, unallocated storage, or a presently idle workspace.
-The next step is to review this report before implementing more runtime
-initialization, especially any values outside `DS:3592..4cea`.
+**User's authentic 0–1500ms report (2026-11-08):** The largest matches
+expose memory aliasing, not merely additional static data to load. The
+eventual `DS=2a7a` window contains the loader's earlier `DS=348a` at
+offset `a100` (`(348a-2a7a)*16`) and its `DS=3445` at offset `9cb0`.
+At 100ms `RTL:00011` appears at `DS:a0f1` for 24,335 bytes; at 175ms
+`RTL:1001f` appears at `DS:a100` for 24,320 bytes. `EXE:00020` at
+`DS:9cb0` is another observed overlapping loader-space mapping. These
+large runs are **not justified as permanent runtime data or BSS**.
+Furthermore `DS:64e3` has a 4,703-byte stable-zero region from 500ms,
+yet `EXE:043ac` was seen at `DS:64e4` for 2,060 bytes at 100ms;
+at least part of that zero region previously held nonzero bytes.
+
+The smaller early RTL runs have a common exact alignment: file offset
+equals runtime DS offset **plus `0x29`**, including `RTL:00580 -> DS:0557`,
+`RTL:01581 -> DS:1558` and `RTL:02c4f -> DS:2c26`. To measure rather
+than guess the intervening fields, `--runtime-data-layout` now also
+compares `RTL:00029..035ba` to `DS:0000..3591`, stopping just before
+the separately verified 5,976-byte EXE data. Each snapshot reports the
+exact-byte count and three kinds of mismatch (source zero changed,
+source nonzero cleared, other changes), along with bounded mismatch
+spans. It labels source matches physically overlapping the loader's
+actual transient DS and reports nonzero-to-zero clearing between the
+first prepared capture and 500ms. None of this yet proves the full
+`0x3592`-byte RTL region is a direct copy or identifies which differing
+words are RTLink relocations versus runtime changes. No unverified
+replacement bytes or extra data-copy routine have been added.
 
 **Microsoft C 5.1 build correction:** The first user-side `DATA.BAT` run
 compiled `DATA.C` but stopped with `DATACHK.C(22): C2073` (an initialized

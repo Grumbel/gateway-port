@@ -33,6 +33,10 @@ TIMING_RESTORE_ENTRY = (0x5896, 76, (11, 18, 33, 50, 54, 62, 66))
 TICK_CALLBACK_ENTRY = (0x58e2, 28, (10, 16))
 DATA_MATCH_SEED = 16
 DATA_MATCH_MINIMUM = 64
+# Multiple independent original-copy runs share this offset delta. It is
+# not yet evidence that *all* intervening RTL bytes survive relocation.
+RTL_DATA_IMAGE_FILE_OFFSET = 0x29
+RTL_DATA_IMAGE_END = STATIC_EXE_DATA[1]
 
 
 def source_window_index(exe, rtl, seed=DATA_MATCH_SEED):
@@ -133,6 +137,34 @@ def zero_regions(data, minimum=128):
                                             span["runtime_ds_offset"]))
 
 
+def rtl_preimage_comparison(rtl, data):
+    """Compare the proposed leading RTL data image, including mismatches.
+
+    Report mismatch classes, not actual proprietary source/guest bytes. This
+    is a diagnostic baseline for identifying relocations, NOT a validated
+    instruction to copy the whole range into a new DOS executable.
+    """
+    size = RTL_DATA_IMAGE_END
+    file_base = RTL_DATA_IMAGE_FILE_OFFSET
+    if len(rtl) < file_base + size or len(data) < size:
+        return None
+    source = rtl[file_base:file_base + size]
+    live = data[:size]
+    equal = sum(a == b for a, b in zip(source, live))
+    from_zero = sum(a == 0 and b != 0 for a, b in zip(source, live))
+    to_zero = sum(a != 0 and b == 0 for a, b in zip(source, live))
+    changed_nonzero = size - equal - from_zero - to_zero
+    mask = bytes(0 if a != b else 1 for a, b in zip(source, live))
+    return {"rtl_file_offset": file_base,
+            "runtime_ds_offset": 0,
+            "length": size,
+            "equal_bytes": equal,
+            "source_zero_to_nonzero": from_zero,
+            "source_nonzero_to_zero": to_zero,
+            "changed_nonzero_bytes": changed_nonzero,
+            "largest_changed_regions": zero_regions(mask, minimum=16)[:12]}
+
+
 def runtime_data_layout(exe, rtl, captures, segment, *, minimum=DATA_MATCH_MINIMUM):
     """Report EXE/RTL exact matches and zero spans in the *eventual* DS.
 
@@ -146,11 +178,21 @@ def runtime_data_layout(exe, rtl, captures, segment, *, minimum=DATA_MATCH_MINIM
         raise ValueError("runtime data segment outside conventional RAM")
     index = source_window_index(exe, rtl)
     snapshots = []
-    for milliseconds, _, ram in captures:
+    for milliseconds, registers, ram in captures:
         data = ram[base:base + 0x10000]
         copies = exact_source_copies(data, index, minimum=minimum)
+        # Earlier DS values can point inside the eventual 64KiB DS window.
+        # This is a *physical alias*, so a copy there may be loader scratch
+        # rather than intended data for the post-handoff program.
+        difference = registers["DS"] - segment
+        loader_alias = (difference * 16 if 0 < difference < 0x1000 else None)
+        for entry in copies:
+            entry["overlaps_loader_ds"] = (loader_alias is not None and
+                entry["runtime_ds_offset"] + entry["length"] > loader_alias)
         snapshots.append({"milliseconds": milliseconds,
+                          "loader_ds_alias_offset": loader_alias,
                           "source_copies": copies,
+                          "rtl_preimage": rtl_preimage_comparison(rtl, data),
                           "zero_bytes": data.count(0),
                           "largest_zero_regions": zero_regions(data)[:10]})
     # Any zero across all settled snapshots is only a potential uninitialized
@@ -161,9 +203,17 @@ def runtime_data_layout(exe, rtl, captures, segment, *, minimum=DATA_MATCH_MINIM
                       for i in range(0x10000)) if settled else b"")
     stable_zero_spans = (zero_regions(bytes(0 if flag else 1 for flag in zero_all))
                          if settled else [])
+    first_prepared = next((ram[base:base + 0x10000] for time, _, ram in captures
+                           if time >= 100), None)
+    cleared = (bytes(0 if old != 0 and new == 0 else 1
+                     for old, new in zip(first_prepared, settled[0]))
+               if first_prepared is not None and settled else b"")
     return {"runtime_data_segment": segment,
             "minimum_source_copy_bytes": minimum,
             "snapshots": snapshots,
+            "nonzero_at_first_prepared_to_zero_by_500ms": (
+                len(cleared) - cleared.count(1) if cleared else None),
+            "largest_cleared_regions_by_500ms": zero_regions(cleared, minimum=64)[:20],
             "stable_zero_regions_from_500ms": stable_zero_spans[:20]}
 
 
@@ -576,10 +626,33 @@ def main():
                 print(" %4dms: %d exact source copies, %d zero bytes" % (
                     sample["milliseconds"], len(sample["source_copies"]),
                     sample["zero_bytes"]))
+                alias = sample["loader_ds_alias_offset"]
+                if alias is not None:
+                    print("       current loader DS physically aliases eventual DS:%04x" % alias)
                 for match in sample["source_copies"][:12]:
-                    print("     %-3s:%05x -> DS:%04x +%d bytes" % (
+                    print("     %-3s:%05x -> DS:%04x +%d bytes%s" % (
                         match["source"], match["source_file_offset"],
-                        match["runtime_ds_offset"], match["length"]))
+                        match["runtime_ds_offset"], match["length"],
+                        " (overlaps loader DS)" if match["overlaps_loader_ds"] else ""))
+                preimage = sample["rtl_preimage"]
+                if preimage is not None:
+                    print("       RTL +0029 preimage DS:0000..3591: %d/%d exact, "
+                          "%d zero->nonzero, %d nonzero->zero, %d changed nonzero" % (
+                              preimage["equal_bytes"], preimage["length"],
+                              preimage["source_zero_to_nonzero"],
+                              preimage["source_nonzero_to_zero"],
+                              preimage["changed_nonzero_bytes"]))
+                    if sample["milliseconds"] in (100, 500, 1500):
+                        for span in preimage["largest_changed_regions"][:8]:
+                            print("         mismatch DS:%04x +%d bytes" % (
+                                span["runtime_ds_offset"], span["length"]))
+            cleared = layout["nonzero_at_first_prepared_to_zero_by_500ms"]
+            if cleared is not None:
+                print("%d bytes nonzero at first >=100ms sample were zero by "
+                      "first >=500ms sample (cannot label them BSS)" % cleared)
+                for span in layout["largest_cleared_regions_by_500ms"][:12]:
+                    print("     DS:%04x +%d bytes cleared" % (
+                        span["runtime_ds_offset"], span["length"]))
             zero_spans = layout["stable_zero_regions_from_500ms"]
             print("Stable zero candidates across >=500ms samples: %d large spans" %
                   len(zero_spans))
