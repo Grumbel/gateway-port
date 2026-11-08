@@ -67,13 +67,20 @@ calls). On a successful check, `entry_status=relocated_original_entry` and
 code identity, **not** the callees' behavior, arguments or DOS-equivalent
 implementation. The user's 22-second rerun succeeded on 2026-11-08:
 both relocated entries validated against all 45 bytes.
+The original diagnostic actually continues to `rtl:1712d` and has three
+more FAR calls at `rtl:17103`, `1710c`, and `17115`. The inspector now
+separately checks that full 103-byte body (83 invariant bytes, five FAR
+calls), returning `complete_original_entry.matched` and all five target
+operands only if the longer check succeeds. If it fails, the established
+45-byte/two-call result remains intact. The user has **not yet run** this
+longer validation on original guest RAM.
 The **eight directly observed relocated FAR operands** are:
 
 | Original call site | Linked target (22-second runtime) | RTL source projection | Evidence/status |
 | --- | --- | --- | --- |
-| `rtl:157b8` | `221b:021f` | Unknown | Bank not yet identified |
+| `rtl:157b8` | `221b:021f` | Unknown | Bank not yet identified; raw `rtl:15793` window falls in data, not a callee entry |
 | `rtl:157bd` | `1a46:01c0` | `rtl:c391` | Existing bank `0a46` projects here |
-| `rtl:157c2` | `1e48:0202` | Unknown | Bank not yet identified |
+| `rtl:157c2` | `1e48:0202` | Candidate `rtl:10da1` | Entry lies after a `RETF`; dedicated relocatable-opcode check is staged, awaiting the user's live RAM rerun |
 | `rtl:157c7` | `1c4d:008b` | `rtl:e771` | Existing bank `0c4d` projects here |
 | `rtl:157d0` | `1f10:035a` | `rtl:11e5f` | Existing bank `0f10` projects here |
 | `rtl:157dc` | `12a5:0b40` | `rtl:621e` | Existing bank `02a5` projects here |
@@ -89,6 +96,32 @@ count at that *callee*. If the bank validation fails or the call points
 outside known bank bounds, it reports only a `raw_source_candidate` (when
 one exists). It does not promote a mere interior byte-window match into
 a verified function identity.
+
+The first call's raw `rtl:15793` byte-window match is misleading: static
+disassembly places it in a data region. It must remain unknown until its
+runtime code and resident bank can be identified independently.
+
+The third call is more promising. `rtl:10da1..10dc6` is a bounded FAR
+routine (preceded and terminated by `RETF`). It starts with `push cs; call
+near rtl:11078`, tests bits `0x0c` of a relocated DS byte, conditionally
+passes two FAR pointers (`DS:0000` and `DS:0080`) to separate FAR callees,
+then clears the same relocated DS word and returns. Its original 38 bytes
+contain two FAR calls with relocated target operands and two relocated DS
+word offsets. The new inspector verifies **all 26 invariant bytes**, that
+both call opcodes remain intact, and that the two DS references still name
+the same word. Only if this passes on the user's actual 22-second snapshot
+does it emit `relocated_source_match`, `relocated_ds_word` and
+`callee_far_calls` (two nested targets); those nested calls are resolved
+through independently validated resident banks where possible. This is
+still *identity* evidence, not an implementation of the call's video-state
+effects. No 22-second validation of this nested entry has yet been supplied.
+
+For other unmatched FAR targets, the inspector now includes 48 live entry
+bytes as `live_entry_hex`, allowing analysis of the unknown `221b:021f`
+callee without treating a file-wide byte-window match as proof of identity.
+Unknown nested targets are similarly reported with their live bytes. This
+does not read past a 1-MiB RAM capture, and does not claim that byte strings
+are disassembled or executable entry points.
 
 Static disassembly gives leads, **not completed services**: `rtl:c391`
 tests a music/device flag and calls a same-bank helper; `rtl:e771` iterates
@@ -125,8 +158,11 @@ python3 tools/inspect_msc51_link_tail.py \
 independently verified relocated DS operands*; `relocated_original_entry`
 certifies a known control/diagnostic entry's stable instruction skeleton.
 A `source_candidate` is only an internal byte-window match and does **not**
-certify function identity. The control and diagnostic routines still require
-callee traces and calling-convention evidence before adding linker definitions.
+certify function identity. For the third control-key callee, a successful
+`relocated_source_match` verifies its exact relocation-masked original
+function body and exposes `callee_far_calls`. The control and diagnostic
+routines still require callee traces and calling-convention evidence before
+adding linker definitions.
 
 ## Historical 26-name LINK report (superseded)
 

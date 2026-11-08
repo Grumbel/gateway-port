@@ -14,7 +14,8 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 
-from inspect_msc51_link_tail import (TAIL_ENTRIES, RELOCATED_RTL_ENTRIES, inspect,
+from inspect_msc51_link_tail import (TAIL_ENTRIES, RELOCATED_RTL_ENTRIES,
+                                     EXTENDED_RTL_ENTRIES, RELOCATED_CALLEE_ENTRIES, inspect,
                                      match_relocated_far_entry)
 
 
@@ -184,6 +185,119 @@ class LinkTailTests(unittest.TestCase):
         with patch('inspect_msc51_link_tail.RTL_BANKS', (bank,)):
             row = inspect(exe, rtl, ram)[1]
         self.assertNotIn('original_source_projection', row['relocated_far_calls'][0])
+
+    def test_nested_callee_matches_fixed_bytes_and_shared_relocated_ds_word(self):
+        exe = b'MZ' + bytes(100)
+        rtl = bytearray(0x1b000)
+        ram = bytearray(1 << 20)
+        entry, length, calls = RELOCATED_RTL_ENTRIES['control_key']
+        original = bytearray((index * 7 + 23) & 255 for index in range(length))
+        for start in calls:
+            original[start:start + 5] = b'\x9a\x00\x00\x00\x00'
+        rtl[entry:entry + length] = original
+        linked = bytearray(original)
+        for start in calls:
+            linked[start + 1:start + 5] = b'\x01\x00\x03\x10'
+        # The third FAR call's destination is recovered from the user's
+        # 22-second snapshot. Only this callee has a bounded RTL template.
+        linked[calls[2] + 1:calls[2] + 5] = b'\x02\x02\x48\x1e'
+        _, seg, off, _, _ = TAIL_ENTRIES[1]
+        ram[(0x1000 + seg) * 16 + off:((0x1000 + seg) * 16 + off) + length] = linked
+
+        (relative_segment, callee_offset), (source_offset, size, fars, words) = \
+            next(iter(RELOCATED_CALLEE_ENTRIES.items()))
+        self.assertEqual((relative_segment, callee_offset), (0x0e48, 0x0202))
+        callee_original = bytearray((index * 11 + 31) & 255 for index in range(size))
+        for start in fars:
+            callee_original[start:start + 5] = b'\x9a\x00\x00\x00\x00'
+        for start in words:
+            callee_original[start:start + 2] = b'\x00\x00'
+        rtl[source_offset:source_offset + size] = callee_original
+        callee_linked = bytearray(callee_original)
+        for index, start in enumerate(fars):
+            callee_linked[start + 1:start + 5] = bytes((index + 7, 0, 0x11, 0x22))
+        for start in words:
+            callee_linked[start:start + 2] = b'\x44\x06'
+        physical = (0x1000 + relative_segment) * 16 + callee_offset
+        ram[physical:physical + size] = callee_linked
+
+        # Independently validate a bank also reached by the nested calls,
+        # so the same run returns their original file-offset projections.
+        bank = dict(segment=0x1211, file_base=0x14000, size=128,
+                    witnesses=(0x14020,))
+        bank_bytes = bytes((index * 13 + 1) & 255 for index in range(128))
+        rtl[bank['file_base']:bank['file_base'] + 128] = bank_bytes
+        bank_physical = (0x1000 + bank['segment']) * 16
+        ram[bank_physical:bank_physical + 128] = bank_bytes
+
+        with patch('inspect_msc51_link_tail.RTL_BANKS', (bank,)):
+            row = inspect(exe, rtl, ram)[1]
+        call = row['relocated_far_calls'][2]
+        self.assertEqual(call['relocated_source_match']['offset'], source_offset)
+        self.assertEqual(call['relocated_source_match']['matched_nonrelocated_bytes'], 26)
+        self.assertEqual(call['relocated_source_match']['relocated_ds_word'], 0x0644)
+        self.assertEqual(len(call['callee_far_calls']), 2)
+        self.assertEqual(call['callee_far_calls'][0]['original_call_offset'],
+                         source_offset + fars[0])
+        self.assertEqual(call['callee_far_calls'][1]['target_offset'], 8)
+        self.assertEqual(call['callee_far_calls'][0]['original_source_projection']['offset'],
+                         bank['file_base'] + 7)
+        self.assertEqual(call['callee_far_calls'][1]['original_source_projection']['offset'],
+                         bank['file_base'] + 8)
+
+        # An unchanged source byte outside a relocation must still match.
+        ram[physical + 11] ^= 1
+        with patch('inspect_msc51_link_tail.RTL_BANKS', (bank,)):
+            call = inspect(exe, rtl, ram)[1]['relocated_far_calls'][2]
+        self.assertNotIn('relocated_source_match', call)
+        self.assertEqual(len(bytes.fromhex(call['live_entry_hex'])), 48)
+        ram[physical + 11] ^= 1
+        # Both DS references point to one original word; different relocated
+        # addresses are not consistent with this exact callee template.
+        ram[physical + words[1]] ^= 1
+        with patch('inspect_msc51_link_tail.RTL_BANKS', (bank,)):
+            call = inspect(exe, rtl, ram)[1]['relocated_far_calls'][2]
+        self.assertNotIn('relocated_source_match', call)
+
+    def test_full_diagnostic_five_call_signature_falls_back_to_verified_prefix(self):
+        exe = b'MZ' + bytes(100)
+        rtl = bytearray(0x1b000)
+        ram = bytearray(1 << 20)
+        entry, length, calls = EXTENDED_RTL_ENTRIES['intro_diagnostic']
+        original = bytearray((index * 17 + 3) & 255 for index in range(length))
+        for start in calls:
+            original[start:start + 5] = b'\x9a\x00\x00\x00\x00'
+        rtl[entry:entry + length] = original
+        linked = bytearray(original)
+        for index, start in enumerate(calls):
+            linked[start + 1:start + 5] = bytes((index + 1, 0, 0x20, 0x21))
+        _, seg, off, _, _ = TAIL_ENTRIES[2]
+        physical = (0x1000 + seg) * 16 + off
+        ram[physical:physical + length] = linked
+
+        row = inspect(exe, rtl, ram)[2]
+        self.assertTrue(row['complete_original_entry']['matched'])
+        self.assertEqual(row['complete_original_entry']['compared_nonrelocated_bytes'], 83)
+        self.assertEqual(len(row['relocated_far_calls']), 5)
+        self.assertEqual(row['relocated_far_calls'][-1]['original_call_offset'], 0x17115)
+
+        # Keep the original 45-byte result when anything outside that
+        # prefix differs; never report three extra calls as verified then.
+        ram[physical + 50] ^= 1
+        row = inspect(exe, rtl, ram)[2]
+        self.assertTrue(row['relocated_original_entry']['matched'])
+        self.assertFalse(row['complete_original_entry']['matched'])
+        self.assertEqual(len(row['relocated_far_calls']), 2)
+
+    def test_relocated_operand_mask_requires_source_placeholders(self):
+        original = bytearray(b'\x90\x9a\x00\x00\x00\x00\x90\x00\x00\xcb')
+        live = bytearray(original)
+        live[2:6] = b'\x12\x34\x56\x78'
+        live[7:9] = b'\x9a\xbc'
+        self.assertTrue(match_relocated_far_entry(original, live, (1,), 10, (7,)))
+        original[7] = 1
+        self.assertFalse(match_relocated_far_entry(original, live, (1,), 10, (7,)))
+        self.assertFalse(match_relocated_far_entry(original, live, (1,), 10, (9,)))
 
     def test_invalid_snapshot_is_reported_without_a_traceback(self):
         with self.assertRaisesRegex(ValueError, '1-MiB'):
