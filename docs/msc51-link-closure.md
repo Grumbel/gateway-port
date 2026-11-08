@@ -653,6 +653,24 @@ under Microsoft C 5.1/DOSBox before their new results can be trusted.
 Neither test attempts to execute relocated code, nor does `DATA.OBJ`
 enter `LINK.RSP` yet.
 
+**Follow-up (second user confirmation):** The updated generated-data
+DOS probe and original EXE/RTL probe both PASS with the 27-word segment
+stage. It is now suitable to investigate the other 206 first-prepared
+changed bytes without altering the verified segment positions.
+
+`inspect_msc51_startup.py --runtime-data-remainder` performs a stricter
+residual analysis: it rechecks all 27 known source-zero words and their
+observed values at *each* early capture before excluding exactly 54
+changed bytes. It groups the remaining changed positions into nearby
+clusters (bridging at most two matching bytes), records their precise
+original RTL offsets, all changed-byte categories and early/late
+stability, and lists frequent byte transitions and repeated 16-bit
+transformations separately for even/odd alignment. Only short source
+and observed hex is printed in text; `--json` contains full spans.
+The report does not write a replacement image or presume that every
+remaining byte is a relocation. A genuine original-capture run is the
+next evidence required before adding further DOS initializer code.
+
 **Microsoft C 5.1 build correction:** The first user-side `DATA.BAT` run
 compiled `DATA.C` but stopped with `DATACHK.C(22): C2073` (an initialized
 automatic `char name[]`), so **neither test executable ran**. Both test

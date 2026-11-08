@@ -5,6 +5,7 @@
 
 import importlib.util
 from pathlib import Path
+import re
 import sys
 import tempfile
 import unittest
@@ -46,6 +47,71 @@ def regs(cs, ip, ds, ss, sp):
 
 
 class StartupSnapshotTests(unittest.TestCase):
+    def test_rtl_remainder_known_sites_match_dos_initializer_tables(self):
+        source = (REPO / "decomp/launcher/dos/msc51_startup_static_data.c").read_text()
+        for identifier, expected in (
+                ("gate_rtl_ds_seg_fixups", startup.KNOWN_RTL_DS_SEG_WORDS),
+                ("gate_rtl_cs_seg_fixups", startup.KNOWN_RTL_CS_SEG_WORDS)):
+            match = re.search(r"static const uint16_t " + identifier +
+                              r"\[\] = \{([^}]+)\};", source)
+            self.assertIsNotNone(match, identifier)
+            observed = tuple(int(word, 16) for word in
+                             re.findall(r"0x([0-9a-fA-F]+)u", match.group(1)))
+            self.assertEqual(observed, expected)
+
+    def test_rtl_remainder_excludes_only_confirmed_segment_words(self):
+        length = startup.RTL_DATA_IMAGE_END
+        rtl = bytearray(b"\x55" * (0x29 + length))
+        source = memoryview(rtl)[0x29:]
+        for offset in (startup.KNOWN_RTL_DS_SEG_WORDS +
+                       startup.KNOWN_RTL_CS_SEG_WORDS):
+            put_word(source, offset, 0)
+        source[0x110] = 0
+        put_word(source, 0x200, 0x1111)
+        put_word(source, 0x210, 0x1111)
+        first = bytearray(source)
+        for offset in startup.KNOWN_RTL_DS_SEG_WORDS:
+            put_word(first, offset, 0x2a7a)
+        for offset in startup.KNOWN_RTL_CS_SEG_WORDS:
+            put_word(first, offset, 0x12a5)
+        first[0x100:0x103] = bytes(3)
+        first[0x110] = 0x77
+        put_word(first, 0x200, 0x2222)
+        put_word(first, 0x210, 0x2222)
+        late = bytearray(first)
+        late[0x100] = 0x12
+        late[0x300] = 0  # Write not present in the first-prepared mismatch.
+        put_word(late, 0x2c10, 0)  # Original game also later mutates this site.
+        samples = [(100, bytes(first)), (125, bytes(first)), (500, bytes(late))]
+        remainder = startup.rtl_preimage_remainder(bytes(rtl), samples, 0x2a7a, 0x1000)
+        self.assertEqual(remainder["initial_changed_bytes"], 62)
+        self.assertEqual(remainder["verified_segment_bytes"], 54)
+        self.assertEqual(remainder["remaining_changed_bytes"], 8)
+        self.assertEqual((remainder["source_zero_to_nonzero"],
+                          remainder["source_nonzero_to_zero"],
+                          remainder["changed_nonzero_bytes"]), (1, 3, 4))
+        self.assertEqual(remainder["cluster_count"], 4)
+        clusters = {item["runtime_ds_offset"]: item for item in remainder["clusters"]}
+        self.assertEqual(clusters[0x100]["length"], 3)
+        self.assertEqual(clusters[0x100]["changed_bytes"], 3)
+        self.assertEqual(clusters[0x100]["changed_bytes_mutated_in_later_samples"], 1)
+        self.assertEqual(clusters[0x110]["source_hex"], "00")
+        self.assertEqual(clusters[0x110]["observed_hex"], "77")
+        self.assertTrue(any(item["source_word"] == 0x1111 and
+                            item["observed_word"] == 0x2222 and
+                            item["runtime_ds_offsets"] == [0x200, 0x210]
+                            for item in remainder["repeated_word_transitions"]))
+        damaged = bytearray(first)
+        put_word(damaged, 0x0fb8, 0x2a79)
+        with self.assertRaisesRegex(ValueError, "known source-zero RTL segment site"):
+            startup.rtl_preimage_remainder(
+                bytes(rtl), [(100, bytes(damaged)), (500, bytes(late))],
+                0x2a7a, 0x1000)
+        raw_damaged = bytearray(rtl)
+        put_word(raw_damaged, 0x29 + 0x0fb8, 1)
+        with self.assertRaisesRegex(ValueError, "known source-zero RTL segment site"):
+            startup.rtl_preimage_remainder(bytes(raw_damaged), samples, 0x2a7a, 0x1000)
+
     def test_preimage_fixups_restrict_hypotheses_and_track_later_writes(self):
         length = startup.RTL_DATA_IMAGE_END
         rtl = bytearray(b"\x55" * (0x29 + length))

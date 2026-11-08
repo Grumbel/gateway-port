@@ -9,6 +9,7 @@ derive or implement the Microsoft C launcher `_main` from a loader snapshot.
 """
 
 import argparse
+from collections import Counter, defaultdict
 import hashlib
 import json
 from pathlib import Path
@@ -37,6 +38,16 @@ DATA_MATCH_MINIMUM = 64
 # not yet evidence that *all* intervening RTL bytes survive relocation.
 RTL_DATA_IMAGE_FILE_OFFSET = 0x29
 RTL_DATA_IMAGE_END = STATIC_EXE_DATA[1]
+# Source-zero words independently checked against the pinned original RTL;
+# the user's first 100ms DOS capture shows the corresponding segment values.
+# These sites alone are covered by gate_dos_fix_intro_rtl_segs (DATA.C).
+KNOWN_RTL_DS_SEG_WORDS = (
+    0x0fb8, 0x0fbc, 0x0fc0, 0x0fc4, 0x0fc8, 0x0fcc,
+    0x153a, 0x153e, 0x1542, 0x1546, 0x154a, 0x154e,
+    0x1552, 0x1556, 0x26d8, 0x2b78, 0x2c10, 0x3246,
+    0x324c, 0x33ae, 0x3540, 0x3544,
+)
+KNOWN_RTL_CS_SEG_WORDS = (0x33de, 0x33e2, 0x33e6, 0x33ea, 0x33ee)
 
 
 def source_window_index(exe, rtl, seed=DATA_MATCH_SEED):
@@ -251,6 +262,109 @@ def rtl_preimage_fixup_candidates(rtl, samples, runtime_ds, image_load):
     }
 
 
+def rtl_preimage_remainder(rtl, samples, runtime_ds, image_load):
+    """Describe every first-prepared byte *not* explained by 27 segment words.
+
+    A known word is excluded only if its source value, observed value and
+    all early snapshots agree. The remaining bytes are deliberately kept as
+    evidence (not converted into unverified DOS writes). Clusters bridge at
+    most two unchanged bytes to reveal interleaved offset/segment records.
+    """
+    fixups = rtl_preimage_fixup_candidates(rtl, samples, runtime_ds, image_load)
+    base = RTL_DATA_IMAGE_FILE_OFFSET
+    size = RTL_DATA_IMAGE_END
+    source = rtl[base:base + size]
+    prepared = sorted((time, data[:size]) for time, data in samples if time >= 100)
+    first = prepared[0][1]
+    early = [data for time, data in prepared if time <= 250]
+    late = [data for time, data in prepared if time >= 500]
+    known = bytearray(size)
+    for offsets, observed in ((KNOWN_RTL_DS_SEG_WORDS, runtime_ds),
+                              (KNOWN_RTL_CS_SEG_WORDS,
+                               (image_load + RESIDENT_SEGMENT) & 0xffff)):
+        for offset in offsets:
+            if (offset + 2 > size or word(source, offset) != 0 or
+                    any(word(sample, offset) != observed for sample in early)):
+                raise ValueError("known source-zero RTL segment site DS:%04x "
+                                 "is not verified in every early snapshot" % offset)
+            if known[offset] or known[offset + 1]:
+                raise ValueError("overlapping known RTL segment word at DS:%04x" % offset)
+            known[offset:offset + 2] = b"\x01\x01"
+    if sum(known) != 54:
+        raise ValueError("expected exactly 54 bytes at 27 known segment sites")
+
+    residual = [i for i in range(size) if source[i] != first[i] and not known[i]]
+    # Each disjoint cluster has one or more truly changed bytes. The raw
+    # hex samples are emitted only at runtime, never stored in source files.
+    clusters = []
+    if residual:
+        starts = []
+        lo = last = residual[0]
+        for offset in residual[1:]:
+            if offset - last > 3 or any(known[last + 1:offset]):
+                starts.append((lo, last + 1))
+                lo = offset
+            last = offset
+        starts.append((lo, last + 1))
+        for lo, hi in starts:
+            hits = [i for i in range(lo, hi) if source[i] != first[i] and not known[i]]
+            clusters.append({
+                "runtime_ds_offset": lo,
+                "rtl_file_offset": base + lo,
+                "length": hi - lo,
+                "changed_bytes": len(hits),
+                "source_hex": source[lo:hi].hex(),
+                "observed_hex": first[lo:hi].hex(),
+                "changed_bytes_stable_in_early_samples": sum(
+                    all(sample[i] == first[i] for sample in early) for i in hits),
+                "changed_bytes_mutated_in_later_samples": sum(
+                    any(sample[i] != first[i] for sample in late) for i in hits),
+            })
+    clusters.sort(key=lambda item: (-item["changed_bytes"], item["runtime_ds_offset"]))
+
+    transitions = Counter((source[i], first[i]) for i in residual)
+    residual_mask = bytearray(size)
+    for offset in residual:
+        residual_mask[offset] = 1
+    # Repeated 16-bit replacements are clues, not a commitment to the
+    # alignment or the reason a byte changed. Never cross a known word.
+    word_sites = defaultdict(list)
+    for offset in range(size - 1):
+        if (known[offset] or known[offset + 1] or
+                not (residual_mask[offset] or residual_mask[offset + 1])):
+            continue
+        if (source[offset] == first[offset] and
+                source[offset + 1] == first[offset + 1]):
+            continue
+        old, new = word(source, offset), word(first, offset)
+        word_sites[(old, new, offset & 1)].append(offset)
+    repeated_words = [
+        {"source_word": old, "observed_word": new, "alignment": parity,
+         "count": len(offsets), "runtime_ds_offsets": offsets}
+        for (old, new, parity), offsets in word_sites.items() if len(offsets) >= 2
+    ]
+    repeated_words.sort(key=lambda item: (-item["count"], item["runtime_ds_offsets"][0]))
+    return {
+        "first_prepared_ms": fixups["first_prepared_ms"],
+        "early_sample_ms": fixups["early_sample_ms"],
+        "late_sample_ms": fixups["late_sample_ms"],
+        "initial_changed_bytes": fixups["changed_bytes"],
+        "verified_segment_words": 27,
+        "verified_segment_bytes": 54,
+        "remaining_changed_bytes": len(residual),
+        "source_zero_to_nonzero": sum(source[i] == 0 for i in residual),
+        "source_nonzero_to_zero": sum(first[i] == 0 for i in residual),
+        "changed_nonzero_bytes": sum(source[i] != 0 and first[i] != 0
+                                     for i in residual),
+        "cluster_count": len(clusters),
+        "clusters": clusters,
+        "top_byte_transitions": [
+            {"source_byte": a, "observed_byte": b, "count": count}
+            for (a, b), count in transitions.most_common(16)],
+        "repeated_word_transitions": repeated_words,
+    }
+
+
 def runtime_data_fixups(rtl, captures, runtime_ds, image_load):
     """Obtain the eventual DS even during captures of the temporary loader."""
     if runtime_ds is None:
@@ -259,6 +373,18 @@ def runtime_data_fixups(rtl, captures, runtime_ds, image_load):
     if start + 0x10000 > RAM_SIZE:
         raise ValueError("runtime data segment outside conventional RAM")
     return rtl_preimage_fixup_candidates(
+        rtl, [(time, ram[start:start + 0x10000]) for time, _, ram in captures],
+        runtime_ds, image_load)
+
+
+def runtime_data_remainder(rtl, captures, runtime_ds, image_load):
+    """Inspect only early deviations not covered by observed segment words."""
+    if runtime_ds is None:
+        raise ValueError("cannot inspect RTL remainder before original DS is observed")
+    start = runtime_ds * 16
+    if start + 0x10000 > RAM_SIZE:
+        raise ValueError("runtime data segment outside conventional RAM")
+    return rtl_preimage_remainder(
         rtl, [(time, ram[start:start + 0x10000]) for time, _, ram in captures],
         runtime_ds, image_load)
 
@@ -662,6 +788,8 @@ def main():
                         help="find exact original-file copies and zero spans in the eventual 64KiB DS")
     parser.add_argument("--runtime-data-fixups", action="store_true",
                         help="report unverified candidate segment-word fixups in the early RTL preimage")
+    parser.add_argument("--runtime-data-remainder", action="store_true",
+                        help="inspect early RTL preimage changes after 27 observed segment-word fixes")
     args = parser.parse_args()
     try:
         exe = args.exe.read_bytes()
@@ -673,6 +801,10 @@ def main():
                 exe, rtl, captures, report["observed_runtime_data_segment"])
         if args.runtime_data_fixups:
             report["runtime_data_fixups"] = runtime_data_fixups(
+                rtl, captures, report["observed_runtime_data_segment"],
+                report["original_exe"]["image_load_segment"])
+        if args.runtime_data_remainder:
+            report["runtime_data_remainder"] = runtime_data_remainder(
                 rtl, captures, report["observed_runtime_data_segment"],
                 report["original_exe"]["image_load_segment"])
     except (ValueError, OSError) as error:
@@ -791,6 +923,43 @@ def main():
             if fixups["candidate_word_count"] > 80:
                 print("    ... %d more candidate words (use --json for all)" %
                       (fixups["candidate_word_count"] - 80))
+        if args.runtime_data_remainder:
+            remaining = report["runtime_data_remainder"]
+            print("RTL preimage changes excluding 27 observed segment-word fixes:")
+            print("  %d initial changed bytes - %d segment bytes = %d unclassified bytes" % (
+                remaining["initial_changed_bytes"], remaining["verified_segment_bytes"],
+                remaining["remaining_changed_bytes"]))
+            print("  remainder classes: %d zero->nonzero, %d nonzero->zero, "
+                  "%d changed nonzero; %d clusters" % (
+                      remaining["source_zero_to_nonzero"],
+                      remaining["source_nonzero_to_zero"],
+                      remaining["changed_nonzero_bytes"], remaining["cluster_count"]))
+            print("  frequent byte changes: " + ", ".join(
+                "%02x->%02x x%d" % (entry["source_byte"],
+                                    entry["observed_byte"], entry["count"])
+                for entry in remaining["top_byte_transitions"][:12]))
+            print("  repeated two-byte changes at one alignment (not proven fixups):")
+            for entry in remaining["repeated_word_transitions"][:12]:
+                offsets = ",".join("%04x" % offset
+                                   for offset in entry["runtime_ds_offsets"][:12])
+                print("    %04x->%04x parity=%d x%d DS:%s%s" % (
+                    entry["source_word"], entry["observed_word"],
+                    entry["alignment"], entry["count"], offsets,
+                    ",..." if entry["count"] > 12 else ""))
+            print("  largest remaining change clusters (hex truncated at 24 bytes):")
+            for cluster in remaining["clusters"][:48]:
+                src, live = cluster["source_hex"], cluster["observed_hex"]
+                print("    DS:%04x RTL:%05x +%d (%d changed, %d early-stable, "
+                      "%d later-mutated) %s -> %s" % (
+                          cluster["runtime_ds_offset"], cluster["rtl_file_offset"],
+                          cluster["length"], cluster["changed_bytes"],
+                          cluster["changed_bytes_stable_in_early_samples"],
+                          cluster["changed_bytes_mutated_in_later_samples"],
+                          src[:48] + ("..." if len(src) > 48 else ""),
+                          live[:48] + ("..." if len(live) > 48 else "")))
+            if remaining["cluster_count"] > 48:
+                print("    ... %d more clusters (use --json for all)" %
+                      (remaining["cluster_count"] - 48))
 
 
 if __name__ == "__main__":

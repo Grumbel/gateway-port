@@ -435,6 +435,25 @@ real original files:
 nix run -L .#msc51-compile-data -- --original-game-dir ../gateway-dos
 ```
 
+Once both probes pass with these 27 segment words, investigate the
+**remaining 206** first-prepared changed bytes with:
+
+```sh
+python3 tools/inspect_msc51_startup.py \
+  --exe ../gateway-dos/GATE.EXE --rtl ../gateway-dos/GATE.RTL \
+  --snapshot-dir build/msc51-startup \
+  --snapshot-dir build/msc51-startup-fine \
+  --runtime-data-remainder
+```
+
+The remainder report first checks that all 27 known sites are zero in
+the source and hold their independently observed segment values in
+every 100–250ms capture. It then excludes only those 54 bytes and
+prints clusters of remaining changes with short original/observed hex
+samples, byte-change frequencies, and repeated 16-bit transformations.
+Use `--json` for complete, untruncated clusters. Neither repeated words
+nor stable changes are automatically classified as relocations.
+
 The user's follow-up Microsoft LINK run consumed `MEMORY.OBJ` and reduced
 the unresolved-symbol count **from 108 to 100**, exactly removing those
 eight segmented-memory names. This verifies linkage, not the launcher
