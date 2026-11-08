@@ -740,6 +740,12 @@ from 75 to 73. The refined class-specific comparison and named gap neighbors
 require another host run. None of these intervals is independently proved to
 be a complete original CRT function.
 
+A [bounded static audit](docs/msc51-crt-gaps.md) identifies recognizable
+command-line parsing, heap allocation and DOS interrupt/port-I/O wrappers in
+the three largest gaps. For a complete machine-readable list of all gaps,
+add `--all-crt-gaps` to the relocation-aware command above; JSON also
+contains the full ordered `all_unmatched_gaps` list without this flag.
+
 ### In-game Gateway debugger (F10)
 
 Launch the original Gateway 1 executable, enter a room, then press **F10**:

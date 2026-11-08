@@ -3,6 +3,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
 """Test CRT-code matching without distributing or requiring Microsoft binaries."""
 
+import contextlib
+import io
 import importlib.util
 from pathlib import Path
 import tempfile
@@ -19,6 +21,13 @@ SPEC.loader.exec_module(msc)
 
 
 class MSC51CompareTests(unittest.TestCase):
+    def test_all_gap_cli_requires_relocation_scan(self):
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit) as failure:
+            msc.main(["--all-crt-gaps"])
+        self.assertEqual(failure.exception.code, 2)
+        self.assertIn("--all-crt-gaps requires --scan-relocations", stderr.getvalue())
+
     @staticmethod
     def fixture_with_fixups(fixup_records, code_size=160):
         """Minimal OMF library with one CODE public and FIXUPP records."""
@@ -236,12 +245,29 @@ class MSC51CompareTests(unittest.TestCase):
                 "preceding_publics": ["CRT.ASM:_both"],
                 "following_publics": ["CRT.ASM:_new"],
             }],
+            "all_unmatched_gaps": [{
+                "start": "0x00024", "end": "0x00040", "bytes": 28,
+                "preceding_publics": ["CRT.ASM:_both"],
+                "following_publics": ["CRT.ASM:_new"],
+            }],
         })
         self.assertEqual(msc.summarize_candidate_spans([]), {
             "code_class_candidates": 0, "candidate_spanned_bytes": 0,
             "unmatched_gap_count": 0, "unmatched_gap_bytes": 0,
             "largest_unmatched_gaps": [],
+            "all_unmatched_gaps": [],
         })
+
+        # The full report must retain more than the eight display-ranked
+        # gaps, and must remain sorted by original RTL offset.
+        many = msc.public_evidence_catalogue(
+            [entry(0x100 + i * 32, f"_fn{i}", 16) for i in range(11)], [])
+        summary = msc.summarize_candidate_spans(many)
+        self.assertEqual(summary["unmatched_gap_count"], 10)
+        self.assertEqual(len(summary["largest_unmatched_gaps"]), 8)
+        self.assertEqual(len(summary["all_unmatched_gaps"]), 10)
+        self.assertEqual(summary["all_unmatched_gaps"][0]["start"], "0x00110")
+        self.assertEqual(summary["all_unmatched_gaps"][-1]["end"], "0x00240")
 
         # Overlapping fingerprint windows must be counted once, not
         # mistaken for extra covered original-code bytes.

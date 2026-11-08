@@ -724,7 +724,7 @@ def summarize_candidate_spans(catalogue: list[dict]) -> dict:
     if not spans:
         return {"code_class_candidates": 0, "candidate_spanned_bytes": 0,
                 "unmatched_gap_count": 0, "unmatched_gap_bytes": 0,
-                "largest_unmatched_gaps": []}
+                "largest_unmatched_gaps": [], "all_unmatched_gaps": []}
     merged = []
     for start, end in spans:
         if merged and start <= merged[-1][1]:
@@ -733,6 +733,16 @@ def summarize_candidate_spans(catalogue: list[dict]) -> dict:
             merged.append((start, end))
     gaps = [(old_end, new_start) for (_, old_end), (new_start, _) in
             zip(merged, merged[1:]) if old_end < new_start]
+    gap_entries = [{"start": f"0x{start:05x}",
+                    "end": f"0x{end:05x}",
+                    "bytes": end - start,
+                    "preceding_publics": sorted(
+                        name for _, span_end, name in source_spans
+                        if span_end == start),
+                    "following_publics": sorted(
+                        name for span_start, _, name in source_spans
+                        if span_start == end)}
+                   for start, end in gaps]
     return {
         "code_class_candidates": len(spans),
         "code_class_candidate_extent": [f"0x{merged[0][0]:05x}",
@@ -740,17 +750,9 @@ def summarize_candidate_spans(catalogue: list[dict]) -> dict:
         "candidate_spanned_bytes": sum(end - start for start, end in merged),
         "unmatched_gap_count": len(gaps),
         "unmatched_gap_bytes": sum(end - start for start, end in gaps),
-        "largest_unmatched_gaps": [{"start": f"0x{start:05x}",
-                                     "end": f"0x{end:05x}",
-                                     "bytes": end - start,
-                                     "preceding_publics": sorted(
-                                         name for _, span_end, name in source_spans
-                                         if span_end == start),
-                                     "following_publics": sorted(
-                                         name for span_start, _, name in source_spans
-                                         if span_start == end)}
-                                    for start, end in sorted(
-                                        gaps, key=lambda gap: (-(gap[1] - gap[0]), gap[0]))[:8]],
+        "largest_unmatched_gaps": sorted(
+            gap_entries, key=lambda gap: (-gap["bytes"], gap["start"]))[:8],
+        "all_unmatched_gaps": gap_entries,  # Original RTL file-offset order.
     }
 
 
@@ -845,7 +847,12 @@ def main(argv: list[str] | None = None) -> int:
                         help="scan OMF public prefixes with FIXUPP relocations masked, "
                              "up to 4096 bytes across contiguous CODE-class "
                              "LEDATA records (candidates only)")
+    parser.add_argument("--all-crt-gaps", action="store_true",
+                        help="print every unmatched CODE-class candidate interval "
+                             "(requires --scan-relocations)")
     args = parser.parse_args(argv)
+    if args.all_crt_gaps and not args.scan_relocations:
+        parser.error("--all-crt-gaps requires --scan-relocations")
     if args.library is None and args.compiler is None:
         parser.error("provide --library FILE or GATEWAY_MSC51_DIR/--compiler DIR")
     try:
@@ -947,7 +954,9 @@ def main(argv: list[str] | None = None) -> int:
                   f'bytes matched within {span_summary["code_class_candidates"]} '
                   f'candidate entries; {span_summary["unmatched_gap_bytes"]} '
                   f'bytes in {span_summary["unmatched_gap_count"]} intervening gaps.')
-            for gap in span_summary["largest_unmatched_gaps"][:5]:
+            selected_gaps = (span_summary["all_unmatched_gaps"] if args.all_crt_gaps
+                             else span_summary["largest_unmatched_gaps"][:5])
+            for gap in selected_gaps:
                 print(f'  Unmatched candidate gap {gap["start"]}..{gap["end"]} '
                       f'({gap["bytes"]} bytes)')
                 print(f'    between {", ".join(gap["preceding_publics"]) or "?"} and '
