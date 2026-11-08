@@ -18,6 +18,12 @@ int gate_dos_clear_intro_rtl_prefix(uint16_t lower_segment, uint16_t paragraphs)
 int gate_dos_fix_intro_rtl_startup_words(uint16_t lower_segment, uint16_t paragraphs);
 int gate_dos_fix_intro_return_pointer(uint16_t lower_segment,
                                       uint16_t paragraphs, GateFarPtr target);
+int gate_dos_prepare_intro_data(uint16_t exe_handle, uint16_t rtl_handle,
+                                uint16_t lower_segment, uint16_t paragraphs,
+                                uint16_t resident_segment,
+                                uint16_t external_a_segment,
+                                uint16_t external_b_segment,
+                                GateFarPtr return_callback);
 int gate_dos_fix_intro_rtl_offs(uint16_t lower_segment, uint16_t paragraphs);
 int gate_dos_fix_intro_rtl_external(uint16_t lower_segment, uint16_t paragraphs,
                                     uint16_t first_segment, uint16_t second_segment);
@@ -68,6 +74,7 @@ static const uint16_t observed_cs_sites[] = {
 static uint8_t memory[0x100000];
 static uint16_t data_segment;
 static unsigned int calls_seek, calls_read, seek_bad, read_short, read_bad;
+static unsigned int integrated_fixture;
 
 void gate_dos_bind_ds(uint16_t segment) { data_segment = segment; }
 uint16_t gate_ds_segment(void) { return data_segment; }
@@ -132,6 +139,30 @@ GateDosFileResult gate_dos_file_read(uint16_t handle, GateFarPtr target,
         gate_far_set_byte(target.segment, (uint16_t)(target.offset + i),
                          (uint8_t)(pattern((handle == 7u ? 0x41e6u : 0x29u) + i) ^
                                    (handle == 8u ? 0x5au : 0u)));
+    if (integrated_fixture && handle == 8u && !read_bad && !read_short) {
+        for (i = 0u; i < sizeof observed_ds_sites / sizeof observed_ds_sites[0]; ++i)
+            gate_ds_set_word(observed_ds_sites[i], 0u);
+        for (i = 0u; i < sizeof observed_cs_sites / sizeof observed_cs_sites[0]; ++i)
+            gate_ds_set_word(observed_cs_sites[i], 0u);
+        for (i = 0u; i < sizeof expected_offsets / sizeof expected_offsets[0]; ++i)
+            gate_ds_set_word(expected_offsets[i].site, expected_offsets[i].source);
+        for (i = 0u; i < sizeof external_a / sizeof external_a[0]; ++i) {
+            gate_ds_set_word(external_a[i].site, 0u);
+            gate_ds_set_word((uint16_t)(external_a[i].site + 2u), 0u);
+        }
+        for (i = 0u; i < sizeof external_b / sizeof external_b[0]; ++i) {
+            gate_ds_set_word(external_b[i].site, 0u);
+            gate_ds_set_word((uint16_t)(external_b[i].site + 2u), 0u);
+        }
+        for (i = 0u; i < 6u; ++i) {
+            static const uint16_t sites[6] = {
+                0x0525u, 0x26d6u, 0x2b74u, 0x2bc6u, 0x2c0eu, 0x2c24u
+            };
+            gate_ds_set_word(sites[i], 0u);
+        }
+        gate_ds_set_word(0x049du, 0u);
+        gate_ds_set_word(0x049fu, 0u);
+    }
     return result;
 }
 
@@ -305,6 +336,38 @@ int main(void)
     if (gate_dos_load_intro_static_data(7u, 0x2000u, 0x100au) != -3)
         abort();
     if (gate_dos_load_intro_rtl_data(8u, 0x2000u, 0x100au) != -3)
+        abort();
+    read_bad = 0u;
+    read_short = 0u;
+    integrated_fixture = 1u;
+    memset(memory, 0xc3, sizeof memory);
+    callback.segment = 0x200au;
+    callback.offset = 0x6001u;
+    gate_far_set_byte(callback.segment, 0x6000u, 0xcfu);
+    gate_far_set_byte(callback.segment, 0x6001u, 0xcbu);
+    gate_far_set_byte(callback.segment, 0x6002u, 0x8bu);
+    gate_far_set_byte(callback.segment, 0x601eu, 0xfau);
+    gate_far_set_byte(callback.segment, 0x601fu, 0x8bu);
+    gate_far_set_byte(callback.segment, 0x6020u, 0x46u);
+    gate_far_set_byte(callback.segment, 0x6021u, 0x06u);
+    gate_far_set_byte(callback.segment, 0x6022u, 0xa3u);
+    seek_bad = 1u;
+    if (gate_dos_prepare_intro_data(7u, 8u, 0x2000u, 0x100au,
+                                    0x1234u, 0x3333u, 0x4444u, callback) != -3)
+        abort();
+    seek_bad = 0u;
+    if (gate_dos_prepare_intro_data(7u, 8u, 0x2000u, 0x1009u,
+                                    0x1234u, 0x3333u, 0x4444u, callback) != -1 ||
+        gate_dos_prepare_intro_data(7u, 8u, 0x2000u, 0x100au,
+                                    0x1234u, 0x3333u, 0x4444u, callback) != 0 ||
+        gate_ds_word(0x049du) != callback.offset ||
+        gate_ds_word(0x049fu) != callback.segment ||
+        gate_ds_word(0x0525u) != 0x0527u ||
+        gate_ds_word(0x26d8u) != 0x200au ||
+        gate_ds_word(0x2c24u) != 0x65f0u ||
+        gate_ds_word(0x4d82u) != 0x2000u ||
+        gate_ds_word(0x4d84u) != 0x200au ||
+        gate_far_byte(data_segment, 0x3592u) != pattern(0x41e6u))
         abort();
     read_short = 0u;
     read_bad = 1u;

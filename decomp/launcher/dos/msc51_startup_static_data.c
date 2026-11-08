@@ -342,3 +342,49 @@ int gate_dos_fix_intro_rtl_external(uint16_t lower_segment, uint16_t paragraphs,
     }
     return 0;
 }
+
+/* A checked *data-only* bootstrap for the reconstructed DOS entry. All
+ * segment parameters come from the caller's actual allocation and relocated
+ * resident-code placement, never from original captured absolute addresses.
+ * File handles and allocated memory remain caller-owned. On any error the
+ * data allocation is partially initialized and MUST be discarded; no game
+ * entry may run. The 14 still-unrecovered early data bytes and resident
+ * driver/interrupt setup are intentionally not fabricated here.
+ * Return 0 success, -1 bad layout, -2..-10 failure at the indicated step. */
+int gate_dos_prepare_intro_data(uint16_t exe_handle, uint16_t rtl_handle,
+                                uint16_t lower_segment, uint16_t paragraphs,
+                                uint16_t resident_segment,
+                                uint16_t external_a_segment,
+                                uint16_t external_b_segment,
+                                GateFarPtr return_callback)
+{
+    extern int gate_dos_bind_intro_aliases(uint16_t, uint16_t);
+    if (lower_segment == 0u || lower_segment > 0xfff5u ||
+        paragraphs < GATE_DATA_MIN_PARAS || resident_segment == 0u ||
+        external_a_segment == 0u || external_b_segment == 0u ||
+        return_callback.segment == 0u)
+        return -1;
+    if (gate_dos_bind_intro_aliases(lower_segment, paragraphs) != 0)
+        return -2;
+    if (gate_dos_load_intro_rtl_data(rtl_handle, lower_segment, paragraphs) != 0)
+        return -3;
+    if (gate_dos_load_intro_static_data(exe_handle, lower_segment, paragraphs) != 0)
+        return -4;
+    if (gate_dos_clear_intro_rtl_prefix(lower_segment, paragraphs) != 0)
+        return -5;
+    if (gate_dos_fix_intro_rtl_segs(lower_segment, paragraphs,
+                                    resident_segment) != 0)
+        return -6;
+    if (gate_dos_fix_intro_rtl_offs(lower_segment, paragraphs) != 0)
+        return -7;
+    if (gate_dos_fix_intro_rtl_startup_words(lower_segment, paragraphs) != 0)
+        return -8;
+    if (gate_dos_fix_intro_rtl_external(lower_segment, paragraphs,
+                                        external_a_segment,
+                                        external_b_segment) != 0)
+        return -9;
+    if (gate_dos_fix_intro_return_pointer(lower_segment, paragraphs,
+                                          return_callback) != 0)
+        return -10;
+    return 0;
+}

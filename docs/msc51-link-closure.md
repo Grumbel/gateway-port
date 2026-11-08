@@ -783,6 +783,20 @@ anchors and the original source pointer is zero. This leaves **14 of 260**
 initial changes: `DS:0518` (one byte) and `0547` (13 changed bytes within
 a 16-byte table). No independent DOS `_main` is implemented yet.
 
+**Checked data-bootstrap entry for the future `_main`:** The source-C DOS
+adapter now provides `gate_dos_prepare_intro_data`, which binds the 45
+observed data aliases, copies the original EXE and RTL initialized-data
+regions from caller-owned DOS file handles, then runs the separately tested
+clear, segment, offset, startup-word, external-pointer and relocated-return
+fixups. Its resident and external segment locations are **arguments** from
+the future loader, never hardcoded original-run addresses. A strict GCC C89
+host integration test feeds generated synthetic file images with the same
+source-zero contracts, exercises the entire sequence and checks output data
+and boundaries. On failure the allocation must be discarded; the routine
+does not attempt rollback. Neither the missing 14 bytes nor actual code-bank
+loading, IRQ/music setup or entry transfer are supplied. This is a functional
+startup-data component, **not a playable DOS executable**.
+
 **Follow-up: determine external allocation ownership from snapshots.**
 After the 167 verified initialization byte changes are excluded, the user's
 remainder report contains only ten clusters: a 63-byte zeroed prefix at

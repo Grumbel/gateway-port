@@ -114,6 +114,7 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("gate_dos_fix_intro_rtl_external", (output / "DATA.C").read_text())
             self.assertIn("gate_dos_fix_intro_rtl_startup_words", (output / "DATA.C").read_text())
             self.assertIn("gate_dos_fix_intro_return_pointer", (output / "DATA.C").read_text())
+            self.assertIn("gate_dos_prepare_intro_data", (output / "DATA.C").read_text())
             self.assertNotIn("DATA.OBJ", (output / "LINK.RSP").read_text())
             (output / "STDINT.H").write_text('#include <stdint.h>\n')
             for source in ("DATACHK.C", "DATAREAL.C"):
