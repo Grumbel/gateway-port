@@ -318,6 +318,10 @@ int main(void)
         if (gate_far_word((uint16_t)resident_allocated,
                           observed_paragraph_sites[i]) != 0x1000u)
             good = 0;
+    if (good && (gate_far_word((uint16_t)resident_allocated, 0x0b01u) != 0x2bf0u ||
+                 gate_far_word((uint16_t)resident_allocated, 0x25f7u) != 0x2bf0u ||
+                 gate_far_word((uint16_t)resident_allocated, 0x3344u) != 0x2bf0u))
+        good = 0;
     if (good && gate_dos_clear_intro_rtl_prefix((uint16_t)allocated,
                                                GATE_REAL_PARAGRAPHS) != 0)
         good = 0;

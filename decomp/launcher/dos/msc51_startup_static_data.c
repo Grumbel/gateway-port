@@ -292,12 +292,56 @@ int gate_dos_relocate_intro_resident_paragraphs(uint16_t resident_segment,
     return 0;
 }
 
+/* Twenty-four absolute DS-offset operands refer to the same byte-level
+ * resident runtime field at DS:2bf0h. All are 0000h in RTL:56de..93dd and
+ * become 2bf0h at 125,175,250 and 500ms. They are offset operands, so
+ * unlike the separately reconstructed DS-segment words they do NOT change
+ * when the rebuilt DOS program is loaded at another segment. Each saved
+ * prefix is the exact original two bytes before the operand. */
+typedef struct GateResidentDataOffsetFixup {
+    uint16_t site;
+    uint16_t prefix;
+} GateResidentDataOffsetFixup;
+static const GateResidentDataOffsetFixup gate_resident_flag_offsets[] = {
+    {0x0b01u, 0xbff7u}, {0x0b16u, 0xa780u}, {0x0b27u, 0x8f80u},
+    {0x0b88u, 0x87f6u}, {0x15a3u, 0x87f6u}, {0x236cu, 0x87c6u},
+    {0x23e6u, 0xa780u}, {0x257fu, 0x8f88u}, {0x25bau, 0x87f6u},
+    {0x25d3u, 0x87f6u}, {0x25dau, 0xa780u}, {0x25f7u, 0x8f80u},
+    {0x2606u, 0x8f80u}, {0x262bu, 0x87f6u}, {0x269eu, 0x87f6u},
+    {0x26b0u, 0x87f6u}, {0x276cu, 0x87f6u}, {0x27b9u, 0x87f6u},
+    {0x2d79u, 0x87f6u}, {0x30a5u, 0x87f6u}, {0x30afu, 0x87f6u},
+    {0x31f3u, 0x87f6u}, {0x3299u, 0x87f6u}, {0x3344u, 0x87f6u}
+};
+
+int gate_dos_relocate_intro_resident_flag_offsets(uint16_t resident_segment,
+                                                   uint16_t paragraphs)
+{
+    unsigned int i;
+    if (resident_segment == 0u || resident_segment > 0xfc30u ||
+        paragraphs < GATE_RESIDENT_PARAS)
+        return -1;
+    for (i = 0u; i < sizeof gate_resident_flag_offsets /
+                      sizeof gate_resident_flag_offsets[0]; ++i) {
+        uint16_t site = gate_resident_flag_offsets[i].site;
+        if (gate_far_word(resident_segment, (uint16_t)(site - 2u)) !=
+                gate_resident_flag_offsets[i].prefix ||
+            gate_far_word(resident_segment, site) != 0u)
+            return -2;
+    }
+    for (i = 0u; i < sizeof gate_resident_flag_offsets /
+                      sizeof gate_resident_flag_offsets[0]; ++i)
+        gate_far_set_word(resident_segment, gate_resident_flag_offsets[i].site,
+                         0x2bf0u);
+    return 0;
+}
+
 /* Stage the first reconstructed resident bank in the eventual DOS entry.
  * Unlike the data-only bootstrap below, this operation does not establish
  * the remaining resident banks, interrupt vectors, or an executable entry.
  * Failure leaves a partially loaded/relocated allocation: discard it.
  * -1 bad arguments, -2 file load, -3 self calls, -4 DS loads,
- * -5 EXE callback, -6 direct segment operands, -7 paragraph carries. */
+ * -5 EXE callback, -6 direct segment operands, -7 paragraph carries,
+ * -8 linked DS flag offsets. */
 int gate_dos_prepare_intro_resident_bank(uint16_t rtl_handle,
                                          uint16_t resident_segment,
                                          uint16_t paragraphs,
@@ -327,6 +371,9 @@ int gate_dos_prepare_intro_resident_bank(uint16_t rtl_handle,
     if (gate_dos_relocate_intro_resident_paragraphs(resident_segment,
                                                     paragraphs) != 0)
         return -7;
+    if (gate_dos_relocate_intro_resident_flag_offsets(resident_segment,
+                                                      paragraphs) != 0)
+        return -8;
     return 0;
 }
 

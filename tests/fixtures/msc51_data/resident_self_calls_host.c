@@ -227,6 +227,26 @@ int main(void)
                       sizeof gate_resident_paragraph_fixups[0]; ++i)
         if (gate_far_word(segment, gate_resident_paragraph_fixups[i].site) != 0x1000u)
             abort();
+    for (i = 0u; i < sizeof gate_resident_flag_offsets /
+                      sizeof gate_resident_flag_offsets[0]; ++i) {
+        uint16_t site = gate_resident_flag_offsets[i].site;
+        gate_far_set_word(segment, (uint16_t)(site - 2u),
+                          gate_resident_flag_offsets[i].prefix);
+        gate_far_set_word(segment, site, 0u);
+    }
+    if (gate_dos_relocate_intro_resident_flag_offsets(segment, 0x03cfu) != -1)
+        abort();
+    gate_far_set_word(segment, 0x3344u, 1u);
+    if (gate_dos_relocate_intro_resident_flag_offsets(segment, 0x03d0u) != -2 ||
+        gate_far_word(segment, 0x0b01u) != 0u)
+        abort();
+    gate_far_set_word(segment, 0x3344u, 0u);
+    if (gate_dos_relocate_intro_resident_flag_offsets(segment, 0x03d0u) != 0)
+        abort();
+    for (i = 0u; i < sizeof gate_resident_flag_offsets /
+                      sizeof gate_resident_flag_offsets[0]; ++i)
+        if (gate_far_word(segment, gate_resident_flag_offsets[i].site) != 0x2bf0u)
+            abort();
     puts("98 self-calls, 7 DS loads, EXE call and 7 direct segments: PASS");
     return 0;
 }
