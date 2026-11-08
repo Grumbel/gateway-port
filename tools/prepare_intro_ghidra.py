@@ -53,14 +53,29 @@ RTL_CORE_BANKS = (
 
 # Reconstructed physical code windows from original startup snapshots. The
 # original RTL file inserts metadata between linked code fragments, so a
-# single file offset delta cannot explain either entire window. Every span
+# single file offset delta cannot explain an entire window. Every span
 # below is independently checked against the 22-second capture (90-100%
-# exact bytes), with function-entry witnesses. The A window starts with ten
-# unmapped bytes, B with four; B also has two single-byte fragment gaps.
+# exact bytes), with function-entry witnesses. The preceding 244c window
+# contains two unmapped boundary bytes (0115h, 0b03h). The A window starts
+# with ten unmapped bytes, B with four; B has two single-byte fragment gaps.
 # All such bytes are retained in the live snapshot but NOT given a false
 # source-file identity. B ends before seven observed zeroed source bytes.
 # All file_base values identify original GATE.RTL bytes (not embedded data).
 RTL_GRAPHICS_BANKS = (
+    # The FAR CALL segment 244ch is used by both neighboring graphics banks.
+    # These six fragments occupy the entire physical window immediately
+    # before resident 252c, except two unmapped post-RETF boundary bytes.
+    dict(segment=0x144c, file_base=0x17e6d, size=0x0e00,
+         spans=(
+             dict(offset=0x0000, file_base=0x17e6d, size=0x0115),
+             dict(offset=0x0116, file_base=0x17f98, size=0x01bc),
+             dict(offset=0x02d2, file_base=0x18187, size=0x00f8),
+             dict(offset=0x03ca, file_base=0x18296, size=0x01f2),
+             dict(offset=0x05bc, file_base=0x184e8, size=0x0547),
+             dict(offset=0x0b04, file_base=0x18a95, size=0x02fc),
+         ),
+         witnesses=(0x17e6d, 0x17f98, 0x18187, 0x18296, 0x184e8,
+                    0x18a95)),
     dict(segment=0x152c, file_base=0x18e00, size=0x0ab0,
          spans=(
              dict(offset=0x000a, file_base=0x18e00, size=0x00da),
@@ -107,6 +122,12 @@ RTL_CANDIDATES = {
     0xfc37: 'linked-far-entry-candidate',
     0xff99: 'linked-far-entry-candidate',
     0x130ab: 'animation-entry-candidate',
+    0x17e6d: 'linked-graphics-far-target',
+    0x17f98: 'linked-graphics-entry',
+    0x18187: 'linked-graphics-entry',
+    0x18296: 'linked-graphics-entry',
+    0x184e8: 'linked-graphics-entry',
+    0x18a95: 'linked-graphics-entry',
     0x18e00: 'linked-graphics-helper-entry',
     0x18e28: 'linked-graphics-coordinate-entry',
     0x18e49: 'linked-graphics-coordinate-entry',
@@ -253,6 +274,65 @@ def source_span(bank, file_offset):
 
 def source_bank(banks, offset):
     return next((bank for bank in banks if source_span(bank, offset)), None)
+
+
+def original_at_runtime_offset(bank, runtime_offset):
+    """Return a verified source file identity, excluding fragment gaps."""
+    for span in source_spans(bank):
+        local = runtime_offset - span['offset']
+        if 0 <= local < span['size']:
+            return span['file_base'] + local
+    return None
+
+
+def resolve_linked_far_target(banks, load_segment, target_segment, target_offset):
+    """Resolve unique DOS physical FAR addresses, including paragraph aliases."""
+    physical = ((target_segment << 4) + target_offset) & 0xfffff
+    matches = []
+    for bank in banks:
+        local = physical - ((load_segment + bank['segment']) * 16)
+        if 0 <= local < bank['size']:
+            original = original_at_runtime_offset(bank, local)
+            if original is not None:
+                matches.append(dict(linked_segment=bank['segment'],
+                                    linked_offset=local,
+                                    rtl_file_offset=original))
+    return matches[0] if len(matches) == 1 else None
+
+
+def graphics_far_target_coverage(snapshot, banks, load_segment, sections):
+    """Check every opcode-identified graphics FAR transfer destination."""
+    calls = []
+    for section in sections:
+        changes = section['zero_word_changes']
+        if changes is None:
+            continue
+        caller_start = (load_segment + section['segment']) * 16
+        for candidate in changes['candidate_words']:
+            if candidate['instruction_context'] not in (
+                    'far-call-segment', 'far-jump-segment'):
+                continue
+            site = candidate['runtime_offset']
+            if site < 2:
+                raise ValueError('FAR segment word lacks preceding offset')
+            target_offset = int.from_bytes(
+                snapshot[caller_start + site - 2:caller_start + site], 'little')
+            target_segment = candidate['observed_value']
+            matched = resolve_linked_far_target(
+                banks, load_segment, target_segment, target_offset)
+            calls.append(dict(caller_segment=section['segment'],
+                              caller_runtime_offset=site - 3,
+                              rtl_file_offset=candidate['rtl_file_offset'] - 3,
+                              kind=('call' if candidate['instruction_context'] ==
+                                    'far-call-segment' else 'jump'),
+                              observed_target_segment=target_segment,
+                              observed_target_offset=target_offset,
+                              mapped_target=matched))
+    return dict(total=len(calls), mapped=sum(item['mapped_target'] is not None
+                                             for item in calls), transfers=calls,
+                note='Runtime physical 20-bit address matches only; unambiguous '
+                     'verified source spans required. No execution frequency '
+                     'or ABI inferred')
 
 
 def validate_bank(rtl, snapshot, bank, load_segment):
@@ -487,6 +567,11 @@ def observed_zero_word_changes(rtl, snapshot, bank, load_segment):
             # not the immediate value stored there.
             kind = 'direct-memory-displacement'
         if (kind == 'unresolved-zero-word' and pos >= 1 and
+                source[pos - 1] == live[pos - 1] and
+                source[pos - 1] in (0xa1, 0xa3)):
+            # MOV AX,[disp16] / MOV [disp16],AX.
+            kind = 'direct-memory-displacement'
+        if (kind == 'unresolved-zero-word' and pos >= 1 and
                 source[pos - 1] == live[pos - 1] == 0x3d):
             kind = 'cmp-ax-immediate'
         if (kind == 'unresolved-zero-word' and pos >= 1 and
@@ -578,6 +663,8 @@ def prepare(exe_path, rtl_path, snapshot_path, output, load_segment=0x1000,
                 rtl_sha256=sha256(rtl), snapshot_sha256=sha256(snapshot),
                 load_segment=load_segment, exe_labels=exe_labels,
                 sections=sections, unmapped_rtl_entries=unmapped,
+                graphics_far_targets=graphics_far_target_coverage(
+                    snapshot, RTL_BANKS, load_segment, sections),
                 unlinked_staging_candidates=staged_unlinked_copy(
                     rtl, snapshot, load_segment),
                 note='Live relocated image from one DOS launch; every bank '
@@ -630,6 +717,15 @@ def main():
                               table['runtime_ds'], table['base_bx'],
                               table['stride_bytes'], len(table['entries']),
                               table['all_memory_matches']))
+            coverage = plan['graphics_far_targets']
+            unresolved = sorted({item['observed_target_segment']
+                                 for item in coverage['transfers']
+                                 if item['mapped_target'] is None})
+            print('  graphics FAR transfers: %d/%d source-mapped; '
+                  'unmapped target segments=%s' % (
+                      coverage['mapped'], coverage['total'],
+                      ','.join('%04x' % segment for segment in unresolved)
+                      or 'none'))
     except (OSError, ValueError) as error:
         parser.exit(1, 'prepare_intro_ghidra: %s\n' % error)
 

@@ -9,20 +9,21 @@ original recovered source nor a playable native executable.
 The raw `GATE.RTL` has unresolved relocation placeholders. **Do not import it
 as if its on-disk bytes were linked machine code.** This pipeline uses a
 specific 22-second 1 MiB guest-memory snapshot and verifies its segment/file
-identities against both SHA-256-pinned DOS binaries. It imports eight
+identities against both SHA-256-pinned DOS binaries. It imports nine
 independently established resident RTL segments, not the complete RTL file,
 and preserves their potentially overlapping addresses using Ghidra overlay
 spaces. The newly added `0c33` file-service bank has four independent entry
 signatures and five known far-entry targets. A linked far-call destination
 outside these segments remains unresolved, not a guessed function.
-The first `0600h`/`0640h` bytes of the two additional graphics windows
+The first `0600h`/`0640h` bytes of the two later graphics windows
 were observed to load between 250 and 350ms and remain unchanged through
 1500ms. The longer portions are independently verified in the 22-second
 reference, without asserting that they were already loaded at 350ms. The
 windows contain **nine independently verified source-file fragments**: six
-in the first window and three in the second. Their mappings account for
-metadata gaps in the original RTL file. Both contiguous runtime windows are
-imported from linked RAM, with every fragment reverified on each import.
+in the first window and three in the second. A newly mapped preceding
+`244c` window has six more verified fragments, for **15 graphics fragments**
+in three contiguous resident windows. Their mappings account for metadata
+gaps in the original RTL file. Every fragment is reverified on each import.
 
 ## Capture the reference snapshot
 
@@ -113,21 +114,25 @@ near calls whose original targets are inside the same verified RTL overlay,
 and enumerates all functions Ghidra finds in those blocks. This is intended to produce large
 batches for inspection instead of manually translating six functions per turn.
 
-**Current coverage limitation:** the eight verified RTL spans are
+**Current coverage limitation:** the nine verified RTL banks are
 `0a46:0000..0a7f`, `0c33:0000..01a9`, `0c4d:0000..08ff`, `0cdc:0000..10ff`, and
 `0f10:0000..1aff`, plus EXE-relative `02a5:0000..3cff` (resident
 `12a5:0000..3cff`) in the captured load layout. The latter maps
 `GATE.RTL:56de..93dd`, including linked `strlen` and the C runtime random
 generator. Its verified start is based on the on-disk/linked byte correlation;
 its end deliberately stops before the next region overwrites memory near
-`RTL:9480`. Two more EXE-relative graphics windows are `152c:0000..0aaf`
+`RTL:9480`. A newly established EXE-relative graphics window
+`144c:0000..0dff` (resident `244c:0000..0dff`) immediately precedes the
+two previously mapped graphics windows `152c:0000..0aaf`
 (resident `252c:0000..0aaf`) and `15d7:0000..0d78` (resident
 `25d7:0000..0d78`). The first A fragment starts at runtime `+000a`
 (`RTL:18e00`); the first B fragment at `+0004` (`RTL:19997`).
-Direct comparison with the pinned 22-second guest RAM verifies **2600/2726**
+Direct comparison with the pinned 22-second guest RAM verifies **3383/3582**
+covered source bytes unchanged in `244c`, **2600/2726**
 covered source bytes unchanged in A and **3198/3443** in B, each with
 multiple independent witnesses. Ten leading A bytes, four leading B bytes,
-and B's single-byte boundaries `+04ad` and `+0c15` lack verified RTL file
+two `244c` post-return boundary bytes `+0115` and `+0b03`, and B's
+single-byte boundaries `+04ad` and `+0c15` lack verified RTL file
 identities. Seven trailing B bytes from an earlier proposed mapping were
 zeroed in live memory and are now excluded from the import; they are not
 treated as copied code. B's previous 489 mismatches against one *linear*
@@ -141,9 +146,21 @@ side effects are correct.
 The source-name lookup also follows `decomp/launcher/symbol-names.tsv`: the
 original file-offset identities remain intact even though reconstructed C
 functions have readable names. The pinned 22-second preparation check now
-produces **eight linked sections, 101 source RTL entry labels, and zero
+produces **nine linked sections, 107 source RTL entry labels, and zero
 unmapped known RTL entry labels**. This does not mean the RTL's complete
 function set or cross-bank calls have been recovered.
+
+The 22-second capture's identified graphics `CALL/JMP FAR` operands account
+for **78 static transfers**. Their physical 20-bit addresses map **67**
+unambiguously into the three verified graphics banks; the other **11** all
+target resident segment `2409`, which is not yet imported. `244c` is a
+direct bank base, while `25b7` aliases an offset in `252c` and `2621`
+aliases `25d7` (starting at linked offset `04a0`). The plan's
+`graphics_far_targets` records each observed segment/offset pair and its
+source-backed target, or an explicit unresolved result. The Ghidra batch
+decompiler now resolves FAR aliases by guest physical address and uses each
+fragment's own `source_spans` for original file identities, including near
+calls. It never assigns an RTL file offset to a two-byte boundary gap.
 
 The reconstructed graphics-fragment mapping is explicitly recorded in each
 Ghidra plan section's `source_spans`. `offset` is the runtime offset *inside*
@@ -152,6 +169,12 @@ Relative offsets are not interchangeable across fragments:
 
 | Runtime graphics window | Runtime offset range | Original RTL file range |
 | --- | --- | --- |
+| `244c` | `0000..0114` | `17e6d..17f81` |
+| `244c` | `0116..02d1` | `17f98..18153` |
+| `244c` | `02d2..03c9` | `18187..1827e` |
+| `244c` | `03ca..05bb` | `18296..18487` |
+| `244c` | `05bc..0b02` | `184e8..18a2e` |
+| `244c` | `0b04..0dff` | `18a95..18d90` |
 | `252c` | `000a..00e3` | `18e00..18ed9` |
 | `252c` | `00e4..0181` | `18edf..18f7c` |
 | `252c` | `0182..0667` | `18f8c..19471` |
@@ -181,13 +204,19 @@ python3 tools/prepare_intro_ghidra.py \
 
 | Linked window | Originally zero word sites | Changed bytes accounted for | Changed covered bytes unexplained |
 | --- | ---: | ---: | ---: |
+| `244c` | 109 | 199 | 0 |
 | `252c` | 64 | 126 | 0 |
 | `25d7` | 134 | 245 | 0 |
-| **Total** | **198** | **371** | **0** |
+| **Total** | **307** | **570** | **0** |
 
-Local 8086 opcode inspection now assigns a specific **operand role to all
-198 word sites**, using unchanged opcode and addressing bytes in both the
-original RTL file and linked capture:
+The newly recovered `244c` bank contributes 109 word sites: nine DS loads,
+43 words within 22 FAR calls, 48 16-bit memory immediates, and nine direct
+memory displacements. Every site has a checked local opcode context.
+
+For the previously mapped `252c` and `25d7` banks, local 8086 opcode
+inspection assigned a specific operand role to all **198 word sites**, using
+unchanged opcode and addressing bytes in both the original RTL file and
+linked capture:
 
 | Verified local opcode context | Changed word sites | Interpretation |
 | --- | ---: | --- |

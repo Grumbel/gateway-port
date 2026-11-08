@@ -44,6 +44,15 @@ for bank, block in blocks.values():
         known_entries.append((address, entry['name']))
 
 
+def source_file_at(bank, runtime_offset):
+    """Resolve an original RTL identity only inside a verified file span."""
+    for span in bank['source_spans']:
+        offset = runtime_offset - span['offset']
+        if 0 <= offset < span['size']:
+            return span['file_base'] + offset
+    return None
+
+
 def identity(address):
     block = memory.getBlock(address)
     if block is None:
@@ -52,8 +61,11 @@ def identity(address):
         if mapped.getName() == block.getName():
             offset = address.subtract(mapped.getStart())
             if 0 <= offset < bank['size']:
-                return dict(file='rtl', offset=bank['file_base'] + offset,
-                            linked_segment=bank['segment'])
+                original = source_file_at(bank, offset)
+                if original is not None:
+                    return dict(file='rtl', offset=original,
+                                linked_segment=bank['segment'])
+                return None
     if block.isOverlay() or not exe_anchors:
         return None
     # The imported MZ resident functions are in the same image as these
@@ -72,16 +84,23 @@ def linked_callee(bytes_):
     if len(bytes_) >= 5 and bytes_[0] == 0x9a:
         offset = bytes_[1] | bytes_[2] << 8
         original_segment = bytes_[3] | bytes_[4] << 8
-        segments = [original_segment]
-        if original_segment >= plan['load_segment']:
-            segments.insert(0, original_segment - plan['load_segment'])
-        for segment in segments:
-            if segment in blocks:
-                bank, block = blocks[segment]
-                if offset < bank['size']:
-                    return dict(kind='far', segment=segment, offset=offset,
-                                target=block.getStart().add(offset),
-                                source_file_offset=bank['file_base'] + offset)
+        physical = ((original_segment << 4) + offset) & 0xfffff
+        matches = []
+        for bank, block in blocks.values():
+            # Guest code may use a paragraph alias in the middle of a bank:
+            # 2621:030e is physically 25d7:07ae, for example.  Compare
+            # physical addresses, not segment numbers alone.
+            start = (plan['load_segment'] + bank['segment']) * 16
+            local = physical - start
+            if 0 <= local < bank['size']:
+                file_offset = source_file_at(bank, local)
+                if file_offset is not None:
+                    matches.append((bank, block, local, file_offset))
+        if len(matches) == 1:
+            bank, block, local, source = matches[0]
+            return dict(kind='far', segment=bank['segment'], offset=local,
+                        target=block.getStart().add(local),
+                        source_file_offset=source)
         return dict(kind='external-far', segment=original_segment,
                     offset=offset, target=None)
     return None
@@ -106,10 +125,11 @@ def near_callee(address, bytes_):
     if displacement & 0x8000:
         displacement -= 0x10000
     local = address.subtract(block.getStart()) + 3 + displacement
-    if 0 <= local < bank['size']:
+    file_offset = source_file_at(bank, local)
+    if file_offset is not None:
         return dict(kind='near', segment=segment, offset=local,
                     target=block.getStart().add(local),
-                    source_file_offset=bank['file_base'] + local)
+                    source_file_offset=file_offset)
     return dict(kind='out-of-bank-near', segment=segment,
                 offset=local & 0xffff, target=None)
 

@@ -955,6 +955,22 @@ verified-table classification. This narrows the next reverse-engineering
 task to identifying the actual fixup records and DOS loader control flow,
 not guessing what these individual 16-bit operands mean.
 
+**Preceding FAR-code bank and physical aliases (22-second RAM):** FAR calls
+from the `252c` and `25d7` banks also reach resident `244c`. Six independent
+source fragments map `244c:0000..0dff` to original RTL file ranges
+`17e6d..18d90` with metadata gaps; 3383 of 3582 source-mapped bytes match
+exactly, the other 199 changed bytes lie at 109 originally-zero word sites,
+and only post-return runtime bytes `+0115`/`+0b03` lack a source identity.
+The actual 16-bit instruction operand contexts are recorded for all 109
+sites. Ghidra imports this as the ninth verified RTL bank and seeds six
+additional entries. FAR calls to `25b7` resolve physically inside the
+`252c` image, while `2621` resolves inside `25d7` at relative `+04a0`;
+thus segment equality alone is insufficient for the decompiler. Strict
+paragraph-alias and per-fragment file identity resolution now maps 67 of
+78 identified graphics FAR transfers. The 11 remaining transfers all
+target resident `2409`, not yet mapped. These numbers describe candidate
+code bytes in one captured layout, not the original loader's control flow.
+
 **Microsoft C 5.1 build correction:** The first user-side `DATA.BAT` run
 compiled `DATA.C` but stopped with `DATACHK.C(22): C2073` (an initialized
 automatic `char name[]`), so **neither test executable ran**. Both test
