@@ -5,7 +5,9 @@
 
 This is the **remaining implementation/verification inventory**, not a list
 of functions already recovered. The latest real Microsoft LINK 3.65 report
-supplied by the user on 2026-11-08 confirmed **26 unresolved names**, with
+supplied by the user on 2026-11-08 confirmed **four unresolved names**:
+the CRT `_main` and three original game services. An earlier LINK run
+confirmed **26 names**, with
 `RTLHW`, `RTFILE`, `RESSTATE`, `HEAP`, `INP`, `CLOCK` and `CRTENV` linked.
 The extended `RTLHW` adapter supplies eight RTL text/video names, and
 `RESSTATE` supplies three bounded raster names. The adapter also now stages
@@ -15,13 +17,37 @@ with bounded host behavior. A new C89 DCL decoder additionally stages the
 compressed-picture service, with host-verified buffered DOS input and planar
 output. The original resource file wrappers now stage their raw BP-2 stack
 slots and unguarded CPU division without two external host-test callbacks.
-**4 is the predicted remainder if all updated DOS probes pass.**
-This is not yet a measured Microsoft LINK result.
+**Four is now the measured LINK result**, not a prediction. A new bounded
+audio startup guard in `RTLHW.OBJ` would lower the unresolved count to
+**three if its changed DOS probe passes**; its enabled-music branch still
+aborts rather than silently omitting the original IRQ 8 initialization.
 The two VFX state definitions now cover only the verified state-flag and
 mouse-cursor paths; the video-buffer path explicitly aborts. Do not
 manufacture no-op definitions merely to obtain an executable.
 
-## The 26 names in the last confirmed LINK report
+## The four names in the latest confirmed LINK report
+
+| Original unresolved name | Source reference | Current work |
+| --- | --- | --- |
+| `_main` | Microsoft 5.1 `LLIBCR.LIB(dos/crt0.asm)` | No working real-mode original startup yet. It must allocate and bind the original EXE/RTL data segments, initialize and relocate resident driver tables and assets, and transfer to `gate_exe_play_intro`. A placeholder `main()` would make LINK succeed but not create a working Gateway launcher. |
+| `_gate_linked_initialize_c306ca35` | `GATE.RTL:c3bd..c6fe`, linked `0a46:01ec` | **Staged as a bounded guard in `RTLHW.OBJ`.** Verified original flags/config early exits are preserved. Enabled music requires `GATE_004.MUS` and an IRQ 8 handler, so the substitute aborts on that branch. The changed `msc51-compile-hardware` DOS probe must pass before re-linking. |
+| `_gate_linked_handle_control_key` | Linked `123f:0004`, called on input key `0x0003` | The original Ctrl-C/Break resident path is not independently mapped or characterized; do not conflate it with ordinary keyboard flushing. |
+| `_gate_linked_print_intr_b006848b` | Linked `1258:172e`, called by image sequence failure paths | The original output destination and calling convention require confirmation; a no-op diagnostic would hide loader failures. |
+
+The `tools/inspect_msc51_link_tail.py` command independently matches these
+three live FAR targets against the original binary images in a captured
+conventional RAM snapshot. It annotates the previously proven audio entry
+(`RTL:c3bd`) but reports an unknown or overwritten target as **unmapped**.
+This is code-identity evidence, not a reconstruction of the callback behavior.
+
+```sh
+python3 tools/inspect_msc51_link_tail.py \
+  --exe ../gateway-dos/GATE.EXE \
+  --rtl ../gateway-dos/GATE.RTL \
+  --ram build/vfx-replay/checkpoint-book_taken.bin --json
+```
+
+## Historical 26-name LINK report (superseded)
 
 | Group | Original unresolved entry points | Count | Required work |
 | --- | --- | ---: | --- |

@@ -28,6 +28,7 @@ void gate_rtl_mode_query_adapter(uint8_t *adapter);
 uint16_t gate_rtl_mode_svga_variant(void);
 GateFarPtr gate_linked_transform_picture_palette_rgb(GateFarPtr source);
 GateFarPtr gate_linked_transform_picture_palette_indexed(GateFarPtr source);
+void gate_linked_initialize_intro_services(void);
 
 static int check(uint16_t actual, uint16_t expected, const char *label)
 {
@@ -57,6 +58,18 @@ int main(void)
         return 1;
     }
     gate_dos_bind_ds((uint16_t)segment);
+    /* Check the two independent, original RTL:c3bd early-return branches.
+     * Never enter the still-unrecovered music-loader/IRQ8 path in a probe. */
+    gate_ds_set_word(GATE_DS_MUSIC_STARTUP_CONFIG, 0x0401u);
+    gate_far_set_byte((uint16_t)segment, GATE_DS_MUSIC_STARTUP_FLAGS, 0x08u);
+    gate_linked_initialize_intro_services();
+    valid &= check(gate_ds_word(GATE_DS_MUSIC_STARTUP_CONFIG), 0x0401u,
+                   "music disabled preserves device configuration");
+    gate_ds_set_word(GATE_DS_MUSIC_STARTUP_CONFIG, 0u);
+    gate_far_set_byte((uint16_t)segment, GATE_DS_MUSIC_STARTUP_FLAGS, 0x06u);
+    gate_linked_initialize_intro_services();
+    valid &= check(gate_far_byte((uint16_t)segment, GATE_DS_MUSIC_STARTUP_FLAGS),
+                   0x06u, "music unconfigured preserves trigger flags");
     if (_dos_allocmem(0x0040u, &rtl_segment) != 0) {
         puts("Hardware probe: RTL segment allocation failed");
         (void)_dos_freemem(segment);

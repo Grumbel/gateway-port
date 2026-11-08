@@ -188,6 +188,14 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("(void)outp(port, value)", hardware)
             self.assertIn("gate_ds_set_word(GATE_DS_DRAW_CLIP_LEFT, left)", hardware)
             self.assertIn("gate_ds_set_word(GATE_DS_DRAW_CLIPPING_ENABLED, enabled == 1 ? 1 : 0)", hardware)
+            self.assertIn("void gate_linked_initialize_c306ca35(void)", hardware)
+            self.assertIn("GATE_STARTUP_MUSIC_TRI_2e58f2f2", hardware)
+            self.assertIn("gate_ds_word(GATE_DS_MUSIC_STARTUP_CONFIG) == 0u", hardware)
+            self.assertIn("abort();", hardware)
+            self.assertIn("music disabled preserves device configuration",
+                          (output / "HWCHK.C").read_text())
+            self.assertIn("music unconfigured preserves trigger flags",
+                          (output / "HWCHK.C").read_text())
             self.assertIn("GATE_DS_DRAW_CLIP_BOTTOM", (output / "HWCHK.C").read_text())
             self.assertIn("gate_dos_bind_rtl_video_ds", hardware)
             self.assertIn("gate_far_word(rtl_video_segment(), 0x030eu)", hardware)

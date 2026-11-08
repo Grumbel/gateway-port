@@ -11,6 +11,24 @@
 #include <dos.h>
 #include <stdlib.h>
 
+/* Original GATE.RTL:c3bd..c3d8 (linked 0a46:01ec) first checks the
+ * relocated startup flags and the configured sound-device count. With
+ * neither, the original returns without touching any music/IRQ state.
+ *
+ * The enabled branch continues through c3d9..c6fe: it loads music records
+ * and installs an IRQ 8 handler. Those effects are not implemented yet.
+ * Fail closed if the original would take that path, rather than reporting
+ * successful initialization with a silently missing interrupt handler. */
+void gate_linked_initialize_intro_services(void)
+{
+    if ((gate_far_byte(gate_ds_segment(), GATE_DS_MUSIC_STARTUP_FLAGS) &
+         GATE_STARTUP_MUSIC_TRIGGER_FLAGS_MASK) == 0u)
+        return;
+    if (gate_ds_word(GATE_DS_MUSIC_STARTUP_CONFIG) == 0u)
+        return;
+    abort();
+}
+
 /* The text-mode RTL bank's DS is NOT the EXE's relocated DS. The original
  * GATE.RTL:f8eb..fbf3 directly addresses offsets 0000, 0002, 0004, 0006,
  * 001a and 030e through its own DS. The eventual DOS launcher entry must
