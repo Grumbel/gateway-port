@@ -517,6 +517,32 @@ success marker before the host accepts the result; the default synthetic
 and memory-placement validation, not a substitute for the missing full
 startup BSS/relocations or three linker definitions.
 
+**Next data-layout measurement (source-byte matches only):** The original
+five coarse and five fine `.bin` captures can now be compared against *both*
+original files, not just the known 5,976-byte `GATE.EXE` range. The optional
+inspection mode examines the **eventual** runtime DS segment at every
+capture time, even while the loader's instantaneous `DS` is different. It
+reports maximal exact runs of at least 64 nontrivial bytes, with file
+offsets, and the largest zero-filled regions stable from 500ms onward:
+
+```sh
+python3 tools/inspect_msc51_startup.py \
+  --exe ../gateway-dos/GATE.EXE --rtl ../gateway-dos/GATE.RTL \
+  --snapshot-dir build/msc51-startup \
+  --snapshot-dir build/msc51-startup-fine \
+  --runtime-data-layout
+# Add --json for the full machine-readable run list.
+```
+
+The matcher ignores repeated low-entropy source windows and suppresses
+ambiguous equal-length origins, rather than misidentifying zero/filler as
+static data. Reported long matches can still include coincidental adjacent
+equal bytes, so boundaries must be checked across multiple captures before
+adding any new loader copy. **Stable zeros do not prove BSS**: they could
+be explicit clearing, unallocated storage, or a presently idle workspace.
+The next step is to review this report before implementing more runtime
+initialization, especially any values outside `DS:3592..4cea`.
+
 **Microsoft C 5.1 build correction:** The first user-side `DATA.BAT` run
 compiled `DATA.C` but stopped with `DATACHK.C(22): C2073` (an initialized
 automatic `char name[]`), so **neither test executable ran**. Both test

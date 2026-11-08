@@ -31,6 +31,140 @@ CALIBRATION_ENTRY = (0x5806, 58, (14, 29, 50))
 TIMING_SETUP_ENTRY = (0x5840, 86, (12, 19, 27, 31, 39, 43, 51, 58))
 TIMING_RESTORE_ENTRY = (0x5896, 76, (11, 18, 33, 50, 54, 62, 66))
 TICK_CALLBACK_ENTRY = (0x58e2, 28, (10, 16))
+DATA_MATCH_SEED = 16
+DATA_MATCH_MINIMUM = 64
+
+
+def source_window_index(exe, rtl, seed=DATA_MATCH_SEED):
+    """Index nontrivial file-byte windows, retaining source file offsets.
+
+    Common patterns (especially BSS-like zero runs) are excluded. A match
+    therefore means an *exact* source-image copy, not merely an all-zero
+    region or a relocated code entry with differing segment operands.
+    """
+    header = mz_image(exe)
+    source_regions = (("exe", header["header_bytes"],
+                       exe[header["header_bytes"]:]), ("rtl", 0, rtl))
+    index = {}
+    for kind, file_base, data in source_regions:
+        for position in range(len(data) - seed + 1):
+            key = data[position:position + seed]
+            if len(set(key)) < 4:
+                continue
+            if key not in index:
+                index[key] = []
+            if index[key] is not None:
+                index[key].append((kind, file_base + position, data, position))
+                if len(index[key]) > 4:
+                    index[key] = None  # ambiguous repeated file pattern
+    return index
+
+
+def exact_source_copies(destination, index, seed=DATA_MATCH_SEED,
+                        minimum=DATA_MATCH_MINIMUM):
+    """Find maximal source-image runs, resolving overlapping candidates.
+
+    This routine deliberately rejects two-way ambiguous equal-length runs;
+    it must never infer an original file offset from repeated filler.
+    """
+    candidates = []
+    for dest in range(len(destination) - seed + 1):
+        matches = index.get(bytes(destination[dest:dest + seed]))
+        if not matches:
+            continue
+        for kind, source_offset, source, pos in matches:
+            if any(candidate["source"] == kind
+                   and candidate["runtime_ds_offset"] <= dest
+                   < candidate["runtime_ds_offset"] + candidate["length"]
+                   and candidate["source_file_offset"] + dest -
+                   candidate["runtime_ds_offset"] == source_offset
+                   for candidate in candidates):
+                continue
+            # The first usable seed may occur *inside* the copy if its
+            # beginning contains low-entropy bytes. Recover the true start.
+            back = 0
+            while (dest > back and pos > back
+                   and destination[dest - back - 1] == source[pos - back - 1]):
+                back += 1
+            start = dest - back
+            source_start = pos - back
+            size = seed + back
+            while (start + size < len(destination) and source_start + size < len(source)
+                   and destination[start + size] == source[source_start + size]):
+                size += 1
+            if size >= minimum:
+                candidates.append({"source": kind,
+                                   "source_file_offset": source_offset - back,
+                                   "runtime_ds_offset": start, "length": size})
+    candidates.sort(key=lambda item: (-item["length"], item["runtime_ds_offset"],
+                                      item["source"], item["source_file_offset"]))
+    origins = {}
+    for candidate in candidates:
+        key = candidate["runtime_ds_offset"], candidate["length"]
+        origins.setdefault(key, set()).add((candidate["source"],
+                                            candidate["source_file_offset"]))
+    chosen = []
+    occupied = bytearray(len(destination))
+    for candidate in candidates:
+        start = candidate["runtime_ds_offset"]
+        end = start + candidate["length"]
+        if len(origins[(start, candidate["length"])]) != 1 or any(occupied[start:end]):
+            continue
+        occupied[start:end] = b"\x01" * candidate["length"]
+        chosen.append(candidate)
+    return chosen
+
+
+def zero_regions(data, minimum=128):
+    """Return large exact zero ranges; these are *candidates*, not proven BSS."""
+    spans = []
+    position = 0
+    while position < len(data):
+        if data[position] != 0:
+            position += 1
+            continue
+        end = position + 1
+        while end < len(data) and data[end] == 0:
+            end += 1
+        if end - position >= minimum:
+            spans.append({"runtime_ds_offset": position, "length": end - position})
+        position = end
+    return sorted(spans, key=lambda span: (-span["length"],
+                                            span["runtime_ds_offset"]))
+
+
+def runtime_data_layout(exe, rtl, captures, segment, *, minimum=DATA_MATCH_MINIMUM):
+    """Report EXE/RTL exact matches and zero spans in the *eventual* DS.
+
+    Even while the loader has a different DS, the window is sampled at the
+    later observed runtime segment, never at a guessed transient register.
+    """
+    if segment is None:
+        raise ValueError("cannot inspect runtime data before original DS is observed")
+    base = segment * 16
+    if base + 0x10000 > RAM_SIZE:
+        raise ValueError("runtime data segment outside conventional RAM")
+    index = source_window_index(exe, rtl)
+    snapshots = []
+    for milliseconds, _, ram in captures:
+        data = ram[base:base + 0x10000]
+        copies = exact_source_copies(data, index, minimum=minimum)
+        snapshots.append({"milliseconds": milliseconds,
+                          "source_copies": copies,
+                          "zero_bytes": data.count(0),
+                          "largest_zero_regions": zero_regions(data)[:10]})
+    # Any zero across all settled snapshots is only a potential uninitialized
+    # or deliberately cleared region, never evidence of C runtime BSS alone.
+    settled = [ram[base:base + 0x10000] for milliseconds, _, ram in captures
+               if milliseconds >= 500]
+    zero_all = (bytes(1 if all(sample[i] == 0 for sample in settled) else 0
+                      for i in range(0x10000)) if settled else b"")
+    stable_zero_spans = (zero_regions(bytes(0 if flag else 1 for flag in zero_all))
+                         if settled else [])
+    return {"runtime_data_segment": segment,
+            "minimum_source_copy_bytes": minimum,
+            "snapshots": snapshots,
+            "stable_zero_regions_from_500ms": stable_zero_spans[:20]}
 
 
 def intro_segment_selectors(header):
@@ -376,10 +510,17 @@ def main():
     parser.add_argument("--snapshot-dir", required=True, type=Path,
                         action="append", help="repeat for additional time ranges")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--runtime-data-layout", action="store_true",
+                        help="find exact original-file copies and zero spans in the eventual 64KiB DS")
     args = parser.parse_args()
     try:
-        report = analyze(args.exe.read_bytes(), args.rtl.read_bytes(),
-                         snapshots_from_directories(args.snapshot_dir))
+        exe = args.exe.read_bytes()
+        rtl = args.rtl.read_bytes()
+        captures = snapshots_from_directories(args.snapshot_dir)
+        report = analyze(exe, rtl, captures)
+        if args.runtime_data_layout:
+            report["runtime_data_layout"] = runtime_data_layout(
+                exe, rtl, captures, report["observed_runtime_data_segment"])
     except (ValueError, OSError) as error:
         parser.error(str(error))
     if args.json:
@@ -423,6 +564,28 @@ def main():
                   "at runtime DS:%04x (exact original bytes)" % (
                       complete, static["original_exe_offset"], static["length"],
                       static["runtime_ds_offset"]))
+        if args.runtime_data_layout:
+            layout = report["runtime_data_layout"]
+            print("Eventual DS=%04x; exact source copies >=%d bytes "
+                  "(zero/filler windows excluded)" % (
+                      layout["runtime_data_segment"],
+                      layout["minimum_source_copy_bytes"]))
+            for sample in layout["snapshots"]:
+                if sample["milliseconds"] < 100:
+                    continue
+                print(" %4dms: %d exact source copies, %d zero bytes" % (
+                    sample["milliseconds"], len(sample["source_copies"]),
+                    sample["zero_bytes"]))
+                for match in sample["source_copies"][:12]:
+                    print("     %-3s:%05x -> DS:%04x +%d bytes" % (
+                        match["source"], match["source_file_offset"],
+                        match["runtime_ds_offset"], match["length"]))
+            zero_spans = layout["stable_zero_regions_from_500ms"]
+            print("Stable zero candidates across >=500ms samples: %d large spans" %
+                  len(zero_spans))
+            for span in zero_spans[:12]:
+                print("     DS:%04x +%d zero bytes (not proven BSS)" % (
+                    span["runtime_ds_offset"], span["length"]))
 
 
 if __name__ == "__main__":

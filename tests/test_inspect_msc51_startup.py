@@ -46,6 +46,60 @@ def regs(cs, ip, ds, ss, sp):
 
 
 class StartupSnapshotTests(unittest.TestCase):
+    def test_data_layout_recovers_exact_exe_and_rtl_runs_with_zero_prefix(self):
+        exe = bytearray(0x400)
+        exe[:2] = b"MZ"
+        put_word(exe, 4, 2)
+        put_word(exe, 8, 2)
+        put_word(exe, 0x18, 0x1c)
+        exe_payload = bytes(21) + bytes(
+            (i * 29 + (i * i // 13)) % 256 for i in range(200))
+        rtl_payload = bytes((i * 23 + (i * i // 17)) % 256 for i in range(190))
+        exe[0x180:0x180 + len(exe_payload)] = exe_payload
+        rtl = bytearray(0x500)
+        rtl[0x100:0x100 + len(rtl_payload)] = rtl_payload
+        data = bytearray(b"\xa6" * 0x10000)
+        data[0x300:0x300 + len(exe_payload)] = exe_payload
+        data[0x2400:0x2400 + len(rtl_payload)] = rtl_payload
+        data[0x1100:0x1260] = bytes(0x160)
+
+        index = startup.source_window_index(bytes(exe), bytes(rtl))
+        matches = startup.exact_source_copies(data, index)
+        self.assertIn({"source": "exe", "source_file_offset": 0x180,
+                       "runtime_ds_offset": 0x300, "length": len(exe_payload)},
+                      matches)
+        self.assertIn({"source": "rtl", "source_file_offset": 0x100,
+                       "runtime_ds_offset": 0x2400, "length": len(rtl_payload)},
+                      matches)
+        self.assertFalse(any(match["runtime_ds_offset"] == 0x1100
+                             for match in matches))
+        ambiguous = bytearray(exe)
+        ambiguous[0x250:0x250 + len(rtl_payload)] = rtl_payload
+        # Two equally long source copies cannot be attributed to either
+        # file with confidence. Suppress the ambiguous source claim.
+        dup_matches = startup.exact_source_copies(
+            data, startup.source_window_index(bytes(ambiguous), bytes(rtl)))
+        self.assertFalse(any(match["runtime_ds_offset"] == 0x2400
+                             for match in dup_matches))
+
+        ram = bytearray(b"\xa6" * startup.RAM_SIZE)
+        segment = 0x2000
+        start = segment * 16
+        ram[start:start + 0x10000] = data
+        settled = bytearray(ram)
+        settled[start + 0x1300:start + 0x1350] = bytes(0x50)
+        captures = [
+            (100, regs(0x3259, 0x103c, 0x348a, 0x3229, 0x3c4), bytes(ram)),
+            (500, regs(0x12a5, 0x3570, segment, segment, 0x7a1a), bytes(settled)),
+        ]
+        layout = startup.runtime_data_layout(bytes(exe), bytes(rtl), captures, segment)
+        self.assertEqual(layout["runtime_data_segment"], segment)
+        self.assertEqual(len(layout["snapshots"]), 2)
+        self.assertEqual(layout["stable_zero_regions_from_500ms"],
+                         [{"runtime_ds_offset": 0x1100, "length": 0x160}])
+        with self.assertRaisesRegex(ValueError, "before original DS"):
+            startup.runtime_data_layout(bytes(exe), bytes(rtl), captures, None)
+
     def test_static_exe_data_is_exact_and_present_before_resident_handoff(self):
         base_exe, rtl = fixture()
         exe = bytearray(0x6000)
