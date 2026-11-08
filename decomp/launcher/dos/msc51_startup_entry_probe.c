@@ -2,7 +2,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception */
 
 /* Optional original-file DOS probe: execute the *reconstructed C* prologue
- * of GATE.EXE:1309..134b and the no-music branch of RTL:c3bd..c3d8,
+ * of GATE.EXE:1309..134b, the no-music branch of RTL:c3bd..c3d8,
+ * and the rejected-mode branch of RTL:f14d,
  * not any unknown relocated resident code.
  * The five selector/target addresses are independently pinned by original
  * intro-entry RAM snapshots. No intro graphics/IRQ/RTLink callbacks run.
@@ -11,6 +12,7 @@
 #include "BOOTCB.H"
 #include <dos.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #define GATE_ENTRY_MEMORY_BIAS 0x12b2u
 
@@ -35,6 +37,32 @@ static char unused_exe_callback[32];
  * supplies this function. Its original call requests 1000h DOS paragraphs. */
 void gate_exe_prepare_intro_globals(void);
 void gate_linked_initialize_intro_services(void);
+uint16_t gate_rtl_set_video_mode(int16_t requested_mode);
+
+/* These three callback bodies exist ONLY in BOOTPREP.EXE. The real mode
+ * setter's rejected-mode branch must return before attempting any of them;
+ * an accidental fall-through is a test failure, never a BIOS mode change. */
+uint16_t gate_rtl_mode_set_bios(uint16_t mode)
+{
+    (void)mode;
+    fputs("DOS intro C video guard: unexpected BIOS mode setup\n", stderr);
+    exit(87);
+    return 1u;
+}
+
+uint16_t gate_rtl_mode_start(uint16_t enabled)
+{
+    (void)enabled;
+    fputs("DOS intro C video guard: unexpected video start\n", stderr);
+    exit(87);
+    return 1u;
+}
+
+void gate_rtl_wait_vertical_retrace(void)
+{
+    fputs("DOS intro C video guard: unexpected retrace wait\n", stderr);
+    exit(87);
+}
 
 int main(void)
 {
@@ -44,6 +72,9 @@ int main(void)
     uint16_t fifth_segment = 0u;
     uint16_t workspace = 0u;
     uint16_t video_mode_before = 0u;
+    uint16_t adapter_before = 0u;
+    uint16_t svga_before = 0u;
+    uint16_t status_port_before = 0u;
     uint16_t i;
     int status;
     int good = 1;
@@ -122,6 +153,27 @@ int main(void)
                 gate_far_word(data_segment, 0x0fceu) != video_mode_before)
                 good = 0;
         }
+        /* Execute the actual Mxx.OBJ compiled from gate_rtl_mode.c, not
+         * a handwritten surrogate. Original RTL:f14d invalidates the mode
+         * word even for a rejected request, and rejects out-of-range mode
+         * indices BEFORE adapter detection, palette I/O and video setup.
+         * Both requests here are intentionally invalid. */
+        if (good) {
+            adapter_before = gate_far_word(data_segment, 0x5516u);
+            svga_before = gate_far_word(data_segment, 0x0fd0u);
+            status_port_before = gate_far_word(data_segment, 0x5514u);
+            gate_far_set_word(data_segment, 0x0fceu, 0x1234u);
+            if (gate_rtl_set_video_mode(-1) != 0u ||
+                gate_far_word(data_segment, 0x0fceu) != 0xffffu)
+                good = 0;
+            gate_far_set_word(data_segment, 0x0fceu, 0x4321u);
+            if (gate_rtl_set_video_mode(5) != 0u ||
+                gate_far_word(data_segment, 0x0fceu) != 0xffffu ||
+                gate_far_word(data_segment, 0x5516u) != adapter_before ||
+                gate_far_word(data_segment, 0x0fd0u) != svga_before ||
+                gate_far_word(data_segment, 0x5514u) != status_port_before)
+                good = 0;
+        }
         /* Do not free a guessed segment if the prologue failed. The
          * original retains the allocation; DOS owns and reclaims it when
          * this one-shot probe exits. */
@@ -136,5 +188,6 @@ int main(void)
     puts("DOS intro C entry prologue: PASS (five recovered writes, original data/CRC, workspace observed; no intro code entered)");
     puts("DOS intro C audio guard: PASS (RTL:c3bd no-music return, configuration preserved; no IRQ installed)");
     puts("DOS intro C video preflight: PASS (DS:0fce=ffff invalid; hardware mode setup still required)");
+    puts("DOS intro C video guard: PASS (RTL:f14d rejected -1 and 5; no BIOS mode entered)");
     return 0;
 }

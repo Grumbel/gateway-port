@@ -140,9 +140,12 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("CL /AL /Od /c HEAP.C", batch)
             self.assertIn("CL /AL /Od /c RTLHW.C", batch)
             self.assertIn("CL /AL /Od /c " + entry_object.replace(".OBJ", ".C"), batch)
+            mode_object = msc51.launcher_source_alias(output, "gate_rtl_mode.c").replace(".C", ".OBJ")
+            self.assertIn("CL /AL /Od /c " + mode_object.replace(".OBJ", ".C"), batch)
             self.assertIn("LINK.EXE @BPREP.RSP", batch)
             self.assertIn("IF EXIST E:\\GATE.RTL BOOTPREP.EXE > BPREAL.LOG", batch)
             self.assertIn(entry_object, (output / "BPREP.RSP").read_text())
+            self.assertIn(mode_object, (output / "BPREP.RSP").read_text())
             self.assertIn("RTLHW.OBJ+", (output / "BPREP.RSP").read_text())
             original_initializer = "gate_linked_initialize_intro_services"
             alias = msc51.msc51_short_names([original_initializer]).get(
@@ -256,13 +259,14 @@ class MSC51Tests(unittest.TestCase):
             output = Path(scratch)
             msc51.stage_launcher(output)
             intro_source = msc51.launcher_source_alias(output, "gate_exe_intro_setup.c")
+            mode_source = msc51.launcher_source_alias(output, "gate_rtl_mode.c")
             executable = output / "startup-entry-host"
             built = subprocess.run(
                 ["gcc", "-x", "c", "-std=c89", "-Wall", "-Wextra", "-Werror",
                  "-include", str(output / "DATNAMES.H"),
                  "-I", str(REPO / "tests/fixtures/msc51_data"),
                  "-I", str(output), str(output / "BOOTPREP.C"),
-                 str(output / intro_source), str(output / "HEAP.C"),
+                 str(output / intro_source), str(output / mode_source), str(output / "HEAP.C"),
                  str(REPO / "tests/fixtures/msc51_data/bootstrap_entry_host.c"),
                  "-o", str(executable)], capture_output=True, text=True)
             self.assertEqual(built.returncode, 0, built.stderr)
@@ -273,6 +277,8 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("RTL:c3bd no-music return, configuration preserved",
                           result.stdout)
             self.assertIn("DS:0fce=ffff invalid; hardware mode setup still required",
+                          result.stdout)
+            self.assertIn("RTL:f14d rejected -1 and 5; no BIOS mode entered",
                           result.stdout)
             for invalid in ("TEST_BAD_SELECTOR", "TEST_ALLOC_FAIL",
                             "TEST_MUSIC_ENABLED", "TEST_VIDEO_PREINITIALIZED",
@@ -390,6 +396,11 @@ class MSC51Tests(unittest.TestCase):
                 "DOS intro C entry prologue: PASS (five recovered writes, original data/CRC, workspace observed; no intro code entered)\n"
                 "DOS intro C audio guard: PASS (RTL:c3bd no-music return, configuration preserved; no IRQ installed)\n"
                 "DOS intro C video preflight: PASS (DS:0fce=ffff invalid; hardware mode setup still required)\n")
+            with self.assertRaisesRegex(ValueError, "video rejected-mode guard"):
+                msc51.validate_static_data_probe(output, require_original=True)
+            (output / "BPREAL.LOG").write_text(
+                (output / "BPREAL.LOG").read_text() +
+                "DOS intro C video guard: PASS (RTL:f14d rejected -1 and 5; no BIOS mode entered)\n")
             msc51.validate_static_data_probe(output, require_original=True)
             (output / "DATA.C").write_text((output / "DATA.C").read_text() + "/* stale */\n")
             with self.assertRaisesRegex(ValueError, "source changed"):
@@ -445,7 +456,7 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn(f'mount e "{game.resolve()}" -ro', command)
             self.assertIn("DATA.BAT", command)
             self.assertEqual(command[:5], ["/usr/bin/false", "--set", "core=dynamic",
-                                           "--set", "cycles=max"])
+                                           "--set", "cpu_cycles=max"])
 
     def test_staged_startup_selectors_match_snapshot_layout_and_run_on_host(self):
         if not shutil.which("gcc"):
@@ -1989,11 +2000,11 @@ class MSC51Tests(unittest.TestCase):
 
     def test_msc51_dosbox_compiler_cpu_speed_and_compatibility_overrides(self):
         self.assertEqual(msc51.dosbox_performance_args(),
-                         ["--set", "core=dynamic", "--set", "cycles=max"])
+                         ["--set", "core=dynamic", "--set", "cpu_cycles=max"])
         self.assertEqual(msc51.dosbox_performance_args("25000", "normal"),
-                         ["--set", "core=normal", "--set", "cycles=25000"])
+                         ["--set", "core=normal", "--set", "cpu_cycles=25000"])
         self.assertEqual(msc51.dosbox_performance_args("auto", "auto"),
-                         ["--set", "core=auto", "--set", "cycles=auto"])
+                         ["--set", "core=auto", "--set", "cpu_cycles=3000"])
         self.assertEqual(msc51.dosbox_performance_args("default", "default"), [])
         for invalid in ("", "0", "49", "2000001", "overclock", "2.5", "max --exit",
                         "٥٠", "0100000000000000000000000000000000000000000"):

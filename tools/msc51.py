@@ -273,11 +273,12 @@ def selector_source_signature(output: Path) -> str:
 
 def static_data_source_signature(output: Path) -> str:
     digest = hashlib.sha256(b"MS C 5.1 /AL /Od original EXE static data v1\n")
-    # The standalone original entry-prologue probe links one recovered Mxx
-    # source, not the whole launcher. Include its generated C and headers
-    # so a changed or renumbered source cannot pass a stale DOS test.
+    # The standalone original entry probe links two recovered Mxx sources:
+    # the EXE prologue and RTL video-mode guard. Include both and all their
+    # headers so changed or renumbered sources cannot pass a stale DOS test.
     additional = tuple(launcher_source_alias(output, name) for name in
-                       ("gate_exe_intro_setup.c", "gate_exe.h",
+                       ("gate_exe_intro_setup.c", "gate_rtl_mode.c",
+                        "gate_exe.h", "gate_rtl_mode.h", "gate_rtl_palette.h",
                         "gate_memory_layout.h"))
     for name in (*STATIC_DATA_SOURCES, *additional, "SOURCE.MAP"):
         digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
@@ -559,8 +560,11 @@ def stage_launcher(output: Path) -> list[str]:
                   for name, alias in sorted(startup_names.items())))
     entry_obj = aliases["gate_exe_intro_setup.c"].replace(".C", ".OBJ")
     entry_source = aliases["gate_exe_intro_setup.c"]
+    mode_obj = aliases["gate_rtl_mode.c"].replace(".C", ".OBJ")
+    mode_source = aliases["gate_rtl_mode.c"]
     prep_response = ["BOOTPREP.OBJ+", "BOOT.OBJ+", "DATA.OBJ+", "SEL.OBJ+",
-                     "MEMORY.OBJ+", "DOSFILE.OBJ+", "HEAP.OBJ+", "RTLHW.OBJ+", entry_obj,
+                     "MEMORY.OBJ+", "DOSFILE.OBJ+", "HEAP.OBJ+", "RTLHW.OBJ+",
+                     entry_obj + "+", mode_obj,
                      "BOOTPREP.EXE", "NUL.MAP", "LLIBCR.LIB LIBH.LIB /NOD", ";"]
     (output / "BPREP.RSP").write_text("\r\n".join(prep_response) + "\r\n")
     # HEAP.OBJ is also required by the standalone recovered C prologue.
@@ -599,13 +603,15 @@ def stage_launcher(output: Path) -> list[str]:
         "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST BOOTCHK.EXE GOTO FAILED",
         "IF EXIST E:\\GATE.RTL BOOTCHK.EXE > BOOTREAL.LOG",
         "IF ERRORLEVEL 1 GOTO FAILED",
-        # Execute the recovered EXE:1309 writes and the original RTL:c3bd
-        # no-music early return, never the later IRQ or graphics branches.
+        # Execute the recovered EXE:1309 writes, RTL:c3bd no-music return,
+        # and the RTL:f14d invalid-mode guard, not BIOS video setup.
         # Both DOS image callbacks remain nonexecutable and are never called.
         "CL /AL /Od /c HEAP.C >> DATBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
         "IF NOT EXIST HEAP.OBJ GOTO FAILED",
         f"CL /AL /Od /c {entry_source} >> DATBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
         f"IF NOT EXIST {entry_obj} GOTO FAILED",
+        f"CL /AL /Od /c {mode_source} >> DATBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        f"IF NOT EXIST {mode_obj} GOTO FAILED",
         "CL /AL /Od /c RTLHW.C >> DATBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
         "IF NOT EXIST RTLHW.OBJ GOTO FAILED",
         "CL /AL /Od /c BOOTPREP.C >> DATBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
@@ -1059,6 +1065,10 @@ def validate_static_data_probe(output: Path, *, require_original: bool = False) 
                 r"^DOS intro C video preflight: PASS \(DS:0fce=ffff invalid; hardware mode setup still required\)\s*$",
                 prepared.read_text(), re.MULTILINE) is None:
             raise ValueError("DOS source-C intro video preflight verification is missing or failed.")
+        if re.search(
+                r"^DOS intro C video guard: PASS \(RTL:f14d rejected -1 and 5; no BIOS mode entered\)\s*$",
+                prepared.read_text(), re.MULTILINE) is None:
+            raise ValueError("DOS source-C intro video rejected-mode guard is missing or failed.")
 
 
 def remove_static_data_outputs(output: Path) -> None:
@@ -1494,9 +1504,10 @@ def dosbox_commands(compiler: Path, output: Path, run_probe: bool,
 def dosbox_performance_args(cycles: str = "max", core: str = "dynamic") -> list[str]:
     """Override DOSBox Staging's slow real-mode defaults for compiler runs.
 
-    The legacy `cycles` option works across the supported DOSBox Staging
-    versions (including 0.82+); `--set` has been supported since 0.79.
-    `default` preserves the user's normal DOSBox configuration instead.
+    DOSBox Staging 0.83 uses `cpu_cycles` instead of deprecated `cycles`.
+    Its real-mode default is 3000; map the old `auto` CLI spelling to that
+    fixed value because `cpu_cycles=auto` is not a supported setting.
+    `default` leaves the user's normal DOSBox configuration untouched.
     """
     if core not in ("auto", "normal", "simple", "dynamic", "default"):
         raise ValueError("--dosbox-core must be auto, normal, simple, dynamic or default")
@@ -1507,7 +1518,7 @@ def dosbox_performance_args(cycles: str = "max", core: str = "dynamic") -> list[
     if core != "default":
         result += ["--set", f"core={core}"]
     if cycles != "default":
-        result += ["--set", f"cycles={cycles}"]
+        result += ["--set", f"cpu_cycles={3000 if cycles == 'auto' else cycles}"]
     return result
 
 
@@ -1545,7 +1556,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="writable DOS workspace; never the Nix store")
     parser.add_argument("--dosbox", default="dosbox-staging")
     parser.add_argument("--dosbox-cycles", default="max",
-                        help="DOSBox CPU cycles: max (default), auto, 50..2000000 or default (no override)")
+                        help="DOSBox real-mode CPU cycles: max (default), auto (3000), 50..2000000 or default (no override)")
     parser.add_argument("--dosbox-core", default="dynamic",
                         choices=("dynamic", "auto", "normal", "simple", "default"),
                         help="DOSBox CPU core: dynamic (default), auto, normal, simple or default (no override)")
@@ -1801,8 +1812,9 @@ def main(argv: list[str] | None = None) -> int:
                  "; the full-bank original-file CRC check was not requested")
               + ("; BOOTCHK.EXE verified DOS allocation, CRC and cleanup, and "
                  "BOOTPREP.EXE executed the five recovered source-C entry "
-                 "writes and the RTL no-music initializer return without "
-                 "entering original resident code or installing IRQs"
+                 "writes, the RTL no-music initializer return and the RTL "
+                 "invalid-video-mode guard without entering original resident "
+                 "code, setting a BIOS video mode or installing IRQs"
                  if original_game_dir is not None
                  else "; BOOT.OBJ was built but its original-file probes were not run")
               + ". DATA.OBJ/BOOT.OBJ remain probe-only until executable startup "

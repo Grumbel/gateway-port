@@ -24,9 +24,60 @@ static void require(int condition)
     }
 }
 
+/* The original RTL mode setter's out-of-range branch must never reach
+ * hardware. In the GCC fixture all callback destinations terminate if it
+ * does; the DOS probe links real RTLHW.OBJ for the audio guard but uses
+ * terminating stand-ins for the BIOS setter and display starter. */
+void gate_rtl_mode_query_adapter(uint8_t *adapter)
+{
+    (void)adapter;
+    require(0);
+}
+
+uint16_t gate_rtl_mode_svga_variant(void)
+{
+    require(0);
+    return 0u;
+}
+
+uint8_t gate_rtl_palette_in(uint16_t port)
+{
+    (void)port;
+    require(0);
+    return 0u;
+}
+
+void gate_rtl_palette_out(uint16_t port, uint8_t value)
+{
+    (void)port;
+    (void)value;
+    require(0);
+}
+
+void gate_rtl_mode_clip(uint16_t bottom, uint16_t right,
+                        uint16_t top, uint16_t left)
+{
+    (void)bottom;
+    (void)right;
+    (void)top;
+    (void)left;
+    require(0);
+}
+
+void gate_rtl_mode_pen(uint16_t enabled)
+{
+    (void)enabled;
+    require(0);
+}
+
 uint16_t gate_ds_word(uint16_t offset)
 {
     return gate_far_word(MOCK_DATA_SEGMENT, offset);
+}
+
+void gate_ds_set_word(uint16_t offset, uint16_t value)
+{
+    gate_far_set_word(MOCK_DATA_SEGMENT, offset, value);
 }
 
 uint16_t gate_ds_segment(void)

@@ -246,7 +246,7 @@ nix develop .#msc51                           # optional DOSBox toolchain shell
 
 The compiler and probe sessions use **DOSBox Staging's dynamic CPU core and
 maximum automatic CPU cycles** by default (`--set core=dynamic --set
-cycles=max`). This speeds up CPU-bound real-mode compilation compared with
+cpu_cycles=max`). This speeds up CPU-bound real-mode compilation compared with
 the emulator's default interpreted real-mode core; the actual speedup depends
 on the host. The settings apply only to the launched DOSBox process, not to
 your global configuration. For the original-file data/boot probes, for
@@ -258,7 +258,9 @@ nix run -L .#msc51-compile-data -- --original-game-dir ../gateway-dos --dosbox-c
 nix run -L .#msc51-compile-data -- --original-game-dir ../gateway-dos --dosbox-core default --dosbox-cycles default
 ```
 
-Use `auto` if timing-dependent DOS behavior fails at `max`; use `default`
+The legacy `--dosbox-cycles auto` option now selects Staging's conservative
+real-mode default of `cpu_cycles=3000` (the modern setting doesn't accept
+`auto`); use it if timing-dependent DOS behavior fails at `max`. Use `default`
 for both options to leave the settings to your own DOSBox configuration.
 The flags apply to all DOSBox-running `msc51-*` commands handled by
 `tools/msc51.py`.
