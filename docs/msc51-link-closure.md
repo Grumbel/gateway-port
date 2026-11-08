@@ -822,6 +822,45 @@ python3 tools/inspect_msc51_startup.py \
   --runtime-pointer-sources
 ```
 
+**Original pointer-source result (subsequently supplied):** Both windows
+are completely zero at 100, 125, 175 and 250ms. At 350ms `external_a`
+has 1,449 nonzero bytes in a `0600h`-byte window, and `external_b` has
+1,515 in `0640h`. They are *byte-identical* at 450, 500 and 1500ms.
+Five nontrivial exact RTL source runs are present in each window, with
+file offsets in `18e00..193d9` (A) and `19a20..19e40` (B). These are
+**loaded code regions** rather than the two imagined DOS allocations:
+existing original-memory VFX tests already independently identify
+`252c:0032`/`0053` as graphics coordinate helpers and
+`25d7:00d6`/`0133` as display pixel-operation handlers.
+
+The first A run (`rtl:18e00 -> 252c:000a`, 218 exact bytes) covers
+*all eight* table target offsets, though only four are distinct. Its
+local file-offset mapping is `RTL file = 18df6h + target offset`.
+All five B source runs agree on `RTL file = 19993h + target offset`;
+the earliest `rtl:19a20 -> 25d7:008d` and the later runs remain
+consistent despite relocated instructions between them. Combining
+those independent copies yields this **candidate entry crosswalk**
+(file locations are original-run evidence, not rebased link addresses):
+
+| Target code offset A | Original RTL file | Target code offset B | Original RTL file |
+| --- | --- | --- | --- |
+| `000a` | `18e00` | `006b` | `199fe` |
+| `0032` | `18e28` | `00d6` | `19a69` |
+| `0053` | `18e49` | `0133` | `19ac6` |
+| `0065` | `18e5b` | `0189` | `19b1c` |
+| | | `01e3` | `19b76` |
+| | | `0272` | `19c05` |
+| | | `0440` | `19dd3` |
+
+`--runtime-pointer-sources` now selects locally supported source-offset
+maps and checks the *live bytes at each unique FAR entry* against that
+source, reporting exactly how many initial bytes match. This is necessary
+because a mapping supported by long runs is not, by itself, proof of
+unmodified code at every entry: relocations can land at the first
+instruction. The next genuine report will establish those per-entry
+prefixes. Do not apply the A base delta to its later code chunks:
+some A source runs show different offsets after loader fixups/packing.
+
 **Microsoft C 5.1 build correction:** The first user-side `DATA.BAT` run
 compiled `DATA.C` but stopped with `DATACHK.C(22): C2073` (an initialized
 automatic `char name[]`), so **neither test executable ran**. Both test

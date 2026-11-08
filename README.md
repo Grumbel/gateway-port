@@ -516,7 +516,14 @@ python3 tools/inspect_msc51_startup.py \
 This is read-only. Matches require at least 64 identical bytes at a unique
 source location. Missing matches do **not** imply uninitialized memory:
 the original loader may have relocated, decompressed or overwritten code.
-Use `--json` for every reported match, not just the first eight per table.
+The user's original run confirms both target windows are zero until 250ms,
+then contain stable RTL-loaded graphics code by 350ms. The diagnostic now
+also maps the *individual FAR-pointer entry offsets* back to candidate RTL
+file locations, checking unchanged instruction prefixes instead of blindly
+assuming every entry follows the same source offset. The already recovered
+VFX tests identify `252c:0032`/`0053` as coordinate helpers and
+`25d7:00d6`/`0133` as pixel-operation handlers. Use `--json` for all exact
+copy records, not just the first eight printed per table.
 
 The user's follow-up Microsoft LINK run consumed `MEMORY.OBJ` and reduced
 the unresolved-symbol count **from 108 to 100**, exactly removing those

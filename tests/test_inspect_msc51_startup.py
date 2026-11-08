@@ -131,6 +131,60 @@ class StartupSnapshotTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "runtime data segment"):
             startup.runtime_pointer_sources(exe, rtl, captures, 0xffff)
 
+    def test_pointer_entry_map_handles_relocated_code_and_preserves_file_offset(self):
+        exe, base_rtl = fixture()
+        rtl = bytearray(base_rtl)
+        rng = random.Random(193)
+        rtl[0x7000:0x7600] = rng.randbytes(0x600)
+        rtl[0x8000:0x8640] = rng.randbytes(0x640)
+        data_segment = 0x2a7a
+        empty = bytearray(startup.RAM_SIZE)
+        for idx, (_, entries) in enumerate(startup.KNOWN_RTL_EXTERNAL_POINTERS):
+            for site, offset in entries:
+                put_word(empty, data_segment * 16 + site, offset)
+                put_word(empty, data_segment * 16 + site + 2,
+                         (0x252c, 0x25d7)[idx])
+        loaded = bytearray(empty)
+        loaded[0x252c * 16:0x252c * 16 + 0x600] = rtl[0x7000:0x7600]
+        loaded[0x25d7 * 16:0x25d7 * 16 + 0x640] = rtl[0x8000:0x8640]
+        # A relocation changes an interior byte of one original function;
+        # the remaining independent entries still support the file mapping.
+        loaded[0x25d7 * 16 + 0x006b + 4] ^= 0xff
+        captures = [(100, regs(0x3259, 0x103c, 0x348a, 0x3229, 0x3c4),
+                     bytes(empty)),
+                    (350, regs(0x12a5, 0x013b, data_segment, data_segment, 0x7a4a),
+                     bytes(loaded))]
+        report = startup.runtime_pointer_sources(exe, bytes(rtl), captures,
+                                                 data_segment)
+        self.assertTrue(all(table["entry_source_map"] is None for table in
+                            report["snapshots"][0]["tables"]))
+        first, second = report["snapshots"][1]["tables"]
+        for table, file_base, unique in ((first, 0x7000, 4),
+                                         (second, 0x8000, 7)):
+            mapping = table["entry_source_map"]
+            self.assertIsNotNone(mapping)
+            self.assertEqual(mapping["source_base_file_offset"], file_base)
+            self.assertEqual(mapping["verified_entry_prefixes"], unique -
+                             (1 if table is second else 0))
+            self.assertEqual(mapping["unique_entry_count"], unique)
+            self.assertEqual([entry["file_offset"] for entry in mapping["entries"]],
+                             [file_base + entry["target_offset"] for entry in
+                              mapping["entries"]])
+        self.assertEqual(second["entry_source_map"]["entries"][0]
+                         ["exact_prefix_bytes"], 4)
+
+        ambiguous_window = rng.randbytes(0x100)
+        ambiguous = startup.pointer_entry_source_map(
+            bytes(0x80) + ambiguous_window,
+            bytes(0x180) + ambiguous_window,
+            ambiguous_window, (0x10, 0x40), [
+                {"source": "exe", "source_file_offset": 0x80,
+                 "runtime_ds_offset": 0, "length": 0x100},
+                {"source": "rtl", "source_file_offset": 0x180,
+                 "runtime_ds_offset": 0, "length": 0x100},
+            ])
+        self.assertIsNone(ambiguous)
+
     def test_mcb_chain_assigns_external_pointer_targets_without_guessing(self):
         data_segment = 0x2a7a
         raw = bytearray(startup.RAM_SIZE)

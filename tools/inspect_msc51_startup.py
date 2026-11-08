@@ -558,6 +558,50 @@ def runtime_mcb_owners(captures, runtime_ds, image_load, *, first_mcb=None):
             "snapshots": reports}
 
 
+def pointer_entry_source_map(exe, rtl, window, pointer_offsets, copies):
+    """Infer a file-offset mapping from full runs, then verify entry prefixes.
+
+    A candidate constant is `source_file_offset - target_offset`; this is
+    valid only locally to the pointer entries. The original loader may pack
+    later code chunks at different offsets. Only unambiguous candidates with
+    at least one eight-byte exact entry prefix are returned.
+    """
+    files = {"exe": exe, "rtl": rtl}
+    origins = {(copy["source"], copy["source_file_offset"] -
+                copy["runtime_ds_offset"]) for copy in copies}
+    candidates = []
+    for kind, origin in origins:
+        source = files[kind]
+        entries = []
+        for offset in sorted(set(pointer_offsets)):
+            start = origin + offset
+            prefix = 0
+            if start >= 0 and offset < len(window):
+                limit = min(16, len(window) - offset, len(source) - start)
+                while prefix < limit and window[offset + prefix] == source[start + prefix]:
+                    prefix += 1
+            entries.append({"target_offset": offset,
+                            "file_offset": start if 0 <= start < len(source) else None,
+                            "exact_prefix_bytes": prefix})
+        supported = sum(entry["exact_prefix_bytes"] >= 8 for entry in entries)
+        if not supported:
+            continue
+        score = (supported, sum(entry["exact_prefix_bytes"] for entry in entries),
+                 sum(copy["length"] for copy in copies
+                     if copy["source"] == kind and
+                     copy["source_file_offset"] - copy["runtime_ds_offset"] == origin))
+        candidates.append((score, kind, origin, entries))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    if len(candidates) > 1 and candidates[0][0] == candidates[1][0]:
+        return None
+    score, kind, origin, entries = candidates[0]
+    return {"source": kind, "source_base_file_offset": origin,
+            "verified_entry_prefixes": score[0], "unique_entry_count": len(entries),
+            "entries": entries}
+
+
 def runtime_pointer_sources(exe, rtl, captures, runtime_ds, *, minimum=64):
     """Compare real FAR-pointer targets with original EXE/RTL file content.
 
@@ -600,6 +644,8 @@ def runtime_pointer_sources(exe, rtl, captures, runtime_ds, *, minimum=64):
                 "window_bytes": size, "nonzero_bytes": size - window.count(0),
                 "changed_from_first": sum(a != b for a, b in
                                           zip(first_windows[name, segment], window)),
+                "entry_source_map": pointer_entry_source_map(
+                    exe, rtl, window, [offset for _, offset in entries], matches),
                 "exact_file_copies": [{"source": entry["source"],
                                        "file_offset": entry["source_file_offset"],
                                        "target_offset": entry["runtime_ds_offset"],
@@ -1245,6 +1291,7 @@ def main():
             print("EXE/RTL source matches in live FAR target windows "
                   "(exact runs >=%d bytes, not proof of code origin):" %
                   sources["minimum_exact_run"])
+            reported_entry_maps = {}
             for sample in sources["snapshots"]:
                 print(" %4dms:" % sample["milliseconds"])
                 for entry in sample["tables"]:
@@ -1268,6 +1315,28 @@ def main():
                     if len(entry["exact_file_copies"]) > 8:
                         print("         ... %d more (use --json for all)" %
                               (len(entry["exact_file_copies"]) - 8))
+                    mapped = entry["entry_source_map"]
+                    if mapped is not None:
+                        signature = (mapped["source"], mapped["source_base_file_offset"],
+                                     tuple((item["target_offset"],
+                                            item["exact_prefix_bytes"])
+                                           for item in mapped["entries"]))
+                        key = (entry["name"], entry["segment"])
+                        if reported_entry_maps.get(key) == signature:
+                            continue  # No duplicate per-entry listing for stable captures.
+                        reported_entry_maps[key] = signature
+                        print("         entry map: %s file = target offset +%05x "
+                              "(%d/%d unique entry prefixes >=8 bytes):" % (
+                                  mapped["source"], mapped["source_base_file_offset"],
+                                  mapped["verified_entry_prefixes"],
+                                  mapped["unique_entry_count"]))
+                        for entry_point in mapped["entries"]:
+                            if entry_point["file_offset"] is not None:
+                                print("           %04x:%04x -> %s:%05x "
+                                      "(prefix %d/16 bytes)" % (
+                                          entry["segment"], entry_point["target_offset"],
+                                          mapped["source"], entry_point["file_offset"],
+                                          entry_point["exact_prefix_bytes"]))
 
 
 if __name__ == "__main__":
