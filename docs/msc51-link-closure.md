@@ -30,7 +30,7 @@ boundaries and checksums, and extracts actual `PUBDEF` names. When
 already exported by one of its input objects. That condition points to a
 stale LINK run or another linkage inconsistency; it is **not** evidence
 that a new function implementation is needed. Missing objects and invalid
-OMF records are reported explicitly. The four synthetic unit tests cover
+OMF records are reported explicitly. The five synthetic unit tests cover
 32-byte decorated symbols, PUBDEF/PUB386 encodings, malformed records,
 multi-module inputs and the missing-versus-exported distinction. There
 are no real DOS `.OBJ` files in this environment, so object contents
@@ -41,11 +41,17 @@ linker inputs successfully and found **no exact `PUBDEF`** for any of
 `_main`, `_gate_linked_handle_control_key`, or
 `_gate_linked_print_intr_b006848b`. This rules out the earlier hypothesis
 that the fully spelled diagnostic was already present in a linked object.
-However, it does **not** distinguish a stale `RTFILE.OBJ` from a compiler
-name spelling difference, and it does not expose whether any related
-diagnostic routine was exported. The audit now suggests similar OMF
-publics and can show every public exported by one input object. Run on
-the **same** staged objects, without rebuilding first:
+The user's follow-up `--object RTFILE.OBJ` run found **exactly three
+publics**: `_gate_linked_copy_runtime_string`,
+`_gate_linked_format_res_cd21e963`, and
+`_gate_linked_open_runtime_path`. The source-C diagnostic is a fourth
+defined function, but no diagnostic public (not even a shortened
+spelling) appears in the compiled object. This supports the stale or
+wrongly compiled object diagnosis, although the object itself is not
+available here to prove *why* it is missing.
+
+The audit now suggests similar OMF publics and can show every public
+exported by one input object. To inspect the same stage:
 
 ```sh
 python3 tools/msc51_object_symbols.py \
@@ -54,13 +60,22 @@ python3 tools/msc51_object_symbols.py \
   --object RTFILE.OBJ
 ```
 
-If the expected public is absent from `RTFILE.OBJ`, compare its printed
-exports with the regenerated `RTFILE.C` source and `RTFBUILD.LOG`. A
-different public spelling points to a naming/linkage bug; no related
-public at all points to an old, incompatible or otherwise wrongly built
-object. Neither case justifies inserting a no-op diagnostic body. The
-two other names have no definitions in the staged C sources and remain
-real reconstruction tasks.
+The Microsoft C runtime-file adapter now verifies the exact four
+`RTFILE.OBJ` OMF publics, **after compiling and again before LINK**,
+in addition to the preexisting source fingerprint. The observed
+three-export object fails explicitly rather than claiming a successful
+launcher link. Rebuild it with:
+
+```sh
+nix run -L .#msc51-compile-runtime-files
+```
+
+Then rerun `msc51_object_symbols.py --object RTFILE.OBJ` and check that
+the fourth public appears. This rebuild must be verified on the user's
+Microsoft C setup; the compiler and DOSBox are unavailable here.
+The missing public does not justify inserting a no-op diagnostic body.
+The two other names have no definitions in the staged C sources and
+remain real reconstruction tasks.
 
 The historical Microsoft C 5.1 compiler recognizes 31-character C names
 and decorates them with an underscore, giving a **32-character OMF public**;

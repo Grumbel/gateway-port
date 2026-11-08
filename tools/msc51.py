@@ -10,6 +10,7 @@ and executable outputs stay in a writable directory outside the Nix store.
 
 import argparse
 import hashlib
+import importlib.util
 import os
 from pathlib import Path
 import re
@@ -1111,6 +1112,31 @@ def validate_runtime_file_adapter(output: Path) -> None:
     if signature is None or signature.read_text().strip() != runtime_file_source_signature(output):
         raise ValueError("Cannot link launcher: runtime FAR string/file source has changed "
                          "since its test. Run msc51-compile-runtime-files again.")
+    # The DOS probe signature proves which source was staged, but not which
+    # functions its .OBJ actually exports. A user-reported 42-object OMF
+    # audit exposed a three-public RTFILE.OBJ without the diagnostic defined
+    # in the current RTFILE.C. Reject that build before invoking LINK.
+    omf_source = REPO / "tools" / "msc51_object_symbols.py"
+    spec = importlib.util.spec_from_file_location("gateway_msc51_omf", omf_source)
+    if spec is None or spec.loader is None:
+        raise ValueError("Cannot inspect RTFILE.OBJ: OMF inspector is unavailable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    obj = locate_case_insensitive(output, "RTFILE.OBJ")
+    assert obj is not None  # already checked above
+    try:
+        exports = module.public_names(obj.read_bytes())
+    except (ValueError, UnicodeDecodeError) as error:
+        raise ValueError(f"Cannot link launcher: invalid RTFILE.OBJ OMF: {error}") from error
+    required = {"_gate_linked_copy_runtime_string",
+                "_gate_linked_format_res_cd21e963",
+                "_gate_linked_open_runtime_path",
+                "_gate_linked_print_intr_b006848b"}
+    missing = sorted(required - exports)
+    if missing:
+        raise ValueError("Cannot link launcher: RTFILE.OBJ lacks public "
+                         + ", ".join(missing)
+                         + ". Run msc51-compile-runtime-files again.")
 
 
 def remove_runtime_file_outputs(output: Path) -> None:
@@ -1714,7 +1740,8 @@ def main(argv: list[str] | None = None) -> int:
                   file=sys.stderr)
             print_runtime_file_diagnostics(output)
             return 1
-        print("Microsoft C 5.1 verified FAR strncpy, resource formatting and DOS path access; "
+        print("Microsoft C 5.1 verified FAR strings, resource formatting, DOS path access "
+              "and all four RTFILE.OBJ publics; "
               "RTFILE.OBJ is ready for the launcher link.")
         return 0
     if args.command == "compile-picture-dcl":

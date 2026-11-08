@@ -451,7 +451,7 @@
         msc51-compile-runtime-files = {
           type = "app";
           program = "${self.packages.${system}.msc51-compile-runtime-files}/bin/gateway-msc51-compile-runtime-files";
-          meta.description = "Compile and probe three reconstructed FAR string, DOS access, and resource path services with Microsoft C 5.1";
+          meta.description = "Compile and probe FAR string, DOS path, and intro diagnostic services with Microsoft C 5.1";
         };
         msc51-compile-picture-dcl = {
           type = "app";

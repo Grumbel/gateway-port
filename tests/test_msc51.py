@@ -23,6 +23,26 @@ msc51 = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(msc51)
 
 
+def fake_runtime_file_obj(include_diagnostic=True):
+    """Synthetic Microsoft OMF publics, never a proprietary compiler object."""
+    def record(kind, payload):
+        size = len(payload) + 1
+        header = bytes((kind, size & 255, size >> 8))
+        return header + payload + bytes(((-sum(header + payload)) & 255,))
+
+    names = ["_gate_linked_copy_runtime_string",
+             "_gate_linked_format_res_cd21e963",
+             "_gate_linked_open_runtime_path"]
+    if include_diagnostic:
+        names.append("_gate_linked_print_intr_b006848b")
+    payload = bytearray(b"\x00\x01")  # group 0, segment 1
+    for name in names:
+        raw = name.encode("ascii")
+        payload.extend(bytes((len(raw),)) + raw + b"\x00\x00\x00")
+    return (record(0x80, b"\x08RTFILE.C")
+            + record(0x90, bytes(payload)) + record(0x8a, b"\x00"))
+
+
 class MSC51Tests(unittest.TestCase):
     def test_optional_original_rtl_fixup_words_are_unrelocated_zero(self):
         original = REPO.parent / "gateway-dos" / "GATE.RTL"
@@ -927,10 +947,20 @@ class MSC51Tests(unittest.TestCase):
                     msc51.main(args)
                 run.assert_not_called()
             self.assertIn("msc51-compile-runtime-files first", error.getvalue())
-            (output / "rtfile.obj").write_bytes(b"real DOS runtime file services")
+            (output / "rtfile.obj").write_bytes(fake_runtime_file_obj())
             (output / "rtfstart.log").write_text("tested")
             (output / "rtfok.log").write_text("passed")
             (output / "rtfsig.log").write_text(msc51.runtime_file_source_signature(output))
+            (output / "rtfile.obj").write_bytes(fake_runtime_file_obj(False))
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run") as run, \
+                 redirect_stderr(io.StringIO()) as error:
+                with self.assertRaises(SystemExit):
+                    msc51.main(args)
+                run.assert_not_called()
+            self.assertIn("RTFILE.OBJ lacks public _gate_linked_print_intr_b006848b",
+                          error.getvalue())
+            (output / "rtfile.obj").write_bytes(fake_runtime_file_obj())
             with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
                  mock.patch.object(msc51.subprocess, "run") as run, \
                  redirect_stderr(io.StringIO()) as error:
@@ -1327,7 +1357,7 @@ class MSC51Tests(unittest.TestCase):
                 self.assertFalse((output / "RTFILE.OBJ").exists())
                 self.assertFalse((output / "RTFOK.LOG").exists())
                 (output / "RTFSTART.LOG").write_text("started")
-                (output / "RTFILE.OBJ").write_bytes(b"compiled")
+                (output / "RTFILE.OBJ").write_bytes(fake_runtime_file_obj())
                 (output / "RTFFAIL.LOG").write_text("resource filename mismatch")
                 return mock.Mock(returncode=0)
 
@@ -1342,7 +1372,7 @@ class MSC51Tests(unittest.TestCase):
                 self.assertFalse((output / "RTFFAIL.LOG").exists())
                 self.assertFalse((output / "RTFILE.OBJ").exists())
                 (output / "RTFSTART.LOG").write_text("started")
-                (output / "RTFILE.OBJ").write_bytes(b"compiled")
+                (output / "RTFILE.OBJ").write_bytes(fake_runtime_file_obj())
                 (output / "RTFOK.LOG").write_text("passed")
                 (output / "RTFTEST.LOG").write_text("Runtime file probe: PASS")
                 (output / "RTFSIG.LOG").write_text(msc51.runtime_file_source_signature(output))
@@ -1352,6 +1382,11 @@ class MSC51Tests(unittest.TestCase):
                  mock.patch.object(msc51.subprocess, "run", side_effect=successful_probe):
                 self.assertEqual(msc51.main(args), 0)
 
+            (output / "RTFILE.OBJ").write_bytes(fake_runtime_file_obj(False))
+            with self.assertRaisesRegex(ValueError,
+                                        "RTFILE.OBJ lacks public _gate_linked_print_intr_b006848b"):
+                msc51.validate_runtime_file_adapter(output)
+            (output / "RTFILE.OBJ").write_bytes(fake_runtime_file_obj())
             (output / "RTFILE.C").write_text((output / "RTFILE.C").read_text() + "/* changed */\n")
             with self.assertRaisesRegex(ValueError, "source has changed"):
                 msc51.validate_runtime_file_adapter(output)
