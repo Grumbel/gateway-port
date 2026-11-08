@@ -104,6 +104,43 @@ class StartupSnapshotTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "duplicate register"):
                 startup.snapshots_from(folder)
 
+    def test_capture_combines_disjoint_time_ranges(self):
+        text = "CS=102c\nIP=71\nDS=ff0\nES=ff0\nSS=3229\nSP=400\n"
+        with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
+            for directory, timestamp in ((first, 0), (second, 125)):
+                folder = Path(directory)
+                (folder / ("at-%d.regs" % timestamp)).write_text(text)
+                (folder / ("at-%d.bin" % timestamp)).write_bytes(
+                    bytes(startup.RAM_SIZE))
+            captures = startup.snapshots_from_directories([Path(second), Path(first)])
+            self.assertEqual([time for time, _, _ in captures], [0, 125])
+            with self.assertRaisesRegex(ValueError, "duplicate snapshot times"):
+                startup.snapshots_from_directories([Path(first), Path(first)])
+
+    def test_calibration_relocations_mask_only_documented_words(self):
+        source = bytearray(0x10000)
+        original = 0x5806
+        length = 58
+        src = bytearray((i * 17 + 3) % 251 for i in range(length))
+        for pos in (14, 29, 50):
+            put_word(src, pos, 0)
+        source[original:original + length] = src
+        ram = bytearray(startup.RAM_SIZE)
+        offset = 0x12a50 + original - 0x56de
+        ram[offset:offset + length] = src
+        for pos, value in ((14, 0x5c8), (29, 0x5c8), (50, 0x5ba)):
+            put_word(ram, offset + pos, value)
+        entry = startup.relocated_timing_entry(
+            bytes(source), bytes(ram), original, length,
+            (14, 29, 50), 0x12a50, 0x56de)
+        self.assertTrue(entry["matched"])
+        self.assertEqual(entry["matched_nonrelocated_bytes"], 52)
+        self.assertEqual(entry["relocated_words"], [0x5c8, 0x5c8, 0x5ba])
+        ram[offset + 35] ^= 1
+        self.assertFalse(startup.relocated_timing_entry(
+            bytes(source), bytes(ram), original, length,
+            (14, 29, 50), 0x12a50, 0x56de)["matched"])
+
     def test_mz_rejects_wrong_declared_length_and_invalid_fixups(self):
         exe, _ = fixture()
         self.assertEqual(startup.mz_image(exe)["image_bytes"], 0x600)

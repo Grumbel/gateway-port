@@ -275,6 +275,80 @@ bootstrap wholesale, or adding a no-op CRT `_main`, would not close the
 functional gap. This capture resolves a **mapping/timing question**, not
 any of the three outstanding LINK externals.
 
+### Finer 125–450ms capture: original timer calibration, not an idle loop
+
+Five more independent original `.regs`/`.bin` pairs on 2026-11-08
+pinpoint the phase changes further. The same read-only inspector accepts
+both capture directories, still requiring the 0ms baseline:
+
+```sh
+python3 tools/inspect_msc51_startup.py \
+  --exe ../gateway-dos/GATE.EXE --rtl ../gateway-dos/GATE.RTL \
+  --snapshot-dir build/msc51-startup \
+  --snapshot-dir build/msc51-startup-fine --json
+```
+
+| Sample | CS:IP | DS / ES / SS:SP | Observation |
+| --- | --- | --- | --- |
+| 125ms | `3259:10ae` | `348a` / `3259` / `3229:03c4` | Loader still running; `02a5` bank reaches the stable 13,956/15,616 original-byte match |
+| 175ms | `3259:0b93` | `3445` / `1ce0` / `3229:03da` | Original loader, old stack |
+| 250ms | `3259:1029` | `3445` / `3259` / `3229:03cc` | Original loader, old stack |
+| 350ms | `12a5:013b` | `2a7a` / `26af` / `2a7a:7a4a` | Resident timer calibration; new data and stack segment |
+| 450ms | `12a5:0140` | `2a7a` / `26af` / `2a7a:7a4a` | Still in the original calibration loop |
+| 500ms | `12a5:3570` | `2a7a` / `2a7a` / `2a7a:7a1a` | Calibration finished; next resident startup stage |
+
+This narrows the original loader-to-resident transition to **250–350ms**,
+not a single observed timestamp. The stable resident bank appears by
+125ms, well before the actual execution/stack handoff.
+
+Both 350ms and 450ms PCs project to the *interior* of an original
+bounded 58-byte routine `RTL:5806..583f`: respectively `rtl:5819`
+and `rtl:581e`. The **entire routine** matches the pinned RTL except
+three known 16-bit relocated operands (**52 invariant bytes**):
+the original two zero DS operands become the *same* `DS:05c8`, and
+the count result stores into `DS:05ba`. The routine pushes registers,
+repeats an arithmetic counter loop while a byte flag is nonzero,
+and saves the calibrated count before returning near. The status byte
+is `1` at both 350ms and 450ms; the result is still `ffffh` there.
+By 500ms the flag has cleared and the stored result is `35f3h`.
+
+The interrupt-driven flag is independently confirmed. The complete
+28-byte **original IRET routine `RTL:58e2..58fd`** matches all
+**24 invariant bytes** in the resident bank; the other four encode
+the relocated `mov ax,2a7a` (temporary DS) and `dec byte [05c8]`.
+The 8086 interrupt vector for **INT 1Ch** changes as follows:
+
+| Sample | Vector at physical `0070h` | Status |
+| --- | --- | --- |
+| 250ms | `f000:0200` | BIOS/default tick callback |
+| 350 and 450ms | `12a5:0204` | Original `RTL:58e2` callback installed |
+| 500ms | `1f10:08d0` | Prior resident callback restored |
+
+At 350ms the prior `1f10:08d0` callback is also saved at
+`2a7a:05bc/05be`, consistent with the neighboring original
+`RTL:5840..5895` setup and `RTL:5896..58e1` cleanup routines. Both
+complete *original-code* bodies now pass strict entry-anchored relocation
+checks on all the 125ms-and-later captures: **70 invariant bytes** across
+the 86-byte timer/INT 1Ch setup, and **62 invariant bytes** across the
+76-byte restore. All 15 WORD fixups are restricted to original zero-word
+instruction operands; the six repeated saved-vector/date/time operands
+agree between setup and restore. The setup's actual patched vector target
+is independently checked against the complete `RTL:58e2` IRET callback.
+At 100ms the setup and callback checks are still incomplete, strengthening
+the observation that relocation is not stable until the 125ms sample.
+
+These are **verified original instruction identities**, not fully verified
+decompiled C replacements or proven safe native Microsoft-C IRQ services.
+The IRQ-visible calibration and callback
+identities are verified by both the original bytes and guest RAM;
+their presence does not mean the rebuilt launcher should install
+an interrupt handler without a separate DOS-side safety test.
+
+The source-C `_main` still has to bind its own allocations and services;
+this evidence now supplies a bounded timing/interrupt initialization
+step. It does not by itself initialize the graphics, input, or intro
+resources, and the three unresolved Microsoft LINK names remain.
+
 The third call is now identified as `rtl:10da1..10dc6`, a bounded FAR
 routine (preceded and terminated by `RETF`). It starts with `push cs; call
 near rtl:11078`, tests bits `0x0c` of a relocated DS byte, conditionally

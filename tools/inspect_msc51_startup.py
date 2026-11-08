@@ -19,6 +19,13 @@ from prepare_intro_ghidra import RTL_BANKS, validate_bank
 RAM_SIZE = 0x100000
 RESIDENT_SEGMENT = 0x02a5
 DATA_WORDS = (0x064e, 0x065c, 0x065e, 0x0660, 0x0662)
+# Both FAR- and interrupt-returning routines lie in the independently
+# validated 02a5 resident bank. The original bytes have zero relocation
+# operands at these precisely disassembled instruction positions.
+CALIBRATION_ENTRY = (0x5806, 58, (14, 29, 50))
+TIMING_SETUP_ENTRY = (0x5840, 86, (12, 19, 27, 31, 39, 43, 51, 58))
+TIMING_RESTORE_ENTRY = (0x5896, 76, (11, 18, 33, 50, 54, 62, 66))
+TICK_CALLBACK_ENTRY = (0x58e2, 28, (10, 16))
 
 
 def word(data, offset):
@@ -66,27 +73,59 @@ def parse_regs(path):
     return result
 
 
-def snapshots_from(directory):
+def snapshots_from_directories(directories):
     entries = []
-    for path in directory.glob("at-*.regs"):
-        token = path.stem.removeprefix("at-")
-        if not token.isdecimal():
-            raise ValueError("invalid snapshot time in %s" % path)
-        time = int(token)
-        image = path.with_suffix(".bin")
-        if not image.is_file():
-            raise ValueError("snapshot RAM missing for %s" % path)
-        memory = image.read_bytes()
-        if len(memory) != RAM_SIZE:
-            raise ValueError("snapshot %s has %d bytes, expected 1 MiB" %
-                             (image, len(memory)))
-        entries.append((time, parse_regs(path), memory))
+    for directory in directories:
+        for path in directory.glob("at-*.regs"):
+            token = path.stem.removeprefix("at-")
+            if not token.isdecimal():
+                raise ValueError("invalid snapshot time in %s" % path)
+            time = int(token)
+            image = path.with_suffix(".bin")
+            if not image.is_file():
+                raise ValueError("snapshot RAM missing for %s" % path)
+            memory = image.read_bytes()
+            if len(memory) != RAM_SIZE:
+                raise ValueError("snapshot %s has %d bytes, expected 1 MiB" %
+                                 (image, len(memory)))
+            entries.append((time, parse_regs(path), memory))
     entries.sort(key=lambda entry: entry[0])
     if not entries or entries[0][0] != 0:
         raise ValueError("need an at-0.regs/at-0.bin baseline")
     if len({time for time, _, _ in entries}) != len(entries):
         raise ValueError("duplicate snapshot times")
     return entries
+
+
+def snapshots_from(directory):
+    """Retain the original one-directory API for callers and tests."""
+    return snapshots_from_directories([directory])
+
+
+def relocated_timing_entry(original, ram, original_offset, length,
+                           relocated_word_offsets, resident_start,
+                           original_bank_offset):
+    """Verify a complete routine, masking only known 16-bit relocations."""
+    relative = original_offset - original_bank_offset
+    if relative < 0 or original_offset + length > len(original):
+        raise ValueError("timing entry outside source RTL")
+    live_start = resident_start + relative
+    if live_start < 0 or live_start + length > len(ram):
+        raise ValueError("timing entry outside snapshot")
+    source = original[original_offset:original_offset + length]
+    live = ram[live_start:live_start + length]
+    masked = {i for start in relocated_word_offsets for i in (start, start + 1)}
+    if (any(start + 2 > length or source[start:start + 2] != b"\0\0"
+            for start in relocated_word_offsets)
+            or any(source[i] != live[i] for i in range(length) if i not in masked)):
+        return {"matched": False}
+    return {
+        "matched": True,
+        "original_rtl_offset": original_offset,
+        "length": length,
+        "matched_nonrelocated_bytes": length - len(masked),
+        "relocated_words": [word(live, offset) for offset in relocated_word_offsets],
+    }
 
 
 def analyze(exe, rtl, captures):
@@ -145,6 +184,42 @@ def analyze(exe, rtl, captures):
             witnesses = []
             verified = False
 
+        calibration = {"matched": False}
+        timing_setup = {"matched": False}
+        timing_restore = {"matched": False}
+        tick_callback = {"matched": False}
+        if verified:
+            calibration = relocated_timing_entry(
+                rtl, ram, *CALIBRATION_ENTRY, resident_start, original_start)
+            timing_setup = relocated_timing_entry(
+                rtl, ram, *TIMING_SETUP_ENTRY, resident_start, original_start)
+            timing_restore = relocated_timing_entry(
+                rtl, ram, *TIMING_RESTORE_ENTRY, resident_start, original_start)
+            tick_callback = relocated_timing_entry(
+                rtl, ram, *TICK_CALLBACK_ENTRY, resident_start, original_start)
+            if (calibration["matched"]
+                    and calibration["relocated_words"][0] != calibration["relocated_words"][1]):
+                calibration = {"matched": False}
+            if (tick_callback["matched"] and runtime_data_segment is not None
+                    and tick_callback["relocated_words"][0] != runtime_data_segment):
+                tick_callback = {"matched": False}
+            if (calibration["matched"] and tick_callback["matched"]
+                    and calibration["relocated_words"][0] != tick_callback["relocated_words"][1]):
+                tick_callback = {"matched": False}
+            if timing_setup["matched"]:
+                operands = timing_setup["relocated_words"]
+                # The last two absolute fixups are the installed INT 1Ch
+                # callback, not arbitrary values in a source byte window.
+                if operands[6:] != [TICK_CALLBACK_ENTRY[0] - original_start,
+                                     image_load + RESIDENT_SEGMENT]:
+                    timing_setup = {"matched": False}
+            if timing_setup["matched"] and timing_restore["matched"]:
+                setup = timing_setup["relocated_words"]
+                restore = timing_restore["relocated_words"]
+                if ([setup[i] for i in range(6)] !=
+                        [restore[i] for i in (0, 1, 3, 4, 5, 6)]):
+                    timing_restore = {"matched": False}
+
         physical_ip = ((regs["CS"] << 4) + regs["IP"]) & 0xfffff
         entry = {"kind": "unmapped"}
         if physical_ip + 16 <= RAM_SIZE:
@@ -158,6 +233,11 @@ def analyze(exe, rtl, captures):
                       physical_ip - resident_start:physical_ip - resident_start + 16]):
                 entry = {"kind": "rtl-exact-16",
                          "file_offset": original_start + physical_ip - resident_start}
+            elif calibration["matched"] and (resident_start + CALIBRATION_ENTRY[0] - original_start
+                    <= physical_ip < resident_start + CALIBRATION_ENTRY[0] - original_start + CALIBRATION_ENTRY[1]):
+                entry = {"kind": "rtl-relocated-calibration",
+                         "file_offset": original_start + physical_ip - resident_start,
+                         "function_offset": CALIBRATION_ENTRY[0]}
 
         data = ram[(regs["DS"] << 4):(regs["DS"] << 4) + 0x10000]
         selected_words = ({"%04x" % offset: word(data, offset)
@@ -169,6 +249,16 @@ def analyze(exe, rtl, captures):
         runtime_words = ({"%04x" % offset: word(runtime_data, offset)
                           for offset in DATA_WORDS}
                          if len(runtime_data) == 0x10000 else {})
+        timing_words = ({"%04x" % offset: word(runtime_data, offset)
+                         for offset in (0x05ba, 0x05bc, 0x05be)}
+                        if len(runtime_data) == 0x10000 else {})
+        timing_flag = (runtime_data[0x05c8]
+                       if len(runtime_data) == 0x10000 else None)
+        int1c = {"offset": word(ram, 0x70), "segment": word(ram, 0x72)}
+        callback_expected = (image_load + RESIDENT_SEGMENT,
+                             TICK_CALLBACK_ENTRY[0] - original_start)
+        callback_installed = (tick_callback["matched"]
+                              and (int1c["segment"], int1c["offset"]) == callback_expected)
         changed = (None if prev_ram is None else
                    sum(a != b for a, b in zip(prev_ram, ram)))
         result["snapshots"].append({
@@ -184,6 +274,14 @@ def analyze(exe, rtl, captures):
             "resident_bank_matching_bytes": bank_matches,
             "resident_bank_verified": verified,
             "resident_bank_witness_offsets": witnesses,
+            "timing_calibration_entry": calibration,
+            "timing_setup_entry": timing_setup,
+            "timing_restore_entry": timing_restore,
+            "timing_tick_callback_entry": tick_callback,
+            "int1c_vector": int1c,
+            "timing_tick_callback_installed": callback_installed,
+            "timing_runtime_words": timing_words,
+            "timing_runtime_flag_byte": timing_flag,
             "data_stack_same_segment": regs["DS"] == regs["SS"],
             "selected_ds_words": selected_words,
             "selected_runtime_data_words": runtime_words,
@@ -197,12 +295,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--exe", required=True, type=Path)
     parser.add_argument("--rtl", required=True, type=Path)
-    parser.add_argument("--snapshot-dir", required=True, type=Path)
+    parser.add_argument("--snapshot-dir", required=True, type=Path,
+                        action="append", help="repeat for additional time ranges")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     try:
         report = analyze(args.exe.read_bytes(), args.rtl.read_bytes(),
-                         snapshots_from(args.snapshot_dir))
+                         snapshots_from_directories(args.snapshot_dir))
     except (ValueError, OSError) as error:
         parser.error(str(error))
     if args.json:
@@ -226,6 +325,12 @@ def main():
                       item["resident_bank_verified"],
                       item["instruction_source"]["kind"],
                       item["changed_memory_bytes"]))
+            if item["timing_calibration_entry"]["matched"]:
+                print("       timing calibration: original rtl:5806 verified; "
+                      "INT 1Ch callback installed=%s; count=%s flag=%s" % (
+                          item["timing_tick_callback_installed"],
+                          item["timing_runtime_words"].get("05ba"),
+                          item["timing_runtime_flag_byte"]))
 
 
 if __name__ == "__main__":
