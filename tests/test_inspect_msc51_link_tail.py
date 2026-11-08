@@ -482,9 +482,23 @@ class LinkTailTests(unittest.TestCase):
         for index in writer_pairs[0]:
             writer_linked[index:index + 2] = b'\xf0\x2b'
         writer_linked[writer_fars[0]:writer_fars[0] + 5] = \
-            b'\x9a\x77\x55\x22\x44'
+            b'\x9a\xd0\x27\xa5\x12'
         writer_physical = (0x1000 + 0x02a5) * 16 + 0x2686
         ram[writer_physical:writer_physical + writer_length] = writer_linked
+
+        stack_source, stack_length, stack_fars, stack_words, stack_pairs = \
+            RELOCATED_CALLEE_ENTRIES[0x02a5, 0x27d0]
+        self.assertEqual((stack_source, stack_length, stack_fars,
+                          stack_words, stack_pairs),
+                         (0x7eae, 20, (), (3,), ()))
+        stack_original = bytearray((index * 29 + 5) & 255
+                                   for index in range(stack_length))
+        stack_original[stack_words[0]:stack_words[0] + 2] = b'\x00\x00'
+        rtl[stack_source:stack_source + stack_length] = stack_original
+        stack_linked = bytearray(stack_original)
+        stack_linked[stack_words[0]:stack_words[0] + 2] = b'\x6c\x25'
+        stack_physical = (0x1000 + 0x02a5) * 16 + 0x27d0
+        ram[stack_physical:stack_physical + stack_length] = stack_linked
 
         cleanup = inspect(exe, rtl, ram)[1]['relocated_far_calls'][0]
         self.assertEqual(cleanup['relocated_source_match']['offset'], source)
@@ -514,7 +528,24 @@ class LinkTailTests(unittest.TestCase):
                          ['runtime_values'], [0x2bf0, 0x2bf0])
         self.assertEqual(writer['callee_far_calls'][0]['original_call_offset'],
                          writer_source + writer_fars[0])
-        self.assertEqual(writer['callee_far_calls'][0]['target_offset'], 0x5577)
+        self.assertEqual(writer['callee_far_calls'][0]['target_offset'], 0x27d0)
+        stack = writer['callee_far_calls'][0]
+        self.assertEqual(stack['relocated_source_match']['offset'], stack_source)
+        self.assertEqual(stack['relocated_source_match']['matched_nonrelocated_bytes'],
+                         18)
+        self.assertEqual(stack['callee_far_calls'], [])
+
+        # A stable instruction mismatch rejects the helper despite its
+        # independently validated 02a5 bank source projection.
+        ram[stack_physical + 12] ^= 1
+        stack = inspect(exe, rtl, ram)[1]['relocated_far_calls'][0] \
+            ['callee_far_calls'][0]['callee_far_calls'][0] \
+            ['callee_far_calls'][0]['callee_far_calls'][0]
+        self.assertNotIn('relocated_source_match', stack)
+        self.assertNotIn('callee_far_calls', stack)
+        self.assertEqual(stack['live_entry_hex'],
+                         ram[stack_physical:stack_physical + 48].hex())
+        ram[stack_physical + 12] ^= 1
 
         # Two references to the same descriptor flag field must remain
         # equal after LINK; masking them independently would be too weak.

@@ -163,9 +163,25 @@ because those two operands were still treated as unchanged instructions.
 The revised check masks the descriptor-bound WORD, validates the equality
 of the two flag-field WORDs, and masks the FAR target at `RTL:7dbd`:
 **90 invariant bytes**. Only on success does it expose that helper's
-relocated FAR target. The 100-byte check awaits a fresh authentic rerun;
-neither this inspection nor the CRT identity implements the unresolved
-Ctrl-Break wrapper.
+relocated FAR target. This check was then exercised against the authentic
+snapshot as described next; the CRT identity alone does not implement
+the unresolved Ctrl-Break wrapper.
+
+The user's next 22-second result **matched all 90 invariant bytes** of
+that corrected writer prefix, verifying both relocated descriptor-flag
+references and exposing its FAR call at `RTL:7dbd` to live `12a5:27d0`.
+The independently validated `02a5` bank projects that target to original
+`RTL:7eae` (decimal 32430), although the raw prefix matcher agrees on only
+three bytes because the next instruction contains a relocated DS address.
+Static disassembly identifies the complete `RTL:7eae..7ec1` FAR routine:
+it saves the FAR return offset/segment in CX/DX, compares SP with a global
+stack bound, returns the positive free-stack distance in AX or zero if
+the bound has been reached, restores the return address and executes RETF.
+The original 20-byte body has one relocated global-address WORD at
+`RTL:7eb1`, leaving **18 invariant bytes**. The inspector now checks that
+whole leaf routine without inventing any more nested calls. Confirmation
+against an authentic 22-second capture is still pending, and this identity
+alone does not establish the complete CRT descriptor-writer ABI.
 
 The third call is now identified as `rtl:10da1..10dc6`, a bounded FAR
 routine (preceded and terminated by `RETF`). It starts with `push cs; call
