@@ -9,12 +9,17 @@ original recovered source nor a playable native executable.
 The raw `GATE.RTL` has unresolved relocation placeholders. **Do not import it
 as if its on-disk bytes were linked machine code.** This pipeline uses a
 specific 22-second 1 MiB guest-memory snapshot and verifies its segment/file
-identities against both SHA-256-pinned DOS binaries. It imports six
+identities against both SHA-256-pinned DOS binaries. It imports eight
 independently established resident RTL segments, not the complete RTL file,
 and preserves their potentially overlapping addresses using Ghidra overlay
 spaces. The newly added `0c33` file-service bank has four independent entry
 signatures and five known far-entry targets. A linked far-call destination
 outside these segments remains unresolved, not a guessed function.
+The two additional graphics windows are loaded by the original DOS startup
+between 250 and 350ms and persist into this 22-second snapshot. The first
+is bounded to 228 bytes because its later RTL source offsets are packed
+nonlinearly; the second requires relocation-aware analysis and is imported
+from live RAM, not from the raw RTL file. Both are verified on every import.
 
 ## Capture the reference snapshot
 
@@ -105,18 +110,33 @@ near calls whose original targets are inside the same verified RTL overlay,
 and enumerates all functions Ghidra finds in those blocks. This is intended to produce large
 batches for inspection instead of manually translating six functions per turn.
 
-**Current coverage limitation:** the six verified RTL spans are
+**Current coverage limitation:** the eight verified RTL spans are
 `0a46:0000..0a7f`, `0c33:0000..01a9`, `0c4d:0000..08ff`, `0cdc:0000..10ff`, and
 `0f10:0000..1aff`, plus EXE-relative `02a5:0000..3cff` (resident
 `12a5:0000..3cff`) in the captured load layout. The latter maps
 `GATE.RTL:56de..93dd`, including linked `strlen` and the C runtime random
 generator. Its verified start is based on the on-disk/linked byte correlation;
 its end deliberately stops before the next region overwrites memory near
-`RTL:9480`. They deliberately exclude unknown sections and external service
-segments. All missing calls must be mapped/verified before the intro is
+`RTL:9480`. Two more EXE-relative graphics spans are `152c:0000..00e3`
+(resident `252c:0000..00e3`, first copied RTL file base `18df6`) and
+`15d7:0000..063f` (resident `25d7:0000..063f`, RTL file base `19993`).
+Direct comparison with the pinned 22-second guest RAM verified **219/228**
+and **1111/1600** exact source bytes, respectively, plus four and five
+independent witness runs. The latter's **489 changed bytes** make it unsafe
+to reconstruct as just the seven already verified `MOV AX,imm16` segment
+fixups. The first span deliberately stops before subsequent source chunks
+change their source-to-target mapping. Other unverified sections and external
+service segments remain excluded. All missing calls must be mapped/verified before the intro is
 complete. An imported label or successful pseudocode export is not evidence
 that the original calling convention, signedness, data structure or guest
 side effects are correct.
+
+The source-name lookup also follows `decomp/launcher/symbol-names.tsv`: the
+original file-offset identities remain intact even though reconstructed C
+functions have readable names. The pinned 22-second preparation check now
+produces **eight linked sections, 79 source RTL entry labels, and zero
+unmapped known RTL entry labels**. This does not mean the RTL's complete
+function set or cross-bank calls have been recovered.
 
 The newly mapped `0a46` span is anchored by the first startup FAR call in
 `GATE.EXE:134c`: original `0a46:01ec` appears at resident `1a46:01ec`

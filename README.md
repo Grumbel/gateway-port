@@ -194,6 +194,11 @@ exports preliminary C-like listings to `build/ghidra/pseudocode.txt`.
 `--prepare-only` works without installing Ghidra. An optional `--objects-json`
 adds labels for the **696 mapped object/event handlers** from a native snapshot.
 See [Ghidra workflow and limitations](docs/ghidra.md).
+The separate [intro Ghidra workflow](docs/intro-ghidra.md) imports
+`GATE.EXE` and eight linked `GATE.RTL` sections from the original 22-second
+RAM capture, including the newly verified `252c` coordinate helpers and
+`25d7` graphics dispatch. It also preserves readable C symbol names from
+`decomp/launcher/symbol-names.tsv` without losing the original file offsets.
 
 ### Historical Microsoft C 5.1 toolchain (optional)
 

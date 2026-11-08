@@ -22,7 +22,7 @@ RTL_SHA256 = 'c187f5ee7be86482cff89e668d934dc961ac50e960df7baa98965910f1ea9566'
 # file offsets as DOS segment offsets.  The sizes stop before the succeeding
 # section overwrites the mapped image (there are different RTL load layouts).
 # There is intentionally no assertion that all of GATE.RTL is mapped here.
-RTL_BANKS = (
+RTL_CORE_BANKS = (
     # EXE:134c calls original 0a46:01ec, loaded at resident 1a46:01ec.
     # Its first eight instruction bytes uniquely locate RTL:c3bd. The
     # c1d1 base is checked against six independent instruction windows.
@@ -50,6 +50,23 @@ RTL_BANKS = (
          witnesses=(0x8298, 0x91d8, 0x91ea)),
 )
 
+# Source-to-resident mappings from the original 350ms startup
+# captures. The 252c bank has *multiple* source deltas: import only its
+# independently verified initial 0x00e4 bytes, not a fictitious continuous
+# code image. The 25d7 window has five matching runs under one file delta,
+# but 489/1600 raw bytes differ. Both banks were independently checked
+# against the private 22-second reference RAM: 219/228 and 1111/1600
+# unchanged bytes, respectively, with all listed witness runs verified.
+# Every import revalidates these against its selected snapshot.
+# These are GATE.RTL original file offsets, not embedded executable bytes.
+RTL_GRAPHICS_BANKS = (
+    dict(segment=0x152c, file_base=0x18df6, size=0x00e4,
+         witnesses=(0x18e00, 0x18e28, 0x18e49, 0x18e5b)),
+    dict(segment=0x15d7, file_base=0x19993, size=0x0640,
+         witnesses=(0x19a20, 0x19ae6, 0x19b9d, 0x19c2c, 0x19dfa)),
+)
+RTL_BANKS = RTL_CORE_BANKS + RTL_GRAPHICS_BANKS
+
 EXE_ENTRIES = (0x0bb8, 0x0e37, 0x0f18, 0x0f61, 0x103a, 0x117e,
                0x1302, 0x1a14, 0x1c11, 0x1c6c)
 
@@ -74,6 +91,17 @@ RTL_CANDIDATES = {
     0xfc37: 'linked-far-entry-candidate',
     0xff99: 'linked-far-entry-candidate',
     0x130ab: 'animation-entry-candidate',
+    0x18e00: 'linked-graphics-helper-entry',
+    0x18e28: 'linked-graphics-coordinate-entry',
+    0x18e49: 'linked-graphics-coordinate-entry',
+    0x18e5b: 'linked-graphics-helper-entry',
+    0x199fe: 'linked-graphics-entry',
+    0x19a69: 'linked-graphics-pixel-entry',
+    0x19ac6: 'linked-graphics-pixel-entry',
+    0x19b1c: 'linked-graphics-entry',
+    0x19b76: 'linked-graphics-entry',
+    0x19c05: 'linked-graphics-entry',
+    0x19dd3: 'linked-graphics-entry',
 }
 
 # The 0x1000 base is added only for *relative* RTL banks. The physical
@@ -94,14 +122,40 @@ def original_bytes(path, expected):
     return data
 
 
+def source_symbol_aliases(source):
+    """Map original-offset symbols to readable names from the tracked manifest."""
+    aliases = {}
+    alias_file = source / 'symbol-names.tsv'
+    if alias_file.is_file():
+        for line in alias_file.read_text().splitlines():
+            if not line.strip() or line.startswith('#'):
+                continue
+            parts = line.split('\t')
+            if len(parts) != 2:
+                raise ValueError('malformed launcher symbol alias: %s' % line)
+            aliases[parts[0]] = parts[1]
+    return aliases
+
+
 def find_source_entries(source, prefix):
-    """Use *defined* source-C routines as hints, not all references to them."""
+    """Resolve original offsets through *defined* numeric or renamed C symbols."""
     expression = re.compile(r'^\s*(?:void|uint16_t|int16_t|GateFarPtr)\s+'
-                            + prefix + r'_([0-9a-f]{4,6})\s*\(', re.M)
-    entries = set()
+                            r'([a-zA-Z_]\w*)\s*\(', re.M)
+    direct = re.compile(r'^' + prefix + r'_([0-9a-f]{4,6})$')
+    definitions = set()
     for path in sorted(source.glob('*.c')):
-        entries.update(int(match.group(1), 16) for match in expression.finditer(
-            path.read_text()))
+        definitions.update(expression.findall(path.read_text()))
+    entries = set()
+    for name in definitions:
+        match = direct.fullmatch(name)
+        if match:
+            entries.add(int(match.group(1), 16))
+    # The tracked aliases retain original-file identity after the public C
+    # functions were renamed. A declaration/reference alone is not enough.
+    for original, readable in source_symbol_aliases(source).items():
+        match = direct.fullmatch(original)
+        if match and readable in definitions:
+            entries.add(int(match.group(1), 16))
     return entries
 
 
@@ -213,6 +267,7 @@ def prepare(exe_path, rtl_path, snapshot_path, output, load_segment=0x1000,
     if not set(EXE_ENTRIES) <= exe_entries:
         raise ValueError('missing reconstructed EXE entry labels')
     reconstructed_rtl_entries = find_source_entries(source, 'gate_rtl')
+    aliases = source_symbol_aliases(source)
     rtl_entries = reconstructed_rtl_entries | set(RTL_CANDIDATES)
     sections = []
     for bank in RTL_BANKS:
@@ -224,7 +279,8 @@ def prepare(exe_path, rtl_path, snapshot_path, output, load_segment=0x1000,
         path.parent.mkdir(parents=True, exist_ok=True)
         image = snapshot[start:start + size]
         path.write_bytes(image)
-        entries = [dict(name='gate_rtl_%x' % off, file_offset=off,
+        entries = [dict(name=aliases.get('gate_rtl_%x' % off,
+                                       'gate_rtl_%x' % off), file_offset=off,
                         offset=off - file_base,
                         role=('source-reconstructed' if off in
                               reconstructed_rtl_entries else
@@ -249,8 +305,9 @@ def prepare(exe_path, rtl_path, snapshot_path, output, load_segment=0x1000,
                 sections=sections, unmapped_rtl_entries=unmapped,
                 unlinked_staging_candidates=staged_unlinked_copy(
                     rtl, snapshot, load_segment),
-                note='Live relocated image from one 22-second DOS launch; '
-                     'not a complete RTL section map or proof of function ABIs')
+                note='Live relocated image from one DOS launch; every bank '
+                     'is verified against that snapshot, including graphics. '
+                     'Not a complete RTL map or proof of function ABIs')
     output.mkdir(parents=True, exist_ok=True)
     plan_path = output / 'intro-ghidra-plan.json'
     plan_path.write_text(json.dumps(plan, indent=2) + '\n')

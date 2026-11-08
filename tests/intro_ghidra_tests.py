@@ -13,12 +13,67 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 from prepare_intro_ghidra import (EXE_SHA256, RTL_SHA256, EXE_ENTRIES,
-                                  RTL_BANKS, RAW_COPY_CANDIDATE,
+                                  RTL_BANKS, RTL_CORE_BANKS, RTL_GRAPHICS_BANKS,
+                                  RTL_CANDIDATES,
+                                  RAW_COPY_CANDIDATE, find_source_entries,
+                                  source_bank, validate_bank,
                                   mz_relocations, prepare, staged_unlinked_copy)
 from run_intro_ghidra import command, run
 
 
 class IntroGhidraTests(unittest.TestCase):
+    def test_renamed_symbols_resolve_to_original_offsets_only_when_defined(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory)
+            (source / 'sample.c').write_text(
+                'uint16_t gate_exe_0bb8(void) { return 0; }\n'
+                'void gate_exe_handle_intro_input(void) { }\n'
+                'void sample(void) { gate_exe_0f18(); }\n')
+            (source / 'symbol-names.tsv').write_text(
+                '# original\treadable\n'
+                'gate_exe_0e37\tgate_exe_handle_intro_input\n'
+                'gate_exe_0f18\tgate_exe_missing_definition\n')
+            self.assertEqual(find_source_entries(source, 'gate_exe'),
+                             {0x0bb8, 0x0e37})
+
+    def test_graphics_banks_are_bounded_and_snapshot_verified(self):
+        self.assertEqual([(bank['segment'], bank['file_base'], bank['size'])
+                          for bank in RTL_GRAPHICS_BANKS],
+                         [(0x152c, 0x18df6, 0x00e4),
+                          (0x15d7, 0x19993, 0x0640)])
+        rtl = bytes((i * 23 + i // 11) % 251 for i in range(0x21000))
+        ram = bytearray(0x100000)
+        original_segments = {(0x1000 + bank['segment']) for bank in RTL_CORE_BANKS}
+        self.assertEqual(RTL_BANKS, RTL_CORE_BANKS + RTL_GRAPHICS_BANKS)
+        for bank in RTL_GRAPHICS_BANKS:
+            self.assertNotIn(0x1000 + bank['segment'], original_segments)
+            start = (0x1000 + bank['segment']) * 16
+            base = bank['file_base']
+            end = base + bank['size']
+            ram[start:start + bank['size']] = rtl[base:end]
+            self.assertTrue(all(base <= witness < end - 16 for witness
+                                in bank['witnesses']))
+            self.assertTrue(all(source_bank(RTL_GRAPHICS_BANKS, offset) == bank
+                                for offset in bank['witnesses']))
+
+        # Segment immediates in one synthetic bank differ from the source;
+        # preserve successful validation using separate invariant witnesses.
+        b = RTL_GRAPHICS_BANKS[1]
+        b_start = (0x1000 + b['segment']) * 16
+        for offset in (0x006b, 0x00d6, 0x0133, 0x0189, 0x01e3, 0x0272, 0x0440):
+            ram[b_start + offset + 11:b_start + offset + 13] = b'\x7a\x2a'
+            self.assertIn(b['file_base'] + offset, RTL_CANDIDATES)
+        for bank in RTL_GRAPHICS_BANKS:
+            start, matches, witnesses = validate_bank(rtl, bytes(ram), bank, 0x1000)
+            self.assertEqual(start, (0x1000 + bank['segment']) * 16)
+            self.assertGreater(matches, bank['size'] * 0.6)
+            self.assertEqual(witnesses, list(bank['witnesses']))
+
+        damaged = bytearray(ram)
+        damaged[b_start:b_start + b['size']] = bytes(b['size'])
+        with self.assertRaisesRegex(ValueError, 'does not contain RTL bank'):
+            validate_bank(rtl, bytes(damaged), b, 0x1000)
+
     def test_missing_or_invalid_inputs(self):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
@@ -75,6 +130,18 @@ class RealGatewayIntroEvidence(unittest.TestCase):
             self.assertGreater(startup['exact_byte_matches'], 0xa80 * 0.60)
             self.assertTrue(any(e['name'] == 'gate_rtl_play_preloaded_picture_sequence'
                                 for s in plan['sections'] for e in s['entries']))
+            graphics = {s['segment']: s for s in plan['sections']
+                        if s['segment'] in (0x152c, 0x15d7)}
+            self.assertEqual(set(graphics), {0x152c, 0x15d7})
+            self.assertEqual((graphics[0x152c]['exact_byte_matches'],
+                              graphics[0x15d7]['exact_byte_matches']), (219, 1111))
+            self.assertEqual({entry['file_offset'] for entry
+                              in graphics[0x152c]['entries']},
+                             {0x18e00, 0x18e28, 0x18e49, 0x18e5b})
+            self.assertEqual({entry['file_offset'] for entry
+                              in graphics[0x15d7]['entries']},
+                             {0x199fe, 0x19a69, 0x19ac6, 0x19b1c,
+                              0x19b76, 0x19c05, 0x19dd3})
             file_services = next(section for section in plan['sections']
                                  if section['segment'] == 0x0c33)
             self.assertEqual({item['file_offset'] for item in file_services['entries']},

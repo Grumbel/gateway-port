@@ -886,6 +886,27 @@ The consecutive-snapshot byte-difference count also tests whether the
 regions *actually stay unchanged* after loading, rather than merely
 containing the same number of nonzero bytes at different times.
 
+**Original relocation values and 22-second cross-check (subsequently
+supplied/verified):** All seven `25d7` function entries replace an original
+`MOV AX,0000h` immediate with `2a7ah` before `MOV DS,AX`; this is the
+eventual runtime data segment. The 100–250ms windows remain zero, the
+350ms snapshot changes 1449 bytes at `252c` and 1515 at `25d7`, and
+**all subsequent 450/500/1500ms windows change zero bytes relative to
+their preceding samples**. The B region has only **1111/1600 exact bytes**
+under a single linear file mapping (`RTL:19993`); 133 byte differences
+were zero-to-nonzero and 13 nonzero-to-zero, with additional nonzero
+changes. Seven two-byte DS operands explain only 14 of the 489 unequal
+bytes, so a plain file copy plus seven relocations is not yet sufficient.
+
+The existing private `build/intro-analysis/at-22000.bin` was available
+locally and independently confirmed the same two bank images at 22 seconds:
+`252c` preserves **219/228** exact source bytes in its *bounded* first
+`00e4h` bytes and all four entry witnesses; `25d7` preserves **1111/1600**
+with all five separate source witnesses. Both have therefore been added
+to the standard **snapshot-validated** intro Ghidra import. This gives
+Ghidra relocated code bytes for further inspection without claiming
+the original binary can yet be rebuilt from only those file offsets.
+
 **Microsoft C 5.1 build correction:** The first user-side `DATA.BAT` run
 compiled `DATA.C` but stopped with `DATACHK.C(22): C2073` (an initialized
 automatic `char name[]`), so **neither test executable ran**. Both test
