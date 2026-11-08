@@ -300,6 +300,73 @@ class LinkTailTests(unittest.TestCase):
                 self.assertFalse(match_relocated_far_entry(original, linked, calls,
                                                            length, words, pairs), hex(entry))
 
+    def test_vfx_cleanup_callee_reveals_named_heap_release(self):
+        exe = b'MZ' + bytes(100)
+        rtl = bytearray(0x1b000)
+        ram = bytearray(1 << 20)
+        control_entry, control_size, control_calls = RELOCATED_RTL_ENTRIES['control_key']
+        control = bytearray((index * 7 + 13) & 255 for index in range(control_size))
+        for start in control_calls:
+            control[start:start + 5] = b'\x9a\x00\x00\x00\x00'
+        rtl[control_entry:control_entry + control_size] = control
+        linked_control = bytearray(control)
+        for start in control_calls:
+            linked_control[start + 1:start + 5] = b'\x01\x00\xa5\x12'
+        linked_control[control_calls[2] + 1:control_calls[2] + 5] = \
+            b'\x02\x02\x48\x1e'
+        _, seg, off, _, _ = TAIL_ENTRIES[1]
+        ram[(0x1000 + seg) * 16 + off:((0x1000 + seg) * 16 + off) +
+            control_size] = linked_control
+
+        helper = RELOCATED_CALLEE_ENTRIES[0x0e48, 0x0202]
+        source, size, fars, words, pairs = helper
+        original = bytearray((index * 11 + 17) & 255 for index in range(size))
+        for start in fars:
+            original[start:start + 5] = b'\x9a\x00\x00\x00\x00'
+        for first, second in pairs:
+            original[first:first + 2] = b'\x00\x00'
+            original[second:second + 2] = (b'\x80\x00' if first == 12
+                                                else b'\x00\x00')
+        rtl[source:source + size] = original
+        linked = bytearray(original)
+        for start in fars:
+            linked[start + 1:start + 5] = b'\x6c\x01\x5d\x24'
+        for first, second in pairs:
+            pair_start = (b'\x5c\x55' if first == 12 else b'\xd2\x13')
+            linked[first:first + 2] = pair_start
+            linked[second:second + 2] = (b'\xdc\x55' if first == 12
+                                          else pair_start)
+        physical = (0x1000 + 0x0e48) * 16 + 0x0202
+        ram[physical:physical + size] = linked
+
+        source, size, fars, words, pairs = RELOCATED_CALLEE_ENTRIES[0x145d, 0x016c]
+        original = bytearray((index * 13 + 7) & 255 for index in range(size))
+        for start in fars:
+            original[start:start + 5] = b'\x9a\x00\x00\x00\x00'
+        for start in words:
+            original[start:start + 2] = b'\x00\x00'
+        rtl[source:source + size] = original
+        linked = bytearray(original)
+        linked[fars[0] + 1:fars[0] + 5] = b'\x48\x00\x3a\x25'
+        linked[words[0]:words[0] + 2] = b'\x7a\x2a'
+        physical = (0x1000 + 0x145d) * 16 + 0x016c
+        ram[physical:physical + size] = linked
+
+        heap_physical = (0x1000 + 0x153a) * 16 + 0x0048
+        ram[heap_physical:heap_physical + 48] = bytes(range(48))
+        row = inspect(exe, rtl, ram)[1]
+        helper_calls = row['relocated_far_calls'][2]['callee_far_calls']
+        self.assertEqual(len(helper_calls), 2)
+        for call in helper_calls:
+            self.assertEqual(call['relocated_source_match']['offset'], 0x180fe)
+            self.assertEqual(call['relocated_source_match']['matched_nonrelocated_bytes'],
+                             80)
+            self.assertEqual(len(call['callee_far_calls']), 1)
+            heap = call['callee_far_calls'][0]
+            self.assertEqual(heap['existing_port_symbol'],
+                             'gate_linked_release_vfx_pixels')
+            self.assertEqual(heap['live_entry_hex'], bytes(range(48)).hex())
+
     def test_full_diagnostic_five_call_signature_falls_back_to_verified_prefix(self):
         exe = b'MZ' + bytes(100)
         rtl = bytearray(0x1b000)

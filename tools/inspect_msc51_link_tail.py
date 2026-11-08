@@ -53,6 +53,8 @@ EXTENDED_RTL_ENTRIES = {
 # 1139d and 10573 follow RETF instructions; 1054d ends at its own RETF,
 # and its exact target offset selects it after the bank's initial records.
 # The 10573 check uses only its first 48 bytes of a longer function.
+# At 145d:016c the complete 86-byte CA00 image destructor has one relocated
+# DS-segment immediate and one FAR call to the already named pixel allocator.
 # (relative segment, offset) -> original entry, length, FAR calls, zero WORDs,
 #                                pairs of WORDs preserving their delta
 RELOCATED_CALLEE_ENTRIES = {
@@ -60,6 +62,14 @@ RELOCATED_CALLEE_ENTRIES = {
     (0x0e48, 0x07fe): (0x1139d, 48, (41,), (13,), ()),
     (0x0df2, 0x000a): (0x1054d, 38, (4,), (), ((18, 25),)),
     (0x0df2, 0x0030): (0x10573, 48, (41,), (), ((8, 15),)),
+    (0x145d, 0x016c): (0x180fe, 86, (43,), (11,), ()),
+}
+
+# These are names already grounded in decomp/launcher/symbol-names.tsv and
+# backed by the existing bounded DOS heap adapter. A name does not imply
+# that the original resident entry is independently source-matched.
+KNOWN_LINKED_PORT_NAMES = {
+    (0x153a, 0x0048): 'gate_linked_release_vfx_pixels',
 }
 
 
@@ -142,9 +152,9 @@ def annotate_relocated_callees(rows, exe, rtl, ram, load_segment):
         except ValueError:
             continue  # Other checkpoints may have replaced resident banks.
         verified_banks[bank['segment']] = bank
-    # Depth 0: original control/diagnostic entry calls; depth 1: calls from
-    # exact relocated callee templates. Do not recursively guess byte streams.
-    for _depth in range(2):
+    # Depth 0: control/diagnostic calls; depth 1: VFX state helper calls;
+    # depth 2: image destructor's heap call. Never guess arbitrary code.
+    for _depth in range(3):
         pending = calls
         if not pending:
             break
@@ -155,6 +165,9 @@ def annotate_relocated_callees(rows, exe, rtl, ram, load_segment):
         for call in pending:
             segment = call['target_segment'] - load_segment
             offset = call['target_offset']
+            known_name = KNOWN_LINKED_PORT_NAMES.get((segment, offset))
+            if known_name is not None:
+                call['existing_port_symbol'] = known_name
             bank = verified_banks.get(segment)
             if bank is not None:
                 projection = project_verified_bank_call(call, bank, rtl, ram,

@@ -31,8 +31,8 @@ manufacture no-op definitions merely to obtain an executable.
 | --- | --- | --- |
 | `_main` | Microsoft 5.1 `LLIBCR.LIB(dos/crt0.asm)` | No working real-mode original startup yet. It must allocate and bind the original EXE/RTL data segments, initialize and relocate resident driver tables and assets, and transfer to `gate_exe_play_intro`. A placeholder `main()` would make LINK succeed but not create a working Gateway launcher. |
 | `_gate_linked_initialize_c306ca35` | `GATE.RTL:c3bd..c6fe`, linked `0a46:01ec` | **Staged as a bounded guard in `RTLHW.OBJ`.** Verified original flags/config early exits are preserved. Enabled music requires `GATE_004.MUS` and an IRQ 8 handler, so the substitute aborts on that branch. The changed `msc51-compile-hardware` DOS probe must pass before re-linking. |
-| `_gate_linked_handle_control_key` | `GATE.RTL:157b8..157e4`, linked `123f:0004`, called on input key `0x0003` | The *entry* is now identified as six relocated FAR calls followed by `RETF`, but their destinations and side effects must be checked; do not conflate Ctrl-C/Break cleanup with ordinary keyboard flushing. |
-| `_gate_linked_print_intr_b006848b` | `GATE.RTL:170c7..1712d`, linked `1258:172e`, called by image sequence failure paths | The *entry* is now located; it formats into a 258-byte local buffer, calls a resident display helper and polls for input. Its actual destination, callee ABI and failure behavior still require confirmation; a no-op would hide loader failures. |
+| `_gate_linked_handle_control_key` | `GATE.RTL:157b8..157e4`, linked `123f:0004`, called on input key `0x0003` | The full six-call entry is verified. Its video-state branch reaches `RTL:10da1` and the already reconstructed VFX image destructor `RTL:180fe`; several other shutdown services and the original state binding still require verification. Do not conflate Ctrl-C/Break cleanup with ordinary keyboard flushing. |
+| `_gate_linked_print_intr_b006848b` | `GATE.RTL:170c7..1712d`, linked `1258:172e`, called by image sequence failure paths | The complete five-call entry is verified; it formats into a 258-byte local buffer, calls resident output, and polls both mouse and keyboard helpers. The full callee ABI, output behavior and failure paths are not yet restored; a no-op would hide loader failures. |
 
 The `tools/inspect_msc51_link_tail.py` command inspects these three live
 FAR targets against the original binary images in a captured conventional
@@ -123,10 +123,32 @@ The revised check compares **22 truly invariant bytes**, preserves the
 original DS-word equality and buffer-address difference, and checks both
 FAR opcodes. Rechecking the actual 48 live bytes supplied by the user
 against the pinned original `GATE.RTL` now succeeds. Both nested FAR calls
-target the same observed runtime entry, `245d:016c`; that callee's source
-identity and behavior remain unresolved until the new inspector emits its
-live bytes. The original 38-byte body and these specific operand
-relationships are verified; its video-state semantics are not yet ported.
+target the same observed runtime entry, `245d:016c`. Its original source
+has now been located as described below. The video-state lifecycle is not
+yet ported to the Microsoft launcher.
+
+`245d:016c` is an **already reconstructed VFX release service**:
+`decomp/launcher/gate_vfx_image.c` implements it as
+`gate_rtl_graphics_release`. The latest 48 live entry bytes match original
+`rtl:180fe` after masking *only* a relocated DS-segment immediate and one
+FAR-call target. The original bounded routine ends with `RETF 4` at
+`rtl:18151`. The inspector now also checks its complete 86-byte body
+(**80 invariant bytes**) and reports the downstream FAR call. Its behavior:
+
+1. Preserve segment/index registers and load the resident graphics DS.
+2. Reject a non-`CA00h` image record with status `ffe4h`.
+3. Load the pixel-data FAR pointer from record offset `18h` and call
+   resident `253a:0048` to release the allocation.
+4. On successful release, overwrite the complete `80h`-byte image record
+   with `ffh` and return zero. On failure, leave the record intact.
+
+The invoked `253a:0048` is already named
+`gate_linked_release_vfx_pixels` and has a bounded real-mode DOS heap
+adapter in `decomp/launcher/dos/msc51_heap.c`. The inspector reports that
+existing port symbol separately from any original file-source match and
+descends another FAR level to expose the live allocator-entry bytes. This
+does **not** establish that the complete Ctrl-Break cleanup is implemented:
+other shutdown calls and the original startup state bindings are missing.
 
 Three additional diagnostic callees now have strong original entry
 boundaries, not merely byte-window guesses:
@@ -169,9 +191,9 @@ two records; `rtl:11e5f` reads a device descriptor and dispatches at least
 two numbered requests; `rtl:621e` performs multiple near calls; `rtl:f827`
 branches on a resident mode selector; `rtl:8aca` initializes a FAR buffer
 descriptor and passes it to another formatter. Actual DOS side effects,
-the original source for `221b:021f` and `245d:016c`, and the remaining
-diagnostic input-polling behavior have yet to be established. None of
-these observations justifies replacing
+the original source for `221b:021f`, and the remaining diagnostic
+input-polling behavior have yet to be established. None of these
+observations justifies replacing
 the Ctrl-Break or diagnostic routines with a stub.
 
 Capture an **earlier** original 22-second intro image (the same canonical
