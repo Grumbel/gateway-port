@@ -247,6 +247,39 @@ int main(void)
                       sizeof gate_resident_flag_offsets[0]; ++i)
         if (gate_far_word(segment, gate_resident_flag_offsets[i].site) != 0x2bf0u)
             abort();
+    for (i = 0u; i < sizeof gate_resident_state_3244 /
+                      sizeof gate_resident_state_3244[0]; ++i) {
+        uint16_t site = gate_resident_state_3244[i].site;
+        gate_far_set_word(segment, (uint16_t)(site - 2u),
+                          gate_resident_state_3244[i].prefix);
+        gate_far_set_word(segment, site, 0u);
+    }
+    for (i = 0u; i < sizeof gate_resident_state_3334 /
+                      sizeof gate_resident_state_3334[0]; ++i) {
+        uint16_t site = gate_resident_state_3334[i].site;
+        gate_far_set_word(segment, (uint16_t)(site - 2u),
+                          gate_resident_state_3334[i].prefix);
+        gate_far_set_word(segment, site, 0u);
+    }
+    if (gate_dos_relocate_intro_resident_state_offsets(segment, 0x03cfu) != -1)
+        abort();
+    /* Corrupt a site in the SECOND group. Both groups must remain intact. */
+    gate_far_set_word(segment, 0x31bbu, 0x0010u);
+    if (gate_dos_relocate_intro_resident_state_offsets(segment, 0x03d0u) != -2 ||
+        gate_far_word(segment, 0x0f93u) != 0u ||
+        gate_far_word(segment, 0x111eu) != 0u)
+        abort();
+    gate_far_set_word(segment, 0x31bbu, 0u);
+    if (gate_dos_relocate_intro_resident_state_offsets(segment, 0x03d0u) != 0)
+        abort();
+    for (i = 0u; i < sizeof gate_resident_state_3244 /
+                      sizeof gate_resident_state_3244[0]; ++i)
+        if (gate_far_word(segment, gate_resident_state_3244[i].site) != 0x3244u)
+            abort();
+    for (i = 0u; i < sizeof gate_resident_state_3334 /
+                      sizeof gate_resident_state_3334[0]; ++i)
+        if (gate_far_word(segment, gate_resident_state_3334[i].site) != 0x3334u)
+            abort();
     puts("98 self-calls, 7 DS loads, EXE call and 7 direct segments: PASS");
     return 0;
 }

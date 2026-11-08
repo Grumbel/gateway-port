@@ -335,13 +335,72 @@ int gate_dos_relocate_intro_resident_flag_offsets(uint16_t resident_segment,
     return 0;
 }
 
+/* Two additional source-zero DS-offset groups remain fixed under the
+ * original loader's segment placement: 17 at 3244h (MOV/ SUB immediates)
+ * and 13 at 3334h (byte TEST displacements / ADD immediates). Four settled
+ * RAM captures agree at every site. The C source does not assign a semantic
+ * type to either original data field. All sites in BOTH groups are checked
+ * before any operand is changed. */
+static const GateResidentDataOffsetFixup gate_resident_state_3244[] = {
+    {0x0f93u, 0x2d06u}, {0x1050u, 0xb856u}, {0x1103u, 0xb87du},
+    {0x118au, 0xb824u}, {0x1347u, 0x2d06u}, {0x139eu, 0x2dc3u},
+    {0x144cu, 0x2dc3u}, {0x14a7u, 0x2dc3u}, {0x1547u, 0x2dc3u},
+    {0x1642u, 0x2d04u}, {0x1787u, 0x2dc3u}, {0x17fau, 0x2dc3u},
+    {0x22c9u, 0xb804u}, {0x2e7au, 0x2dc3u}, {0x2f0bu, 0x2dc3u},
+    {0x31a9u, 0x2dc3u}, {0x3328u, 0x2d06u}
+};
+static const GateResidentDataOffsetFixup gate_resident_state_3334[] = {
+    {0x111eu, 0x87f6u}, {0x11a5u, 0x87f6u}, {0x1358u, 0x05e0u},
+    {0x13b0u, 0x87f6u}, {0x145du, 0x05e0u}, {0x14b9u, 0x87f6u},
+    {0x1559u, 0x87f6u}, {0x1653u, 0x05e0u}, {0x1798u, 0x05e0u},
+    {0x180cu, 0x87f6u}, {0x2e8bu, 0x05e0u}, {0x2f1du, 0x87f6u},
+    {0x31bbu, 0x87f6u}
+};
+
+static int gate_dos_check_resident_state_offsets(uint16_t segment,
+                                                 const GateResidentDataOffsetFixup *sites,
+                                                 unsigned int count)
+{
+    unsigned int i;
+    for (i = 0u; i < count; ++i)
+        if (gate_far_word(segment, (uint16_t)(sites[i].site - 2u)) != sites[i].prefix ||
+            gate_far_word(segment, sites[i].site) != 0u)
+            return -2;
+    return 0;
+}
+
+int gate_dos_relocate_intro_resident_state_offsets(uint16_t resident_segment,
+                                                    uint16_t paragraphs)
+{
+    unsigned int i;
+    if (resident_segment == 0u || resident_segment > 0xfc30u ||
+        paragraphs < GATE_RESIDENT_PARAS)
+        return -1;
+    if (gate_dos_check_resident_state_offsets(resident_segment,
+                                              gate_resident_state_3244,
+                                              sizeof gate_resident_state_3244 /
+                                              sizeof gate_resident_state_3244[0]) != 0 ||
+        gate_dos_check_resident_state_offsets(resident_segment,
+                                              gate_resident_state_3334,
+                                              sizeof gate_resident_state_3334 /
+                                              sizeof gate_resident_state_3334[0]) != 0)
+        return -2;
+    for (i = 0u; i < sizeof gate_resident_state_3244 /
+                      sizeof gate_resident_state_3244[0]; ++i)
+        gate_far_set_word(resident_segment, gate_resident_state_3244[i].site, 0x3244u);
+    for (i = 0u; i < sizeof gate_resident_state_3334 /
+                      sizeof gate_resident_state_3334[0]; ++i)
+        gate_far_set_word(resident_segment, gate_resident_state_3334[i].site, 0x3334u);
+    return 0;
+}
+
 /* Stage the first reconstructed resident bank in the eventual DOS entry.
  * Unlike the data-only bootstrap below, this operation does not establish
  * the remaining resident banks, interrupt vectors, or an executable entry.
  * Failure leaves a partially loaded/relocated allocation: discard it.
  * -1 bad arguments, -2 file load, -3 self calls, -4 DS loads,
  * -5 EXE callback, -6 direct segment operands, -7 paragraph carries,
- * -8 linked DS flag offsets. */
+ * -8 linked DS flag offsets, -9 additional state offsets. */
 int gate_dos_prepare_intro_resident_bank(uint16_t rtl_handle,
                                          uint16_t resident_segment,
                                          uint16_t paragraphs,
@@ -374,6 +433,9 @@ int gate_dos_prepare_intro_resident_bank(uint16_t rtl_handle,
     if (gate_dos_relocate_intro_resident_flag_offsets(resident_segment,
                                                       paragraphs) != 0)
         return -8;
+    if (gate_dos_relocate_intro_resident_state_offsets(resident_segment,
+                                                       paragraphs) != 0)
+        return -9;
     return 0;
 }
 

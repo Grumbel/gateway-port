@@ -67,7 +67,38 @@ def flag_offset_manifest():
             re.findall(r"\{0x([0-9a-f]+)u, 0x([0-9a-f]+)u\}", match.group(1))]
 
 
+def state_offset_manifest(name):
+    source = (ROOT / "decomp/launcher/dos/msc51_startup_static_data.c").read_text()
+    match = re.search(r"static const GateResidentDataOffsetFixup " + name +
+                      r"\[\] = \{(.*?)\n\};", source, re.DOTALL)
+    if match is None:
+        raise AssertionError(name + " manifest missing")
+    return [(int(site, 16), int(prefix, 16)) for site, prefix in
+            re.findall(r"\{0x([0-9a-f]+)u, 0x([0-9a-f]+)u\}", match.group(1))]
+
+
 class ResidentSelfCallTests(unittest.TestCase):
+    def test_two_state_offset_groups_against_original_ram(self):
+        rtl_path = ROOT.parent / "gateway-dos/GATE.RTL"
+        captures = [ROOT / f"build/msc51-startup-fine/at-{ms}.bin"
+                    for ms in (125, 175, 250)]
+        captures.append(ROOT / "build/msc51-startup/at-500.bin")
+        if not rtl_path.exists() or not all(path.exists() for path in captures):
+            self.skipTest("Original RTL and settled DOS captures unavailable")
+        rtl = rtl_path.read_bytes()[0x56de:0x93de]
+        live = [path.read_bytes()[0x12a50:0x12a50 + len(rtl)] for path in captures]
+        for value, expected_count in ((0x3244, 17), (0x3334, 13)):
+            sites = state_offset_manifest("gate_resident_state_%04x" % value)
+            self.assertEqual(len(sites), expected_count)
+            self.assertEqual([site for site, _ in sites],
+                             sorted(set(site for site, _ in sites)))
+            for site, prefix in sites:
+                self.assertEqual(rtl[site - 2:site], prefix.to_bytes(2, "little"), hex(site))
+                self.assertEqual(rtl[site:site + 2], bytes(2), hex(site))
+                for ram in live:
+                    self.assertEqual(ram[site:site + 2], value.to_bytes(2, "little"),
+                                     hex(site))
+
     def test_flag_offsets_against_original_ram(self):
         rtl_path = ROOT.parent / "gateway-dos/GATE.RTL"
         captures = [ROOT / f"build/msc51-startup-fine/at-{ms}.bin"
