@@ -215,6 +215,7 @@ nix run .#msc51-prepare-launcher              # stage all 28 recovered launcher 
 nix run -L .#msc51-compile-launcher            # compile all 28 with Microsoft C 5.1
 nix run -L .#msc51-compile-memory              # compile and test real DOS memory adapter
 nix run -L .#msc51-compile-selectors           # test original loader's 45 overlapping segment selectors
+nix run -L .#msc51-compile-data                # test exact static EXE data read into original DS window
 nix run -L .#msc51-compile-dos-files           # compile and test real DOS file operations
 nix run -L .#msc51-compile-rtl-state           # compile and test 40 recovered RTL state functions
 nix run -L .#msc51-compile-hardware            # compile/probe real DOS port I/O and clipping state
@@ -364,6 +365,25 @@ original code, image data or the initialized mode descriptors. After running:
 nix run -L .#msc51-compile-selectors
 # If it fails, inspect build/msc51-launcher/SELBUILD.LOG and SELTEST.LOG.
 ```
+
+The guest `SELTEST.LOG` now confirms 12 data/33 lower aliases, and the
+timer's `TMRTEST.LOG` confirms DOS date/time restoration after PIT reset.
+Original startup memory comparisons also identify a separate, unchanged
+5,976-byte copy from `GATE.EXE` offset `041e6h` to runtime `DS:3592h`
+by 100ms. `msc51-compile-data` builds `DATA.OBJ` and a standalone
+`DATACHK.EXE` which verifies a bounded seek/read of exactly that range
+into the lower/data overlapping allocation using **generated test bytes**.
+It reuses the already verified memory, DOS-file, and selector probes:
+
+```sh
+nix run -L .#msc51-compile-data
+# If it fails, inspect build/msc51-launcher/DATBUILD.LOG and DATTEST.LOG.
+```
+
+`DATA.OBJ` is not yet in `LINK.RSP`: it does not fill BSS, relocate RTL
+resident banks, or recreate `_main`. The probe does not bundle or copy
+any original game bytes; the eventual loader must be given a separate
+handle to the user's original `GATE.EXE`.
 
 The user's follow-up Microsoft LINK run consumed `MEMORY.OBJ` and reduced
 the unresolved-symbol count **from 108 to 100**, exactly removing those

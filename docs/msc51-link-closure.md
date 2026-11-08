@@ -431,6 +431,13 @@ accidentally mark the latest source verified. Re-run
 `nix run -L .#msc51-compile-clock` with the latest bundle and return the
 new `TMRTEST.LOG` (plus `CLKBUILD.LOG` if the output is still old).
 
+**Guest confirmation (2026-11-08, after bundle 055):** The newly
+supplied `TMRTEST(4).LOG` includes `DOS date/time restored` after the
+eight-tick PIT probe, and `SELTEST.LOG` reports all 45 aliases passing.
+These close the two isolated DOS experiments, not `_main` or the RTL
+loader/relocator. The timer's `3654` C loop iterations per tick remain
+distinct from the original `35f3h` calibrated counter.
+
 **Startup selector mapping (bundle 055):** Independent of the timer phase,
 the original 100ms RAM capture shows a fully initialized table of **45**
 selectors at runtime `DS:4d82..4e4e`, already stable while the CPU remains
@@ -462,6 +469,39 @@ CRT `_main` nor loads the original data, relocates the RTL, initializes
 video/music/resources, or makes `GATEWAY.EXE` playable. The next startup
 work is reproducing the data-image initialization and relocation into
 these observed windows before calling `gate_exe_play_intro`.
+
+**Static EXE data copied by 100ms (bundle 056):** Independently of the
+two segment aliases, source-image comparison found a contiguous **5,976-byte
+exact copy** from original `GATE.EXE:041e6..0593e` to original runtime
+`DS:3592..4ce9` (exclusive end `4cea`). Every byte agrees at 100, 125,
+175, 250, 350, 450, 500 and 1500ms; 0 and 10ms do not match. Bytes
+immediately on either side of the run do not match the same EXE mapping.
+The inspector now reports this exact match and its first complete snapshot.
+This is an evidence-backed *source-file copy range*, not evidence that
+the rest of the data segment, startup BSS or RTLink fixups are complete.
+At 100ms the original loader also holds a temporary unrelocated RTL-file
+slice beginning at runtime `DS:a0f8`; that region is overwritten before
+500ms, so copying it into the final runtime data image would be wrong.
+
+The new isolated `DATA.C` DOS host adapter takes an already-opened original
+EXE handle, validates its caller-owned `100ah`-paragraph dual-window
+allocation, and seeks/reads exactly that static run through the existing
+INT 21h wrapper. It rejects wrong bindings, unsuccessful seeks, short
+reads and DOS read errors; a short read can leave a partial destination,
+so callers must discard the allocation. `DATACHK.EXE` uses a self-generated
+synthetic file of the requisite size, not redistributed proprietary bytes.
+The host C89 fixture covers allocation guards, complete copy, adjacent
+sentinels, selector preservation and seek/read failure branches. The
+Microsoft C/DOSBox test has **not** been run in this workspace; run:
+
+```sh
+nix run -L .#msc51-compile-data
+# Return DATTEST.LOG, plus DATBUILD.LOG if the probe fails.
+```
+
+`DATA.OBJ` remains outside `LINK.RSP`. The original initialized data
+outside this range, the BSS, runtime addresses/relocations, resident bank
+loading and the full `_main` control flow are not reconstructed.
 
 The third call is now identified as `rtl:10da1..10dc6`, a bounded FAR
 routine (preceded and terminated by `RETF`). It starts with `push cs; call

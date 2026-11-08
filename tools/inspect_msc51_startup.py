@@ -20,6 +20,10 @@ from prepare_intro_ghidra import RTL_BANKS, validate_bank
 RAM_SIZE = 0x100000
 RESIDENT_SEGMENT = 0x02a5
 DATA_WORDS = (0x064e, 0x065c, 0x065e, 0x0660, 0x0662)
+# The original EXE's trailing initialized-data block is copied without
+# translation into the runtime DS. Both ends are confirmed by immediately
+# adjacent non-matching bytes in every settled capture, not by text content.
+STATIC_EXE_DATA = (0x41e6, 0x3592, 0x1758)
 # Both FAR- and interrupt-returning routines lie in the independently
 # validated 02a5 resident bank. The original bytes have zero relocation
 # operands at these precisely disassembled instruction positions.
@@ -186,6 +190,11 @@ def analyze(exe, rtl, captures, selector_fields=None):
         raise ValueError("EXE or RTL bank outside supplied RAM/file")
     original_bank = rtl[original_start:original_start + bank_size]
     original_image = exe[header["header_bytes"]:]
+    static_file_offset, static_ds_offset, static_length = STATIC_EXE_DATA
+    # Older synthetic unit fixtures intentionally have much smaller EXEs.
+    # Do not claim the block is present when their source cannot contain it.
+    static_exe_data = (exe[static_file_offset:static_file_offset + static_length]
+                       if static_file_offset + static_length <= len(exe) else None)
     # Derive the eventual data segment only from observed registers when
     # execution has reached the resident bank with the normal shared DS/SS.
     # Sampling this *same* segment at earlier times reveals initialization
@@ -213,6 +222,10 @@ def analyze(exe, rtl, captures, selector_fields=None):
         "observed_runtime_data_segment": runtime_data_segment,
         "intro_segment_selector_offsets": selector_fields,
         "first_complete_segment_selectors": None,
+        "static_exe_data": {"original_exe_offset": static_file_offset,
+                            "runtime_ds_offset": static_ds_offset,
+                            "length": static_length},
+        "first_complete_static_exe_data_ms": None,
         "snapshots": [],
     }
     prev_ram = None
@@ -293,6 +306,13 @@ def analyze(exe, rtl, captures, selector_fields=None):
         runtime_words = ({"%04x" % offset: word(runtime_data, offset)
                           for offset in DATA_WORDS}
                          if len(runtime_data) == 0x10000 else {})
+        static_match = (sum(a == b for a, b in zip(
+            runtime_data[static_ds_offset:static_ds_offset + static_length],
+            static_exe_data)) if (len(runtime_data) == 0x10000
+                                  and static_exe_data is not None) else None)
+        if (static_match == static_length
+                and result["first_complete_static_exe_data_ms"] is None):
+            result["first_complete_static_exe_data_ms"] = time
         selector_groups = (segment_selector_groups(ram, runtime_data_segment,
                                                    selector_fields)
                            if runtime_data_segment is not None else None)
@@ -339,6 +359,7 @@ def analyze(exe, rtl, captures, selector_fields=None):
             "data_stack_same_segment": regs["DS"] == regs["SS"],
             "selected_ds_words": selected_words,
             "selected_runtime_data_words": runtime_words,
+            "static_exe_data_matching_bytes": static_match,
             "runtime_segment_selector_counts": (
                 {key: len(names) for key, names in selector_groups.items()}
                 if selector_groups is not None else None),
@@ -395,6 +416,13 @@ def main():
                   "the windows overlap" % (
                       layout["milliseconds"], len(layout["data"]),
                       len(layout["data_minus_000a"])))
+        complete = report["first_complete_static_exe_data_ms"]
+        if complete is not None:
+            static = report["static_exe_data"]
+            print("EXE static data complete by %dms: exe:%05x +%d bytes "
+                  "at runtime DS:%04x (exact original bytes)" % (
+                      complete, static["original_exe_offset"], static["length"],
+                      static["runtime_ds_offset"]))
 
 
 if __name__ == "__main__":

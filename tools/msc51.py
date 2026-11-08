@@ -230,6 +230,8 @@ def msc51_rename_identifiers(source: str, names: dict[str, str]) -> str:
 
 MEMORY_SOURCES = ("GATEMEM.H", "STDINT.H", "MEMORY.C", "MEMCHK.C")
 SELECTOR_SOURCES = ("GATEMEM.H", "STDINT.H", "SEL.C", "SELCHK.C", "MEMORY.C")
+STATIC_DATA_SOURCES = ("GATEMEM.H", "GATEDOS.H", "STDINT.H", "DATA.C",
+                       "DATACHK.C", "SEL.C", "MEMORY.C", "DOSFILE.C")
 DOS_FILE_SOURCES = ("GATEDOS.H", "GATEMEM.H", "STDINT.H", "DOSFILE.C", "FILECHK.C",
                     "MEMORY.C")
 RTL_STATE_SOURCES = ("RTLLAY.H", "RTLIMAC.H", "RTLSTATE.H", "GATEMEM.H", "STDINT.H",
@@ -262,6 +264,13 @@ def memory_source_signature(output: Path) -> str:
 def selector_source_signature(output: Path) -> str:
     digest = hashlib.sha256(b"MS C 5.1 /AL /Od original startup selector windows v1\n")
     for name in SELECTOR_SOURCES:
+        digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
+    return digest.hexdigest()[:16]
+
+
+def static_data_source_signature(output: Path) -> str:
+    digest = hashlib.sha256(b"MS C 5.1 /AL /Od original EXE static data v1\n")
+    for name in STATIC_DATA_SOURCES:
         digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
     return digest.hexdigest()[:16]
 
@@ -506,6 +515,25 @@ def stage_launcher(output: Path) -> list[str]:
     for dos_name, staged_name in (("msc51_dos_file.c", "DOSFILE.C"),
                                   ("msc51_dos_file_probe.c", "FILECHK.C")):
         (output / staged_name).write_text((source_dir / "dos" / dos_name).read_text())
+    for dos_name, staged_name in (("msc51_startup_static_data.c", "DATA.C"),
+                                  ("msc51_startup_static_data_probe.c", "DATACHK.C")):
+        (output / staged_name).write_text((source_dir / "dos" / dos_name).read_text())
+    data_signature = static_data_source_signature(output)
+    data_batch = [
+        "@ECHO OFF", "ECHO MS C 5.1 original EXE static data copy > DATSTART.LOG",
+        "SET PATH=C:\\BIN;C:\\", "SET INCLUDE=C:\\INCLUDE;C:\\",
+        "SET LIB=C:\\LIB;C:\\", "SET TEMP=D:\\", "SET TMP=D:\\",
+        "CL /AL /Od /c DATA.C > DATBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        "IF NOT EXIST DATA.OBJ GOTO FAILED",
+        "CL /AL /Od DATACHK.C DATA.OBJ SEL.OBJ MEMORY.OBJ DOSFILE.OBJ /FeDATACHK.EXE /link LLIBCR.LIB LIBH.LIB/NOD >> DATBUILD.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST DATACHK.EXE GOTO FAILED",
+        "DATACHK.EXE > DATTEST.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        f"ECHO {data_signature} > DATSIG.LOG",
+        "ECHO DOS static EXE data copy probe passed > DATOK.LOG",
+        "GOTO DONE", ":FAILED", "ECHO DOS static EXE data copy probe failed > DATFAIL.LOG",
+        ":DONE", "EXIT",
+    ]
+    (output / "DATA.BAT").write_text("\r\n".join(data_batch) + "\r\n")
     file_signature = dos_file_source_signature(output)
     file_batch = [
         "@ECHO OFF", "ECHO MS C 5.1 DOS file adapter > FILSTART.LOG",
@@ -914,6 +942,41 @@ def print_selector_diagnostics(output: Path) -> None:
     print(f"DOS selector workspace: {output}", file=sys.stderr)
 
 
+def validate_static_data_probe(output: Path) -> None:
+    if (any(locate_case_insensitive(output, name) is None
+            for name in ("DATA.OBJ", "DATACHK.EXE", "DATSTART.LOG",
+                         "DATOK.LOG", "DATTEST.LOG")) or
+            locate_case_insensitive(output, "DATFAIL.LOG") is not None):
+        raise ValueError("DOS static EXE data copy probe failed. "
+                         "Run msc51-compile-data again.")
+    signature = locate_case_insensitive(output, "DATSIG.LOG")
+    if signature is None or signature.read_text().strip() != static_data_source_signature(output):
+        raise ValueError("DOS static data source changed since its test. "
+                         "Run msc51-compile-data again.")
+    result = locate_case_insensitive(output, "DATTEST.LOG")
+    if re.search(r"^Static EXE data probe: PASS \(5976 bytes at DS:3592h\)\s*$",
+                 result.read_text(), re.MULTILINE) is None:
+        raise ValueError("DOS static data copy log does not verify all 5976 bytes.")
+
+
+def remove_static_data_outputs(output: Path) -> None:
+    names = {"DATA.OBJ", "DATACHK.OBJ", "DATACHK.EXE", "DATSTART.LOG",
+             "DATBUILD.LOG", "DATTEST.LOG", "DATOK.LOG", "DATFAIL.LOG", "DATSIG.LOG",
+             "DATASRC.BIN"}
+    if output.is_dir():
+        for entry in output.iterdir():
+            if entry.is_file() and entry.name.upper() in names:
+                entry.unlink()
+
+
+def print_static_data_diagnostics(output: Path) -> None:
+    for name in ("DATFAIL.LOG", "DATBUILD.LOG", "DATTEST.LOG", "DATOK.LOG"):
+        path = locate_case_insensitive(output, name)
+        content = path.read_text(errors="replace") if path else "(not created)"
+        print(f"--- {name} ---\n{content[-8_000:].rstrip()}", file=sys.stderr)
+    print(f"DOS static data workspace: {output}", file=sys.stderr)
+
+
 def validate_dos_file_adapter(output: Path) -> None:
     """Require a successful DOS INT 21h file-operations round trip."""
     if (locate_case_insensitive(output, "DOSFILE.OBJ") is None or
@@ -1311,7 +1374,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("probe", "shell", "prepare", "install",
                                             "prepare-launcher", "compile-launcher",
-                                            "compile-memory", "compile-selectors",
+                                            "compile-memory", "compile-selectors", "compile-data",
                                             "compile-dos-files",
                                             "compile-rtl-state", "compile-hardware",
                                             "compile-runtime-files",
@@ -1333,7 +1396,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="one original floppy image, repeat in original disk order")
     args = parser.parse_args(argv)
     launcher = args.command in ("prepare-launcher", "compile-launcher",
-                                "compile-memory", "compile-selectors",
+                                "compile-memory", "compile-selectors", "compile-data",
                                 "compile-dos-files",
                                 "compile-rtl-state", "compile-hardware",
                                 "compile-runtime-files", "compile-picture-dcl",
@@ -1363,7 +1426,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             if args.command == "link-launcher":
                 validate_link_prerequisites(output, objects)
-            if args.command in ("compile-selectors", "compile-dos-files", "compile-rtl-state",
+            if args.command in ("compile-selectors", "compile-data", "compile-dos-files", "compile-rtl-state",
                                 "compile-hardware", "compile-runtime-files",
                                 "compile-picture-dcl",
                                 "compile-resident-state",
@@ -1375,13 +1438,16 @@ def main(argv: list[str] | None = None) -> int:
             if args.command == "compile-picture-dcl":
                 validate_dos_file_adapter(output)
                 validate_rtl_state_adapter(output)
+            if args.command == "compile-data":
+                validate_selector_probe(output)
+                validate_dos_file_adapter(output)
             if not args.compiler:
                 parser.error("set GATEWAY_MSC51_DIR or pass --compiler /path/to/installed/MSC51")
             compiler = validate_compiler(Path(args.compiler))
             commands = dosbox_commands(
                 compiler, output,
                 args.command in ("probe", "compile-launcher", "compile-memory",
-                                 "compile-selectors",
+                                 "compile-selectors", "compile-data",
                                  "compile-dos-files", "compile-rtl-state",
                                  "compile-hardware", "compile-runtime-files",
                                  "compile-picture-dcl",
@@ -1393,6 +1459,7 @@ def main(argv: list[str] | None = None) -> int:
                                  "link-launcher"),
                 ("LINK.BAT" if args.command == "link-launcher" else
                  "SELECT.BAT" if args.command == "compile-selectors" else
+                 "DATA.BAT" if args.command == "compile-data" else
                  "DOSFILE.BAT" if args.command == "compile-dos-files" else
                  "RTLST.BAT" if args.command == "compile-rtl-state" else
                  "RTLHW.BAT" if args.command == "compile-hardware" else
@@ -1426,6 +1493,9 @@ def main(argv: list[str] | None = None) -> int:
         command.append("--exit")
     elif args.command == "compile-selectors":
         remove_selector_outputs(output)
+        command.append("--exit")
+    elif args.command == "compile-data":
+        remove_static_data_outputs(output)
         command.append("--exit")
     elif args.command == "compile-dos-files":
         remove_dos_file_outputs(output)
@@ -1481,6 +1551,8 @@ def main(argv: list[str] | None = None) -> int:
             print_memory_diagnostics(output)
         elif args.command == "compile-selectors":
             print_selector_diagnostics(output)
+        elif args.command == "compile-data":
+            print_static_data_diagnostics(output)
         elif args.command == "compile-dos-files":
             print_dos_file_diagnostics(output)
         elif args.command == "compile-rtl-state":
@@ -1525,6 +1597,18 @@ def main(argv: list[str] | None = None) -> int:
         print("Microsoft C 5.1 verified 45 original startup selector bindings "
               "over two overlapping 64KiB windows; SEL.OBJ remains probe-only "
               "until data loading and relocation are reconstructed.")
+        return 0
+    if args.command == "compile-data":
+        try:
+            validate_static_data_probe(output)
+        except ValueError as error:
+            print(f"Microsoft C did not verify startup static data copy: {error}",
+                  file=sys.stderr)
+            print_static_data_diagnostics(output)
+            return 1
+        print("Microsoft C 5.1 verified a 5976-byte generated fixture can be copied "
+              "from original EXE offsets to runtime DS:3592; DATA.OBJ remains probe-only pending "
+              "the rest of startup and RTLink fixups.")
         return 0
     if args.command == "compile-dos-files":
         try:

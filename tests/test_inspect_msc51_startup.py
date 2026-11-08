@@ -46,6 +46,44 @@ def regs(cs, ip, ds, ss, sp):
 
 
 class StartupSnapshotTests(unittest.TestCase):
+    def test_static_exe_data_is_exact_and_present_before_resident_handoff(self):
+        base_exe, rtl = fixture()
+        exe = bytearray(0x6000)
+        exe[:len(base_exe)] = base_exe
+        put_word(exe, 2, 0)
+        put_word(exe, 4, len(exe) // 512)
+        file_offset, ds_offset, length = startup.STATIC_EXE_DATA
+        exe[file_offset:file_offset + length] = bytes(
+            (i * 29 + (i // 13) * 7 + 17) % 251 for i in range(length))
+        before = bytearray(startup.RAM_SIZE)
+        before[0x10000:0x10000 + len(exe) - 0x20] = exe[0x20:]
+        loaded = bytearray(before)
+        runtime_offset = 0x2a7a0 + ds_offset
+        loaded[runtime_offset:runtime_offset + length] = exe[
+            file_offset:file_offset + length]
+        captures = [
+            (0, regs(0x102c, 0x71, 0x0ff0, 0x3229, 0x400), bytes(before)),
+            (100, regs(0x3259, 0x103c, 0x348a, 0x3229, 0x3c4), bytes(loaded)),
+            (500, regs(0x12a5, 0x3570, 0x2a7a, 0x2a7a, 0x7a1a), bytes(loaded)),
+        ]
+        report = startup.analyze(bytes(exe), rtl, captures)
+        self.assertEqual(report["static_exe_data"], {
+            "original_exe_offset": file_offset,
+            "runtime_ds_offset": ds_offset,
+            "length": length,
+        })
+        self.assertEqual(report["first_complete_static_exe_data_ms"], 100)
+        self.assertLess(report["snapshots"][0]["static_exe_data_matching_bytes"], 100)
+        self.assertEqual([item["static_exe_data_matching_bytes"]
+                          for item in report["snapshots"][1:]], [length, length])
+        damaged = bytearray(loaded)
+        damaged[runtime_offset + 100] ^= 1
+        captures[1] = (100, captures[1][1], bytes(damaged))
+        report = startup.analyze(bytes(exe), rtl, captures)
+        self.assertEqual(report["first_complete_static_exe_data_ms"], 500)
+        self.assertEqual(report["snapshots"][1]["static_exe_data_matching_bytes"],
+                         length - 1)
+
     def test_selector_windows_are_overlapping_and_initialized_before_handoff(self):
         exe, rtl = fixture()
         selectors = startup.intro_segment_selectors(

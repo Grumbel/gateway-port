@@ -23,6 +23,94 @@ SPEC.loader.exec_module(msc51)
 
 
 class MSC51Tests(unittest.TestCase):
+    def test_staged_static_data_copy_c89_host_and_probe_only_link(self):
+        if not shutil.which("gcc"):
+            self.skipTest("gcc needed for synthetic static EXE data fixture")
+        with tempfile.TemporaryDirectory() as scratch:
+            output = Path(scratch)
+            msc51.stage_launcher(output)
+            executable = output / "static-data-host-probe"
+            build = subprocess.run(
+                ["gcc", "-x", "c", "-std=c89", "-Wall", "-Wextra", "-Werror",
+                 "-I", str(output), str(output / "DATA.C"), str(output / "SEL.C"),
+                 str(REPO / "tests/fixtures/msc51_data/data_host_probe.c"),
+                 "-o", str(executable)], capture_output=True, text=True)
+            self.assertEqual(build.returncode, 0, build.stderr)
+            probe = subprocess.run([str(executable)], capture_output=True, text=True)
+            self.assertEqual(probe.returncode, 0, probe.stderr)
+            self.assertIn("static EXE copy host: PASS", probe.stdout)
+            batch = (output / "DATA.BAT").read_text()
+            self.assertIn("CL /AL /Od /c DATA.C", batch)
+            self.assertIn("DATACHK.C DATA.OBJ SEL.OBJ MEMORY.OBJ DOSFILE.OBJ", batch)
+            self.assertIn("DATACHK.EXE > DATTEST.LOG", batch)
+            self.assertNotIn("DATA.OBJ", (output / "LINK.RSP").read_text())
+            (output / "STDINT.H").write_text('#include <stdint.h>\n')
+            syntax = subprocess.run(
+                ["gcc", "-std=c89", "-Wall", "-Wextra", "-Werror", "-fsyntax-only",
+                 "-I", str(REPO / "tests/fixtures/msc51_data"),
+                 "-I", str(output), "-x", "c", str(output / "DATACHK.C")],
+                capture_output=True, text=True)
+            self.assertEqual(syntax.returncode, 0, syntax.stderr)
+
+    def test_compile_data_requires_verified_dependencies_and_current_guest_log(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            compiler = root / "compiler"
+            for directory in ("BIN", "LIB", "INCLUDE"):
+                (compiler / directory).mkdir(parents=True)
+            for name in ("CL.EXE", "C1.EXE", "C1L.EXE", "C2.EXE", "C3.EXE", "LINK.EXE"):
+                (compiler / "BIN" / name).touch()
+            for name in ("LLIBCR.LIB", "LIBH.LIB"):
+                (compiler / "LIB" / name).touch()
+            (compiler / "INCLUDE" / "STDIO.H").touch()
+            output = root / "launcher"
+            msc51.stage_launcher(output)
+            args = ["compile-data", "--compiler", str(compiler),
+                    "--output", str(output)]
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run") as run, \
+                 redirect_stderr(io.StringIO()) as error:
+                with self.assertRaises(SystemExit):
+                    msc51.main(args)
+                run.assert_not_called()
+            self.assertIn("msc51-compile-memory first", error.getvalue())
+            for name in ("MEMORY.OBJ", "MEMSTART.LOG", "MEMOK.LOG"):
+                (output / name).write_text("tested")
+            (output / "MEMSIG.LOG").write_text(msc51.memory_source_signature(output))
+            for name in ("SEL.OBJ", "SELCHK.EXE", "SELSTART.LOG", "SELOK.LOG"):
+                (output / name).write_text("tested")
+            (output / "SELTEST.LOG").write_text(
+                "Selector alias probe: PASS (12 data, 33 lower, 160-byte overlap)\n")
+            (output / "SELSIG.LOG").write_text(msc51.selector_source_signature(output))
+            for name in ("DOSFILE.OBJ", "FILSTART.LOG", "FILOK.LOG"):
+                (output / name).write_text("tested")
+            (output / "FILSIG.LOG").write_text(msc51.dos_file_source_signature(output))
+            for name in ("DATA.OBJ", "DATACHK.EXE", "DATTEST.LOG", "DATOK.LOG"):
+                (output / name).write_text("stale")
+
+            def completed(command, check):
+                self.assertIn("DATA.BAT", command)
+                self.assertFalse(check)
+                self.assertFalse((output / "DATACHK.EXE").exists())
+                for name in ("DATA.OBJ", "DATACHK.EXE", "DATSTART.LOG", "DATOK.LOG"):
+                    (output / name).write_text("current")
+                (output / "DATTEST.LOG").write_text(
+                    "Static EXE data probe: PASS (5976 bytes at DS:3592h)\n")
+                (output / "DATSIG.LOG").write_text(msc51.static_data_source_signature(output))
+                return mock.Mock(returncode=0)
+
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run", side_effect=completed):
+                self.assertEqual(msc51.main(args), 0)
+            (output / "DATTEST.LOG").write_text("Static EXE data probe: PASS (old)\n")
+            with self.assertRaisesRegex(ValueError, "does not verify"):
+                msc51.validate_static_data_probe(output)
+            (output / "DATTEST.LOG").write_text(
+                "Static EXE data probe: PASS (5976 bytes at DS:3592h)\n")
+            (output / "DATA.C").write_text((output / "DATA.C").read_text() + "/* stale */\n")
+            with self.assertRaisesRegex(ValueError, "source changed"):
+                msc51.validate_static_data_probe(output)
+
     def test_staged_startup_selectors_match_snapshot_layout_and_run_on_host(self):
         if not shutil.which("gcc"):
             self.skipTest("gcc needed for C89 selector alias fixture")
