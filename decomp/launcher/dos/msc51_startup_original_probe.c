@@ -25,6 +25,23 @@ int gate_dos_load_intro_rtl_data(uint16_t handle, uint16_t lower_segment,
                                  uint16_t paragraphs);
 int gate_dos_fix_intro_rtl_segs(uint16_t lower_segment, uint16_t paragraphs,
                                 uint16_t resident_segment);
+int gate_dos_fix_intro_rtl_offs(uint16_t lower_segment, uint16_t paragraphs);
+
+typedef struct ExpectedOffset {
+    uint16_t site, source, expected;
+} ExpectedOffset;
+static const ExpectedOffset expected_offsets[] = {
+    {0x0fb6u, 0x0000u, 0x0f92u}, {0x0fbau, 0x0004u, 0x0f96u},
+    {0x0fbeu, 0x0008u, 0x0f9au}, {0x0fc2u, 0x000cu, 0x0f9eu},
+    {0x0fc6u, 0x0010u, 0x0fa2u}, {0x0fcau, 0x0014u, 0x0fa6u},
+    {0x1538u, 0x001au, 0x14fau}, {0x153cu, 0x0020u, 0x1500u},
+    {0x1540u, 0x002au, 0x150au}, {0x1544u, 0x002fu, 0x150fu},
+    {0x1548u, 0x0039u, 0x1519u}, {0x154cu, 0x003fu, 0x151fu},
+    {0x1550u, 0x0049u, 0x1529u}, {0x1554u, 0x004eu, 0x152eu},
+    {0x33dcu, 0x0000u, 0x0c02u}, {0x33e0u, 0x0000u, 0x0c02u},
+    {0x33e4u, 0x0000u, 0x0c02u}, {0x33e8u, 0x0000u, 0x0c02u},
+    {0x33ecu, 0x0000u, 0x0c02u}
+};
 
 static const uint16_t observed_ds_sites[] = {
     0x0fb8u, 0x0fbcu, 0x0fc0u, 0x0fc4u, 0x0fc8u, 0x0fccu,
@@ -200,6 +217,13 @@ int main(void)
                               sizeof observed_cs_sites[0]; ++i)
         if (gate_ds_word(observed_cs_sites[i]) != 0x1234u)
             good = 0;
+    if (good && gate_dos_fix_intro_rtl_offs((uint16_t)allocated,
+                                           GATE_REAL_PARAGRAPHS) != 0)
+        good = 0;
+    for (i = 0u; good && i < sizeof expected_offsets /
+                              sizeof expected_offsets[0]; ++i)
+        if (gate_ds_word(expected_offsets[i].site) != expected_offsets[i].expected)
+            good = 0;
     if (good && (gate_far_byte(data_segment, GATE_REAL_DEST) != exe_first_byte ||
                  gate_ds_word(0x4d82u) != (uint16_t)allocated ||
                  gate_ds_word(0x4d84u) != data_segment))
@@ -215,7 +239,7 @@ int main(void)
         if (_dos_freemem(allocated) != 0u)
             good = 0;
     }
-    puts(good ? "Original EXE/RTL data probe: PASS (5976 + 13714 bytes, 27 segment fixes)"
+    puts(good ? "Original EXE/RTL data probe: PASS (5976 + 13714 bytes, 27 seg + 19 off fixes)"
               : "Original EXE/RTL data probe: FAIL");
     return good ? 0 : 1;
 }

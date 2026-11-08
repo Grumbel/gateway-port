@@ -671,6 +671,32 @@ The report does not write a replacement image or presume that every
 remaining byte is a relocation. A genuine original-capture run is the
 next evidence required before adding further DOS initializer code.
 
+**Follow-up: 19 internal offsets from the genuine remainder report.**
+The user-provided report isolates two regular FAR data-pointer tables:
+six near words at `DS:0fb6..0fca` (stride four) are rebased from the
+original RTL by `+0f92h`, and eight at `DS:1538..1554` (stride four)
+by `+14e0h`. The matching segment half of each pointer is among the
+previously recovered DS fixups. A third regular five-entry FAR pointer
+table has near words at `DS:33dc..33ec` (stride four) changed from
+zero to `0c02h`; the corresponding segment words at `DS:33de..33ee`
+are the previously recovered resident CS fixups. The exact old words
+at all 19 positions are independently confirmed in the pinned original
+`GATE.RTL` (`source=file:DS+0029h`). All replacements are stable in the
+100/125/175/250ms samples.
+
+`gate_dos_fix_intro_rtl_offs` applies only these 19 near word changes,
+checking *every original word* before any write and validating the same
+DOS segment allocation and DS binding as the segment fixer. Unlike the
+pointer groups targeting `252ch` and `25d7h` in the report, these
+internal offsets require no additional segment allocation hypothesis.
+Both the generated DOS fixture and the real-file DOS probe now test
+all 27 segment and 19 offset writes (46 words = **92 bytes**), leaving
+**168 first-prepared mismatch bytes** unclassified. The synthetic C89
+host fixture covers failed preflight, invalid bounds and preservation of
+existing segment words. The extended Microsoft C 5.1 tests still need
+to run on the user's machine, and no initialized image is yet eligible
+for startup execution.
+
 **Microsoft C 5.1 build correction:** The first user-side `DATA.BAT` run
 compiled `DATA.C` but stopped with `DATACHK.C(22): C2073` (an initialized
 automatic `char name[]`), so **neither test executable ran**. Both test

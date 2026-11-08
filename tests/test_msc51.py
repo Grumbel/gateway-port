@@ -41,6 +41,24 @@ class MSC51Tests(unittest.TestCase):
         for offset in ds_sites + cs_sites:
             self.assertEqual(rtl[0x29 + offset:0x29 + offset + 2], b"\x00\x00",
                              f"RTL file {0x29 + offset:05x} is no longer zero")
+        offset_sites = (
+            (0x0fb6, 0x0000, 0x0f92), (0x0fba, 0x0004, 0x0f96),
+            (0x0fbe, 0x0008, 0x0f9a), (0x0fc2, 0x000c, 0x0f9e),
+            (0x0fc6, 0x0010, 0x0fa2), (0x0fca, 0x0014, 0x0fa6),
+            (0x1538, 0x001a, 0x14fa), (0x153c, 0x0020, 0x1500),
+            (0x1540, 0x002a, 0x150a), (0x1544, 0x002f, 0x150f),
+            (0x1548, 0x0039, 0x1519), (0x154c, 0x003f, 0x151f),
+            (0x1550, 0x0049, 0x1529), (0x1554, 0x004e, 0x152e),
+            (0x33dc, 0x0000, 0x0c02), (0x33e0, 0x0000, 0x0c02),
+            (0x33e4, 0x0000, 0x0c02), (0x33e8, 0x0000, 0x0c02),
+            (0x33ec, 0x0000, 0x0c02),
+        )
+        self.assertEqual(len(offset_sites), 19)
+        for index, (site, source, observed) in enumerate(offset_sites):
+            self.assertEqual(int.from_bytes(rtl[0x29 + site:0x2b + site], "little"),
+                             source, f"unexpected RTL offset field at {site:04x}")
+            addend = 0x0f92 if index < 6 else 0x14e0 if index < 14 else 0x0c02
+            self.assertEqual((observed - source) & 0xffff, addend)
 
     def test_staged_static_data_copy_c89_host_and_probe_only_link(self):
         if not shutil.which("gcc"):
@@ -57,7 +75,7 @@ class MSC51Tests(unittest.TestCase):
             self.assertEqual(build.returncode, 0, build.stderr)
             probe = subprocess.run([str(executable)], capture_output=True, text=True)
             self.assertEqual(probe.returncode, 0, probe.stderr)
-            self.assertIn("static EXE/RTL copy and 27 segment fixes host: PASS", probe.stdout)
+            self.assertIn("static EXE/RTL copy, 27 segment and 19 offset fixes host: PASS", probe.stdout)
             batch = (output / "DATA.BAT").read_text()
             self.assertIn("CL /AL /Od /c DATA.C", batch)
             self.assertIn("DATACHK.C DATA.OBJ SEL.OBJ MEMORY.OBJ DOSFILE.OBJ", batch)
@@ -66,6 +84,7 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("IF EXIST E:\\GATE.RTL DATAREAL.EXE > DATREAL.LOG", batch)
             self.assertIn("gate_dos_load_intro_rtl_data", (output / "DATA.C").read_text())
             self.assertIn("gate_dos_fix_intro_rtl_segs", (output / "DATA.C").read_text())
+            self.assertIn("gate_dos_fix_intro_rtl_offs", (output / "DATA.C").read_text())
             self.assertNotIn("DATA.OBJ", (output / "LINK.RSP").read_text())
             (output / "STDINT.H").write_text('#include <stdint.h>\n')
             for source in ("DATACHK.C", "DATAREAL.C"):
@@ -130,7 +149,7 @@ class MSC51Tests(unittest.TestCase):
                 for name in ("DATA.OBJ", "DATACHK.EXE", "DATAREAL.EXE", "DATSTART.LOG", "DATOK.LOG"):
                     (output / name).write_text("current")
                 (output / "DATTEST.LOG").write_text(
-                    "Static EXE/RTL data probe: PASS (5976 + 13714 bytes; 27 segment fixes)\n")
+                    "Static EXE/RTL data probe: PASS (5976 + 13714 bytes; 27 seg + 19 off fixes)\n")
                 (output / "DATSIG.LOG").write_text(msc51.static_data_source_signature(output))
                 return mock.Mock(returncode=0)
 
@@ -141,11 +160,11 @@ class MSC51Tests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "does not verify"):
                 msc51.validate_static_data_probe(output)
             (output / "DATTEST.LOG").write_text(
-                "Static EXE/RTL data probe: PASS (5976 + 13714 bytes; 27 segment fixes)\n")
+                "Static EXE/RTL data probe: PASS (5976 + 13714 bytes; 27 seg + 19 off fixes)\n")
             with self.assertRaisesRegex(ValueError, "original GATE.EXE/GATE.RTL data test"):
                 msc51.validate_static_data_probe(output, require_original=True)
             (output / "DATREAL.LOG").write_text(
-                "Original EXE/RTL data probe: PASS (5976 + 13714 bytes, 27 segment fixes)\n")
+                "Original EXE/RTL data probe: PASS (5976 + 13714 bytes, 27 seg + 19 off fixes)\n")
             msc51.validate_static_data_probe(output, require_original=True)
             (output / "DATA.C").write_text((output / "DATA.C").read_text() + "/* stale */\n")
             with self.assertRaisesRegex(ValueError, "source changed"):

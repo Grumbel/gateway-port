@@ -58,14 +58,27 @@ class StartupSnapshotTests(unittest.TestCase):
             observed = tuple(int(word, 16) for word in
                              re.findall(r"0x([0-9a-fA-F]+)u", match.group(1)))
             self.assertEqual(observed, expected)
+        offsets_match = re.search(
+            r"static const GateIntroOffsetFixup gate_rtl_offset_fixups\[\] = "
+            r"\{(.*?)\};", source, re.DOTALL)
+        self.assertIsNotNone(offsets_match)
+        triples = re.findall(
+            r"\{0x([0-9a-fA-F]+)u, 0x([0-9a-fA-F]+)u, "
+            r"0x([0-9a-fA-F]+)u\}", offsets_match.group(1))
+        observed = tuple((int(site, 16), int(original, 16),
+                          (int(original, 16) + int(addend, 16)) & 0xffff)
+                         for site, original, addend in triples)
+        self.assertEqual(observed, startup.KNOWN_RTL_OFFSET_FIXUPS)
 
-    def test_rtl_remainder_excludes_only_confirmed_segment_words(self):
+    def test_rtl_remainder_excludes_only_confirmed_word_sites(self):
         length = startup.RTL_DATA_IMAGE_END
         rtl = bytearray(b"\x55" * (0x29 + length))
         source = memoryview(rtl)[0x29:]
         for offset in (startup.KNOWN_RTL_DS_SEG_WORDS +
                        startup.KNOWN_RTL_CS_SEG_WORDS):
             put_word(source, offset, 0)
+        for offset, old, _ in startup.KNOWN_RTL_OFFSET_FIXUPS:
+            put_word(source, offset, old)
         source[0x110] = 0
         put_word(source, 0x200, 0x1111)
         put_word(source, 0x210, 0x1111)
@@ -74,6 +87,8 @@ class StartupSnapshotTests(unittest.TestCase):
             put_word(first, offset, 0x2a7a)
         for offset in startup.KNOWN_RTL_CS_SEG_WORDS:
             put_word(first, offset, 0x12a5)
+        for offset, _, observed in startup.KNOWN_RTL_OFFSET_FIXUPS:
+            put_word(first, offset, observed)
         first[0x100:0x103] = bytes(3)
         first[0x110] = 0x77
         put_word(first, 0x200, 0x2222)
@@ -84,8 +99,10 @@ class StartupSnapshotTests(unittest.TestCase):
         put_word(late, 0x2c10, 0)  # Original game also later mutates this site.
         samples = [(100, bytes(first)), (125, bytes(first)), (500, bytes(late))]
         remainder = startup.rtl_preimage_remainder(bytes(rtl), samples, 0x2a7a, 0x1000)
-        self.assertEqual(remainder["initial_changed_bytes"], 62)
+        self.assertEqual(remainder["initial_changed_bytes"], 100)
         self.assertEqual(remainder["verified_segment_bytes"], 54)
+        self.assertEqual(remainder["verified_offset_bytes"], 38)
+        self.assertEqual(remainder["verified_total_bytes"], 92)
         self.assertEqual(remainder["remaining_changed_bytes"], 8)
         self.assertEqual((remainder["source_zero_to_nonzero"],
                           remainder["source_nonzero_to_zero"],
@@ -111,6 +128,12 @@ class StartupSnapshotTests(unittest.TestCase):
         put_word(raw_damaged, 0x29 + 0x0fb8, 1)
         with self.assertRaisesRegex(ValueError, "known source-zero RTL segment site"):
             startup.rtl_preimage_remainder(bytes(raw_damaged), samples, 0x2a7a, 0x1000)
+        damaged = bytearray(first)
+        put_word(damaged, 0x1538, 0x14f9)
+        with self.assertRaisesRegex(ValueError, "known RTL offset fixup"):
+            startup.rtl_preimage_remainder(
+                bytes(rtl), [(100, bytes(damaged)), (500, bytes(late))],
+                0x2a7a, 0x1000)
 
     def test_preimage_fixups_restrict_hypotheses_and_track_later_writes(self):
         length = startup.RTL_DATA_IMAGE_END

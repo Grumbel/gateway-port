@@ -48,6 +48,18 @@ KNOWN_RTL_DS_SEG_WORDS = (
     0x324c, 0x33ae, 0x3540, 0x3544,
 )
 KNOWN_RTL_CS_SEG_WORDS = (0x33de, 0x33e2, 0x33e6, 0x33ea, 0x33ee)
+KNOWN_RTL_OFFSET_FIXUPS = (
+    (0x0fb6, 0x0000, 0x0f92), (0x0fba, 0x0004, 0x0f96),
+    (0x0fbe, 0x0008, 0x0f9a), (0x0fc2, 0x000c, 0x0f9e),
+    (0x0fc6, 0x0010, 0x0fa2), (0x0fca, 0x0014, 0x0fa6),
+    (0x1538, 0x001a, 0x14fa), (0x153c, 0x0020, 0x1500),
+    (0x1540, 0x002a, 0x150a), (0x1544, 0x002f, 0x150f),
+    (0x1548, 0x0039, 0x1519), (0x154c, 0x003f, 0x151f),
+    (0x1550, 0x0049, 0x1529), (0x1554, 0x004e, 0x152e),
+    (0x33dc, 0x0000, 0x0c02), (0x33e0, 0x0000, 0x0c02),
+    (0x33e4, 0x0000, 0x0c02), (0x33e8, 0x0000, 0x0c02),
+    (0x33ec, 0x0000, 0x0c02),
+)
 
 
 def source_window_index(exe, rtl, seed=DATA_MATCH_SEED):
@@ -263,7 +275,7 @@ def rtl_preimage_fixup_candidates(rtl, samples, runtime_ds, image_load):
 
 
 def rtl_preimage_remainder(rtl, samples, runtime_ds, image_load):
-    """Describe every first-prepared byte *not* explained by 27 segment words.
+    """Describe first-prepared bytes outside 27 segment and 19 offset words.
 
     A known word is excluded only if its source value, observed value and
     all early snapshots agree. The remaining bytes are deliberately kept as
@@ -290,8 +302,16 @@ def rtl_preimage_remainder(rtl, samples, runtime_ds, image_load):
             if known[offset] or known[offset + 1]:
                 raise ValueError("overlapping known RTL segment word at DS:%04x" % offset)
             known[offset:offset + 2] = b"\x01\x01"
-    if sum(known) != 54:
-        raise ValueError("expected exactly 54 bytes at 27 known segment sites")
+    for offset, old, observed in KNOWN_RTL_OFFSET_FIXUPS:
+        if (offset + 2 > size or word(source, offset) != old or
+                any(word(sample, offset) != observed for sample in early)):
+            raise ValueError("known RTL offset fixup at DS:%04x is not "
+                             "verified in every early snapshot" % offset)
+        if known[offset] or known[offset + 1]:
+            raise ValueError("overlapping known RTL offset word at DS:%04x" % offset)
+        known[offset:offset + 2] = b"\x01\x01"
+    if sum(known) != 92:
+        raise ValueError("expected 92 bytes at 46 known word sites")
 
     residual = [i for i in range(size) if source[i] != first[i] and not known[i]]
     # Each disjoint cluster has one or more truly changed bytes. The raw
@@ -351,6 +371,9 @@ def rtl_preimage_remainder(rtl, samples, runtime_ds, image_load):
         "initial_changed_bytes": fixups["changed_bytes"],
         "verified_segment_words": 27,
         "verified_segment_bytes": 54,
+        "verified_offset_words": 19,
+        "verified_offset_bytes": 38,
+        "verified_total_bytes": 92,
         "remaining_changed_bytes": len(residual),
         "source_zero_to_nonzero": sum(source[i] == 0 for i in residual),
         "source_nonzero_to_zero": sum(first[i] == 0 for i in residual),
@@ -789,7 +812,7 @@ def main():
     parser.add_argument("--runtime-data-fixups", action="store_true",
                         help="report unverified candidate segment-word fixups in the early RTL preimage")
     parser.add_argument("--runtime-data-remainder", action="store_true",
-                        help="inspect early RTL preimage changes after 27 observed segment-word fixes")
+                        help="inspect early RTL preimage changes after 27 segment + 19 offset fixes")
     args = parser.parse_args()
     try:
         exe = args.exe.read_bytes()
@@ -925,9 +948,11 @@ def main():
                       (fixups["candidate_word_count"] - 80))
         if args.runtime_data_remainder:
             remaining = report["runtime_data_remainder"]
-            print("RTL preimage changes excluding 27 observed segment-word fixes:")
-            print("  %d initial changed bytes - %d segment bytes = %d unclassified bytes" % (
+            print("RTL preimage changes excluding 27 segment and 19 offset fixes:")
+            print("  %d initial changed bytes - %d segment bytes - %d offset bytes = "
+                  "%d unclassified bytes" % (
                 remaining["initial_changed_bytes"], remaining["verified_segment_bytes"],
+                remaining["verified_offset_bytes"],
                 remaining["remaining_changed_bytes"]))
             print("  remainder classes: %d zero->nonzero, %d nonzero->zero, "
                   "%d changed nonzero; %d clusters" % (

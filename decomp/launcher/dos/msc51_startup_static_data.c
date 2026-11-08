@@ -7,9 +7,9 @@
  *   DS:0000..3591, with several long exact spans and modified words.
  *
  * The second routine stages only the *unmodified RTL preimage*: the
- * mismatched 260 bytes at 100ms are only partly reconstructed: the 27
- * source-zero segment words listed below are observed in original RAM.
- * The remaining 206 mismatch bytes have no established initialization
+ * mismatched 260 bytes at 100ms are partly reconstructed: 27 source-zero
+ * segment words and 19 independently observed offset words below.
+ * The remaining 168 mismatch bytes have no established initialization
  * rule. No original data is embedded. The file-copy routines require
  * caller-owned segment windows and file handles; none of these routines
  * loads resident banks, creates BSS or implements DOS launcher main().
@@ -130,5 +130,59 @@ int gate_dos_fix_intro_rtl_segs(uint16_t lower_segment, uint16_t paragraphs,
     for (i = 0u; i < sizeof gate_rtl_cs_seg_fixups /
                       sizeof gate_rtl_cs_seg_fixups[0]; ++i)
         gate_ds_set_word(gate_rtl_cs_seg_fixups[i], resident_segment);
+    return 0;
+}
+
+typedef struct GateIntroOffsetFixup {
+    uint16_t site;
+    uint16_t source;
+    uint16_t addend;
+} GateIntroOffsetFixup;
+
+/* The user's actual 100..250ms RAM captures show these 19 offset words
+ * after the raw RTL +0029h preimage is initialized. Their source values
+ * are independently checked in the original file. The first six are
+ * rebased by 0f92h, the next eight by 14e0h, and five FAR code-pointer
+ * offsets change from zero to 0c02h (their CS words are among the 27
+ * segment replacements above). These are offsets, not DOS segments.
+ */
+static const GateIntroOffsetFixup gate_rtl_offset_fixups[] = {
+    {0x0fb6u, 0x0000u, 0x0f92u}, {0x0fbau, 0x0004u, 0x0f92u},
+    {0x0fbeu, 0x0008u, 0x0f92u}, {0x0fc2u, 0x000cu, 0x0f92u},
+    {0x0fc6u, 0x0010u, 0x0f92u}, {0x0fcau, 0x0014u, 0x0f92u},
+    {0x1538u, 0x001au, 0x14e0u}, {0x153cu, 0x0020u, 0x14e0u},
+    {0x1540u, 0x002au, 0x14e0u}, {0x1544u, 0x002fu, 0x14e0u},
+    {0x1548u, 0x0039u, 0x14e0u}, {0x154cu, 0x003fu, 0x14e0u},
+    {0x1550u, 0x0049u, 0x14e0u}, {0x1554u, 0x004eu, 0x14e0u},
+    {0x33dcu, 0x0000u, 0x0c02u}, {0x33e0u, 0x0000u, 0x0c02u},
+    {0x33e4u, 0x0000u, 0x0c02u}, {0x33e8u, 0x0000u, 0x0c02u},
+    {0x33ecu, 0x0000u, 0x0c02u}
+};
+
+/* Apply the 19 observed near-offset fixes with the same no-partial-write
+ * contract as the segment fixer. Run after copying the raw RTL preimage,
+ * before or after segment-word replacements. This does not discover the
+ * original loader's relocation table, or initialize unrelated data.
+ * -1 invalid allocation/DS binding; -2 source value mismatch.
+ */
+int gate_dos_fix_intro_rtl_offs(uint16_t lower_segment, uint16_t paragraphs)
+{
+    unsigned int i;
+    if (lower_segment == 0u || lower_segment > 0xfff5u ||
+        paragraphs < GATE_DATA_MIN_PARAS ||
+        gate_ds_segment() != (uint16_t)(lower_segment + 0x000au))
+        return -1;
+
+    for (i = 0u; i < sizeof gate_rtl_offset_fixups /
+                      sizeof gate_rtl_offset_fixups[0]; ++i)
+        if (gate_ds_word(gate_rtl_offset_fixups[i].site) !=
+            gate_rtl_offset_fixups[i].source)
+            return -2;
+
+    for (i = 0u; i < sizeof gate_rtl_offset_fixups /
+                      sizeof gate_rtl_offset_fixups[0]; ++i)
+        gate_ds_set_word(gate_rtl_offset_fixups[i].site,
+                         (uint16_t)(gate_rtl_offset_fixups[i].source +
+                                    gate_rtl_offset_fixups[i].addend));
     return 0;
 }
