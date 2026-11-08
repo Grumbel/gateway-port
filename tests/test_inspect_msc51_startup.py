@@ -374,11 +374,23 @@ class StartupSnapshotTests(unittest.TestCase):
         self.assertEqual(remainder["verified_offset_bytes"], 48)
         self.assertEqual(remainder["verified_external_pointers"], 19)
         self.assertEqual(remainder["verified_external_bytes"], 65)
+        self.assertEqual(remainder["verified_cleared_prefix_bytes"], 0)
         self.assertEqual(remainder["verified_total_bytes"], 167)
         self.assertEqual([entry["observed_segment"]
                           for entry in remainder["observed_external_tables"]],
                          [0x252c, 0x25d7])
         self.assertEqual(remainder["remaining_changed_bytes"], 8)
+        cleared_early = bytearray(first)
+        cleared_late = bytearray(late)
+        cleared_early[2:66] = bytes(64)
+        cleared_late[2:66] = bytes(64)
+        cleared = startup.rtl_preimage_remainder(
+            bytes(rtl), [(100, bytes(cleared_early)),
+                         (125, bytes(cleared_early)),
+                         (500, bytes(cleared_late))], 0x2a7a, 0x1000)
+        self.assertEqual(cleared["verified_cleared_prefix_bytes"], 64)
+        self.assertEqual(cleared["verified_total_bytes"], 231)
+        self.assertEqual(cleared["remaining_changed_bytes"], 8)
         self.assertEqual((remainder["source_zero_to_nonzero"],
                           remainder["source_nonzero_to_zero"],
                           remainder["changed_nonzero_bytes"]), (1, 3, 4))

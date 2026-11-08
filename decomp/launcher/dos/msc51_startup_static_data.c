@@ -26,6 +26,24 @@
 #define GATE_RTL_DATA_BYTES 0x3592u
 #define GATE_DATA_MIN_PARAS 0x100au
 
+/* At 100, 125, 175 and 250ms the first 64 bytes after the two-byte
+ * RTL data header are zero, whereas the raw RTL preimage contains resident
+ * instructions there. This is an observed early initialization boundary,
+ * not proof of the original loader's clearing mechanism. It must run only
+ * on the newly loaded RTL data image, before any original code uses the
+ * fields (56 of the 63 changed bytes are subsequently rewritten). */
+int gate_dos_clear_intro_rtl_prefix(uint16_t lower_segment, uint16_t paragraphs)
+{
+    uint16_t i;
+    if (lower_segment == 0u || lower_segment > 0xfff5u ||
+        paragraphs < GATE_DATA_MIN_PARAS ||
+        gate_ds_segment() != (uint16_t)(lower_segment + 0x000au))
+        return -1;
+    for (i = 2u; i < 66u; ++i)
+        gate_far_set_byte(gate_ds_segment(), i, 0u);
+    return 0;
+}
+
 /* -1 invalid allocation/binding, -2 failed/inexact seek, -3 read error
  * or short read. On a short read, the destination may be partly written;
  * callers must discard that allocation rather than entering the intro.

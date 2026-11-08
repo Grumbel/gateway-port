@@ -12,6 +12,7 @@ int gate_dos_load_intro_static_data(uint16_t handle, uint16_t lower_segment,
                                     uint16_t paragraphs);
 int gate_dos_load_intro_rtl_data(uint16_t handle, uint16_t lower_segment,
                                  uint16_t paragraphs);
+int gate_dos_clear_intro_rtl_prefix(uint16_t lower_segment, uint16_t paragraphs);
 int gate_dos_fix_intro_rtl_segs(uint16_t lower_segment, uint16_t paragraphs,
                                 uint16_t resident_segment);
 int gate_dos_fix_intro_rtl_offs(uint16_t lower_segment, uint16_t paragraphs);
@@ -170,6 +171,16 @@ int main(void)
     good &= gate_ds_word(0x4d82u) == (uint16_t)allocated;
     good &= gate_ds_word(0x4d84u) == (uint16_t)(allocated + 10u);
     good &= gate_far_byte(gate_ds_segment(), 0x3592u) == pattern(0x41e6u);
+    good &= gate_dos_clear_intro_rtl_prefix((uint16_t)allocated, 0x1009u) == -1;
+    good &= gate_far_byte(gate_ds_segment(), 2u) ==
+            (uint8_t)(pattern(0x2bu) ^ 0x5au);
+    good &= gate_dos_clear_intro_rtl_prefix((uint16_t)allocated, 0x100au) == 0;
+    for (i = 2u; i < 66u; ++i)
+        good &= gate_far_byte(gate_ds_segment(), (uint16_t)i) == 0u;
+    good &= gate_far_byte(gate_ds_segment(), 1u) ==
+            (uint8_t)(pattern(0x2au) ^ 0x5au);
+    good &= gate_far_byte(gate_ds_segment(), 66u) ==
+            (uint8_t)(pattern(0x6bu) ^ 0x5au);
     /* Stage a separate generated source-zero image of the 27 observed
      * 100ms segment-word sites. The full raw-source comparison above
      * has already verified the bounded seek/read behavior. */

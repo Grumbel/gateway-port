@@ -358,6 +358,17 @@ def rtl_preimage_remainder(rtl, samples, runtime_ds, image_load):
     if sum(item["pointer_count"] for item in external) != 19:
         raise ValueError("expected 19 external FAR pointers")
 
+    # The observed loader clears the 64-byte prefix after its two-byte RTL
+    # header. Do not count it as explained when an unrelated/synthetic RAM
+    # capture does not establish the same early state.
+    prefix_cleared = all(sample[2:66] == bytes(64) for sample in early)
+    cleared_bytes = 0
+    if prefix_cleared:
+        if any(known[2:66]):
+            raise ValueError("known RTL fixup overlaps cleared prefix")
+        known[2:66] = bytes([1]) * 64
+        cleared_bytes = sum(source[i] != 0 for i in range(2, 66))
+
     residual = [i for i in range(size) if source[i] != first[i] and not known[i]]
     # Each disjoint cluster has one or more truly changed bytes. The raw
     # hex samples are emitted only at runtime, never stored in source files.
@@ -420,8 +431,9 @@ def rtl_preimage_remainder(rtl, samples, runtime_ds, image_load):
         "verified_offset_bytes": 48,
         "verified_external_pointers": 19,
         "verified_external_bytes": verified_external_bytes,
+        "verified_cleared_prefix_bytes": cleared_bytes,
         "observed_external_tables": external,
-        "verified_total_bytes": 102 + verified_external_bytes,
+        "verified_total_bytes": 102 + verified_external_bytes + cleared_bytes,
         "remaining_changed_bytes": len(residual),
         "source_zero_to_nonzero": sum(source[i] == 0 for i in residual),
         "source_nonzero_to_zero": sum(first[i] == 0 for i in residual),
@@ -1249,12 +1261,13 @@ def main():
         if args.runtime_data_remainder:
             remaining = report["runtime_data_remainder"]
             print("RTL preimage changes excluding 27 segment, 24 offset, "
-                  "and 19 external-pointer fixes:")
+                  "19 external-pointer fixes and verified prefix clearing:")
             print("  %d initial changed bytes - %d segment bytes - %d offset bytes "
-                  "- %d external-pointer bytes = "
+                  "- %d external-pointer bytes - %d cleared-prefix bytes = "
                   "%d unclassified bytes" % (
                 remaining["initial_changed_bytes"], remaining["verified_segment_bytes"],
                 remaining["verified_offset_bytes"], remaining["verified_external_bytes"],
+                remaining["verified_cleared_prefix_bytes"],
                 remaining["remaining_changed_bytes"]))
             for entry in remaining["observed_external_tables"]:
                 print("  %s: %d FAR pointers, observed segment=%04x "

@@ -23,6 +23,7 @@ int gate_dos_load_intro_static_data(uint16_t handle, uint16_t lower_segment,
                                     uint16_t paragraphs);
 int gate_dos_load_intro_rtl_data(uint16_t handle, uint16_t lower_segment,
                                  uint16_t paragraphs);
+int gate_dos_clear_intro_rtl_prefix(uint16_t lower_segment, uint16_t paragraphs);
 int gate_dos_fix_intro_rtl_segs(uint16_t lower_segment, uint16_t paragraphs,
                                 uint16_t resident_segment);
 int gate_dos_fix_intro_rtl_offs(uint16_t lower_segment, uint16_t paragraphs);
@@ -220,6 +221,12 @@ int main(void)
                  gate_ds_word(0x4d82u) != (uint16_t)allocated ||
                  gate_ds_word(0x4d84u) != data_segment))
         good = 0;
+    if (good && gate_dos_clear_intro_rtl_prefix((uint16_t)allocated,
+                                               GATE_REAL_PARAGRAPHS) != 0)
+        good = 0;
+    for (i = 2u; good && i < 66u; ++i)
+        if (gate_far_byte(data_segment, i) != 0u)
+            good = 0;
 
     /* The pinned original RTL contains zero words at all 27 observed
      * sites. Exercise the preflight and segment-parameter relocation only

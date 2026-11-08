@@ -14,6 +14,7 @@ int gate_dos_load_intro_rtl_data(uint16_t handle, uint16_t lower_segment,
                                  uint16_t paragraphs);
 int gate_dos_fix_intro_rtl_segs(uint16_t lower_segment, uint16_t paragraphs,
                                 uint16_t resident_segment);
+int gate_dos_clear_intro_rtl_prefix(uint16_t lower_segment, uint16_t paragraphs);
 int gate_dos_fix_intro_rtl_offs(uint16_t lower_segment, uint16_t paragraphs);
 int gate_dos_fix_intro_rtl_external(uint16_t lower_segment, uint16_t paragraphs,
                                     uint16_t first_segment, uint16_t second_segment);
@@ -168,6 +169,16 @@ int main(void)
     if (gate_far_byte(data_segment, 0x3592u) != boundary ||
         gate_ds_word(0x4d82u) != 0x2000u ||
         gate_ds_word(0x4d84u) != 0x200au)
+        abort();
+    if (gate_dos_clear_intro_rtl_prefix(0x2000u, 0x1009u) != -1 ||
+        gate_far_byte(data_segment, 2u) != (uint8_t)(pattern(0x2bu) ^ 0x5au) ||
+        gate_dos_clear_intro_rtl_prefix(0x2000u, 0x100au) != 0)
+        abort();
+    for (i = 2u; i < 66u; ++i)
+        if (gate_far_byte(data_segment, (uint16_t)i) != 0u)
+            abort();
+    if (gate_far_byte(data_segment, 1u) != (uint8_t)(pattern(0x2au) ^ 0x5au) ||
+        gate_far_byte(data_segment, 66u) != (uint8_t)(pattern(0x6bu) ^ 0x5au))
         abort();
     /* Synthetic file bytes are not zero at every observed source-word
      * site. Turn only those exact words into a zero-source relocation

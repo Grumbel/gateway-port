@@ -745,6 +745,18 @@ These five fields explain **10 more changed bytes**, bringing coverage
 to **167 of 260** early changes and leaving **93**. Microsoft C 5.1/DOSBox
 verification of this updated helper remains pending on the user's host.
 
+**2026-11-08 follow-up:** The actual 100/125/175/250ms snapshots also
+establish that `DS:0002..0041` is cleared (64 bytes, of which 63 differ
+from the original RTL preimage); the two-byte header and `DS:0042` remain
+untouched. Added `gate_dos_clear_intro_rtl_prefix` to the DOS staging and
+synthetic, original-file and host probes. The remainder inspector now
+classifies this range only when *every* early capture confirms the clearing.
+The pinned captures then account for **230 of 260** changed bytes, leaving
+**30**, all originally zero and subsequently initialized to nonzero values.
+This is an observed bounded initialization operation, not proof of the
+original loader's algorithm or a complete startup; Microsoft C 5.1/DOSBox
+execution of the revised probe remains pending.
+
 **Follow-up: determine external allocation ownership from snapshots.**
 After the 167 verified initialization byte changes are excluded, the user's
 remainder report contains only ten clusters: a 63-byte zeroed prefix at
