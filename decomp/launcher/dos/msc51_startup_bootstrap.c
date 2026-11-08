@@ -22,8 +22,9 @@ int gate_dos_prepare_intro_data(uint16_t exe_handle, uint16_t rtl_handle,
        uint16_t lower_segment, uint16_t paragraphs,
        uint16_t resident_segment, uint16_t external_a_segment,
        uint16_t external_b_segment, GateFarPtr return_callback);
-uint32_t gate_dos_intro_resident_crc32(uint16_t resident_segment,
-                                       uint16_t paragraphs);
+uint32_t gate_dos_intro_resident_crc32_with_callback(uint16_t resident_segment,
+                                       uint16_t paragraphs,
+                                       uint16_t expected_callback_offset);
 uint32_t gate_dos_intro_data_crc32(uint16_t lower_segment,
                                    uint16_t paragraphs);
 
@@ -101,21 +102,27 @@ int gate_dos_boot_prepare(const GateDosBootConfig *config,
     if (gate_dos_prepare_intro_resident_bank_with_exe(rtl_handle, exe_handle,
             image->resident_segment, GATE_BOOT_RESIDENT_PARAGRAPHS,
             (uint16_t)(image->lower_segment + GATE_BOOT_DATA_SHIFT),
-            config->exe_callback) != 0 ||
-        gate_dos_intro_resident_crc32(image->resident_segment,
-                                     GATE_BOOT_RESIDENT_PARAGRAPHS) !=
-                                     GATE_BOOT_RESIDENT_CRC) {
+            config->exe_callback) != 0) {
         error = -6;
+        goto fail;
+    }
+    if (gate_dos_intro_resident_crc32_with_callback(image->resident_segment,
+            GATE_BOOT_RESIDENT_PARAGRAPHS, config->exe_callback.offset) !=
+            GATE_BOOT_RESIDENT_CRC) {
+        error = -9;
         goto fail;
     }
     if (gate_dos_prepare_intro_data(exe_handle, rtl_handle,
             image->lower_segment, GATE_BOOT_DATA_PARAGRAPHS,
             image->resident_segment, config->external_a_segment,
-            config->external_b_segment, config->return_callback) != 0 ||
-        gate_dos_intro_data_crc32(image->lower_segment,
-                                 GATE_BOOT_DATA_PARAGRAPHS) !=
-                                 GATE_BOOT_DATA_CRC) {
+            config->external_b_segment, config->return_callback) != 0) {
         error = -7;
+        goto fail;
+    }
+    if (gate_dos_intro_data_crc32(image->lower_segment,
+                                  GATE_BOOT_DATA_PARAGRAPHS) !=
+                                  GATE_BOOT_DATA_CRC) {
+        error = -10;
         goto fail;
     }
 

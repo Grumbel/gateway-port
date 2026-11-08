@@ -133,6 +133,25 @@ handles. Allocation, file-open, copy, relocation, checksum and close failures
 all discard the partial image and unbind guest DS. A second prepare on an
 owned image is rejected. The public release operation frees both allocations.
 
+**Real-DOS owner follow-up (2026-11-08):** The user's Microsoft C 5.1
+`DATA.BAT` now compiles all three probes. `DATTEST.LOG` passes; `DATREAL.LOG`
+independently passes both complete original-file CRCs (`F332BF93`,
+`5A991491`). `BOOTREAL.LOG` nevertheless returned owner `-6`, before
+`BOOTPREP.EXE` could run. The original-file data probe supplies the known
+`1000:0030` EXE callback, while `BOOTCHK.EXE` uses a DOS-stack placeholder
+whose offset depends on the linked probe. The resident CRC already masks the
+callback *segment*, but did not normalize the offset WORD at bank `+0a4eh`;
+an otherwise correct bank could therefore fail its fingerprint. The owner
+now checks that the resident WORD equals the caller's supplied offset, then
+hashes the original `0030h` in its place. The fixed-original-callback CRC
+interface and the expected full-bank fingerprint are unchanged. The owner
+also distinguishes stage failures `-6` (resident preparation), `-9`
+(resident CRC), `-7` (data preparation), and `-10` (data CRC), so a future
+DOS failure identifies the failing step. Host fixtures exercise the
+normalization and a deliberately wrong callback. Only a fresh DOSBox run can
+confirm whether this resolves the user's `-6` failure; no executable callback
+or independently playable `_main` has been added.
+
 `tools/msc51.py` stages `BOOT.C`, `BOOT.H` and a standalone `BOOTCHK.EXE` probe
 in the regular `msc51-compile-data` batch. When provided with pinned original
 files, the strict DOS log validation requires the new original-file owner

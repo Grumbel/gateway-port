@@ -184,6 +184,23 @@ int main(int argc, char **argv)
         gate_far_word(segment, 0x0a4eu) != external.offset ||
         gate_far_word(segment, 0x0a50u) != external.segment)
         abort();
+    {
+        uint32_t fixed_crc = gate_dos_intro_resident_crc32(segment, 0x03d0u);
+        /* The original offset 0030h contributes to the old CRC. The
+         * rebuilt owner's callback can live anywhere in its code segment;
+         * normalization must retain the same CRC and reject a wrong
+         * declared callback offset. */
+        gate_far_set_word(segment, 0x0a4eu, 0x4a72u);
+        if (gate_dos_intro_resident_crc32_with_callback(segment, 0x03d0u,
+                                                        0x4a72u) != fixed_crc ||
+            gate_dos_intro_resident_crc32(segment, 0x03d0u) != 0ul)
+            abort();
+        gate_far_set_word(segment, 0x0a4eu, 0x4a73u);
+        if (gate_dos_intro_resident_crc32_with_callback(segment, 0x03d0u,
+                                                        0x4a72u) != 0ul)
+            abort();
+        gate_far_set_word(segment, 0x0a4eu, 0x0030u);
+    }
     for (i = 0u; i < sizeof gate_resident_cmp_ds /
                       sizeof gate_resident_cmp_ds[0]; ++i) {
         uint16_t site = gate_resident_cmp_ds[i];
@@ -681,6 +698,14 @@ int main(int argc, char **argv)
                     0x3000u, 0x03d0u, 0x200au, external) != 0 ||
             gate_dos_intro_resident_crc32(0x3000u, 0x03d0u) != 0xf332bf93ul)
             abort();
+        /* Same authentic full bank, but linked into a different owner:
+         * normalizing its chosen callback offset preserves the witness. */
+        gate_far_set_word(0x3000u, 0x0a4eu, 0x4a72u);
+        if (gate_dos_intro_resident_crc32_with_callback(0x3000u, 0x03d0u,
+                                                         0x4a72u) != 0xf332bf93ul ||
+            gate_dos_intro_resident_crc32(0x3000u, 0x03d0u) != 0ul)
+            abort();
+        gate_far_set_word(0x3000u, 0x0a4eu, 0x0030u);
         gate_far_set_byte(0x3000u, 0x09d9u, 0x01u);
         if (gate_dos_intro_resident_crc32(0x3000u, 0x03d0u) != 0xf332bf93ul)
             abort();

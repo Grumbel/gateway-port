@@ -1217,7 +1217,11 @@ int gate_dos_prepare_intro_resident_bank_with_exe(uint16_t rtl_handle,
  *
  * Keep the mask derived from the SAME relocation site tables that patch
  * the first bank. This permits real DOS allocations to use different
- * segments without copying any original byte or address layout into it. */
+ * segments without copying any original byte or address layout into it.
+ * The original EXE callback offset was 0030h, but a rebuilt source-C
+ * callback has a different linker-chosen offset. Verify the caller's
+ * actual offset first and normalize that one WORD back to the original
+ * 0030h when computing the unchanged original-image witness. */
 static void gate_resident_mask_word(uint8_t *mask, uint16_t offset)
 {
     mask[offset >> 3] = (uint8_t)(mask[offset >> 3] |
@@ -1227,8 +1231,9 @@ static void gate_resident_mask_word(uint8_t *mask, uint16_t offset)
                                   (uint8_t)(1u << (offset & 7u)));
 }
 
-uint32_t gate_dos_intro_resident_crc32(uint16_t resident_segment,
-                                       uint16_t paragraphs)
+uint32_t gate_dos_intro_resident_crc32_with_callback(uint16_t resident_segment,
+                                       uint16_t paragraphs,
+                                       uint16_t expected_callback_offset)
 {
     static uint8_t mutable_bytes[GATE_RESIDENT_BYTES / 8u];
     uint32_t crc = 0xfffffffful;
@@ -1236,7 +1241,8 @@ uint32_t gate_dos_intro_resident_crc32(uint16_t resident_segment,
     unsigned int i, bit;
 
     if (resident_segment == 0u || resident_segment > 0xfc30u ||
-        paragraphs < GATE_RESIDENT_PARAS)
+        paragraphs < GATE_RESIDENT_PARAS ||
+        gate_far_word(resident_segment, 0x0a4eu) != expected_callback_offset)
         return 0ul;
     for (i = 0u; i < sizeof mutable_bytes; ++i)
         mutable_bytes[i] = 0u;
@@ -1261,11 +1267,24 @@ uint32_t gate_dos_intro_resident_crc32(uint16_t resident_segment,
         uint8_t value = (mutable_bytes[offset >> 3] &
                          (uint8_t)(1u << (offset & 7u))) != 0u ?
                         0u : gate_far_byte(resident_segment, offset);
+        if (offset == 0x0a4eu)
+            value = 0x30u;
+        else if (offset == 0x0a4fu)
+            value = 0u;
         crc ^= (uint32_t)value;
         for (bit = 0u; bit < 8u; ++bit)
             crc = (crc >> 1) ^ ((crc & 1ul) != 0ul ? 0xedb88320ul : 0ul);
     }
     return crc ^ 0xfffffffful;
+}
+
+/* Preserve the original-file/snapshot CRC interface and its fixed 0030h
+ * callback offset; only the rebuilt owner opts into dynamic rebasing. */
+uint32_t gate_dos_intro_resident_crc32(uint16_t resident_segment,
+                                       uint16_t paragraphs)
+{
+    return gate_dos_intro_resident_crc32_with_callback(resident_segment,
+                                                       paragraphs, 0x0030u);
 }
 
 

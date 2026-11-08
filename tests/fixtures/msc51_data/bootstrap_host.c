@@ -83,10 +83,12 @@ int gate_dos_prepare_intro_resident_bank_with_exe(uint16_t rtl_handle,
     return fail_at == 5 ? -2 : 0;
 }
 
-uint32_t gate_dos_intro_resident_crc32(uint16_t segment, uint16_t paragraphs)
+uint32_t gate_dos_intro_resident_crc32_with_callback(uint16_t segment,
+                                uint16_t paragraphs, uint16_t callback_offset)
 {
     ++resident_crcs;
     require(segment == 0x4000u && paragraphs == 0x03d0u);
+    require(callback_offset == 0x1234u);
     return fail_at == 6 ? 0u : 0xf332bf93ul;
 }
 
@@ -153,8 +155,8 @@ int main(void)
         } else {
             require(result == -(stage == 1 ? 2 : stage == 2 ? 3 :
                                 stage == 3 ? 4 : stage == 4 ? 5 :
-                                stage == 5 || stage == 6 ? 6 :
-                                stage == 7 || stage == 8 ? 7 : 8));
+                                stage == 5 ? 6 : stage == 6 ? 9 :
+                                stage == 7 ? 7 : stage == 8 ? 10 : 8));
         }
         require(allocations == 0 && open_files == 0);
         require(image.lower_segment == 0u && image.resident_segment == 0u);
