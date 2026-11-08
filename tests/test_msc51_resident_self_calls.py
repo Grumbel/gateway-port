@@ -171,6 +171,30 @@ def trailing_offset_manifest():
                        match.group(1))]
 
 
+def service_table_manifest():
+    source = (ROOT / "decomp/launcher/dos/msc51_startup_static_data.c").read_text()
+    match = re.search(r"static const GateResidentEarlyOffsetFixup "
+                      r"gate_resident_service_table_offsets\[\] = \{(.*?)\n\};",
+                      source, re.DOTALL)
+    if match is None:
+        raise AssertionError("startup service table offsets missing")
+    return [tuple(int(value, 16) for value in entry) for entry in
+            re.findall(r"\{0x([0-9a-f]+)u, 0x([0-9a-f]+)u, 0x([0-9a-f]+)u\}",
+                       match.group(1))]
+
+
+def remaining_zero_manifest():
+    source = (ROOT / "decomp/launcher/dos/msc51_startup_static_data.c").read_text()
+    match = re.search(r"static const GateResidentEarlyOffsetFixup "
+                      r"gate_resident_remaining_zero_offsets\[\] = \{(.*?)\n\};",
+                      source, re.DOTALL)
+    if match is None:
+        raise AssertionError("resident remaining-zero offsets missing")
+    return [tuple(int(value, 16) for value in entry) for entry in
+            re.findall(r"\{0x([0-9a-f]+)u, 0x([0-9a-f]+)u, 0x([0-9a-f]+)u\}",
+                       match.group(1))]
+
+
 class ResidentSelfCallTests(unittest.TestCase):
     def test_relocation_tables_cover_disjoint_changed_bytes(self):
         rtl_path = ROOT.parent / "gateway-dos/GATE.RTL"
@@ -210,7 +234,8 @@ class ResidentSelfCallTests(unittest.TestCase):
         # already written by an earlier stage of the composed bootstrap.
         for entries in (early_offset_manifest(), cs_state_manifest(),
                         service_offset_manifest(), allocator_offset_manifest(),
-                        bound_offset_manifest(), trailing_offset_manifest()):
+                        bound_offset_manifest(), trailing_offset_manifest(),
+                        service_table_manifest(), remaining_zero_manifest()):
             for site, _, _ in entries:
                 self.assertFalse({site - 2, site - 1} & occupied, hex(site))
             for site, _, _ in entries:
@@ -219,8 +244,48 @@ class ResidentSelfCallTests(unittest.TestCase):
         changed = {i for i, (source, settled) in enumerate(zip(rtl, live))
                    if source != settled}
         self.assertEqual(len(changed), 1660)
-        self.assertEqual(len(changed & occupied), 1447)
-        self.assertEqual(len(changed - occupied), 213)
+        self.assertEqual(len(changed & occupied), 1531)
+        self.assertEqual(len(changed - occupied), 129)
+
+    def test_25_remaining_zero_offsets_against_original_ram(self):
+        rtl_path = ROOT.parent / "gateway-dos/GATE.RTL"
+        captures = [ROOT / f"build/msc51-startup-fine/at-{ms}.bin"
+                    for ms in (125, 175, 250)]
+        captures.append(ROOT / "build/msc51-startup/at-500.bin")
+        if not rtl_path.exists() or not all(path.exists() for path in captures):
+            self.skipTest("Original RTL and settled DOS captures unavailable")
+        rtl = rtl_path.read_bytes()[0x56de:0x93de]
+        live = [path.read_bytes()[0x12a50:0x12a50 + len(rtl)] for path in captures]
+        entries = remaining_zero_manifest()
+        self.assertEqual(len(entries), 25)
+        self.assertEqual([site for site, _, _ in entries],
+                         sorted(set(site for site, _, _ in entries)))
+        for site, target, prefix in entries:
+            self.assertEqual(rtl[site - 2:site], prefix.to_bytes(2, "little"), hex(site))
+            self.assertEqual(rtl[site:site + 2], bytes(2), hex(site))
+            for ram in live:
+                self.assertEqual(ram[site:site + 2], target.to_bytes(2, "little"),
+                                 hex(site))
+
+    def test_17_service_table_offsets_against_original_ram(self):
+        rtl_path = ROOT.parent / "gateway-dos/GATE.RTL"
+        captures = [ROOT / f"build/msc51-startup-fine/at-{ms}.bin"
+                    for ms in (125, 175, 250)]
+        captures.append(ROOT / "build/msc51-startup/at-500.bin")
+        if not rtl_path.exists() or not all(path.exists() for path in captures):
+            self.skipTest("Original RTL and settled DOS captures unavailable")
+        rtl = rtl_path.read_bytes()[0x56de:0x93de]
+        live = [path.read_bytes()[0x12a50:0x12a50 + len(rtl)] for path in captures]
+        entries = service_table_manifest()
+        self.assertEqual(len(entries), 17)
+        self.assertEqual([site for site, _, _ in entries],
+                         sorted(set(site for site, _, _ in entries)))
+        for site, target, prefix in entries:
+            self.assertEqual(rtl[site - 2:site], prefix.to_bytes(2, "little"), hex(site))
+            self.assertEqual(rtl[site:site + 2], bytes(2), hex(site))
+            for ram in live:
+                self.assertEqual(ram[site:site + 2], target.to_bytes(2, "little"),
+                                 hex(site))
 
     def test_17_trailing_resident_offsets_against_original_ram(self):
         rtl_path = ROOT.parent / "gateway-dos/GATE.RTL"

@@ -814,6 +814,89 @@ int gate_dos_relocate_intro_resident_trailing_offsets(uint16_t resident_segment,
     return 0;
 }
 
+/* Linked startup-service data tables in the +0a9e..+0ba9 resident cluster.
+ * The source operands are all zero, and the original settled DOS RAM shows
+ * these sixteen-bit offsets in DS:4cf0..4d04 plus 64d8. Some instruction
+ * context prefixes overlap other operands IN THIS group, so the full-group
+ * preflight must finish before modifying any site. */
+static const GateResidentEarlyOffsetFixup gate_resident_service_table_offsets[] = {
+    {0x0a9eu, 0x4cf2u, 0x0e8bu}, {0x0aadu, 0x4cf4u, 0x06c5u},
+    {0x0ab6u, 0x4cf0u, 0x1effu}, {0x0ac2u, 0x4cf8u, 0x06c5u},
+    {0x0accu, 0x4cf0u, 0x1effu}, {0x0b2eu, 0x4cfcu, 0xbee7u},
+    {0x0b31u, 0x4cfcu, 0xbf00u}, {0x0b37u, 0x4cfcu, 0xbe00u},
+    {0x0b44u, 0x64d8u, 0xbeecu}, {0x0b47u, 0x64d8u, 0xbf00u},
+    {0x0b50u, 0x4d04u, 0xbf00u}, {0x0b5bu, 0x4d04u, 0xbeecu},
+    {0x0b5eu, 0x4d04u, 0xbf00u}, {0x0b64u, 0x4d04u, 0xbe00u},
+    {0x0b67u, 0x4d04u, 0xbf00u}, {0x0ba0u, 0x4cf2u, 0x0e8bu},
+    {0x0ba9u, 0x4cf0u, 0x1effu}
+};
+
+int gate_dos_relocate_intro_resident_service_tables(uint16_t resident_segment,
+                                                     uint16_t paragraphs)
+{
+    unsigned int i;
+    if (resident_segment == 0u || resident_segment > 0xfc30u ||
+        paragraphs < GATE_RESIDENT_PARAS)
+        return -1;
+    for (i = 0u; i < sizeof gate_resident_service_table_offsets /
+                      sizeof gate_resident_service_table_offsets[0]; ++i) {
+        uint16_t site = gate_resident_service_table_offsets[i].site;
+        if (gate_far_word(resident_segment, (uint16_t)(site - 2u)) !=
+                gate_resident_service_table_offsets[i].prefix ||
+            gate_far_word(resident_segment, site) != 0u)
+            return -2;
+    }
+    for (i = 0u; i < sizeof gate_resident_service_table_offsets /
+                      sizeof gate_resident_service_table_offsets[0]; ++i)
+        gate_far_set_word(resident_segment,
+                         gate_resident_service_table_offsets[i].site,
+                         gate_resident_service_table_offsets[i].target);
+    return 0;
+}
+
+/* Other source-zero absolute WORD references scattered through the bank:
+ * early timer fields, startup length/stack immediates and resident service
+ * pointers. Each is a stable original linker result in four DOS captures.
+ * Keeping these in a separate preflight avoids assuming a shared addend. */
+static const GateResidentEarlyOffsetFixup gate_resident_remaining_zero_offsets[] = {
+    {0x0195u, 0x0204u, 0x0070u}, {0x029fu, 0x02d4u, 0xb8c0u},
+    {0x0759u, 0x07c1u, 0x05c7u}, {0x09cfu, 0x64eeu, 0xc481u},
+    {0x0a19u, 0x4fdcu, 0xbffcu}, {0x0a1cu, 0x64f0u, 0xb900u},
+    {0x0a81u, 0x2be9u, 0xa321u}, {0x0a96u, 0x0a58u, 0xba25u},
+    {0x0ae9u, 0x2bc8u, 0xbe00u}, {0x0c12u, 0x2c24u, 0x1e3bu},
+    {0x0c1cu, 0x2c20u, 0xa1cbu}, {0x0c5fu, 0x2be9u, 0x1638u},
+    {0x0d29u, 0x2c06u, 0xa3c4u}, {0x0e81u, 0x4e68u, 0xbe06u},
+    {0x0ed0u, 0x2b76u, 0x0603u}, {0x0ed6u, 0x2b70u, 0x0639u},
+    {0x0efdu, 0x2b70u, 0xa348u}, {0x0f06u, 0x2b76u, 0x1601u},
+    {0x0f35u, 0x2becu, 0xa2cbu}, {0x0f56u, 0x2c2au, 0xbb13u},
+    {0x0f5bu, 0x2be1u, 0xa398u}, {0x1ee4u, 0x4e22u, 0x068eu},
+    {0x1f05u, 0x4e22u, 0x068eu}, {0x1f27u, 0x4e22u, 0x068eu},
+    {0x1f4du, 0x4e22u, 0x068eu}
+};
+
+int gate_dos_relocate_intro_resident_remaining_zero(uint16_t resident_segment,
+                                                     uint16_t paragraphs)
+{
+    unsigned int i;
+    if (resident_segment == 0u || resident_segment > 0xfc30u ||
+        paragraphs < GATE_RESIDENT_PARAS)
+        return -1;
+    for (i = 0u; i < sizeof gate_resident_remaining_zero_offsets /
+                      sizeof gate_resident_remaining_zero_offsets[0]; ++i) {
+        uint16_t site = gate_resident_remaining_zero_offsets[i].site;
+        if (gate_far_word(resident_segment, (uint16_t)(site - 2u)) !=
+                gate_resident_remaining_zero_offsets[i].prefix ||
+            gate_far_word(resident_segment, site) != 0u)
+            return -2;
+    }
+    for (i = 0u; i < sizeof gate_resident_remaining_zero_offsets /
+                      sizeof gate_resident_remaining_zero_offsets[0]; ++i)
+        gate_far_set_word(resident_segment,
+                         gate_resident_remaining_zero_offsets[i].site,
+                         gate_resident_remaining_zero_offsets[i].target);
+    return 0;
+}
+
 /* Stage the first reconstructed resident bank in the eventual DOS entry.
  * Unlike the data-only bootstrap below, this operation does not establish
  * the remaining resident banks, interrupt vectors, or an executable entry.
@@ -824,7 +907,8 @@ int gate_dos_relocate_intro_resident_trailing_offsets(uint16_t resident_segment,
  * -10 linked small data offsets, -11 CS-local dispatch table,
  * -12 early DS-state offsets, -13 early resident CS-state offsets,
  * -14 runtime-service DS offsets, -15 allocator DS offsets,
- * -16 additional memory-bound DS offsets, -17 trailing resident DS offsets. */
+ * -16 additional memory-bound DS offsets, -17 trailing resident DS offsets,
+ * -18 linked startup-service table offsets, -19 remaining zero operands. */
 int gate_dos_prepare_intro_resident_bank(uint16_t rtl_handle,
                                          uint16_t resident_segment,
                                          uint16_t paragraphs,
@@ -884,6 +968,12 @@ int gate_dos_prepare_intro_resident_bank(uint16_t rtl_handle,
     if (gate_dos_relocate_intro_resident_trailing_offsets(resident_segment,
                                                           paragraphs) != 0)
         return -17;
+    if (gate_dos_relocate_intro_resident_service_tables(resident_segment,
+                                                        paragraphs) != 0)
+        return -18;
+    if (gate_dos_relocate_intro_resident_remaining_zero(resident_segment,
+                                                        paragraphs) != 0)
+        return -19;
     return 0;
 }
 
