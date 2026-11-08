@@ -3,6 +3,46 @@
 
 # Microsoft C 5.1 launcher link closure
 
+## Verify unresolved names against compiled DOS OMF objects
+
+The Microsoft LINK report listed `_gate_linked_print_intr_b006848b` as
+unresolved. However, the current generated `RTFILE.C` defines a function
+with exactly this name (the deterministic, 31-character alias of
+`gate_linked_print_intro_diagnostic`), and `LINK.RSP` explicitly includes
+`RTFILE.OBJ`. This is **not yet proof** that the user's compiled
+`RTFILE.OBJ` actually exports that symbol. It is also not proof that the
+bounded current diagnostic printer reproduces the original five-call
+`GATE.RTL:170c7..1712d` formatter-and-input loop.
+
+Run this source-independent OMF audit on the actual Microsoft C build:
+
+```sh
+python3 tools/msc51_object_symbols.py \
+  --stage build/msc51-launcher \
+  --symbol _main \
+  --symbol _gate_linked_handle_control_key \
+  --symbol _gate_linked_print_intr_b006848b
+```
+
+The tool reads each `*.OBJ` named in `LINK.RSP`, validates its record
+boundaries and checksums, and extracts actual `PUBDEF` names. When
+`LINK.LOG` exists, it also marks names reported unresolved by LINK but
+already exported by one of its input objects. That condition points to a
+stale LINK run or another linkage inconsistency; it is **not** evidence
+that a new function implementation is needed. Missing objects and invalid
+OMF records are reported explicitly. The four synthetic unit tests cover
+32-byte decorated symbols, PUBDEF/PUB386 encodings, malformed records,
+multi-module inputs and the missing-versus-exported distinction. There
+are no real DOS `.OBJ` files in this environment, so the result for the
+user's latest LINK run remains to be collected.
+
+The historical Microsoft C 5.1 compiler recognizes 31-character C names
+and decorates them with an underscore, giving a **32-character OMF public**;
+the [Microsoft KB Q70249](https://jeffpar.github.io/kbarchive/kb/070/Q70249/)
+notes that the limitation arises when an old MASM module truncates such a
+name, not that two C translation units cannot share it. We therefore
+cannot infer a truncation bug merely from this unresolved name.
+
 ## DOS image owner for the future real entry point
 
 `decomp/launcher/dos/msc51_startup_bootstrap.c` now owns the first two
