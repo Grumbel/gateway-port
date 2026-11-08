@@ -215,6 +215,66 @@ two-second run and all five dumps are independent of the launcher LINK
 attempt. Merely matching original loader startup does not supply an
 equivalent reconstructed DOS `main()`.
 
+### Original startup capture: observed relocation and segment transition
+
+The user's five original 1 MiB `.bin` and `.regs` captures from the above
+command were inspected on 2026-11-08. The original EXE/RTL SHA-256 values
+match the pinned inputs in `docs/executable.md`. The new read-only analysis
+command makes these checks repeatable; the proprietary captures stay outside
+Git:
+
+```sh
+python3 tools/inspect_msc51_startup.py \
+  --exe ../gateway-dos/GATE.EXE \
+  --rtl ../gateway-dos/GATE.RTL \
+  --snapshot-dir build/msc51-startup --json
+```
+
+The MZ image has **zero entries in its standard relocation directory**.
+At 0ms its complete 22,936-byte post-header image appears **identically**
+at physical `10000h`, with the initial `CS:IP=102c:0071` pointing to
+`exe:0351` and `SS:SP=3229:0400` matching the MZ header. That tells us
+what DOS loaded; it does **not** mean RTLink performs no relocations later.
+
+| Capture | CS:IP | DS / SS:SP | EXE image identical bytes | Resident `02a5` bank identical bytes | Entry source |
+| --- | --- | --- | ---: | ---: | --- |
+| 0ms | `102c:0071` | `0ff0` / `3229:0400` | 22,936/22,936 | 471/15,616 (not present) | `exe:0351` (16 exact bytes) |
+| 10ms | `3259:13b2` | `1e60` / `3229:03ba` | 18,636/22,936 | 471/15,616 (not present) | Unmapped; loader image not source-matched |
+| 100ms | `3259:103c` | `348a` / `3229:03c4` | 298/22,936 | 14,677/15,616 (**verified**) | Unmapped; loader image not source-matched |
+| 500ms | `12a5:3570` | `2a7a` / `2a7a:7a1a` | 268/22,936 | 13,956/15,616 (**verified**) | `rtl:8c4e` (16 exact bytes) |
+| 1500ms | `12a5:3bc5` | `2a7a` / `2a7a:7a08` | 268/22,936 | 13,956/15,616 (**verified**) | `rtl:92a3` (16 exact bytes) |
+
+The independently established original resident bank is
+`RTL:56de..93dd`, loaded at relative `02a5` (physical `12a50h` for
+this run). The three independently selected witnesses `RTL:8298`,
+`RTL:91d8` and `RTL:91ea` pass `prepare_intro_ghidra.validate_bank`
+at 100, 500 and 1500ms, not at 0 or 10ms. Differences within the bank
+include fixups and changed runtime content; the high aggregate byte count
+**does not** establish byte-for-byte unrelocated code. The precise transition
+to resident execution happens **between the 100ms and 500ms samples**;
+the snapshots do not resolve a more exact time.
+
+From the 500/1500ms register agreement (`DS=ES=SS=2a7a`) we can also
+sample that **same future runtime data segment at every earlier instant**.
+This is different from sampling the active loader `DS` at 10 or 100ms:
+
+| Sample | `[2a7a:065c]` | `[2a7a:065e]` | `[2a7a:0660]` | `[2a7a:0662]` |
+| --- | ---: | ---: | ---: | ---: |
+| 0 and 10ms | `0000` | `0000` | `0000` | `0000` |
+| 100ms | `007f` | `0000` | `0000` | `0000` |
+| 500 and 1500ms | `007f` | `0001` | `0401` | `005a` |
+
+This bounds some resident-state initialization to 10–100ms and other
+writes to 100–500ms, without claiming their full original semantics.
+The original startup switches both data and stack to `2a7a` before the
+500ms capture, replacing the MZ's initial `3229` stack. The rebuilt
+Microsoft-C launcher still needs its *own* real-mode `_main`: reproduce
+the necessary memory/segment bindings and initializations as independently
+verified services, then enter the reconstructed intro. Copying the old
+bootstrap wholesale, or adding a no-op CRT `_main`, would not close the
+functional gap. This capture resolves a **mapping/timing question**, not
+any of the three outstanding LINK externals.
+
 The third call is now identified as `rtl:10da1..10dc6`, a bounded FAR
 routine (preceded and terminated by `RETF`). It starts with `push cs; call
 near rtl:11078`, tests bits `0x0c` of a relocated DS byte, conditionally
