@@ -419,9 +419,21 @@ python3 tools/inspect_msc51_startup.py \
 ```
 
 This reports early changed-byte counts and *unverified* 16-bit segment
-value/delta candidates, including odd-aligned words. A stable candidate
-is not proof of an RTL relocation; later changes can be normal runtime
-state. Add `--json` to inspect the complete candidate list.
+value/delta candidates, including odd-aligned words. The original startup
+captures produced **27 zero-source segment-word replacements** (22 runtime
+DS, five resident CS), and their source offsets were checked directly
+against the pinned RTL. A guarded `gate_dos_fix_intro_rtl_segs` helper now
+applies only those 27 replacements after a raw RTL copy; the generated-data
+and original-file DOS probes verify it. The other **206 of 260 early changed
+bytes remain unexplained**, so `DATA.OBJ` stays outside the launcher link.
+Add `--json` to inspect all reported candidate words.
+
+After updating this source, rerun the Microsoft C test, including both
+real original files:
+
+```sh
+nix run -L .#msc51-compile-data -- --original-game-dir ../gateway-dos
+```
 
 The user's follow-up Microsoft LINK run consumed `MEMORY.OBJ` and reduced
 the unresolved-symbol count **from 108 to 100**, exactly removing those

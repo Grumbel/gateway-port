@@ -23,6 +23,18 @@ int gate_dos_load_intro_static_data(uint16_t handle, uint16_t lower_segment,
                                     uint16_t paragraphs);
 int gate_dos_load_intro_rtl_data(uint16_t handle, uint16_t lower_segment,
                                  uint16_t paragraphs);
+int gate_dos_fix_intro_rtl_segs(uint16_t lower_segment, uint16_t paragraphs,
+                                uint16_t resident_segment);
+
+static const uint16_t observed_ds_sites[] = {
+    0x0fb8u, 0x0fbcu, 0x0fc0u, 0x0fc4u, 0x0fc8u, 0x0fccu,
+    0x153au, 0x153eu, 0x1542u, 0x1546u, 0x154au, 0x154eu,
+    0x1552u, 0x1556u, 0x26d8u, 0x2b78u, 0x2c10u, 0x3246u,
+    0x324cu, 0x33aeu, 0x3540u, 0x3544u
+};
+static const uint16_t observed_cs_sites[] = {
+    0x33deu, 0x33e2u, 0x33e6u, 0x33eau, 0x33eeu
+};
 
 /* Avoid C2073 on Microsoft C 5.1: initialized arrays need static storage. */
 static char original_exe_name[] = "E:\\GATE.EXE";
@@ -173,6 +185,26 @@ int main(void)
                  gate_ds_word(0x4d84u) != data_segment))
         good = 0;
 
+    /* The pinned original RTL contains zero words at all 27 observed
+     * sites. Exercise the preflight and segment-parameter relocation only
+     * *after* independently comparing all original source-image bytes.
+     * 1234h is a test code segment; no code is jumped to from the probe. */
+    if (good && gate_dos_fix_intro_rtl_segs((uint16_t)allocated,
+                                           GATE_REAL_PARAGRAPHS, 0x1234u) != 0)
+        good = 0;
+    for (i = 0u; good && i < sizeof observed_ds_sites /
+                              sizeof observed_ds_sites[0]; ++i)
+        if (gate_ds_word(observed_ds_sites[i]) != data_segment)
+            good = 0;
+    for (i = 0u; good && i < sizeof observed_cs_sites /
+                              sizeof observed_cs_sites[0]; ++i)
+        if (gate_ds_word(observed_cs_sites[i]) != 0x1234u)
+            good = 0;
+    if (good && (gate_far_byte(data_segment, GATE_REAL_DEST) != exe_first_byte ||
+                 gate_ds_word(0x4d82u) != (uint16_t)allocated ||
+                 gate_ds_word(0x4d84u) != data_segment))
+        good = 0;
+
     if (have_handle) {
         result = gate_dos_file_close(handle);
         if (result.carry)
@@ -183,7 +215,7 @@ int main(void)
         if (_dos_freemem(allocated) != 0u)
             good = 0;
     }
-    puts(good ? "Original EXE/RTL data probe: PASS (5976 + 13714 bytes, matching disk images)"
+    puts(good ? "Original EXE/RTL data probe: PASS (5976 + 13714 bytes, 27 segment fixes)"
               : "Original EXE/RTL data probe: FAIL");
     return good ? 0 : 1;
 }

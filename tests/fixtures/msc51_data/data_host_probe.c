@@ -12,6 +12,18 @@ int gate_dos_load_intro_static_data(uint16_t handle, uint16_t lower_segment,
                                     uint16_t paragraphs);
 int gate_dos_load_intro_rtl_data(uint16_t handle, uint16_t lower_segment,
                                  uint16_t paragraphs);
+int gate_dos_fix_intro_rtl_segs(uint16_t lower_segment, uint16_t paragraphs,
+                                uint16_t resident_segment);
+
+static const uint16_t observed_ds_sites[] = {
+    0x0fb8u, 0x0fbcu, 0x0fc0u, 0x0fc4u, 0x0fc8u, 0x0fccu,
+    0x153au, 0x153eu, 0x1542u, 0x1546u, 0x154au, 0x154eu,
+    0x1552u, 0x1556u, 0x26d8u, 0x2b78u, 0x2c10u, 0x3246u,
+    0x324cu, 0x33aeu, 0x3540u, 0x3544u
+};
+static const uint16_t observed_cs_sites[] = {
+    0x33deu, 0x33e2u, 0x33e6u, 0x33eau, 0x33eeu
+};
 
 static uint8_t memory[0x100000];
 static uint16_t data_segment;
@@ -121,6 +133,34 @@ int main(void)
         gate_ds_word(0x4d82u) != 0x2000u ||
         gate_ds_word(0x4d84u) != 0x200au)
         abort();
+    /* Synthetic file bytes are not zero at every observed source-word
+     * site. Turn only those exact words into a zero-source relocation
+     * fixture after verifying the entire raw source copy above. */
+    for (i = 0u; i < sizeof observed_ds_sites / sizeof observed_ds_sites[0]; ++i)
+        gate_ds_set_word(observed_ds_sites[i], 0u);
+    for (i = 0u; i < sizeof observed_cs_sites / sizeof observed_cs_sites[0]; ++i)
+        gate_ds_set_word(observed_cs_sites[i], 0u);
+    gate_ds_set_word(observed_cs_sites[4], 0x1234u);
+    if (gate_dos_fix_intro_rtl_segs(0x2000u, 0x100au, 0x1234u) != -2 ||
+        gate_ds_word(observed_ds_sites[0]) != 0u ||
+        gate_ds_word(observed_cs_sites[0]) != 0u ||
+        gate_ds_word(observed_cs_sites[4]) != 0x1234u)
+        abort();
+    gate_ds_set_word(observed_cs_sites[4], 0u);
+    if (gate_dos_fix_intro_rtl_segs(0x2000u, 0x1009u, 0x1234u) != -1 ||
+        gate_dos_fix_intro_rtl_segs(0x2000u, 0x100au, 0u) != -1 ||
+        gate_dos_fix_intro_rtl_segs(0x2000u, 0x100au, 0x1234u) != 0)
+        abort();
+    for (i = 0u; i < sizeof observed_ds_sites / sizeof observed_ds_sites[0]; ++i)
+        if (gate_ds_word(observed_ds_sites[i]) != 0x200au)
+            abort();
+    for (i = 0u; i < sizeof observed_cs_sites / sizeof observed_cs_sites[0]; ++i)
+        if (gate_ds_word(observed_cs_sites[i]) != 0x1234u)
+            abort();
+    if (gate_far_byte(data_segment, 0x3592u) != boundary ||
+        gate_ds_word(0x4d82u) != 0x2000u ||
+        gate_ds_word(0x4d84u) != 0x200au)
+        abort();
     seek_bad = 1u;
     if (gate_dos_load_intro_static_data(7u, 0x2000u, 0x100au) != -2 ||
         gate_dos_load_intro_rtl_data(8u, 0x2000u, 0x100au) != -2 ||
@@ -138,6 +178,6 @@ int main(void)
         abort();
     if (gate_dos_load_intro_rtl_data(8u, 0x2000u, 0x100au) != -3)
         abort();
-    puts("static EXE/RTL copy host: PASS (boundaries/seek/short read/failure)");
+    puts("static EXE/RTL copy and 27 segment fixes host: PASS");
     return 0;
 }

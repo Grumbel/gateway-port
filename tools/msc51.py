@@ -959,13 +959,13 @@ def validate_static_data_probe(output: Path, *, require_original: bool = False) 
         raise ValueError("DOS static data source changed since its test. "
                          "Run msc51-compile-data again.")
     result = locate_case_insensitive(output, "DATTEST.LOG")
-    if re.search(r"^Static EXE/RTL data probe: PASS \(5976 \+ 13714 bytes\)\s*$",
+    if re.search(r"^Static EXE/RTL data probe: PASS \(5976 \+ 13714 bytes; 27 segment fixes\)\s*$",
                  result.read_text(), re.MULTILINE) is None:
-        raise ValueError("DOS static data copy log does not verify both source regions.")
+        raise ValueError("DOS static data log does not verify the source copies and 27 fixes.")
     if require_original:
         real = locate_case_insensitive(output, "DATREAL.LOG")
         if (real is None or re.search(
-                r"^Original EXE/RTL data probe: PASS \(5976 \+ 13714 bytes, matching disk images\)\s*$",
+                r"^Original EXE/RTL data probe: PASS \(5976 \+ 13714 bytes, 27 segment fixes\)\s*$",
                 real.read_text(), re.MULTILINE) is None):
             raise ValueError("DOS original GATE.EXE/GATE.RTL data test is missing or failed.")
 
@@ -1641,11 +1641,11 @@ def main(argv: list[str] | None = None) -> int:
                   file=sys.stderr)
             print_static_data_diagnostics(output)
             return 1
-        print("Microsoft C 5.1 verified generated EXE/RTL source images can be copied "
-              "into distinct original DS ranges"
-              + (" and confirmed both against read-only GATE.EXE/GATE.RTL"
+        print("Microsoft C 5.1 verified EXE/RTL source-image copies and 27 early "
+              "segment fixes"
+              + (" against read-only GATE.EXE/GATE.RTL"
                  if original_game_dir is not None else "")
-              + "; DATA.OBJ remains probe-only pending RTL fixups and the rest of startup.")
+              + "; DATA.OBJ remains probe-only pending the other 206 changed bytes and startup.")
         return 0
     if args.command == "compile-dos-files":
         try:

@@ -621,6 +621,38 @@ candidate lists are available as `--runtime-data-fixups --json` and must
 be checked against original startup instructions before being translated
 to DOS fixups. No new loader writes have been added on speculation.
 
+**Observed 27 segment-word replacements (user's genuine capture):**
+The first 100ms sample differs from the RTL +0029h preimage at 260 bytes,
+all unchanged in the 125/175/250ms samples. The subsequent 500/1500ms
+captures alter 60 of those early bytes and 531 bytes in this leading data
+region overall. Exactly 27 zero-source word sites hold the observed
+segment values at 100ms: 22 become `DS=2a7a`, five become resident
+`CS=12a5`. Most appear in 4-byte-spaced FAR-pointer records. All 27
+source words were independently checked as zero in the pinned original
+`GATE.RTL` file. The site groups are:
+
+| Destination word | Eventual-DS offsets |
+| --- | --- |
+| Data segment | `0fb8,0fbc,0fc0,0fc4,0fc8,0fcc`; `153a,153e,1542,1546,154a,154e,1552,1556`; `26d8,2b78,2c10`; `3246,324c,33ae,3540,3544` |
+| Resident code segment | `33de,33e2,33e6,33ea,33ee` |
+
+The 27 words cover **54 of 260** early changed bytes. `DS:2c10` was
+subsequently modified in the original runtime, so its 100ms initial
+segment value must not be assumed permanent. The remaining **206 changed
+bytes** require additional original startup analysis and may include
+non-segment fixups, data initialization or code updates.
+
+`gate_dos_fix_intro_rtl_segs(lower, paragraphs, resident_cs)` now applies
+only these 27 word replacements to a copied RTL preimage. The caller
+supplies the actual loaded resident code segment; this routine does not
+assume `12a5`. It checks all 27 original zero words before writing any,
+returning `-2` with no modifications for an unexpected preimage, and
+rejects invalid allocation/segment parameters with `-1`. The regenerated
+synthetic `DATACHK.EXE` and original-file `DATAREAL.EXE` must both PASS
+under Microsoft C 5.1/DOSBox before their new results can be trusted.
+Neither test attempts to execute relocated code, nor does `DATA.OBJ`
+enter `LINK.RSP` yet.
+
 **Microsoft C 5.1 build correction:** The first user-side `DATA.BAT` run
 compiled `DATA.C` but stopped with `DATACHK.C(22): C2073` (an initialized
 automatic `char name[]`), so **neither test executable ran**. Both test
