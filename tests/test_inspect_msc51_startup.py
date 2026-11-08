@@ -5,6 +5,7 @@
 
 import importlib.util
 from pathlib import Path
+import random
 import re
 import sys
 import tempfile
@@ -54,6 +55,82 @@ def regs(cs, ip, ds, ss, sp):
 
 
 class StartupSnapshotTests(unittest.TestCase):
+    def test_original_mcb_layout_keeps_far_targets_inside_psp_block(self):
+        data_segment = 0x2a7a
+        raw = bytearray(startup.RAM_SIZE)
+        put_mcb(raw, 0x0fef, "Z", 0x0ff0, 0x9010)
+        for idx, (_, entries) in enumerate(startup.KNOWN_RTL_EXTERNAL_POINTERS):
+            for site, offset in entries:
+                put_word(raw, data_segment * 16 + site, offset)
+                put_word(raw, data_segment * 16 + site + 2,
+                         (0x252c, 0x25d7)[idx])
+        after_resize = bytearray(raw)
+        put_mcb(after_resize, 0x0fef, "M", 0x0ff0, 0x2a8a)
+        put_mcb(after_resize, 0x3a7a, "Z", 0, 0x6570)
+        captures = [(100, regs(0x3259, 0x103c, 0x348a, 0x3229, 0x3c4), bytes(raw)),
+                    (350, regs(0x12a5, 0x013b, data_segment, data_segment, 0x7a4a),
+                     bytes(after_resize))]
+        report = startup.runtime_mcb_owners(captures, data_segment, 0x1000)
+        self.assertEqual([len(s["mcb_chain"]["blocks"]) for s in report["snapshots"]],
+                         [1, 2])
+        for sample, paragraphs in zip(report["snapshots"], (0x9010, 0x2a8a)):
+            self.assertTrue(sample["mcb_chain"]["complete"])
+            self.assertEqual([entry["owner"]["segment_delta"] for entry
+                              in sample["external_tables"]], [0x153c, 0x15e7])
+            self.assertTrue(all(not entry["owner"]["starts_at_block"] for entry
+                                in sample["external_tables"]))
+            self.assertEqual([entry["owner"]["paragraphs"] for entry
+                              in sample["external_tables"]], [paragraphs] * 2)
+            self.assertEqual(sample["runtime_ds_owner"]["segment_delta"], 0x1a8a)
+
+    def test_pointer_targets_find_exact_file_sources_without_guessed_allocations(self):
+        exe, rtl = fixture()
+        # Independent high-entropy windows avoid the fixture's repetitive
+        # test patterns, which are deliberately rejected as ambiguous seeds.
+        rng = random.Random(4711)
+        exe = bytearray(exe)
+        rtl = bytearray(rtl)
+        exe[0x220:0x2b0] = rng.randbytes(0x90)
+        rtl[0x5800:0x58b0] = rng.randbytes(0xb0)
+        exe, rtl = bytes(exe), bytes(rtl)
+        data_segment = 0x2a7a
+        raw = bytearray(startup.RAM_SIZE)
+        for idx, (_, entries) in enumerate(startup.KNOWN_RTL_EXTERNAL_POINTERS):
+            for site, offset in entries:
+                put_word(raw, data_segment * 16 + site, offset)
+                put_word(raw, data_segment * 16 + site + 2,
+                         (0x252c, 0x25d7)[idx])
+        raw[0x252c * 16 + 0x110:0x252c * 16 + 0x1a0] = exe[0x220:0x2b0]
+        raw[0x25d7 * 16 + 0x120:0x25d7 * 16 + 0x1d0] = rtl[0x5800:0x58b0]
+        late = bytearray(raw)
+        late[0x252c * 16 + 0x10] = 0x5a
+        captures = [(100, regs(0x3259, 0x103c, 0x348a, 0x3229, 0x3c4), bytes(raw)),
+                    (500, regs(0x12a5, 0x3570, data_segment, data_segment, 0x7a1a),
+                     bytes(late))]
+        report = startup.runtime_pointer_sources(exe, rtl, captures, data_segment)
+        self.assertEqual(report["minimum_exact_run"], 64)
+        self.assertEqual(len(report["snapshots"]), 2)
+        first_a, first_b = report["snapshots"][0]["tables"]
+        self.assertEqual((first_a["segment"], first_b["segment"]),
+                         (0x252c, 0x25d7))
+        self.assertIn({"source": "exe", "file_offset": 0x220,
+                       "target_offset": 0x110, "length": 0x90},
+                      first_a["exact_file_copies"])
+        self.assertIn({"source": "rtl", "file_offset": 0x5800,
+                       "target_offset": 0x120, "length": 0xb0},
+                      first_b["exact_file_copies"])
+        self.assertEqual([item["changed_from_first"] for item in
+                          report["snapshots"][1]["tables"]], [1, 0])
+
+        inconsistent = bytearray(raw)
+        put_word(inconsistent, data_segment * 16 + 0x2acf + 2, 0)
+        invalid = startup.runtime_pointer_sources(
+            exe, rtl, [(100, captures[0][1], bytes(inconsistent))], data_segment)
+        self.assertTrue(invalid["snapshots"][0]["tables"][0]["initialized"])
+        self.assertFalse(invalid["snapshots"][0]["tables"][1]["initialized"])
+        with self.assertRaisesRegex(ValueError, "runtime data segment"):
+            startup.runtime_pointer_sources(exe, rtl, captures, 0xffff)
+
     def test_mcb_chain_assigns_external_pointer_targets_without_guessing(self):
         data_segment = 0x2a7a
         raw = bytearray(startup.RAM_SIZE)

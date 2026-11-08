@@ -65,7 +65,8 @@ KNOWN_RTL_OFFSET_FIXUPS = (
 )
 # The offsets, not the target segment values, are stable in the original
 # capture. The two segment values are sampled independently at runtime and
-# must not be used as compile-time allocation addresses.
+# must not be used as compile-time program-image layout addresses. The MCB
+# evidence places both targets inside the single original PSP-owned block.
 KNOWN_RTL_EXTERNAL_POINTERS = (
     ("external_a", (
         (0x2814, 0x000a), (0x2852, 0x0032), (0x2890, 0x0032),
@@ -557,6 +558,58 @@ def runtime_mcb_owners(captures, runtime_ds, image_load, *, first_mcb=None):
             "snapshots": reports}
 
 
+def runtime_pointer_sources(exe, rtl, captures, runtime_ds, *, minimum=64):
+    """Compare real FAR-pointer targets with original EXE/RTL file content.
+
+    Each table segment is obtained from the live DS and checked against all
+    originally observed offsets. This does not assume a separate allocation
+    or that an exact source copy exists: executable code may be relocated,
+    unpacked, generated, or overwritten by the time of the first capture.
+    """
+    if runtime_ds is None or runtime_ds * 16 + RTL_DATA_IMAGE_END > RAM_SIZE:
+        raise ValueError("runtime data segment outside conventional RAM")
+    index = source_window_index(exe, rtl)
+    first_windows = {}
+    samples = []
+    for milliseconds, _, ram in captures:
+        if milliseconds < 100:
+            continue
+        entries_report = []
+        for name, entries in KNOWN_RTL_EXTERNAL_POINTERS:
+            address = runtime_ds * 16
+            segments = {word(ram, address + site + 2) for site, _ in entries}
+            offsets_match = all(word(ram, address + site) == offset
+                                for site, offset in entries)
+            segment = next(iter(segments)) if len(segments) == 1 else None
+            if not offsets_match or segment in (None, 0):
+                entries_report.append({"name": name, "initialized": False,
+                                       "observed_segments": sorted(segments),
+                                       "offsets_match": offsets_match})
+                continue
+            # Include bytes beyond the last pointer, without assuming that
+            # the whole 64KiB target segment is owned by that one table.
+            size = max(0x600, max(offset for _, offset in entries) + 0x200)
+            start = segment * 16
+            if start + size > RAM_SIZE:
+                raise ValueError("FAR target %s exceeds conventional RAM" % name)
+            window = ram[start:start + size]
+            first_windows.setdefault((name, segment), window)
+            matches = exact_source_copies(window, index, minimum=minimum)
+            entries_report.append({
+                "name": name, "initialized": True, "segment": segment,
+                "window_bytes": size, "nonzero_bytes": size - window.count(0),
+                "changed_from_first": sum(a != b for a, b in
+                                          zip(first_windows[name, segment], window)),
+                "exact_file_copies": [{"source": entry["source"],
+                                       "file_offset": entry["source_file_offset"],
+                                       "target_offset": entry["runtime_ds_offset"],
+                                       "length": entry["length"]}
+                                      for entry in matches],
+            })
+        samples.append({"milliseconds": milliseconds, "tables": entries_report})
+    return {"minimum_exact_run": minimum, "snapshots": samples}
+
+
 def runtime_data_layout(exe, rtl, captures, segment, *, minimum=DATA_MATCH_MINIMUM):
     """Report EXE/RTL exact matches and zero spans in the *eventual* DS.
 
@@ -960,6 +1013,8 @@ def main():
                         help="inspect early RTL preimage changes after staged pointer fixes")
     parser.add_argument("--runtime-mcb-owners", action="store_true",
                         help="walk DOS MCBs to identify owners of the two external pointer tables")
+    parser.add_argument("--runtime-pointer-sources", action="store_true",
+                        help="compare the FAR-pointer target windows to original EXE/RTL bytes")
     parser.add_argument("--mcb-start", type=lambda value: int(value, 0),
                         help="first known MCB segment (default: initial PSP minus one paragraph)")
     args = parser.parse_args()
@@ -984,6 +1039,9 @@ def main():
                 captures, report["observed_runtime_data_segment"],
                 report["original_exe"]["image_load_segment"],
                 first_mcb=args.mcb_start)
+        if args.runtime_pointer_sources:
+            report["runtime_pointer_sources"] = runtime_pointer_sources(
+                exe, rtl, captures, report["observed_runtime_data_segment"])
     except (ValueError, OSError) as error:
         parser.error(str(error))
     if args.json:
@@ -1112,7 +1170,7 @@ def main():
                 remaining["remaining_changed_bytes"]))
             for entry in remaining["observed_external_tables"]:
                 print("  %s: %d FAR pointers, observed segment=%04x "
-                      "(caller must identify allocation)" % (
+                      "(caller must identify image placement)" % (
                       entry["name"], entry["pointer_count"],
                       entry["observed_segment"]))
             print("  remainder classes: %d zero->nonzero, %d nonzero->zero, "
@@ -1182,6 +1240,34 @@ def main():
                           "paragraphs=%04x delta=%04x" % (
                               owner["data_segment"], owner["owner_psp"],
                               owner["paragraphs"], owner["segment_delta"]))
+        if args.runtime_pointer_sources:
+            sources = report["runtime_pointer_sources"]
+            print("EXE/RTL source matches in live FAR target windows "
+                  "(exact runs >=%d bytes, not proof of code origin):" %
+                  sources["minimum_exact_run"])
+            for sample in sources["snapshots"]:
+                print(" %4dms:" % sample["milliseconds"])
+                for entry in sample["tables"]:
+                    if not entry["initialized"]:
+                        print("       %s: table not consistently initialized "
+                              "(offsets_match=%s, segments=%s)" % (
+                                  entry["name"], entry["offsets_match"],
+                                  ",".join("%04x" % seg for seg in
+                                           entry["observed_segments"])))
+                        continue
+                    print("       %s at %04x:0000 +%04x: %d nonzero, "
+                          "%d bytes changed since first sample; %d source copies" % (
+                              entry["name"], entry["segment"], entry["window_bytes"],
+                              entry["nonzero_bytes"], entry["changed_from_first"],
+                              len(entry["exact_file_copies"])))
+                    for match in entry["exact_file_copies"][:8]:
+                        print("         %s:%05x -> %04x:%04x +%d bytes" % (
+                            match["source"], match["file_offset"],
+                            entry["segment"], match["target_offset"],
+                            match["length"]))
+                    if len(entry["exact_file_copies"]) > 8:
+                        print("         ... %d more (use --json for all)" %
+                              (len(entry["exact_file_copies"]) - 8))
 
 
 if __name__ == "__main__":

@@ -9,9 +9,10 @@
  * The second routine stages only the *unmodified RTL preimage*: the
  * mismatched 260 bytes at 100ms are partly reconstructed: 27 source-zero
  * segment words, 24 independently observed offset words, and two externally
- * segmented FAR-pointer tables below. The external tables require segment
- * values from actual caller-owned allocations; the original observations
- * cannot establish those allocations. No original data is embedded.
+ * segmented FAR-pointer tables below. Original DOS MCB captures establish
+ * that both targets lie INSIDE the existing PSP-owned program block, not in
+ * separately allocated DOS blocks. The caller must supply their actual
+ * segment placement in the rebuilt program layout. No game data is embedded.
  * The file-copy routines require
  * caller-owned segment windows and file handles; none of these routines
  * loads resident banks, creates BSS or implements DOS launcher main().
@@ -203,9 +204,11 @@ typedef struct GateIntroExternalPtr {
  * eight entries at DS:2814 (stride 003eh) and eleven at DS:2a93 (stride
  * 0014h). All 76 source bytes are zero in the pinned RTL preimage. The
  * first table's observed segment was 252ch; the second's was 25d7h.
- * Those are original-run addresses, NOT portable segments. We stage only
- * the observed offsets; the caller must provide each actual allocated
- * target segment independently. No assumption is made about its origin.
+ * Those are original-run addresses, NOT portable segments. Both reside in
+ * the original PSP's allocation (offsets 153ch and 15e7h paragraphs past
+ * PSP=0ff0); the PSP block shrinks to 2a8ah paragraphs at 350ms. We stage
+ * only observed pointer offsets; the caller must provide the corresponding
+ * actual program-image segments. No allocation inference is made here.
  */
 static const GateIntroExternalPtr gate_rtl_external_a[] = {
     {0x2814u, 0x000au}, {0x2852u, 0x0032u},
@@ -225,8 +228,8 @@ static const GateIntroExternalPtr gate_rtl_external_b[] = {
 
 /* -1 invalid DS binding/allocation/target segment; -2 unexpected source
  * (ALL sites checked before writing). Must run on an untouched, copied
- * RTL preimage. The caller must separately allocate/identify both target
- * segments; this routine neither allocates them nor verifies their data.
+ * RTL preimage. The caller must identify both target image segments;
+ * this routine neither allocates memory nor verifies their contents.
  */
 int gate_dos_fix_intro_rtl_external(uint16_t lower_segment, uint16_t paragraphs,
                                     uint16_t first_segment, uint16_t second_segment)

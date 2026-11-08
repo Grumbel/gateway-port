@@ -430,8 +430,9 @@ by `0x0f92`, eight by `0x14e0`, and five resident-code pointer offsets
 set to `0x0c02`. `gate_dos_fix_intro_rtl_offs` now stages those too, with
 an all-sites source preflight. The next genuine remainder report isolated
 19 more FAR pointers in two regular tables (eight and eleven entries).
-Their source fields are all zero, but their target segments must come from
-two as-yet-unidentified allocations. The
+Their source fields are all zero. The original MCB trace now proves that
+their observed target segments lie **inside the original PSP-owned program
+block**, not in separate DOS allocations. The
 `gate_dos_fix_intro_rtl_external(lower, paras, first_seg, second_seg)`
 helper now accepts these segments from its caller, with all-site source
 preflight; it never hardcodes the original-run `252c` and `25d7` values.
@@ -470,9 +471,9 @@ samples, byte-change frequencies, and repeated 16-bit transformations.
 Use `--json` for complete, untruncated clusters. Neither repeated words
 nor stable changes are automatically classified as relocations.
 
-For the two external FAR-pointer tables, determine whether their observed
-segments `252c` and `25d7` are separate DOS allocations or addresses
-inside larger blocks. This optional diagnostic reads serialized MCBs
+For the two FAR-pointer tables, inspect the original DOS block ownership
+instead of assuming the observed segments begin allocations. This optional
+diagnostic reads serialized MCBs
 from the existing original startup RAM snapshots (it does not modify
 them or infer ownership from arbitrary M/Z bytes):
 
@@ -489,7 +490,33 @@ It begins at the DOS MCB immediately preceding the observed initial PSP
 and start offset for the external pointer targets and the eventual runtime
 data segment. An incomplete chain is reported as such; `--mcb-start 0xSEG`
 allows a separately verified first MCB. This establishes which blocks
-were present, not the original `_dos_allocmem` call sequence.
+were present, not the original `_dos_allocmem` call sequence. The original
+100–250ms captures show a **single** `0ff0`-owned block of `9010h`
+paragraphs. At 350ms that PSP block has shrunk to `2a8ah` paragraphs,
+ending at paragraph `3a7ah`, exactly 64KiB beyond the eventual data
+segment's base `2a7ah`. The two pointers refer to segments `PSP+153ch` and `PSP+15e7h`;
+the eventual DS is `PSP+1a8ah`. All three are subsegments of the same
+original process block both before and after the resize. Later additional
+MCBs do not change that ownership. The replacement launcher must supply
+its actual in-image target segments when staging these pointers.
+
+The next check asks what **bytes** occupy the two targets. It reads a
+bounded window around each original FAR-pointer table's target offsets,
+compares it to nontrivial exact byte runs from the original EXE and RTL,
+and reports modifications between captures:
+
+```sh
+python3 tools/inspect_msc51_startup.py \
+  --exe ../gateway-dos/GATE.EXE --rtl ../gateway-dos/GATE.RTL \
+  --snapshot-dir build/msc51-startup \
+  --snapshot-dir build/msc51-startup-fine \
+  --runtime-pointer-sources
+```
+
+This is read-only. Matches require at least 64 identical bytes at a unique
+source location. Missing matches do **not** imply uninitialized memory:
+the original loader may have relocated, decompressed or overwritten code.
+Use `--json` for every reported match, not just the first eight per table.
 
 The user's follow-up Microsoft LINK run consumed `MEMORY.OBJ` and reduced
 the unresolved-symbol count **from 108 to 100**, exactly removing those

@@ -778,6 +778,50 @@ python3 tools/inspect_msc51_startup.py \
   --runtime-mcb-owners
 ```
 
+**Original DOS MCB result (subsequently supplied):** At 100, 125, 175
+and 250ms, the complete MCB chain has **one** block (terminal `Z`):
+PSP `0ff0`, owner `0ff0`, size `9010h` paragraphs. At 350 and 450ms
+the same owner block is `2a8ah` paragraphs long, with one further MCB;
+at 500ms there are three MCBs and at 1500ms four. In every settled
+sample, both pointer targets and the eventual DS belong to the **same
+original process block**. The addresses are interior segments, not starts
+of independently allocated blocks:
+
+| Use | Observed segment | Paragraphs after PSP `0ff0` |
+| --- | --- | --- |
+| First FAR-pointer table (`external_a`) | `252c` | `153c` |
+| Second FAR-pointer table (`external_b`) | `25d7` | `15e7` |
+| Eventual runtime DS | `2a7a` | `1a8a` |
+
+After the shrink, the PSP block ends at paragraph `3a7a`, exactly
+`1000h` paragraphs (64KiB) after the eventual runtime DS base. The
+later MCBs do not own these pointers. This **corrects** the earlier
+unresolved separate-allocation hypothesis: the segment values describe
+positions inside Gateway's original process image. The C89 helper still
+takes target segments as caller parameters, because an independently
+linked replacement executable must resolve its *own* layout; it should
+not use `252c` or `25d7` as constants or allocate two new DOS blocks.
+
+**Next bounded provenance probe:** `--runtime-pointer-sources` separately
+reads each observed FAR-pointer target segment at each settled original
+RAM capture. It first verifies all original table offsets and a common
+nonzero target segment per table, then compares at least `600h` bytes
+around the target offsets with nontrivial, unambiguous 64-byte-or-longer
+copies from the original EXE/RTL. It also reports nonzero bytes and
+changes since that segment's first observed sample. Thus the next user
+run can distinguish unchanged original-file copies from modified or
+synthetically produced memory, without guessing new DOS allocations.
+The absence of a long exact run does not establish that bytes are BSS,
+or that the referenced routines were not in the original executable.
+
+```sh
+python3 tools/inspect_msc51_startup.py \
+  --exe ../gateway-dos/GATE.EXE --rtl ../gateway-dos/GATE.RTL \
+  --snapshot-dir build/msc51-startup \
+  --snapshot-dir build/msc51-startup-fine \
+  --runtime-pointer-sources
+```
+
 **Microsoft C 5.1 build correction:** The first user-side `DATA.BAT` run
 compiled `DATA.C` but stopped with `DATACHK.C(22): C2073` (an initialized
 automatic `char name[]`), so **neither test executable ran**. Both test
