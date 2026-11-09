@@ -315,14 +315,14 @@ except Exception:
                     '=========================' \
                     "Source: $GATEWAY_SOURCE" \
                     "Build:  $GATEWAY_BUILD_DIR (Debug by default)" \
-                    '' \
+                    "" \
                     'Build and run (SDL3 + Unicorn)' \
                     '  gateway-configure                 Configure CMake/Ninja' \
                     '  gateway-build                     Build the project' \
                     '  ctest --test-dir "$GATEWAY_BUILD_DIR" --output-on-failure' \
                     '  gateway-run ../gateway-dos/GATE.EXE' \
                     '  gateway-run-gdb ../gateway-dos/GATE.EXE' \
-                    '' \
+                    "" \
                     'Source-C intro development' \
                     '  gateway-intro-source-c-live --from-original ../gateway-dos' \
                     '  gateway-intro-source-c-full ../gateway-dos      Silent replay' \
@@ -330,21 +330,21 @@ except Exception:
                     '  gateway-intro-source-c-picture-dump SNAPSHOT DOS-DIR OUT.ppm' \
                     '  gateway-intro-source-c-captions SNAPSHOT DOS-DIR' \
                     '  gateway-intro-source-c-replay FILE.gvr' \
-                    '' \
+                    "" \
                     'Emulation diagnostics and captures' \
                     '  gateway-probe ../gateway-dos/GATE.EXE --headless --milliseconds 15000' \
                     '  gateway-intro ../gateway-dos' \
                     '  gateway-intro-dump ../gateway-dos --ms 22000 OUT.ppm' \
-                    '' \
+                    "" \
                     'Specialized tools' \
                     '  gateway-msc51 --help             DOS compiler, probes and link audit' \
                     '  nix develop .#msc51              Compiler + DOSBox Staging shell' \
                     '  nix develop .#ghidra             Ghidra + PyGhidra shell' \
-                    '' \
+                    "" \
                     'Debugging: gateway-run-gdb; Ctrl-C then bt / continue.' \
                     'Unicorn guest registers are not native GDB registers.' \
                     'See README.md for commands and required original assets.' \
-                    ''
+                    ""
                   ;;
               esac
             '';
@@ -369,7 +369,7 @@ except Exception:
                     '  gateway-decompile-intro GATE.EXE GATE.RTL --snapshot RAM.bin --output DIR' \
                     '  gateway-decompile-intro --help' \
                     '  See docs/intro-ghidra.md for the snapshot workflow.' \
-                    ''
+                    ""
                   ;;
               esac
             '';
@@ -391,7 +391,7 @@ except Exception:
                     '  gateway-msc51 link-launcher       Link GATEWAY.EXE after prerequisite probes' \
                     '  gateway-msc51 test-dos-entry --original-game-dir ../gateway-dos' \
                     '  nix run .#gateway-dos -- ../gateway-dos /INTRO' \
-                    ''
+                    ""
                   ;;
               esac
             '';

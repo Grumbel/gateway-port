@@ -57,6 +57,16 @@ class FlakeLayoutTests(unittest.TestCase):
                         "Emulation diagnostics and captures", "Specialized tools"):
             self.assertIn(heading, shell)
 
+    def test_welcome_text_does_not_end_nix_multiline_strings(self):
+        # Inside a Nix indented string, two consecutive single quotes are
+        # a Nix delimiter, not an empty Bash argument.  Use "" for blank
+        # lines in the shellHook's printf argument list instead.
+        shell = FLAKE.split("      devShells = eachSystem", 1)[1]
+        self.assertNotRegex(shell, r"(?m)^[ \t]*''[ \t]*\\[ \t]*$")
+        self.assertNotRegex(shell, r"(?m)^[ \t]*''[ \t]*$")
+        self.assertIn('"" \\\n                    \'Build and run', shell)
+        self.assertIn('""\n                  ;;', shell)
+
     def test_launcher_shell_syntax(self):
         for filename in ("gateway_dos.sh", "gateway_intro_source_c_full.sh"):
             result = subprocess.run(["bash", "-n", str(REPO / "tools" / filename)],
