@@ -16,6 +16,11 @@ typedef struct GateDosBootConfig {
     GateFarPtr return_callback;
     uint16_t external_a_segment;
     uint16_t external_b_segment;
+    /* Zero: verify original RTL:4bc9 IRET/RETF instruction context (probes).
+     * One: the caller has executed and verified a compiled FAR C return
+     * callback, for a wholly source-C intro that never runs the RTL bank.
+     * Other values are invalid. */
+    uint16_t source_c_return;
 } GateDosBootConfig;
 
 /* Two independent DOS allocations. This is NOT the original RTLink MCB

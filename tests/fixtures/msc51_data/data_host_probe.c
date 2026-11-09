@@ -19,6 +19,8 @@ int gate_dos_fix_intro_rtl_startup_words(uint16_t lower_segment, uint16_t paragr
 int gate_dos_fix_intro_early_bytes(uint16_t lower_segment, uint16_t paragraphs);
 int gate_dos_fix_intro_return_pointer(uint16_t lower_segment,
                                       uint16_t paragraphs, GateFarPtr target);
+int gate_dos_fix_intro_source_return(uint16_t lower_segment,
+                                     uint16_t paragraphs, GateFarPtr target);
 int gate_dos_prepare_intro_data(uint16_t exe_handle, uint16_t rtl_handle,
                                 uint16_t lower_segment, uint16_t paragraphs,
                                 uint16_t resident_segment,
@@ -250,6 +252,20 @@ int main(void)
         gate_ds_word(0x049du) != callback.offset ||
         gate_ds_word(0x049fu) != callback.segment)
         abort();
+    /* A code pointer with different compiler-emitted context is rejected by
+     * the original-byte oracle, but the explicitly opted-in source-C path
+     * installs its address once. A duplicate installation is forbidden. */
+    gate_ds_set_word(0x049du, 0u);
+    gate_ds_set_word(0x049fu, 0u);
+    callback.offset = 0x6100u;
+    if (gate_dos_fix_intro_return_pointer(0x2000u, 0x100au, callback) != -2 ||
+        gate_dos_fix_intro_source_return(0x2000u, 0x1009u, callback) != -1 ||
+        gate_dos_fix_intro_source_return(0x2000u, 0x100au, callback) != 0 ||
+        gate_dos_fix_intro_source_return(0x2000u, 0x100au, callback) != -2 ||
+        gate_ds_word(0x049du) != callback.offset ||
+        gate_ds_word(0x049fu) != callback.segment)
+        abort();
+    gate_ds_set_word(0x049du, 0x6001u);
     gate_ds_set_word(0x0525u, 0u);
     gate_ds_set_word(0x26d6u, 0u);
     gate_ds_set_word(0x2b74u, 0u);

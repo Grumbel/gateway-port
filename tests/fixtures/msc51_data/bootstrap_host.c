@@ -107,6 +107,16 @@ int gate_dos_prepare_intro_data(uint16_t exe_handle, uint16_t rtl_handle,
     return fail_at == 7 ? -4 : 0;
 }
 
+int gate_dos_prepare_intro_data_source(uint16_t exe_handle, uint16_t rtl_handle,
+       uint16_t lower_segment, uint16_t paragraphs,
+       uint16_t resident_segment, uint16_t external_a_segment,
+       uint16_t external_b_segment, GateFarPtr return_callback)
+{
+    return gate_dos_prepare_intro_data(exe_handle, rtl_handle, lower_segment,
+              paragraphs, resident_segment, external_a_segment,
+              external_b_segment, return_callback);
+}
+
 uint32_t gate_dos_intro_data_crc32(uint16_t segment, uint16_t paragraphs)
 {
     ++data_crcs;
@@ -123,6 +133,7 @@ static GateDosBootConfig config(void)
     c.return_callback.segment = 0x8888u; c.return_callback.offset = 0x5678u;
     c.external_a_segment = 0x5555u;
     c.external_b_segment = 0x6666u;
+    c.source_c_return = 0u;
     return c;
 }
 
@@ -167,6 +178,10 @@ int main(void)
     c = config();
     c.exe_callback.segment = 0u;
     image.lower_segment = image.resident_segment = 0u;
+    require(gate_dos_boot_prepare(&c, &image) == -1);
+    require(alloc_attempts == 0 && opens == 0);
+    c = config();
+    c.source_c_return = 2u;
     require(gate_dos_boot_prepare(&c, &image) == -1);
     require(alloc_attempts == 0 && opens == 0);
     puts("DOS intro owner: 11 allocation/file/CRC outcomes and invalid callback PASS");

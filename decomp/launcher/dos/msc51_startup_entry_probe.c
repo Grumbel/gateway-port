@@ -104,6 +104,7 @@ int main(void)
     }
     config.external_a_segment = 0x3333u;
     config.external_b_segment = 0x4444u;
+    config.source_c_return = 0u;
     status = gate_dos_boot_prepare(&config, &image);
     if (status != 0) {
         printf("DOS intro C entry prologue: FAIL image status=%d\n", status);

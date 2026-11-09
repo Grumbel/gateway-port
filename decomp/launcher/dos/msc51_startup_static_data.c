@@ -1542,27 +1542,50 @@ int gate_dos_fix_intro_early_bytes(uint16_t lower_segment, uint16_t paragraphs)
  * code address; original runtime 17ec:013f is not a portable constant.
  * Refuse a missing/incorrect bank or a previously initialized pointer.
  * -1 invalid layout/target, -2 wrong code or nonzero source pointer. */
-int gate_dos_fix_intro_return_pointer(uint16_t lower_segment,
-                                      uint16_t paragraphs, GateFarPtr target)
+static int gate_dos_fix_intro_return_pointer_impl(uint16_t lower_segment,
+                         uint16_t paragraphs, GateFarPtr target,
+                         uint16_t source_c_return)
 {
     if (lower_segment == 0u || lower_segment > 0xfff5u ||
         paragraphs < GATE_DATA_MIN_PARAS ||
         gate_ds_segment() != (uint16_t)(lower_segment + 0x000au) ||
         target.segment == 0u || target.offset == 0u || target.offset > 0xffdeu)
         return -1;
-    if (gate_ds_word(0x049du) != 0u || gate_ds_word(0x049fu) != 0u ||
-        gate_far_byte(target.segment, (uint16_t)(target.offset - 1u)) != 0xcfu ||
-        gate_far_byte(target.segment, target.offset) != 0xcbu ||
-        gate_far_byte(target.segment, (uint16_t)(target.offset + 1u)) != 0x8bu ||
-        gate_far_byte(target.segment, (uint16_t)(target.offset + 0x1du)) != 0xfau ||
-        gate_far_byte(target.segment, (uint16_t)(target.offset + 0x1eu)) != 0x8bu ||
-        gate_far_byte(target.segment, (uint16_t)(target.offset + 0x1fu)) != 0x46u ||
-        gate_far_byte(target.segment, (uint16_t)(target.offset + 0x20u)) != 0x06u ||
-        gate_far_byte(target.segment, (uint16_t)(target.offset + 0x21u)) != 0xa3u)
+    if (source_c_return > 1u || gate_ds_word(0x049du) != 0u ||
+        gate_ds_word(0x049fu) != 0u)
+        return -2;
+    if (!source_c_return &&
+        (gate_far_byte(target.segment, (uint16_t)(target.offset - 1u)) != 0xcfu ||
+         gate_far_byte(target.segment, target.offset) != 0xcbu ||
+         gate_far_byte(target.segment, (uint16_t)(target.offset + 1u)) != 0x8bu ||
+         gate_far_byte(target.segment, (uint16_t)(target.offset + 0x1du)) != 0xfau ||
+         gate_far_byte(target.segment, (uint16_t)(target.offset + 0x1eu)) != 0x8bu ||
+         gate_far_byte(target.segment, (uint16_t)(target.offset + 0x1fu)) != 0x46u ||
+         gate_far_byte(target.segment, (uint16_t)(target.offset + 0x20u)) != 0x06u ||
+         gate_far_byte(target.segment, (uint16_t)(target.offset + 0x21u)) != 0xa3u))
         return -2;
     gate_ds_set_word(0x049du, target.offset);
     gate_ds_set_word(0x049fu, target.segment);
     return 0;
+}
+
+int gate_dos_fix_intro_return_pointer(uint16_t lower_segment,
+                                      uint16_t paragraphs, GateFarPtr target)
+{
+    return gate_dos_fix_intro_return_pointer_impl(lower_segment, paragraphs,
+                                                   target, 0u);
+}
+
+/* The rebuilt DOS entry supplies a *real callable* FAR C return function.
+ * Unlike the original RTL:4bc9 context, its compiler-generated surrounding
+ * instructions differ. The caller must verify the FAR ABI by invoking that
+ * function before passing its code pointer here. Never use this path for a
+ * copied, nonexecuted test buffer or for dispatch into original RTL code. */
+int gate_dos_fix_intro_source_return(uint16_t lower_segment,
+                                     uint16_t paragraphs, GateFarPtr target)
+{
+    return gate_dos_fix_intro_return_pointer_impl(lower_segment, paragraphs,
+                                                   target, 1u);
 }
 
 typedef struct GateIntroExternalPtr {
@@ -1644,12 +1667,13 @@ int gate_dos_fix_intro_rtl_external(uint16_t lower_segment, uint16_t paragraphs,
  * actual initialization mechanism and resident driver/interrupt setup
  * remain unknown.
  * Return 0 success, -1 bad layout, -2..-11 failure at the indicated step. */
-int gate_dos_prepare_intro_data(uint16_t exe_handle, uint16_t rtl_handle,
+static int gate_dos_prepare_intro_data_impl(uint16_t exe_handle, uint16_t rtl_handle,
                                 uint16_t lower_segment, uint16_t paragraphs,
                                 uint16_t resident_segment,
                                 uint16_t external_a_segment,
                                 uint16_t external_b_segment,
-                                GateFarPtr return_callback)
+                                GateFarPtr return_callback,
+                                uint16_t source_c_return)
 {
     extern int gate_dos_bind_intro_aliases(uint16_t, uint16_t);
     if (lower_segment == 0u || lower_segment > 0xfff5u ||
@@ -1676,12 +1700,37 @@ int gate_dos_prepare_intro_data(uint16_t exe_handle, uint16_t rtl_handle,
                                         external_a_segment,
                                         external_b_segment) != 0)
         return -9;
-    if (gate_dos_fix_intro_return_pointer(lower_segment, paragraphs,
-                                          return_callback) != 0)
+    if ((source_c_return ?
+         gate_dos_fix_intro_source_return(lower_segment, paragraphs, return_callback) :
+         gate_dos_fix_intro_return_pointer(lower_segment, paragraphs, return_callback)) != 0)
         return -10;
     if (gate_dos_fix_intro_early_bytes(lower_segment, paragraphs) != 0)
         return -11;
     return 0;
+}
+
+int gate_dos_prepare_intro_data(uint16_t exe_handle, uint16_t rtl_handle,
+                                uint16_t lower_segment, uint16_t paragraphs,
+                                uint16_t resident_segment,
+                                uint16_t external_a_segment,
+                                uint16_t external_b_segment,
+                                GateFarPtr return_callback)
+{
+    return gate_dos_prepare_intro_data_impl(exe_handle, rtl_handle,
+             lower_segment, paragraphs, resident_segment, external_a_segment,
+             external_b_segment, return_callback, 0u);
+}
+
+int gate_dos_prepare_intro_data_source(uint16_t exe_handle, uint16_t rtl_handle,
+                                uint16_t lower_segment, uint16_t paragraphs,
+                                uint16_t resident_segment,
+                                uint16_t external_a_segment,
+                                uint16_t external_b_segment,
+                                GateFarPtr return_callback)
+{
+    return gate_dos_prepare_intro_data_impl(exe_handle, rtl_handle,
+             lower_segment, paragraphs, resident_segment, external_a_segment,
+             external_b_segment, return_callback, 1u);
 }
 
 /* All 19,690 bytes of the prepared data image DS:0000..4ce9 match the

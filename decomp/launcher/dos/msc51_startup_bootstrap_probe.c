@@ -33,6 +33,7 @@ int main(void)
      * checksums normalize them; the real DOS main needs actual bindings. */
     config.external_a_segment = 0x3333u;
     config.external_b_segment = 0x4444u;
+    config.source_c_return = 0u;
     status = gate_dos_boot_prepare(&config, &image);
     if (status == 0)
         gate_dos_boot_release(&image);

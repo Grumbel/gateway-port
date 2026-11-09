@@ -253,7 +253,7 @@ MEMORY_SOURCES = ("GATEMEM.H", "STDINT.H", "MEMORY.C", "MEMCHK.C")
 SELECTOR_SOURCES = ("GATEMEM.H", "STDINT.H", "SEL.C", "SELCHK.C", "MEMORY.C")
 STATIC_DATA_SOURCES = ("GATEMEM.H", "GATEDOS.H", "STDINT.H", "DATA.C",
                        "DATACHK.C", "DATAREAL.C", "BOOT.H", "BOOTCB.H", "BOOT.C",
-                       "BOOTCHK.C", "BOOTPREP.C", "BOOTVGA.C", "BPREP.RSP",
+                       "BOOTCHK.C", "BOOTPREP.C", "BOOTVGA.C", "MAIN.C", "BPREP.RSP",
                        "BVID.RSP", "DATNAMES.H", "HEAP.C", "SEL.C", "MEMORY.C",
                        "DOSFILE.C", "RTLLAY.H", "RTLHW.C", "RESSTATE.C")
 DOS_FILE_SOURCES = ("GATEDOS.H", "GATEMEM.H", "STDINT.H", "DOSFILE.C", "FILECHK.C",
@@ -595,7 +595,8 @@ def stage_launcher(output: Path) -> list[str]:
                        ("msc51_startup_bootstrap.c", "BOOT.C"),
                        ("msc51_startup_bootstrap_probe.c", "BOOTCHK.C"),
                        ("msc51_startup_entry_probe.c", "BOOTPREP.C"),
-                       ("msc51_startup_video_probe.c", "BOOTVGA.C"))
+                       ("msc51_startup_video_probe.c", "BOOTVGA.C"),
+                       ("msc51_intro_entry.c", "MAIN.C"))
     startup_contents = [(staged, (source_dir / "dos" / original).read_text())
                         for original, staged in startup_sources]
     # MSC 5.1 compares only 31 identifier characters. The resident
@@ -606,7 +607,13 @@ def stage_launcher(output: Path) -> list[str]:
     # fixtures call the *same* shortened exports with GCC.
     startup_names = msc51_short_names([contents for _, contents in startup_contents])
     for staged, contents in startup_contents:
-        (output / staged).write_text(msc51_rename_identifiers(contents, startup_names))
+        # MAIN.C calls both standalone DOS startup and 28 original launcher
+        # modules. It must share the identifiers selected for both groups.
+        if staged == "MAIN.C":
+            contents = contents.replace('"gate_intro_schedule.h"',
+                                        f'"{aliases["gate_intro_schedule.h"]}"')
+        identifiers = {**startup_names, **shortened} if staged == "MAIN.C" else startup_names
+        (output / staged).write_text(msc51_rename_identifiers(contents, identifiers))
     (output / "DATNAMES.H").write_text(
         "/* Host-test aliases for the staged Microsoft C startup symbols. */\n"
         + "".join(f"#define {name} {alias}\n"
@@ -697,6 +704,8 @@ def stage_launcher(output: Path) -> list[str]:
         "IF NOT EXIST BOOTVGA.EXE GOTO FAILED",
         "IF EXIST E:\\GATE.RTL BOOTVGA.EXE > BVIDREAL.LOG",
         "IF ERRORLEVEL 1 GOTO FAILED",
+        "CL /AL /Od /c MAIN.C >> DATBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        "IF NOT EXIST MAIN.OBJ GOTO FAILED",
         f"ECHO {data_signature} > DATSIG.LOG",
         "ECHO DOS static EXE data copy probe passed > DATOK.LOG",
         "GOTO DONE", ":FAILED", "ECHO DOS static EXE data copy probe failed > DATFAIL.LOG",
@@ -1071,7 +1080,8 @@ def stage_launcher(output: Path) -> list[str]:
                 "RTLIMG.OBJ+", "RTLTEXT.OBJ+", "RTLPAL.OBJ+", "RTLGR.OBJ+",
                 "RTLHW.OBJ+", "RTFILE.OBJ+", "RESSTATE.OBJ+", "HEAP.OBJ+", "CTRL.OBJ+",
                 "BREAK.OBJ+", "BREXIT.OBJ+",
-                "INP.OBJ+", "CLOCK.OBJ+", "CRTENV.OBJ+", "PICTDCL.OBJ",
+                "INP.OBJ+", "CLOCK.OBJ+", "CRTENV.OBJ+", "PICTDCL.OBJ+",
+                "MAIN.OBJ+", "BOOT.OBJ+", "DATA.OBJ+", "SEL.OBJ",
                 "GATEWAY.EXE", "GATEWAY.MAP", "LLIBCR.LIB LIBH.LIB /NOD", ";"])
     (output / "LINK.RSP").write_text("\r\n".join(response) + "\r\n")
     link_batch = [
@@ -1088,6 +1098,18 @@ def stage_launcher(output: Path) -> list[str]:
         ":DONE", "EXIT",
     ]
     (output / "LINK.BAT").write_text("\r\n".join(link_batch) + "\r\n")
+    entry_batch = [
+        "@ECHO OFF", "E:",
+        "D:\\GATEWAY.EXE /CHECK > D:\\ENTRY.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED",
+        "D:\\GATEWAY.EXE /PICTURE > D:\\PICTURE.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED",
+        "ECHO Gateway source-C DOS entry passed > D:\\ENTRYOK.LOG",
+        "GOTO DONE", ":FAILED",
+        "ECHO Gateway source-C DOS entry failed > D:\\ENTRYFAIL.LOG",
+        ":DONE", "EXIT",
+    ]
+    (output / "ENTRY.BAT").write_text("\r\n".join(entry_batch) + "\r\n")
     return objects
 
 
@@ -1141,6 +1163,7 @@ def validate_link_prerequisites(output: Path, objects: list[str]) -> None:
         ("msc51-compile-input", lambda: validate_input_adapter(output)),
         ("msc51-compile-clock", lambda: validate_clock_adapter(output)),
         ("msc51-compile-crt", lambda: validate_crt_adapter(output)),
+        ("msc51-compile-data", lambda: validate_static_data_probe(output)),
     )
     failures = []
     for command, validate in validations:
@@ -1218,12 +1241,13 @@ def print_selector_diagnostics(output: Path) -> None:
 
 
 def validate_static_data_probe(output: Path, *, require_original: bool = False) -> None:
-    if (any(locate_case_insensitive(output, name) is None
-            for name in ("DATA.OBJ", "DATACHK.EXE", "DATAREAL.EXE", "DATSTART.LOG",
-                         "BOOTPREP.EXE", "DATOK.LOG", "DATTEST.LOG")) or
-            locate_case_insensitive(output, "DATFAIL.LOG") is not None):
-        raise ValueError("DOS static EXE data copy probe failed. "
-                         "Run msc51-compile-data again.")
+    required = ("DATA.OBJ", "MAIN.OBJ", "DATACHK.EXE", "DATAREAL.EXE",
+                "DATSTART.LOG", "BOOTPREP.EXE", "DATOK.LOG", "DATTEST.LOG")
+    missing = [name for name in required if locate_case_insensitive(output, name) is None]
+    if missing or locate_case_insensitive(output, "DATFAIL.LOG") is not None:
+        raise ValueError("DOS static EXE data copy probe failed"
+                         + (f" (missing: {', '.join(missing)})" if missing else " (failure marker)")
+                         + ". Run msc51-compile-data again.")
     signature = locate_case_insensitive(output, "DATSIG.LOG")
     if signature is None or signature.read_text().strip() != static_data_source_signature(output):
         raise ValueError("DOS static data source changed since its test. "
@@ -1284,7 +1308,7 @@ def validate_static_data_probe(output: Path, *, require_original: bool = False) 
 
 
 def remove_static_data_outputs(output: Path) -> None:
-    names = {"DATA.OBJ", "DATACHK.OBJ", "DATACHK.EXE", "DATAREAL.OBJ",
+    names = {"DATA.OBJ", "MAIN.OBJ", "DATACHK.OBJ", "DATACHK.EXE", "DATAREAL.OBJ",
              "DATAREAL.EXE", "DATREAL.LOG", "DATSTART.LOG",
              "BOOT.OBJ", "BOOTCHK.OBJ", "BOOTCHK.EXE", "BOOTREAL.LOG",
              "BOOTPREP.OBJ", "BOOTPREP.EXE", "BPREAL.LOG",
@@ -1871,7 +1895,7 @@ def main(argv: list[str] | None = None) -> int:
                                             "compile-input",
                                             "compile-clock",
                                             "compile-crt",
-                                            "link-launcher"))
+                                            "link-launcher", "test-dos-entry"))
     parser.add_argument("--compiler", default=os.environ.get("GATEWAY_MSC51_DIR"),
                         help="installed Microsoft C 5.1 directory (or GATEWAY_MSC51_DIR)")
     parser.add_argument("--output", type=Path,
@@ -1889,12 +1913,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--floppy", type=Path, action="append", default=[],
                         help="one original floppy image, repeat in original disk order")
     parser.add_argument("--original-game-dir", type=Path,
-                        help="compile-data only: verify pinned GATE.EXE/GATE.RTL mounted read-only as E")
+                        help="compile-data/test-dos-entry: verify pinned GATE.EXE/GATE.RTL mounted read-only as E")
     args = parser.parse_args(argv)
     if args.headless and args.command in ("shell", "install"):
         parser.error("--headless is only supported for noninteractive DOS probes")
-    if args.original_game_dir is not None and args.command != "compile-data":
-        parser.error("--original-game-dir is supported only by compile-data")
+    if args.original_game_dir is not None and args.command not in ("compile-data", "test-dos-entry"):
+        parser.error("--original-game-dir is supported only by compile-data and test-dos-entry")
+    if args.command == "test-dos-entry" and args.original_game_dir is None:
+        parser.error("test-dos-entry requires --original-game-dir")
     launcher = args.command in ("prepare-launcher", "compile-launcher",
                                 "compile-memory", "compile-selectors", "compile-data",
                                 "compile-dos-files",
@@ -1907,7 +1933,7 @@ def main(argv: list[str] | None = None) -> int:
                                 "compile-input",
                                 "compile-clock",
                                 "compile-crt",
-                                "link-launcher")
+                                "link-launcher", "test-dos-entry")
     output = (args.output or Path("build/msc51-launcher" if launcher else "build/intro-msc51")).expanduser().resolve()
     objects = []
     if launcher:
@@ -1943,6 +1969,11 @@ def main(argv: list[str] | None = None) -> int:
         else:
             if args.command == "link-launcher":
                 validate_link_prerequisites(output, objects)
+            if args.command == "test-dos-entry":
+                exe = locate_case_insensitive(output, "GATEWAY.EXE")
+                if (exe is None or executable_format(exe.read_bytes()) != "DOS MZ" or
+                        locate_case_insensitive(output, "LINKDONE.LOG") is None):
+                    raise ValueError("test-dos-entry requires a linked real-mode GATEWAY.EXE; run link-launcher")
             if args.command in ("compile-selectors", "compile-data", "compile-dos-files", "compile-rtl-state",
                                 "compile-hardware", "compile-runtime-files",
                                 "compile-picture-dcl",
@@ -1984,8 +2015,9 @@ def main(argv: list[str] | None = None) -> int:
                                  "compile-input",
                                  "compile-clock",
                                  "compile-crt",
-                                 "link-launcher"),
-                ("LINK.BAT" if args.command == "link-launcher" else
+                                 "link-launcher", "test-dos-entry"),
+                ("ENTRY.BAT" if args.command == "test-dos-entry" else
+                 "LINK.BAT" if args.command == "link-launcher" else
                  "SELECT.BAT" if args.command == "compile-selectors" else
                  "DATA.BAT" if args.command == "compile-data" else
                  "DOSFILE.BAT" if args.command == "compile-dos-files" else
@@ -2082,6 +2114,12 @@ def main(argv: list[str] | None = None) -> int:
         command.append("--exit")
     elif args.command == "link-launcher":
         remove_launcher_link_outputs(output)
+        command.append("--exit")
+    elif args.command == "test-dos-entry":
+        for name in ("ENTRY.LOG", "PICTURE.LOG", "ENTRYOK.LOG", "ENTRYFAIL.LOG"):
+            previous = locate_case_insensitive(output, name)
+            if previous is not None:
+                previous.unlink()
         command.append("--exit")
     print("DOSBox CPU: " + (" ".join(performance_args) or "user configuration"), flush=True)
     print("DOSBox commands: " + " ; ".join(commands), flush=True)
@@ -2183,8 +2221,8 @@ def main(argv: list[str] | None = None) -> int:
                  "original resident code or installing IRQs"
                  if original_game_dir is not None
                  else "; BOOT.OBJ was built but its original-file probes were not run")
-              + ". DATA.OBJ/BOOT.OBJ remain probe-only until executable startup "
-              "and other resident banks are reconstructed.")
+              + ". DATA.OBJ/BOOT.OBJ/MAIN.OBJ are available for the new "
+              "source-C executable entry; original resident banks remain unentered.")
         return 0
     if args.command == "compile-dos-files":
         try:
@@ -2337,8 +2375,27 @@ def main(argv: list[str] | None = None) -> int:
                   "Missing original DOS/resident symbols are expected.", file=sys.stderr)
             print_launcher_link_diagnostics(output)
             return 1
-        print("Microsoft LINK produced GATEWAY.EXE from all 28 launcher objects; "
-              "execution and original DOS semantics remain unverified.")
+        print("Microsoft LINK produced real-mode GATEWAY.EXE from 28 original-derived "
+              "launcher objects, 17 DOS adapters and the four startup/entry objects. "
+              "Use test-dos-entry to verify actual DOS startup and first-picture drawing.")
+        return 0
+    if args.command == "test-dos-entry":
+        success = locate_case_insensitive(output, "ENTRYOK.LOG")
+        failed = locate_case_insensitive(output, "ENTRYFAIL.LOG")
+        entry = locate_case_insensitive(output, "ENTRY.LOG")
+        picture = locate_case_insensitive(output, "PICTURE.LOG")
+        entry_text = entry.read_text(errors="replace") if entry is not None else ""
+        picture_text = picture.read_text(errors="replace") if picture is not None else ""
+        if (success is None or failed is not None or
+                "Gateway DOS source-C entry: PASS" not in entry_text or
+                "Gateway DOS first splash: PASS" not in picture_text):
+            print("Gateway source-C DOS entry or first-picture smoke test failed.", file=sys.stderr)
+            print(f"ENTRY.LOG: {entry_text.strip() or '(missing)'}", file=sys.stderr)
+            print(f"PICTURE.LOG: {picture_text.strip() or '(missing)'}", file=sys.stderr)
+            return 1
+        print("Real-mode GATEWAY.EXE passed source-C boot, mode-12 VGA setup, "
+              "first splash picture load/draw and BIOS restoration under DOSBox. "
+              "The full timed intro remains unverified.")
         return 0
     if args.command == "compile-launcher":
         success = locate_case_insensitive(output, "SUCCESS.LOG")

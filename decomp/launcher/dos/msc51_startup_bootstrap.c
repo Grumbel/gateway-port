@@ -22,6 +22,10 @@ int gate_dos_prepare_intro_data(uint16_t exe_handle, uint16_t rtl_handle,
        uint16_t lower_segment, uint16_t paragraphs,
        uint16_t resident_segment, uint16_t external_a_segment,
        uint16_t external_b_segment, GateFarPtr return_callback);
+int gate_dos_prepare_intro_data_source(uint16_t exe_handle, uint16_t rtl_handle,
+       uint16_t lower_segment, uint16_t paragraphs,
+       uint16_t resident_segment, uint16_t external_a_segment,
+       uint16_t external_b_segment, GateFarPtr return_callback);
 uint32_t gate_dos_intro_resident_crc32_with_callback(uint16_t resident_segment,
                                        uint16_t paragraphs,
                                        uint16_t expected_callback_offset);
@@ -62,7 +66,7 @@ int gate_dos_boot_prepare(const GateDosBootConfig *config,
         config->exe_callback.segment == 0u ||
         config->return_callback.segment == 0u ||
         config->external_a_segment == 0u ||
-        config->external_b_segment == 0u)
+        config->external_b_segment == 0u || config->source_c_return > 1u)
         return -1;
 
     if (_dos_allocmem(GATE_BOOT_DATA_PARAGRAPHS, &allocated) != 0u)
@@ -113,7 +117,13 @@ int gate_dos_boot_prepare(const GateDosBootConfig *config,
         error = -9;
         goto fail;
     }
-    data_status = gate_dos_prepare_intro_data(exe_handle, rtl_handle,
+    if (config->source_c_return == 1u)
+        data_status = gate_dos_prepare_intro_data_source(exe_handle, rtl_handle,
+            image->lower_segment, GATE_BOOT_DATA_PARAGRAPHS,
+            image->resident_segment, config->external_a_segment,
+            config->external_b_segment, config->return_callback);
+    else
+        data_status = gate_dos_prepare_intro_data(exe_handle, rtl_handle,
             image->lower_segment, GATE_BOOT_DATA_PARAGRAPHS,
             image->resident_segment, config->external_a_segment,
             config->external_b_segment, config->return_callback);

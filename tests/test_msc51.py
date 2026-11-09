@@ -45,6 +45,23 @@ def fake_runtime_file_obj(include_diagnostic=True):
 
 
 class MSC51Tests(unittest.TestCase):
+    def test_real_mode_entry_batch_is_guarded_and_not_a_false_full_intro_pass(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            output = Path(scratch)
+            msc51.stage_launcher(output)
+            batch = (output / "ENTRY.BAT").read_text()
+            self.assertIn("D:\\GATEWAY.EXE /CHECK > D:\\ENTRY.LOG", batch)
+            self.assertIn("D:\\GATEWAY.EXE /PICTURE > D:\\PICTURE.LOG", batch)
+            self.assertEqual(batch.count("IF ERRORLEVEL 1 GOTO FAILED"), 2)
+            self.assertIn("ENTRYFAIL.LOG", batch)
+            self.assertNotIn("/INTRO", batch)
+            link = (output / "LINK.RSP").read_text()
+            self.assertIn("MAIN.OBJ+", link)
+            with redirect_stderr(io.StringIO()) as diagnostic:
+                with self.assertRaises(SystemExit):
+                    msc51.main(["test-dos-entry", "--output", str(output)])
+            self.assertIn("requires --original-game-dir", diagnostic.getvalue())
+
     def test_optional_original_rtl_fixup_words_are_unrelocated_zero(self):
         original = REPO.parent / "gateway-dos" / "GATE.RTL"
         if not original.is_file():
@@ -218,8 +235,9 @@ class MSC51Tests(unittest.TestCase):
             for source in ("BOOTCHK.C", "BOOTPREP.C", "BOOTVGA.C"):
                 self.assertIn('#include "BOOTCB.H"', (output / source).read_text())
                 self.assertIn("gate_probe_load_return_context(", (output / source).read_text())
-            self.assertNotIn("DATA.OBJ", (output / "LINK.RSP").read_text())
-            self.assertNotIn("BOOT.OBJ", (output / "LINK.RSP").read_text())
+            self.assertIn("DATA.OBJ", (output / "LINK.RSP").read_text())
+            self.assertIn("BOOT.OBJ", (output / "LINK.RSP").read_text())
+            self.assertIn("MAIN.OBJ", (output / "LINK.RSP").read_text())
             (output / "STDINT.H").write_text('#include <stdint.h>\n')
             for source in ("DATACHK.C", "DATAREAL.C", "BOOTPREP.C", "BOOTVGA.C"):
                 text = (output / source).read_text()
@@ -458,7 +476,7 @@ class MSC51Tests(unittest.TestCase):
                 self.assertIn("DATA.BAT", command)
                 self.assertFalse(check)
                 self.assertFalse((output / "DATACHK.EXE").exists())
-                for name in ("DATA.OBJ", "DATACHK.EXE", "DATAREAL.EXE",
+                for name in ("DATA.OBJ", "MAIN.OBJ", "DATACHK.EXE", "DATAREAL.EXE",
                              "BOOTPREP.EXE", "DATSTART.LOG", "DATOK.LOG"):
                     (output / name).write_text("current")
                 (output / "DATTEST.LOG").write_text(
@@ -646,7 +664,7 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("CL /AL /Od /c SEL.C", batch)
             self.assertIn("SELCHK.C SEL.OBJ MEMORY.OBJ", batch)
             self.assertIn("SELCHK.EXE > SELTEST.LOG", batch)
-            self.assertNotIn("SEL.OBJ", (output / "LINK.RSP").read_text())
+            self.assertIn("SEL.OBJ", (output / "LINK.RSP").read_text())
             executable = output / "selector-host-probe"
             build = subprocess.run(
                 ["gcc", "-x", "c", "-std=c89", "-Wall", "-Wextra", "-Werror",
@@ -836,15 +854,16 @@ class MSC51Tests(unittest.TestCase):
 
             self.assertNotIn("/Fe", batch)  # No complete DOS executable yet.
             response = (output / "LINK.RSP").read_text().splitlines()
-            self.assertEqual(response[:45],
+            self.assertEqual(response[:49],
                              [f"M{index:02d}.OBJ+" for index in range(28)] +
                              ["MEMORY.OBJ+", "DOSFILE.OBJ+", "RTLIMG.OBJ+",
                               "RTLTEXT.OBJ+", "RTLPAL.OBJ+", "RTLGR.OBJ+",
                               "RTLHW.OBJ+", "RTFILE.OBJ+", "RESSTATE.OBJ+",
                               "HEAP.OBJ+", "CTRL.OBJ+", "BREAK.OBJ+", "BREXIT.OBJ+",
                               "INP.OBJ+", "CLOCK.OBJ+", "CRTENV.OBJ+",
-                              "PICTDCL.OBJ"])
-            self.assertEqual(response[45:], ["GATEWAY.EXE", "GATEWAY.MAP",
+                              "PICTDCL.OBJ+", "MAIN.OBJ+", "BOOT.OBJ+",
+                              "DATA.OBJ+", "SEL.OBJ"])
+            self.assertEqual(response[49:], ["GATEWAY.EXE", "GATEWAY.MAP",
                                              "LLIBCR.LIB LIBH.LIB /NOD", ";"])
             memory_batch = (output / "MEMORY.BAT").read_text()
             self.assertIn("CL /AL /Od /c MEMORY.C", memory_batch)
@@ -1478,6 +1497,15 @@ class MSC51Tests(unittest.TestCase):
             (output / "crtstart.log").write_text("tested")
             (output / "crtok.log").write_text("passed")
             (output / "crtsig.log").write_text(msc51.crt_source_signature(output))
+            # The linked source-C entry now consumes the CRC-checked data
+            # image; a stale or missing MAIN/DATA/BOOT/SEL cannot link.
+            for name in ("main.obj", "data.obj", "boot.obj", "sel.obj",
+                         "datareal.exe", "datachk.exe", "bootprep.exe",
+                         "datstart.log", "datok.log"):
+                (output / name).write_bytes(b"DOS startup")
+            (output / "dattest.log").write_text(
+                "Static EXE/RTL data probe: PASS (5976 + 13714 bytes; 27 seg + 24 off + 19 external pointers)\n")
+            (output / "datsig.log").write_text(msc51.static_data_source_signature(output))
             for name in ("LINKSTAR.LOG", "LNKSTART.LOG", "LINKDONE.LOG", "LINKFAIL.LOG",
                          "LINK.LOG", "GATEWAY.EXE", "GATEWAY.MAP"):
                 (output / name.lower()).write_bytes(b"stale result")
