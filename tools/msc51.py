@@ -1552,6 +1552,13 @@ def dosbox_performance_args(cycles: str = "max", core: str = "dynamic") -> list[
     return result
 
 
+def dosbox_headless_args() -> list[str]:
+    """Disable desktop-only mouse capture for SDL's dummy video driver."""
+    return ["--noprimaryconf", "--nolocalconf",
+            "--set", "mouse_capture=nomouse",
+            "--set", "mididevice=none"]
+
+
 def install_commands(destination: Path, floppies: list[Path]) -> list[str]:
     if not floppies:
         raise ValueError("pass at least one --floppy IMAGE (in disk order)")
@@ -1590,6 +1597,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dosbox-core", default="dynamic",
                         choices=("dynamic", "auto", "normal", "simple", "default"),
                         help="DOSBox CPU core: dynamic (default), auto, normal, simple or default (no override)")
+    parser.add_argument("--headless", action="store_true",
+                        help="run noninteractive DOS probes with SDL dummy video/audio")
     parser.add_argument("--install-dir", type=Path,
                         help="writable target for installing the original Microsoft compiler")
     parser.add_argument("--floppy", type=Path, action="append", default=[],
@@ -1597,6 +1606,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--original-game-dir", type=Path,
                         help="compile-data only: verify pinned GATE.EXE/GATE.RTL mounted read-only as E")
     args = parser.parse_args(argv)
+    if args.headless and args.command in ("shell", "install"):
+        parser.error("--headless is only supported for noninteractive DOS probes")
     if args.original_game_dir is not None and args.command != "compile-data":
         parser.error("--original-game-dir is supported only by compile-data")
     launcher = args.command in ("prepare-launcher", "compile-launcher",
@@ -1703,6 +1714,7 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as error:
         parser.error(str(error))
     command = [dosbox, *performance_args,
+               *(dosbox_headless_args() if args.headless else []),
                *(part for line in commands for part in ("-c", line))]
     if args.command == "probe":
         # An old successful EXE/LOG must never masquerade as a fresh build.
@@ -1767,7 +1779,14 @@ def main(argv: list[str] | None = None) -> int:
         command.append("--exit")
     print("DOSBox CPU: " + (" ".join(performance_args) or "user configuration"), flush=True)
     print("DOSBox commands: " + " ; ".join(commands), flush=True)
-    result = subprocess.run(command, check=False)
+    guest_env = None
+    if args.headless:
+        guest_env = os.environ.copy()
+        guest_env.update(SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
+    if guest_env is None:
+        result = subprocess.run(command, check=False)
+    else:
+        result = subprocess.run(command, check=False, env=guest_env)
     if result.returncode != 0:
         if args.command == "probe":
             print_probe_diagnostics(output)

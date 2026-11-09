@@ -2086,6 +2086,42 @@ class MSC51Tests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "--dosbox-core"):
             msc51.dosbox_performance_args("max", "hyper")
 
+    def test_msc51_headless_dosbox_invocation(self):
+        self.assertEqual(msc51.dosbox_headless_args(), [
+            "--noprimaryconf", "--nolocalconf",
+            "--set", "mouse_capture=nomouse", "--set", "mididevice=none",
+        ])
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            compiler = root / "compiler"
+            for subdir in ("BIN", "LIB", "INCLUDE"):
+                (compiler / subdir).mkdir(parents=True)
+            for name in ("CL.EXE", "C1.EXE", "C1L.EXE", "C2.EXE", "C3.EXE", "LINK.EXE"):
+                (compiler / "BIN" / name).touch()
+            for name in ("LLIBCR.LIB", "LIBH.LIB"):
+                (compiler / "LIB" / name).touch()
+            (compiler / "INCLUDE" / "STDIO.H").touch()
+
+            with mock.patch.object(msc51.shutil, "which", return_value="/dosbox"), \
+                 mock.patch.object(msc51.subprocess, "run") as run, \
+                 redirect_stderr(io.StringIO()):
+                run.return_value.returncode = 17
+                status = msc51.main(["probe", "--compiler", str(compiler),
+                                     "--output", str(root / "output"), "--headless"])
+            self.assertEqual(status, 17)
+            command = run.call_args.args[0]
+            self.assertEqual(command[0], "/dosbox")
+            self.assertIn("--noprimaryconf", command)
+            self.assertIn("--nolocalconf", command)
+            self.assertIn("mouse_capture=nomouse", command)
+            self.assertIn("cpu_cycles=max", command)
+            self.assertEqual(run.call_args.kwargs["env"]["SDL_VIDEODRIVER"], "dummy")
+            self.assertEqual(run.call_args.kwargs["env"]["SDL_AUDIODRIVER"], "dummy")
+            self.assertIn("--exit", command)
+
+        with self.assertRaises(SystemExit):
+            msc51.main(["shell", "--headless"])
+
     def test_installer_mounts_original_images_in_supplied_order(self):
         with tempfile.TemporaryDirectory() as scratch:
             root = Path(scratch)

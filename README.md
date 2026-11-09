@@ -264,6 +264,12 @@ real-mode default of `cpu_cycles=3000` (the modern setting doesn't accept
 for both options to leave the settings to your own DOSBox configuration.
 The flags apply to all DOSBox-running `msc51-*` commands handled by
 `tools/msc51.py`.
+For unattended Linux environments without a display, pass `--headless` to a
+noninteractive probe (for example `nix run -L .#msc51-compile-data --
+--headless --original-game-dir ../gateway-dos`). This selects SDL dummy
+video/audio and disables mouse capture; it does not perform visible VGA
+comparisons. See the [verified DOSBox Staging headless setup and smoke
+test](docs/dosbox-staging.md).
 See the [DOSBox Staging CPU documentation](https://www.dosbox-staging.org/0.83/manual/system/cpu/)
 for the core and cycle tradeoffs. An unchanged probe result is still
 required; more CPU cycles are not evidence of correct startup behavior.
