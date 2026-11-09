@@ -26,6 +26,17 @@ uint16_t gate_rtl_set_video_mode(int16_t requested_mode);
 uint16_t gate_rtl_mode_start(uint16_t enabled);
 void gate_rtl_plot_pixel(uint16_t color, uint16_t y, uint16_t x);
 
+/* RTL:f473 is reached only by the 16-color VGA palette branch, never
+ * by the mode-3 path under test. M23.OBJ nevertheless references the
+ * symbol, so the isolated executable must provide a link-time callback.
+ * Exit rather than abort on unexpected entry: atexit must restore a
+ * possibly already-switched BIOS video mode before DOSBox returns. */
+void gate_rtl_wait_vertical_retrace(void)
+{
+    fputs("DOS intro live VGA probe: unexpected retrace branch\n", stderr);
+    exit(87);
+}
+
 static uint8_t query_bios_video_mode(void)
 {
     union REGS in, out;

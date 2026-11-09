@@ -64,8 +64,3 @@ void gate_rtl_plot_pixel(uint16_t color, uint16_t y, uint16_t x)
     gate_far_set_byte(0xa000u, (uint16_t)(y * 320u + x),
                       getenv("TEST_VIDEO_BAD_PIXEL") != 0 ? 0x43u : (uint8_t)color);
 }
-
-void gate_rtl_wait_vertical_retrace(void)
-{
-    require(0); /* mode 3 must skip the VGA attribute-palette branch */
-}

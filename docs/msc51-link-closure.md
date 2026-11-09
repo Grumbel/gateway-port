@@ -270,6 +270,14 @@ and is not a substitute for linking the resident bank loader. Its separate
 witness. The C89 host test verifies success plus bad-pixel, rejected-adapter
 and failed-restore cases with synthetic BIOS callbacks. No Microsoft C 5.1
 or DOSBox binaries are installed here; actual guest execution is pending.
+The first user-side `BOOTVGA.EXE` link failed with one missing public:
+`_gate_rtl_wait_vertical_retrace` referenced by the original-derived
+`M23.OBJ`. The source-C mode 3 cannot enter that palette branch, but
+MS LINK still requires its symbol. `BOOTVGA.C` now implements an explicit
+unreachable-branch guard that calls `exit(87)` rather than `abort()`, so
+the video-restoration `atexit` handler gets control if the guard is ever
+reached. The host fixture no longer hides this missing definition; a new
+real Microsoft LINK run is required to confirm the closure.
 
 **Microsoft C 5.1 identifier compatibility:** The user's first real
 `DATA.BAT` run failed at `DATA.C` compilation, not during the probe:

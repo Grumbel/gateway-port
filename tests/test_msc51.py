@@ -154,6 +154,9 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn(entry_object, (output / "BVID.RSP").read_text())
             self.assertIn(mode_object, (output / "BVID.RSP").read_text())
             self.assertNotIn("RESSTATE.OBJ+", (output / "BPREP.RSP").read_text())
+            self.assertIn("void gate_rtl_wait_vertical_retrace(void)",
+                          (output / "BOOTVGA.C").read_text())
+            self.assertIn("exit(87);", (output / "BOOTVGA.C").read_text())
             original_initializer = "gate_linked_initialize_intro_services"
             alias = msc51.msc51_short_names([original_initializer]).get(
                 original_initializer, original_initializer)
