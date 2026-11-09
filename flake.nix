@@ -82,8 +82,6 @@
                 echo "   or: $0 guest-22s.bin DOS-DIR" >&2
                 exit 2
               fi
-              replay_dir="$(mktemp -d)"
-              trap 'rm -f "$replay_dir/replay.gvr" "$replay_dir/final.ppm" "$replay_dir/guest-22s.bin" "$replay_dir/guest-22s.ppm" "$replay_dir/guest-22s.regs" "$replay_dir/probe.log"; rmdir "$replay_dir"' EXIT
               dos_dir="$1"
               if [ "$#" -eq 2 ] && [ -f "$1" ] && [ -d "$2" ]; then
                 dos_dir="$2"
@@ -102,16 +100,6 @@
                 snapshot="$2"
               fi
           '';
-          sourceCFull = pkgs.writeShellApplication {
-            name = "gateway-intro-source-c-full";
-            runtimeInputs = [ pkgs.coreutils ];
-            text = sourceCSetup + ''
-              ${self.packages.${system}.intro-decompile}/bin/gateway-intro-source-c-composite \
-                "$snapshot" "$dos_dir" "$replay_dir/final.ppm" --full --record "$replay_dir/replay.gvr"
-              ${self.packages.${system}.default}/bin/gateway-intro-source-c-replay \
-                "$replay_dir/replay.gvr"
-            '';
-          };
           sourceCLive = pkgs.writeShellApplication {
             name = "gateway-intro-source-c-live";
             runtimeInputs = [ pkgs.coreutils ];
@@ -136,61 +124,35 @@
                 "$dos_dir/GATEMAIN.EXE" --game-args "0 258 9 2 816 1 7 544"
             '';
           };
+          dosLauncher = pkgs.writeShellApplication {
+            name = "gateway-dos";
+            runtimeInputs = [ pkgs.coreutils pkgs.dosbox-staging ];
+            text = ''
+              exec ${pkgs.bash}/bin/bash ${self}/tools/gateway_dos.sh "$@"
+            '';
+          };
+          gatewayApp = {
+            type = "app";
+            program = "${self.packages.${system}.default}/bin/gateway";
+            meta.description = "Run the original Gateway DOS game through the SDL3/Unicorn port";
+          };
         in {
-        default = {
+        default = gatewayApp;
+        gateway = gatewayApp;
+        gateway-dos = {
           type = "app";
-          program = "${self.packages.${system}.default}/bin/gateway";
-          meta.description = "Run the original Gateway DOS game through the SDL3/Unicorn port";
+          program = "${dosLauncher}/bin/gateway-dos";
+          meta.description = "Run the recompiled source-C DOS intro in DOSBox Staging (requires locally built GATEWAY.EXE)";
         };
-        probe = {
-          type = "app";
-          program = "${self.packages.${system}.default}/bin/gateway-probe";
-          meta.description = "Capture deterministic headless DOS execution and conventional RAM snapshots with Unicorn";
-        };
-        intro = {
-          type = "app";
-          program = "${self.packages.${system}.default}/bin/gateway-intro";
-          meta.description = "Preview the Gateway intro with the native C++ renderer";
-        };
-        intro-source-c = {
-          type = "app";
-          program = "${self.packages.${system}.default}/bin/gateway-intro-source-c-captions";
-          meta.description = "Play all eighteen original source-C caption pages (requires a DOS RAM snapshot)";
-        };
-        intro-source-c-dump = {
-          type = "app";
-          program = "${self.packages.${system}.intro-decompile}/bin/gateway-intro-source-c-dump";
-          meta.description = "Export all eighteen original source-C caption frames without SDL3";
-        };
-        intro-source-c-picture-dump = {
-          type = "app";
-          program = "${self.packages.${system}.intro-decompile}/bin/gateway-intro-source-c-picture-dump";
-          meta.description = "Render one real Gateway PIC through the reconstructed C loader and VGA path";
-        };
-        intro-source-c-full = {
-          type = "app";
-          program = "${sourceCFull}/bin/gateway-intro-source-c-full";
-          meta.description = "Play the original source-C Gateway intro with PIC images, palette fades, animations and all captions (silent)";
-        };
-        intro-source-c-live = {
+        gateway-decomp = {
           type = "app";
           program = "${sourceCLive}/bin/gateway-intro-source-c-live";
-          meta.description = "Play the source-C Gateway intro live from original DOS assets through SDL3 with AdLib music and keyboard input";
+          meta.description = "Play the reconstructed source-C intro in SDL3 with AdLib audio and input";
         };
-        intro-source-c-play = {
+        gateway-hybrid = {
           type = "app";
           program = "${sourceCPlay}/bin/gateway-intro-source-c-play";
-          meta.description = "Play the source-C intro with AdLib audio, then enter the original Unicorn-powered Gateway game";
-        };
-        intro-dump = {
-          type = "app";
-          program = "${self.packages.${system}.default}/bin/gateway-intro-dump";
-          meta.description = "Render a Gateway intro frame to a PPM image at a specified time";
-        };
-        intro-ghidra = {
-          type = "app";
-          program = "${self.packages.${system}.intro-ghidra}/bin/gateway-decompile-intro";
-          meta.description = "Decompile a relocated Gateway intro snapshot with Ghidra";
+          meta.description = "Play the source-C intro in SDL3, then enter the Unicorn-powered Gateway game";
         };
       });
       checks = eachSystem (system:
@@ -217,6 +179,14 @@
             src = self;
           } ''
             python3 "$src/tools/decomp_status.py" --tracker "$src/decomp/functions.tsv" check
+            touch "$out"
+          '';
+          flake-layout = pkgs.runCommand "gateway-port-flake-layout" {
+            nativeBuildInputs = [ pkgs.python3 pkgs.bash ];
+            src = self;
+          } ''
+            cd "$src"
+            python3 tests/test_flake_layout.py
             touch "$out"
           '';
           msc51-tooling = pkgs.runCommand "gateway-port-msc51-tooling" {
@@ -279,6 +249,27 @@ except Exception:
 ' \
               --args "$GATEWAY_BUILD_DIR/gateway" "$@"
           '';
+          # Research binaries live behind local development commands, not
+          # public flake apps. Build them from the checkout being edited.
+          devUtility = name: pkgs.writeShellScriptBin name ''
+            set -euo pipefail
+            gateway-build
+            exec "$GATEWAY_BUILD_DIR/${name}" "$@"
+          '';
+          devUtilities = map devUtility [
+            "gateway-probe"
+            "gateway-intro"
+            "gateway-intro-dump"
+            "gateway-intro-source-c-captions"
+            "gateway-intro-source-c-dump"
+            "gateway-intro-source-c-picture-dump"
+            "gateway-intro-source-c-replay"
+            "gateway-intro-source-c-live"
+          ];
+          sourceCFull = pkgs.writeShellScriptBin "gateway-intro-source-c-full" ''
+            ${sourceCheck}
+            exec ${pkgs.bash}/bin/bash "$GATEWAY_SOURCE/tools/gateway_intro_source_c_full.sh" "$@"
+          '';
           # The actual DOS research tools are Python subcommands, not
           # independent applications. Keep them in the dev shell rather
           # than exporting dozens of near-identical flake outputs.
@@ -313,30 +304,47 @@ except Exception:
           default = pkgs.mkShell {
             inputsFrom = [ self.packages.${system}.default ];
             packages = [ pkgs.ninja pkgs.pkg-config pkgs.clang-tools pkgs.gdb pkgs.nasm
-                         configure build run runGdb msc51Command ];
+                         configure build run runGdb sourceCFull msc51Command ] ++ devUtilities;
             shellHook = ''
               export GATEWAY_SOURCE="$PWD"
               export GATEWAY_BUILD_DIR="''${GATEWAY_BUILD_DIR:-/tmp/gateway-port-build}"
               case $- in
                 *i*)
-                  printf '%s\n' \
+                  printf '\n%s\n' \
                     'Gateway development shell' \
                     '=========================' \
                     "Source: $GATEWAY_SOURCE" \
                     "Build:  $GATEWAY_BUILD_DIR (Debug by default)" \
-                    '  gateway-configure                   Configure CMake/Ninja' \
-                    '  gateway-build                       Build the project' \
-                    '  gateway-run ../101/S101.EXE         Build and run Spellcasting 101' \
-                    '  gateway-run ../201/S201.EXE         Build and run Spellcasting 201' \
-                    '  gateway-run-gdb ../101/S101.EXE     Build and debug under GDB' \
-                    '  nix develop .#ghidra                Optional Ghidra reverse engineering shell' \
-                    'Troubleshooting:' \
-                    '  gateway-run ../201/S201.EXE --trace-video' \
-                    '  gateway-run ../101/S101.EXE --headless --milliseconds 15000 \' \
-                    '    --dump-prefix /tmp/s101-stall --trace-blocks /tmp/s101-blocks.txt' \
-                    'GDB: press Ctrl-C to interrupt a frozen game, then use bt / continue.' \
-                    'Guest DOS registers are inside Unicorn, not native GDB registers.' \
-                    'More details: README.md (Debugging with nix develop).'
+                    '' \
+                    'Build and run (SDL3 + Unicorn)' \
+                    '  gateway-configure                 Configure CMake/Ninja' \
+                    '  gateway-build                     Build the project' \
+                    '  ctest --test-dir "$GATEWAY_BUILD_DIR" --output-on-failure' \
+                    '  gateway-run ../gateway-dos/GATE.EXE' \
+                    '  gateway-run-gdb ../gateway-dos/GATE.EXE' \
+                    '' \
+                    'Source-C intro development' \
+                    '  gateway-intro-source-c-live --from-original ../gateway-dos' \
+                    '  gateway-intro-source-c-full ../gateway-dos      Silent replay' \
+                    '  gateway-intro-source-c-dump SNAPSHOT DOS-DIR OUT-DIR' \
+                    '  gateway-intro-source-c-picture-dump SNAPSHOT DOS-DIR OUT.ppm' \
+                    '  gateway-intro-source-c-captions SNAPSHOT DOS-DIR' \
+                    '  gateway-intro-source-c-replay FILE.gvr' \
+                    '' \
+                    'Emulation diagnostics and captures' \
+                    '  gateway-probe ../gateway-dos/GATE.EXE --headless --milliseconds 15000' \
+                    '  gateway-intro ../gateway-dos' \
+                    '  gateway-intro-dump ../gateway-dos --ms 22000 OUT.ppm' \
+                    '' \
+                    'Specialized tools' \
+                    '  gateway-msc51 --help             DOS compiler, probes and link audit' \
+                    '  nix develop .#msc51              Compiler + DOSBox Staging shell' \
+                    '  nix develop .#ghidra             Ghidra + PyGhidra shell' \
+                    '' \
+                    'Debugging: gateway-run-gdb; Ctrl-C then bt / continue.' \
+                    'Unicorn guest registers are not native GDB registers.' \
+                    'See README.md for commands and required original assets.' \
+                    ''
                   ;;
               esac
             '';
@@ -352,6 +360,19 @@ except Exception:
                          (pkgs.python3.withPackages (ps: [ ps.pyghidra ]))
                          self.packages.${system}.intro-ghidra ];
             GHIDRA_INSTALL_DIR = "${pkgs.ghidra}/lib/ghidra";
+            shellHook = ''
+              case $- in
+                *i*)
+                  printf '\n%s\n' \
+                    'Ghidra reverse engineering' \
+                    '--------------------------' \
+                    '  gateway-decompile-intro GATE.EXE GATE.RTL --snapshot RAM.bin --output DIR' \
+                    '  gateway-decompile-intro --help' \
+                    '  See docs/intro-ghidra.md for the snapshot workflow.' \
+                    ''
+                  ;;
+              esac
+            '';
           };
           msc51 = pkgs.mkShell {
             inputsFrom = [ self.devShells.${system}.default ];
@@ -359,6 +380,20 @@ except Exception:
                          pkgs._7zz ];
             shellHook = ''
               export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
+              case $- in
+                *i*)
+                  printf '\n%s\n' \
+                    'Microsoft C 5.1 / DOSBox tools' \
+                    '-----------------------------' \
+                    '  gateway-msc51 --help             List all compiler and probe commands' \
+                    '  gateway-msc51 compile-launcher    Compile the source-C launcher objects' \
+                    '  gateway-msc51 compile-data --original-game-dir ../gateway-dos' \
+                    '  gateway-msc51 link-launcher       Link GATEWAY.EXE after prerequisite probes' \
+                    '  gateway-msc51 test-dos-entry --original-game-dir ../gateway-dos' \
+                    '  nix run .#gateway-dos -- ../gateway-dos /INTRO' \
+                    ''
+                  ;;
+              esac
             '';
           };
         });

@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception
+"""Source-only regression checks for Gateway's public Nix interface.
+
+These checks supplement, but do not replace, `nix flake show` and
+`nix flake check` on a host with Nix installed.
+"""
+
+from pathlib import Path
+import os
+import re
+import subprocess
+import tempfile
+import unittest
+
+
+REPO = Path(__file__).resolve().parent.parent
+FLAKE = (REPO / "flake.nix").read_text()
+
+
+def dos_launcher_script():
+    return (REPO / "tools/gateway_dos.sh").read_text()
+
+
+class FlakeLayoutTests(unittest.TestCase):
+    def test_only_the_four_public_game_modes_are_apps(self):
+        apps = FLAKE.split("      apps = eachSystem", 1)[1].split(
+            "      checks = eachSystem", 1)[0]
+        exported = set(re.findall(r"(?m)^        ([a-z][a-z-]*) =", apps))
+        self.assertEqual(exported, {
+            "default", "gateway", "gateway-dos", "gateway-decomp", "gateway-hybrid"
+        })
+        self.assertIn("default = gatewayApp;", apps)
+        self.assertIn("gateway = gatewayApp;", apps)
+        self.assertEqual(apps.count('meta.description = "'), 4)
+        self.assertIn("/bin/gateway-intro-source-c-live", apps)
+        self.assertIn("/bin/gateway-intro-source-c-play", apps)
+        self.assertIn('tools/gateway_dos.sh', apps)
+        self.assertIn('exec dosbox-staging', dos_launcher_script())
+        self.assertIn('GATEWAY_MSC51_BUILD_DIR', dos_launcher_script())
+        self.assertIn('mount e', dos_launcher_script())
+
+    def test_research_launchers_are_shell_commands(self):
+        shell = FLAKE.split("      devShells = eachSystem", 1)[1]
+        targets = re.search(r"devUtilities = map devUtility \[(.*?)\];", shell, re.S)
+        self.assertIsNotNone(targets)
+        names = re.findall(r'"(gateway-[a-z-]+)"', targets.group(1))
+        self.assertEqual(len(names), len(set(names)))
+        cmake = (REPO / "CMakeLists.txt").read_text()
+        for name in names:
+            self.assertIn(f"add_executable({name}", cmake)
+        self.assertIn('"gateway-intro-source-c-full"', shell)
+        self.assertIn('"gateway-msc51"', shell)
+        self.assertIn('"gateway-decompile-intro"', FLAKE)
+        for heading in ("Build and run", "Source-C intro development",
+                        "Emulation diagnostics and captures", "Specialized tools"):
+            self.assertIn(heading, shell)
+
+    def test_launcher_shell_syntax(self):
+        for filename in ("gateway_dos.sh", "gateway_intro_source_c_full.sh"):
+            result = subprocess.run(["bash", "-n", str(REPO / "tools" / filename)],
+                                    text=True, capture_output=True, check=False)
+            self.assertEqual(result.returncode, 0, f"{filename}: {result.stderr}")
+
+    def test_dos_launcher_mounts_originals_readonly_and_runs_local_exe(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            game = root / "game assets"
+            build = root / "rebuilt exe"
+            bin_dir = root / "bin"
+            for directory in (game, build, bin_dir):
+                directory.mkdir()
+            (game / "GATE.EXE").write_bytes(b"test original EXE")
+            (game / "GATE.RTL").write_bytes(b"test original RTL")
+            (build / "GATEWAY.EXE").write_bytes(b"test recompiled EXE")
+            exe = bin_dir / "dosbox-staging"
+            exe.write_text("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$DOSBOX_ARGS\"\n")
+            exe.chmod(0o755)
+            args_file = root / "args.txt"
+            env = dict(os.environ, GATEWAY_MSC51_BUILD_DIR=str(build),
+                       DOSBOX_ARGS=str(args_file), PATH=str(bin_dir) + os.pathsep + os.environ["PATH"])
+            run = subprocess.run(["bash", "-c", dos_launcher_script(), "--",
+                                  str(game), "/PICTURE"], env=env,
+                                 text=True, capture_output=True, check=False)
+            self.assertEqual(run.returncode, 0, run.stderr)
+            self.assertEqual(args_file.read_text().splitlines(), [
+                "-c", f'mount e "{game}" -ro',
+                "-c", f'mount d "{build}"',
+                "-c", "e:",
+                "-c", r"D:\GATEWAY.EXE /PICTURE",
+                "--exit",
+            ])
+            args_file.unlink()
+            bad = subprocess.run(["bash", "-c", dos_launcher_script(), "--",
+                                  str(game), "/UNKNOWN"], env=env,
+                                 text=True, capture_output=True, check=False)
+            self.assertEqual(bad.returncode, 2)
+            self.assertFalse(args_file.exists())
+
+
+if __name__ == "__main__":
+    unittest.main()
