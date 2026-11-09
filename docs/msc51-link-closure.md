@@ -2462,7 +2462,7 @@ Once the linker reports zero missing names, the next milestone is *actual
 DOS execution* through the original intro sequence with deterministic
 input/frame comparisons. A linked `GATEWAY.EXE` is insufficient by itself.
 
-### Original VFX rasterizer byte-copy recovered (2026-11-09)
+### Original VFX mode-13h byte-copy and mode-12h aligned VGA rasterizer recovered (2026-11-09)
 
 The SHA-256-pinned original `GATE.RTL` contains the mode-13h VFX drawing
 callback at file offset `rtl:189a0..18a2c`, matching the already captured
@@ -2493,11 +2493,28 @@ visual equivalence to the original under DOSBox Staging 0.82.2.
 
 More importantly for the slow 640x480 splash, the original mode-12h
 callback is recoverable from `rtl:187da..1899d` (resident `24a7:02fe`).
-It sets VGA Graphics Controller mode/bit-mask/ALU registers and the
-sequencer's plane mask, then processes **one source byte per eight pixels**;
-the aligned path begins at `rtl:18870`. Our current mode-12h DOS adapter
-still uses two BIOS pixel interrupts per displayed pixel. Replacing that
-adapter requires a faithful translation of the original direct-VGA path,
-including unaligned writes and plane changes, followed by independent VGA
-pixel comparisons. Compiler optimization switches and arbitrary altered
-intro delays are not substitutes for that recovery.
+It sets Graphics Controller register 5 to **08h** (VGA read mode 1,
+write mode 0), color-don't-care register 7 to zero, and register 8 to the
+active bit mask. Register 3 receives the raster operation shifted left
+three bits; sequencer map masks progress **01, 02, 04, 08**. In the
+byte-aligned branch at `rtl:18870..188b2`, each `LODSB; AND ES:[DI],AL`
+loads VGA latches and writes one source byte (eight pixels) into the
+selected plane. The original restores fixed register values (not the
+caller's prior register snapshot) at `rtl:1895c..1898d`.
+
+The source-C DOS adapter now reproduces this original register sequence
+for byte-aligned, whole-byte mode-12h images. It processes all four plane
+bytes per row with the recovered source stride and destination pitch,
+leaves raster operations to the VGA GC hardware, and resets registers
+exactly as the original. A C89 host fixture models four VGA latches,
+plane masks and GC logical operations. More importantly, the genuine
+MS C 5.1 `/AL /Od` `RESCHK.EXE` passed in DOSBox 0.74 with actual
+`A000h`/VGA-port writes and independent BIOS color readback for COPY,
+XOR, OR, AND and two interleaved rows. Original-file opcode witnesses
+pin the aligned loop, mask advance and cleanup.
+
+The **remaining unaligned and fractional-byte path** still uses the
+slow BIOS adapter: `rtl:188b4..18959` needs its source-word rotation,
+leading and trailing GC8 masks, and `image+32h` partial-byte mask
+recovered and independently tested before removal. Compiler optimization
+switches or changed intro delays are not substitutes for that recovery.

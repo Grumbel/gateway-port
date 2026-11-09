@@ -179,8 +179,10 @@ void gate_rtl_background_rect(uint16_t style, uint16_t bottom,
  * copy branch (189ca..189de) moves whole words and then the odd byte with
  * REP MOVSW/MOVSB; XOR/AND/OR use byte operations. This implementation
  * retains that row-copy distinction, using MSC 5.1 movedata for its native
- * segment:offset transfer. Mode-12h remains a bounded BIOS adapter, not a
- * decompilation of the original RTL:187da VGA register rasterizer. */
+ * segment:offset transfer. The byte-aligned four-plane mode-12h path below
+ * follows RTL:187da..188b2 and its register cleanup at RTL:1895c..1898d.
+ * Unaligned edges still use a separate BIOS adapter, pending recovery of
+ * the original masked rotation path at RTL:188b4..18959. */
 enum {
     DOS_VFX_SIGNATURE = 0x00,
     DOS_VFX_PLANES = 0x12,
@@ -216,6 +218,58 @@ static uint8_t vfx_raster_byte(uint8_t incoming, uint8_t old,
     case 3u: return (uint8_t)(old ^ incoming);
     default: return (uint8_t)(old | incoming);
     }
+}
+
+/* Original RTL:187e9..188b2, byte-aligned mode-12h VFX rasterizer.
+ * GC5=08 selects read mode 1 and write mode 0; with GC7=0, VGA reads
+ * return FF and load the four latches. Hence the original instruction
+ * AND BYTE PTR ES:[DI],AL writes the source byte to the selected plane,
+ * and GC3 supplies the requested raster operation against the latches.
+ * The source image groups all four planes of a row before the next row.
+ * Do not replace this read/AND/write with a direct copy: on planar VGA
+ * the register state and latch side effects are part of the operation. */
+static void vfx_mode12_aligned(uint16_t x, uint16_t y, uint16_t height,
+                                uint16_t stride, uint16_t copy_bytes,
+                                uint16_t operation, GateFarPtr source)
+{
+    uint16_t row, plane, col;
+    uint16_t destination = (uint16_t)((uint32_t)y * 80u + x / 8u);
+
+    outp(0x3ce, 5); outp(0x3cf, 8);
+    outp(0x3ce, 7); outp(0x3cf, 0);
+    outp(0x3ce, 8); outp(0x3cf, 0xff);
+    outp(0x3c4, 2); outp(0x3c5, 0x0f);
+    outp(0x3c4, 2); outp(0x3c5, 1);
+    outp(0x3ce, 3); outp(0x3cf, (uint8_t)(operation << 3));
+
+    for (row = 0u; row < height; ++row) {
+        for (plane = 0u; plane < 4u; ++plane) {
+            uint16_t plane_source = (uint16_t)(source.offset +
+                (uint32_t)(row * 4u + plane) * stride);
+            uint8_t plane_mask = (uint8_t)(1u << plane);
+            if (row != 0u || plane != 0u) {
+                outp(0x3c4, 2);
+                outp(0x3c5, plane_mask);
+            }
+            for (col = 0u; col < copy_bytes; ++col) {
+                uint16_t address = (uint16_t)(destination + col);
+                uint8_t incoming = gate_far_byte(source.segment,
+                    (uint16_t)(plane_source + col));
+                uint8_t latched = gate_far_byte(
+                    GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT, address);
+                gate_far_set_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                    address, (uint8_t)(latched & incoming));
+            }
+        }
+        destination = (uint16_t)(destination + 80u);
+    }
+
+    /* RTL:1895c resets known VGA defaults, not previous register values. */
+    outp(0x3ce, 5); outp(0x3cf, 0);
+    outp(0x3ce, 7); outp(0x3cf, 0x0f);
+    outp(0x3ce, 8); outp(0x3cf, 0xff);
+    outp(0x3c4, 2); outp(0x3c5, 0x0f);
+    outp(0x3ce, 3); outp(0x3cf, 0);
 }
 
 /* RTL:11078 (save) and RTL:10f64 (restore), original FAR entries
@@ -369,15 +423,23 @@ void gate_linked_blit_vfx_picture(uint16_t zero, uint16_t y, uint16_t x,
             dest = (uint16_t)(dest + 320u);
         }
     } else {
-        /* Mode 12h uses four bitplanes per row in source memory, with
-         * MSB-first bits. Use BIOS read/write to respect VGA latches and
-         * preserve the caller's sequencer / graphics-controller state. */
+        /* The original mode-12h path is directly recovered for complete
+         * bytes at an aligned X. The unaligned clipped/edge paths remain
+         * a BIOS adapter until RTL:188b4..18959 is reconstructed. */
         union REGS in, out;
+        uint16_t copy_bytes = vfx_word(image, DOS_VFX_ROW_BYTES);
         if (gate_far_byte(image.segment,
                 (uint16_t)(image.offset + DOS_VFX_PLANES)) != 4u ||
             gate_far_byte(image.segment,
                 (uint16_t)(image.offset + DOS_VFX_BPP)) != 1u)
             abort();
+        if ((x & 7u) == 0u && (width & 7u) == 0u) {
+            if (width < original_width)
+                copy_bytes = width / 8u;
+            vfx_mode12_aligned(x, y, height, stride, copy_bytes,
+                               operation, source);
+            return;
+        }
         for (row = 0u; row < height; ++row) {
             for (col = 0u; col < width; ++col) {
                 uint16_t plane;

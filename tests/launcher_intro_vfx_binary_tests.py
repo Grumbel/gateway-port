@@ -54,8 +54,8 @@ class OriginalRtlVfxRasterizer(unittest.TestCase):
                          bytes.fromhex('ac26080547'))  # OR
 
     def test_mode12_uses_vga_hardware_rasterizer_not_bios_pixels(self):
-        # Original RTL:187da (resident 24a7:02fe) selects VGA GC mode 3,
-        # sets its bit mask and uses the sequencer map mask per plane.
+        # Original RTL:187da (resident 24a7:02fe) sets GC5=8 (read mode
+        # 1, write mode 0), color-don't-care 0 and the full GC8 bit mask.
         self.assertEqual(self.rtl[0x187e9:0x187fd],
                          bytes.fromhex('b005bace03ee42b008eeb007bace03ee42b000ee'))
         # RTL:1885b shifts the raster operation left three bits and writes
@@ -66,6 +66,18 @@ class OriginalRtlVfxRasterizer(unittest.TestCase):
         # touches one VGA byte (eight pixels) per iteration.
         self.assertEqual(self.rtl[0x18870:0x18881],
                          bytes.fromhex('81f900ff753e578b4ef6ac26200547e2f9'))
+        # Advance by the source stride for each plane, cycle sequencer
+        # masks 1/2/4/8 and advance the destination only after plane 8.
+        self.assertEqual(self.rtl[0x18881:0x1888b],
+                         bytes.fromhex('5f0376e6807ef0017411'))
+        self.assertEqual(self.rtl[0x1888b:0x1889c],
+                         bytes.fromhex('8b56ecd066ee3856ee76118b56ea8856ee'))
+        # The original resets fixed GC/SEQ defaults rather than restoring
+        # a caller-saved register snapshot.
+        self.assertEqual(self.rtl[0x1895c:0x18970],
+                         bytes.fromhex('b005bace03ee42b000eeb007bace03ee42b00fee'))
+        self.assertEqual(self.rtl[0x1897a:0x1898e],
+                         bytes.fromhex('b002bac403ee42b00feeb003bace03ee42b000ee'))
 
 
 class NativeVfxProvenance(unittest.TestCase):

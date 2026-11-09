@@ -314,6 +314,61 @@ int main(void)
     valid &= check((uint16_t)(out.h.al & 15u), 2u,
                    "mode-12 VFX alternate pixel");
 
+    /* Exercise the recovered RTL:187da byte-aligned VGA path with actual
+     * 3c4/3ce port writes and A000 latches (not the BIOS pixel adapter).
+     * Plane source stride is two bytes, even though each row draws one. */
+    gate_far_set_word(image.segment, image.offset + 0x14u, 2u);
+    gate_far_set_word(image.segment, image.offset + 0x2cu, 8u);
+    gate_far_set_word(image.segment, image.offset + 0x2eu, 2u);
+    gate_far_set_word(image.segment, image.offset + 0x30u, 1u);
+    gate_far_set_byte(image.segment, 0x0800u, 0x80u);
+    gate_far_set_byte(image.segment, 0x0802u, 0x40u);
+    gate_far_set_byte(image.segment, 0x0804u, 0x20u);
+    gate_far_set_byte(image.segment, 0x0806u, 0x10u);
+    gate_far_set_byte(image.segment, 0x0808u, 0x55u);
+    gate_far_set_byte(image.segment, 0x080au, 0xaau);
+    gate_far_set_byte(image.segment, 0x080cu, 0u);
+    gate_far_set_byte(image.segment, 0x080eu, 0xf0u);
+    gate_linked_blit_vfx_picture(0u, 18u, 32u, 0u, image);
+    in.x.ax = 0x0d00u;
+    in.x.bx = 0u;
+    in.x.cx = 32u;
+    in.x.dx = 18u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 1u,
+                   "mode-12 original aligned plane-0 copy");
+    in.x.cx = 33u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 2u,
+                   "mode-12 original aligned plane-1 copy");
+    in.x.cx = 35u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 8u,
+                   "mode-12 original aligned plane-3 copy");
+    in.x.cx = 32u;
+    in.x.dx = 19u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 10u,
+                   "mode-12 original aligned next-row stride");
+    gate_linked_blit_vfx_picture(0u, 18u, 32u, 3u, image);
+    in.x.cx = 33u;
+    in.x.dx = 18u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 0u,
+                   "mode-12 original aligned plane XOR");
+    gate_linked_blit_vfx_picture(0u, 18u, 32u, 2u, image);
+    in.x.cx = 32u;
+    in.x.dx = 19u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 10u,
+                   "mode-12 original aligned plane OR");
+    gate_linked_blit_vfx_picture(0u, 18u, 32u, 1u, image);
+    in.x.cx = 33u;
+    in.x.dx = 19u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 9u,
+                   "mode-12 original aligned plane AND");
+
     in.x.ax = original_bios_mode;
     int86(0x10, &in, &out);
 

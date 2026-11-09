@@ -63,11 +63,71 @@ static unsigned int mouse_hides;
 static unsigned int mouse_shows;
 static unsigned int movedata_calls;
 static unsigned int movedata_bytes;
+static unsigned int planar_bios_reads;
+static unsigned int planar_bios_writes;
+static unsigned int planar_vga_writes;
+static uint8_t gc_register[9] = { 0u, 0u, 0u, 0u, 0u, 0u, 0u, 15u, 255u };
+static uint8_t gc_index;
+static uint8_t seq_register[5] = { 0u, 0u, 15u, 0u, 0u };
+static uint8_t seq_index;
+static uint8_t vga_latches[4];
+
+static uint8_t plane_byte(unsigned int plane, unsigned int offset)
+{
+    unsigned int bit;
+    uint8_t result = 0u;
+    for (bit = 0u; bit < 8u; ++bit) {
+        unsigned int pixel = (offset / 80u) * 640u +
+                             (offset % 80u) * 8u + bit;
+        if ((planar[pixel] & (1u << plane)) != 0u)
+            result |= (uint8_t)(0x80u >> bit);
+    }
+    return result;
+}
+
+static void vga_write(unsigned int offset, uint8_t data)
+{
+    unsigned int plane, bit;
+    unsigned int logic = (gc_register[3] >> 3) & 3u;
+    ++planar_vga_writes;
+    assert(gc_register[5] == 8u && gc_register[7] == 0u);
+    for (plane = 0u; plane < 4u; ++plane) {
+        if ((seq_register[2] & (1u << plane)) == 0u)
+            continue;
+        for (bit = 0u; bit < 8u; ++bit) {
+            unsigned int index = (offset / 80u) * 640u +
+                                 (offset % 80u) * 8u + bit;
+            uint8_t mask = (uint8_t)(0x80u >> bit);
+            uint8_t src = (data & mask) != 0u;
+            uint8_t old = (vga_latches[plane] & mask) != 0u;
+            uint8_t value = src;
+            if ((gc_register[8] & mask) == 0u)
+                value = old;
+            else if (logic == 1u)
+                value = (uint8_t)(src & old);
+            else if (logic == 2u)
+                value = (uint8_t)(src | old);
+            else if (logic == 3u)
+                value = (uint8_t)(src ^ old);
+            if (value)
+                planar[index] |= (uint8_t)(1u << plane);
+            else
+                planar[index] &= (uint8_t)~(1u << plane);
+        }
+    }
+}
 
 uint16_t gate_ds_segment(void) { return current_ds; }
 uint8_t gate_far_byte(uint16_t segment, uint16_t offset)
 {
     unsigned long address = (((unsigned long)segment << 4) + offset) & 0xffffful;
+    if (segment == 0xa000u && video_mode == 0x12u) {
+        unsigned int plane;
+        for (plane = 0u; plane < 4u; ++plane)
+            vga_latches[plane] = plane_byte(plane, offset);
+        assert(gc_register[5] == 8u && gc_register[7] == 0u);
+        return 0xffu; /* VGA read mode 1 with color-don't-care = 0 */
+    }
     return memory[address];
 }
 uint16_t gate_far_word(uint16_t segment, uint16_t offset)
@@ -78,6 +138,10 @@ uint16_t gate_far_word(uint16_t segment, uint16_t offset)
 void gate_far_set_byte(uint16_t segment, uint16_t offset, uint8_t value)
 {
     unsigned long address = (((unsigned long)segment << 4) + offset) & 0xffffful;
+    if (segment == 0xa000u && video_mode == 0x12u) {
+        vga_write(offset, value);
+        return;
+    }
     memory[address] = value;
 }
 void gate_far_set_word(uint16_t segment, uint16_t offset, uint16_t value)
@@ -111,7 +175,22 @@ uint16_t gate_linked_release_vfx_pixels(GateFarPtr pointer)
     return 0xffffu;
 }
 int inp(unsigned int port) { (void)port; return 0u; }
-int outp(unsigned int port, int value) { (void)port; return value; }
+int outp(unsigned int port, int value)
+{
+    if (port == 0x3ceu)
+        gc_index = (uint8_t)value;
+    else if (port == 0x3cfu) {
+        assert(gc_index < sizeof(gc_register));
+        gc_register[gc_index] = (uint8_t)value;
+    } else if (port == 0x3c4u)
+        seq_index = (uint8_t)value;
+    else if (port == 0x3c5u) {
+        assert(seq_index < sizeof(seq_register));
+        seq_register[seq_index] = (uint8_t)value;
+    } else
+        assert(0);
+    return value;
+}
 int int86(int number, union REGS *input, union REGS *output)
 {
     if (number == 0x33) {
@@ -135,10 +214,12 @@ int int86(int number, union REGS *input, union REGS *output)
         break;
     case 0x0du:
         assert(input->x.cx < 640u && input->x.dx < 480u);
+        ++planar_bios_reads;
         output->h.al = planar[(unsigned long)input->x.dx * 640u + input->x.cx];
         break;
     case 0x0cu:
         assert(input->x.cx < 640u && input->x.dx < 480u);
+        ++planar_bios_writes;
         planar[(unsigned long)input->x.dx * 640u + input->x.cx] = input->h.al;
         break;
     default:
@@ -255,6 +336,7 @@ int main(int argc, char **argv)
     assert(gate_ds_word(GATE_DS_DRAW_Y) == 7u);
 
     gate_ds_set_word(GATE_DS_RENDERER_MODE, 2u);
+    video_mode = 0x12u;
     gate_rtl_plot_pixel(0x1bu, 16u, 18u);
     assert(planar[16ul * 640u + 18u] == 0x0bu);
     gate_ds_set_word(GATE_DS_DRAW_OPERATION, 3u);
@@ -279,6 +361,7 @@ int main(int argc, char **argv)
     gate_far_set_byte(0x6100u, 0x0202u, 0x35u);
     gate_far_set_byte(0x6100u, 0x0203u, 0x46u);
     gate_ds_set_word(GATE_DS_RENDERER_MODE, 3u);
+    video_mode = 0x13u;
     gate_linked_blit_vfx_picture(0u, 20u, 30u, 0u, image);
     assert(movedata_calls == 2u && movedata_bytes == 4u);
     assert(pixel13(30u, 20u) == 0x13u);
@@ -310,6 +393,7 @@ int main(int argc, char **argv)
     assert(pixel13(34u, 23u) == 0x63u);
 
     gate_ds_set_word(GATE_DS_RENDERER_MODE, 2u);
+    video_mode = 0x12u;
     gate_far_set_word(image.segment, image.offset + 0x2eu, 1u);
     gate_far_set_word(image.segment, image.offset + 0x14u, 1u);
     gate_far_set_byte(image.segment, image.offset + 0x12u, 4u);
@@ -321,6 +405,46 @@ int main(int argc, char **argv)
     gate_linked_blit_vfx_picture(0u, 16u, 18u, 0u, image);
     assert(planar[16ul * 640u + 18u] == 5u);
     assert(planar[16ul * 640u + 19u] == 2u);
+
+    /* Recovered RTL:18870 aligned copy: 4 planes x 2 rows x 1 byte.
+     * Source rows are plane-interleaved with a two-byte plane stride. */
+    gate_far_set_word(image.segment, image.offset + 0x2cu, 8u);
+    gate_far_set_word(image.segment, image.offset + 0x2eu, 2u);
+    gate_far_set_word(image.segment, image.offset + 0x30u, 1u);
+    gate_far_set_word(image.segment, image.offset + 0x14u, 2u);
+    gate_far_set_byte(0x6100u, 0x0200u, 0x80u);
+    gate_far_set_byte(0x6100u, 0x0202u, 0x40u);
+    gate_far_set_byte(0x6100u, 0x0204u, 0x20u);
+    gate_far_set_byte(0x6100u, 0x0206u, 0x10u);
+    gate_far_set_byte(0x6100u, 0x0208u, 0x55u);
+    gate_far_set_byte(0x6100u, 0x020au, 0xaau);
+    gate_far_set_byte(0x6100u, 0x020cu, 0u);
+    gate_far_set_byte(0x6100u, 0x020eu, 0xf0u);
+    {
+        unsigned int prior_bios_reads = planar_bios_reads;
+        unsigned int prior_bios_writes = planar_bios_writes;
+        gate_linked_blit_vfx_picture(0u, 18u, 32u, 0u, image);
+        assert(planar_bios_reads == prior_bios_reads);
+        assert(planar_bios_writes == prior_bios_writes);
+    }
+    assert(planar_vga_writes == 8u);
+    assert(planar[18ul * 640u + 32u] == 1u);
+    assert(planar[18ul * 640u + 33u] == 2u);
+    assert(planar[18ul * 640u + 34u] == 4u);
+    assert(planar[18ul * 640u + 35u] == 8u);
+    assert(planar[19ul * 640u + 32u] == 10u);
+    assert(planar[19ul * 640u + 33u] == 9u);
+    assert(planar[19ul * 640u + 36u] == 2u);
+    assert(gc_register[5] == 0u && gc_register[7] == 15u);
+    assert(gc_register[8] == 255u && gc_register[3] == 0u);
+    assert(seq_register[2] == 15u);
+    gate_linked_blit_vfx_picture(0u, 18u, 32u, 3u, image);
+    assert(planar[18ul * 640u + 32u] == 0u);
+    assert(planar[19ul * 640u + 33u] == 0u);
+    gate_linked_blit_vfx_picture(0u, 18u, 32u, 2u, image);
+    assert(planar[18ul * 640u + 35u] == 8u);
+    gate_linked_blit_vfx_picture(0u, 18u, 32u, 1u, image);
+    assert(planar[19ul * 640u + 32u] == 10u);
     return 0;
 }
 ''')
