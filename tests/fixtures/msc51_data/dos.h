@@ -6,4 +6,9 @@
 #define GATE_MSC51_DATA_HOST_DOS_H
 unsigned int _dos_allocmem(unsigned int paragraphs, unsigned int *segment);
 unsigned int _dos_freemem(unsigned int segment);
+union REGS {
+    struct { unsigned short ax, bx, cx, dx; } x;
+    struct { unsigned char al, ah, bl, bh, cl, ch, dl, dh; } h;
+};
+int int86(int interrupt_number, union REGS *input, union REGS *output);
 #endif

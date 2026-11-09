@@ -233,8 +233,9 @@ MEMORY_SOURCES = ("GATEMEM.H", "STDINT.H", "MEMORY.C", "MEMCHK.C")
 SELECTOR_SOURCES = ("GATEMEM.H", "STDINT.H", "SEL.C", "SELCHK.C", "MEMORY.C")
 STATIC_DATA_SOURCES = ("GATEMEM.H", "GATEDOS.H", "STDINT.H", "DATA.C",
                        "DATACHK.C", "DATAREAL.C", "BOOT.H", "BOOTCB.H", "BOOT.C",
-                       "BOOTCHK.C", "BOOTPREP.C", "BPREP.RSP", "DATNAMES.H", "HEAP.C",
-                       "SEL.C", "MEMORY.C", "DOSFILE.C", "RTLLAY.H", "RTLHW.C")
+                       "BOOTCHK.C", "BOOTPREP.C", "BOOTVGA.C", "BPREP.RSP",
+                       "BVID.RSP", "DATNAMES.H", "HEAP.C", "SEL.C", "MEMORY.C",
+                       "DOSFILE.C", "RTLLAY.H", "RTLHW.C", "RESSTATE.C")
 DOS_FILE_SOURCES = ("GATEDOS.H", "GATEMEM.H", "STDINT.H", "DOSFILE.C", "FILECHK.C",
                     "MEMORY.C")
 RTL_STATE_SOURCES = ("RTLLAY.H", "RTLIMAC.H", "RTLSTATE.H", "GATEMEM.H", "STDINT.H",
@@ -542,7 +543,8 @@ def stage_launcher(output: Path) -> list[str]:
                        ("msc51_startup_probe_callback.h", "BOOTCB.H"),
                        ("msc51_startup_bootstrap.c", "BOOT.C"),
                        ("msc51_startup_bootstrap_probe.c", "BOOTCHK.C"),
-                       ("msc51_startup_entry_probe.c", "BOOTPREP.C"))
+                       ("msc51_startup_entry_probe.c", "BOOTPREP.C"),
+                       ("msc51_startup_video_probe.c", "BOOTVGA.C"))
     startup_contents = [(staged, (source_dir / "dos" / original).read_text())
                         for original, staged in startup_sources]
     # MSC 5.1 compares only 31 identifier characters. The resident
@@ -567,6 +569,11 @@ def stage_launcher(output: Path) -> list[str]:
                      entry_obj + "+", mode_obj,
                      "BOOTPREP.EXE", "NUL.MAP", "LLIBCR.LIB LIBH.LIB /NOD", ";"]
     (output / "BPREP.RSP").write_text("\r\n".join(prep_response) + "\r\n")
+    video_response = ["BOOTVGA.OBJ+", "BOOT.OBJ+", "DATA.OBJ+", "SEL.OBJ+",
+                      "MEMORY.OBJ+", "DOSFILE.OBJ+", "HEAP.OBJ+", "RTLHW.OBJ+",
+                      "RESSTATE.OBJ+", entry_obj + "+", mode_obj,
+                      "BOOTVGA.EXE", "NUL.MAP", "LLIBCR.LIB LIBH.LIB /NOD", ";"]
+    (output / "BVID.RSP").write_text("\r\n".join(video_response) + "\r\n")
     # HEAP.OBJ is also required by the standalone recovered C prologue.
     # Stage it before hashing the DATA batch; the separate heap adapter
     # batch below uses the exact same source and short-name mapping.
@@ -581,6 +588,8 @@ def stage_launcher(output: Path) -> list[str]:
     (output / "RTLLAY.H").write_text(msc51_rename_identifiers(layout, shortened))
     (output / "RTLHW.C").write_text(msc51_rename_identifiers(
         (source_dir / "dos/msc51_hardware.c").read_text(), shortened))
+    (output / "RESSTATE.C").write_text(msc51_rename_identifiers(
+        (source_dir / "dos/msc51_resident_state.c").read_text(), shortened))
     data_signature = static_data_source_signature(output)
     data_batch = [
         "@ECHO OFF", "ECHO MS C 5.1 original EXE static data copy > DATSTART.LOG",
@@ -619,6 +628,17 @@ def stage_launcher(output: Path) -> list[str]:
         "C:\\BIN\\LINK.EXE @BPREP.RSP >> DATBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
         "IF NOT EXIST BOOTPREP.EXE GOTO FAILED",
         "IF EXIST E:\\GATE.RTL BOOTPREP.EXE > BPREAL.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED",
+        # Unlike BOOTPREP, this deliberately changes the virtual VGA mode.
+        # BOOTVGA owns the original two data allocations and installs an
+        # atexit handler that restores the prior BIOS mode before release.
+        "CL /AL /Od /c RESSTATE.C >> DATBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        "IF NOT EXIST RESSTATE.OBJ GOTO FAILED",
+        "CL /AL /Od /c BOOTVGA.C >> DATBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        "IF NOT EXIST BOOTVGA.OBJ GOTO FAILED",
+        "C:\\BIN\\LINK.EXE @BVID.RSP >> DATBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        "IF NOT EXIST BOOTVGA.EXE GOTO FAILED",
+        "IF EXIST E:\\GATE.RTL BOOTVGA.EXE > BVIDREAL.LOG",
         "IF ERRORLEVEL 1 GOTO FAILED",
         f"ECHO {data_signature} > DATSIG.LOG",
         "ECHO DOS static EXE data copy probe passed > DATOK.LOG",
@@ -1073,6 +1093,11 @@ def validate_static_data_probe(output: Path, *, require_original: bool = False) 
                 r"^DOS intro C video layout: PASS \(RTL:f14d mode 3; 320x200 descriptors; BIOS mode switch simulated\)\s*$",
                 prepared.read_text(), re.MULTILINE) is None:
             raise ValueError("DOS source-C intro video layout verification is missing or failed.")
+        live = locate_case_insensitive(output, "BVIDREAL.LOG")
+        if live is None or re.search(
+                r"^DOS intro live VGA probe: PASS \(RTL:f14d \+ resident 2409 mode 13; A000 pixel; prior BIOS mode restored\)\s*$",
+                live.read_text(), re.MULTILINE) is None:
+            raise ValueError("DOS source-C and resident VGA mode/restore verification is missing or failed.")
 
 
 def remove_static_data_outputs(output: Path) -> None:
@@ -1080,6 +1105,7 @@ def remove_static_data_outputs(output: Path) -> None:
              "DATAREAL.EXE", "DATREAL.LOG", "DATSTART.LOG",
              "BOOT.OBJ", "BOOTCHK.OBJ", "BOOTCHK.EXE", "BOOTREAL.LOG",
              "BOOTPREP.OBJ", "BOOTPREP.EXE", "BPREAL.LOG",
+             "BOOTVGA.OBJ", "BOOTVGA.EXE", "BVIDREAL.LOG",
              "DATBUILD.LOG", "DATTEST.LOG", "DATOK.LOG", "DATFAIL.LOG", "DATSIG.LOG",
              "DATASRC.BIN", "DATARTL.BIN"}
     if output.is_dir():
@@ -1090,7 +1116,7 @@ def remove_static_data_outputs(output: Path) -> None:
 
 def print_static_data_diagnostics(output: Path) -> None:
     for name in ("DATFAIL.LOG", "DATBUILD.LOG", "DATTEST.LOG", "DATREAL.LOG",
-                 "BOOTREAL.LOG", "BPREAL.LOG", "DATOK.LOG"):
+                 "BOOTREAL.LOG", "BPREAL.LOG", "BVIDREAL.LOG", "DATOK.LOG"):
         path = locate_case_insensitive(output, name)
         content = path.read_text(errors="replace") if path else "(not created)"
         print(f"--- {name} ---\n{content[-8_000:].rstrip()}", file=sys.stderr)
@@ -1818,8 +1844,10 @@ def main(argv: list[str] | None = None) -> int:
                  "BOOTPREP.EXE executed the five recovered source-C entry "
                  "writes, the RTL no-music initializer return, the RTL "
                  "invalid-video-mode guard and mode-3 descriptor setup "
-                 "without entering original resident code, switching a "
-                 "BIOS video mode or installing IRQs"
+                 "with simulated BIOS callbacks; BOOTVGA.EXE exercised "
+                 "the real reconstructed resident mode-13 switch, pixel "
+                 "write and prior-BIOS-mode restoration without entering "
+                 "original resident code or installing IRQs"
                  if original_game_dir is not None
                  else "; BOOT.OBJ was built but its original-file probes were not run")
               + ". DATA.OBJ/BOOT.OBJ remain probe-only until executable startup "

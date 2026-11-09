@@ -144,9 +144,16 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("CL /AL /Od /c " + mode_object.replace(".OBJ", ".C"), batch)
             self.assertIn("LINK.EXE @BPREP.RSP", batch)
             self.assertIn("IF EXIST E:\\GATE.RTL BOOTPREP.EXE > BPREAL.LOG", batch)
+            self.assertIn("CL /AL /Od /c RESSTATE.C >> DATBUILD.LOG", batch)
+            self.assertIn("LINK.EXE @BVID.RSP", batch)
+            self.assertIn("IF EXIST E:\\GATE.RTL BOOTVGA.EXE > BVIDREAL.LOG", batch)
             self.assertIn(entry_object, (output / "BPREP.RSP").read_text())
             self.assertIn(mode_object, (output / "BPREP.RSP").read_text())
             self.assertIn("RTLHW.OBJ+", (output / "BPREP.RSP").read_text())
+            self.assertIn("RESSTATE.OBJ+", (output / "BVID.RSP").read_text())
+            self.assertIn(entry_object, (output / "BVID.RSP").read_text())
+            self.assertIn(mode_object, (output / "BVID.RSP").read_text())
+            self.assertNotIn("RESSTATE.OBJ+", (output / "BPREP.RSP").read_text())
             original_initializer = "gate_linked_initialize_intro_services"
             alias = msc51.msc51_short_names([original_initializer]).get(
                 original_initializer, original_initializer)
@@ -164,7 +171,8 @@ class MSC51Tests(unittest.TestCase):
             # names such as gate_dos_relocate_intro_resident_* otherwise
             # collide as distinct function bodies under C2084.
             for source in ("DATA.C", "DATACHK.C", "DATAREAL.C", "BOOT.H", "BOOTCB.H",
-                           "BOOT.C", "BOOTCHK.C", "BOOTPREP.C", "RTLHW.C"):
+                           "BOOT.C", "BOOTCHK.C", "BOOTPREP.C", "BOOTVGA.C",
+                           "RTLHW.C", "RESSTATE.C"):
                 ids = msc51.msc51_identifiers((output / source).read_text())
                 self.assertTrue(all(len(name) <= 31 for name in ids), source)
                 self.assertEqual(len(ids), len({name[:31] for name in ids}), source)
@@ -199,13 +207,13 @@ class MSC51Tests(unittest.TestCase):
             callback_header = (output / "BOOTCB.H").read_text()
             self.assertIn("gate_dos_file_seek(handle, 0u, 0x4bc8ul)", callback_header)
             self.assertIn("gate_dos_file_read(handle,", callback_header)
-            for source in ("BOOTCHK.C", "BOOTPREP.C"):
+            for source in ("BOOTCHK.C", "BOOTPREP.C", "BOOTVGA.C"):
                 self.assertIn('#include "BOOTCB.H"', (output / source).read_text())
                 self.assertIn("gate_probe_load_return_context(", (output / source).read_text())
             self.assertNotIn("DATA.OBJ", (output / "LINK.RSP").read_text())
             self.assertNotIn("BOOT.OBJ", (output / "LINK.RSP").read_text())
             (output / "STDINT.H").write_text('#include <stdint.h>\n')
-            for source in ("DATACHK.C", "DATAREAL.C", "BOOTPREP.C"):
+            for source in ("DATACHK.C", "DATAREAL.C", "BOOTPREP.C", "BOOTVGA.C"):
                 text = (output / source).read_text()
                 # MS C 5.1 emits C2073 for an initialized automatic array
                 # inside main(), even though host GCC accepts the C89 code.
@@ -295,6 +303,41 @@ class MSC51Tests(unittest.TestCase):
                                               capture_output=True, text=True)
                     self.assertEqual(rejected.returncode, 1, rejected.stderr)
                     self.assertIn("DOS intro C entry prologue: FAIL", rejected.stdout)
+
+    def test_recovered_mode_sets_and_restores_live_vga_in_host_fixture(self):
+        if not shutil.which("gcc"):
+            self.skipTest("gcc needed for synthetic resident video fixture")
+        with tempfile.TemporaryDirectory() as scratch:
+            output = Path(scratch)
+            msc51.stage_launcher(output)
+            intro = msc51.launcher_source_alias(output, "gate_exe_intro_setup.c")
+            mode = msc51.launcher_source_alias(output, "gate_rtl_mode.c")
+            executable = output / "startup-video-host"
+            built = subprocess.run(
+                ["gcc", "-x", "c", "-std=c89", "-Wall", "-Wextra", "-Werror",
+                 "-include", str(output / "DATNAMES.H"),
+                 "-I", str(REPO / "tests/fixtures/msc51_data"),
+                 "-I", str(output), str(output / "BOOTVGA.C"),
+                 str(output / intro), str(output / mode), str(output / "HEAP.C"),
+                 str(REPO / "tests/fixtures/msc51_data/bootstrap_entry_host.c"),
+                 str(REPO / "tests/fixtures/msc51_data/bootstrap_video_host.c"),
+                 "-o", str(executable)], capture_output=True, text=True)
+            self.assertEqual(built.returncode, 0, built.stderr)
+            env = os.environ.copy()
+            env["TEST_VIDEO_ONLY"] = "1"
+            result = subprocess.run([str(executable)], env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("RTL:f14d + resident 2409 mode 13; A000 pixel; prior BIOS mode restored",
+                          result.stdout)
+            for rejected_var in ("TEST_VIDEO_BAD_PIXEL", "TEST_VIDEO_NOT_VGA",
+                                 "TEST_VIDEO_FAIL_RESTORE"):
+                with self.subTest(rejected_var=rejected_var):
+                    rejected_env = env.copy()
+                    rejected_env[rejected_var] = "1"
+                    rejected = subprocess.run([str(executable)], env=rejected_env,
+                                              capture_output=True, text=True)
+                    self.assertEqual(rejected.returncode, 1, rejected.stderr)
+                    self.assertIn("DOS intro live VGA probe: FAIL", rejected.stdout)
 
     def test_original_rtl_video_mode_needs_hardware_initialization(self):
         rtl = REPO.parent / "gateway-dos" / "GATE.RTL"
@@ -419,6 +462,14 @@ class MSC51Tests(unittest.TestCase):
             (output / "BPREAL.LOG").write_text(
                 (output / "BPREAL.LOG").read_text() +
                 "DOS intro C video layout: PASS (RTL:f14d mode 3; 320x200 descriptors; BIOS mode switch simulated)\n")
+            with self.assertRaisesRegex(ValueError, "resident VGA mode/restore verification"):
+                msc51.validate_static_data_probe(output, require_original=True)
+            (output / "BVIDREAL.LOG").write_text(
+                "DOS intro live VGA probe: PASS (old)\n")
+            with self.assertRaisesRegex(ValueError, "resident VGA mode/restore verification"):
+                msc51.validate_static_data_probe(output, require_original=True)
+            (output / "BVIDREAL.LOG").write_text(
+                "DOS intro live VGA probe: PASS (RTL:f14d + resident 2409 mode 13; A000 pixel; prior BIOS mode restored)\n")
             msc51.validate_static_data_probe(output, require_original=True)
             (output / "DATA.C").write_text((output / "DATA.C").read_text() + "/* stale */\n")
             with self.assertRaisesRegex(ValueError, "source changed"):

@@ -251,6 +251,26 @@ startup `_main` remain unimplemented; this isolated step does not draw,
 install IRQs, prove a call to `gate_exe_play_intro`, or make the launcher
 playable.
 
+**Live VGA integration (DOS run pending).** `DATA.BAT` additionally builds a
+*different* original-file probe, `BOOTVGA.EXE`, from the same source-C mode
+setter and the existing reconstructed `RESSTATE.OBJ`. This one intentionally
+invokes the real resident mode selector (`2409:0008`) and video start
+(`2409:003e`) through BIOS INT 10h. After checking the original image-owner
+segments and startup prologue it requests RTL mode 3, verifies BIOS mode 13h,
+the original rendering state and one pixel written through reconstructed
+resident dispatch to `A000:0509`, then invokes the resident video disable
+branch and verifies BIOS text mode 3. An `atexit` cleanup handler is
+registered before loading images, arms restoration *before* the first mode
+switch and restores the prior BIOS mode before freeing DOS allocations, so
+ordinary failures leave the DOSBox console usable. This probe contains no
+original resident code or playable `_main`, does not call IRQ/music setup,
+and is not a substitute for linking the resident bank loader. Its separate
+`BVIDREAL.LOG` must have the exact
+`DOS intro live VGA probe: PASS (RTL:f14d + resident 2409 mode 13; A000 pixel; prior BIOS mode restored)`
+witness. The C89 host test verifies success plus bad-pixel, rejected-adapter
+and failed-restore cases with synthetic BIOS callbacks. No Microsoft C 5.1
+or DOSBox binaries are installed here; actual guest execution is pending.
+
 **Microsoft C 5.1 identifier compatibility:** The user's first real
 `DATA.BAT` run failed at `DATA.C` compilation, not during the probe:
 the compiler sees only 31 identifier characters and treats distinct
@@ -272,8 +292,9 @@ nix run -L .#msc51-compile-data -- --original-game-dir ../gateway-dos
 
 `BOOTREAL.LOG` must contain the exact owner `PASS` line; `DATREAL.LOG` must
 also contain both original CRC witnesses; `BPREAL.LOG` must contain the
-five-write reconstructed entry probe witness **and the new no-music return
-witness**. A failed or absent log is not a
+five-write reconstructed entry probe witness, the audio guard and mode-3
+descriptor witness, and `BVIDREAL.LOG` must prove the real BIOS-mode cycle.
+A failed or absent log is not a
 successful test. `BOOT.OBJ` is deliberately not included in `LINK.RSP` while
 no valid source-C `_main` can consume it.
 

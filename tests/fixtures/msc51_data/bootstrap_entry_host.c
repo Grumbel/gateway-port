@@ -13,6 +13,7 @@
 
 static uint16_t words[0x8000];
 static uint16_t lower_words[0x8000];
+static uint8_t video_bytes[64000];
 static unsigned startup_allocations;
 static unsigned no_music_calls;
 static unsigned adapter_queries, clipped_frames, pen_calls;
@@ -91,9 +92,26 @@ uint16_t gate_ds_segment(void)
 uint8_t gate_far_byte(uint16_t segment, uint16_t offset)
 {
     uint16_t value;
+    if (segment == 0xa000u)
+        return video_bytes[offset];
     require(segment == MOCK_DATA_SEGMENT);
     value = gate_far_word(segment, (uint16_t)(offset & 0xfffeu));
     return (uint8_t)((offset & 1u) ? (value >> 8) : value);
+}
+
+void gate_far_set_byte(uint16_t segment, uint16_t offset, uint8_t value)
+{
+    uint16_t previous;
+    if (segment == 0xa000u) {
+        video_bytes[offset] = value;
+        return;
+    }
+    previous = gate_far_word(segment, (uint16_t)(offset & 0xfffeu));
+    if (offset & 1u)
+        previous = (uint16_t)((previous & 0x00ffu) | ((uint16_t)value << 8));
+    else
+        previous = (uint16_t)((previous & 0xff00u) | value);
+    gate_far_set_word(segment, (uint16_t)(offset & 0xfffeu), previous);
 }
 
 /* The host fixture verifies linkage and call order. The guest build links
@@ -219,7 +237,8 @@ int gate_dos_boot_prepare(const GateDosBootConfig *config,
 void gate_dos_boot_release(GateDosBootImage *image)
 {
     require(image != 0);
-    if (getenv("TEST_BAD_SELECTOR") == 0 &&
+    if (getenv("TEST_VIDEO_ONLY") == 0 &&
+        getenv("TEST_BAD_SELECTOR") == 0 &&
         getenv("TEST_ALLOC_FAIL") == 0 &&
         getenv("TEST_MUSIC_ENABLED") == 0 &&
         getenv("TEST_VIDEO_PREINITIALIZED") == 0 &&

@@ -441,12 +441,18 @@ CRC32 against the original 125–250ms startup state. The generated-data
 fails the optional mode. Without this flag, the test needs no original
 game files and does not mount drive `E:`.
 
-The final original-file `BOOTPREP.EXE` probe also compiles real reconstructed
+The original-file `BOOTPREP.EXE` probe also compiles real reconstructed
 source-C startup and video-mode code. Its mode-3 test checks the original
-320×200 descriptor layout through relocated segment aliases; BIOS video-mode
-changes are **simulated** to keep this validation nonvisual and isolated.
-Inspect `BPREAL.LOG` for each separate startup and mode result. This is not
-yet a working DOS launcher or an actual VGA initialization.
+320×200 descriptor layout through relocated segment aliases; its BIOS
+video-mode changes are **simulated** to keep that validation nonvisual.
+The separate `BOOTVGA.EXE` probe now links the actual reconstructed
+`RESSTATE.OBJ`, requests mode 13h via BIOS, verifies one mode-13 pixel
+in video memory, calls the recovered mode disable path and restores the
+previous BIOS video mode on exit (including ordinary error paths). Both
+tests use the original data images, not original resident *code*.
+Inspect `BPREAL.LOG` and `BVIDREAL.LOG` for their independent results.
+The real VGA test runs **inside DOSBox**, briefly changing its virtual
+display mode; it is not yet a working DOS launcher or playable intro.
 
 `DATA.OBJ` is not yet in `LINK.RSP`. The first resident bank and prepared
 data image now have complete host-verified initial-byte reconstructions,
