@@ -180,9 +180,8 @@ void gate_rtl_background_rect(uint16_t style, uint16_t bottom,
  * REP MOVSW/MOVSB; XOR/AND/OR use byte operations. This implementation
  * retains that row-copy distinction, using MSC 5.1 movedata for its native
  * segment:offset transfer. The byte-aligned four-plane mode-12h path below
- * follows RTL:187da..188b2 and its register cleanup at RTL:1895c..1898d.
- * Unaligned edges still use a separate BIOS adapter, pending recovery of
- * the original masked rotation path at RTL:188b4..18959. */
+ * follows RTL:187da..18959 (both aligned and unaligned branches) and the
+ * register cleanup at RTL:1895c..1898d. */
 enum {
     DOS_VFX_SIGNATURE = 0x00,
     DOS_VFX_PLANES = 0x12,
@@ -192,21 +191,13 @@ enum {
     DOS_VFX_PIXELS_SEGMENT = 0x1a,
     DOS_VFX_WIDTH = 0x2c,
     DOS_VFX_HEIGHT = 0x2e,
-    DOS_VFX_ROW_BYTES = 0x30
+    DOS_VFX_ROW_BYTES = 0x30,
+    DOS_VFX_LAST_BYTE_MASK = 0x32
 };
 
 static uint16_t vfx_word(GateFarPtr image, uint16_t offset)
 {
     return gate_far_word(image.segment, (uint16_t)(image.offset + offset));
-}
-
-/* Resident 244c:0000 rolls the segment ahead by 1000h on a 64KiB
- * read-offset boundary. Plain 8086 FAR read helpers do not do that. */
-static uint8_t vfx_extended_byte(GateFarPtr data, uint32_t position)
-{
-    uint32_t linear = (uint32_t)data.offset + position;
-    return gate_far_byte((uint16_t)(data.segment + ((linear >> 16) << 12)),
-                         (uint16_t)linear);
 }
 
 static uint8_t vfx_raster_byte(uint8_t incoming, uint8_t old,
@@ -218,6 +209,47 @@ static uint8_t vfx_raster_byte(uint8_t incoming, uint8_t old,
     case 3u: return (uint8_t)(old ^ incoming);
     default: return (uint8_t)(old | incoming);
     }
+}
+
+static void vfx_mode12_ports_start(uint16_t operation)
+{
+    outp(0x3ce, 5); outp(0x3cf, 8);
+    outp(0x3ce, 7); outp(0x3cf, 0);
+    outp(0x3ce, 8); outp(0x3cf, 0xff);
+    outp(0x3c4, 2); outp(0x3c5, 0x0f);
+    outp(0x3c4, 2); outp(0x3c5, 1);
+    outp(0x3ce, 3); outp(0x3cf, (uint8_t)(operation << 3));
+}
+
+static void vfx_mode12_ports_finish(void)
+{
+    /* RTL:1895c resets known VGA defaults, not previous register values. */
+    outp(0x3ce, 5); outp(0x3cf, 0);
+    outp(0x3ce, 7); outp(0x3cf, 0x0f);
+    outp(0x3ce, 8); outp(0x3cf, 0xff);
+    outp(0x3c4, 2); outp(0x3c5, 0x0f);
+    outp(0x3ce, 3); outp(0x3cf, 0);
+}
+
+static void vfx_mode12_mask(uint8_t mask)
+{
+    outp(0x3ce, 8);
+    outp(0x3cf, mask);
+}
+
+static void vfx_mode12_and_byte(uint16_t address, uint8_t incoming)
+{
+    uint8_t latched = gate_far_byte(
+        GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT, address);
+    gate_far_set_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT, address,
+                      (uint8_t)(latched & incoming));
+}
+
+static uint16_t vfx_rotate_left_word(uint16_t value, uint16_t count)
+{
+    if (count == 0u)
+        return value;
+    return (uint16_t)((value << count) | (value >> (16u - count)));
 }
 
 /* Original RTL:187e9..188b2, byte-aligned mode-12h VFX rasterizer.
@@ -235,12 +267,7 @@ static void vfx_mode12_aligned(uint16_t x, uint16_t y, uint16_t height,
     uint16_t row, plane, col;
     uint16_t destination = (uint16_t)((uint32_t)y * 80u + x / 8u);
 
-    outp(0x3ce, 5); outp(0x3cf, 8);
-    outp(0x3ce, 7); outp(0x3cf, 0);
-    outp(0x3ce, 8); outp(0x3cf, 0xff);
-    outp(0x3c4, 2); outp(0x3c5, 0x0f);
-    outp(0x3c4, 2); outp(0x3c5, 1);
-    outp(0x3ce, 3); outp(0x3cf, (uint8_t)(operation << 3));
+    vfx_mode12_ports_start(operation);
 
     for (row = 0u; row < height; ++row) {
         for (plane = 0u; plane < 4u; ++plane) {
@@ -255,21 +282,93 @@ static void vfx_mode12_aligned(uint16_t x, uint16_t y, uint16_t height,
                 uint16_t address = (uint16_t)(destination + col);
                 uint8_t incoming = gate_far_byte(source.segment,
                     (uint16_t)(plane_source + col));
-                uint8_t latched = gate_far_byte(
-                    GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT, address);
-                gate_far_set_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
-                    address, (uint8_t)(latched & incoming));
+                vfx_mode12_and_byte(address, incoming);
             }
         }
         destination = (uint16_t)(destination + 80u);
     }
 
-    /* RTL:1895c resets known VGA defaults, not previous register values. */
-    outp(0x3ce, 5); outp(0x3cf, 0);
-    outp(0x3ce, 7); outp(0x3cf, 0x0f);
-    outp(0x3ce, 8); outp(0x3cf, 0xff);
-    outp(0x3c4, 2); outp(0x3c5, 0x0f);
-    outp(0x3ce, 3); outp(0x3cf, 0);
+    vfx_mode12_ports_finish();
+}
+
+/* Original RTL:188b4..18959, unaligned/masked four-plane path. The
+ * source is advanced one byte between overlapping LODSW operations, then
+ * ROL AX,CL supplies adjacent screen bytes. Two GC8 masks from the image
+ * header's last-byte mask protect the right edge, even when the X origin
+ * is already byte-aligned but the picture width is not. For a one-byte
+ * source row, the original takes a separate mask setup branch at 188c0.
+ * Read/write and port order follow the original, including writes with
+ * GC8=0 (a masked no-op on VGA). */
+static void vfx_mode12_masked(uint16_t x, uint16_t y, uint16_t height,
+                               uint16_t stride, uint16_t copy_bytes,
+                               uint8_t last_mask, uint16_t operation,
+                               GateFarPtr source)
+{
+    uint16_t row, plane;
+    uint16_t shift = (uint16_t)((8u - (x & 7u)) & 7u);
+    uint16_t destination = (uint16_t)((uint32_t)y * 80u + x / 8u);
+    uint16_t end_word;
+    uint16_t start_word;
+    uint8_t start_mask, end_mask1, end_mask2;
+
+    if (copy_bytes == 1u) {
+        start_word = last_mask;
+        end_word = (uint16_t)last_mask << 8;
+    } else {
+        start_word = 0xffu;
+        /* RTL:188b7's MOV AL,CH; CBW preserves the high sign bits. */
+        end_word = (uint16_t)((last_mask & 0x80u ? 0xff00u : 0u) | last_mask);
+    }
+    start_word = (uint16_t)(start_word << shift);
+    end_word = (uint16_t)(end_word << shift);
+    start_mask = (uint8_t)(start_word >> 8);
+    end_mask1 = (uint8_t)(end_word >> 8);
+    end_mask2 = (uint8_t)end_word;
+
+    vfx_mode12_ports_start(operation);
+    for (row = 0u; row < height; ++row) {
+        for (plane = 0u; plane < 4u; ++plane) {
+            uint16_t cursor = (uint16_t)(source.offset +
+                (uint32_t)(row * 4u + plane) * stride);
+            uint16_t screen = destination;
+            uint16_t data;
+            int16_t remaining = (int16_t)copy_bytes;
+            if (row != 0u || plane != 0u) {
+                outp(0x3c4, 2);
+                outp(0x3c5, (uint8_t)(1u << plane));
+            }
+            vfx_mode12_mask(start_mask);
+            data = gate_far_word(source.segment, cursor);
+            ++cursor; /* LODSW; DEC SI: sliding 16-bit source window */
+            if (shift != 0u) {
+                data = vfx_rotate_left_word(data, shift);
+                vfx_mode12_and_byte(screen++, (uint8_t)(data >> 8));
+                --remaining;
+            } else {
+                --remaining;
+                if (remaining == 0)
+                    goto masked_tail;
+            }
+
+            vfx_mode12_mask(0xffu);
+            --remaining;
+            while (remaining > 0) {
+                vfx_mode12_and_byte(screen++, (uint8_t)data);
+                data = gate_far_word(source.segment, cursor);
+                ++cursor;
+                data = vfx_rotate_left_word(data, shift);
+                --remaining;
+            }
+masked_tail:
+            vfx_mode12_mask(end_mask1);
+            vfx_mode12_and_byte(screen, (uint8_t)data);
+            vfx_mode12_mask(end_mask2);
+            vfx_mode12_and_byte((uint16_t)(screen + 1u),
+                                (uint8_t)(data >> 8));
+        }
+        destination = (uint16_t)(destination + 80u);
+    }
+    vfx_mode12_ports_finish();
 }
 
 /* RTL:11078 (save) and RTL:10f64 (restore), original FAR entries
@@ -423,44 +522,24 @@ void gate_linked_blit_vfx_picture(uint16_t zero, uint16_t y, uint16_t x,
             dest = (uint16_t)(dest + 320u);
         }
     } else {
-        /* The original mode-12h path is directly recovered for complete
-         * bytes at an aligned X. The unaligned clipped/edge paths remain
-         * a BIOS adapter until RTL:188b4..18959 is reconstructed. */
-        union REGS in, out;
+        /* RTL:187da..18959: byte-aligned and masked planar VGA paths. */
         uint16_t copy_bytes = vfx_word(image, DOS_VFX_ROW_BYTES);
+        uint8_t last_mask = (uint8_t)vfx_word(image, DOS_VFX_LAST_BYTE_MASK);
         if (gate_far_byte(image.segment,
                 (uint16_t)(image.offset + DOS_VFX_PLANES)) != 4u ||
             gate_far_byte(image.segment,
                 (uint16_t)(image.offset + DOS_VFX_BPP)) != 1u)
             abort();
-        if ((x & 7u) == 0u && (width & 7u) == 0u) {
-            if (width < original_width)
-                copy_bytes = width / 8u;
+        if (width < original_width) {
+            copy_bytes = (uint16_t)((width + 7u) / 8u);
+            last_mask = (uint8_t)(0xffu << ((8u - (width & 7u)) & 7u));
+        }
+        if ((x & 7u) == 0u && last_mask == 0xffu) {
             vfx_mode12_aligned(x, y, height, stride, copy_bytes,
                                operation, source);
-            return;
-        }
-        for (row = 0u; row < height; ++row) {
-            for (col = 0u; col < width; ++col) {
-                uint16_t plane;
-                uint32_t base = (uint32_t)row * 4u * stride + col / 8u;
-                uint8_t mask = (uint8_t)(0x80u >> (col & 7u));
-                uint8_t pixel = 0u;
-                uint8_t old;
-                for (plane = 0u; plane < 4u; ++plane)
-                    if ((vfx_extended_byte(source,
-                         base + (uint32_t)plane * stride) & mask) != 0u)
-                        pixel = (uint8_t)(pixel | (uint8_t)(1u << plane));
-                in.x.ax = 0x0d00u;
-                in.x.bx = 0u;
-                in.x.cx = (uint16_t)(x + col);
-                in.x.dx = (uint16_t)(y + row);
-                int86(0x10, &in, &out);
-                old = (uint8_t)(out.h.al & 15u);
-                in.h.ah = 0x0cu;
-                in.h.al = (uint8_t)(vfx_raster_byte(pixel, old, operation) & 15u);
-                int86(0x10, &in, &out);
-            }
+        } else {
+            vfx_mode12_masked(x, y, height, stride, copy_bytes,
+                              last_mask, operation, source);
         }
     }
 }

@@ -2462,7 +2462,7 @@ Once the linker reports zero missing names, the next milestone is *actual
 DOS execution* through the original intro sequence with deterministic
 input/frame comparisons. A linked `GATEWAY.EXE` is insufficient by itself.
 
-### Original VFX mode-13h byte-copy and mode-12h aligned VGA rasterizer recovered (2026-11-09)
+### Original VFX mode-13h byte-copy and mode-12h VGA rasterizer recovered (2026-11-09)
 
 The SHA-256-pinned original `GATE.RTL` contains the mode-13h VFX drawing
 callback at file offset `rtl:189a0..18a2c`, matching the already captured
@@ -2503,18 +2503,40 @@ selected plane. The original restores fixed register values (not the
 caller's prior register snapshot) at `rtl:1895c..1898d`.
 
 The source-C DOS adapter now reproduces this original register sequence
-for byte-aligned, whole-byte mode-12h images. It processes all four plane
-bytes per row with the recovered source stride and destination pitch,
-leaves raster operations to the VGA GC hardware, and resets registers
-exactly as the original. A C89 host fixture models four VGA latches,
-plane masks and GC logical operations. More importantly, the genuine
-MS C 5.1 `/AL /Od` `RESCHK.EXE` passed in DOSBox 0.74 with actual
-`A000h`/VGA-port writes and independent BIOS color readback for COPY,
-XOR, OR, AND and two interleaved rows. Original-file opcode witnesses
-pin the aligned loop, mask advance and cleanup.
+for byte-aligned, whole-byte images. It processes all four plane bytes
+per row with the recovered source stride and destination pitch, leaves
+raster operations to the VGA GC hardware, and resets registers exactly
+as the original. A C89 host fixture models four VGA latches, plane masks
+and GC logical operations. The genuine MS C 5.1 `/AL /Od` `RESCHK.EXE`
+passes in DOSBox 0.74 with actual A000/VGA-port writes and independent
+BIOS color readback for COPY, XOR, OR, AND and two interleaved rows.
 
-The **remaining unaligned and fractional-byte path** still uses the
-slow BIOS adapter: `rtl:188b4..18959` needs its source-word rotation,
-leading and trailing GC8 masks, and `image+32h` partial-byte mask
-recovered and independently tested before removal. Compiler optimization
-switches or changed intro delays are not substitutes for that recovery.
+The *other* original branch at `rtl:188b4..18959` is now also recovered.
+The image header's `+32h` low byte supplies the valid-bit mask for the
+last source byte; the original substitutes a clipped-end mask when the
+screen boundary truncates the width. `LODSW; DEC SI; ROL AX,CL` reads
+overlapping source words, producing the leading byte, complete interior
+bytes and up to two trailing masked VGA writes. The **one-source-byte**
+case uses its distinct `188c0` setup, and an X coordinate divisible by
+eight can still enter this masked branch if the width is fractional.
+The source-C implementation preserves those cases, GC8 mask order,
+16-bit word rotations and segment-offset wraps, and removes the former
+two-BIOS-interrupts-per-pixel mode-12h VFX adapter entirely.
+
+Pinned original opcode witnesses cover both branches. Independent C89
+host tests compare all four operations for a 13-pixel two-byte image at
+an unaligned origin and after clipping it to seven pixels at the right
+edge, plus an exhaustive width **1–31** × origin alignment **0–7** ×
+**four raster operations** sweep, checking unchanged neighboring pixels
+and absence of per-pixel
+BIOS calls. Real DOSBox 0.74/MS C 5.1 `RESCHK.EXE` passes BIOS readback
+for a rotated 13-pixel image, XOR restore and x=633/y=478 clipping,
+including the final visible VGA pixel and scanline. This verifies the
+VFX image drawing routine. The new `RESSTATE.OBJ` also passed a real
+Microsoft Overlay LINK 3.65 build and `/CHECK`, `/PICTURE`, `/SECOND`,
+`/TITLE`, `/TRANS`, `/SCENE` execution in DOSBox 0.74. **Pixel and
+rectangle services for fonts and
+backgrounds remain separate BIOS adapters**, and the complete visual
+presentation has not been compared against the original on the user's
+DOSBox Staging 0.82.2. Compiler optimization and altered intro delays
+remain out of scope.

@@ -72,6 +72,18 @@ class OriginalRtlVfxRasterizer(unittest.TestCase):
                          bytes.fromhex('5f0376e6807ef0017411'))
         self.assertEqual(self.rtl[0x1888b:0x1889c],
                          bytes.fromhex('8b56ecd066ee3856ee76118b56ea8856ee'))
+        # RTL:188b4 handles unaligned origins AND partial source bytes.
+        # The special one-source-byte row selects CH for both leading and
+        # trailing masks; otherwise CBW sign-extends CH before SHL AX,CL.
+        self.assertEqual(self.rtl[0x188b4:0x188d6], bytes.fromhex(
+            'bbff008ac598837ef60175068add8ae532c0d3e0d3e3'
+            '8866e08846de887ee28b5ef6'))
+        # The actual data loop uses a sliding LODSW; DEC SI; ROL AX,CL
+        # source window, then CPU AND against VGA latches and GC8 masks.
+        self.assertEqual(self.rtl[0x188e4:0x188f6], bytes.fromhex(
+            'ad4e84c975054b7509eb21d3c0262025474b'))
+        self.assertEqual(self.rtl[0x18909:0x18920], bytes.fromhex(
+            'ad4ed3c04b75f58bd8b008bace03ee428a46e0ee26201d'))
         # The original resets fixed GC/SEQ defaults rather than restoring
         # a caller-saved register snapshot.
         self.assertEqual(self.rtl[0x1895c:0x18970],

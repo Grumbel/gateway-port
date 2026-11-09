@@ -76,6 +76,8 @@ static uint8_t plane_byte(unsigned int plane, unsigned int offset)
 {
     unsigned int bit;
     uint8_t result = 0u;
+    if (offset >= 80u * 480u)
+        return 0u; /* A000 has offscreen VGA memory beyond visible rows. */
     for (bit = 0u; bit < 8u; ++bit) {
         unsigned int pixel = (offset / 80u) * 640u +
                              (offset % 80u) * 8u + bit;
@@ -101,6 +103,8 @@ static void vga_write(unsigned int offset, uint8_t data)
             uint8_t src = (data & mask) != 0u;
             uint8_t old = (vga_latches[plane] & mask) != 0u;
             uint8_t value = src;
+            if (index >= sizeof(planar))
+                continue;
             if ((gc_register[8] & mask) == 0u)
                 value = old;
             else if (logic == 1u)
@@ -396,6 +400,8 @@ int main(int argc, char **argv)
     video_mode = 0x12u;
     gate_far_set_word(image.segment, image.offset + 0x2eu, 1u);
     gate_far_set_word(image.segment, image.offset + 0x14u, 1u);
+    gate_far_set_word(image.segment, image.offset + 0x30u, 1u);
+    gate_far_set_word(image.segment, image.offset + 0x32u, 0x3fc0u);
     gate_far_set_byte(image.segment, image.offset + 0x12u, 4u);
     gate_far_set_byte(image.segment, image.offset + 0x13u, 1u);
     gate_far_set_byte(0x6100u, 0x0200u, 0x80u); /* plane 0, x=0 */
@@ -412,6 +418,7 @@ int main(int argc, char **argv)
     gate_far_set_word(image.segment, image.offset + 0x2eu, 2u);
     gate_far_set_word(image.segment, image.offset + 0x30u, 1u);
     gate_far_set_word(image.segment, image.offset + 0x14u, 2u);
+    gate_far_set_word(image.segment, image.offset + 0x32u, 0x00ffu);
     gate_far_set_byte(0x6100u, 0x0200u, 0x80u);
     gate_far_set_byte(0x6100u, 0x0202u, 0x40u);
     gate_far_set_byte(0x6100u, 0x0204u, 0x20u);
@@ -423,11 +430,12 @@ int main(int argc, char **argv)
     {
         unsigned int prior_bios_reads = planar_bios_reads;
         unsigned int prior_bios_writes = planar_bios_writes;
+        unsigned int prior_vga_writes = planar_vga_writes;
         gate_linked_blit_vfx_picture(0u, 18u, 32u, 0u, image);
         assert(planar_bios_reads == prior_bios_reads);
         assert(planar_bios_writes == prior_bios_writes);
+        assert(planar_vga_writes == prior_vga_writes + 8u);
     }
-    assert(planar_vga_writes == 8u);
     assert(planar[18ul * 640u + 32u] == 1u);
     assert(planar[18ul * 640u + 33u] == 2u);
     assert(planar[18ul * 640u + 34u] == 4u);
@@ -445,6 +453,139 @@ int main(int argc, char **argv)
     assert(planar[18ul * 640u + 35u] == 8u);
     gate_linked_blit_vfx_picture(0u, 18u, 32u, 1u, image);
     assert(planar[19ul * 640u + 32u] == 10u);
+
+    /* RTL:188b4..18959 also handles fractional source bytes, rotated
+     * leading pixels, two-byte source windows and right/bottom clipping.
+     * Each oracle pixel is decoded from source planes, independent of GC
+     * bit-mask and source-word-rotation instruction emulation. */
+    gate_far_set_word(image.segment, image.offset + 0x2cu, 13u);
+    gate_far_set_word(image.segment, image.offset + 0x2eu, 2u);
+    gate_far_set_word(image.segment, image.offset + 0x30u, 2u);
+    gate_far_set_word(image.segment, image.offset + 0x14u, 2u);
+    gate_far_set_word(image.segment, image.offset + 0x32u, 0x07f8u);
+    gate_far_set_byte(0x6100u, 0x0200u, 0xa9u);
+    gate_far_set_byte(0x6100u, 0x0201u, 0xa8u);
+    gate_far_set_byte(0x6100u, 0x0202u, 0x56u);
+    gate_far_set_byte(0x6100u, 0x0203u, 0x50u);
+    gate_far_set_byte(0x6100u, 0x0204u, 0x0fu);
+    gate_far_set_byte(0x6100u, 0x0205u, 0xf8u);
+    gate_far_set_byte(0x6100u, 0x0206u, 0xf0u);
+    gate_far_set_byte(0x6100u, 0x0207u, 0u);
+    gate_far_set_byte(0x6100u, 0x0208u, 0x3cu);
+    gate_far_set_byte(0x6100u, 0x0209u, 0x60u);
+    gate_far_set_byte(0x6100u, 0x020au, 0xc3u);
+    gate_far_set_byte(0x6100u, 0x020bu, 0x90u);
+    gate_far_set_byte(0x6100u, 0x020cu, 0xffu);
+    gate_far_set_byte(0x6100u, 0x020du, 0xf8u);
+    gate_far_set_byte(0x6100u, 0x020eu, 0u);
+    gate_far_set_byte(0x6100u, 0x020fu, 0u);
+    {
+        unsigned int case_index, op, line, column, plane;
+        unsigned int prior_bios_reads = planar_bios_reads;
+        unsigned int prior_bios_writes = planar_bios_writes;
+        for (case_index = 0u; case_index < 2u; ++case_index) {
+            uint16_t left = case_index == 0u ? 29u : 633u;
+            uint16_t top = case_index == 0u ? 20u : 478u;
+            uint16_t visible = case_index == 0u ? 13u : 7u;
+            for (op = 0u; op < 4u; ++op) {
+                for (line = 0u; line < 2u; ++line)
+                    for (column = 0u; column < visible; ++column)
+                        planar[(top + line) * 640ul + left + column] = 5u;
+                planar[(top + 0u) * 640ul + left - 1u] = 11u;
+                if (left + visible < 640u)
+                    planar[(top + 0u) * 640ul + left + visible] = 11u;
+                gate_linked_blit_vfx_picture(0u, top, left, (uint16_t)op, image);
+                for (line = 0u; line < 2u; ++line)
+                    for (column = 0u; column < visible; ++column) {
+                        uint8_t source_color = 0u;
+                        uint8_t expected;
+                        for (plane = 0u; plane < 4u; ++plane) {
+                            uint16_t at = (uint16_t)(0x0200u +
+                                (line * 4u + plane) * 2u + column / 8u);
+                            if (gate_far_byte(0x6100u, at) &
+                                (0x80u >> (column & 7u)))
+                                source_color |= (uint8_t)(1u << plane);
+                        }
+                        expected = op == 0u ? source_color :
+                            op == 1u ? (uint8_t)(5u & source_color) :
+                            op == 2u ? (uint8_t)(5u | source_color) :
+                                       (uint8_t)(5u ^ source_color);
+                        assert(planar[(top + line) * 640ul + left + column]
+                               == expected);
+                    }
+                assert(planar[top * 640ul + left - 1u] == 11u);
+                if (left + visible < 640u)
+                    assert(planar[top * 640ul + left + visible] == 11u);
+            }
+        }
+        assert(planar_bios_reads == prior_bios_reads);
+        assert(planar_bios_writes == prior_bios_writes);
+    }
+
+    /* Sweep every possible VGA bit alignment and source-row remainder.
+     * The oracle decodes source-plane bits directly, not through the
+     * reconstructed shift/mask/register code. Include the 1-byte branch,
+     * aligned partial bytes, and multi-LODSW overlapping reads. */
+    {
+        unsigned int width, alignment, op, line, column, plane, byte;
+        unsigned int prior_bios_reads = planar_bios_reads;
+        unsigned int prior_bios_writes = planar_bios_writes;
+        gate_far_set_word(image.segment, image.offset + 0x2eu, 2u);
+        gate_far_set_word(image.segment, image.offset + 0x14u, 4u);
+        for (line = 0u; line < 2u; ++line)
+            for (plane = 0u; plane < 4u; ++plane)
+                for (byte = 0u; byte < 4u; ++byte) {
+                    uint16_t source_address = (uint16_t)(0x0200u +
+                        (line * 4u + plane) * 4u + byte);
+                    uint8_t value = (uint8_t)(line * 97u + plane * 37u +
+                                              byte * 91u + 0xa5u);
+                    gate_far_set_byte(0x6100u, source_address, value);
+                }
+        for (width = 1u; width <= 31u; ++width) {
+            uint8_t last_mask = (uint8_t)(0xffu <<
+                ((8u - (width & 7u)) & 7u));
+            gate_far_set_word(image.segment, image.offset + 0x2cu,
+                              (uint16_t)width);
+            gate_far_set_word(image.segment, image.offset + 0x30u,
+                              (uint16_t)((width + 7u) / 8u));
+            gate_far_set_word(image.segment, image.offset + 0x32u,
+                (uint16_t)((uint16_t)(uint8_t)~last_mask << 8 | last_mask));
+            for (alignment = 0u; alignment < 8u; ++alignment) {
+                uint16_t left = (uint16_t)(96u + alignment);
+                for (op = 0u; op < 4u; ++op) {
+                    for (line = 0u; line < 2u; ++line)
+                        for (column = 0u; column < width; ++column)
+                            planar[(100u + line) * 640ul + left + column] = 5u;
+                    planar[100u * 640ul + left - 1u] = 11u;
+                    planar[100u * 640ul + left + width] = 11u;
+                    gate_linked_blit_vfx_picture(0u, 100u, left,
+                                                 (uint16_t)op, image);
+                    for (line = 0u; line < 2u; ++line)
+                        for (column = 0u; column < width; ++column) {
+                            uint8_t source_color = 0u;
+                            uint8_t expected;
+                            for (plane = 0u; plane < 4u; ++plane) {
+                                uint16_t address = (uint16_t)(0x0200u +
+                                    (line * 4u + plane) * 4u + column / 8u);
+                                if (gate_far_byte(0x6100u, address) &
+                                    (0x80u >> (column & 7u)))
+                                    source_color |= (uint8_t)(1u << plane);
+                            }
+                            expected = op == 0u ? source_color :
+                                op == 1u ? (uint8_t)(5u & source_color) :
+                                op == 2u ? (uint8_t)(5u | source_color) :
+                                           (uint8_t)(5u ^ source_color);
+                            assert(planar[(100u + line) * 640ul + left + column]
+                                   == expected);
+                        }
+                    assert(planar[100u * 640ul + left - 1u] == 11u);
+                    assert(planar[100u * 640ul + left + width] == 11u);
+                }
+            }
+        }
+        assert(planar_bios_reads == prior_bios_reads);
+        assert(planar_bios_writes == prior_bios_writes);
+    }
     return 0;
 }
 ''')

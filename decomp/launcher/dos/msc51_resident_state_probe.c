@@ -293,6 +293,8 @@ int main(void)
     valid &= check((uint16_t)(out.h.al & 15u), 0x0bu, "planar VGA pixel");
 
     gate_far_set_word(image.segment, image.offset + 0x14u, 1u);
+    gate_far_set_word(image.segment, image.offset + 0x30u, 1u);
+    gate_far_set_word(image.segment, image.offset + 0x32u, 0x3fc0u);
     gate_far_set_word(image.segment, image.offset + 0x2cu, 2u);
     gate_far_set_word(image.segment, image.offset + 0x2eu, 1u);
     gate_far_set_byte(image.segment, image.offset + 0x12u, 4u);
@@ -321,6 +323,7 @@ int main(void)
     gate_far_set_word(image.segment, image.offset + 0x2cu, 8u);
     gate_far_set_word(image.segment, image.offset + 0x2eu, 2u);
     gate_far_set_word(image.segment, image.offset + 0x30u, 1u);
+    gate_far_set_word(image.segment, image.offset + 0x32u, 0x00ffu);
     gate_far_set_byte(image.segment, 0x0800u, 0x80u);
     gate_far_set_byte(image.segment, 0x0802u, 0x40u);
     gate_far_set_byte(image.segment, 0x0804u, 0x20u);
@@ -368,6 +371,67 @@ int main(void)
     int86(0x10, &in, &out);
     valid &= check((uint16_t)(out.h.al & 15u), 9u,
                    "mode-12 original aligned plane AND");
+
+    /* RTL:188b4 also draws unaligned 13-pixel (two-source-byte) rows.
+     * At x=633 the same image is clipped to seven pixels and writes a
+     * zero-masked trailing VGA byte just outside the visible scanline. */
+    gate_far_set_word(image.segment, image.offset + 0x14u, 2u);
+    gate_far_set_word(image.segment, image.offset + 0x2cu, 13u);
+    gate_far_set_word(image.segment, image.offset + 0x2eu, 2u);
+    gate_far_set_word(image.segment, image.offset + 0x30u, 2u);
+    gate_far_set_word(image.segment, image.offset + 0x32u, 0x07f8u);
+    gate_far_set_byte(image.segment, 0x0800u, 0xa9u);
+    gate_far_set_byte(image.segment, 0x0801u, 0xa8u);
+    gate_far_set_byte(image.segment, 0x0802u, 0x56u);
+    gate_far_set_byte(image.segment, 0x0803u, 0x50u);
+    gate_far_set_byte(image.segment, 0x0804u, 0x0fu);
+    gate_far_set_byte(image.segment, 0x0805u, 0xf8u);
+    gate_far_set_byte(image.segment, 0x0806u, 0xf0u);
+    gate_far_set_byte(image.segment, 0x0807u, 0u);
+    gate_far_set_byte(image.segment, 0x0808u, 0x3cu);
+    gate_far_set_byte(image.segment, 0x0809u, 0x60u);
+    gate_far_set_byte(image.segment, 0x080au, 0xc3u);
+    gate_far_set_byte(image.segment, 0x080bu, 0x90u);
+    gate_far_set_byte(image.segment, 0x080cu, 0xffu);
+    gate_far_set_byte(image.segment, 0x080du, 0xf8u);
+    gate_far_set_byte(image.segment, 0x080eu, 0u);
+    gate_far_set_byte(image.segment, 0x080fu, 0u);
+    gate_linked_blit_vfx_picture(0u, 20u, 29u, 0u, image);
+    in.x.ax = 0x0d00u;
+    in.x.bx = 0u;
+    in.x.cx = 29u;
+    in.x.dx = 20u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 9u,
+                   "mode-12 rotated first-byte source");
+    in.x.cx = 37u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 5u,
+                   "mode-12 rotated second source byte");
+    in.x.cx = 41u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 5u,
+                   "mode-12 rotated partial last byte");
+    gate_linked_blit_vfx_picture(0u, 20u, 29u, 3u, image);
+    in.x.cx = 37u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 0u,
+                   "mode-12 rotated XOR restore");
+    gate_linked_blit_vfx_picture(0u, 478u, 633u, 0u, image);
+    in.x.cx = 633u;
+    in.x.dx = 478u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 9u,
+                   "mode-12 clipped VGA right edge");
+    in.x.cx = 639u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 6u,
+                   "mode-12 clipped VGA last pixel");
+    in.x.cx = 633u;
+    in.x.dx = 479u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 6u,
+                   "mode-12 clipped VGA last scanline");
 
     in.x.ax = original_bios_mode;
     int86(0x10, &in, &out);
