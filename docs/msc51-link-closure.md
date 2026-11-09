@@ -1774,7 +1774,7 @@ All three are tied to the same recovered launcher source by the staging
 signature. Native tests also check signed quotient truncation and
 child-process SIGABRT on both write-needed routes.
 
-### CRT descriptor writer: verified binary-file path
+### CRT descriptor writer: verified binary and LF-free text paths
 
 The upstream `RTL:6f0f` call invokes original `RTL:7d64..7eab`, the
 Microsoft-style low-level write routine (not the simpler `1c29:0055` DOS
@@ -1787,7 +1787,7 @@ captures the writer's three relocated operands agree: `RTL:7d6f` links to
 with the independently disassembled flag tests.
 
 `gate_linked_write_crt_descriptor` now reconstructs the **successful
-binary** routes: validate the handle, seek to EOF with DOS INT 21h/42h
+binary and LF-free text** routes: validate the handle, seek to EOF with DOS INT 21h/42h
 for flag `20h` (append), return zero without writing for count zero,
 otherwise call INT 21h/40h and return its positive byte count. Flag
 `40h` (device) also accepts a zero-byte result if the first source byte
@@ -1796,9 +1796,14 @@ FAR pointer `+6/+8`, the file handle is the signed descriptor byte `+0bh`,
 and a short positive write sets error flag `20h` at descriptor `+0ah` and
 returns `ffffh`, while still resetting the current pointer and count.
 
-This is deliberately bounded: flag `80h` with positive count enters the
-original's more involved newline-to-CR/LF conversion and its FAR stack
-space helper at `RTL:7eae`. Invalid handles, DOS carry failures and
+Text mode (`80h`) uses the source-verified `RTL:7db3..7db7` REPNE SCASB
+to search for LF (`0ah`), incrementing only the 16-bit ES:DI offset. If
+none is present, `RTL:7db7` branches directly to the raw DOS write at
+`RTL:7e74`, including the usual append seek. The C reconstruction scans
+the same 16-bit wrapped source offsets and permits the ordinary write.
+If an LF is found, it still aborts before the original's more involved
+newline-to-CR/LF conversion and FAR stack-space helper at `RTL:7eae`.
+Invalid handles, DOS carry failures and
 ambiguous zero-byte disk writes enter an unrecovered CRT error/errno path.
 All those cases currently abort; the full active stream close also remains
 unimplemented. No guest errno state is invented.
@@ -1809,10 +1814,14 @@ temporary file afterward. It verifies a zero-byte no-op, three initial
 binary bytes, an append write after deliberately rewinding, then two more
 bytes through the actual source-C stream flush. Rewinding and reading
 back all seven expected bytes establishes that the DOS calls really ran.
-`Original CRT binary descriptor DOS probe: PASS` is now a fourth required
-`STRTEST.LOG` witness; the staged-source signature rejects stale results.
+The same real DOS file is then extended by three LF-free text-mode bytes,
+rewound, and checked for all ten expected bytes without translation.
+`Original CRT binary descriptor DOS probe: PASS` and
+`Original CRT text no-LF DOS probe: PASS` are required `STRTEST.LOG`
+witnesses; the staged-source signature rejects stale results.
 Native tests cover full and short writes, append calls, Ctrl-Z device
-semantics and fail-closed unsupported branches.
+semantics, 16-bit scan wrapping, maximum-length termination, text stream
+flush and fail-closed LF/error branches.
 
 Three additional diagnostic callees now have strong original entry
 boundaries, not merely byte-window guesses:

@@ -59,9 +59,10 @@ void gate_rtl_close_resource_file(uint16_t handle);
  * closed/inactive stream descriptors; active CRT flush/close aborts. */
 void gate_linked_shutdown_intro_stream(void);
 
-/* CRT descriptor writer RTL:7d64..7eab. Only successful binary-mode
- * writes and zero-length paths are supported. Text conversion, invalid
- * handles, failed DOS operations, and ambiguous results abort. */
+/* CRT descriptor writer RTL:7d64..7eab. Successful binary writes,
+ * text-mode writes without LF and zero-length paths are supported.
+ * Text CR/LF conversion, invalid handles, failed DOS operations and
+ * ambiguous results abort. */
 uint16_t gate_linked_write_crt_descriptor(uint16_t handle, GateFarPtr source,
                                           uint16_t count);
 

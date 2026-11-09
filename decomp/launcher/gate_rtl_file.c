@@ -7,12 +7,15 @@
 
 /* Original RTL:7d64..7eab, linked in the verified 02a5 resident bank.
  * RTL:7d6f, 7d7c and 7d8e independently relocate to DS:2bee/2bf0/2bf0.
- * For binary-mode writes, the only OS services are DOS AH=42h (append)
- * and AH=40h (write). RTL:7e74 returns 0 for an empty write; RTL:7e91
- * returns the DOS byte count for a nonempty successful write. A zero-byte
+ * For binary-mode writes and text writes containing no LF, the only OS
+ * services are DOS AH=42h (append) and AH=40h (write). RTL:7db3..7db7
+ * scans the whole text source with REPNE SCASB; if it finds no LF, the
+ * original jumps to the ordinary writer at RTL:7e74. That path returns
+ * 0 for an empty write; RTL:7e91 returns the DOS byte count for a successful
+ * nonempty write. A zero-byte
  * result on a device is accepted only if the first source byte is 1ah.
  *
- * Original text-mode CR/LF conversion and the CRT errno/CF translation
+ * Original text-mode CR/LF expansion and the CRT errno/CF translation
  * require further reconstruction. Reject those and every failed DOS call
  * before inventing any error-global side effect. */
 uint16_t gate_linked_write_crt_descriptor(uint16_t handle, GateFarPtr source,
@@ -25,8 +28,19 @@ uint16_t gate_linked_write_crt_descriptor(uint16_t handle, GateFarPtr source,
         abort();
     flags = gate_far_byte(gate_ds_segment(),
                           (uint16_t)(GATE_DS_CRT_HANDLE_FLAGS + handle));
-    if ((flags & GATE_CRT_TEXT_BIT) != 0 && count != 0)
-        abort();
+    if ((flags & GATE_CRT_TEXT_BIT) != 0) {
+        /* RTL:7da7..7db7: ES:DI scans count bytes for LF, with DI
+         * wrapping at 16 bits. A match enters the unrecovered stack
+         * CR/LF conversion path. No match falls through to raw AH=40h. */
+        uint16_t remaining = count;
+        uint16_t offset = source.offset;
+        while (remaining != 0) {
+            if (gate_far_byte(source.segment, offset) == 0x0au)
+                abort();
+            offset = (uint16_t)(offset + 1u);
+            --remaining;
+        }
+    }
     if ((flags & GATE_CRT_APPEND_BIT) != 0) {
         result = gate_dos_file_seek(handle, 2u, 0ul);
         if (result.carry)

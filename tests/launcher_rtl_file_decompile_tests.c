@@ -231,12 +231,47 @@ static void test_original_crt_descriptor_writer_binary(void)
     ds_bytes[GATE_DS_CRT_HANDLE_FLAGS + 3u] = GATE_CRT_TEXT_BIT;
     assert(gate_linked_write_crt_descriptor(3u, buffer, 0u) == 0u);
 
+    /* RTL:7db5 searches count bytes with REPNE SCASB. If there is no
+     * LF, RTL:7db7 takes the plain DOS AH=40h write path. */
+    stream_bytes[buffer.offset] = 'H';
+    stream_bytes[buffer.offset + 1u] = 'i';
+    stream_bytes[buffer.offset + 2u] = '!';
+    crt_write_result.ax = 3u;
+    assert(gate_linked_write_crt_descriptor(3u, buffer, 3u) == 3u);
+    assert(last_handle == 3u && last_length == 3u);
+    assert(crt_write_calls == initial_writes + 5);
+
+    /* ES:DI increments wrap at 0xffff; do not normalize the FAR address
+     * into a physically contiguous host buffer. */
+    buffer.offset = 0xfffeu;
+    stream_bytes[0xfffeu] = 'A';
+    stream_bytes[0xffffu] = 'B';
+    stream_bytes[0] = 'C';
+    assert(gate_linked_write_crt_descriptor(3u, buffer, 3u) == 3u);
+    assert(last_pointer.offset == 0xfffeu && last_length == 3u);
+    buffer.offset = 0x1000u;
+
+    /* The append seek also occurs for LF-free text writes. */
+    ds_bytes[GATE_DS_CRT_HANDLE_FLAGS + 3u] =
+        GATE_CRT_TEXT_BIT | GATE_CRT_APPEND_BIT;
+    assert(gate_linked_write_crt_descriptor(3u, buffer, 3u) == 3u);
+    assert(crt_seek_calls == 2 && last_origin == 2u && last_offset == 0u);
+
+    /* A maximum 16-bit count must terminate after exactly 65535 bytes,
+     * not wrap an unsigned 16-bit loop counter back to zero. */
+    buffer.offset = 0u;
+    ds_bytes[GATE_DS_CRT_HANDLE_FLAGS + 3u] = GATE_CRT_TEXT_BIT;
+    crt_write_result.ax = 0xffffu;
+    assert(gate_linked_write_crt_descriptor(3u, buffer, 0xffffu) == 0xffffu);
+    assert(last_length == 0xffffu);
+    buffer.offset = 0x1000u;
+
 #ifndef _WIN32
     /* Reconstructed bounds and DOS carry handling fail closed until the
      * original CRT errno path and CR/LF transformation are available. */
     {
         int branch;
-        for (branch = 0; branch < 5; ++branch) {
+        for (branch = 0; branch < 6; ++branch) {
             pid_t child = fork();
             int status = 0;
             assert(child >= 0);
@@ -250,8 +285,10 @@ static void test_original_crt_descriptor_writer_binary(void)
                 if (branch == 0)
                     (void)gate_linked_write_crt_descriptor(20u, buffer, 1u);
                 else {
-                    if (branch == 1)
+                    if (branch == 1 || branch == 5) {
                         ds_bytes[GATE_DS_CRT_HANDLE_FLAGS + 3u] = GATE_CRT_TEXT_BIT;
+                        stream_bytes[buffer.offset + (branch == 5 ? 1u : 0u)] = 0x0au;
+                    }
                     if (branch == 2)
                         crt_write_result.carry = 1u;
                     if (branch == 3)
@@ -260,7 +297,8 @@ static void test_original_crt_descriptor_writer_binary(void)
                         ds_bytes[GATE_DS_CRT_HANDLE_FLAGS + 3u] = GATE_CRT_APPEND_BIT;
                         crt_seek_result.carry = 1u;
                     }
-                    (void)gate_linked_write_crt_descriptor(3u, buffer, 1u);
+                    (void)gate_linked_write_crt_descriptor(3u, buffer,
+                                                            branch == 5 ? 2u : 1u);
                 }
                 _exit(0);
             }
@@ -528,8 +566,19 @@ static void test_original_stream_flush_without_writer(void)
     assert(gate_far_word(stream.segment, (uint16_t)(f + 4u)) == 0u);
     assert(gate_far_byte(stream.segment, (uint16_t)(f + 0x0au)) == 0x22u);
 
+    /* The upstream buffered flush also accepts LF-free text through the
+     * original writer's raw AH=40h fallthrough. */
+    gate_far_set_byte(stream.segment, (uint16_t)(f + 0x0au), 0x02u);
+    ds_bytes[GATE_DS_CRT_HANDLE_FLAGS + 3u] = GATE_CRT_TEXT_BIT;
+    stream_bytes[0x5000u] = 'x';
+    gate_far_set_word(stream.segment, f, 0x5001u);
+    crt_write_result.ax = 1u;
+    assert(gate_linked_flush_intro_stream(stream) == 0u);
+    assert(last_handle == 3u && last_length == 1u);
+    assert(gate_far_word(stream.segment, f) == 0x5000u);
+
 #ifndef _WIN32
-    /* Both write-needed branches reject unreconstructed text mode.
+    /* Both write-needed branches reject unreconstructed CR/LF expansion.
      * Child failures must leave parent fixture intact. */
     {
         int branch;
@@ -546,6 +595,7 @@ static void test_original_stream_flush_without_writer(void)
                 (void)setrlimit(RLIMIT_CORE, &limit);
                 gate_far_set_byte(stream.segment, (uint16_t)(f + 0x0au),
                                   branch ? 0x02u : 0x0au);
+                stream_bytes[0x5000u] = 0x0au;
                 gate_far_set_byte(stream.segment, (uint16_t)(f + 0x0bu), 3u);
                 gate_far_set_word(stream.segment, f, 0x5001u);
                 (void)gate_linked_flush_intro_stream(stream);

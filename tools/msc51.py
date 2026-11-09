@@ -1542,6 +1542,8 @@ def validate_stream_probe(output: Path) -> None:
         raise ValueError("Original stream descriptor-table DOS probe returned no PASS witness")
     if "Original CRT binary descriptor DOS probe: PASS" not in log.read_text(errors="replace"):
         raise ValueError("Original CRT binary descriptor DOS probe returned no PASS witness")
+    if "Original CRT text no-LF DOS probe: PASS" not in log.read_text(errors="replace"):
+        raise ValueError("Original CRT text no-LF DOS probe returned no PASS witness")
     signature = locate_case_insensitive(output, "STRSIG.LOG")
     if signature is None or signature.read_text().strip() != stream_source_signature(output):
         raise ValueError("Original stream cleanup source changed since DOS test")
@@ -2207,9 +2209,9 @@ def main(argv: list[str] | None = None) -> int:
             print_stream_diagnostics(output)
             return 1
         print("Microsoft C 5.1 executed the Ctrl-Break quiet-close, nested "
-              "RTL:6eb8 stream flush, and bounded RTL:7d64 binary CRT writer "
+              "RTL:6eb8 stream flush, and bounded RTL:7d64 CRT writer "
               "from the actual launcher M11.OBJ with real DOS memory/files; "
-              "text-mode writing and active close remain unsupported.")
+              "CR/LF expansion, CRT errno paths and active close remain unsupported.")
         return 0
     if args.command == "compile-input":
         try:

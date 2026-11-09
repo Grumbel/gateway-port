@@ -19,10 +19,12 @@ static int probe_crt_binary_write(void)
 {
     char filename[11];
     unsigned char payload[7];
-    unsigned char observed[7];
+    unsigned char observed[10];
+    unsigned char text_bytes[3];
     GateFarPtr filename_pointer;
     GateFarPtr payload_pointer;
     GateFarPtr observed_pointer;
+    GateFarPtr text_pointer;
     GateFarPtr stream;
     GateDosFileResult io;
     FILE *existing;
@@ -102,11 +104,35 @@ static int probe_crt_binary_write(void)
     valid &= check(io.ax, 7u, "CRT binary verify read length");
     valid &= check(memcmp(payload, observed, 7u) == 0, 1u,
                    "CRT binary verify exact seven bytes");
+
+    /* RTL:7db5 scans for LF before dispatching the ordinary DOS writer.
+     * The earlier seven-byte read leaves the file position at EOF; prove
+     * that an LF-free text-mode write adds exactly three raw bytes. */
+    text_bytes[0] = 'D';
+    text_bytes[1] = 'O';
+    text_bytes[2] = 'S';
+    text_pointer = gate_stack_pointer(text_bytes);
+    gate_far_set_byte(gate_ds_segment(),
+        (uint16_t)(GATE_DS_CRT_HANDLE_FLAGS + handle), GATE_CRT_TEXT_BIT);
+    valid &= check(gate_linked_write_crt_descriptor(handle, text_pointer, 3u),
+                   3u, "CRT LF-free text write");
+    io = gate_dos_file_seek(handle, 0u, 0ul);
+    valid &= check(io.carry, 0u, "CRT text verify rewind");
+    memset(observed, 0, sizeof observed);
+    io = gate_dos_file_read(handle, observed_pointer, 10u);
+    valid &= check(io.carry, 0u, "CRT text verify read carry");
+    valid &= check(io.ax, 10u, "CRT text verify read length");
+    valid &= check(memcmp(payload, observed, 7u) == 0, 1u,
+                   "CRT text leaves original seven bytes untouched");
+    valid &= check(memcmp(text_bytes, observed + 7u, 3u) == 0, 1u,
+                   "CRT text verifies three unmodified bytes");
     io = gate_dos_file_close(handle);
     valid &= check(io.carry, 0u, "CRT binary close");
     valid &= check((uint16_t)remove(filename), 0u, "CRT binary remove probe file");
     puts(valid ? "Original CRT binary descriptor DOS probe: PASS" :
                  "Original CRT binary descriptor DOS probe: FAIL");
+    puts(valid ? "Original CRT text no-LF DOS probe: PASS" :
+                 "Original CRT text no-LF DOS probe: FAIL");
     return valid;
 }
 
