@@ -217,6 +217,13 @@ int main(int argc, char **argv)
     gate_ds_set_word(0x0662u, 0x8002u);
     gate_linked_shutdown_audio();
     assert(gate_ds_word(0x0662u) == 0u && calls == 0u);
+    /* Until the original RTL text bank is bound, the source-owned cursor
+     * word must be independent of the (unrelated) main EXE data segment. */
+    gate_far_set_word(0x4000u, 0x030eu, 0x7777u);
+    assert(gate_rtl_video_block_mode() == 0u);
+    gate_rtl_video_set_block_mode(0x0102u);
+    assert(gate_rtl_video_block_mode() == 0x0102u);
+    assert(gate_far_word(0x4000u, 0x030eu) == 0x7777u);
     gate_dos_bind_rtl_video_ds(0x5000u);
     gate_far_set_word(0x5000u, 0x0000u, 0x2031u);
     gate_far_set_byte(0x5000u, 0x0002u, 0x7au);

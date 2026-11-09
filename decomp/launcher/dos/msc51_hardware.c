@@ -66,6 +66,11 @@ void gate_linked_dos_setvect(uint16_t vector, GateFarPtr target)
  * bind that segment after loading/relocating the RTL. Never fall back to
  * gate_ds_segment(): that would read unrelated EXE/renderer state. */
 static uint16_t rtl_video_ds;
+/* The DOS bootstrap does not yet reconstruct the separate RTL text-video
+ * segment. Preserve its block-cursor flag as distinct, zero-initialized
+ * source-owned state for graphics-mode clear calls. No other RTL text
+ * fields are invented; those still require a real bound segment. */
+static uint16_t unbound_rtl_block_mode;
 
 void gate_dos_bind_rtl_video_ds(uint16_t segment)
 {
@@ -106,11 +111,17 @@ int16_t gate_rtl_video_tab_base(void)
 
 uint16_t gate_rtl_video_block_mode(void)
 {
+    if (rtl_video_ds == 0u)
+        return unbound_rtl_block_mode;
     return gate_far_word(rtl_video_segment(), 0x030eu);
 }
 
 void gate_rtl_video_set_block_mode(uint16_t mode)
 {
+    if (rtl_video_ds == 0u) {
+        unbound_rtl_block_mode = mode;
+        return;
+    }
     gate_far_set_word(rtl_video_segment(), 0x030eu, mode);
 }
 

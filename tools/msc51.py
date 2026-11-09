@@ -1069,7 +1069,7 @@ def stage_launcher(output: Path) -> list[str]:
                       f"IF NOT EXIST M{index:02d}.OBJ GOTO BUILD_FAILED"))
     lines.extend(("ECHO All reconstructed launcher objects compiled > SUCCESS.LOG",
                   "GOTO DONE", ":BUILD_FAILED",
-                  "ECHO Microsoft C failed to compile a module > BUILDFAIL.LOG",
+                  "ECHO Microsoft C failed to compile a module > BUILDBAD.LOG",
                   ":DONE", "EXIT"))
     (output / "COMPILE.BAT").write_text("\r\n".join(lines) + "\r\n")
     objects = [f"M{index:02d}.OBJ" for index in range(len(sources))]
@@ -1111,9 +1111,11 @@ def stage_launcher(output: Path) -> list[str]:
         "IF ERRORLEVEL 1 GOTO FAILED",
         "D:\\GATEWAY.EXE /TITLE > D:\\TITLE.LOG",
         "IF ERRORLEVEL 1 GOTO FAILED",
+        "D:\\GATEWAY.EXE /TRANS > D:\\TRANS.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED",
         "ECHO Gateway source-C DOS entry passed > D:\\ENTRYOK.LOG",
         "GOTO DONE", ":FAILED",
-        "ECHO Gateway source-C DOS entry failed > D:\\ENTRYFAIL.LOG",
+        "ECHO Gateway source-C DOS entry failed > D:\\ENTRYBAD.LOG",
         ":DONE", "EXIT",
     ]
     (output / "ENTRY.BAT").write_text("\r\n".join(entry_batch) + "\r\n")
@@ -1131,7 +1133,8 @@ def remove_probe_outputs(output: Path) -> None:
 
 def remove_launcher_outputs(output: Path, objects: list[str]) -> None:
     """A stale .OBJ or success marker cannot satisfy a fresh DOS compile."""
-    names = {"START.LOG", "BUILD.LOG", "BUILDFAIL.LOG", "SUCCESS.LOG", *objects}
+    names = {"START.LOG", "BUILD.LOG", "BUILDFAIL.LOG", "BUILDFAI.LOG",
+             "BUILDBAD.LOG", "SUCCESS.LOG", *objects}
     if output.is_dir():
         for entry in output.iterdir():
             if entry.is_file() and entry.name.upper() in names:
@@ -1143,7 +1146,7 @@ def validate_launcher_objects(output: Path, objects: list[str]) -> None:
     missing = [name for name in objects if locate_case_insensitive(output, name) is None]
     if (missing or locate_case_insensitive(output, "START.LOG") is None or
             locate_case_insensitive(output, "SUCCESS.LOG") is None or
-            locate_case_insensitive(output, "BUILDFAIL.LOG") is not None):
+            locate_case_insensitive(output, "BUILDBAD.LOG") is not None):
         raise ValueError(f"Cannot link launcher: {len(missing)} of {len(objects)} "
                          "objects missing or compiler success marker absent. "
                          "Run msc51-compile-launcher first.")
@@ -1797,11 +1800,13 @@ DOS_ENTRY_PASS_MARKERS = (
     ("PICTURE.LOG", "Gateway DOS first splash: PASS"),
     ("SECOND.LOG", "Gateway DOS second splash: PASS"),
     ("TITLE.LOG", "Gateway DOS: title interlude returned"),
+    ("TRANS.LOG", "Gateway DOS transition: PASS"),
 )
 
 
 def remove_dos_entry_outputs(output: Path) -> None:
-    for name in ("ENTRYOK.LOG", "ENTRYFAIL.LOG", *(name for name, _ in DOS_ENTRY_PASS_MARKERS)):
+    for name in ("ENTRYOK.LOG", "ENTRYBAD.LOG", "ENTRYFAIL.LOG", "ENTRYFAI.LOG",
+                 *(name for name, _ in DOS_ENTRY_PASS_MARKERS)):
         previous = locate_case_insensitive(output, name)
         if previous is not None:
             previous.unlink()
@@ -1811,8 +1816,8 @@ def dos_entry_failures(output: Path) -> list[str]:
     failures = []
     if locate_case_insensitive(output, "ENTRYOK.LOG") is None:
         failures.append("ENTRYOK.LOG absent")
-    if locate_case_insensitive(output, "ENTRYFAIL.LOG") is not None:
-        failures.append("ENTRYFAIL.LOG present")
+    if locate_case_insensitive(output, "ENTRYBAD.LOG") is not None:
+        failures.append("ENTRYBAD.LOG present")
     for name, marker in DOS_ENTRY_PASS_MARKERS:
         log = locate_case_insensitive(output, name)
         if log is None or marker not in log.read_text(errors="replace"):
@@ -1821,7 +1826,7 @@ def dos_entry_failures(output: Path) -> list[str]:
 
 
 LAUNCHER_BUILD_STAGES = (
-    ("compile-launcher", "COMPILE.BAT", "SUCCESS.LOG", "BUILDFAIL.LOG"),
+    ("compile-launcher", "COMPILE.BAT", "SUCCESS.LOG", "BUILDBAD.LOG"),
     ("compile-memory", "MEMORY.BAT", "MEMOK.LOG", "MEMFAIL.LOG"),
     ("compile-selectors", "SELECT.BAT", "SELOK.LOG", "SELFAIL.LOG"),
     ("compile-dos-files", "DOSFILE.BAT", "FILOK.LOG", "FILFAIL.LOG"),
@@ -1838,7 +1843,7 @@ LAUNCHER_BUILD_STAGES = (
     ("compile-crt", "CRT.BAT", "CRTOK.LOG", "CRTFAIL.LOG"),
     ("compile-data", "DATA.BAT", "DATOK.LOG", "DATFAIL.LOG"),
     ("link-launcher", "LINK.BAT", "LINKDONE.LOG", "LINKFAIL.LOG"),
-    ("test-dos-entry", "ENTRY.BAT", "ENTRYOK.LOG", "ENTRYFAIL.LOG"),
+    ("test-dos-entry", "ENTRY.BAT", "ENTRYOK.LOG", "ENTRYBAD.LOG"),
 )
 
 
@@ -1922,7 +1927,7 @@ def print_full_launcher_build_diagnostics(output: Path) -> None:
     if last in diagnostics:
         diagnostics[last](output)
     if last == "test-dos-entry":
-        for name in (*[name for name, _ in DOS_ENTRY_PASS_MARKERS], "ENTRYFAIL.LOG"):
+        for name in (*[name for name, _ in DOS_ENTRY_PASS_MARKERS], "ENTRYBAD.LOG"):
             path = locate_case_insensitive(output, name)
             content = path.read_text(errors="replace") if path else "(not created)"
             print(f"--- {name} ---\n{content[-8_000:].rstrip()}", file=sys.stderr)
@@ -1939,7 +1944,7 @@ def print_launcher_link_diagnostics(output: Path) -> None:
 
 
 def print_launcher_diagnostics(output: Path) -> None:
-    for name in ("BUILDFAIL.LOG", "BUILD.LOG", "SUCCESS.LOG"):
+    for name in ("BUILDBAD.LOG", "BUILD.LOG", "SUCCESS.LOG"):
         path = locate_case_insensitive(output, name)
         content = path.read_text(errors="replace") if path is not None else "(not created)"
         if len(content) > 12_000:
@@ -2570,7 +2575,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "compile-launcher":
         success = locate_case_insensitive(output, "SUCCESS.LOG")
         started = locate_case_insensitive(output, "START.LOG")
-        failed = locate_case_insensitive(output, "BUILDFAIL.LOG")
+        failed = locate_case_insensitive(output, "BUILDBAD.LOG")
         missing = [name for name in objects if locate_case_insensitive(output, name) is None]
         if success is None or started is None or failed is not None or missing:
             print(f"Microsoft C 5.1 launcher object compilation incomplete; "

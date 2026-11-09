@@ -23,6 +23,7 @@ void gate_exe_play_intro(void);
 void gate_exe_play_title_interlude(void);
 void gate_linked_initialize_intro_services(void);
 uint16_t gate_rtl_set_video_mode(int16_t requested_mode);
+void gate_rtl_clear_video_display(void);
 uint16_t gate_rtl_show_picture(uint16_t resource, uint16_t placement);
 
 /* The original RTL:4bc9 callback only RETFs. A far C function performs
@@ -83,13 +84,15 @@ int main(int argc, char **argv)
     int picture_only = argc > 1 && strcmp(argv[1], "/PICTURE") == 0;
     int second_only = argc > 1 && strcmp(argv[1], "/SECOND") == 0;
     int title_only = argc > 1 && strcmp(argv[1], "/TITLE") == 0;
+    int transition_only = argc > 1 && strcmp(argv[1], "/TRANS") == 0;
 
     owned_image.lower_segment = 0u;
     owned_image.resident_segment = 0u;
     video_restore_armed = 0u;
-    if (argc > 1 && !check_only && !picture_only && !second_only && !title_only) {
+    if (argc > 1 && !check_only && !picture_only && !second_only &&
+        !title_only && !transition_only) {
         if (strcmp(argv[1], "/INTRO") != 0) {
-            fputs("Usage: GATEWAY [/CHECK | /PICTURE | /SECOND | /TITLE | /INTRO]\n", stderr);
+            fputs("Usage: GATEWAY [/CHECK | /PICTURE | /SECOND | /TITLE | /TRANS | /INTRO]\n", stderr);
             return 2;
         }
     }
@@ -145,6 +148,17 @@ int main(int argc, char **argv)
     }
     if (check_only) {
         puts("Gateway DOS source-C entry: PASS (images, FAR return, resources, VGA mode 12)");
+        return 0;
+    }
+    if (transition_only) {
+        if (gate_rtl_set_video_mode(3) != 1u ||
+            gate_ds_word(GATE_DS_GRAPHICS_MODE) != 3u ||
+            gate_entry_bios_mode() != 0x13u) {
+            fputs("Gateway DOS: VGA mode-13 transition failed\n", stderr);
+            return 1;
+        }
+        gate_rtl_clear_video_display();
+        puts("Gateway DOS transition: PASS (VGA mode 13 and display clear)");
         return 0;
     }
     if (picture_only) {

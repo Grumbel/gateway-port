@@ -28,9 +28,10 @@ callback placeholder only on the new source executable path. Its modes are:
 - `/PICTURE`: the same checks plus original first-splash load and draw;
 - `/SECOND`: original second-splash load and draw;
 - `/TITLE`: source-C title interlude with startup globals and no-music initialization;
+- `/TRANS`: isolated mode-12h to mode-13h switch and cleared 320×200 display;
 - `/INTRO` (default): attempt the full original-derived intro schedule.
 
-The four isolated verification modes **passed under DOSBox 0.74**, with
+The five isolated verification modes **passed under DOSBox 0.74**, with
 original files mounted read-only, in the same session as all compiler/link
 stages. To reproduce on DOSBox Staging:
 
@@ -39,12 +40,24 @@ gateway-msc51 compile-all --original-game-dir ../gateway-dos
 gateway-msc51 test-dos-entry --original-game-dir ../gateway-dos
 ```
 
-`ENTRY.BAT` checks all four real DOS program exit codes, validates fresh
-`ENTRY.LOG`, `PICTURE.LOG`, `SECOND.LOG`, and `TITLE.LOG` text and writes
-`ENTRYOK.LOG` only after all four pass. `/INTRO` is
-**not yet verified as a complete playable intro**: a longer trial exited
-abnormally, and original audio/IRQ and resident callback behaviors remain
-incomplete.
+`ENTRY.BAT` checks all five real DOS program exit codes, validates fresh
+`ENTRY.LOG`, `PICTURE.LOG`, `SECOND.LOG`, `TITLE.LOG`, and `TRANS.LOG` text,
+and writes `ENTRYOK.LOG` only after all five pass. Failed stages write
+`ENTRYBAD.LOG`. The older nine-character DOS basename `ENTRYFAIL.LOG`
+was silently truncated to `ENTRYFAI.LOG` in DOSBox 0.74, leaving stale
+failure markers across combined builds. Similarly, `BUILDFAIL.LOG` was
+truncated to `BUILDFAI.LOG`; both now use valid 8.3 names and clean their
+legacy aliases.
+
+`/TRANS` verifies that the newly reconstructed, separately owned
+zero-initialized RTL block-cursor state permits the original display-clear
+routine to return after the 320×200 switch without consulting unrelated
+EXE DS bytes. It does **not** reconstruct the entire original RTL text-video
+data segment. The full `/INTRO` is **not yet verified as a complete playable
+intro**: a 60-second DOSBox 0.74 trial did not exit, and original audio/IRQ
+and resident callback behaviors remain incomplete. The title interlude's
+recovered waits total 6,750 ms before accounting for palette retrace loops;
+no timing constants were changed without comparison to the original game.
 
 ## Historical link checkpoint (2026-11-09): only `_main` remained
 
