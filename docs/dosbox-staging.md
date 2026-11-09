@@ -9,6 +9,29 @@ original Gateway files, compiled DOS objects and generated probes must stay
 outside Git. The `msc51` Nix apps supply DOSBox Staging and the optional,
 hash-pinned compiler when running in the user's Nix environment.
 
+## Source-C DOS executable checkpoint (2026-11-09)
+
+The original-derived launcher now links to `GATEWAY.EXE`, a real-mode
+MS-DOS program, using an explicitly reconstructed source-C `main()` and a
+source-C FAR-return callback. The prior missing CRT `_main` and Ctrl-Break
+symbols are closed without executing incomplete original resident banks.
+The original DOS game files stay on a separate read-only drive. After the
+other required `compile-*` stages have passed:
+
+```sh
+gateway-msc51 compile-data --original-game-dir ../gateway-dos
+gateway-msc51 link-launcher
+gateway-msc51 test-dos-entry --original-game-dir ../gateway-dos --headless
+```
+
+The last command runs real DOS `GATEWAY.EXE /CHECK` and `/PICTURE`, verifies
+both process exit codes and their `ENTRY.LOG`/`PICTURE.LOG` success text,
+and rejects stale success markers. Both passed on independently installed
+DOSBox 0.74 with the real Microsoft C 5.1-built EXE. The supported Nix
+toolchain uses DOSBox Staging. `/INTRO` is callable from the original-files
+drive as `D:\GATEWAY.EXE /INTRO` but **has not completed correctly** in the
+current tests. See [link closure](msc51-link-closure.md) for precise scope.
+
 ## Portable Linux build checked in an external test environment
 
 On 2026-11-09, the official [Linux x86-64 DOSBox Staging 0.83.0

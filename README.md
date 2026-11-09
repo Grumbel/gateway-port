@@ -233,7 +233,9 @@ installs the pinned historical compiler (no manual floppy setup required):
 nix develop .#msc51
 gateway-msc51 compile-launcher                # compile all 28 original-code C modules
 gateway-msc51 compile-stream                  # run the real DOS CRT stream test
-gateway-msc51 link-launcher                   # Microsoft LINK unresolved-symbol audit
+gateway-msc51 compile-data --original-game-dir ../gateway-dos
+gateway-msc51 link-launcher                   # link real-mode source-C GATEWAY.EXE
+gateway-msc51 test-dos-entry --original-game-dir ../gateway-dos
 gateway-msc51 link-report                     # classify saved LINK.LOG without DOSBox
 gateway-msc51 compare                         # compare original RTL with Microsoft C's CRT
 gateway-msc51 --help                          # list all compiler/probe subcommands
@@ -273,8 +275,9 @@ comparisons. See the [verified DOSBox Staging headless setup and smoke
 test](docs/dosbox-staging.md).
 The 2026-11-09 [historical-compiler reproduction](docs/dosbox-staging.md#reproduced-with-microsoft-c-51-and-original-game-files)
 also verifies the full original-file DOS startup and live VGA probe chain on
-a headless machine. Microsoft LINK still needs the reconstructed `_main` and
-Ctrl-Break handler; no playable DOS recompile is claimed.
+a headless machine. Microsoft C 5.1 now links a real-mode source-C entry
+and the DOS boot and first-splash smoke tests pass; the **complete timed
+intro remains unverified**. See the [link and runtime checkpoint](docs/msc51-link-closure.md).
 See the [DOSBox Staging CPU documentation](https://www.dosbox-staging.org/0.83/manual/system/cpu/)
 for the core and cycle tradeoffs. An unchanged probe result is still
 required; more CPU cycles are not evidence of correct startup behavior.

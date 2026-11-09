@@ -9,7 +9,41 @@ plain `nix develop`. The historical `msc51-*` Nix app entry points were
 consolidated into that one development-shell command; the compiler and
 original DOS game files remain outside Git.
 
-## Current link checkpoint (2026-11-09): only `_main` remains
+## Current link checkpoint (2026-11-09): real-mode EXE linked and smoke-tested
+
+`tools/msc51.py link-launcher` now produces a genuine MS-DOS `GATEWAY.EXE`
+using Microsoft C 5.1 `/AL /Od` and Microsoft Overlay Linker 3.65: 28
+original-derived launcher translation units, 17 DOS/RTL adapters, and four
+startup objects `MAIN.OBJ`, `BOOT.OBJ`, `DATA.OBJ` and `SEL.OBJ` (49 OMF
+inputs total). The compiler and the original `GATE.EXE`/`GATE.RTL` remain
+outside Git. The loaded original resident bytes are **data only**, not
+executable code; unimplemented original resident callbacks are not entered.
+
+`MAIN.OBJ` supplies real FAR source-C callbacks, owns both original-data
+allocations, binds relocated EXE resource/font pointers and initializes
+BIOS VGA mode 12h. A source-C FAR return replaces the original byte-array
+callback placeholder only on the new source executable path. Its modes are:
+
+- `/CHECK`: original-file preparation, segment bindings and VGA initialization;
+- `/PICTURE`: the same checks plus original first-splash load and draw;
+- `/INTRO` (default): attempt the full original-derived intro schedule.
+
+The first two modes **passed under DOSBox 0.74**, with original files
+mounted read-only. After compiling the prerequisites and linking, reproduce
+them on DOSBox Staging with:
+
+```sh
+gateway-msc51 link-launcher
+gateway-msc51 test-dos-entry --original-game-dir ../gateway-dos
+```
+
+The new `ENTRY.BAT` checks both real DOS program exit codes, validates fresh
+`ENTRY.LOG` and `PICTURE.LOG` text and writes `ENTRYOK.LOG`. `/INTRO` is
+**not yet verified as a complete playable intro**: a longer trial exited
+abnormally, and original audio/IRQ and resident callback behaviors remain
+incomplete.
+
+## Historical link checkpoint (2026-11-09): only `_main` remained
 
 The recovered outer Ctrl-Break handler at `GATE.RTL:157b8..157e4` now
 builds into `BREAK.OBJ`, and its Microsoft C `exit(1)` adapter builds into
