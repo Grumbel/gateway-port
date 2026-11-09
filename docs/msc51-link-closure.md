@@ -3,6 +3,12 @@
 
 # Microsoft C 5.1 launcher link closure
 
+Current `gateway-msc51` compilation examples in this document run inside
+`nix develop .#msc51`; source-staging and saved-log analysis also work under
+plain `nix develop`. The historical `msc51-*` Nix app entry points were
+consolidated into that one development-shell command; the compiler and
+original DOS game files remain outside Git.
+
 ## Verify unresolved names against compiled DOS OMF objects
 
 The Microsoft LINK report listed `_gate_linked_print_intr_b006848b` as
@@ -67,7 +73,7 @@ three-export object fails explicitly rather than claiming a successful
 launcher link. Rebuild it with:
 
 ```sh
-nix run -L .#msc51-compile-runtime-files
+gateway-msc51 compile-runtime-files
 ```
 
 Then rerun `msc51_object_symbols.py --object RTFILE.OBJ` and check that
@@ -344,7 +350,7 @@ successful Microsoft C 5.1 rebuild is **not** yet established.
 On the user's NixOS/DOSBox setup, the relevant complete verification is:
 
 ```sh
-nix run -L .#msc51-compile-data -- --original-game-dir ../gateway-dos
+gateway-msc51 compile-data --original-game-dir ../gateway-dos
 ```
 
 `BOOTREAL.LOG` must contain the exact owner `PASS` line; `DATREAL.LOG` must
@@ -791,7 +797,7 @@ only used by the standalone probe; **`TIMER.OBJ` is not added to
 been verified under the original Microsoft C compiler in DOSBox. Run:
 
 ```sh
-nix run -L .#msc51-compile-clock
+gateway-msc51 compile-clock
 # Return CLKBUILD.LOG, TMRTEST.LOG, CLKFAIL.LOG or CLKOK.LOG.
 ```
 
@@ -854,7 +860,7 @@ distinguish an older bundle from an older staged DOS binary with this log
 alone. `validate_clock_adapter` now checks the actual guest output as well
 as the `CLKSIG.LOG` source signature, so an old passing executable cannot
 accidentally mark the latest source verified. Re-run
-`nix run -L .#msc51-compile-clock` with the latest bundle and return the
+`gateway-msc51 compile-clock` with the latest bundle and return the
 new `TMRTEST.LOG` (plus `CLKBUILD.LOG` if the output is still old).
 
 **Guest confirmation (2026-11-08, after bundle 055):** The newly
@@ -885,8 +891,8 @@ frees it. The C89 host fixture tests all 45 writes and both invalid-input
 guards. Run:
 
 ```sh
-nix run -L .#msc51-compile-memory      # if MEMORY.OBJ is not current
-nix run -L .#msc51-compile-selectors
+gateway-msc51 compile-memory      # if MEMORY.OBJ is not current
+gateway-msc51 compile-selectors
 # Return SELBUILD.LOG and SELTEST.LOG if the guest test fails.
 ```
 
@@ -921,7 +927,7 @@ sentinels, selector preservation and seek/read failure branches. The
 Microsoft C/DOSBox test has **not** been run in this workspace; run:
 
 ```sh
-nix run -L .#msc51-compile-data
+gateway-msc51 compile-data
 # Return DATTEST.LOG, plus DATBUILD.LOG if the probe fails.
 ```
 
@@ -1023,7 +1029,7 @@ probe—not yet a startup initializer eligible for `LINK.RSP`.
 Its actual Microsoft C 5.1 run must be repeated after this change:
 
 ```sh
-nix run -L .#msc51-compile-data -- --original-game-dir ../gateway-dos
+gateway-msc51 compile-data --original-game-dir ../gateway-dos
 # Both DATTEST.LOG and DATREAL.LOG must pass; return DATBUILD.LOG on failure.
 ```
 
@@ -1535,7 +1541,7 @@ truncation warnings. Host C89 compilation is not a replacement for the
 Microsoft C run. Rebuild and inspect both result logs:
 
 ```sh
-nix run -L .#msc51-compile-data -- --original-game-dir ../gateway-dos
+gateway-msc51 compile-data --original-game-dir ../gateway-dos
 # DATBUILD.LOG, DATTEST.LOG and DATREAL.LOG under build/msc51-launcher/
 ```
 
@@ -1823,6 +1829,27 @@ Native tests cover full and short writes, append calls, Ctrl-Z device
 semantics, 16-bit scan wrapping, maximum-length termination, text stream
 flush and fail-closed LF/error branches.
 
+### CRT newline conversion: bounded stack allocation still unresolved
+
+The original `RTL:7db5..7db7` branch enters conversion only when it
+encounters a line feed. The original helper at `RTL:7eae..7ec1` compares
+`SP` to a relocated DS stack-limit WORD before the writer allocates a
+temporary SS-based buffer. In all available genuine 100, 350, 500 and
+1500ms RAM captures its linked instruction at live `12a5:27d3` reads
+`DS:2c24`; the 500ms capture has `DS:2c24 = 65f0h`. This is a live
+relocation observation, not a fixed stack pointer or a size that should be
+fabricated in the C host adapter.
+
+Disassembly of `RTL:7dc3..7e6e` shows the available stack check rejects
+`AX <= 0a8h`. Otherwise it selects a 128-byte or 512-byte SS buffer
+(larger when `AX >= 0228h`), expands each LF to CR LF and flushes
+intermediate chunks with DOS AH=40h. The success result is accumulated
+bytes actually reported by DOS **minus the number of CR insertions**.
+The original also has distinct short-write, device Ctrl-Z and error
+paths. Until the original buffer capacity, stack-limit, and exact failure
+side effects are testable in the linked DOS build, the C reconstruction
+continues to reject text containing LF without performing a partial write.
+
 Three additional diagnostic callees now have strong original entry
 boundaries, not merely byte-window guesses:
 
@@ -1916,22 +1943,22 @@ adding linker definitions.
 ### Current DOS probe order
 
 ```sh
-nix run -L .#msc51-compile-launcher
-nix run -L .#msc51-compile-memory
-nix run -L .#msc51-compile-dos-files
-nix run -L .#msc51-compile-rtl-state
-nix run -L .#msc51-compile-hardware
-nix run -L .#msc51-compile-runtime-files
-nix run -L .#msc51-compile-picture-dcl
-nix run -L .#msc51-compile-resident-state
-nix run -L .#msc51-compile-heap
-nix run -L .#msc51-compile-font
-nix run -L .#msc51-compile-stream
-nix run -L .#msc51-compile-input
-nix run -L .#msc51-compile-clock
-nix run -L .#msc51-compile-crt
-nix run -L .#msc51-link-launcher
-nix run .#msc51-link-report -- --json build/msc51-link-report.json
+gateway-msc51 compile-launcher
+gateway-msc51 compile-memory
+gateway-msc51 compile-dos-files
+gateway-msc51 compile-rtl-state
+gateway-msc51 compile-hardware
+gateway-msc51 compile-runtime-files
+gateway-msc51 compile-picture-dcl
+gateway-msc51 compile-resident-state
+gateway-msc51 compile-heap
+gateway-msc51 compile-font
+gateway-msc51 compile-stream
+gateway-msc51 compile-input
+gateway-msc51 compile-clock
+gateway-msc51 compile-crt
+gateway-msc51 link-launcher
+gateway-msc51 link-report --json build/msc51-link-report.json
 ```
 
 The linker refuses stale compiled objects, missing probe successes and
@@ -1941,8 +1968,8 @@ real VGA pixels, but not full original image reproduction. The original
 binary assets and GATE.EXE/GATE.RTL live guest snapshot remain necessary to
 recover and validate the listed core services.
 
-`msc51-link-launcher` now checks all 12 compiler/probe prerequisites and
-reports every missing or stale source signature with its `nix run` command
+`gateway-msc51 link-launcher` now checks all 12 compiler/probe prerequisites and
+reports every missing or stale source signature with its rebuild command
 in one rejection. The 28 reconstructed modules can therefore compile
 successfully while LINK is still blocked by an older `RTLSIG.LOG` or
 `PICSIG.LOG`; those are freshness failures, not additional unresolved
@@ -1958,7 +1985,7 @@ for disassembling the resulting Microsoft 5.1 `M11.OBJ` or verifying the
 original DOS exception handler and stack history.
 
 After updating to the extended `RTLHW.C`, rerun
-`nix run -L .#msc51-compile-hardware` before linking. Its probe now uses an
+`gateway-msc51 compile-hardware` before linking. Its probe now uses an
 independent 0x40-paragraph RTL data segment, three distinct FAR dimension
 segments, block-cursor state, real INT 10h text cursor get/set, and a
 non-visible character/attribute rewrite. **A passing probe does not
@@ -1986,7 +2013,7 @@ specific channel-to-bit ordering and input offset wrap. The DOS probe checks
 the output addresses and all 16 round trips against Microsoft C 5.1 memory.
 
 The extended `RESSTATE.C` also requires
-`nix run -L .#msc51-compile-resident-state` before linking. It exercises
+`gateway-msc51 compile-resident-state` before linking. It exercises
 copy/XOR in mode 13h, single-width horizontal lines, opaque fill and outline,
 state restoration, and one mode-12h planar pixel through real BIOS. The host
 fixture independently checks AND/XOR/OR, clipping, both line orientations,

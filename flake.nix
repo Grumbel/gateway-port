@@ -56,241 +56,22 @@
           # Explicitly opt-in, SHA-512-pinned historic compiler distribution.
           # This is proprietary Microsoft software: do not commit it to Git or
           # redistribute the resulting closure. No default package/check
-          # depends on it; only the msc51 apps and dev shell request it.
-          msc51-archive = pkgs.fetchurl {
-            name = "microsoft-c-5.1-1988-floppies.7z";
-            urls = [
-              "https://dl.winworldpc.com/Abandonware%20Applications/PC/Microsoft%20C%205.1%20Optimizing%20Compiler%20(5.25).7z"
-              "https://dl-alt1.winworldpc.com/Abandonware%20Applications/PC/Microsoft%20C%205.1%20Optimizing%20Compiler%20(5.25).7z"
-            ];
-            hash = "sha512-WDfi77qmgoXVwlh+PdKm6uJpOiG078akK0GtIvgXkcQMLaZO7VRj/Z4IV8I4Hv4M4yCE6m1uqxFzXAV8z8O6gA==";
-          };
+          # depends on it; only the explicit msc51 dev shell requests it.
           msc51 = pkgs.runCommand "gateway-microsoft-c-5.1" {
-            archive = self.packages.${system}.msc51-archive;
+            archive = pkgs.fetchurl {
+              name = "microsoft-c-5.1-1988-floppies.7z";
+              urls = [
+                "https://dl.winworldpc.com/Abandonware%20Applications/PC/Microsoft%20C%205.1%20Optimizing%20Compiler%20(5.25).7z"
+                "https://dl-alt1.winworldpc.com/Abandonware%20Applications/PC/Microsoft%20C%205.1%20Optimizing%20Compiler%20(5.25).7z"
+              ];
+              hash = "sha512-WDfi77qmgoXVwlh+PdKm6uJpOiG078akK0GtIvgXkcQMLaZO7VRj/Z4IV8I4Hv4M4yCE6m1uqxFzXAV8z8O6gA==";
+            };
             nativeBuildInputs = [ pkgs._7zz pkgs.mtools pkgs.python3 ];
           } ''
             mkdir extracted
             7zz x -y "$archive" -oextracted >/dev/null
             python3 ${source}/tools/msc51_unpack.py extracted "$out"
           '';
-          # These wrappers use the pinned Nix compiler by default. An
-          # explicit --compiler DIR still selects a separate installation.
-          msc51-probe = pkgs.writeShellApplication {
-            name = "gateway-msc51-probe";
-            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
-            text = ''
-              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
-              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py probe \
-                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
-            '';
-          };
-          msc51-shell = pkgs.writeShellApplication {
-            name = "gateway-msc51-shell";
-            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
-            text = ''
-              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
-              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py shell \
-                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
-            '';
-          };
-          msc51-prepare = pkgs.writeShellApplication {
-            name = "gateway-msc51-prepare";
-            runtimeInputs = [ pkgs.python3 ];
-            text = ''
-              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py prepare "$@"
-            '';
-          };
-          msc51-prepare-launcher = pkgs.writeShellApplication {
-            name = "gateway-msc51-prepare-launcher";
-            runtimeInputs = [ pkgs.python3 ];
-            text = ''
-              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py prepare-launcher "$@"
-            '';
-          };
-          msc51-compile-launcher = pkgs.writeShellApplication {
-            name = "gateway-msc51-compile-launcher";
-            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
-            text = ''
-              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
-              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py compile-launcher \
-                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
-            '';
-          };
-          msc51-compile-memory = pkgs.writeShellApplication {
-            name = "gateway-msc51-compile-memory";
-            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
-            text = ''
-              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
-              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py compile-memory \
-                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
-            '';
-          };
-          msc51-compile-selectors = pkgs.writeShellApplication {
-            name = "gateway-msc51-compile-selectors";
-            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
-            text = ''
-              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
-              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py compile-selectors \
-                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
-            '';
-          };
-          msc51-compile-data = pkgs.writeShellApplication {
-            name = "gateway-msc51-compile-data";
-            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
-            text = ''
-              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
-              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py compile-data \
-                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
-            '';
-          };
-          msc51-compile-dos-files = pkgs.writeShellApplication {
-            name = "gateway-msc51-compile-dos-files";
-            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
-            text = ''
-              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
-              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py compile-dos-files \
-                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
-            '';
-          };
-          msc51-compile-rtl-state = pkgs.writeShellApplication {
-            name = "gateway-msc51-compile-rtl-state";
-            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
-            text = ''
-              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
-              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py compile-rtl-state \
-                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
-            '';
-          };
-          msc51-compile-hardware = pkgs.writeShellApplication {
-            name = "gateway-msc51-compile-hardware";
-            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
-            text = ''
-              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
-              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py compile-hardware \
-                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
-            '';
-          };
-          msc51-compile-runtime-files = pkgs.writeShellApplication {
-            name = "gateway-msc51-compile-runtime-files";
-            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
-            text = ''
-              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
-              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py compile-runtime-files \
-                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
-            '';
-          };
-          msc51-compile-picture-dcl = pkgs.writeShellApplication {
-            name = "gateway-msc51-compile-picture-dcl";
-            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
-            text = ''
-              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
-              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py compile-picture-dcl \
-                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
-            '';
-          };
-          msc51-compile-resident-state = pkgs.writeShellApplication {
-            name = "gateway-msc51-compile-resident-state";
-            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
-            text = ''
-              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
-              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py compile-resident-state \
-                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
-            '';
-          };
-          msc51-compile-heap = pkgs.writeShellApplication {
-            name = "gateway-msc51-compile-heap";
-            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
-            text = ''
-              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
-              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py compile-heap \
-                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
-            '';
-          };
-          msc51-compile-font = pkgs.writeShellApplication {
-            name = "gateway-msc51-compile-font";
-            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
-            text = ''
-              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
-              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py compile-font \
-                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
-            '';
-          };
-          msc51-compile-stream = pkgs.writeShellApplication {
-            name = "gateway-msc51-compile-stream";
-            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
-            text = ''
-              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
-              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py compile-stream \
-                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
-            '';
-          };
-          msc51-compile-input = pkgs.writeShellApplication {
-            name = "gateway-msc51-compile-input";
-            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
-            text = ''
-              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
-              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py compile-input \
-                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
-            '';
-          };
-          msc51-compile-clock = pkgs.writeShellApplication {
-            name = "gateway-msc51-compile-clock";
-            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
-            text = ''
-              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
-              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py compile-clock \
-                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
-            '';
-          };
-          msc51-compile-crt = pkgs.writeShellApplication {
-            name = "gateway-msc51-compile-crt";
-            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
-            text = ''
-              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
-              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py compile-crt \
-                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
-            '';
-          };
-          msc51-link-launcher = pkgs.writeShellApplication {
-            name = "gateway-msc51-link-launcher";
-            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
-            text = ''
-              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
-              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py link-launcher \
-                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
-            '';
-          };
-          # Read existing LINK.LOG without launching DOSBox or fetching MSC.
-          msc51-link-report = pkgs.writeShellApplication {
-            name = "gateway-msc51-link-report";
-            runtimeInputs = [ pkgs.python3 ];
-            text = ''
-              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51_link_report.py "$@"
-            '';
-          };
-          msc51-install = pkgs.writeShellApplication {
-            name = "gateway-msc51-install";
-            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
-            text = ''
-              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py install \
-                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
-            '';
-          };
-          msc51-compare = pkgs.writeShellApplication {
-            name = "gateway-msc51-compare";
-            runtimeInputs = [ pkgs.python3 ];
-            text = ''
-              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
-              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51_compare.py "$@"
-            '';
-          };
-          msc51-unpack = pkgs.writeShellApplication {
-            name = "gateway-msc51-unpack";
-            runtimeInputs = [ pkgs.python3 pkgs.mtools ];
-            text = ''
-              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51_unpack.py "$@"
-            '';
-          };
         });
       apps = eachSystem (system:
         let
@@ -411,131 +192,6 @@
           program = "${self.packages.${system}.intro-ghidra}/bin/gateway-decompile-intro";
           meta.description = "Decompile a relocated Gateway intro snapshot with Ghidra";
         };
-        msc51-probe = {
-          type = "app";
-          program = "${self.packages.${system}.msc51-probe}/bin/gateway-msc51-probe";
-          meta.description = "Compile and run the recovered intro random-number probe with a local Microsoft C 5.1 installation in DOSBox";
-        };
-        msc51-shell = {
-          type = "app";
-          program = "${self.packages.${system}.msc51-shell}/bin/gateway-msc51-shell";
-          meta.description = "Open DOSBox with a user-installed Microsoft C 5.1 compiler and writable Gateway work directory";
-        };
-        msc51-prepare = {
-          type = "app";
-          program = "${self.packages.${system}.msc51-prepare}/bin/gateway-msc51-prepare";
-          meta.description = "Stage the recovered intro C sources for Microsoft C 5.1 without running DOSBox";
-        };
-        msc51-prepare-launcher = {
-          type = "app";
-          program = "${self.packages.${system}.msc51-prepare-launcher}/bin/gateway-msc51-prepare-launcher";
-          meta.description = "Stage all reconstructed Gateway launcher C modules as 16-bit DOS C89 sources without downloading the compiler";
-        };
-        msc51-compile-launcher = {
-          type = "app";
-          program = "${self.packages.${system}.msc51-compile-launcher}/bin/gateway-msc51-compile-launcher";
-          meta.description = "Attempt to compile all 28 reconstructed launcher modules to DOS objects with Microsoft C 5.1";
-        };
-        msc51-compile-memory = {
-          type = "app";
-          program = "${self.packages.${system}.msc51-compile-memory}/bin/gateway-msc51-compile-memory";
-          meta.description = "Compile and verify the Gateway DOS segmented-memory adapter with Microsoft C 5.1";
-        };
-        msc51-compile-selectors = {
-          type = "app";
-          program = "${self.packages.${system}.msc51-compile-selectors}/bin/gateway-msc51-compile-selectors";
-          meta.description = "Probe two overlapping DOS segment windows and 45 startup selector bindings with Microsoft C 5.1";
-        };
-        msc51-compile-data = {
-          type = "app";
-          program = "${self.packages.${system}.msc51-compile-data}/bin/gateway-msc51-compile-data";
-          meta.description = "Probe copying the exact 5976-byte static EXE data range into the original DOS segment window";
-        };
-        msc51-compile-dos-files = {
-          type = "app";
-          program = "${self.packages.${system}.msc51-compile-dos-files}/bin/gateway-msc51-compile-dos-files";
-          meta.description = "Compile and verify the Gateway DOS file-service adapter with Microsoft C 5.1";
-        };
-        msc51-compile-rtl-state = {
-          type = "app";
-          program = "${self.packages.${system}.msc51-compile-rtl-state}/bin/gateway-msc51-compile-rtl-state";
-          meta.description = "Compile and verify 40 original RTL state accessors and live segment selectors with Microsoft C 5.1";
-        };
-        msc51-compile-hardware = {
-          type = "app";
-          program = "${self.packages.${system}.msc51-compile-hardware}/bin/gateway-msc51-compile-hardware";
-          meta.description = "Compile DOS VGA port I/O and verified resident clipping state with Microsoft C 5.1";
-        };
-        msc51-compile-runtime-files = {
-          type = "app";
-          program = "${self.packages.${system}.msc51-compile-runtime-files}/bin/gateway-msc51-compile-runtime-files";
-          meta.description = "Compile and probe FAR string, DOS path, and intro diagnostic services with Microsoft C 5.1";
-        };
-        msc51-compile-picture-dcl = {
-          type = "app";
-          program = "${self.packages.${system}.msc51-compile-picture-dcl}/bin/gateway-msc51-compile-picture-dcl";
-          meta.description = "Compile and verify streaming PKWARE DCL image decoding with Microsoft C 5.1";
-        };
-        msc51-compile-resident-state = {
-          type = "app";
-          program = "${self.packages.${system}.msc51-compile-resident-state}/bin/gateway-msc51-compile-resident-state";
-          meta.description = "Compile and probe genuine DOS BIOS video-mode transitions and original resident drawing state";
-        };
-        msc51-compile-heap = {
-          type = "app";
-          program = "${self.packages.${system}.msc51-compile-heap}/bin/gateway-msc51-compile-heap";
-          meta.description = "Compile and test DOS heap allocation and release, including VFX buffers larger than 64KiB";
-        };
-        msc51-compile-font = {
-          type = "app";
-          program = "${self.packages.${system}.msc51-compile-font}/bin/gateway-msc51-compile-font";
-          meta.description = "Run recovered RTL font-cache cleanup from a Microsoft C 5.1 launcher object with real DOS heap ownership";
-        };
-        msc51-compile-stream = {
-          type = "app";
-          program = "${self.packages.${system}.msc51-compile-stream}/bin/gateway-msc51-compile-stream";
-          meta.description = "Verify Ctrl-Break quiet stream close and nested no-write flush under Microsoft C 5.1 and DOSBox";
-        };
-        msc51-compile-input = {
-          type = "app";
-          program = "${self.packages.${system}.msc51-compile-input}/bin/gateway-msc51-compile-input";
-          meta.description = "Compile and probe BIOS keyboard queue, original unget state and DOS mouse button query";
-        };
-        msc51-compile-clock = {
-          type = "app";
-          program = "${self.packages.${system}.msc51-compile-clock}/bin/gateway-msc51-compile-clock";
-          meta.description = "Compile and probe DOS elapsed-time and animation delay boundaries";
-        };
-        msc51-compile-crt = {
-          type = "app";
-          program = "${self.packages.${system}.msc51-compile-crt}/bin/gateway-msc51-compile-crt";
-          meta.description = "Compile and probe original Microsoft C FAR getenv and atol runtime services";
-        };
-        msc51-link-launcher = {
-          type = "app";
-          program = "${self.packages.${system}.msc51-link-launcher}/bin/gateway-msc51-link-launcher";
-          meta.description = "Attempt Microsoft LINK on the 28 launcher objects and report unresolved original DOS services";
-        };
-        msc51-link-report = {
-          type = "app";
-          program = "${self.packages.${system}.msc51-link-report}/bin/gateway-msc51-link-report";
-          meta.description = "Classify Microsoft LINK unresolved symbols using original Gateway source names and addresses; no DOSBox required";
-        };
-        msc51-install = {
-          type = "app";
-          program = "${self.packages.${system}.msc51-install}/bin/gateway-msc51-install";
-          meta.description = "Install user-provided Microsoft C 5.1 floppy images into a local directory using DOSBox";
-        };
-        msc51-compare = {
-          type = "app";
-          program = "${self.packages.${system}.msc51-compare}/bin/gateway-msc51-compare";
-          meta.description = "Fetch pinned Microsoft C 5.1 and compare its runtime library against the original Gateway CRT";
-        };
-        msc51-unpack = {
-          type = "app";
-          program = "${self.packages.${system}.msc51-unpack}/bin/gateway-msc51-unpack";
-          meta.description = "Assemble an offline Microsoft C 5.1 installation from a directory of original DOS floppy images";
-        };
       });
       checks = eachSystem (system:
         let pkgs = import nixpkgs { inherit system; }; in {
@@ -623,11 +279,41 @@ except Exception:
 ' \
               --args "$GATEWAY_BUILD_DIR/gateway" "$@"
           '';
+          # The actual DOS research tools are Python subcommands, not
+          # independent applications. Keep them in the dev shell rather
+          # than exporting dozens of near-identical flake outputs.
+          msc51Command = pkgs.writeShellScriptBin "gateway-msc51" ''
+            set -euo pipefail
+            if [ "$#" -eq 0 ] || [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+              echo "usage: gateway-msc51 SUBCOMMAND [options]"
+              echo "  compare       Compare the original Gateway RTL against Microsoft C"
+              echo "  unpack        Assemble a compiler from offline floppy images"
+              echo "  link-report   Analyze an existing Microsoft LINK.LOG"
+              echo "  The remaining compiler/probe subcommands and options follow:"
+              exec ${pkgs.python3}/bin/python3 ${self}/tools/msc51.py --help
+            fi
+            subcommand="$1"
+            shift
+            case "$subcommand" in
+              compare)
+                exec ${pkgs.python3}/bin/python3 ${self}/tools/msc51_compare.py "$@"
+                ;;
+              unpack)
+                exec ${pkgs.python3}/bin/python3 ${self}/tools/msc51_unpack.py "$@"
+                ;;
+              link-report)
+                exec ${pkgs.python3}/bin/python3 ${self}/tools/msc51_link_report.py "$@"
+                ;;
+              *)
+                exec ${pkgs.python3}/bin/python3 ${self}/tools/msc51.py "$subcommand" "$@"
+                ;;
+            esac
+          '';
         in {
           default = pkgs.mkShell {
             inputsFrom = [ self.packages.${system}.default ];
             packages = [ pkgs.ninja pkgs.pkg-config pkgs.clang-tools pkgs.gdb pkgs.nasm
-                         configure build run runGdb ];
+                         configure build run runGdb msc51Command ];
             shellHook = ''
               export GATEWAY_SOURCE="$PWD"
               export GATEWAY_BUILD_DIR="''${GATEWAY_BUILD_DIR:-/tmp/gateway-port-build}"
@@ -669,32 +355,11 @@ except Exception:
           };
           msc51 = pkgs.mkShell {
             inputsFrom = [ self.devShells.${system}.default ];
-            packages = [ pkgs.dosbox-staging pkgs.python3
-                         self.packages.${system}.msc51-probe
-                         self.packages.${system}.msc51-shell
-                         self.packages.${system}.msc51-prepare
-                         self.packages.${system}.msc51-prepare-launcher
-                         self.packages.${system}.msc51-compile-launcher
-                         self.packages.${system}.msc51-compile-memory
-                         self.packages.${system}.msc51-compile-selectors
-                         self.packages.${system}.msc51-compile-data
-                         self.packages.${system}.msc51-compile-dos-files
-                         self.packages.${system}.msc51-compile-rtl-state
-                         self.packages.${system}.msc51-compile-hardware
-                         self.packages.${system}.msc51-compile-runtime-files
-                         self.packages.${system}.msc51-compile-picture-dcl
-                         self.packages.${system}.msc51-compile-resident-state
-                         self.packages.${system}.msc51-compile-heap
-                         self.packages.${system}.msc51-compile-font
-                         self.packages.${system}.msc51-compile-stream
-                         self.packages.${system}.msc51-compile-input
-                         self.packages.${system}.msc51-compile-clock
-                         self.packages.${system}.msc51-compile-crt
-                         self.packages.${system}.msc51-link-launcher
-                         self.packages.${system}.msc51-link-report
-                         self.packages.${system}.msc51-install
-                         self.packages.${system}.msc51-compare
-                         self.packages.${system}.msc51-unpack ];
+            packages = [ pkgs.dosbox-staging pkgs.python3 pkgs.mtools
+                         pkgs._7zz ];
+            shellHook = ''
+              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
+            '';
           };
         });
     };

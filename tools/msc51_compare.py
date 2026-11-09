@@ -821,7 +821,7 @@ def resolve_library(compiler_root: Path) -> Path:
     ):
         raise ValueError(
             f"{compiler_root} contains floppy images, not an installed compiler. "
-            "Use 'nix run .#msc51-unpack -- IMAGE-DIR OUTPUT-DIR' or "
+            "Use 'gateway-msc51 unpack IMAGE-DIR OUTPUT-DIR' or "
             "the default pinned flake compiler."
         )
     raise ValueError(

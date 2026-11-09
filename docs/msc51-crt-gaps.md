@@ -3,6 +3,10 @@
 
 # Unmatched Microsoft C runtime candidate intervals in GATE.RTL
 
+The `gateway-msc51` commands below run in `nix develop .#msc51` (for the
+pinned compiler), or plain `nix develop` with an explicit `--compiler DIR`;
+the old individual `msc51-*` Nix apps were consolidated into one command.
+
 The Microsoft C 5.1 `LLIBCR.LIB` relocation-aware public-symbol comparison
 identified 11,761 bytes across 70 CODE-class candidate spans, with 1,056
 bytes in 26 intervening gaps (confirmed by the user's 2026-11-08 host run).
@@ -92,7 +96,7 @@ To obtain the complete ordered set of unmatched intervals from the **real
 Microsoft C library** on a host with Nix, run:
 
 ```sh
-nix run -L .#msc51-compare -- \
+gateway-msc51 compare \
   --omf-details --scan-relocations --all-crt-gaps \
   --json build/msc51-crt-relocations.json
 ```

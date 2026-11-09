@@ -70,7 +70,7 @@ def validate_compiler(directory: Path) -> Path:
                for entry in directory.rglob("*") if entry.is_file()):
             raise ValueError(
                 f"{directory} contains floppy images, not an installed compiler. "
-                "Use 'nix run .#msc51-unpack -- IMAGE-DIR OUTPUT-DIR' or "
+                "Use 'gateway-msc51 unpack IMAGE-DIR OUTPUT-DIR' or "
                 "the default pinned flake compiler."
             )
         raise ValueError(
@@ -1098,7 +1098,7 @@ def validate_link_prerequisites(output: Path, objects: list[str]) -> None:
         try:
             validate()
         except ValueError as error:
-            failures.append(f"  nix run -L .#{command}\n    {error}")
+            failures.append(f"  gateway-msc51 {command.removeprefix('msc51-')}\n    {error}")
     if failures:
         raise ValueError("Cannot link launcher; rebuild these prerequisites "
                          "and rerun LINK:\n" + "\n".join(failures))

@@ -880,7 +880,7 @@ original Microsoft C ABI or segmented data layout.
 
 The user has now compiled **all 28** reconstructed modules with the actual
 Microsoft C 5.1 `/AL /Od /c` compiler through
-`nix run -L .#msc51-compile-launcher`. The staged DOS 8.3 source names map
+`gateway-msc51 compile-launcher` in `nix develop .#msc51`. The staged DOS 8.3 source names map
 back to their original files via `build/msc51-launcher/SOURCE.MAP`, and all
 31-character identifier aliases are documented in `SYMBOL.MAP`. The first
 compiler run exposed unsupported C99 automatic aggregate initializers and
@@ -888,7 +888,7 @@ identifier collisions; the corrected staging passed the next actual run.
 Original file offsets in source comments remain intact, not replaced by
 shortened identifiers.
 
-`nix run -L .#msc51-link-launcher` is a **separate diagnostic** for the original
+`gateway-msc51 link-launcher` is a **separate diagnostic** for the original
 Microsoft linker. It reuses the successful `.OBJ` files, writes a response
 file and saves `LINK.LOG` for an unresolved-service inventory. The first
 working Microsoft LINK 3.65 invocation on the user host listed 28 inputs and
@@ -902,7 +902,7 @@ neither address is an original stable source-file offset. RTL state accessors
 such as `gate_rtl_video_columns` retain their annotated **RTL DS:0x0004**
 location, also distinct from original RTL file offsets.
 
-`nix run .#msc51-link-report -- --details --json build/msc51-link-report.json`
+`gateway-msc51 link-report --details --json build/msc51-link-report.json`
 summarizes an existing `LINK.LOG`, restores all shortened identifiers, shows
 the referring original C modules and preserves provenance types:
 `original_file_offset` (for `rtl:0x...` or `exe:0x...`) versus
@@ -915,7 +915,7 @@ functions. See the top-level toolchain instructions.
 The eight guest-memory symbols now have a separate **DOS-specific**
 implementation in `dos/msc51_memory.c`, using Microsoft C 5.1 `FP_SEG`/
 `FP_OFF` far pointers and an explicitly bound guest DS. The optional
-`nix run -L .#msc51-compile-memory` builds `MEMORY.OBJ` and runs an actual
+`gateway-msc51 compile-memory` builds `MEMORY.OBJ` and runs an actual
 Microsoft C DOS `MEMCHK.EXE` before permitting the next link attempt.
 The probe checks DS words, 8086 offset wrapping, and SS:offset access to a
 stack variable. A recorded source fingerprint also prevents reusing an older
@@ -928,7 +928,7 @@ includes `MEMORY.OBJ` and reports 100 missing names, exactly eight fewer
 than the original report. The next boundary is the five `gate_dos_file_*`
 calls. `dos/msc51_dos_file.c` implements `INT 21h` create/open/close/read/
 write/seek with Microsoft C 5.1 `intdosx`, retaining the carry flag alongside
-the actual AX and DX registers. `nix run -L .#msc51-compile-dos-files` builds
+the actual AX and DX registers. `gateway-msc51 compile-dos-files` builds
 `DOSFILE.OBJ` and runs a DOS `FILECHK.EXE` using a temporary file on the
 writable staging mount. A fresh `FILOK.LOG` and source fingerprint are
 required to include the adapter in the following `LINK.RSP`; this
@@ -965,7 +965,7 @@ output untouched, reads status port 0x03da, and checks the segment memory
 effects of clipping and the special case `(enabled == 1)`. This module is
 not a substitute for the missing resident video dispatcher, palette
 upload, sound, input, overlays, or startup; if the user confirms it with
-`nix run -L .#msc51-compile-hardware`, the expected linker remainder is 51.
+`gateway-msc51 compile-hardware`, the expected linker remainder is 51.
 
 `msc51-compile-runtime-files` is a further independent DOS adapter.
 `dos/msc51_runtime_files.c` implements three original linked Microsoft C

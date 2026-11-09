@@ -1438,8 +1438,8 @@ class MSC51Tests(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     msc51.main(args)
                 run.assert_not_called()
-            self.assertIn("nix run -L .#msc51-compile-rtl-state", error.getvalue())
-            self.assertIn("nix run -L .#msc51-compile-picture-dcl", error.getvalue())
+            self.assertIn("gateway-msc51 compile-rtl-state", error.getvalue())
+            self.assertIn("gateway-msc51 compile-picture-dcl", error.getvalue())
             self.assertIn("source has changed since its test", error.getvalue())
             self.assertNotIn("msc51-compile-input:", error.getvalue())
 

@@ -213,38 +213,37 @@ observations, not a reconstructed DOS relocation table.
 Gateway's `GATE.RTL` contains a Microsoft C runtime signature dated 1988,
 making Microsoft C 5.1 a useful compiler-code-generation reference. The
 historical compiler is **proprietary software**. The repository contains none
-of its binaries; the following opt-in Nix targets fetch a separately published
-1988 distribution, with a pinned SHA-512 hash, and unpack it into a Nix store
-path. Do not redistribute the resulting compiler closure.
+of its binaries. The opt-in `msc51` development shell obtains a separately
+published 1988 distribution, verifies its pinned SHA-512 hash, and unpacks it
+into a Nix store path. Do not redistribute the resulting compiler closure.
 
-From the Gateway checkout, with **no floppy or compiler setup required**:
+For source staging and saved-log analysis, the regular development shell
+needs no Microsoft C download:
 
 ```sh
-nix run .#msc51-compare                       # download and compare original CRT
-nix run .#msc51-probe                         # compile and run 32 rand steps in DOSBox
-nix run .#msc51-shell                         # interactive DOSBox compiler
-nix run .#msc51-prepare                       # prepare C89 source only (no download)
-nix run .#msc51-prepare-launcher              # stage all 28 recovered launcher modules
-nix run -L .#msc51-compile-launcher            # compile all 28 with Microsoft C 5.1
-nix run -L .#msc51-compile-memory              # compile and test real DOS memory adapter
-nix run -L .#msc51-compile-selectors           # test original loader's 45 overlapping segment selectors
-nix run -L .#msc51-compile-data                # test exact static EXE data read into original DS window
-nix run -L .#msc51-compile-dos-files           # compile and test real DOS file operations
-nix run -L .#msc51-compile-rtl-state           # compile and test 40 recovered RTL state functions
-nix run -L .#msc51-compile-hardware            # compile/probe real DOS port I/O and clipping state
-nix run -L .#msc51-compile-runtime-files       # compile/probe FAR strings, resource paths, DOS access()
-nix run -L .#msc51-compile-resident-state       # compile/probe resident video mode and drawing DS words
-nix run -L .#msc51-compile-heap                 # DOS heap for font/VFX, including buffers >64KiB
-nix run -L .#msc51-compile-font                 # original font-cache teardown in the actual launcher M13.OBJ
-nix run -L .#msc51-compile-stream               # first Ctrl-Break quiet-stream cleanup in the actual launcher M11.OBJ
-nix run -L .#msc51-compile-input                # BIOS keyboard and mouse services, buffered key state
-nix run -L .#msc51-compile-clock                # real DOS wall-clock and delay services
-nix run -L .#msc51-compile-crt                  # Microsoft C 5.1 FAR getenv() and atol()
-nix run -L .#msc51-link-launcher               # try LINK with the resulting objects
-nix run .#msc51-link-report                    # classify saved LINK.LOG without DOSBox
-nix build .#msc51                             # optional: inspect assembled DOS tree
-nix develop .#msc51                           # optional DOSBox toolchain shell
+nix develop
+gateway-msc51 prepare-launcher               # stage the 28 recovered C modules
+gateway-msc51 link-report                     # inspect an existing LINK.LOG
 ```
+
+For actual Microsoft C and DOSBox probes, the separately opt-in shell
+installs the pinned historical compiler (no manual floppy setup required):
+
+```sh
+nix develop .#msc51
+gateway-msc51 compile-launcher                # compile all 28 original-code C modules
+gateway-msc51 compile-stream                  # run the real DOS CRT stream test
+gateway-msc51 link-launcher                   # Microsoft LINK unresolved-symbol audit
+gateway-msc51 link-report                     # classify saved LINK.LOG without DOSBox
+gateway-msc51 compare                         # compare original RTL with Microsoft C's CRT
+gateway-msc51 --help                          # list all compiler/probe subcommands
+```
+
+All former `msc51-*` app entry points now live behind **one command** in
+the development shells. `gateway-msc51 <subcommand> [options]` delegates to
+`tools/msc51.py`, or to the existing compare, unpack and link-report Python
+tools. The `msc51` package output remains available for explicit offline
+inspection. The default shell does not depend on the proprietary compiler.
 
 The compiler and probe sessions use **DOSBox Staging's dynamic CPU core and
 maximum automatic CPU cycles** by default (`--set core=dynamic --set
@@ -255,19 +254,19 @@ your global configuration. For the original-file data/boot probes, for
 example, you can instead pin a cycle budget or restore conservative timing:
 
 ```sh
-nix run -L .#msc51-compile-data -- --original-game-dir ../gateway-dos --dosbox-cycles 25000
-nix run -L .#msc51-compile-data -- --original-game-dir ../gateway-dos --dosbox-core auto --dosbox-cycles auto
-nix run -L .#msc51-compile-data -- --original-game-dir ../gateway-dos --dosbox-core default --dosbox-cycles default
+gateway-msc51 compile-data --original-game-dir ../gateway-dos --dosbox-cycles 25000
+gateway-msc51 compile-data --original-game-dir ../gateway-dos --dosbox-core auto --dosbox-cycles auto
+gateway-msc51 compile-data --original-game-dir ../gateway-dos --dosbox-core default --dosbox-cycles default
 ```
 
 The legacy `--dosbox-cycles auto` option now selects Staging's conservative
 real-mode default of `cpu_cycles=3000` (the modern setting doesn't accept
 `auto`); use it if timing-dependent DOS behavior fails at `max`. Use `default`
 for both options to leave the settings to your own DOSBox configuration.
-The flags apply to all DOSBox-running `msc51-*` commands handled by
-`tools/msc51.py`.
+The flags apply to all DOSBox-running `gateway-msc51` probe commands handled
+by `tools/msc51.py`.
 For unattended Linux environments without a display, pass `--headless` to a
-noninteractive probe (for example `nix run -L .#msc51-compile-data --
+noninteractive probe (for example `gateway-msc51 compile-data
 --headless --original-game-dir ../gateway-dos`). This selects SDL dummy
 video/audio and disables mouse capture; it does not perform visible VGA
 comparisons. See the [verified DOSBox Staging headless setup and smoke
@@ -280,7 +279,7 @@ See the [DOSBox Staging CPU documentation](https://www.dosbox-staging.org/0.83/m
 for the core and cycle tradeoffs. An unchanged probe result is still
 required; more CPU cycles are not evidence of correct startup behavior.
 
-The opt-in `msc51-archive` Nix package downloads
+The opt-in `msc51` Nix package downloads
 [WinWorld's Microsoft C 5.1 5¼-inch distribution](https://winworldpc.com/product/microsoft-c-c/5x)
 from either of its two mirrors using the archive's published SHA-512 checksum.
 `msc51` unpacks the 7z file and extracts the contained FAT floppy images using
@@ -299,7 +298,7 @@ protected-mode copy. Other duplicates still use the first sorted source.
 Every choice and rejected conflicting file is recorded in
 `compiler-manifest.json` with the original disk and SHA-256; the tool emits
 diagnostics when choosing. For forensic comparison,
-`msc51-unpack --strict-duplicates` instead rejects any conflicting bytes.
+`gateway-msc51 unpack --strict-duplicates` instead rejects any conflicting bytes.
 The assembled toolchain must contain real-mode `CL`, `C1`, `C1L`, `C2`, `C3`
 and `LINK`; tools known to be protected-mode are rejected before DOSBox runs.
 This is not a complete executable compatibility audit, nor proof that the
@@ -309,19 +308,19 @@ For an existing download containing raw floppy `.img`/`.ima` images, you can
 import it offline instead of fetching it again:
 
 ```sh
-nix run .#msc51-unpack -- \
+gateway-msc51 unpack \
   "/path/to/Microsoft C 5.1 Optimizing Compiler (5.25)" build/msc51-local
-nix run .#msc51-compare -- --compiler build/msc51-local
+gateway-msc51 compare --compiler build/msc51-local
 ```
 
-The `GATEWAY_MSC51_DIR` environment variable is for calling the underlying
-Python scripts directly. The Nix `msc51-compare`, `msc51-probe` and
-`msc51-shell` apps deliberately select their pinned compiler by default, even
-if that variable is set. Pass `--compiler DIR` to any app to use your own
+The `nix develop .#msc51` shell sets `GATEWAY_MSC51_DIR` to the pinned
+compiler installation. The underlying Python tools and `gateway-msc51`
+honor that variable. Pass `--compiler DIR` to the appropriate subcommand
+to use your own
 **assembled** installation, not a directory containing floppy images.
 
 For historical reference, the original interactive DOS installer remains
-available via `nix run .#msc51-install -- --install-dir DIR --floppy SETUP.img
+available via `gateway-msc51 install --install-dir DIR --floppy SETUP.img
 --floppy COMPILER1.img ...`; it is no longer necessary for the usual workflow.
 
 The probe's generated files are in `build/intro-msc51/`. `PROBE.C` and `RANDOM.C`
@@ -333,13 +332,13 @@ with `/link LLIBCR.LIB LIBH.LIB/NOD`, preventing compiler-emitted default
 library requests from selecting the absent `LLIBCE.LIB`. The helper library
 is needed for 32-bit multiplication/division generated by the compiler. It
 writes `INTROCHK.EXE`,
-`BUILD.LOG`, and `TEST.LOG`. `msc51-probe` checks that the DOS executable
+`BUILD.LOG`, and `TEST.LOG`. `gateway-msc51 probe` checks that the DOS executable
 actually reports all 32 original `rand()` states correct. To customize the
 toolchain directory or the staging output directory, pass `--compiler DIR`
-or `--output DIR` after `--` in the `nix run` commands.
+or `--output DIR` directly after the `gateway-msc51` subcommand.
 
 `BUILD.BAT` explicitly runs `EXIT` at the end so DOSBox closes on its own.
-If DOSBox starts but the compilation fails, `msc51-probe` prints the
+If DOSBox starts but the compilation fails, `gateway-msc51 probe` prints the
 compiler's `BUILD.LOG` and, when present, `TEST.LOG` automatically. `START.LOG`
 confirms that DOSBox actually reached the batch file; `CLFAIL.LOG` flags a
 nonzero Microsoft compiler exit status, and `RUNFAIL.LOG` a failed DOS test
@@ -385,7 +384,7 @@ and refuses to report success without a fresh `START.LOG`, `SUCCESS.LOG` and
 all expected object files. To use another compiler installation:
 
 ```sh
-nix run -L .#msc51-compile-launcher -- --compiler build/msc51-local
+gateway-msc51 compile-launcher --compiler build/msc51-local
 ```
 
 The initial real-link report found 108 unresolved names, including eight
@@ -411,7 +410,7 @@ from `msc51-compile-memory`; it does not create a launcher `_main` or load
 original code, image data or the initialized mode descriptors. After running:
 
 ```sh
-nix run -L .#msc51-compile-selectors
+gateway-msc51 compile-selectors
 # If it fails, inspect build/msc51-launcher/SELBUILD.LOG and SELTEST.LOG.
 ```
 
@@ -428,7 +427,7 @@ source-file reads of **both disjoint regions** using generated test bytes.
 It reuses the already verified memory, DOS-file, and selector probes:
 
 ```sh
-nix run -L .#msc51-compile-data
+gateway-msc51 compile-data
 # If it fails, inspect build/msc51-launcher/DATBUILD.LOG and DATTEST.LOG.
 ```
 
@@ -436,7 +435,7 @@ To additionally exercise the **actual original** `GATE.EXE` and `GATE.RTL`
 files in DOSBox, pass their directory explicitly:
 
 ```sh
-nix run -L .#msc51-compile-data -- --original-game-dir ../gateway-dos
+gateway-msc51 compile-data --original-game-dir ../gateway-dos
 # Also inspect build/msc51-launcher/DATREAL.LOG.
 ```
 
@@ -514,7 +513,7 @@ After updating this source, rerun the Microsoft C test, including both
 real original files:
 
 ```sh
-nix run -L .#msc51-compile-data -- --original-game-dir ../gateway-dos
+gateway-msc51 compile-data --original-game-dir ../gateway-dos
 ```
 
 Once both probes pass with the 27 segment words, 24 offset words and
@@ -751,19 +750,19 @@ the tested `MEMORY.OBJ`, `DOSFILE.OBJ` and four RTL objects, without
 recompiling any of them:
 
 ```sh
-nix run -L .#msc51-compile-dos-files
-nix run -L .#msc51-compile-rtl-state
-nix run -L .#msc51-compile-hardware
-nix run -L .#msc51-compile-runtime-files
-nix run -L .#msc51-compile-resident-state
-nix run -L .#msc51-compile-heap
-nix run -L .#msc51-compile-font
-nix run -L .#msc51-compile-stream
-nix run -L .#msc51-compile-input
-nix run -L .#msc51-compile-clock
-nix run -L .#msc51-compile-crt
-nix run -L .#msc51-link-launcher
-nix run .#msc51-link-report -- --json build/msc51-link-report.json
+gateway-msc51 compile-dos-files
+gateway-msc51 compile-rtl-state
+gateway-msc51 compile-hardware
+gateway-msc51 compile-runtime-files
+gateway-msc51 compile-resident-state
+gateway-msc51 compile-heap
+gateway-msc51 compile-font
+gateway-msc51 compile-stream
+gateway-msc51 compile-input
+gateway-msc51 compile-clock
+gateway-msc51 compile-crt
+gateway-msc51 link-launcher
+gateway-msc51 link-report --json build/msc51-link-report.json
 ```
 
 It generates `build/msc51-launcher/LINK.RSP` and `LINK.BAT`, then invokes
@@ -798,7 +797,7 @@ To inventory the saved log without invoking DOSBox or downloading the
 proprietary compiler again:
 
 ```sh
-nix run .#msc51-link-report -- --details --json build/msc51-link-report.json
+gateway-msc51 link-report --details --json build/msc51-link-report.json
 ```
 
 The report resolves shortened Microsoft identifiers using `SYMBOL.MAP`,
@@ -821,7 +820,7 @@ sequences while ignoring only the mutable address/call operands. The optional
 JSON report contains locations, lengths, and file hashes, **not binary data**.
 The user-side `msc51-compare` run located both signatures inside Microsoft
 C 5.1's `LLIBCR.LIB`. To map those raw offsets to individual object modules,
-run `nix run .#msc51-compare -- --omf-details`. This parses the legacy OMF
+run `gateway-msc51 compare --omf-details`. This parses the legacy OMF
 library page layout, identifies the containing `LEDATA` record and segment
 offset, and reports an exact `PUBDEF` name when present. The real Microsoft C
 5.1 library identifies `GATE.RTL:0x091d8` as `rand.c:_srand` (module at
@@ -832,7 +831,7 @@ library metadata**, not independently recovered names in the Gateway binary.
 For more exploratory matches, run:
 
 ```sh
-nix run -L .#msc51-compare -- --scan-public-prefixes --json build/msc51-crt-candidates.json
+gateway-msc51 compare --scan-public-prefixes --json build/msc51-crt-candidates.json
 ```
 
 This optional scan looks for unique, exact prefixes of at least 16 bytes at
@@ -870,7 +869,7 @@ disassembly-based verification of callable boundaries.
 For a deeper, relocation-aware comparison, use:
 
 ```sh
-nix run -L .#msc51-compare -- \
+gateway-msc51 compare \
   --omf-details --scan-relocations \
   --json build/msc51-crt-relocations.json
 ```
