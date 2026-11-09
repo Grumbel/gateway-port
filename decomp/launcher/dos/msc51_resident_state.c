@@ -191,6 +191,134 @@ static int mode13_copy_nonhorizontal(int32_t x0, int32_t y0,
     return 1;
 }
 
+/* RTL:1a39c sets GC0 to the pen, GC1 to 0f (set/reset in all four
+ * planes), and GC3 to the COPY raster operation. RTL:1a517 restores
+ * fixed defaults: GC0=0, GC1=0, GC3=0, GC8=ff. */
+static void mode12_copy_line_begin(uint8_t color)
+{
+    outp(0x3ce, 0); outp(0x3cf, color);
+    outp(0x3ce, 1); outp(0x3cf, 0x0f);
+    outp(0x3ce, 3); outp(0x3cf, 0);
+}
+
+static void mode12_copy_line_end(void)
+{
+    outp(0x3ce, 0); outp(0x3cf, 0);
+    outp(0x3ce, 1); outp(0x3cf, 0);
+    outp(0x3ce, 3); outp(0x3cf, 0);
+    outp(0x3ce, 8); outp(0x3cf, 0xff);
+}
+
+/* The original horizontal RTL:1a4ab/1a4b1/1a4b6 MOVSB copies from VGA
+ * video memory back to itself with GC8 selecting which bits change. The
+ * read loads all four VGA latches; GC0/GC1 replace the selected plane
+ * bits with the pen color on the write. Do not omit the read. */
+static void mode12_copy_masked_byte(uint16_t address)
+{
+    uint8_t old = gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT, address);
+    gate_far_set_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT, address, old);
+}
+
+/* Original mode-12h vertical COPY branch RTL:1a425..1a44c (through the
+ * VGA GC-backed line routine RTL:1a39c). GC8 selects one pixel within
+ * each 80-byte scanline. The CPU OR read/modify/write is essential:
+ * the read loads the VGA latches before the write. The original
+ * coordinate helper RTL:1a37b uses the mode pitch, without the separate
+ * drawing-state page offset used by the pixel callback. */
+static int mode12_copy_vertical(int32_t x0, int32_t y0,
+                                 int32_t x1, int32_t y1,
+                                 uint8_t color)
+{
+    uint16_t address;
+    uint8_t mask, old;
+    int16_t y;
+    int32_t tmp;
+    if (gate_ds_word(GATE_DS_RENDERER_MODE) != 2u ||
+        gate_ds_word(GATE_DS_DRAW_OPERATION) != 0u ||
+        gate_ds_word(GATE_DS_DRAW_PAGE_OFFSET) != 0u ||
+        x0 != x1 || x0 < 0 || x0 >= 640 ||
+        y0 < 0 || y0 >= 480 || y1 < 0 || y1 >= 480)
+        return 0;
+    if (gate_ds_word(GATE_DS_DRAW_CLIPPING_ENABLED) == 1u &&
+        (x0 < (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_LEFT) ||
+         x0 > (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_RIGHT) ||
+         y0 < (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_TOP) ||
+         y1 < (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_TOP) ||
+         y0 > (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_BOTTOM) ||
+         y1 > (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_BOTTOM)))
+        return 0;
+
+    if (y0 > y1) { tmp = y0; y0 = y1; y1 = tmp; }
+    address = (uint16_t)(80l * y0 + x0 / 8);
+    mask = (uint8_t)(1u << (7u - (x0 & 7u)));
+    mode12_copy_line_begin(color);
+    outp(0x3ce, 8); outp(0x3cf, mask);
+    for (y = (int16_t)y0; y <= (int16_t)y1; ++y) {
+        old = gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT, address);
+        gate_far_set_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                          address, (uint8_t)(old | 0x08u));
+        address = (uint16_t)(address + 80u);
+    }
+    mode12_copy_line_end();
+    return 1;
+}
+
+/* RTL:1a44f..1a4b8 takes horizontal mode-12h COPY lines by computing
+ * the left and right partial-byte masks, using VGA's GC8 mask for the
+ * edge bytes, then copying unchanged full VGA bytes with REP MOVSB.
+ * Source and destination both point at A000; it is the GC set/reset
+ * state that supplies the new color. The 1-byte span intersects both
+ * masks, matching the original CX=0 branch at RTL:1a4a4. */
+static int mode12_copy_horizontal(int32_t x0, int32_t y0,
+                                   int32_t x1, int32_t y1,
+                                   uint8_t color)
+{
+    uint16_t first, last, address, i;
+    uint8_t first_mask, last_mask;
+    int32_t tmp;
+    if (gate_ds_word(GATE_DS_RENDERER_MODE) != 2u ||
+        gate_ds_word(GATE_DS_DRAW_OPERATION) != 0u ||
+        gate_ds_word(GATE_DS_DRAW_PAGE_OFFSET) != 0u ||
+        y0 != y1 || y0 < 0 || y0 >= 480 ||
+        x0 < 0 || x0 >= 640 || x1 < 0 || x1 >= 640)
+        return 0;
+    if (gate_ds_word(GATE_DS_DRAW_CLIPPING_ENABLED) == 1u &&
+        (x0 < (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_LEFT) ||
+         x1 < (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_LEFT) ||
+         x0 > (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_RIGHT) ||
+         x1 > (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_RIGHT) ||
+         y0 < (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_TOP) ||
+         y0 > (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_BOTTOM)))
+        return 0;
+
+    if (x0 > x1) { tmp = x0; x0 = x1; x1 = tmp; }
+    first = (uint16_t)(x0 / 8);
+    last = (uint16_t)(x1 / 8);
+    address = (uint16_t)(80l * y0 + first);
+    first_mask = (uint8_t)(0xffu >> (x0 & 7u));
+    last_mask = (uint8_t)(0xffu << (7u - (x1 & 7u)));
+    mode12_copy_line_begin(color);
+    if (first == last) {
+        outp(0x3ce, 8); outp(0x3cf, first_mask & last_mask);
+        mode12_copy_masked_byte(address);
+    } else {
+        if ((x0 & 7) != 0) {
+            outp(0x3ce, 8); outp(0x3cf, first_mask);
+            mode12_copy_masked_byte(address++);
+            ++first;
+        }
+        if (first < last) {
+            outp(0x3ce, 8); outp(0x3cf, 0xff);
+            for (i = first; i < last; ++i)
+                mode12_copy_masked_byte(address++);
+        }
+        outp(0x3ce, 8); outp(0x3cf, last_mask);
+        mode12_copy_masked_byte(address);
+    }
+    mode12_copy_line_end();
+    return 1;
+}
+
 /* Original 2621:003e first updates the remembered pen, then rasterizes
  * from its prior position. The intro's recovered calls use axis-aligned
  * single-pixel-wide, unmasked edges. The mode-13h COPY backend now also
@@ -210,6 +338,12 @@ void gate_rtl_resident_line_to(uint16_t x, uint16_t y)
         abort();
     if (mode13_copy_nonhorizontal(old_x, old_y, next_x, next_y,
                                   (uint8_t)color))
+        return;
+    if (mode12_copy_vertical(old_x, old_y, next_x, next_y,
+                             (uint8_t)color))
+        return;
+    if (mode12_copy_horizontal(old_x, old_y, next_x, next_y,
+                               (uint8_t)color))
         return;
     if (old_x == next_x) {
         step = old_y <= next_y ? 1 : -1;
@@ -285,6 +419,12 @@ void gate_rtl_background_rect(uint16_t style, uint16_t bottom,
                 (uint16_t)((uint32_t)y * 320u + left),
                 (uint8_t)gate_ds_word(GATE_DS_DRAW_COLOR),
                 (uint16_t)(right - left + 1u));
+        } else if (mode12_copy_horizontal((int32_t)left, (int32_t)y,
+                     (int32_t)right, (int32_t)y,
+                     (uint8_t)gate_ds_word(GATE_DS_DRAW_COLOR))) {
+            /* RTL:1a742 invokes a horizontal line for each fill row.
+             * In planar mode RTL:1a44f handles the two partial bytes
+             * and all enclosed full bytes through VGA GC8 and MOVSB. */
         } else {
             uint16_t x;
             for (x = left;; ++x) {

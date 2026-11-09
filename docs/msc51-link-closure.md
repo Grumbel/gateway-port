@@ -2389,6 +2389,35 @@ Clipped diagonals, wide or masked lines, non-COPY operations and planar
 line loops remain outside this recovered branch. The animation's overall
 timing and palette transitions still require original-runtime comparison.
 
+### Original mode-12h planar vertical and horizontal COPY branches
+
+The original 16-color VGA line backend at `GATE.RTL:1a39c..1a532`
+programs the Graphics Controller's set/reset color (GC0), plane enable
+(GC1=`0f`) and raster operation (GC3). The vertical branch
+`RTL:1a425..1a44c` sets GC8 to the individual pixel bit and executes
+`OR ES:[BX],AL` with an 80-byte line stride. This is **not** an ordinary
+CPU bitmap write: its read loads the VGA latches, and the following write
+uses the GC set/reset and bit mask to change all four bitplanes.
+
+The horizontal branch `RTL:1a44f..1a4b8` derives the leading and trailing
+partial-byte masks from the inclusive X endpoints, intersects them when
+the complete line fits in one VGA byte, and uses VGA-to-VGA `MOVSB` for
+edge bytes and `REP MOVSB` for the full-byte interior. The source and
+destination are both A000h: the copied CPU byte is not the new color;
+GC0/GC1 and the VGA read latches supply the actual pixel operation.
+`RTL:1a517..1a523` resets GC0/GC1/GC3/GC8 to fixed values afterward.
+
+The DOS source-C raster bridge now follows those branches for fully visible
+mode-12h single-width, unmasked COPY lines, including the horizontal
+line calls made by opaque style-2 rectangle fills. It leaves partial
+clipping, nonzero draw-page offset, masked/wide lines, diagonals, other
+raster operations and other video modes on the separate existing paths.
+Pinned RTL byte witnesses and a four-latch VGA host model check exact
+edge pixels, reversed lines, controller cleanup and byte-level call
+counts; genuine MS C 5.1 `/AL /Od` DOSBox 0.74 `RESCHK.EXE` independently
+reads the drawn pixels with BIOS INT 10h/AH=0Dh. This does not establish
+the timing or palette transition parity of the complete introduction.
+
 ### Original VFX save/restore state: the remaining evidence
 
 The previously missing `gate_linked_save_vfx_draw_state` and

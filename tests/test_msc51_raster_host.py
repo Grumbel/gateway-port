@@ -68,6 +68,7 @@ static unsigned int span_fill_bytes;
 static unsigned int planar_bios_reads;
 static unsigned int planar_bios_writes;
 static unsigned int planar_vga_writes;
+static unsigned int planar_set_reset_writes;
 static uint8_t gc_register[9] = { 0u, 0u, 0u, 0u, 0u, 0u, 0u, 15u, 255u };
 static uint8_t gc_index;
 static uint8_t seq_register[5] = { 0u, 0u, 15u, 0u, 0u };
@@ -95,7 +96,9 @@ static void vga_write(unsigned int offset, uint8_t data)
     unsigned int logic = (gc_register[3] >> 3) & 3u;
     ++planar_vga_writes;
     assert((gc_register[5] == 8u && gc_register[7] == 0u) ||
-           gc_register[5] == 2u);
+           gc_register[5] == 2u || gc_register[5] == 0u);
+    if (gc_register[5] == 0u && gc_register[1] == 0x0fu)
+        ++planar_set_reset_writes;
     for (plane = 0u; plane < 4u; ++plane) {
         if ((seq_register[2] & (1u << plane)) == 0u)
             continue;
@@ -105,6 +108,9 @@ static void vga_write(unsigned int offset, uint8_t data)
             uint8_t mask = (uint8_t)(0x80u >> bit);
             uint8_t src = gc_register[5] == 2u ?
                 (uint8_t)((data & (1u << plane)) != 0u) :
+                (gc_register[5] == 0u &&
+                 (gc_register[1] & (1u << plane)) != 0u) ?
+                (uint8_t)((gc_register[0] & (1u << plane)) != 0u) :
                 (uint8_t)((data & mask) != 0u);
             uint8_t old = (vga_latches[plane] & mask) != 0u;
             uint8_t value = src;
@@ -138,7 +144,7 @@ uint8_t gate_far_byte(uint16_t segment, uint16_t offset)
             assert(gc_register[7] == 0u);
             return 0xffu; /* VGA read mode 1, color-don't-care = 0 */
         }
-        assert(gc_register[5] == 2u);
+        assert(gc_register[5] == 2u || gc_register[5] == 0u);
         return vga_latches[0]; /* Read mode 0 loads latches; AX discarded. */
     }
     return memory[address];
@@ -468,6 +474,90 @@ int main(int argc, char **argv)
     assert(planar[16ul * 640u + 18u] == 5u);
     assert(planar[16ul * 640u + 26u] == 9u);
     gate_ds_set_word(GATE_DS_DRAW_PAGE_OFFSET, 0u);
+    /* RTL:1a425 sets GC0/GC1 for the complete vertical line and uses
+     * the original per-byte VGA-latch read/modify/write, not BIOS pixels. */
+    gate_ds_set_word(GATE_DS_DRAW_COLOR, 0x0bu);
+    gate_rtl_resident_move_to(100u, 60u);
+    gate_rtl_resident_line_to(100u, 63u);
+    assert(planar_set_reset_writes == 4u);
+    assert(planar[60ul * 640u + 100u] == 0x0bu);
+    assert(planar[62ul * 640u + 100u] == 0x0bu);
+    assert(planar[63ul * 640u + 100u] == 0x0bu);
+    assert(planar[59ul * 640u + 100u] == 0u);
+    assert(planar[61ul * 640u + 101u] == 0u);
+    assert(gc_register[0] == 0u && gc_register[1] == 0u);
+    assert(gc_register[3] == 0u && gc_register[8] == 0xffu);
+    gate_ds_set_word(GATE_DS_DRAW_COLOR, 0x05u);
+    gate_rtl_resident_line_to(100u, 60u);
+    assert(planar_set_reset_writes == 8u);
+    assert(planar[60ul * 640u + 100u] == 0x05u);
+    assert(planar[63ul * 640u + 100u] == 0x05u);
+    /* A nonzero page offset keeps the existing separate pixel boundary. */
+    gate_ds_set_word(GATE_DS_DRAW_PAGE_OFFSET, 1u);
+    gate_rtl_resident_move_to(104u, 65u);
+    gate_rtl_resident_line_to(104u, 66u);
+    assert(planar_set_reset_writes == 8u);
+    assert(planar[65ul * 640u + 112u] == 0x05u);
+    assert(planar[65ul * 640u + 104u] == 0u);
+    gate_ds_set_word(GATE_DS_DRAW_PAGE_OFFSET, 0u);
+    /* RTL:1a44f uses masked first/last bytes and full-byte VGA MOVSB
+     * copies for horizontal COPY lines, including reversed endpoints. */
+    gate_ds_set_word(GATE_DS_DRAW_COLOR, 0x0eu);
+    gate_rtl_resident_move_to(105u, 80u);
+    gate_rtl_resident_line_to(108u, 80u);
+    assert(planar_set_reset_writes == 9u); /* One shared VGA byte. */
+    assert(planar[80ul * 640u + 104u] == 0u);
+    assert(planar[80ul * 640u + 105u] == 0x0eu);
+    assert(planar[80ul * 640u + 108u] == 0x0eu);
+    assert(planar[80ul * 640u + 109u] == 0u);
+    gate_ds_set_word(GATE_DS_DRAW_COLOR, 0x09u);
+    gate_rtl_resident_move_to(109u, 82u);
+    gate_rtl_resident_line_to(133u, 82u);
+    assert(planar_set_reset_writes == 13u); /* Edge, two full, edge. */
+    assert(planar[82ul * 640u + 108u] == 0u);
+    assert(planar[82ul * 640u + 109u] == 9u);
+    assert(planar[82ul * 640u + 111u] == 9u);
+    assert(planar[82ul * 640u + 112u] == 9u);
+    assert(planar[82ul * 640u + 127u] == 9u);
+    assert(planar[82ul * 640u + 133u] == 9u);
+    assert(planar[82ul * 640u + 134u] == 0u);
+    gate_ds_set_word(GATE_DS_DRAW_COLOR, 0x03u);
+    gate_rtl_resident_line_to(109u, 82u);
+    assert(planar_set_reset_writes == 17u);
+    assert(planar[82ul * 640u + 109u] == 3u);
+    assert(planar[82ul * 640u + 133u] == 3u);
+    gate_rtl_background_setup(0u, 0x06u, 0u);
+    gate_rtl_background_rect(2u, 92u, 218u, 90u, 200u);
+    assert(planar_set_reset_writes == 26u); /* Three rows, three bytes. */
+    assert(planar[90ul * 640u + 200u] == 6u);
+    assert(planar[91ul * 640u + 214u] == 6u);
+    assert(planar[92ul * 640u + 218u] == 6u);
+    assert(planar[92ul * 640u + 219u] == 0u);
+    assert(planar[89ul * 640u + 200u] == 0u);
+    assert(gate_ds_word(GATE_DS_DRAW_COLOR) == 3u);
+    /* Non-COPY and partially clipped spans retain the old single-pixel
+     * boundary, not the GC0/GC1 set/reset COPY backend. */
+    gate_ds_set_word(GATE_DS_DRAW_OPERATION, 3u);
+    gate_ds_set_word(GATE_DS_DRAW_COLOR, 1u);
+    gate_rtl_resident_move_to(105u, 80u);
+    gate_rtl_resident_line_to(108u, 80u);
+    assert(planar_set_reset_writes == 26u);
+    assert(planar[80ul * 640u + 105u] == 0x0fu);
+    gate_ds_set_word(GATE_DS_DRAW_OPERATION, 0u);
+    gate_ds_set_word(GATE_DS_DRAW_CLIPPING_ENABLED, 1u);
+    gate_ds_set_word(GATE_DS_DRAW_CLIP_LEFT, 112u);
+    gate_ds_set_word(GATE_DS_DRAW_CLIP_RIGHT, 114u);
+    gate_ds_set_word(GATE_DS_DRAW_CLIP_TOP, 84u);
+    gate_ds_set_word(GATE_DS_DRAW_CLIP_BOTTOM, 84u);
+    gate_ds_set_word(GATE_DS_DRAW_COLOR, 3u);
+    gate_rtl_resident_move_to(110u, 84u);
+    gate_rtl_resident_line_to(116u, 84u);
+    assert(planar_set_reset_writes == 26u);
+    assert(planar[84ul * 640u + 111u] == 0u);
+    assert(planar[84ul * 640u + 112u] == 3u);
+    assert(planar[84ul * 640u + 114u] == 3u);
+    assert(planar[84ul * 640u + 115u] == 0u);
+    gate_ds_set_word(GATE_DS_DRAW_CLIPPING_ENABLED, 0u);
     assert(planar_bios_reads == 0u && planar_bios_writes == 0u);
     assert(gc_register[5] == 0u && gc_register[3] == 0u);
     assert(gc_register[8] == 0xffu);

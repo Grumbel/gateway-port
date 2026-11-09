@@ -140,6 +140,32 @@ class OriginalRtlVfxRasterizer(unittest.TestCase):
             '8a46dcaa0bf679070376e8e2f6eb200376e603fbe2edeb17'
             '8a46dcaa03fb0bf679080376e84fe2f3eb050376e6e2ec'))
 
+    def test_original_planar_vertical_uses_gc_set_reset_and_latches(self):
+        # RTL:1a39c programs GC0 = color, GC1 = 0f, GC3 = op<<3.
+        self.assertEqual(self.rtl[0x1a39c:0x1a3b3], bytes.fromhex(
+            'bace038a66dc32c0efb8010fef8a66deb103d2e4b003ef'))
+        # RTL:1a425 normalizes Y, and 1a43f selects the pixel in GC8.
+        # CPU OR ES:[BX],AL reads the VGA latches, then writes its set/reset
+        # color at each 80-byte row stride; the end pixel is included.
+        self.assertEqual(self.rtl[0x1a43f:0x1a44c],
+                         bytes.fromhex('d2e4b008ef5926080703dee2f9'))
+        # Original fixed-register cleanup, not a restoration of saved VGA
+        # controller values: GC0=0, GC1=0, GC3=0, GC8=ff.
+        self.assertEqual(self.rtl[0x1a517:0x1a523],
+                         bytes.fromhex('33c0ef40efb003efb808ffef'))
+
+    def test_original_planar_horizontal_masks_and_movsb(self):
+        # RTL:1a44f derives the starting mask from the first pixel's bit
+        # and the final mask from the inclusive last pixel's bit.
+        self.assertEqual(self.rtl[0x1a471:0x1a481],
+                         bytes.fromhex('8b4e0880e10780f107b2ffd2e22256d8'))
+        # RTL:1a49c selects a shared-byte intersection for CX=0, or
+        # masked first-byte MOVSB, GC8=full-byte REP MOVSB, and masked
+        # last-byte MOVSB. Source/dest are both the VGA aperture.
+        self.assertEqual(self.rtl[0x1a49c:0x1a4b7], bytes.fromhex(
+            '0aff780d0bc9750422dfeb0b8ae7efa449'
+            '8a66d8eff3a48ae3efa4'))
+
 
 class NativeVfxProvenance(unittest.TestCase):
     @classmethod

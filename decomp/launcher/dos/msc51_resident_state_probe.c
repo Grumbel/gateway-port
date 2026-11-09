@@ -378,6 +378,89 @@ int main(void)
                    "original planar GC page origin leaves prior pixel");
     gate_ds_set_word(GATE_DS_DRAW_PAGE_OFFSET, 0u);
 
+    /* Original RTL:1a425..1a44c sets GC0/GC1 and uses an 80-byte
+     * stride with GC8 one-bit masks. Independently read through BIOS. */
+    gate_rtl_resident_set_pen_color(0x0au);
+    gate_rtl_resident_move_to(120u, 70u);
+    gate_rtl_resident_line_to(120u, 73u);
+    in.x.ax = 0x0d00u;
+    in.x.cx = 120u;
+    in.x.dx = 70u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 0x0au,
+                   "planar set/reset vertical first pixel");
+    in.x.dx = 73u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 0x0au,
+                   "planar set/reset vertical last pixel");
+    in.x.cx = 121u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 0u,
+                   "planar set/reset neighboring bit unchanged");
+    gate_rtl_resident_set_pen_color(3u);
+    gate_rtl_resident_line_to(120u, 70u);
+    in.x.cx = 120u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 3u,
+                   "planar set/reset reversed vertical line");
+
+    /* RTL:1a44f uses GC8 partial-byte masks and VGA-to-VGA MOVSB for
+     * complete bytes. Verify shared-byte, long, reversed and solid-fill
+     * cases via BIOS readback rather than trusting A000 read-map zero. */
+    gate_rtl_resident_set_pen_color(0x0eu);
+    gate_rtl_resident_move_to(105u, 80u);
+    gate_rtl_resident_line_to(108u, 80u);
+    in.x.cx = 105u;
+    in.x.dx = 80u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 0x0eu,
+                   "planar horizontal shared-byte first");
+    in.x.cx = 108u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 0x0eu,
+                   "planar horizontal shared-byte last");
+    in.x.cx = 109u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 0u,
+                   "planar horizontal shared-byte neighbor");
+    gate_rtl_resident_set_pen_color(9u);
+    gate_rtl_resident_move_to(109u, 82u);
+    gate_rtl_resident_line_to(133u, 82u);
+    in.x.cx = 109u;
+    in.x.dx = 82u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 9u,
+                   "planar horizontal partial first byte");
+    in.x.cx = 120u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 9u,
+                   "planar horizontal full VGA byte");
+    in.x.cx = 133u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 9u,
+                   "planar horizontal partial last byte");
+    gate_rtl_resident_set_pen_color(3u);
+    gate_rtl_resident_line_to(109u, 82u);
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 3u,
+                   "planar horizontal reverse endpoints");
+    gate_rtl_background_setup(0u, 6u, 0u);
+    gate_rtl_background_rect(2u, 92u, 218u, 90u, 200u);
+    in.x.cx = 200u;
+    in.x.dx = 90u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 6u,
+                   "planar solid rectangle first pixel");
+    in.x.cx = 218u;
+    in.x.dx = 92u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 6u,
+                   "planar solid rectangle last pixel");
+    in.x.cx = 219u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 0u,
+                   "planar solid rectangle adjacent pixel");
+
     gate_far_set_word(image.segment, image.offset + 0x14u, 1u);
     gate_far_set_word(image.segment, image.offset + 0x30u, 1u);
     gate_far_set_word(image.segment, image.offset + 0x32u, 0x3fc0u);
