@@ -2337,6 +2337,32 @@ no fallback to BIOS drawing or newly invented optimization was added.
 Whether every drawing-state relocation and later page-switch path matches
 the original game still requires an original-runtime comparison.
 
+### Original solid rectangle's horizontal COPY span
+
+The original rectangle at `GATE.RTL:1a6ee..1a850` (captured resident
+`2698:0006`) does **not** directly call the pixel callback for every
+point. Its opaque pattern-zero/style-2 case (`RTL:1a73a..1a755`)
+repeats an explicit horizontal line call for each inclusive scanline.
+The original line router at `RTL:19f2d` (resident `2621:0079`) uses a
+specialized mode-13h branch beginning at `RTL:1a535`. For COPY, a one-pixel
+width and an unmasked horizontal line, the branch at
+`RTL:1a5d1..1a5e6` computes the inclusive width and uses `REP STOSB`
+to fill consecutive bytes of `A000h`. This accounts for the fast
+full-width black/colored rectangles that were missing from our previous
+per-pixel bridge.
+
+The DOS adapter now routes **only** fully in-bounds and unclipped mode-13h
+COPY spans to a FAR `memset` over the real A000 aperture. The same route
+is reached by horizontal line-to and opaque style-2 rectangle rows;
+partial clipping, mode-12h VGA, non-COPY operations and unsupported line
+widths retain their previous explicit boundaries. A pinned RTL opcode
+test checks the scanline loop and `REP STOSB`; the C89 host fixture
+counts contiguous span operations and verifies pixel shapes. The MS C 5.1
+`/AL /Od` `RESCHK.EXE` probe verifies the resulting line and rectangle
+against actual A000 pixels under DOSBox 0.74. This bounded recovery does
+not assert the remaining Bresenham/planar/patterned line branches are
+equivalent to the original runtime.
+
 ### Original VFX save/restore state: the remaining evidence
 
 The previously missing `gate_linked_save_vfx_draw_state` and

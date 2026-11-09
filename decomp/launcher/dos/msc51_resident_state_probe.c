@@ -216,6 +216,15 @@ int main(void)
     valid &= check(gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
                                  (uint16_t)(17u * 320u + 17u)),
                    0x20u, "solid rectangle interior");
+    valid &= check(gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                                 (uint16_t)(16u * 320u + 16u)),
+                   0x20u, "original solid rectangle span first byte");
+    valid &= check(gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                                 (uint16_t)(18u * 320u + 18u)),
+                   0x20u, "original solid rectangle span last byte");
+    valid &= check(gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                                 (uint16_t)(17u * 320u + 19u)),
+                   0u, "original solid rectangle span neighbor");
     valid &= check(gate_ds_word(GATE_DS_DRAW_COLOR), 0x0au,
                    "rectangle restores pen color");
     valid &= check(gate_ds_word(GATE_DS_DRAW_LINE_MASK), 0xffffu,

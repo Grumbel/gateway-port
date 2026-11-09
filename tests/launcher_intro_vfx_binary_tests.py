@@ -113,6 +113,18 @@ class OriginalRtlVfxRasterizer(unittest.TestCase):
         self.assertEqual(self.rtl[0x19aa8:0x19ab4],
                          bytes.fromhex('b808ffefb80500efb80300ef'))
 
+    def test_original_mode13_horizontal_copy_uses_rep_stosb(self):
+        # RTL:19f2d's line router switches to RTL:1a535's 320-byte pitch
+        # backend. Horizontal COPY takes the inclusive REP STOSB branch.
+        self.assertEqual(self.rtl[0x1a535:0x1a54b],
+                         bytes.fromhex('837ede007405ea00000000be40018b4e082b4e0c745e'))
+        self.assertEqual(self.rtl[0x1a5d1:0x1a5e6],
+                         bytes.fromhex('518b460a8b5e0c9a000000008bfb59418a46dcf3aa'))
+        # RTL:1a6ee's solid rectangle loops over scanlines, issuing a
+        # four-coordinate horizontal line call for each row.
+        self.assertEqual(self.rtl[0x1a73a:0x1a755],
+                         bytes.fromhex('c74428ffff8b7e0cff760e57ff760a579a00000000473b7e0876ed'))
+
 
 class NativeVfxProvenance(unittest.TestCase):
     @classmethod

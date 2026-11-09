@@ -1112,6 +1112,11 @@ class MSC51Tests(unittest.TestCase):
             self.assertNotIn("in.h.ah = 0x0cu", (output / "RESSTATE.C").read_text())
             self.assertIn("void gate_rtl_resident_line_to(uint16_t x", (output / "RESSTATE.C").read_text())
             self.assertIn("void gate_rtl_background_rect(uint16_t style", (output / "RESSTATE.C").read_text())
+            self.assertIn("mode13_copy_span(left, right, y)",
+                          (output / "RESSTATE.C").read_text())
+            self.assertIn("gate_far_fill_bytes", (output / "GATEMEM.H").read_text())
+            self.assertIn("memset(address, value, count)",
+                          (output / "MEMORY.C").read_text())
             self.assertIn("mode-13 pixel XOR", (output / "RESCHK.C").read_text())
             self.assertIn("planar VGA pixel", (output / "RESCHK.C").read_text())
             self.assertIn("gate_linked_blit_vfx_picture", (output / "RESCHK.C").read_text())

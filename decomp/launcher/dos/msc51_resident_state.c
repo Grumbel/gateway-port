@@ -82,6 +82,26 @@ void gate_rtl_plot_pixel(uint16_t color, uint16_t y, uint16_t x)
     }
 }
 
+/* Original RTL:19f2d's line router takes RTL:1a535's mode-13h branch
+ * when the raster operation is COPY and the line is one pixel wide.
+ * For equal Y, RTL:1a5d1..1a5e6 draws the inclusive horizontal span
+ * with REP STOSB. Only dispatch here when the whole span survives the
+ * current clipping rectangle; other cases retain the per-pixel boundary. */
+static int mode13_copy_span(uint16_t left, uint16_t right, uint16_t y)
+{
+    if (gate_ds_word(GATE_DS_RENDERER_MODE) != 3u ||
+        gate_ds_word(GATE_DS_DRAW_OPERATION) != 0u ||
+        left > right || right >= 320u || y >= 200u)
+        return 0;
+    if (gate_ds_word(GATE_DS_DRAW_CLIPPING_ENABLED) == 1u &&
+        ((int16_t)left < (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_LEFT) ||
+         (int16_t)right > (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_RIGHT) ||
+         (int16_t)y < (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_TOP) ||
+         (int16_t)y > (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_BOTTOM)))
+        return 0;
+    return 1;
+}
+
 /* Original 2621:003e first updates the remembered pen, then rasterizes
  * from its prior position. The intro's recovered calls use axis-aligned
  * single-pixel-wide, unmasked edges; diagonal/masked paths are not yet
@@ -106,6 +126,14 @@ void gate_rtl_resident_line_to(uint16_t x, uint16_t y)
                 break;
         }
     } else if (old_y == next_y) {
+        uint16_t left = (uint16_t)(old_x < next_x ? old_x : next_x);
+        uint16_t right = (uint16_t)(old_x > next_x ? old_x : next_x);
+        if (mode13_copy_span(left, right, y)) {
+            gate_far_fill_bytes(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                (uint16_t)((uint32_t)y * 320u + left),
+                (uint8_t)color, (uint16_t)(right - left + 1u));
+            return;
+        }
         step = old_x <= next_x ? 1 : -1;
         for (cursor = old_x;; cursor += step) {
             gate_rtl_plot_pixel(color, y, (uint16_t)cursor);
@@ -157,11 +185,20 @@ void gate_rtl_background_rect(uint16_t style, uint16_t bottom,
     gate_ds_set_word(GATE_DS_DRAW_LINE_MASK, 0xffffu);
     gate_ds_set_word(GATE_DS_DRAW_LINE_WIDTH, 1u);
     for (y = top;; ++y) {
-        uint16_t x;
-        for (x = left;; ++x) {
-            gate_rtl_plot_pixel(gate_ds_word(GATE_DS_DRAW_COLOR), y, x);
-            if (x == right)
-                break;
+        if (mode13_copy_span(left, right, y)) {
+            /* RTL:1a742's solid style-2 rectangle sends one horizontal
+             * line per row to RTL:19f2d, which takes REP STOSB here. */
+            gate_far_fill_bytes(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                (uint16_t)((uint32_t)y * 320u + left),
+                (uint8_t)gate_ds_word(GATE_DS_DRAW_COLOR),
+                (uint16_t)(right - left + 1u));
+        } else {
+            uint16_t x;
+            for (x = left;; ++x) {
+                gate_rtl_plot_pixel(gate_ds_word(GATE_DS_DRAW_COLOR), y, x);
+                if (x == right)
+                    break;
+            }
         }
         if (y == bottom)
             break;

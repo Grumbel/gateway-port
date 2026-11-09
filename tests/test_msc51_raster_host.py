@@ -63,6 +63,8 @@ static unsigned int mouse_hides;
 static unsigned int mouse_shows;
 static unsigned int movedata_calls;
 static unsigned int movedata_bytes;
+static unsigned int span_fills;
+static unsigned int span_fill_bytes;
 static unsigned int planar_bios_reads;
 static unsigned int planar_bios_writes;
 static unsigned int planar_vga_writes;
@@ -154,6 +156,16 @@ void gate_far_set_byte(uint16_t segment, uint16_t offset, uint8_t value)
         return;
     }
     memory[address] = value;
+}
+/* The MS C /AL adapter uses FAR memset for the original REP STOSB. */
+void gate_far_fill_bytes(uint16_t segment, uint16_t offset,
+                         uint8_t value, uint16_t count)
+{
+    uint16_t i;
+    ++span_fills;
+    span_fill_bytes += count;
+    for (i = 0u; i < count; ++i)
+        gate_far_set_byte(segment, (uint16_t)(offset + i), value);
 }
 void gate_far_set_word(uint16_t segment, uint16_t offset, uint16_t value)
 {
@@ -326,6 +338,7 @@ int main(int argc, char **argv)
     gate_ds_set_word(GATE_DS_DRAW_COLOR, 0x11u);
     gate_rtl_resident_move_to(5u, 5u);
     gate_rtl_resident_line_to(8u, 5u);
+    assert(span_fills == 1u && span_fill_bytes == 4u);
     assert(pixel13(5u, 5u) == 0x11u);
     assert(pixel13(6u, 5u) == 0x11u);
     assert(pixel13(8u, 5u) == 0x11u);
@@ -334,17 +347,41 @@ int main(int argc, char **argv)
     assert(pixel13(8u, 6u) == 0x11u);
     gate_rtl_background_setup(0u, 0x24u, 0u);
     gate_rtl_background_rect(2u, 14u, 14u, 12u, 12u);
+    assert(span_fills == 4u && span_fill_bytes == 13u);
     assert(pixel13(12u, 12u) == 0x24u);
     assert(pixel13(13u, 13u) == 0x24u);
     assert(pixel13(14u, 14u) == 0x24u);
     assert(gate_ds_word(GATE_DS_DRAW_COLOR) == 0x11u);
     assert(gate_ds_word(GATE_DS_DRAW_LINE_WIDTH) == 1u);
     gate_rtl_background_rect(1u, 19u, 19u, 17u, 17u);
+    assert(span_fills == 6u && span_fill_bytes == 19u);
     assert(pixel13(18u, 17u) == 0x11u);
     assert(pixel13(17u, 18u) == 0x11u);
     assert(pixel13(18u, 18u) == 0u);
     assert(gate_ds_word(GATE_DS_DRAW_X) == 8u);
     assert(gate_ds_word(GATE_DS_DRAW_Y) == 7u);
+
+    /* Partial clip and non-COPY operation must not enter REP STOSB:
+     * the original fast branch only handles untouched COPY spans. */
+    gate_ds_set_word(GATE_DS_DRAW_CLIPPING_ENABLED, 1u);
+    gate_ds_set_word(GATE_DS_DRAW_CLIP_LEFT, 42u);
+    gate_ds_set_word(GATE_DS_DRAW_CLIP_RIGHT, 44u);
+    gate_ds_set_word(GATE_DS_DRAW_CLIP_TOP, 40u);
+    gate_ds_set_word(GATE_DS_DRAW_CLIP_BOTTOM, 40u);
+    gate_rtl_resident_move_to(40u, 40u);
+    gate_rtl_resident_line_to(45u, 40u);
+    assert(span_fills == 6u);
+    assert(pixel13(41u, 40u) == 0u);
+    assert(pixel13(42u, 40u) == 0x11u);
+    assert(pixel13(44u, 40u) == 0x11u);
+    assert(pixel13(45u, 40u) == 0u);
+    gate_ds_set_word(GATE_DS_DRAW_CLIPPING_ENABLED, 0u);
+    gate_ds_set_word(GATE_DS_DRAW_OPERATION, 3u);
+    gate_rtl_resident_move_to(50u, 40u);
+    gate_rtl_resident_line_to(53u, 40u);
+    assert(span_fills == 6u);
+    assert(pixel13(51u, 40u) == 0x11u);
+    gate_ds_set_word(GATE_DS_DRAW_OPERATION, 0u);
 
     gate_ds_set_word(GATE_DS_RENDERER_MODE, 2u);
     video_mode = 0x12u;

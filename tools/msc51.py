@@ -528,6 +528,7 @@ def stage_launcher(output: Path) -> list[str]:
         "void gate_ds_set_word(uint16_t offset, uint16_t value);\n"
         "uint8_t gate_far_byte(uint16_t segment, uint16_t offset);\n"
         "void gate_far_set_byte(uint16_t segment, uint16_t offset, uint8_t value);\n"
+        "void gate_far_fill_bytes(uint16_t segment, uint16_t offset, uint8_t value, uint16_t count);\n"
         "uint16_t gate_far_word(uint16_t segment, uint16_t offset);\n"
         "void gate_far_set_word(uint16_t segment, uint16_t offset, uint16_t value);\n"
         "GateFarPtr gate_stack_pointer(void *buffer);\n"

@@ -7,6 +7,7 @@
  */
 #include "GATEMEM.H"
 #include <dos.h>
+#include <memory.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -40,6 +41,18 @@ void gate_far_set_byte(uint16_t segment, uint16_t offset, uint8_t value)
     FP_SEG(address) = segment;
     FP_OFF(address) = offset;
     *address = value;
+}
+
+/* Source-shaped DOS equivalent of the original mode-13h REP STOSB line
+ * backend (RTL:1a5d1..1a5e6). The caller ensures the byte range remains
+ * inside the 64KiB video aperture; /AL makes memset's pointer FAR. */
+void gate_far_fill_bytes(uint16_t segment, uint16_t offset,
+                         uint8_t value, uint16_t count)
+{
+    unsigned char far *address;
+    FP_SEG(address) = segment;
+    FP_OFF(address) = offset;
+    memset(address, value, count);
 }
 
 uint16_t gate_far_word(uint16_t segment, uint16_t offset)
