@@ -61,7 +61,8 @@ void gate_linked_shutdown_intro_stream(void);
 
 /* Nested RTL:6eb8..6f45 buffered-flush routine. Implements the branches
  * that do not enter the unresolved CRT descriptor writer. Unsupported
- * writing and relocated descriptor-table branches abort explicitly. */
+ * writing aborts explicitly; the relocated descriptor-table check and
+ * its no-write outcome are now recovered. */
 uint16_t gate_linked_flush_intro_stream(GateFarPtr stream);
 
 /* The original low-level runtime/DOS calls retain their FAR identities.

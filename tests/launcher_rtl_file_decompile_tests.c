@@ -15,6 +15,7 @@
 #endif
 
 static uint16_t ds_words[0x10000];
+static uint8_t ds_bytes[0x10000];
 static uint8_t stream_bytes[0x10000];
 static void *stack_address;
 static int stack_calls;
@@ -52,11 +53,17 @@ uint16_t gate_ds_word(uint16_t offset) { return ds_words[offset]; }
 void gate_ds_set_word(uint16_t offset, uint16_t value) { ds_words[offset] = value; }
 uint8_t gate_far_byte(uint16_t segment, uint16_t offset)
 {
+    if (segment == 0x4567u)
+        return ds_bytes[offset];
     assert(segment == 0x9876u);
     return stream_bytes[offset];
 }
 void gate_far_set_byte(uint16_t segment, uint16_t offset, uint8_t value)
 {
+    if (segment == 0x4567u) {
+        ds_bytes[offset] = value;
+        return;
+    }
     assert(segment == 0x9876u);
     stream_bytes[offset] = value;
 }
@@ -331,13 +338,69 @@ static void test_original_stream_flush_without_writer(void)
     assert(gate_linked_flush_intro_stream(stream) == 0u);
     assert(gate_far_word(stream.segment, f) == 0x4567u);
     assert(gate_far_word(stream.segment, (uint16_t)(f + 4u)) == 0u);
+
+    /* The two independently relocated operands are DS:3244/3334.
+     * A 12-byte stream index selects the corresponding 6-byte file
+     * record's first byte. Bit zero clear skips a write regardless of
+     * the cursor-base difference. */
+    stream.offset = (uint16_t)(GATE_DS_CRT_STREAMS + GATE_CRT_STREAM_STRIDE);
+    f = stream.offset;
+    gate_far_set_byte(stream.segment, (uint16_t)(f + 0x0au), 0x02u);
+    gate_far_set_word(stream.segment, f, 0x6000u);
+    gate_far_set_word(stream.segment, (uint16_t)(f + 2u), 0x1111u);
+    gate_far_set_word(stream.segment, (uint16_t)(f + 4u), 0x4444u);
+    gate_far_set_word(stream.segment, (uint16_t)(f + 6u), 0x5000u);
+    gate_far_set_word(stream.segment, (uint16_t)(f + 8u), 0x2222u);
+    ds_bytes[GATE_DS_CRT_DESCRIPTOR_FLAGS + GATE_CRT_FILE_STRIDE] = 0u;
+    assert(gate_linked_flush_intro_stream(stream) == 0u);
+    assert(gate_far_word(stream.segment, f) == 0x5000u);
+    assert(gate_far_word(stream.segment, (uint16_t)(f + 2u)) == 0x2222u);
+    assert(gate_far_word(stream.segment, (uint16_t)(f + 4u)) == 0u);
+
+    /* Bit zero set must consult pending data, including signed deltas. */
+    ds_bytes[GATE_DS_CRT_DESCRIPTOR_FLAGS + GATE_CRT_FILE_STRIDE] = 1u;
+    gate_far_set_word(stream.segment, f, 0x4ffeu);
+    assert(gate_linked_flush_intro_stream(stream) == 0u);
+    assert(gate_far_word(stream.segment, f) == 0x5000u);
+
+    /* Original signed IDIV truncates a -4 descriptor displacement to
+     * index zero, NOT index -1; that selects DS:3334 directly. */
+    stream.offset = (uint16_t)(GATE_DS_CRT_STREAMS - 4u);
+    f = stream.offset;
+    ds_bytes[GATE_DS_CRT_DESCRIPTOR_FLAGS] = 0u;
+    gate_far_set_byte(stream.segment, (uint16_t)(f + 0x0au), 0x02u);
+    gate_far_set_word(stream.segment, f, 0x7000u);
+    gate_far_set_word(stream.segment, (uint16_t)(f + 6u), 0x5000u);
+    gate_far_set_word(stream.segment, (uint16_t)(f + 8u), 0x3333u);
+    gate_far_set_word(stream.segment, (uint16_t)(f + 4u), 11u);
+    assert(gate_linked_flush_intro_stream(stream) == 0u);
+    assert(gate_far_word(stream.segment, f) == 0x5000u);
+    assert(gate_far_word(stream.segment, (uint16_t)(f + 4u)) == 0u);
+
+    /* With -13 the same signed IDIV produces -1, selecting the record
+     * preceding DS:3334; unsigned division would select another index. */
+    stream.offset = (uint16_t)(GATE_DS_CRT_STREAMS - 13u);
+    f = stream.offset;
+    ds_bytes[GATE_DS_CRT_DESCRIPTOR_FLAGS - GATE_CRT_FILE_STRIDE] = 0u;
+    ds_bytes[GATE_DS_CRT_DESCRIPTOR_FLAGS] = 1u;
+    gate_far_set_byte(stream.segment, (uint16_t)(f + 0x0au), 0x02u);
+    gate_far_set_word(stream.segment, f, 0x7000u);
+    gate_far_set_word(stream.segment, (uint16_t)(f + 6u), 0x5000u);
+    gate_far_set_word(stream.segment, (uint16_t)(f + 8u), 0x3333u);
+    gate_far_set_word(stream.segment, (uint16_t)(f + 4u), 11u);
+    assert(gate_linked_flush_intro_stream(stream) == 0u);
+    assert(gate_far_word(stream.segment, f) == 0x5000u);
+    assert(gate_far_word(stream.segment, (uint16_t)(f + 4u)) == 0u);
     assert(write_calls == old_writes && close_calls == old_closes);
 
 #ifndef _WIN32
-    /* Unsupported write-needed or descriptor-table branches fail closed.
+    /* Both write-needed branches fail closed.
      * Child failures must leave parent fixture intact. */
     {
         int branch;
+        stream.offset = (uint16_t)(GATE_DS_CRT_STREAMS + GATE_CRT_STREAM_STRIDE);
+        f = stream.offset;
+        ds_bytes[GATE_DS_CRT_DESCRIPTOR_FLAGS + GATE_CRT_FILE_STRIDE] = 1u;
         for (branch = 0; branch < 2; ++branch) {
             pid_t child = fork();
             int status = 0;
@@ -347,7 +410,7 @@ static void test_original_stream_flush_without_writer(void)
                 (void)setrlimit(RLIMIT_CORE, &limit);
                 gate_far_set_byte(stream.segment, (uint16_t)(f + 0x0au),
                                   branch ? 0x02u : 0x0au);
-                gate_far_set_word(stream.segment, f, 0x4568u);
+                gate_far_set_word(stream.segment, f, 0x5001u);
                 (void)gate_linked_flush_intro_stream(stream);
                 _exit(0);
             }

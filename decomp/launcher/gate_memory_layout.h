@@ -57,6 +57,15 @@ enum {
     GATE_DS_RENDERER_CHECK_BIOS_MODE = 0x15d2,
 
     GATE_DS_DRAW_STATE_BASE = 0x29de,
+    /* The two RTL:6eb8 operands link to these bases in the 100, 350,
+     * 500 and 1500ms originals: 20 stream records of 12 bytes, followed
+     * by 6-byte DOS descriptor records. Only byte 0 of the latter is
+     * currently used by the recovered quiet-flush branch. */
+    GATE_DS_CRT_STREAMS = 0x3244,
+    GATE_DS_CRT_DESCRIPTOR_FLAGS = 0x3334,
+    GATE_CRT_STREAM_STRIDE = 12,
+    GATE_CRT_FILE_STRIDE = 6,
+    GATE_CRT_FILE_WRITE_BIT = 1,
     GATE_DS_CRT_CHAR_CLASS_TABLE = 0x33f7,
     GATE_DS_TIMEZONE_ENV_NAME = 0x352c,
     GATE_DS_TIMEZONE_OFFSET_LOW = 0x3538,

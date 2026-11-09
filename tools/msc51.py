@@ -1538,6 +1538,8 @@ def validate_stream_probe(output: Path) -> None:
         raise ValueError("Original stream quiet-close DOS probe returned no PASS witness")
     if "Original stream no-write flush DOS probe: PASS" not in log.read_text(errors="replace"):
         raise ValueError("Original stream no-write flush DOS probe returned no PASS witness")
+    if "Original stream descriptor-table DOS probe: PASS" not in log.read_text(errors="replace"):
+        raise ValueError("Original stream descriptor-table DOS probe returned no PASS witness")
     signature = locate_case_insensitive(output, "STRSIG.LOG")
     if signature is None or signature.read_text().strip() != stream_source_signature(output):
         raise ValueError("Original stream cleanup source changed since DOS test")

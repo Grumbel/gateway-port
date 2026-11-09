@@ -1739,23 +1739,40 @@ also reach `RTL:6f27` without a file write. Every such path copies the
 base FAR pointer at `+6/+8` to the current pointer at `+0/+2`, sets
 the pending-count word `+4` to zero, and returns `AX=0`.
 
-The new source-C `gate_linked_flush_intro_stream` reproduces only those
-no-write paths in the same `M11.OBJ` as the quiet close. A mode-2 stream
-without bit `08h` requires the two independently relocated descriptor-
-table words at `RTL:6ed8/6eea`; mode-2 positive pending bytes invoke
-the original CRT descriptor writer at `RTL:6f0f → RTL:7d64`. Both
-unrecovered paths abort **before mutating** the descriptor. The outer
-`gate_linked_shutdown_intro_stream` still rejects active states until
-the complete close/flush/write chain can be handled faithfully.
+The source-C `gate_linked_flush_intro_stream` also implements mode 2 without
+bit `08h`. Its two independently relocated operands at `RTL:6ed8/6eea`
+resolve to `DS:3244` (base of 12-byte stream records) and `DS:3334`
+(base of six-byte file-metadata records), respectively, in original startup
+RAM captures at 100, 350, 500 and 1500 ms. These bases differ by `f0h`,
+consistent with 20 stream records. The original signed `IDIV 12` converts
+the stream's 16-bit offset relative to `DS:3244` into an index, multiplies
+that index by six and tests bit zero of the metadata record's first byte.
+If the bit is clear, it skips the writer even for positive cursor-minus-base;
+if set, it performs the signed pending-byte test described above. In both
+no-write cases the buffer pointer and count are reset as in the original.
+Only a positive pending-byte result invokes the CRT descriptor writer at
+`RTL:6f0f → RTL:7d64`, which still aborts **before mutating** the
+descriptor. The outer `gate_linked_shutdown_intro_stream` still rejects
+active states until the complete close/flush/write chain can be handled
+faithfully. For reproducibility, the live RTL bank starts at physical
+`12a5h * 10h + 17dah = 1422ah`: the WORD at `1424ah` (the linked
+`RTL:6ed8` immediate) is `3244h`, and the WORD at `1425ch` (the linked
+`RTL:6eea` displacement) is `3334h` in each capture.
 
 `STRCHK.EXE` now tests the actual Microsoft C 5.1 implementation against
 real DOS-allocated descriptor memory: both current FAR-pointer words,
 pending count reset, untouched mode bits, and signed negative pending
-arithmetic. A separate mandatory witness
-`Original stream no-write flush DOS probe: PASS` is required alongside
-the earlier quiet-close PASS; the staging signature ties both to the
-same recovered launcher source. Native tests exercise write-needed and
-unresolved descriptor-table rejection using child-process SIGABRT checks.
+arithmetic. It additionally allocates the original DS layout, exercises
+both metadata-flag outcomes and verifies the resulting FAR pointer and
+count. The mandatory `STRTEST.LOG` witnesses are:
+
+- `Original stream quiet-close DOS probe: PASS`
+- `Original stream no-write flush DOS probe: PASS`
+- `Original stream descriptor-table DOS probe: PASS`
+
+All three are tied to the same recovered launcher source by the staging
+signature. Native tests also check signed quotient truncation and
+child-process SIGABRT on both write-needed routes.
 
 Three additional diagnostic callees now have strong original entry
 boundaries, not merely byte-window guesses:

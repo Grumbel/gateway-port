@@ -704,9 +704,10 @@ and file-close branch is recovered. `STRSIG.LOG` ties the PASS witness to
 the staged launcher object and DOS adapters.
 The same probe also executes the nested `RTL:6eb8` stream-flush routine's
 no-write paths: it restores the current FAR pointer from the base and
-clears the pending count, verified with both non-write mode and signed
-nonpositive cursor-minus-base in mode 2. Buffered writes, the relocated
-descriptor table and actual active close remain unresolved and fail closed.
+clears the pending count, verified with non-write mode, signed nonpositive
+cursor-minus-base in mode 2, and metadata-flag handling at the recovered
+`DS:3244/3334` relocated stream/file tables. Buffered writes and actual
+active close remain unresolved and fail closed.
 
 `msc51-compile-input` adds five BIOS-backed keyboard/mouse and animation
 input boundaries.

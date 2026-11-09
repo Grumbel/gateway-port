@@ -27,6 +27,7 @@ int main(void)
     uint16_t offset = 0xfffdu; /* field +0ah wraps around the 16-bit offset */
     uint16_t flags_offset = 7u;
     GateFarPtr flush_stream;
+    GateFarPtr table_stream;
     int valid = 1;
 
     if (_dos_allocmem(0x0620u, &data_segment) != 0) {
@@ -101,6 +102,55 @@ int main(void)
                    "mode-2 pending count reset");
     puts(valid ? "Original stream no-write flush DOS probe: PASS" :
                  "Original stream no-write flush DOS probe: FAIL");
+
+    /* Original RTL:6ed8/6eea relocated separately to DS:3244/3334.
+     * Stream #1 sits at base+12, with its file metadata at base+6.
+     * A clear metadata bit zero must bypass writing even when bytes
+     * appear pending, while a set bit goes through the signed cursor
+     * comparison before deciding whether a CRT write is necessary. */
+    table_stream.segment = (uint16_t)data_segment;
+    table_stream.offset = (uint16_t)(GATE_DS_CRT_STREAMS +
+                                    GATE_CRT_STREAM_STRIDE);
+    gate_far_set_word(table_stream.segment, table_stream.offset, 0x1010u);
+    gate_far_set_word(table_stream.segment, (uint16_t)(table_stream.offset + 2u),
+                      0x8888u);
+    gate_far_set_word(table_stream.segment, (uint16_t)(table_stream.offset + 4u),
+                      0x1234u);
+    gate_far_set_word(table_stream.segment, (uint16_t)(table_stream.offset + 6u),
+                      0x1000u);
+    gate_far_set_word(table_stream.segment, (uint16_t)(table_stream.offset + 8u),
+                      0x2222u);
+    gate_far_set_byte(table_stream.segment, (uint16_t)(table_stream.offset + 10u),
+                      0x02u);
+    gate_far_set_byte(table_stream.segment,
+                      (uint16_t)(GATE_DS_CRT_DESCRIPTOR_FLAGS +
+                      GATE_CRT_FILE_STRIDE), 0u);
+    valid &= check(gate_linked_flush_intro_stream(table_stream), 0u,
+                   "mode-2 metadata-clear flush result");
+    valid &= check(gate_far_word(table_stream.segment, table_stream.offset), 0x1000u,
+                   "mode-2 metadata-clear pointer reset");
+    valid &= check(gate_far_word(table_stream.segment,
+                   (uint16_t)(table_stream.offset + 2u)), 0x2222u,
+                   "mode-2 metadata-clear pointer segment reset");
+    valid &= check(gate_far_word(table_stream.segment,
+                   (uint16_t)(table_stream.offset + 4u)), 0u,
+                   "mode-2 metadata-clear pending reset");
+
+    gate_far_set_byte(table_stream.segment,
+                      (uint16_t)(GATE_DS_CRT_DESCRIPTOR_FLAGS +
+                      GATE_CRT_FILE_STRIDE), 1u);
+    gate_far_set_word(table_stream.segment, table_stream.offset, 0x0ffeu);
+    gate_far_set_word(table_stream.segment, (uint16_t)(table_stream.offset + 4u),
+                      0x9999u);
+    valid &= check(gate_linked_flush_intro_stream(table_stream), 0u,
+                   "mode-2 metadata-set nonpositive pending flush result");
+    valid &= check(gate_far_word(table_stream.segment, table_stream.offset), 0x1000u,
+                   "mode-2 metadata-set pointer reset");
+    valid &= check(gate_far_word(table_stream.segment,
+                   (uint16_t)(table_stream.offset + 4u)), 0u,
+                   "mode-2 metadata-set pending reset");
+    puts(valid ? "Original stream descriptor-table DOS probe: PASS" :
+                 "Original stream descriptor-table DOS probe: FAIL");
 
     valid &= check((uint16_t)_dos_freemem(descriptor_segment), 0u,
                    "release descriptor allocation");

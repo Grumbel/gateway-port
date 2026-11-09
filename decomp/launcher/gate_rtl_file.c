@@ -8,10 +8,10 @@
  * On EVERY return the original writes the descriptor base FAR pointer
  * into current (+0/+2) and resets its pending count (+4), even if no
  * write was needed. Only its nonwriting routes are source-reconstructed.
- * The mode-2 path without bit 08h reads a separately relocated DOS
- * descriptor flag table; mode-2 pending data calls the CRT writer at
- * RTL:7d64. Neither behavior is safe to approximate as a successful
- * flush, so abort before changing the descriptor in either case. */
+ * The mode-2 path without bit 08h indexes a separately relocated DOS
+ * descriptor flag table. Its bit-zero-clear exit also skips the writer.
+ * Positive pending data calls the CRT writer at RTL:7d64, so abort
+ * before changing the descriptor in that still-unrecovered case. */
 uint16_t gate_linked_flush_intro_stream(GateFarPtr stream)
 {
     uint16_t field;
@@ -24,16 +24,28 @@ uint16_t gate_linked_flush_intro_stream(GateFarPtr stream)
     field = (uint16_t)(stream.offset + GATE_CONTROL_STREAM_FLAGS_OFFSET);
     flags = gate_far_byte(stream.segment, field);
     if ((flags & GATE_CONTROL_STREAM_MODE_MASK) == GATE_CONTROL_STREAM_WRITE_MODE) {
-        uint16_t cursor;
-        uint16_t base;
-        if ((flags & GATE_CONTROL_STREAM_FORCE_WRITE_BIT) == 0)
-            abort();
-        cursor = gate_far_word(stream.segment, (uint16_t)(stream.offset +
-                               GATE_CONTROL_STREAM_CURRENT_OFFSET));
-        base = gate_far_word(stream.segment, (uint16_t)(stream.offset +
-                             GATE_CONTROL_STREAM_BASE_OFFSET));
-        if ((int16_t)(uint16_t)(cursor - base) > 0)
-            abort();
+        uint8_t needs_buffer_check = 1;
+        if ((flags & GATE_CONTROL_STREAM_FORCE_WRITE_BIT) == 0) {
+            /* RTL:6ed5..6eed: original signed IDIV by 12 truncates toward
+             * zero, even for an unaligned or negative descriptor offset.
+             * Convert the 16-bit quotient back to the 16-bit BX index
+             * before testing the first byte of its six-byte file record. */
+            int16_t delta = (int16_t)(uint16_t)(stream.offset - GATE_DS_CRT_STREAMS);
+            int16_t index = (int16_t)(delta / GATE_CRT_STREAM_STRIDE);
+            uint16_t flag_address = (uint16_t)(GATE_DS_CRT_DESCRIPTOR_FLAGS +
+                     (uint16_t)(index * GATE_CRT_FILE_STRIDE));
+            if ((gate_far_byte(gate_ds_segment(), flag_address) &
+                 GATE_CRT_FILE_WRITE_BIT) == 0)
+                needs_buffer_check = 0;
+        }
+        if (needs_buffer_check) {
+            uint16_t cursor = gate_far_word(stream.segment, (uint16_t)(stream.offset +
+                                            GATE_CONTROL_STREAM_CURRENT_OFFSET));
+            uint16_t base = gate_far_word(stream.segment, (uint16_t)(stream.offset +
+                                          GATE_CONTROL_STREAM_BASE_OFFSET));
+            if ((int16_t)(uint16_t)(cursor - base) > 0)
+                abort();
+        }
     }
 
     base_offset = gate_far_word(stream.segment, (uint16_t)(stream.offset +
