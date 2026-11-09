@@ -1190,8 +1190,37 @@ proof that the rendered game output is correct.
 ```sh
 ./build/gateway ../gateway-dos/GATE.EXE
 # Or, from the installed Nix package:
-nix run . -- ../gateway-dos/GATE.EXE
+nix run .#gateway -- ../gateway-dos/GATE.EXE
 ```
+
+The flake exposes only four user-facing launch modes (the default app is an
+alias of `gateway`):
+
+| App | Purpose |
+| --- | --- |
+| `default`, `gateway` | SDL3 frontend with the original DOS code running under Unicorn |
+| `gateway-dos` | Recompiled source-C DOS launcher in DOSBox Staging |
+| `gateway-decomp` | Native SDL3 source-C intro with AdLib music and input |
+| `gateway-hybrid` | Native source-C intro, then original game under SDL3/Unicorn |
+
+```sh
+nix run . -- ../gateway-dos/GATE.EXE
+nix run .#gateway-dos -- ../gateway-dos /INTRO
+nix run .#gateway-decomp -- ../gateway-dos
+nix run .#gateway-hybrid -- ../gateway-dos
+```
+
+`gateway-dos` needs a locally built `build/msc51-launcher/GATEWAY.EXE`
+(override its directory using `GATEWAY_MSC51_BUILD_DIR`). Compile and link
+it with `gateway-msc51` in `nix develop .#msc51`; the original game assets
+remain in `../gateway-dos` and are mounted read-only. The `/CHECK` and
+`/PICTURE` modes are verified, but the full DOS `/INTRO` currently fails
+before completing. See [DOS link checkpoint](docs/msc51-link-closure.md).
+
+Other intro previews, captures, Ghidra, and Microsoft C diagnostic tools are
+development commands inside `nix develop` / `nix develop .#ghidra` /
+`nix develop .#msc51`, not top-level apps. The development shell lists these
+commands with examples when opened interactively.
 
 F11 or Alt-Enter toggles desktop fullscreen; these shortcuts are handled by
 the host. Close the window to stop, or press Ctrl-C in the launching terminal
@@ -1221,14 +1250,14 @@ through a native OPL3 adapter and forwards keys to the recovered C input
 handler:
 
 ```sh
-nix run .#intro-source-c-live -- ../gateway-dos
+nix run .#gateway-decomp -- ../gateway-dos
 ```
 
 To play the recovered source-C intro and then enter the original game, use
 the opt-in hybrid launcher:
 
 ```sh
-nix run .#intro-source-c-play -- ../gateway-dos
+nix run .#gateway-hybrid -- ../gateway-dos
 ```
 
 Escape skips the rest of the intro and continues into the original game;
@@ -1241,21 +1270,24 @@ without executing any Unicorn/DOS startup instructions. The live runner
 and its transition have not been compiled/tested with SDL3 here.
 
 An independent original source-C caption-only diagnostic remains available,
-separate from the C++ renderer below. Given a captured 1 MiB
-original DOS memory image, `nix run .#intro-source-c --
-build/intro-analysis/at-22000.bin ../gateway-dos` displays eighteen pages
-through the recovered `GATE.EXE:117e` source-C functions. The headless
-`nix run .#intro-source-c-dump -- build/intro-analysis/at-22000.bin
-../gateway-dos build/source-c-pages` exports the same frames (create the
-output directory first). The **full** intro's default live and replay modes
+separate from the C++ renderer below. Given a captured 1 MiB original DOS
+memory image, the following commands inside `nix develop` display or export
+all eighteen pages through the recovered `GATE.EXE:117e` source-C functions:
+
+```sh
+gateway-intro-source-c-captions build/intro-analysis/at-22000.bin ../gateway-dos
+mkdir -p build/source-c-pages
+gateway-intro-source-c-dump build/intro-analysis/at-22000.bin ../gateway-dos build/source-c-pages
+```
+
+The **full** intro's default live and replay modes
 reconstruct their linked startup state from the original EXE/RTL/PIC assets
 with no guest-RAM capture. The hybrid game transition still starts a fresh
 emulated main-program process. SDL audio and timing parity remain to be
 tested against original DOS. See
 [source-C intro status](docs/intro-source-c.md) for snapshot setup and tests.
-The independent original C image path is also runnable as
-`nix run .#intro-source-c-picture-dump -- build/intro-analysis/at-22000.bin
-../gateway-dos build/source-c-picture.pgm`, using the original PIC decoder
+The independent original C image path is also runnable via
+`gateway-intro-source-c-picture-dump`, using the original PIC decoder
 host boundary and the recovered C image-loader and drawing functions.
 Use `--resource 0x3105 0 --rgb` after the output filename to render an
 original intro background in full color through the source-C DAC service.
@@ -1270,7 +1302,8 @@ proportional font, without executing DOS instructions. This SDL viewer is
 retained as an independent reference:
 
 ```sh
-nix run .#intro -- ../gateway-dos
+nix develop
+gateway-intro ../gateway-dos
 ./build/gateway-intro-dump ../gateway-dos --ms 22000 build/native-intro.ppm
 ./build/gateway-intro-dump ../gateway-dos --ms 303000 build/intro-mid-glyph.ppm --ink-pixels 2627
 ```

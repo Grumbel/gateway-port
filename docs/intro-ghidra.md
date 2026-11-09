@@ -34,7 +34,8 @@ executable is expected in a normal checkout:
 
 ```sh
 mkdir -p build/intro-analysis
-nix run -L .#probe -- ../gateway-dos/GATE.EXE \
+nix develop
+gateway-probe ../gateway-dos/GATE.EXE \
   --headless --read-only --deterministic-clock --milliseconds 24000 \
   --dump-at 22000:build/intro-analysis/at-22000
 ```
@@ -57,16 +58,16 @@ outside the Git history.
 From the repository root:
 
 ```sh
-nix run .#intro-ghidra -- \
+nix develop .#ghidra
+gateway-decompile-intro \
   ../gateway-dos/GATE.EXE ../gateway-dos/GATE.RTL \
   --snapshot build/intro-analysis/at-22000.bin \
   --output build/ghidra-intro
 ```
 
-Or use the already available Ghidra development shell:
+The equivalent direct Python command in that development shell is:
 
 ```sh
-nix develop .#ghidra
 python3 tools/run_intro_ghidra.py \
   ../gateway-dos/GATE.EXE ../gateway-dos/GATE.RTL \
   --snapshot build/intro-analysis/at-22000.bin \

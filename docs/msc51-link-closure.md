@@ -730,7 +730,7 @@ original startup RAM **and registers**, not just the much later
 
 ```sh
 mkdir -p build/msc51-startup
-nix run -L .#probe -- ../gateway-dos/GATE.EXE \
+gateway-probe ../gateway-dos/GATE.EXE \
   --headless --read-only --deterministic-clock --milliseconds 2000 \
   --dump-at 0:build/msc51-startup/at-0 \
   --dump-at 10:build/msc51-startup/at-10 \
@@ -2160,13 +2160,13 @@ observations justifies replacing
 the Ctrl-Break or diagnostic routines with a stub.
 
 Capture an **earlier** original 22-second intro image (the same canonical
-snapshot described in [intro-ghidra.md](intro-ghidra.md)). The `probe`
-Nix app builds the executable as needed; do not assume the special
+snapshot described in [intro-ghidra.md](intro-ghidra.md)). Enter
+`nix develop` first; `gateway-probe` builds the executable as needed. Do not assume the special
 `build/local-probe/` manual build exists:
 
 ```sh
 mkdir -p build/intro-analysis
-nix run -L .#probe -- ../gateway-dos/GATE.EXE \
+gateway-probe ../gateway-dos/GATE.EXE \
   --headless --read-only --deterministic-clock --milliseconds 24000 \
   --dump-at 22000:build/intro-analysis/at-22000
 ```

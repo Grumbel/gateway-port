@@ -43,12 +43,14 @@ With the original DOS assets in `../gateway-dos`:
 
 ```sh
 mkdir -p build/intro-analysis
-nix run -L .#probe -- ../gateway-dos/GATE.EXE \
+nix develop
+gateway-probe ../gateway-dos/GATE.EXE \
   --headless --read-only --deterministic-clock --milliseconds 24000 \
   --dump-at 22000:build/intro-analysis/at-22000
 ```
 
-The `probe` app builds itself through Nix; `build/local-probe/gateway-probe`
+The `gateway-probe` development command builds the local target when needed;
+`build/local-probe/gateway-probe`
 exists only after the separate static-Unicorn ZIP build. `at-22000.bin` is
 a private 1 MiB guest-memory image,
 not a file to commit or package. The host currently expects DS `0x2a7a` and
@@ -186,7 +188,7 @@ intro configurations equivalent to a genuine DOS startup.
 ## Run the source-C captions
 
 ```sh
-nix run .#intro-source-c -- build/intro-analysis/at-22000.bin ../gateway-dos
+gateway-intro-source-c-captions build/intro-analysis/at-22000.bin ../gateway-dos
 ```
 
 Space or Return advances, Backspace goes back, P pauses automatic advance,
@@ -201,7 +203,7 @@ frames using only the C-source build:
 
 ```sh
 mkdir -p build/source-c-pages
-nix run .#intro-source-c-dump -- \
+gateway-intro-source-c-dump \
   build/intro-analysis/at-22000.bin ../gateway-dos build/source-c-pages
 ```
 
@@ -214,7 +216,7 @@ under `build/`; no narrative text or original assets enter the Git history.
 ## Play the original source-C intro live (with AdLib music)
 
 ```sh
-nix run .#intro-source-c-live -- ../gateway-dos
+nix run .#gateway-decomp -- ../gateway-dos
 ```
 
 This executes `GATE.EXE:1302` on a worker thread while an SDL3 window
@@ -279,7 +281,7 @@ this environment.
 ## Continue from the source-C intro into the original game
 
 ```sh
-nix run .#intro-source-c-play -- ../gateway-dos
+nix run .#gateway-hybrid -- ../gateway-dos
 ```
 
 This optional mode uses the same live, music-enabled source-C intro. When
@@ -289,7 +291,7 @@ the remaining intro using the original source-C input logic and continues to
 the game; closing the window cancels both programs. Ctrl-C in the terminal
 uses the OS signal disposition, so it can terminate a stalled worker without
 waiting for another SDL event; it does not enter the game. The intro-only
-`intro-source-c-live` app above retains its inspection window after completion.
+`gateway-decomp` app above retains its inspection window after completion.
 
 The game command-line parameters `0 258 9 2 816 1 7 544` were checked against
 the original DOS launcher's `4b03` overlay transition and preserved child PSP
@@ -311,11 +313,11 @@ development environment; only the standalone game startup was tested.
 ## Play the deterministic source-C recording (silent)
 
 ```sh
-nix run .#intro-source-c-full -- \
-  ../gateway-dos
+nix develop
+gateway-intro-source-c-full ../gateway-dos
 ```
 
-This app executes the **actual recovered C `GATE.EXE:1302` function**,
+This development command executes the **actual recovered C `GATE.EXE:1302` function**,
 including its original image, fade, caption and animation entry points.
 Narrow native bridges supply VFX/DCL, RAM, VGA mode 13h, files, deterministic
 clock and silent audio initialization. It first creates a private temporary
@@ -417,7 +419,7 @@ The source-C image-load/draw boundary can also render the original
 running 8086 instructions:
 
 ```sh
-nix run .#intro-source-c-picture-dump -- \
+gateway-intro-source-c-picture-dump \
   build/intro-analysis/at-22000.bin ../gateway-dos build/source-c-picture.pgm
 ```
 
@@ -436,7 +438,7 @@ picture calls, run the **persistent source-C picture-call sequence**:
 
 ```sh
 mkdir -p build/source-c-sequence
-nix run .#intro-source-c-picture-dump -- \
+gateway-intro-source-c-picture-dump \
   build/intro-analysis/at-22000.bin ../gateway-dos \
   build/source-c-sequence --sequence
 ```
