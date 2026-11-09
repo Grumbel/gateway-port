@@ -1780,7 +1780,7 @@ All three are tied to the same recovered launcher source by the staging
 signature. Native tests also check signed quotient truncation and
 child-process SIGABRT on both write-needed routes.
 
-### CRT descriptor writer: verified binary and LF-free text paths
+### CRT descriptor writer: verified binary, LF-free and bounded LF paths
 
 The upstream `RTL:6f0f` call invokes original `RTL:7d64..7eab`, the
 Microsoft-style low-level write routine (not the simpler `1c29:0055` DOS
@@ -1792,7 +1792,7 @@ captures the writer's three relocated operands agree: `RTL:7d6f` links to
 `c1h` for handles 0–2 and `41h` for handles 3–4 at 500 ms, consistent
 with the independently disassembled flag tests.
 
-`gate_linked_write_crt_descriptor` now reconstructs the **successful
+`gate_linked_write_crt_descriptor` reconstructs the **successful
 binary and LF-free text** routes: validate the handle, seek to EOF with DOS INT 21h/42h
 for flag `20h` (append), return zero without writing for count zero,
 otherwise call INT 21h/40h and return its positive byte count. Flag
@@ -1807,8 +1807,7 @@ to search for LF (`0ah`), incrementing only the 16-bit ES:DI offset. If
 none is present, `RTL:7db7` branches directly to the raw DOS write at
 `RTL:7e74`, including the usual append seek. The C reconstruction scans
 the same 16-bit wrapped source offsets and permits the ordinary write.
-If an LF is found, it still aborts before the original's more involved
-newline-to-CR/LF conversion and FAR stack-space helper at `RTL:7eae`.
+If an LF is found, the bounded high-stack branch described below expands it.
 Invalid handles, DOS carry failures and
 ambiguous zero-byte disk writes enter an unrecovered CRT error/errno path.
 All those cases currently abort; the full active stream close also remains
@@ -1822,14 +1821,18 @@ bytes through the actual source-C stream flush. Rewinding and reading
 back all seven expected bytes establishes that the DOS calls really ran.
 The same real DOS file is then extended by three LF-free text-mode bytes,
 rewound, and checked for all ten expected bytes without translation.
+The high-stack LF test rewinds first, selects append mode, then adds source
+bytes `X`, LF, `Y`; it rewinds again and verifies fourteen actual bytes,
+with CR inserted immediately before LF and no earlier data overwritten.
 `Original CRT binary descriptor DOS probe: PASS` and
-`Original CRT text no-LF DOS probe: PASS` are required `STRTEST.LOG`
+`Original CRT text no-LF DOS probe: PASS` and
+`Original CRT text LF high-stack DOS probe: PASS` are required `STRTEST.LOG`
 witnesses; the staged-source signature rejects stale results.
 Native tests cover full and short writes, append calls, Ctrl-Z device
 semantics, 16-bit scan wrapping, maximum-length termination, text stream
-flush and fail-closed LF/error branches.
+flush and fail-closed low-stack/error branches.
 
-### CRT newline conversion: bounded stack allocation still unresolved
+### CRT newline conversion: recovered 512-byte high-stack branch
 
 The original `RTL:7db5..7db7` branch enters conversion only when it
 encounters a line feed. The original helper at `RTL:7eae..7ec1` compares
@@ -1845,10 +1848,23 @@ Disassembly of `RTL:7dc3..7e6e` shows the available stack check rejects
 (larger when `AX >= 0228h`), expands each LF to CR LF and flushes
 intermediate chunks with DOS AH=40h. The success result is accumulated
 bytes actually reported by DOS **minus the number of CR insertions**.
-The original also has distinct short-write, device Ctrl-Z and error
-paths. Until the original buffer capacity, stack-limit, and exact failure
-side effects are testable in the linked DOS build, the C reconstruction
-continues to reject text containing LF without performing a partial write.
+The C reconstruction now implements the **successful 512-byte buffer
+branch**. It uses the linked `DS:2c24` limit, requires a deliberately
+conservative `0300h`-byte margin at its C frame (the Microsoft C source
+recompile does not have the original assembly's frame layout), and checks
+that the allocated 512-byte SS buffer remains at least `0080h` above that
+limit. It expands LF to CR LF, flushes with actual DOS AH=40h in the
+original chunk order, and computes the same 16-bit return count even for
+short positive writes. No guest errno side effect is invented.
+
+Native tests cover one LF, insertion at the 512-byte chunk boundary,
+16-bit FAR source wrapping and positive short writes. A fresh Microsoft C
+5.1/DOSBox `STRCHK.EXE` probe performed the actual `X` LF `Y` conversion
+into the existing temporary DOS file and verified every resulting byte.
+The synthetic test sets a known safe stack bound based on its own frame;
+it does **not** claim that a newly rebuilt Gateway `_main` would configure
+the original stack exactly. The 128-byte low-stack path, insufficient-stack
+error behavior, CRT errno paths and active stream close still abort.
 
 Three additional diagnostic callees now have strong original entry
 boundaries, not merely byte-window guesses:

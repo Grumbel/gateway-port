@@ -19,7 +19,7 @@ static int probe_crt_binary_write(void)
 {
     char filename[11];
     unsigned char payload[7];
-    unsigned char observed[10];
+    unsigned char observed[14];
     unsigned char text_bytes[3];
     GateFarPtr filename_pointer;
     GateFarPtr payload_pointer;
@@ -29,6 +29,7 @@ static int probe_crt_binary_write(void)
     GateDosFileResult io;
     FILE *existing;
     uint16_t handle;
+    GateFarPtr stack_probe;
     int valid = 1;
 
     strcpy(filename, "STRBIN.TMP");
@@ -126,6 +127,41 @@ static int probe_crt_binary_write(void)
                    "CRT text leaves original seven bytes untouched");
     valid &= check(memcmp(text_bytes, observed + 7u, 3u) == 0, 1u,
                    "CRT text verifies three unmodified bytes");
+
+    /* Use a deliberately roomy, known SS margin in this synthetic DOS
+     * descriptor environment. The original writer's relocated DS stack
+     * limit is 2c24h, but it is not initialized by this stand-alone probe.
+     * Leave a full 0400h between the current probe frame and that guard;
+     * the recovered source-C converter then checks its own 512-byte buffer. */
+    stack_probe = gate_stack_pointer(&stack_probe);
+    if (stack_probe.offset < 0x0500u) {
+        puts("CRT text LF probe: too little DOS stack for high-stack case");
+        valid = 0;
+    } else {
+        gate_ds_set_word(GATE_DS_CRT_STACK_LIMIT,
+                         (uint16_t)(stack_probe.offset - 0x0400u));
+        text_bytes[0] = 'X';
+        text_bytes[1] = 0x0au;
+        text_bytes[2] = 'Y';
+        /* Append must seek back to EOF even after a deliberate rewind. */
+        io = gate_dos_file_seek(handle, 0u, 0ul);
+        valid &= check(io.carry, 0u, "CRT LF append pre-rewind");
+        gate_far_set_byte(gate_ds_segment(),
+            (uint16_t)(GATE_DS_CRT_HANDLE_FLAGS + handle),
+            GATE_CRT_TEXT_BIT | GATE_CRT_APPEND_BIT);
+        valid &= check(gate_linked_write_crt_descriptor(handle, text_pointer, 3u),
+                       3u, "CRT LF-converted text write");
+        io = gate_dos_file_seek(handle, 0u, 0ul);
+        valid &= check(io.carry, 0u, "CRT LF-converted text rewind");
+        memset(observed, 0, sizeof observed);
+        io = gate_dos_file_read(handle, observed_pointer, 14u);
+        valid &= check(io.carry, 0u, "CRT LF-converted text read carry");
+        valid &= check(io.ax, 14u, "CRT LF-converted text read length");
+        valid &= check(memcmp(payload, observed, 7u) == 0, 1u,
+                       "CRT LF-converted text leaves seven binary bytes");
+        valid &= check(memcmp(observed + 7u, "DOSX\r\nY", 7u) == 0, 1u,
+                       "CRT LF-converted text actual CR LF bytes");
+    }
     io = gate_dos_file_close(handle);
     valid &= check(io.carry, 0u, "CRT binary close");
     valid &= check((uint16_t)remove(filename), 0u, "CRT binary remove probe file");
@@ -133,6 +169,8 @@ static int probe_crt_binary_write(void)
                  "Original CRT binary descriptor DOS probe: FAIL");
     puts(valid ? "Original CRT text no-LF DOS probe: PASS" :
                  "Original CRT text no-LF DOS probe: FAIL");
+    puts(valid ? "Original CRT text LF high-stack DOS probe: PASS" :
+                 "Original CRT text LF high-stack DOS probe: FAIL");
     return valid;
 }
 

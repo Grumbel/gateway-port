@@ -1140,6 +1140,11 @@ class MSC51Tests(unittest.TestCase):
                 "Original CRT binary descriptor DOS probe: PASS\n"
                 "Original CRT text no-LF DOS probe: PASS\n"
                 "Original stream quiet-close DOS probe: PASS\n")
+            with self.assertRaisesRegex(ValueError, "CRT text LF high-stack"):
+                msc51.validate_stream_probe(output)
+            (output / "STRTEST.LOG").write_text(
+                (output / "STRTEST.LOG").read_text() +
+                "Original CRT text LF high-stack DOS probe: PASS\n")
             (output / "STRSIG.LOG").write_text(msc51.stream_source_signature(output))
             msc51.validate_stream_probe(output)
             (output / wrapper).write_text((output / wrapper).read_text() + "/* changed */\n")

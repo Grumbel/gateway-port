@@ -62,6 +62,9 @@ enum {
      * original 100, 350, 500 and 1500ms startup RAM captures. */
     GATE_DS_CRT_HANDLE_LIMIT = 0x2bee,
     GATE_DS_CRT_HANDLE_FLAGS = 0x2bf0,
+    /* RTL:7eae's stack-space FAR helper reads this relocated WORD.
+     * It is the original SS stack limit, not an arbitrary scratch size. */
+    GATE_DS_CRT_STACK_LIMIT = 0x2c24,
     GATE_CRT_APPEND_BIT = 0x20,
     GATE_CRT_DEVICE_BIT = 0x40,
     GATE_CRT_TEXT_BIT = 0x80,

@@ -30,6 +30,13 @@ static int crt_write_calls;
 static int crt_seek_calls;
 static GateDosFileResult crt_write_result;
 static GateDosFileResult crt_seek_result;
+static uint16_t crt_stack_offset = 1u;
+static uint8_t crt_stack_writes;
+static uint8_t crt_stack_short_write;
+static uint8_t crt_captured[4096];
+static size_t crt_captured_count;
+static uint16_t crt_batch_sizes[16];
+static unsigned crt_batch_count;
 static uint16_t expected_read_word = 0x5678;
 static uint16_t stack_initial = 0xbeefu;
 static uint16_t read_result = 1;
@@ -87,7 +94,7 @@ GateFarPtr gate_stack_pointer(void *pointer)
 {
     stack_address = pointer;
     ++stack_calls;
-    return (GateFarPtr){0xf000, 0x0001};
+    return (GateFarPtr){0xf000, crt_stack_offset};
 }
 uint16_t gate_rtl_file_stack_word(void) { return stack_initial; }
 _Noreturn void gate_rtl_file_divide_fault(void)
@@ -175,11 +182,23 @@ uint16_t gate_linked_dos_file_close(uint16_t handle)
 GateDosFileResult gate_dos_file_write(uint16_t handle, GateFarPtr source,
                                       uint16_t count)
 {
+    GateDosFileResult result = crt_write_result;
     ++crt_write_calls;
     last_handle = handle;
     last_pointer = source;
     last_length = count;
-    return crt_write_result;
+    if (crt_stack_writes) {
+        assert(source.segment == 0xf000 && source.offset == crt_stack_offset);
+        assert(stack_address != NULL && crt_batch_count < 16);
+        crt_batch_sizes[crt_batch_count++] = count;
+        result.carry = 0;
+        result.ax = crt_stack_short_write && count > 1u
+                        ? (uint16_t)(count - 1u) : count;
+        assert(crt_captured_count + result.ax <= sizeof crt_captured);
+        memcpy(crt_captured + crt_captured_count, stack_address, result.ax);
+        crt_captured_count += result.ax;
+    }
+    return result;
 }
 
 GateDosFileResult gate_dos_file_seek(uint16_t handle, uint16_t origin,
@@ -307,6 +326,92 @@ static void test_original_crt_descriptor_writer_binary(void)
         }
     }
 #endif
+    ds_bytes[GATE_DS_CRT_HANDLE_FLAGS + 3u] = 0u;
+}
+
+static void test_original_crt_descriptor_writer_lf_high_stack(void)
+{
+    GateFarPtr source = {0x9876u, 0x1000u};
+    unsigned i;
+    ds_words[GATE_DS_CRT_HANDLE_LIMIT] = 20u;
+    ds_words[GATE_DS_CRT_STACK_LIMIT] = 0x7000u;
+    ds_bytes[GATE_DS_CRT_HANDLE_FLAGS + 3u] = GATE_CRT_TEXT_BIT;
+    crt_stack_offset = 0x9000u;
+    crt_stack_writes = 1u;
+    crt_stack_short_write = 0u;
+
+    stream_bytes[0x1000] = 'A';
+    stream_bytes[0x1001] = 0x0au;
+    stream_bytes[0x1002] = 'B';
+    crt_captured_count = 0;
+    crt_batch_count = 0;
+    assert(gate_linked_write_crt_descriptor(3u, source, 3u) == 3u);
+    assert(crt_batch_count == 1 && crt_batch_sizes[0] == 4u);
+    assert(crt_captured_count == 4u);
+    assert(memcmp(crt_captured, "A\r\nB", 4) == 0);
+
+    /* The full-buffer check occurs before CR and before LF separately;
+     * 511 preceding bytes cause CR to fill the 512-byte SS buffer. */
+    for (i = 0; i < 511; ++i)
+        stream_bytes[0x1000u + i] = 'Q';
+    stream_bytes[0x1000u + 511u] = 0x0au;
+    stream_bytes[0x1000u + 512u] = 'Z';
+    crt_captured_count = 0;
+    crt_batch_count = 0;
+    assert(gate_linked_write_crt_descriptor(3u, source, 513u) == 513u);
+    assert(crt_batch_count == 2);
+    assert(crt_batch_sizes[0] == 512u && crt_batch_sizes[1] == 2u);
+    assert(crt_captured_count == 514u);
+    for (i = 0; i < 511; ++i)
+        assert(crt_captured[i] == 'Q');
+    assert(crt_captured[511] == 0x0du && crt_captured[512] == 0x0au &&
+           crt_captured[513] == 'Z');
+
+    /* The original source SI and scan DI wrap their 16-bit offsets. */
+    source.offset = 0xffffu;
+    stream_bytes[0xffff] = 0x0au;
+    stream_bytes[0] = 'Z';
+    crt_captured_count = 0;
+    crt_batch_count = 0;
+    assert(gate_linked_write_crt_descriptor(3u, source, 2u) == 2u);
+    assert(crt_captured_count == 3u);
+    assert(memcmp(crt_captured, "\r\nZ", 3) == 0);
+
+    /* A short positive DOS write returns actual bytes minus inserted CRs;
+     * the caller's stream flush is responsible for marking an error. */
+    source.offset = 0x1000u;
+    stream_bytes[0x1000] = 'A';
+    stream_bytes[0x1001] = 0x0au;
+    stream_bytes[0x1002] = 'B';
+    crt_stack_short_write = 1u;
+    crt_captured_count = 0;
+    crt_batch_count = 0;
+    assert(gate_linked_write_crt_descriptor(3u, source, 3u) == 2u);
+    assert(crt_captured_count == 3u);
+    assert(memcmp(crt_captured, "A\r\n", 3) == 0);
+
+#ifndef _WIN32
+    /* The original may take its 128-byte route below 0228h; the
+     * reconstructed high-stack-only writer must refuse that state. */
+    {
+        pid_t child = fork();
+        int status = 0;
+        assert(child >= 0);
+        if (child == 0) {
+            struct rlimit limit = {0, 0};
+            (void)setrlimit(RLIMIT_CORE, &limit);
+            crt_stack_offset = 0x71ffu;
+            (void)gate_linked_write_crt_descriptor(3u, source, 3u);
+            _exit(0);
+        }
+        assert(waitpid(child, &status, 0) == child);
+        assert(WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT);
+    }
+#endif
+
+    crt_stack_writes = 0u;
+    crt_stack_short_write = 0u;
+    crt_stack_offset = 1u;
     ds_bytes[GATE_DS_CRT_HANDLE_FLAGS + 3u] = 0u;
 }
 
@@ -578,8 +683,8 @@ static void test_original_stream_flush_without_writer(void)
     assert(gate_far_word(stream.segment, f) == 0x5000u);
 
 #ifndef _WIN32
-    /* Both write-needed branches reject unreconstructed CR/LF expansion.
-     * Child failures must leave parent fixture intact. */
+    /* Both write-needed branches still reject an LF with insufficient
+     * original CRT stack margin. Child failures preserve the parent. */
     {
         int branch;
         stream.offset = (uint16_t)(GATE_DS_CRT_STREAMS + GATE_CRT_STREAM_STRIDE);
@@ -614,6 +719,7 @@ int main(void)
     test_reads();
     test_writes_and_close();
     test_original_crt_descriptor_writer_binary();
+    test_original_crt_descriptor_writer_lf_high_stack();
     test_first_ctrl_break_stream_cleanup_quiet_branches();
     test_original_stream_flush_without_writer();
     puts("intro RTL file wrappers: ok");

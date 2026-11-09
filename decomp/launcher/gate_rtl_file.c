@@ -15,13 +15,80 @@
  * nonempty write. A zero-byte
  * result on a device is accepted only if the first source byte is 1ah.
  *
- * Original text-mode CR/LF expansion and the CRT errno/CF translation
- * require further reconstruction. Reject those and every failed DOS call
- * before inventing any error-global side effect. */
+ * Original CRT errno/CF translation still requires reconstruction. Reject
+ * failed DOS calls before inventing any error-global side effect. */
+
+/* RTL:7e18..7e38 flushes a nonempty SS buffer and accumulates AX even
+ * for short positive DOS writes; a zero or carry result requires the
+ * still-unrecovered CRT error path. */
+static void gate_crt_flush_text_buffer(uint16_t handle, GateFarPtr source,
+                                       uint16_t *pending, uint16_t *written)
+{
+    GateDosFileResult result;
+    if (*pending == 0)
+        return;
+    result = gate_dos_file_write(handle, source, *pending);
+    if (result.carry || result.ax == 0)
+        abort();
+    *written = (uint16_t)(*written + result.ax);
+    *pending = 0;
+}
+
+/* RTL:7dc3..7e6e uses a 512-byte SS buffer when the stack-space helper
+ * returns at least 0228h bytes. The C89 compiler has a different frame
+ * size, so accept only a comfortably larger margin (0300h) and check the
+ * actual allocated buffer remains above the original stack limit. The
+ * original 128-byte low-stack path is deliberately not enabled yet.
+ *
+ * RTL:7de3..7e08 emits LF as CR LF and flushes a full buffer BEFORE the
+ * next byte. RTL:7e18..7e38 resets DI to the buffer start. RTL:7e63
+ * returns the total DOS count minus inserted CR bytes (modulo 16 bits).
+ * Original carry/zero-result errno paths still abort. */
+static uint16_t gate_crt_write_text_lf_512(uint16_t handle,
+                                           GateFarPtr source, uint16_t count)
+{
+    uint8_t buffer[512];
+    GateFarPtr stack_buffer;
+    uint16_t stack_limit = gate_ds_word(GATE_DS_CRT_STACK_LIMIT);
+    uint16_t offset = source.offset;
+    uint16_t pending = 0;
+    uint16_t inserted = 0;
+    uint16_t written = 0;
+    uint16_t remaining = count;
+
+    stack_buffer = gate_stack_pointer(buffer);
+
+    /* The hardware stack grows downward; do not call DOS from a buffer
+     * which would overlap the original linked CRT stack guard. */
+    if (stack_buffer.offset <= stack_limit ||
+        (uint16_t)(stack_buffer.offset - stack_limit) < 0x80u)
+        abort();
+
+    while (remaining != 0) {
+        uint8_t byte = gate_far_byte(source.segment, offset);
+        offset = (uint16_t)(offset + 1u);
+        if (byte == 0x0au) {
+            if (pending == sizeof buffer)
+                gate_crt_flush_text_buffer(handle, stack_buffer, &pending,
+                                            &written);
+            buffer[pending++] = 0x0du;
+            ++inserted;
+        }
+        if (pending == sizeof buffer)
+            gate_crt_flush_text_buffer(handle, stack_buffer, &pending,
+                                        &written);
+        buffer[pending++] = byte;
+        --remaining;
+    }
+    gate_crt_flush_text_buffer(handle, stack_buffer, &pending, &written);
+    return (uint16_t)(written - inserted);
+}
+
 uint16_t gate_linked_write_crt_descriptor(uint16_t handle, GateFarPtr source,
                                           uint16_t count)
 {
     uint8_t flags;
+    uint8_t has_lf = 0;
     GateDosFileResult result;
 
     if (handle >= gate_ds_word(GATE_DS_CRT_HANDLE_LIMIT))
@@ -30,13 +97,14 @@ uint16_t gate_linked_write_crt_descriptor(uint16_t handle, GateFarPtr source,
                           (uint16_t)(GATE_DS_CRT_HANDLE_FLAGS + handle));
     if ((flags & GATE_CRT_TEXT_BIT) != 0) {
         /* RTL:7da7..7db7: ES:DI scans count bytes for LF, with DI
-         * wrapping at 16 bits. A match enters the unrecovered stack
-         * CR/LF conversion path. No match falls through to raw AH=40h. */
+         * wrapping at 16 bits. No match falls through to raw AH=40h. */
         uint16_t remaining = count;
         uint16_t offset = source.offset;
         while (remaining != 0) {
-            if (gate_far_byte(source.segment, offset) == 0x0au)
-                abort();
+            if (gate_far_byte(source.segment, offset) == 0x0au) {
+                has_lf = 1;
+                break;
+            }
             offset = (uint16_t)(offset + 1u);
             --remaining;
         }
@@ -48,6 +116,17 @@ uint16_t gate_linked_write_crt_descriptor(uint16_t handle, GateFarPtr source,
     }
     if (count == 0)
         return 0;
+
+    if (has_lf) {
+        uint8_t stack_probe;
+        GateFarPtr probe;
+        uint16_t limit = gate_ds_word(GATE_DS_CRT_STACK_LIMIT);
+        probe = gate_stack_pointer(&stack_probe);
+        if (probe.offset <= limit ||
+            (uint16_t)(probe.offset - limit) < 0x300u)
+            abort();
+        return gate_crt_write_text_lf_512(handle, source, count);
+    }
 
     result = gate_dos_file_write(handle, source, count);
     if (result.carry)

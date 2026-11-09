@@ -1532,7 +1532,7 @@ def validate_stream_probe(output: Path) -> None:
             for name in ("STRCHK.EXE", "STRSTART.LOG", "STROK.LOG", "STRTEST.LOG")) or
             locate_case_insensitive(output, "STRFAIL.LOG") is not None):
         raise ValueError("Original RTL stream quiet-close DOS probe has not passed. "
-                         "Run msc51-compile-stream first.")
+                         "Run gateway-msc51 compile-stream first.")
     log = locate_case_insensitive(output, "STRTEST.LOG")
     if "Original stream quiet-close DOS probe: PASS" not in log.read_text(errors="replace"):
         raise ValueError("Original stream quiet-close DOS probe returned no PASS witness")
@@ -1544,6 +1544,8 @@ def validate_stream_probe(output: Path) -> None:
         raise ValueError("Original CRT binary descriptor DOS probe returned no PASS witness")
     if "Original CRT text no-LF DOS probe: PASS" not in log.read_text(errors="replace"):
         raise ValueError("Original CRT text no-LF DOS probe returned no PASS witness")
+    if "Original CRT text LF high-stack DOS probe: PASS" not in log.read_text(errors="replace"):
+        raise ValueError("Original CRT text LF high-stack DOS probe returned no PASS witness")
     signature = locate_case_insensitive(output, "STRSIG.LOG")
     if signature is None or signature.read_text().strip() != stream_source_signature(output):
         raise ValueError("Original stream cleanup source changed since DOS test")
@@ -2211,7 +2213,8 @@ def main(argv: list[str] | None = None) -> int:
         print("Microsoft C 5.1 executed the Ctrl-Break quiet-close, nested "
               "RTL:6eb8 stream flush, and bounded RTL:7d64 CRT writer "
               "from the actual launcher M11.OBJ with real DOS memory/files; "
-              "CR/LF expansion, CRT errno paths and active close remain unsupported.")
+              "512-byte high-stack CR/LF conversion passed; low-stack conversion, "
+              "CRT errno paths and active close remain unsupported.")
         return 0
     if args.command == "compile-input":
         try:
