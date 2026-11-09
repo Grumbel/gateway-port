@@ -1008,6 +1008,16 @@ fingerprint guard the LINK input. The original heap's private free-list
 has not been reconstructed; the adapter uses DOS allocation explicitly.
 The predicted missing names become **37** if all stages pass on DOSBox.
 
+`msc51-compile-font` separately verifies the original source-C cleanup at
+`GATE.RTL:e771..e800`, the fourth control-key teardown call. It links the
+actual staged font module `M13.OBJ` against the previously tested real-DOS
+heap/memory adapters, with fail-closed probe-only definitions for unrelated
+font-selection services. `FONTCHK.EXE` verifies three allocated FAR buffers
+are freed, an unused slot is preserved, resource bytes are invalidated on
+occupied slots, and the active font pointer changes even for empty slots.
+`FNTTEST.LOG` and the staged-source signature guard the result. This
+establishes no missing outer Ctrl-Break handler or DOS executable entry.
+
 `msc51-compile-input` adds a real DOS BIOS keyboard/mouse adapter for
 linked `0df2:000a/0030` and `0e48:011b/07fe`. It checks original input
 state at linked DS:133e/1340, queries INT 16h/AH=01h through Microsoft C's

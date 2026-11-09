@@ -235,6 +235,7 @@ nix run -L .#msc51-compile-hardware            # compile/probe real DOS port I/O
 nix run -L .#msc51-compile-runtime-files       # compile/probe FAR strings, resource paths, DOS access()
 nix run -L .#msc51-compile-resident-state       # compile/probe resident video mode and drawing DS words
 nix run -L .#msc51-compile-heap                 # DOS heap for font/VFX, including buffers >64KiB
+nix run -L .#msc51-compile-font                 # original font-cache teardown in the actual launcher M13.OBJ
 nix run -L .#msc51-compile-input                # BIOS keyboard and mouse services, buffered key state
 nix run -L .#msc51-compile-clock                # real DOS wall-clock and delay services
 nix run -L .#msc51-compile-crt                  # Microsoft C 5.1 FAR getenv() and atol()
@@ -682,6 +683,13 @@ and release boundaries using real DOS `_dos_allocmem`/`_dos_freemem`.
 64KiB segment boundary. Allocation failures return `0000:0000` and null
 VFX releases are rejected. This replaces the original allocator's unknown
 private free-list bookkeeping with DOS-managed conventional memory.
+`msc51-compile-font` then recompiles the recovered launcher `M13.OBJ` and
+links it with `HEAP.OBJ` and `MEMORY.OBJ` in `FONTCHK.EXE`. The bounded
+DOSBox probe verifies the two font-cache records, release of three occupied
+FAR buffers, preservation of an empty record's allocation and the original
+active-font pointer update even for empty slots. The other font-selection
+dependencies are fail-closed probe-only stubs; no font-selection code is
+replaced in the actual launcher.
 The predicted unresolved count falls further to **37** if all pending
 adapters compile and link successfully.
 
@@ -730,6 +738,7 @@ nix run -L .#msc51-compile-hardware
 nix run -L .#msc51-compile-runtime-files
 nix run -L .#msc51-compile-resident-state
 nix run -L .#msc51-compile-heap
+nix run -L .#msc51-compile-font
 nix run -L .#msc51-compile-input
 nix run -L .#msc51-compile-clock
 nix run -L .#msc51-compile-crt

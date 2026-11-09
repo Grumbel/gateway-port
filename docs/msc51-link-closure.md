@@ -1660,6 +1660,44 @@ The **outer** `_gate_linked_handle_control_key` remains unresolved, as do
 its other file, audio, stream and exit callees; this is not a complete
 Ctrl-Break handler or a working game entry point.
 
+**Fourth Ctrl-Break callee, original RTL font-cache cleanup (2026-11-09,
+DOS verified).** The control-key handler's fourth FAR call at
+`RTL:157c7` reaches original `RTL:e771..e79a` (linked `1c4d:008b` at
+the observed load base). The 1500ms original 1-MiB RAM snapshot contains
+its relocated entry at physical `01c55b`; compared with the unrelocated
+RTL bytes, the `ADD AX,0008h` in the two-iteration `30 * index + base`
+loop is relocated to `ADD AX,54ceh`. Thus the exact two record addresses
+are `DS:54ce` and `DS:54ec`, not file-handle table entries. Its nested
+`RTL:e79b..e800` callee checks each record's reference count, zeroes a
+nonzero count, invalidates both resource identifier bytes, and calls the
+same FAR heap-free target `1e2c:0138` on pointers at record offsets
+`+0eh`, `+12h`, and `+1ah`. The three target operands are visibly present
+in the original linked RAM bytes. An empty record skips those releases
+*but still* reaches `RTL:e7f5`, which writes the current record to the
+active-font FAR pointer at relocated `DS:54ca/54cc`.
+
+The already reconstructed `gate_rtl_release_font_slot` incorrectly
+returned early for an empty record, skipping that final pointer update.
+Corrected the branch in the **same** recovered native source used to stage
+Microsoft C 5.1's `M13.OBJ`. The new `msc51-compile-font` stage compiles
+a small `FONTCHK.EXE` against **that actual M13.OBJ**, the existing DOS
+heap and memory adapters; it does not reimplement the original cleanup
+in a separate DOS source. Under headless DOSBox Staging, real DOS
+memory-control-block ownership checks confirmed three occupied-slot heap
+releases, preservation of an unused slot's allocation and resource bytes,
+record refcount/invalidity writes and active-FAR-pointer updates both
+after the two-slot loop and after releasing a single already-empty record.
+The fresh `FNTTEST.LOG` witness is `Font cache DOS probe: PASS`;
+`FNTSIG.LOG` binds it to the staged source so stale logs cannot pass.
+Unentered font-selection dependencies are intentionally fail-closed
+probe-only exports, not implementations for the launcher. Native font-cache
+and staging regression tests also pass.
+
+This is **one original Ctrl-Break callee**, not an implementation of
+`_gate_linked_handle_control_key`. The first file/stream cleanup callee,
+the handler's remaining branches and actual DOS entry `_main` still need
+reconstruction. Do not count `FONTCHK.EXE` as a playable Gateway intro.
+
 Three additional diagnostic callees now have strong original entry
 boundaries, not merely byte-window guesses:
 
@@ -1695,9 +1733,8 @@ Unknown nested targets are similarly reported with their live bytes. This
 does not read past a 1-MiB RAM capture, and does not claim that byte strings
 are disassembled or executable entry points.
 
-Static disassembly gives leads, **not completed services**: `rtl:c391`
-tests a music/device flag and calls a same-bank helper; `rtl:e771` iterates
-two records; `rtl:11e5f` reads a device descriptor and dispatches at least
+Static disassembly gives leads, **not completed services**: `rtl:11e5f`
+reads a device descriptor and dispatches at least
 two numbered requests; `rtl:621e` performs multiple near calls; `rtl:f827`
 branches on a resident mode selector; `rtl:8aca` initializes a FAR buffer
 descriptor and passes it to another formatter. Actual DOS side effects,
@@ -1763,6 +1800,7 @@ nix run -L .#msc51-compile-runtime-files
 nix run -L .#msc51-compile-picture-dcl
 nix run -L .#msc51-compile-resident-state
 nix run -L .#msc51-compile-heap
+nix run -L .#msc51-compile-font
 nix run -L .#msc51-compile-input
 nix run -L .#msc51-compile-clock
 nix run -L .#msc51-compile-crt

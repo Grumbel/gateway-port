@@ -833,6 +833,7 @@ class MSC51Tests(unittest.TestCase):
             self.assertEqual(batch.count("IF ERRORLEVEL 1 GOTO BUILD_FAILED"), len(expected))
             self.assertIn("IF NOT EXIST M27.OBJ GOTO BUILD_FAILED", batch)
             self.assertIn("ECHO All reconstructed launcher objects compiled > SUCCESS.LOG", batch)
+
             self.assertNotIn("/Fe", batch)  # No complete DOS executable yet.
             response = (output / "LINK.RSP").read_text().splitlines()
             self.assertEqual(response[:42],
@@ -1071,6 +1072,29 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("IF ERRORLEVEL 1 GOTO LINK_FAILED", link_batch)
             self.assertIn("IF NOT EXIST GATEWAY.EXE GOTO LINK_FAILED", link_batch)
             self.assertIn(":LINK_FAILED\nECHO Original DOS services", link_batch)
+
+    def test_font_probe_links_actual_recovered_module_and_rejects_stale_results(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            output = Path(scratch)
+            msc51.stage_launcher(output)
+            font_obj = msc51.launcher_source_alias(output, "gate_rtl_font.c").replace(".C", ".OBJ")
+            batch = (output / "FONT.BAT").read_text()
+            self.assertIn(f"FONTCHK.C {font_obj} HEAP.OBJ MEMORY.OBJ", batch)
+            self.assertIn("/c M13.C", batch)  # Always compile the current recovered source.
+            self.assertIn("gate_rtl_clear_font_cache()", (output / "FONTCHK.C").read_text())
+            with self.assertRaisesRegex(ValueError, "not passed"):
+                msc51.validate_font_probe(output)
+            for name in ("FONTCHK.EXE", "FNTSTART.LOG", "FNTOK.LOG"):
+                (output / name).write_text("built\n")
+            (output / "FNTTEST.LOG").write_text("Font cache DOS probe: PASS\n")
+            (output / "FNTSIG.LOG").write_text(msc51.font_source_signature(output))
+            msc51.validate_font_probe(output)
+            (output / "M13.C").write_text((output / "M13.C").read_text() + "/* changed */\n")
+            with self.assertRaisesRegex(ValueError, "source changed"):
+                msc51.validate_font_probe(output)
+            msc51.remove_font_outputs(output)
+            with self.assertRaisesRegex(ValueError, "not passed"):
+                msc51.validate_font_probe(output)
 
     def test_c89_compatibility_transformations_preserve_large_constants(self):
         staged = msc51.msc51_enums_to_macros("enum { ONE = 1, SPACE = 0xfffff, FLAG = (1ul << 31) };")

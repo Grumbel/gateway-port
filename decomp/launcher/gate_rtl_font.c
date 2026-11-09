@@ -4,7 +4,8 @@
 #include "gate_rtl.h"
 #include "gate_rtl_file.h"
 
-/* Original GATE.RTL:e771..ebcf, linked at 0c4d:018d in the observed intro.
+/* Original GATE.RTL:e771..ebcf, linked cleanup at 0c4d:008b and font
+ * selector at 0c4d:018d in the observed intro.
  * The original stores two 30-byte slots in its own DS and accesses the
  * current video/font type through relocated segment-selector words. */
 static GateFarPtr font_slot(uint16_t index)
@@ -66,17 +67,19 @@ static uint8_t font_fallback_height(void)
 
 /* RTL:e79b..e800: release one slot if its reference counter is nonzero.
  * The three far pointers are passed to the allocator's free service even
- * when no corresponding optional width/spacing table was ever allocated. */
+ * when no corresponding optional width/spacing table was ever allocated.
+ * The active-font pointer update at RTL:e7f5 is OUTSIDE the conditional:
+ * an already-empty slot also becomes the active font. */
 void gate_rtl_release_font_slot(GateFarPtr font)
 {
-    if (font_word(font, GATE_FONT_SLOT_REFCOUNT) == 0)
-        return;
-    font_set_word(font, GATE_FONT_SLOT_REFCOUNT, 0);
-    font_set_byte(font, GATE_FONT_SLOT_RESOURCE_MODE, GATE_FONT_INVALID_RESOURCE_BYTE);
-    font_set_byte(font, GATE_FONT_SLOT_RESOURCE_ID, GATE_FONT_INVALID_RESOURCE_BYTE);
-    gate_linked_free_far_heap(font_pointer(font, GATE_FONT_SLOT_WIDTH_TABLE_OFFSET));
-    gate_linked_free_far_heap(font_pointer(font, GATE_FONT_SLOT_SPACING_TABLE_OFFSET));
-    gate_linked_free_far_heap(font_pointer(font, GATE_FONT_SLOT_BITMAP_OFFSET));
+    if (font_word(font, GATE_FONT_SLOT_REFCOUNT) != 0) {
+        font_set_word(font, GATE_FONT_SLOT_REFCOUNT, 0);
+        font_set_byte(font, GATE_FONT_SLOT_RESOURCE_MODE, GATE_FONT_INVALID_RESOURCE_BYTE);
+        font_set_byte(font, GATE_FONT_SLOT_RESOURCE_ID, GATE_FONT_INVALID_RESOURCE_BYTE);
+        gate_linked_free_far_heap(font_pointer(font, GATE_FONT_SLOT_WIDTH_TABLE_OFFSET));
+        gate_linked_free_far_heap(font_pointer(font, GATE_FONT_SLOT_SPACING_TABLE_OFFSET));
+        gate_linked_free_far_heap(font_pointer(font, GATE_FONT_SLOT_BITMAP_OFFSET));
+    }
     font_set_active(font);
 }
 

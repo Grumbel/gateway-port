@@ -204,6 +204,24 @@ static void test_eviction_and_missing_resource_fallback(void)
     assert(gate_ds_word(0x54ca) == 0x54ec);
 }
 
+static void test_empty_slot_still_updates_active_pointer(void)
+{
+    GateFarPtr first;
+    setup();
+    gate_ds_set_word(GATE_DS_ACTIVE_FONT_OFFSET, 0xdeadu);
+    gate_ds_set_word(GATE_DS_ACTIVE_FONT_SEGMENT, 0xbeefu);
+    gate_rtl_clear_font_cache();
+    assert(frees == 0u);
+    assert(gate_ds_word(GATE_DS_ACTIVE_FONT_OFFSET) == 0x54ecu);
+    assert(gate_ds_word(GATE_DS_ACTIVE_FONT_SEGMENT) == DS);
+    first.segment = DS;
+    first.offset = GATE_DS_FONT_CACHE_BASE;
+    gate_rtl_release_font_slot(first);
+    assert(frees == 0u);
+    assert(gate_ds_word(GATE_DS_ACTIVE_FONT_OFFSET) == 0x54ceu);
+    assert(gate_ds_word(GATE_DS_ACTIVE_FONT_SEGMENT) == DS);
+}
+
 static void test_retry_then_default_on_exhausted_heap(void)
 {
     GateFarPtr slot;
@@ -245,6 +263,7 @@ int main(void)
 {
     test_real_resource_branch_and_cache_hit();
     test_eviction_and_missing_resource_fallback();
+    test_empty_slot_still_updates_active_pointer();
     test_retry_then_default_on_exhausted_heap();
     test_retry_succeeds_and_negative_metric_rounding();
     puts("original RTL font cache, file loading and fallback: OK");

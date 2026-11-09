@@ -270,6 +270,8 @@ PICTURE_DCL_SOURCES = ("GATEMEM.H", "GATEDOS.H", "STDINT.H",
 RESIDENT_STATE_SOURCES = ("GATEMEM.H", "STDINT.H", "RTLLAY.H", "RTLIMAC.H",
                           "RESSTATE.C", "RESCHK.C", "MEMORY.C", "HEAP.C")
 HEAP_SOURCES = ("GATEMEM.H", "STDINT.H", "HEAP.C", "HEAPCHK.C", "MEMORY.C")
+FONT_SOURCES = ("GATEMEM.H", "STDINT.H", "RTLLAY.H", "M13.C", "FONTCHK.C",
+                "HEAP.C", "MEMORY.C")
 INPUT_SOURCES = ("GATEMEM.H", "STDINT.H", "RTLLAY.H", "INP.C", "INPCHK.C",
                  "MEMORY.C")
 CLOCK_SOURCES = ("GATEMEM.H", "STDINT.H", "RTLLAY.H", "CLOCK.C",
@@ -368,6 +370,16 @@ def resident_state_source_signature(output: Path) -> str:
 def heap_source_signature(output: Path) -> str:
     digest = hashlib.sha256(b"MS C 5.1 /AL /Od DOS heap services v1\n")
     for name in HEAP_SOURCES:
+        digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
+    return digest.hexdigest()[:16]
+
+
+def font_source_signature(output: Path) -> str:
+    digest = hashlib.sha256(b"MS C 5.1 /AL /Od original font cache v1\n")
+    # M13.C transitively includes other staged Hxx headers; fingerprint
+    # them all rather than silently accept a changed shared definition.
+    names = (*FONT_SOURCES, *(path.name for path in sorted(output.glob("H[0-9][0-9].H"))))
+    for name in names:
         digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
     return digest.hexdigest()[:16]
 
@@ -845,6 +857,31 @@ def stage_launcher(output: Path) -> list[str]:
         ":DONE", "EXIT",
     ]
     (output / "HEAP.BAT").write_text("\r\n".join(heap_batch) + "\r\n")
+    # Link the actual launcher font translation unit for an independent
+    # DOSBox exercise of RTL:e771/e79b. The probe's fail-closed definitions
+    # cover only the unentered font-selection dependencies of the full M13.
+    (output / "FONTCHK.C").write_text(msc51_rename_identifiers(
+        (source_dir / "dos/msc51_font_probe.c").read_text(), shortened))
+    font_object = aliases["gate_rtl_font.c"].replace(".C", ".OBJ")
+    font_signature = font_source_signature(output)
+    font_batch = [
+        "@ECHO OFF", "ECHO MS C 5.1 original RTL font cache > FNTSTART.LOG",
+        "SET PATH=C:\\BIN;C:\\", "SET INCLUDE=C:\\INCLUDE;C:\\",
+        "SET LIB=C:\\LIB;C:\\", "SET TEMP=D:\\", "SET TMP=D:\\",
+        # Recompile from this staging snapshot so an older M13.OBJ cannot
+        # produce a false PASS after a recovered-source change.
+        f"CL /AL /Od /c {aliases['gate_rtl_font.c']} > FNTBUILD.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED", f"IF NOT EXIST {font_object} GOTO FAILED",
+        f"CL /AL /Od FONTCHK.C {font_object} HEAP.OBJ MEMORY.OBJ /FeFONTCHK.EXE /link LLIBCR.LIB LIBH.LIB/NOD >> FNTBUILD.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST FONTCHK.EXE GOTO FAILED",
+        "FONTCHK.EXE > FNTTEST.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        f"ECHO {font_signature} > FNTSIG.LOG",
+        "ECHO Original RTL font-cache DOS probe passed > FNTOK.LOG",
+        "GOTO DONE", ":FAILED",
+        "ECHO Original RTL font-cache DOS probe failed > FNTFAIL.LOG",
+        ":DONE", "EXIT",
+    ]
+    (output / "FONT.BAT").write_text("\r\n".join(font_batch) + "\r\n")
     for original, staged in (("msc51_input.c", "INP.C"),
                              ("msc51_input_probe.c", "INPCHK.C")):
         (output / staged).write_text(msc51_rename_identifiers(
@@ -1409,6 +1446,37 @@ def print_heap_diagnostics(output: Path) -> None:
     print(f"DOS heap workspace: {output}", file=sys.stderr)
 
 
+def validate_font_probe(output: Path) -> None:
+    if (any(locate_case_insensitive(output, name) is None
+            for name in ("FONTCHK.EXE", "FNTSTART.LOG", "FNTOK.LOG", "FNTTEST.LOG")) or
+            locate_case_insensitive(output, "FNTFAIL.LOG") is not None):
+        raise ValueError("Original RTL font-cache DOS probe has not passed. "
+                         "Run msc51-compile-font first.")
+    log = locate_case_insensitive(output, "FNTTEST.LOG")
+    if "Font cache DOS probe: PASS" not in log.read_text(errors="replace"):
+        raise ValueError("Original RTL font-cache DOS probe returned no PASS witness")
+    signature = locate_case_insensitive(output, "FNTSIG.LOG")
+    if signature is None or signature.read_text().strip() != font_source_signature(output):
+        raise ValueError("Original RTL font-cache source changed since DOS test")
+
+
+def remove_font_outputs(output: Path) -> None:
+    names = {"FNTSTART.LOG", "FNTOK.LOG", "FNTFAIL.LOG", "FNTBUILD.LOG",
+             "FNTSIG.LOG", "FNTTEST.LOG", "FONTCHK.EXE", "FONTCHK.OBJ"}
+    if output.is_dir():
+        for entry in output.iterdir():
+            if entry.is_file() and entry.name.upper() in names:
+                entry.unlink()
+
+
+def print_font_diagnostics(output: Path) -> None:
+    for name in ("FNTFAIL.LOG", "FNTBUILD.LOG", "FNTTEST.LOG", "FNTOK.LOG"):
+        path = locate_case_insensitive(output, name)
+        content = path.read_text(errors="replace") if path else "(not created)"
+        print(f"--- {name} ---\n{content[-8_000:].rstrip()}", file=sys.stderr)
+    print(f"DOS font-cache workspace: {output}", file=sys.stderr)
+
+
 def validate_input_adapter(output: Path) -> None:
     if (any(locate_case_insensitive(output, name) is None
             for name in ("INP.OBJ", "INPSTART.LOG", "INPOK.LOG")) or
@@ -1635,6 +1703,7 @@ def main(argv: list[str] | None = None) -> int:
                                             "compile-picture-dcl",
                                             "compile-resident-state",
                                             "compile-heap",
+                                            "compile-font",
                                             "compile-input",
                                             "compile-clock",
                                             "compile-crt",
@@ -1669,6 +1738,7 @@ def main(argv: list[str] | None = None) -> int:
                                 "compile-runtime-files", "compile-picture-dcl",
                                 "compile-resident-state",
                                 "compile-heap",
+                                "compile-font",
                                 "compile-input",
                                 "compile-clock",
                                 "compile-crt",
@@ -1723,6 +1793,9 @@ def main(argv: list[str] | None = None) -> int:
             if args.command == "compile-data":
                 validate_selector_probe(output)
                 validate_dos_file_adapter(output)
+            if args.command == "compile-font":
+                validate_launcher_objects(output, objects)
+                validate_heap_adapter(output)
             if not args.compiler:
                 parser.error("set GATEWAY_MSC51_DIR or pass --compiler /path/to/installed/MSC51")
             compiler = validate_compiler(Path(args.compiler))
@@ -1735,6 +1808,7 @@ def main(argv: list[str] | None = None) -> int:
                                  "compile-picture-dcl",
                                  "compile-resident-state",
                                  "compile-heap",
+                                 "compile-font",
                                  "compile-input",
                                  "compile-clock",
                                  "compile-crt",
@@ -1749,6 +1823,7 @@ def main(argv: list[str] | None = None) -> int:
                  "PICTDCL.BAT" if args.command == "compile-picture-dcl" else
                  "RESST.BAT" if args.command == "compile-resident-state" else
                  "HEAP.BAT" if args.command == "compile-heap" else
+                 "FONT.BAT" if args.command == "compile-font" else
                  "INPUT.BAT" if args.command == "compile-input" else
                  "CLOCK.BAT" if args.command == "compile-clock" else
                  "CRT.BAT" if args.command == "compile-crt" else
@@ -1814,6 +1889,9 @@ def main(argv: list[str] | None = None) -> int:
         remove_heap_outputs(output)
         remove_launcher_link_outputs(output)
         command.append("--exit")
+    elif args.command == "compile-font":
+        remove_font_outputs(output)
+        command.append("--exit")
     elif args.command == "compile-input":
         remove_input_outputs(output)
         remove_launcher_link_outputs(output)
@@ -1864,6 +1942,8 @@ def main(argv: list[str] | None = None) -> int:
             print_resident_state_diagnostics(output)
         elif args.command == "compile-heap":
             print_heap_diagnostics(output)
+        elif args.command == "compile-font":
+            print_font_diagnostics(output)
         elif args.command == "compile-input":
             print_input_diagnostics(output)
         elif args.command == "compile-clock":
@@ -2004,6 +2084,18 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print("Microsoft C 5.1 verified DOS heap allocations including >64KiB VFX buffers; "
               "HEAP.OBJ is ready for the launcher link.")
+        return 0
+    if args.command == "compile-font":
+        try:
+            validate_font_probe(output)
+        except ValueError as error:
+            print(f"Microsoft C did not verify the original font-cache cleanup: {error}",
+                  file=sys.stderr)
+            print_font_diagnostics(output)
+            return 1
+        print("Microsoft C 5.1 executed the original recovered font-cache cleanup "
+              "from the launcher object with real DOS heap ownership; "
+              "font-selection dependencies were fail-closed probe stubs.")
         return 0
     if args.command == "compile-input":
         try:
