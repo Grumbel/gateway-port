@@ -1863,10 +1863,12 @@ def dosbox_performance_args(cycles: str = "max", core: str = "dynamic") -> list[
 
 
 def dosbox_headless_args() -> list[str]:
-    """Disable desktop-only mouse capture for SDL's dummy video driver."""
+    """Use SDL's software renderer without a windowing system or OpenGL."""
     return ["--noprimaryconf", "--nolocalconf",
             "--set", "mouse_capture=nomouse",
-            "--set", "mididevice=none"]
+            "--set", "mididevice=none",
+            "--set", "output=texture",
+            "--set", "texture_renderer=software"]
 
 
 def install_commands(destination: Path, floppies: list[Path]) -> list[str]:

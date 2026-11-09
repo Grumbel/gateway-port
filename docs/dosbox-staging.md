@@ -53,7 +53,12 @@ access are needed to run the unpacked binary.
 ## Headless setup
 
 In containers without an X11/Wayland display or audio device, use SDL's
-dummy video/audio backends and disable mouse capture. On the tested 0.83.0
+dummy video/audio backends, disable mouse capture, and explicitly select
+`output=texture` with `texture_renderer=software` for the compiler runs.
+DOSBox Staging 0.82.2 defaults to OpenGL output, which can abort *before*
+running any DOS command when SDL uses its dummy video driver, even after
+DOSBox reports that it is falling back to texture rendering. The software
+renderer selection avoids this OpenGL initialization path. On the tested 0.83.0
 build, `SDL_VIDEODRIVER=dummy` **without** `mouse_capture=nomouse` aborted
 during `SDL_SetRelativeMouseMode` with `Error putting the mouse into relative
 mode`. With that setting, DOSBox fell back from OpenGL to its software SDL
@@ -67,6 +72,7 @@ mkdir -p build/dosbox-smoke
 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
   "$dosbox" --noprimaryconf --nolocalconf \
   --set mouse_capture=nomouse --set mididevice=none \
+  --set output=texture --set texture_renderer=software \
   --set core=dynamic --set cpu_cycles=max \
   -c "mount c \"$PWD/build/dosbox-smoke\"" \
   -c 'c:' -c 'ver > PROBE.TXT' --exit
@@ -82,7 +88,8 @@ DOS version 5.00
 
 `tools/msc51.py` now accepts `--headless` for its noninteractive DOS probe
 commands. It sets both SDL dummy backends and passes `--noprimaryconf`,
-`--nolocalconf`, `mouse_capture=nomouse` and `mididevice=none`. Its existing
+`--nolocalconf`, `mouse_capture=nomouse`, `mididevice=none`, `output=texture`,
+and `texture_renderer=software`. Its existing
 `--dosbox` argument also accepts an absolute path to the portable executable.
 For example, when a complete Microsoft C 5.1 installation is available:
 

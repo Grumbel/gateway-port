@@ -2384,6 +2384,7 @@ class MSC51Tests(unittest.TestCase):
         self.assertEqual(msc51.dosbox_headless_args(), [
             "--noprimaryconf", "--nolocalconf",
             "--set", "mouse_capture=nomouse", "--set", "mididevice=none",
+            "--set", "output=texture", "--set", "texture_renderer=software",
         ])
         with tempfile.TemporaryDirectory() as scratch:
             root = Path(scratch)
@@ -2408,6 +2409,8 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("--noprimaryconf", command)
             self.assertIn("--nolocalconf", command)
             self.assertIn("mouse_capture=nomouse", command)
+            self.assertIn("output=texture", command)
+            self.assertIn("texture_renderer=software", command)
             self.assertIn("cpu_cycles=max", command)
             self.assertEqual(run.call_args.kwargs["env"]["SDL_VIDEODRIVER"], "dummy")
             self.assertEqual(run.call_args.kwargs["env"]["SDL_AUDIODRIVER"], "dummy")
