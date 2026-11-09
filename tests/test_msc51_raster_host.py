@@ -273,6 +273,51 @@ static uint8_t pixel13(uint16_t x, uint16_t y)
     return gate_far_byte(0xa000u, (uint16_t)(320ul * y + x));
 }
 
+/* Independent geometric oracle for short, isolated planar diagonals.
+ * The nearest-integer formula does not use the RTL's VGA mask batching,
+ * byte address, or incrementally updated Bresenham error. */
+static void check_planar_diagonal(int x0, int y0, int x1, int y1,
+                                  uint8_t color)
+{
+    unsigned char expected[32u * 32u];
+    int min_x, min_y, max_x, max_y, dx, dy, sign, i, x, y;
+    int tmp;
+    if (x0 > x1) {
+        tmp = x0; x0 = x1; x1 = tmp;
+        tmp = y0; y0 = y1; y1 = tmp;
+    }
+    min_x = x0;
+    max_x = x1;
+    min_y = y0 < y1 ? y0 : y1;
+    max_y = y0 > y1 ? y0 : y1;
+    dx = x1 - x0;
+    dy = max_y - min_y;
+    sign = y1 >= y0 ? 1 : -1;
+    assert(dx > 0 && dy > 0 && dx < 30 && dy < 30);
+    memset(expected, 0, sizeof(expected));
+    if (dx >= dy) {
+        for (i = 0; i <= dx; ++i) {
+            x = x0 + i;
+            y = y0 + sign * ((2 * dy * i + dx) / (2 * dx));
+            expected[(y - min_y) * 32 + x - min_x] = 1u;
+        }
+    } else {
+        for (i = 0; i <= dy; ++i) {
+            y = y0 + sign * i;
+            x = x0 + (2 * dx * i + dy) / (2 * dy);
+            expected[(y - min_y) * 32 + x - min_x] = 1u;
+        }
+    }
+    for (y = min_y - 1; y <= max_y + 1; ++y)
+        for (x = min_x - 1; x <= max_x + 1; ++x) {
+            uint8_t wanted = (x >= min_x && x <= max_x &&
+                              y >= min_y && y <= max_y &&
+                              expected[(y - min_y) * 32 + x - min_x]) ?
+                              color : 0u;
+            assert(planar[(unsigned long)y * 640u + x] == wanted);
+        }
+}
+
 int main(int argc, char **argv)
 {
     GateFarPtr image;
@@ -535,13 +580,38 @@ int main(int argc, char **argv)
     assert(planar[92ul * 640u + 219u] == 0u);
     assert(planar[89ul * 640u + 200u] == 0u);
     assert(gate_ds_word(GATE_DS_DRAW_COLOR) == 3u);
+    /* RTL:1a4ba batches shallow diagonal bits until a byte boundary or
+     * Y step. The steep RTL:1a4f9 branch writes every pixel. Exercise both
+     * signed slopes and reversed endpoints, including GC8 bit rollover. */
+    gate_ds_set_word(GATE_DS_DRAW_COLOR, 0x0au);
+    gate_rtl_resident_move_to(100u, 120u);
+    gate_rtl_resident_line_to(112u, 124u);
+    assert(planar_set_reset_writes == 33u); /* 7, not 13, VGA writes. */
+    check_planar_diagonal(100, 120, 112, 124, 0x0au);
+    gate_ds_set_word(GATE_DS_DRAW_COLOR, 0x0bu);
+    gate_rtl_resident_move_to(152u, 134u);
+    gate_rtl_resident_line_to(139u, 139u);
+    assert(planar_set_reset_writes == 41u); /* Reversed, downward in Y. */
+    check_planar_diagonal(152, 134, 139, 139, 0x0bu);
+    gate_ds_set_word(GATE_DS_DRAW_COLOR, 0x0cu);
+    gate_rtl_resident_move_to(200u, 140u);
+    gate_rtl_resident_line_to(205u, 158u);
+    assert(planar_set_reset_writes == 60u); /* 19 steep pixels. */
+    check_planar_diagonal(200, 140, 205, 158, 0x0cu);
+    gate_ds_set_word(GATE_DS_DRAW_COLOR, 0x0du);
+    gate_rtl_resident_move_to(241u, 145u);
+    gate_rtl_resident_line_to(235u, 166u);
+    assert(planar_set_reset_writes == 82u); /* 22 reverse steep pixels. */
+    check_planar_diagonal(241, 145, 235, 166, 0x0du);
+    assert(gc_register[0] == 0u && gc_register[1] == 0u);
+    assert(gc_register[3] == 0u && gc_register[8] == 0xffu);
     /* Non-COPY and partially clipped spans retain the old single-pixel
      * boundary, not the GC0/GC1 set/reset COPY backend. */
     gate_ds_set_word(GATE_DS_DRAW_OPERATION, 3u);
     gate_ds_set_word(GATE_DS_DRAW_COLOR, 1u);
     gate_rtl_resident_move_to(105u, 80u);
     gate_rtl_resident_line_to(108u, 80u);
-    assert(planar_set_reset_writes == 26u);
+    assert(planar_set_reset_writes == 82u);
     assert(planar[80ul * 640u + 105u] == 0x0fu);
     gate_ds_set_word(GATE_DS_DRAW_OPERATION, 0u);
     gate_ds_set_word(GATE_DS_DRAW_CLIPPING_ENABLED, 1u);
@@ -552,7 +622,7 @@ int main(int argc, char **argv)
     gate_ds_set_word(GATE_DS_DRAW_COLOR, 3u);
     gate_rtl_resident_move_to(110u, 84u);
     gate_rtl_resident_line_to(116u, 84u);
-    assert(planar_set_reset_writes == 26u);
+    assert(planar_set_reset_writes == 82u);
     assert(planar[84ul * 640u + 111u] == 0u);
     assert(planar[84ul * 640u + 112u] == 3u);
     assert(planar[84ul * 640u + 114u] == 3u);

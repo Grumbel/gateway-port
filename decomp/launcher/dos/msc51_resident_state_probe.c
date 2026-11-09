@@ -461,6 +461,79 @@ int main(void)
     valid &= check((uint16_t)(out.h.al & 15u), 0u,
                    "planar solid rectangle adjacent pixel");
 
+    /* RTL:1a3b6..1a422 routes diagonals through RTL:1a4ba's batched
+     * X-major VGA GC8 writes or RTL:1a4f9's one-write-per-Y branch.
+     * BIOS readback checks pixel placement independently of A000 latches. */
+    gate_rtl_resident_set_pen_color(10u);
+    gate_rtl_resident_move_to(100u, 120u);
+    gate_rtl_resident_line_to(112u, 124u);
+    in.x.ax = 0x0d00u;
+    in.x.cx = 100u; in.x.dx = 120u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 10u,
+                   "planar shallow diagonal first bit");
+    in.x.cx = 107u; in.x.dx = 122u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 10u,
+                   "planar shallow diagonal VGA byte wrap");
+    in.x.cx = 112u; in.x.dx = 124u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 10u,
+                   "planar shallow diagonal final bit");
+    in.x.cx = 107u; in.x.dx = 123u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 0u,
+                   "planar shallow diagonal adjacent row");
+    gate_rtl_resident_set_pen_color(11u);
+    gate_rtl_resident_move_to(152u, 134u);
+    gate_rtl_resident_line_to(139u, 139u);
+    in.x.cx = 139u; in.x.dx = 139u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 11u,
+                   "planar reverse shallow first bit");
+    in.x.cx = 146u; in.x.dx = 136u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 11u,
+                   "planar reverse shallow mid bit");
+    in.x.cx = 152u; in.x.dx = 134u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 11u,
+                   "planar reverse shallow last bit");
+    gate_rtl_resident_set_pen_color(12u);
+    gate_rtl_resident_move_to(200u, 140u);
+    gate_rtl_resident_line_to(205u, 158u);
+    in.x.cx = 200u; in.x.dx = 140u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 12u,
+                   "planar steep diagonal first bit");
+    in.x.cx = 203u; in.x.dx = 149u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 12u,
+                   "planar steep diagonal mid bit");
+    in.x.cx = 205u; in.x.dx = 158u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 12u,
+                   "planar steep diagonal final bit");
+    gate_rtl_resident_set_pen_color(13u);
+    gate_rtl_resident_move_to(241u, 145u);
+    gate_rtl_resident_line_to(235u, 166u);
+    in.x.cx = 235u; in.x.dx = 166u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 13u,
+                   "planar reverse steep first bit");
+    in.x.cx = 238u; in.x.dx = 155u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 13u,
+                   "planar reverse steep mid bit");
+    in.x.cx = 241u; in.x.dx = 145u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 13u,
+                   "planar reverse steep last bit");
+    in.x.cx = 239u; in.x.dx = 155u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 0u,
+                   "planar steep diagonal adjacent bit");
+
     gate_far_set_word(image.segment, image.offset + 0x14u, 1u);
     gate_far_set_word(image.segment, image.offset + 0x30u, 1u);
     gate_far_set_word(image.segment, image.offset + 0x32u, 0x3fc0u);

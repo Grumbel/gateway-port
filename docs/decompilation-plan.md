@@ -1439,6 +1439,17 @@ integration tests and 37 original-byte checks pass; no new main-game
 handler is marked ported. No image renderer, event loop or standalone
 source-C executable is present, so **intro playability is still open**.
 
+2026-11-10 MS-DOS intro source recovery: decoded the original planar VGA
+diagonal COPY branches at `GATE.RTL:1a3b6..1a515` into the Microsoft C 5.1
+resident adapter. Shallow lines retain the source's masked-byte batching,
+while steep lines retain the per-pixel `ROR/ADC` address advance. Both use
+the original 16-bit Bresenham error and GC set/reset latch operations.
+Pinned opcode witnesses, a bounding-box pixel/neighbor host oracle with exact
+VGA write counts, and real DOSBox/BIOS pixel readback pass. The `/AL /Od`
+object links with Microsoft Overlay Linker 3.65; no scheduling changes,
+compiler optimizations, or intro visual/timing equivalence are claimed.
+See [MS C 5.1 link closure](msc51-link-closure.md).
+
 ## 10. Risks and how to react
 
 | Risk | Signal | Reaction |

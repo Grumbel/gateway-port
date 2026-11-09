@@ -2646,3 +2646,39 @@ backgrounds remain separate BIOS adapters**, and the complete visual
 presentation has not been compared against the original on the user's
 DOSBox Staging 0.82.2. Compiler optimization and altered intro delays
 remain out of scope.
+
+### Original planar VGA COPY diagonal line branches recovered (2026-11-10)
+
+The source-C resident line backend now expresses the remaining one-pixel,
+unmasked, fully visible **mode-12h COPY** paths from the pinned original
+`GATE.RTL` at `rtl:1a3b6..1a422` and `rtl:1a4ba..1a515`. These are
+separate from the recovered mode-13h Bresenham and mode-12h horizontal and
+vertical branches. The original sorts endpoints left-to-right, selects a
+signed 80-byte scanline stride, and initializes the 16-bit error terms
+`2*minor`, `2*minor-major`, and `2*minor-2*major`.
+
+The shallow X-major branch (`1a4ba..1a4f7`) is **not one VGA write per
+pixel**: it accumulates adjacent bits into `AH` with `OR AH,BL`, rotates
+the next bit with `ROR BL,1`, and writes the accumulated GC8 mask only
+when crossing a VGA byte, moving to the next scanline, or finishing the
+line. The steep Y-major branch (`1a4f9..1a515`) writes once per pixel,
+steps the row by ±80 bytes, and advances a pixel in X via `ROR AH,1` and
+`ADC DI,0`. Both use `OR ES:[DI],AL`, which loads VGA latches before the
+set/reset color write; the original fixed GC0/1/3/8 cleanup follows.
+
+The binary regression pins the instruction bytes for initialization and
+both branches. The host C89 VGA model independently checks complete pixel
+patterns and unchanged neighbors for shallow/steep positive and negative
+slopes and reversed endpoints; it also checks the original shallow byte
+write counts (7 and 8 writes for 13- and 14-pixel examples versus one
+write per pixel for steep lines). The actual Microsoft C 5.1 `/AL /Od`
+`RESCHK.EXE` passed real DOSBox 0.74 BIOS pixel readback for these four
+cases, including byte rollover and unchanged adjacent pixels. Microsoft
+Overlay Linker 3.65 linked the updated `RESSTATE.OBJ` successfully.
+
+No compiler optimization or custom redraw scheduling was introduced.
+Partially clipped or out-of-bounds diagonal line routing, masked/wide
+lines, non-COPY diagonals, and the original transition timing and palette
+behavior remain **unverified**. The DOSBox 0.74 probe is a bounded
+instruction/output check, not a full comparison against the original
+intro playing under DOSBox Staging.

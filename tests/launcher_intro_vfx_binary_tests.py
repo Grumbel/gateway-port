@@ -166,6 +166,25 @@ class OriginalRtlVfxRasterizer(unittest.TestCase):
             '0aff780d0bc9750422dfeb0b8ae7efa449'
             '8a66d8eff3a48ae3efa4'))
 
+    def test_original_planar_diagonals_batch_masks_and_rotate_carry(self):
+        # RTL:1a3f5 sets 2*minor, 2*minor-major, and 2*minor-2*major
+        # after sorting the signed slope at RTL:1a3b6..1a3f3.
+        self.assertEqual(self.rtl[0x1a3f5:0x1a403], bytes.fromhex(
+            'd1e3895ee82bd98bf32bd9895ee6'))
+        # Shallow X-major lines accumulate bits in AH (OR AH,BL), rotate
+        # the next bit through CF, and flush the mask at a byte wrap,
+        # a Y change, or the last pixel. The OR ES:[DI],AL operation loads
+        # VGA latches, preserving adjacent bits in all four planes.
+        self.assertEqual(self.rtl[0x1a4ba:0x1a4f7], bytes.fromhex(
+            '8ae30ae3d0cb721d0bf6790b0376e8e2f1ef260805eb46'
+            '0376e6ef260805037eeae2ddeb38ef260805470bf67907'
+            '0376e8e2cdeb280376e6037eeae2c3'))
+        # Steep Y-major lines write each pixel, then advance the signed
+        # row stride; ROR AH,1 and ADC DI,0 cross VGA byte boundaries.
+        self.assertEqual(self.rtl[0x1a4f9:0x1a517], bytes.fromhex(
+            '8b5eeaef26080503fb0bf679070376e8e2f1eb0a'
+            '0376e6d0cc83d700e2e5'))
+
 
 class NativeVfxProvenance(unittest.TestCase):
     @classmethod

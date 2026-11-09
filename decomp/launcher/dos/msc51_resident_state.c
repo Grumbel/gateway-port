@@ -319,11 +319,108 @@ static int mode12_copy_horizontal(int32_t x0, int32_t y0,
     return 1;
 }
 
+/* RTL:1a3b6..1a422 sorts diagonal endpoints by X, selects the signed
+ * 80-byte row stride, and initializes its 16-bit Bresenham error as
+ * 2*minor-major. The shallow RTL:1a4ba..1a4f7 branch batches successive
+ * bits in AH: it writes a VGA byte only when the bit mask wraps, Y changes,
+ * or the last pixel has been accumulated. The steep RTL:1a4f9..1a515
+ * branch writes each pixel then advances the row; ROR/ADC moves right by
+ * one pixel on an error step. Both use the original GC8 mask and the
+ * CPU OR ES:[DI],AL VGA-latch read/modify/write. */
+static int mode12_copy_diagonal(int32_t x0, int32_t y0,
+                                 int32_t x1, int32_t y1,
+                                 uint8_t color)
+{
+    int16_t dx, dy, major, minor, error, twice_minor, correction;
+    int16_t row_stride, i;
+    uint16_t address;
+    uint8_t mask, pending_mask, old;
+    int wrapped, change_row;
+    int32_t tmp;
+    if (gate_ds_word(GATE_DS_RENDERER_MODE) != 2u ||
+        gate_ds_word(GATE_DS_DRAW_OPERATION) != 0u ||
+        gate_ds_word(GATE_DS_DRAW_PAGE_OFFSET) != 0u ||
+        x0 == x1 || y0 == y1 ||
+        x0 < 0 || x0 >= 640 || x1 < 0 || x1 >= 640 ||
+        y0 < 0 || y0 >= 480 || y1 < 0 || y1 >= 480)
+        return 0;
+    if (gate_ds_word(GATE_DS_DRAW_CLIPPING_ENABLED) == 1u &&
+        (x0 < (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_LEFT) ||
+         x1 < (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_LEFT) ||
+         x0 > (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_RIGHT) ||
+         x1 > (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_RIGHT) ||
+         y0 < (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_TOP) ||
+         y1 < (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_TOP) ||
+         y0 > (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_BOTTOM) ||
+         y1 > (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_BOTTOM)))
+        return 0;
+
+    if (x0 > x1) {
+        tmp = x0; x0 = x1; x1 = tmp;
+        tmp = y0; y0 = y1; y1 = tmp;
+    }
+    dx = (int16_t)(x1 - x0);
+    dy = (int16_t)(y1 - y0);
+    row_stride = dy < 0 ? -80 : 80;
+    if (dy < 0) dy = (int16_t)-dy;
+    major = dx >= dy ? dx : dy;
+    minor = dx >= dy ? dy : dx;
+    twice_minor = (int16_t)(2 * minor);
+    error = (int16_t)(twice_minor - major);
+    correction = (int16_t)(twice_minor - 2 * major);
+    address = (uint16_t)(80l * y0 + x0 / 8);
+    mask = (uint8_t)(1u << (7u - (x0 & 7u)));
+    mode12_copy_line_begin(color);
+
+    if (dx >= dy) {
+        pending_mask = 0u;
+        for (i = 0; i <= major; ++i) {
+            pending_mask = (uint8_t)(pending_mask | mask);
+            wrapped = (mask & 1u) != 0u;
+            mask = (uint8_t)((mask >> 1) | (wrapped ? 0x80u : 0u));
+            change_row = error >= 0;
+            if (wrapped || change_row || i == major) {
+                outp(0x3ce, 8); outp(0x3cf, pending_mask);
+                old = gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                                    address);
+                gate_far_set_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                                  address, (uint8_t)(old | 8u));
+                pending_mask = 0u;
+            }
+            if (wrapped) ++address;
+            if (change_row) {
+                error = (int16_t)(error + correction);
+                address = (uint16_t)(address + row_stride);
+            } else {
+                error = (int16_t)(error + twice_minor);
+            }
+        }
+    } else {
+        for (i = 0; i <= major; ++i) {
+            outp(0x3ce, 8); outp(0x3cf, mask);
+            old = gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                                address);
+            gate_far_set_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                              address, (uint8_t)(old | 8u));
+            address = (uint16_t)(address + row_stride);
+            if (error < 0) {
+                error = (int16_t)(error + twice_minor);
+            } else {
+                error = (int16_t)(error + correction);
+                wrapped = (mask & 1u) != 0u;
+                mask = (uint8_t)((mask >> 1) | (wrapped ? 0x80u : 0u));
+                if (wrapped) ++address;
+            }
+        }
+    }
+    mode12_copy_line_end();
+    return 1;
+}
+
 /* Original 2621:003e first updates the remembered pen, then rasterizes
- * from its prior position. The intro's recovered calls use axis-aligned
- * single-pixel-wide, unmasked edges. The mode-13h COPY backend now also
- * recovers the original vertical and diagonal branches; masked and wide
- * lines remain unimplemented. */
+ * from its prior position. All mode-13h and mode-12h COPY line branches
+ * are recovered for fully visible one-pixel, unmasked lines; clipping,
+ * non-COPY diagonals, and wide or masked lines remain separate boundaries. */
 void gate_rtl_resident_line_to(uint16_t x, uint16_t y)
 {
     int32_t old_x = (int16_t)gate_ds_word(GATE_DS_DRAW_X);
@@ -344,6 +441,9 @@ void gate_rtl_resident_line_to(uint16_t x, uint16_t y)
         return;
     if (mode12_copy_horizontal(old_x, old_y, next_x, next_y,
                                (uint8_t)color))
+        return;
+    if (mode12_copy_diagonal(old_x, old_y, next_x, next_y,
+                             (uint8_t)color))
         return;
     if (old_x == next_x) {
         step = old_y <= next_y ? 1 : -1;
