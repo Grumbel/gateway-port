@@ -706,8 +706,11 @@ The same probe also executes the nested `RTL:6eb8` stream-flush routine's
 no-write paths: it restores the current FAR pointer from the base and
 clears the pending count, verified with non-write mode, signed nonpositive
 cursor-minus-base in mode 2, and metadata-flag handling at the recovered
-`DS:3244/3334` relocated stream/file tables. Buffered writes and actual
-active close remain unresolved and fail closed.
+`DS:3244/3334` relocated stream/file tables. The subsequent CRT writer
+at `RTL:7d64` now supports successful binary DOS writes and appending,
+tested by writing and reading seven real bytes under Microsoft C 5.1;
+short writes set the original stream error flag. Text-mode conversion,
+writer errors and actual active close remain unresolved and fail closed.
 
 `msc51-compile-input` adds five BIOS-backed keyboard/mouse and animation
 input boundaries.

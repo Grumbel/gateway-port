@@ -1036,9 +1036,13 @@ all skip the CRT writer, reset current pointer to base, zero pending count
 and return zero. The last case is now recovered using original relocated
 `DS:3244` (12-byte stream records) and `DS:3334` (6-byte file metadata)
 from four independent RAM captures; metadata bit zero set also handles
-nonpositive pending bytes. Actual buffered writes abort, and the outer
-close still rejects active descriptors. `STRTEST.LOG` requires separate
-PASS lines for quiet close, no-write flush and descriptor-table handling.
+nonpositive pending bytes. The nested writer at `RTL:7d64` now also
+handles successful binary DOS writes and append mode using relocated
+`DS:2bee/2bf0` handle metadata. A partial write sets stream error bit
+`20h` before the normal pointer/count reset. The DOS probe writes and
+reads seven real bytes through this code, with an independent fourth
+`STRTEST.LOG` PASS witness. Text conversion, writer errors and the outer
+active close still abort; no complete Ctrl-Break shutdown is claimed.
 
 `msc51-compile-input` adds a real DOS BIOS keyboard/mouse adapter for
 linked `0df2:000a/0030` and `0e48:011b/07fe`. It checks original input

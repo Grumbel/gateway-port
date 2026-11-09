@@ -2,22 +2,64 @@
 /* SPDX-License-Identifier: LicenseRef-Gateway-Derived */
 
 #include "gate_rtl_file.h"
+#include "gate_dos_file_runtime.h"
 #include <stdlib.h>
+
+/* Original RTL:7d64..7eab, linked in the verified 02a5 resident bank.
+ * RTL:7d6f, 7d7c and 7d8e independently relocate to DS:2bee/2bf0/2bf0.
+ * For binary-mode writes, the only OS services are DOS AH=42h (append)
+ * and AH=40h (write). RTL:7e74 returns 0 for an empty write; RTL:7e91
+ * returns the DOS byte count for a nonempty successful write. A zero-byte
+ * result on a device is accepted only if the first source byte is 1ah.
+ *
+ * Original text-mode CR/LF conversion and the CRT errno/CF translation
+ * require further reconstruction. Reject those and every failed DOS call
+ * before inventing any error-global side effect. */
+uint16_t gate_linked_write_crt_descriptor(uint16_t handle, GateFarPtr source,
+                                          uint16_t count)
+{
+    uint8_t flags;
+    GateDosFileResult result;
+
+    if (handle >= gate_ds_word(GATE_DS_CRT_HANDLE_LIMIT))
+        abort();
+    flags = gate_far_byte(gate_ds_segment(),
+                          (uint16_t)(GATE_DS_CRT_HANDLE_FLAGS + handle));
+    if ((flags & GATE_CRT_TEXT_BIT) != 0 && count != 0)
+        abort();
+    if ((flags & GATE_CRT_APPEND_BIT) != 0) {
+        result = gate_dos_file_seek(handle, 2u, 0ul);
+        if (result.carry)
+            abort();
+    }
+    if (count == 0)
+        return 0;
+
+    result = gate_dos_file_write(handle, source, count);
+    if (result.carry)
+        abort();
+    if (result.ax != 0)
+        return result.ax;
+    if ((flags & GATE_CRT_DEVICE_BIT) != 0 &&
+        gate_far_byte(source.segment, source.offset) == GATE_CRT_DOS_CTRL_Z)
+        return 0;
+    abort();
+}
 
 /* Nested RTL:6eb8..6f45, linked from the first control-key CRT close.
  * On EVERY return the original writes the descriptor base FAR pointer
  * into current (+0/+2) and resets its pending count (+4), even if no
- * write was needed. Only its nonwriting routes are source-reconstructed.
- * The mode-2 path without bit 08h indexes a separately relocated DOS
- * descriptor flag table. Its bit-zero-clear exit also skips the writer.
- * Positive pending data calls the CRT writer at RTL:7d64, so abort
- * before changing the descriptor in that still-unrecovered case. */
+ * write was needed. The mode-2 path without bit 08h indexes a relocated
+ * DOS descriptor flag table. Positive pending bytes use RTL:7d64's
+ * bounded CRT writer; a short write sets descriptor error bit 20h and
+ * makes the result ffffh. */
 uint16_t gate_linked_flush_intro_stream(GateFarPtr stream)
 {
     uint16_t field;
     uint8_t flags;
     uint16_t base_offset;
     uint16_t base_segment;
+    uint16_t status = 0;
 
     if (stream.segment == 0)
         abort();
@@ -43,8 +85,22 @@ uint16_t gate_linked_flush_intro_stream(GateFarPtr stream)
                                             GATE_CONTROL_STREAM_CURRENT_OFFSET));
             uint16_t base = gate_far_word(stream.segment, (uint16_t)(stream.offset +
                                           GATE_CONTROL_STREAM_BASE_OFFSET));
-            if ((int16_t)(uint16_t)(cursor - base) > 0)
-                abort();
+            uint16_t pending = (uint16_t)(cursor - base);
+            if ((int16_t)pending > 0) {
+                GateFarPtr source;
+                uint16_t written;
+                source.offset = base;
+                source.segment = gate_far_word(stream.segment,
+                    (uint16_t)(stream.offset + GATE_CONTROL_STREAM_BASE_SEGMENT));
+                written = gate_linked_write_crt_descriptor(
+                    (uint16_t)(int16_t)(int8_t)gate_far_byte(stream.segment,
+                         (uint16_t)(stream.offset + 11u)), source, pending);
+                if (written != pending) {
+                    gate_far_set_byte(stream.segment, field,
+                                      (uint8_t)(flags | 0x20u));
+                    status = 0xffffu;
+                }
+            }
         }
     }
 
@@ -58,7 +114,7 @@ uint16_t gate_linked_flush_intro_stream(GateFarPtr stream)
                       GATE_CONTROL_STREAM_CURRENT_SEGMENT), base_segment);
     gate_far_set_word(stream.segment, (uint16_t)(stream.offset +
                       GATE_CONTROL_STREAM_PENDING_COUNT), 0);
-    return 0;
+    return status;
 }
 
 /* First Ctrl-Break FAR callee, RTL:15706..15729, linked 221b:021f.

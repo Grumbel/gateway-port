@@ -59,10 +59,15 @@ void gate_rtl_close_resource_file(uint16_t handle);
  * closed/inactive stream descriptors; active CRT flush/close aborts. */
 void gate_linked_shutdown_intro_stream(void);
 
-/* Nested RTL:6eb8..6f45 buffered-flush routine. Implements the branches
- * that do not enter the unresolved CRT descriptor writer. Unsupported
- * writing aborts explicitly; the relocated descriptor-table check and
- * its no-write outcome are now recovered. */
+/* CRT descriptor writer RTL:7d64..7eab. Only successful binary-mode
+ * writes and zero-length paths are supported. Text conversion, invalid
+ * handles, failed DOS operations, and ambiguous results abort. */
+uint16_t gate_linked_write_crt_descriptor(uint16_t handle, GateFarPtr source,
+                                          uint16_t count);
+
+/* Nested RTL:6eb8..6f45 buffered-flush routine. The relocated stream
+ * metadata controls whether to write; a successful CRT binary write also
+ * resets the stream buffer. Unsupported operations abort explicitly. */
 uint16_t gate_linked_flush_intro_stream(GateFarPtr stream);
 
 /* The original low-level runtime/DOS calls retain their FAR identities.

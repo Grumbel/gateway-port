@@ -5,11 +5,110 @@
  * real DOS-owned DS and descriptor segments. This is the bounded quiet
  * branch only; active CRT stream close remains explicitly unsupported. */
 #include "GATEMEM.H"
+#include "GATEDOS.H"
 #include "RTLLAY.H"
 #include <dos.h>
 #include <stdio.h>
+#include <string.h>
 
 void gate_linked_shutdown_intro_stream(void);
+uint16_t gate_linked_write_crt_descriptor(uint16_t handle, GateFarPtr source,
+                                          uint16_t count);
+
+static int probe_crt_binary_write(void)
+{
+    char filename[11];
+    unsigned char payload[7];
+    unsigned char observed[7];
+    GateFarPtr filename_pointer;
+    GateFarPtr payload_pointer;
+    GateFarPtr observed_pointer;
+    GateFarPtr stream;
+    GateDosFileResult io;
+    FILE *existing;
+    uint16_t handle;
+    int valid = 1;
+
+    strcpy(filename, "STRBIN.TMP");
+    payload[0] = 0x11u;
+    payload[1] = 0x22u;
+    payload[2] = 0x33u;
+    payload[3] = 0x44u;
+    payload[4] = 0x55u;
+    payload[5] = 0x66u;
+    payload[6] = 0x77u;
+    memset(observed, 0, sizeof observed);
+
+    existing = fopen(filename, "rb");
+    if (existing != NULL) {
+        fclose(existing);
+        puts("Stream binary probe: STRBIN.TMP already exists; refusing overwrite");
+        return 0;
+    }
+    filename_pointer = gate_stack_pointer(filename);
+    payload_pointer = gate_stack_pointer(payload);
+    observed_pointer = gate_stack_pointer(observed);
+    io = gate_dos_file_open(filename_pointer, 2u, 1u);
+    if (io.carry) {
+        puts("Stream binary probe: DOS file create failed");
+        return 0;
+    }
+    handle = io.ax;
+    gate_ds_set_word(GATE_DS_CRT_HANDLE_LIMIT, 20u);
+    gate_far_set_byte(gate_ds_segment(),
+                      (uint16_t)(GATE_DS_CRT_HANDLE_FLAGS + handle), 0u);
+    valid &= check(gate_linked_write_crt_descriptor(handle, payload_pointer, 0u),
+                   0u, "CRT empty binary write");
+    valid &= check(gate_linked_write_crt_descriptor(handle, payload_pointer, 3u),
+                   3u, "CRT binary first write");
+
+    /* The original 7d81 append bit performs a seek to EOF before AH=40h.
+     * Rewind first to detect a missing append seek. */
+    io = gate_dos_file_seek(handle, 0u, 0ul);
+    valid &= check(io.carry, 0u, "CRT append pre-rewind");
+    gate_far_set_byte(gate_ds_segment(),
+        (uint16_t)(GATE_DS_CRT_HANDLE_FLAGS + handle), GATE_CRT_APPEND_BIT);
+    payload_pointer.offset = (uint16_t)(payload_pointer.offset + 3u);
+    valid &= check(gate_linked_write_crt_descriptor(handle, payload_pointer, 2u),
+                   2u, "CRT binary append write");
+
+    /* Exercise RTL:6f0f's caller with an actual stream descriptor. */
+    stream.segment = gate_ds_segment();
+    stream.offset = (uint16_t)(GATE_DS_CRT_STREAMS + GATE_CRT_STREAM_STRIDE);
+    gate_far_set_word(stream.segment, stream.offset,
+                      (uint16_t)(payload_pointer.offset + 4u));
+    gate_far_set_word(stream.segment, (uint16_t)(stream.offset + 4u), 2u);
+    gate_far_set_word(stream.segment, (uint16_t)(stream.offset + 6u),
+                      (uint16_t)(payload_pointer.offset + 2u));
+    gate_far_set_word(stream.segment, (uint16_t)(stream.offset + 8u),
+                      payload_pointer.segment);
+    gate_far_set_byte(stream.segment, (uint16_t)(stream.offset + 10u), 0x02u);
+    gate_far_set_byte(stream.segment, (uint16_t)(stream.offset + 11u),
+                      (uint8_t)handle);
+    gate_far_set_byte(stream.segment,
+        (uint16_t)(GATE_DS_CRT_DESCRIPTOR_FLAGS + GATE_CRT_FILE_STRIDE), 1u);
+    valid &= check(gate_linked_flush_intro_stream(stream), 0u,
+                   "CRT binary stream flush result");
+    valid &= check(gate_far_word(stream.segment, stream.offset),
+                   (uint16_t)(payload_pointer.offset + 2u),
+                   "CRT binary stream current reset");
+    valid &= check(gate_far_word(stream.segment, (uint16_t)(stream.offset + 4u)),
+                   0u, "CRT binary stream pending reset");
+
+    io = gate_dos_file_seek(handle, 0u, 0ul);
+    valid &= check(io.carry, 0u, "CRT binary verify rewind");
+    io = gate_dos_file_read(handle, observed_pointer, 7u);
+    valid &= check(io.carry, 0u, "CRT binary verify read carry");
+    valid &= check(io.ax, 7u, "CRT binary verify read length");
+    valid &= check(memcmp(payload, observed, 7u) == 0, 1u,
+                   "CRT binary verify exact seven bytes");
+    io = gate_dos_file_close(handle);
+    valid &= check(io.carry, 0u, "CRT binary close");
+    valid &= check((uint16_t)remove(filename), 0u, "CRT binary remove probe file");
+    puts(valid ? "Original CRT binary descriptor DOS probe: PASS" :
+                 "Original CRT binary descriptor DOS probe: FAIL");
+    return valid;
+}
 
 static int check(uint16_t actual, uint16_t expected, const char *label)
 {
@@ -151,6 +250,8 @@ int main(void)
                    "mode-2 metadata-set pending reset");
     puts(valid ? "Original stream descriptor-table DOS probe: PASS" :
                  "Original stream descriptor-table DOS probe: FAIL");
+
+    valid &= probe_crt_binary_write();
 
     valid &= check((uint16_t)_dos_freemem(descriptor_segment), 0u,
                    "release descriptor allocation");

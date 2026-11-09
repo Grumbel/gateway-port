@@ -2,6 +2,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception */
 
 #include "gate_rtl_file.h"
+#include "gate_dos_file_runtime.h"
 
 #include <assert.h>
 #include <setjmp.h>
@@ -25,6 +26,10 @@ static int close_calls;
 static int write_calls;
 static int read_calls;
 static int seek_calls;
+static int crt_write_calls;
+static int crt_seek_calls;
+static GateDosFileResult crt_write_result;
+static GateDosFileResult crt_seek_result;
 static uint16_t expected_read_word = 0x5678;
 static uint16_t stack_initial = 0xbeefu;
 static uint16_t read_result = 1;
@@ -165,6 +170,106 @@ uint16_t gate_linked_dos_file_close(uint16_t handle)
     ++close_calls;
     last_handle = handle;
     return 0x1234;
+}
+
+GateDosFileResult gate_dos_file_write(uint16_t handle, GateFarPtr source,
+                                      uint16_t count)
+{
+    ++crt_write_calls;
+    last_handle = handle;
+    last_pointer = source;
+    last_length = count;
+    return crt_write_result;
+}
+
+GateDosFileResult gate_dos_file_seek(uint16_t handle, uint16_t origin,
+                                     uint32_t offset)
+{
+    ++crt_seek_calls;
+    last_handle = handle;
+    last_origin = origin;
+    last_offset = offset;
+    return crt_seek_result;
+}
+
+static void test_original_crt_descriptor_writer_binary(void)
+{
+    GateFarPtr buffer = {0x9876u, 0x1000u};
+    int initial_writes = crt_write_calls;
+    ds_words[GATE_DS_CRT_HANDLE_LIMIT] = 20u;
+    ds_bytes[GATE_DS_CRT_HANDLE_FLAGS + 3u] = 0u;
+
+    /* RTL:7e77 skips DOS entirely for zero-byte binary writes. */
+    assert(gate_linked_write_crt_descriptor(3u, buffer, 0u) == 0u);
+    assert(crt_write_calls == initial_writes);
+
+    crt_write_result.ax = 4u;
+    assert(gate_linked_write_crt_descriptor(3u, buffer, 4u) == 4u);
+    assert(crt_write_calls == initial_writes + 1);
+    assert(last_handle == 3u && last_length == 4u);
+    assert(last_pointer.segment == buffer.segment &&
+           last_pointer.offset == buffer.offset);
+
+    /* A short positive write is returned without forcing -1 here;
+     * the upstream RTL:6eb8 stream flush marks the stream error. */
+    crt_write_result.ax = 2u;
+    assert(gate_linked_write_crt_descriptor(3u, buffer, 4u) == 2u);
+
+    /* RTL:7d81 does DOS seek-end before any actual append-mode write. */
+    ds_bytes[GATE_DS_CRT_HANDLE_FLAGS + 3u] = GATE_CRT_APPEND_BIT;
+    assert(gate_linked_write_crt_descriptor(3u, buffer, 2u) == 2u);
+    assert(crt_seek_calls == 1 && last_handle == 3u && last_origin == 2u);
+    assert(last_offset == 0u);
+
+    /* RTL:7e95 accepts an empty device result for a source Ctrl-Z. */
+    ds_bytes[GATE_DS_CRT_HANDLE_FLAGS + 3u] = GATE_CRT_DEVICE_BIT;
+    gate_far_set_byte(buffer.segment, buffer.offset, GATE_CRT_DOS_CTRL_Z);
+    crt_write_result.ax = 0u;
+    assert(gate_linked_write_crt_descriptor(3u, buffer, 1u) == 0u);
+
+    /* Text mode has a verified no-op exit when the byte count is zero. */
+    ds_bytes[GATE_DS_CRT_HANDLE_FLAGS + 3u] = GATE_CRT_TEXT_BIT;
+    assert(gate_linked_write_crt_descriptor(3u, buffer, 0u) == 0u);
+
+#ifndef _WIN32
+    /* Reconstructed bounds and DOS carry handling fail closed until the
+     * original CRT errno path and CR/LF transformation are available. */
+    {
+        int branch;
+        for (branch = 0; branch < 5; ++branch) {
+            pid_t child = fork();
+            int status = 0;
+            assert(child >= 0);
+            if (child == 0) {
+                struct rlimit limit = {0, 0};
+                (void)setrlimit(RLIMIT_CORE, &limit);
+                crt_write_result.ax = 1u;
+                crt_write_result.carry = 0u;
+                crt_seek_result.carry = 0u;
+                ds_bytes[GATE_DS_CRT_HANDLE_FLAGS + 3u] = 0u;
+                if (branch == 0)
+                    (void)gate_linked_write_crt_descriptor(20u, buffer, 1u);
+                else {
+                    if (branch == 1)
+                        ds_bytes[GATE_DS_CRT_HANDLE_FLAGS + 3u] = GATE_CRT_TEXT_BIT;
+                    if (branch == 2)
+                        crt_write_result.carry = 1u;
+                    if (branch == 3)
+                        crt_write_result.ax = 0u;
+                    if (branch == 4) {
+                        ds_bytes[GATE_DS_CRT_HANDLE_FLAGS + 3u] = GATE_CRT_APPEND_BIT;
+                        crt_seek_result.carry = 1u;
+                    }
+                    (void)gate_linked_write_crt_descriptor(3u, buffer, 1u);
+                }
+                _exit(0);
+            }
+            assert(waitpid(child, &status, 0) == child);
+            assert(WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT);
+        }
+    }
+#endif
+    ds_bytes[GATE_DS_CRT_HANDLE_FLAGS + 3u] = 0u;
 }
 
 static void test_base_and_path(void)
@@ -393,14 +498,45 @@ static void test_original_stream_flush_without_writer(void)
     assert(gate_far_word(stream.segment, (uint16_t)(f + 4u)) == 0u);
     assert(write_calls == old_writes && close_calls == old_closes);
 
+    /* A binary-mode positive pending buffer can now reach the CRT writer.
+     * A full write returns zero after reset; a partial write sets error
+     * bit 20h and returns ffffh, as original RTL:6f17..6f24 requires. */
+    stream.offset = (uint16_t)(GATE_DS_CRT_STREAMS + GATE_CRT_STREAM_STRIDE);
+    f = stream.offset;
+    ds_bytes[GATE_DS_CRT_DESCRIPTOR_FLAGS + GATE_CRT_FILE_STRIDE] = 1u;
+    ds_words[GATE_DS_CRT_HANDLE_LIMIT] = 20u;
+    ds_bytes[GATE_DS_CRT_HANDLE_FLAGS + 3u] = 0u;
+    gate_far_set_byte(stream.segment, (uint16_t)(f + 0x0au), 0x02u);
+    gate_far_set_byte(stream.segment, (uint16_t)(f + 0x0bu), 3u);
+    gate_far_set_word(stream.segment, (uint16_t)(f + 6u), 0x5000u);
+    gate_far_set_word(stream.segment, (uint16_t)(f + 8u), 0x9876u);
+    gate_far_set_word(stream.segment, f, 0x5004u);
+    gate_far_set_word(stream.segment, (uint16_t)(f + 4u), 4u);
+    crt_write_result.ax = 4u;
+    assert(gate_linked_flush_intro_stream(stream) == 0u);
+    assert(last_handle == 3u && last_length == 4u &&
+           last_pointer.segment == 0x9876u && last_pointer.offset == 0x5000u);
+    assert(gate_far_word(stream.segment, f) == 0x5000u);
+    assert(gate_far_word(stream.segment, (uint16_t)(f + 4u)) == 0u);
+    assert(gate_far_byte(stream.segment, (uint16_t)(f + 0x0au)) == 0x02u);
+
+    gate_far_set_word(stream.segment, f, 0x5004u);
+    gate_far_set_word(stream.segment, (uint16_t)(f + 4u), 4u);
+    crt_write_result.ax = 2u;
+    assert(gate_linked_flush_intro_stream(stream) == 0xffffu);
+    assert(gate_far_word(stream.segment, f) == 0x5000u);
+    assert(gate_far_word(stream.segment, (uint16_t)(f + 4u)) == 0u);
+    assert(gate_far_byte(stream.segment, (uint16_t)(f + 0x0au)) == 0x22u);
+
 #ifndef _WIN32
-    /* Both write-needed branches fail closed.
+    /* Both write-needed branches reject unreconstructed text mode.
      * Child failures must leave parent fixture intact. */
     {
         int branch;
         stream.offset = (uint16_t)(GATE_DS_CRT_STREAMS + GATE_CRT_STREAM_STRIDE);
         f = stream.offset;
         ds_bytes[GATE_DS_CRT_DESCRIPTOR_FLAGS + GATE_CRT_FILE_STRIDE] = 1u;
+        ds_bytes[GATE_DS_CRT_HANDLE_FLAGS + 3u] = GATE_CRT_TEXT_BIT;
         for (branch = 0; branch < 2; ++branch) {
             pid_t child = fork();
             int status = 0;
@@ -410,6 +546,7 @@ static void test_original_stream_flush_without_writer(void)
                 (void)setrlimit(RLIMIT_CORE, &limit);
                 gate_far_set_byte(stream.segment, (uint16_t)(f + 0x0au),
                                   branch ? 0x02u : 0x0au);
+                gate_far_set_byte(stream.segment, (uint16_t)(f + 0x0bu), 3u);
                 gate_far_set_word(stream.segment, f, 0x5001u);
                 (void)gate_linked_flush_intro_stream(stream);
                 _exit(0);
@@ -426,6 +563,7 @@ int main(void)
     test_base_and_path();
     test_reads();
     test_writes_and_close();
+    test_original_crt_descriptor_writer_binary();
     test_first_ctrl_break_stream_cleanup_quiet_branches();
     test_original_stream_flush_without_writer();
     puts("intro RTL file wrappers: ok");

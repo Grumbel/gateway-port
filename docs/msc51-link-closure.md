@@ -1774,6 +1774,46 @@ All three are tied to the same recovered launcher source by the staging
 signature. Native tests also check signed quotient truncation and
 child-process SIGABRT on both write-needed routes.
 
+### CRT descriptor writer: verified binary-file path
+
+The upstream `RTL:6f0f` call invokes original `RTL:7d64..7eab`, the
+Microsoft-style low-level write routine (not the simpler `1c29:0055` DOS
+wrapper). The original 100-byte entry was already independently matched
+with 90 invariant bytes. Across original 100, 350, 500 and 1500 ms RAM
+captures the writer's three relocated operands agree: `RTL:7d6f` links to
+`DS:2bee` (20-handle limit), while `RTL:7d7c` and `7d8e` both link to
+`DS:2bf0` (byte-per-handle flags). The live handle table includes flags
+`c1h` for handles 0–2 and `41h` for handles 3–4 at 500 ms, consistent
+with the independently disassembled flag tests.
+
+`gate_linked_write_crt_descriptor` now reconstructs the **successful
+binary** routes: validate the handle, seek to EOF with DOS INT 21h/42h
+for flag `20h` (append), return zero without writing for count zero,
+otherwise call INT 21h/40h and return its positive byte count. Flag
+`40h` (device) also accepts a zero-byte result if the first source byte
+is Ctrl-Z (`1ah`). For an upstream stream flush, bytes come from the base
+FAR pointer `+6/+8`, the file handle is the signed descriptor byte `+0bh`,
+and a short positive write sets error flag `20h` at descriptor `+0ah` and
+returns `ffffh`, while still resetting the current pointer and count.
+
+This is deliberately bounded: flag `80h` with positive count enters the
+original's more involved newline-to-CR/LF conversion and its FAR stack
+space helper at `RTL:7eae`. Invalid handles, DOS carry failures and
+ambiguous zero-byte disk writes enter an unrecovered CRT error/errno path.
+All those cases currently abort; the full active stream close also remains
+unimplemented. No guest errno state is invented.
+
+The expanded `STRCHK.EXE` creates only `STRBIN.TMP` on its writable DOSBox
+test drive, refuses to overwrite a preexisting file, and removes its
+temporary file afterward. It verifies a zero-byte no-op, three initial
+binary bytes, an append write after deliberately rewinding, then two more
+bytes through the actual source-C stream flush. Rewinding and reading
+back all seven expected bytes establishes that the DOS calls really ran.
+`Original CRT binary descriptor DOS probe: PASS` is now a fourth required
+`STRTEST.LOG` witness; the staged-source signature rejects stale results.
+Native tests cover full and short writes, append calls, Ctrl-Z device
+semantics and fail-closed unsupported branches.
+
 Three additional diagnostic callees now have strong original entry
 boundaries, not merely byte-window guesses:
 

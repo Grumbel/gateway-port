@@ -57,6 +57,15 @@ enum {
     GATE_DS_RENDERER_CHECK_BIOS_MODE = 0x15d2,
 
     GATE_DS_DRAW_STATE_BASE = 0x29de,
+    /* RTL:7d64 uses the runtime handle limit and its one-byte-per-handle
+     * flags. All three operands relocate to these addresses in the
+     * original 100, 350, 500 and 1500ms startup RAM captures. */
+    GATE_DS_CRT_HANDLE_LIMIT = 0x2bee,
+    GATE_DS_CRT_HANDLE_FLAGS = 0x2bf0,
+    GATE_CRT_APPEND_BIT = 0x20,
+    GATE_CRT_DEVICE_BIT = 0x40,
+    GATE_CRT_TEXT_BIT = 0x80,
+    GATE_CRT_DOS_CTRL_Z = 0x1a,
     /* The two RTL:6eb8 operands link to these bases in the 100, 350,
      * 500 and 1500ms originals: 20 stream records of 12 bytes, followed
      * by 6-byte DOS descriptor records. Only byte 0 of the latter is
