@@ -45,6 +45,75 @@ def fake_runtime_file_obj(include_diagnostic=True):
 
 
 class MSC51Tests(unittest.TestCase):
+    def test_combined_dos_build_calls_all_stages_with_fresh_witnesses(self):
+        self.assertEqual([step for step, *_ in msc51.LAUNCHER_BUILD_STAGES], [
+            "compile-launcher", "compile-memory", "compile-selectors",
+            "compile-dos-files", "compile-rtl-state", "compile-hardware",
+            "compile-runtime-files", "compile-picture-dcl", "compile-resident-state",
+            "compile-heap", "compile-font", "compile-stream", "compile-input",
+            "compile-clock", "compile-crt", "compile-data", "link-launcher",
+            "test-dos-entry",
+        ])
+        with tempfile.TemporaryDirectory() as scratch:
+            output = Path(scratch)
+            objects = msc51.stage_launcher(output)
+            (output / "SUCCESS.LOG").write_text("old")
+            (output / "ALLDONE.LOG").write_text("old")
+            (output / "ENTRYOK.LOG").write_text("old")
+            (output / "RTLHW.OBJ").write_bytes(b"old")
+            msc51.prepare_full_launcher_build(output, objects)
+            self.assertFalse((output / "SUCCESS.LOG").exists())
+            self.assertFalse((output / "ALLDONE.LOG").exists())
+            self.assertFalse((output / "ENTRYOK.LOG").exists())
+            self.assertFalse((output / "RTLHW.OBJ").exists())
+            master = (output / "BUILDALL.BAT").read_text()
+            self.assertEqual(master.count("CALL B"), 18)
+            self.assertEqual(master.count(" > ALLSTEP.LOG"), 18)
+            for index, (step, batch, success, failure) in enumerate(msc51.LAUNCHER_BUILD_STAGES):
+                child = f"B{index:02d}.BAT"
+                self.assertIn(f"ECHO {step} > ALLSTEP.LOG\nCALL {child}\nD:\n"
+                              f"IF NOT EXIST {success} GOTO FAILED\n"
+                              f"IF EXIST {failure} GOTO FAILED", master)
+                original = (output / batch).read_text().splitlines()
+                wrapper = (output / child).read_text().splitlines()
+                self.assertEqual(original[-1].upper(), "EXIT")
+                self.assertEqual(wrapper, original[:-1])
+            self.assertIn("ECHO Gateway combined DOS build passed > ALLDONE.LOG", master)
+            with self.assertRaisesRegex(ValueError, "did not complete"):
+                msc51.validate_full_launcher_build(output, objects)
+
+    def test_combined_dos_build_uses_one_emulator_invocation(self):
+        game = REPO.parent / "gateway-dos"
+        if not (game / "GATE.EXE").is_file() or not (game / "GATE.RTL").is_file():
+            self.skipTest("original Gateway files unavailable")
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            compiler = root / "compiler"
+            for subdir in ("BIN", "LIB", "INCLUDE"):
+                (compiler / subdir).mkdir(parents=True)
+            for name in ("CL.EXE", "C1.EXE", "C1L.EXE", "C2.EXE", "C3.EXE", "LINK.EXE"):
+                (compiler / "BIN" / name).touch()
+            for name in ("LLIBCR.LIB", "LIBH.LIB"):
+                (compiler / "LIB" / name).touch()
+            (compiler / "INCLUDE" / "STDIO.H").touch()
+            with mock.patch.object(msc51.shutil, "which", return_value="/dosbox"), \
+                 mock.patch.object(msc51.subprocess, "run") as run, \
+                 redirect_stderr(io.StringIO()):
+                run.return_value.returncode = 17
+                status = msc51.main(["compile-all", "--compiler", str(compiler),
+                                     "--output", str(root / "output"),
+                                     "--original-game-dir", str(game)])
+            self.assertEqual(status, 17)
+            run.assert_called_once()
+            command = run.call_args.args[0]
+            self.assertEqual(command[0], "/dosbox")
+            self.assertIn(f'mount e "{game}" -ro', command)
+            self.assertIn("BUILDALL.BAT", command)
+            self.assertEqual(command.count("BUILDALL.BAT"), 1)
+            self.assertNotIn("COMPILE.BAT", command)
+            self.assertIn("--exit", command)
+            self.assertTrue((root / "output" / "BUILDALL.BAT").is_file())
+
     def test_real_mode_entry_batch_is_guarded_and_not_a_false_full_intro_pass(self):
         with tempfile.TemporaryDirectory() as scratch:
             output = Path(scratch)

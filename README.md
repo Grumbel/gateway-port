@@ -234,6 +234,7 @@ are for investigating individual compilation stages:
 
 ```sh
 nix develop .#msc51
+gateway-msc51 compile-all --original-game-dir ../gateway-dos # full one-session DOS build
 gateway-msc51 compile-launcher                # compile all 28 original-code C modules
 gateway-msc51 compile-stream                  # run the real DOS CRT stream test
 gateway-msc51 compile-data --original-game-dir ../gateway-dos
@@ -249,6 +250,12 @@ the development shells. `gateway-msc51 <subcommand> [options]` delegates to
 `tools/msc51.py`, or to the existing compare, unpack and link-report Python
 tools. The `msc51` package output remains available for explicit offline
 inspection. The default shell does not depend on the proprietary compiler.
+
+The `compile-all` command performs all 18 build/probe/link/entry stages in
+**one DOSBox session**. It checks every stage's fresh DOS success marker, then
+validates the original-file CRC witnesses, module signatures, link result,
+and entry outputs on the host. Individual `compile-*` commands remain
+available for research and isolating failures.
 
 The compiler and probe sessions use **DOSBox Staging's dynamic CPU core and
 maximum automatic CPU cycles** by default (`--set core=dynamic --set
@@ -1218,7 +1225,7 @@ nix run .#gateway-hybrid -- ../gateway-dos
 through Nix, compiles the original-derived source and DOS service adapters,
 links `GATEWAY.EXE`, checks the DOS startup/picture in headless DOSBox, and
 then launches the requested mode in interactive DOSBox Staging. The initial
-build takes several DOSBox compiler sessions; later launches reuse the
+build runs all 18 stages inside one headless DOSBox session; later launches reuse the
 executable in `$XDG_CACHE_HOME/gateway-port/msc51` (or
 `~/.cache/gateway-port/msc51`) as long as the Nix source and compiler do not
 change. Set `GATEWAY_MSC51_BUILD_DIR` to use another writable directory,

@@ -15,8 +15,15 @@ The original-derived launcher now links to `GATEWAY.EXE`, a real-mode
 MS-DOS program, using an explicitly reconstructed source-C `main()` and a
 source-C FAR-return callback. The prior missing CRT `_main` and Ctrl-Break
 symbols are closed without executing incomplete original resident banks.
-The original DOS game files stay on a separate read-only drive. After the
-other required `compile-*` stages have passed:
+The original DOS game files stay on a separate read-only drive. The complete
+compiler/probe/link/entry sequence now runs in a single DOSBox session:
+
+```sh
+gateway-msc51 compile-all --original-game-dir ../gateway-dos --headless
+```
+
+For individual investigation after the other required `compile-*` stages
+have passed, the final steps remain available separately:
 
 ```sh
 gateway-msc51 compile-data --original-game-dir ../gateway-dos

@@ -1784,6 +1784,122 @@ def remove_launcher_link_outputs(output: Path) -> None:
                 entry.unlink()
 
 
+# Keep the individual compiler/probe entry points for research, but start the
+# DOS emulator only once for the user-facing rebuilt game. Every generated
+# stage batch ends with EXIT for its standalone invocation; the combined
+# session uses call-safe copies that return to the master batch at EOF.
+LAUNCHER_BUILD_STAGES = (
+    ("compile-launcher", "COMPILE.BAT", "SUCCESS.LOG", "BUILDFAIL.LOG"),
+    ("compile-memory", "MEMORY.BAT", "MEMOK.LOG", "MEMFAIL.LOG"),
+    ("compile-selectors", "SELECT.BAT", "SELOK.LOG", "SELFAIL.LOG"),
+    ("compile-dos-files", "DOSFILE.BAT", "FILOK.LOG", "FILFAIL.LOG"),
+    ("compile-rtl-state", "RTLST.BAT", "RTLOK.LOG", "RTLFAIL.LOG"),
+    ("compile-hardware", "RTLHW.BAT", "HWOK.LOG", "HWFAIL.LOG"),
+    ("compile-runtime-files", "RTFILE.BAT", "RTFOK.LOG", "RTFFAIL.LOG"),
+    ("compile-picture-dcl", "PICTDCL.BAT", "PICOK.LOG", "PICFAIL.LOG"),
+    ("compile-resident-state", "RESST.BAT", "RESOK.LOG", "RESFAIL.LOG"),
+    ("compile-heap", "HEAP.BAT", "HEAPOK.LOG", "HEAPFAIL.LOG"),
+    ("compile-font", "FONT.BAT", "FNTOK.LOG", "FNTFAIL.LOG"),
+    ("compile-stream", "STREAM.BAT", "STROK.LOG", "STRFAIL.LOG"),
+    ("compile-input", "INPUT.BAT", "INPOK.LOG", "INPFAIL.LOG"),
+    ("compile-clock", "CLOCK.BAT", "CLKOK.LOG", "CLKFAIL.LOG"),
+    ("compile-crt", "CRT.BAT", "CRTOK.LOG", "CRTFAIL.LOG"),
+    ("compile-data", "DATA.BAT", "DATOK.LOG", "DATFAIL.LOG"),
+    ("link-launcher", "LINK.BAT", "LINKDONE.LOG", "LINKFAIL.LOG"),
+    ("test-dos-entry", "ENTRY.BAT", "ENTRYOK.LOG", "ENTRYFAIL.LOG"),
+)
+
+
+def prepare_full_launcher_build(output: Path, objects: list[str]) -> None:
+    """Remove all stale witnesses and stage a single fail-closed DOS build."""
+    remove_launcher_outputs(output, objects)
+    for remover in (remove_memory_outputs, remove_selector_outputs,
+                    remove_dos_file_outputs, remove_rtl_state_outputs,
+                    remove_hardware_outputs, remove_runtime_file_outputs,
+                    remove_picture_dcl_outputs, remove_resident_state_outputs,
+                    remove_heap_outputs, remove_font_outputs, remove_stream_outputs,
+                    remove_input_outputs, remove_clock_outputs, remove_crt_outputs,
+                    remove_static_data_outputs, remove_launcher_link_outputs):
+        remover(output)
+    for name in ("ALLSTART.LOG", "ALLSTEP.LOG", "ALLDONE.LOG", "ALLFAIL.LOG",
+                 "ENTRY.LOG", "PICTURE.LOG", "ENTRYOK.LOG", "ENTRYFAIL.LOG"):
+        previous = locate_case_insensitive(output, name)
+        if previous is not None:
+            previous.unlink()
+    batch = ["@ECHO OFF", "ECHO Gateway combined DOS build started > ALLSTART.LOG"]
+    for index, (step, filename, success, failure) in enumerate(LAUNCHER_BUILD_STAGES):
+        source = (output / filename).read_text().splitlines()
+        if not source or source[-1].strip().upper() != "EXIT":
+            raise ValueError(f"Expected final EXIT in generated {filename}")
+        child = f"B{index:02d}.BAT"
+        (output / child).write_bytes(("\r\n".join(source[:-1]) + "\r\n").encode("ascii"))
+        batch.extend((f"ECHO {step} > ALLSTEP.LOG", f"CALL {child}",
+                      "D:", f"IF NOT EXIST {success} GOTO FAILED",
+                      f"IF EXIST {failure} GOTO FAILED"))
+    batch.extend(("ECHO Gateway combined DOS build passed > ALLDONE.LOG",
+                  "GOTO DONE", ":FAILED",
+                  "ECHO Gateway combined DOS build failed > ALLFAIL.LOG",
+                  ":DONE", "EXIT"))
+    (output / "BUILDALL.BAT").write_bytes(("\r\n".join(batch) + "\r\n").encode("ascii"))
+
+
+def validate_full_launcher_build(output: Path, objects: list[str]) -> None:
+    if (locate_case_insensitive(output, "ALLSTART.LOG") is None or
+            locate_case_insensitive(output, "ALLDONE.LOG") is None or
+            locate_case_insensitive(output, "ALLFAIL.LOG") is not None):
+        raise ValueError("Combined DOS batch did not complete successfully")
+    validate_launcher_objects(output, objects)
+    validate_selector_probe(output)
+    validate_font_probe(output)
+    validate_link_prerequisites(output, objects)
+    validate_static_data_probe(output, require_original=True)
+    exe = locate_case_insensitive(output, "GATEWAY.EXE")
+    if (locate_case_insensitive(output, "LINKDONE.LOG") is None or
+            locate_case_insensitive(output, "LINKFAIL.LOG") is not None or
+            exe is None or executable_format(exe.read_bytes()) != "DOS MZ"):
+        raise ValueError("Microsoft LINK did not produce a valid real-mode GATEWAY.EXE")
+    entry = locate_case_insensitive(output, "ENTRY.LOG")
+    picture = locate_case_insensitive(output, "PICTURE.LOG")
+    if (locate_case_insensitive(output, "ENTRYOK.LOG") is None or
+            locate_case_insensitive(output, "ENTRYFAIL.LOG") is not None or
+            entry is None or "Gateway DOS source-C entry: PASS" not in entry.read_text(errors="replace") or
+            picture is None or "Gateway DOS first splash: PASS" not in picture.read_text(errors="replace")):
+        raise ValueError("Real-mode DOS entry or first-picture verification failed")
+
+
+def print_full_launcher_build_diagnostics(output: Path) -> None:
+    step = locate_case_insensitive(output, "ALLSTEP.LOG")
+    last = step.read_text(errors="replace").strip() if step is not None else "not started"
+    print(f"Combined DOS build last stage: {last}", file=sys.stderr)
+    print(f"Combined DOS workspace: {output}", file=sys.stderr)
+    diagnostics = {
+        "compile-launcher": print_launcher_diagnostics,
+        "compile-memory": print_memory_diagnostics,
+        "compile-selectors": print_selector_diagnostics,
+        "compile-dos-files": print_dos_file_diagnostics,
+        "compile-rtl-state": print_rtl_state_diagnostics,
+        "compile-hardware": print_hardware_diagnostics,
+        "compile-runtime-files": print_runtime_file_diagnostics,
+        "compile-picture-dcl": print_picture_dcl_diagnostics,
+        "compile-resident-state": print_resident_state_diagnostics,
+        "compile-heap": print_heap_diagnostics,
+        "compile-font": print_font_diagnostics,
+        "compile-stream": print_stream_diagnostics,
+        "compile-input": print_input_diagnostics,
+        "compile-clock": print_clock_diagnostics,
+        "compile-crt": print_crt_diagnostics,
+        "compile-data": print_static_data_diagnostics,
+        "link-launcher": print_launcher_link_diagnostics,
+    }
+    if last in diagnostics:
+        diagnostics[last](output)
+    if last == "test-dos-entry":
+        for name in ("ENTRY.LOG", "PICTURE.LOG", "ENTRYFAIL.LOG"):
+            path = locate_case_insensitive(output, name)
+            content = path.read_text(errors="replace") if path else "(not created)"
+            print(f"--- {name} ---\n{content[-8_000:].rstrip()}", file=sys.stderr)
+
+
 def print_launcher_link_diagnostics(output: Path) -> None:
     for name in ("LINKFAIL.LOG", "LINK.LOG", "LINKDONE.LOG"):
         path = locate_case_insensitive(output, name)
@@ -1899,7 +2015,7 @@ def main(argv: list[str] | None = None) -> int:
                                             "compile-stream",
                                             "compile-input",
                                             "compile-clock",
-                                            "compile-crt",
+                                            "compile-crt", "compile-all",
                                             "link-launcher", "test-dos-entry"))
     parser.add_argument("--compiler", default=os.environ.get("GATEWAY_MSC51_DIR"),
                         help="installed Microsoft C 5.1 directory (or GATEWAY_MSC51_DIR)")
@@ -1922,10 +2038,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.headless and args.command in ("shell", "install"):
         parser.error("--headless is only supported for noninteractive DOS probes")
-    if args.original_game_dir is not None and args.command not in ("compile-data", "test-dos-entry"):
-        parser.error("--original-game-dir is supported only by compile-data and test-dos-entry")
-    if args.command == "test-dos-entry" and args.original_game_dir is None:
-        parser.error("test-dos-entry requires --original-game-dir")
+    if args.original_game_dir is not None and args.command not in ("compile-data", "test-dos-entry", "compile-all"):
+        parser.error("--original-game-dir is supported only by compile-data, test-dos-entry and compile-all")
+    if args.command in ("test-dos-entry", "compile-all") and args.original_game_dir is None:
+        parser.error(f"{args.command} requires --original-game-dir")
     launcher = args.command in ("prepare-launcher", "compile-launcher",
                                 "compile-memory", "compile-selectors", "compile-data",
                                 "compile-dos-files",
@@ -1938,7 +2054,7 @@ def main(argv: list[str] | None = None) -> int:
                                 "compile-input",
                                 "compile-clock",
                                 "compile-crt",
-                                "link-launcher", "test-dos-entry")
+                                "compile-all", "link-launcher", "test-dos-entry")
     output = (args.output or Path("build/msc51-launcher" if launcher else "build/intro-msc51")).expanduser().resolve()
     objects = []
     if launcher:
@@ -2020,8 +2136,9 @@ def main(argv: list[str] | None = None) -> int:
                                  "compile-input",
                                  "compile-clock",
                                  "compile-crt",
-                                 "link-launcher", "test-dos-entry"),
-                ("ENTRY.BAT" if args.command == "test-dos-entry" else
+                                 "compile-all", "link-launcher", "test-dos-entry"),
+                ("BUILDALL.BAT" if args.command == "compile-all" else
+                 "ENTRY.BAT" if args.command == "test-dos-entry" else
                  "LINK.BAT" if args.command == "link-launcher" else
                  "SELECT.BAT" if args.command == "compile-selectors" else
                  "DATA.BAT" if args.command == "compile-data" else
@@ -2056,7 +2173,13 @@ def main(argv: list[str] | None = None) -> int:
     command = [dosbox, *performance_args,
                *(dosbox_headless_args() if args.headless else []),
                *(part for line in commands for part in ("-c", line))]
-    if args.command == "probe":
+    if args.command == "compile-all":
+        try:
+            prepare_full_launcher_build(output, objects)
+        except ValueError as error:
+            parser.error(str(error))
+        command.append("--exit")
+    elif args.command == "probe":
         # An old successful EXE/LOG must never masquerade as a fresh build.
         remove_probe_outputs(output)
         command.append("--exit")
@@ -2147,7 +2270,9 @@ def main(argv: list[str] | None = None) -> int:
     else:
         result = subprocess.run(command, check=False, env=guest_env)
     if result.returncode != 0:
-        if args.command == "probe":
+        if args.command == "compile-all":
+            print_full_launcher_build_diagnostics(output)
+        elif args.command == "probe":
             print_probe_diagnostics(output)
         elif args.command == "compile-launcher":
             print_launcher_diagnostics(output)
@@ -2184,6 +2309,16 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "link-launcher":
             print_launcher_link_diagnostics(output)
         return result.returncode
+    if args.command == "compile-all":
+        try:
+            validate_full_launcher_build(output, objects)
+        except ValueError as error:
+            print(f"Combined Microsoft C 5.1 DOS build failed: {error}", file=sys.stderr)
+            print_full_launcher_build_diagnostics(output)
+            return 1
+        print("Microsoft C 5.1 completed all 18 compiler, probe, link and DOS "
+              "entry stages in one DOSBox session. The full timed intro remains unverified.")
+        return 0
     if args.command == "compile-memory":
         try:
             validate_memory_adapter(output)

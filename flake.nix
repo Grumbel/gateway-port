@@ -391,6 +391,7 @@ except Exception:
                     '-----------------------------' \
                     '  gateway-msc51 --help             List all compiler and probe commands' \
                     '  gateway-msc51 compile-launcher    Compile the source-C launcher objects' \
+                    '  gateway-msc51 compile-all --original-game-dir ../gateway-dos' \
                     '  gateway-msc51 compile-data --original-game-dir ../gateway-dos' \
                     '  gateway-msc51 link-launcher       Link GATEWAY.EXE after prerequisite probes' \
                     '  gateway-msc51 test-dos-entry --original-game-dir ../gateway-dos' \

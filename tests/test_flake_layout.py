@@ -97,7 +97,7 @@ class FlakeLayoutTests(unittest.TestCase):
             python.write_text(
                 "#!/bin/sh\n"
                 "printf '%s\\n' \"$2\" >> \"$MSC51_CALLS\"\n"
-                "if [ \"$2\" = link-launcher ]; then\n"
+                "if [ \"$2\" = compile-all ]; then\n"
                 "  printf MZ > \"$GATEWAY_MSC51_BUILD_DIR/GATEWAY.EXE\"\n"
                 "fi\n"
             )
@@ -112,15 +112,7 @@ class FlakeLayoutTests(unittest.TestCase):
                                   str(game), "/PICTURE"], env=env,
                                  text=True, capture_output=True, check=False)
             self.assertEqual(run.returncode, 0, run.stderr)
-            commands = [
-                "compile-launcher", "compile-memory", "compile-selectors",
-                "compile-dos-files", "compile-rtl-state", "compile-hardware",
-                "compile-runtime-files", "compile-picture-dcl", "compile-resident-state",
-                "compile-heap", "compile-font", "compile-stream", "compile-input",
-                "compile-clock", "compile-crt", "compile-data", "link-launcher",
-                "test-dos-entry",
-            ]
-            self.assertEqual(calls_file.read_text().splitlines(), commands)
+            self.assertEqual(calls_file.read_text().splitlines(), ["compile-all"])
             self.assertEqual(args_file.read_text().splitlines(), [
                 "-c", f'mount e "{game}" -ro',
                 "-c", f'mount d "{build}"',
@@ -132,14 +124,14 @@ class FlakeLayoutTests(unittest.TestCase):
                                   str(game), "/INTRO"], env=env,
                                  text=True, capture_output=True, check=False)
             self.assertEqual(run.returncode, 0, run.stderr)
-            self.assertEqual(calls_file.read_text().splitlines(), commands)
+            self.assertEqual(calls_file.read_text().splitlines(), ["compile-all"])
             self.assertIn(r"D:\GATEWAY.EXE /INTRO", args_file.read_text())
             rebuild_env = dict(env, GATEWAY_DOS_REBUILD="1")
             run = subprocess.run(["bash", "-c", dos_launcher_script(), "--",
                                   str(game), "/CHECK"], env=rebuild_env,
                                  text=True, capture_output=True, check=False)
             self.assertEqual(run.returncode, 0, run.stderr)
-            self.assertEqual(calls_file.read_text().splitlines(), commands * 2)
+            self.assertEqual(calls_file.read_text().splitlines(), ["compile-all"] * 2)
             changed_source = root / "second source revision"
             changed_source.mkdir()
             changed_env = dict(env, GATEWAY_MSC51_SOURCE_DIR=str(changed_source))
@@ -147,7 +139,7 @@ class FlakeLayoutTests(unittest.TestCase):
                                   str(game), "/CHECK"], env=changed_env,
                                  text=True, capture_output=True, check=False)
             self.assertEqual(run.returncode, 0, run.stderr)
-            self.assertEqual(calls_file.read_text().splitlines(), commands * 3)
+            self.assertEqual(calls_file.read_text().splitlines(), ["compile-all"] * 3)
             args_file.unlink()
             bad = subprocess.run(["bash", "-c", dos_launcher_script(), "--",
                                   str(game), "/UNKNOWN"], env=env,

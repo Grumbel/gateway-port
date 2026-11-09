@@ -60,21 +60,10 @@ if [ "${GATEWAY_DOS_REBUILD:-0}" = 1 ] || [ ! -f "$launcher_dir/GATEWAY.EXE" ] |
   printf 'gateway-dos: compiling source-C MS-DOS launcher (first run may take a while)\n' >&2
   # Do not allow a stamp from an earlier build to survive an unsuccessful run.
   rm -f "$stamp_file"
-  for command in \
-      compile-launcher compile-memory compile-selectors compile-dos-files \
-      compile-rtl-state compile-hardware compile-runtime-files \
-      compile-picture-dcl compile-resident-state compile-heap compile-font \
-      compile-stream compile-input compile-clock compile-crt compile-data \
-      link-launcher test-dos-entry; do
-    printf 'gateway-dos: %s\n' "$command" >&2
-    extra=()
-    if [ "$command" = compile-data ] || [ "$command" = test-dos-entry ]; then
-      extra=(--original-game-dir "$dos_dir")
-    fi
-    python3 "$source_dir/tools/msc51.py" "$command" \
-      --compiler "$compiler_dir" --output "$launcher_dir" \
-      --dosbox "$dosbox_bin" --headless "${extra[@]}"
-  done
+  printf 'gateway-dos: compile-all (one DOSBox session)\n' >&2
+  python3 "$source_dir/tools/msc51.py" compile-all \
+    --compiler "$compiler_dir" --output "$launcher_dir" \
+    --dosbox "$dosbox_bin" --headless --original-game-dir "$dos_dir"
   printf '%s\n' "$stamp" > "$stamp_file"
 fi
 flock -u 9
