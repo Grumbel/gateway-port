@@ -19,7 +19,7 @@ static int probe_crt_binary_write(void)
 {
     char filename[11];
     unsigned char payload[7];
-    unsigned char observed[18];
+    unsigned char observed[21];
     unsigned char text_bytes[3];
     GateFarPtr filename_pointer;
     GateFarPtr payload_pointer;
@@ -187,8 +187,66 @@ static int probe_crt_binary_write(void)
         valid &= check(memcmp(observed + 7u, "DOSX\r\nYQ\r\nR", 11u) == 0, 1u,
                        "CRT low-stack actual appended CR LF bytes");
     }
+    /* Prove the active RTL:6640 route on the real DOS descriptor. Its
+     * source-C 6eb8 flush writes three pending bytes, 6cd2 sees no
+     * heap-owned buffer (bit 08h clear), and 7a30 closes the handle.
+     * The extra-close metadata word at DS:3338 + index*6 is zero. */
+    text_bytes[0] = 'U';
+    text_bytes[1] = 'V';
+    text_bytes[2] = 'W';
+    gate_far_set_word(stream.segment, stream.offset,
+                      (uint16_t)(text_pointer.offset + 3u));
+    gate_far_set_word(stream.segment, (uint16_t)(stream.offset + 2u),
+                      text_pointer.segment);
+    gate_far_set_word(stream.segment, (uint16_t)(stream.offset + 4u), 3u);
+    gate_far_set_word(stream.segment, (uint16_t)(stream.offset + 6u),
+                      text_pointer.offset);
+    gate_far_set_word(stream.segment, (uint16_t)(stream.offset + 8u),
+                      text_pointer.segment);
+    gate_far_set_byte(stream.segment, (uint16_t)(stream.offset + 10u),
+                      0x02u); /* RTL:6eb8 buffered-write descriptor mode */
+    gate_far_set_byte(stream.segment, (uint16_t)(stream.offset + 11u),
+                      (uint8_t)handle);
+    gate_far_set_byte(gate_ds_segment(),
+        (uint16_t)(GATE_DS_CRT_DESCRIPTOR_FLAGS + GATE_CRT_FILE_STRIDE),
+        GATE_CRT_FILE_WRITE_BIT);
+    gate_far_set_word(gate_ds_segment(),
+        (uint16_t)(GATE_DS_CRT_DESCRIPTOR_FLAGS + GATE_CRT_FILE_STRIDE +
+                   GATE_CRT_FILE_CLOSE_EXTRA_WORD_OFFSET), 0u);
+    gate_far_set_byte(gate_ds_segment(),
+        (uint16_t)(GATE_DS_CRT_HANDLE_FLAGS + handle), 0u);
+    gate_ds_set_word(GATE_DS_CONTROL_STREAM_OPEN, 0u);
+    gate_ds_set_word(GATE_DS_CONTROL_STREAM_AUX, 0x1234u);
+    gate_ds_set_word(GATE_DS_CONTROL_STREAM_OFFSET, stream.offset);
+    gate_ds_set_word(GATE_DS_CONTROL_STREAM_SEGMENT, stream.segment);
+    gate_linked_shutdown_intro_stream();
+    valid &= check(gate_ds_word(GATE_DS_CONTROL_STREAM_OPEN), 0xffffu,
+                   "CRT active close invalidates stream open flag");
+    valid &= check(gate_ds_word(GATE_DS_CONTROL_STREAM_AUX), 0u,
+                   "CRT active close resets stream companion");
+    valid &= check(gate_far_byte(stream.segment,
+                     (uint16_t)(stream.offset + 10u)), 0u,
+                   "CRT active close clears stream flags");
+    valid &= check(gate_far_word(stream.segment,
+                     (uint16_t)(stream.offset + 4u)), 0u,
+                   "CRT active close drains pending bytes");
     io = gate_dos_file_close(handle);
-    valid &= check(io.carry, 0u, "CRT binary close");
+    valid &= check(io.carry, 1u, "CRT active close closed real DOS handle");
+
+    io = gate_dos_file_open(filename_pointer, 0u, 0u);
+    valid &= check(io.carry, 0u, "CRT active close reopen for verification");
+    if (!io.carry) {
+        handle = io.ax;
+        io = gate_dos_file_read(handle, observed_pointer, 21u);
+        valid &= check(io.carry, 0u, "CRT active close readback carry");
+        valid &= check(io.ax, 21u, "CRT active close readback length");
+        valid &= check(memcmp(payload, observed, 7u) == 0, 1u,
+                       "CRT active close preserved binary file prefix");
+        valid &= check(memcmp(observed + 7u, "DOSX\r\nYQ\r\nRUVW", 14u) == 0,
+                       1u, "CRT active close flushed exact final bytes");
+        io = gate_dos_file_close(handle);
+        valid &= check(io.carry, 0u, "CRT active close verification handle");
+    }
     valid &= check((uint16_t)remove(filename), 0u, "CRT binary remove probe file");
     puts(valid ? "Original CRT binary descriptor DOS probe: PASS" :
                  "Original CRT binary descriptor DOS probe: FAIL");
@@ -198,6 +256,8 @@ static int probe_crt_binary_write(void)
                  "Original CRT text LF high-stack DOS probe: FAIL");
     puts(valid ? "Original CRT text LF low-stack DOS probe: PASS" :
                  "Original CRT text LF low-stack DOS probe: FAIL");
+    puts(valid ? "Original active stream flush-close DOS probe: PASS" :
+                 "Original active stream flush-close DOS probe: FAIL");
     return valid;
 }
 

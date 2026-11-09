@@ -1025,10 +1025,12 @@ Microsoft C 5.1 and DOSBox. The descriptor pointer uses relocated
 The nested original CRT stream-close routine at `RTL:6640` has two
 no-I/O exits: `(flags & 83h) == 0` or `(flags & 40h) != 0`. Those clear
 descriptor byte `+0ah` and invalidate the open-state word; an already
-negative word skips everything. The native code aborts on active streams
-requiring the unrecovered flush/close sequence. The DOS probe links the
-real `M11.OBJ`, DOS file and runtime adapters, with a source signature
-and `STRTEST.LOG` PASS witness. It does not prove active file closure.
+negative word skips everything. The native code also handles successful
+active streams without heap-owned buffers or file postprocessing: it
+flushes through the recovered CRT writer, closes the signed-byte DOS
+handle with AH=3eh and clears the linked file flag. The DOS probe links
+the real `M11.OBJ`, DOS file and runtime adapters, with source-signed
+`STRTEST.LOG` PASS witnesses for both quiet and active close.
 The same stage also verifies the nested `RTL:6eb8..6f45` no-write flush
 in `M11.OBJ`: mode != 2, mode 2/bit-08h with nonpositive signed pending
 bytes, and mode 2/bit-08h clear with descriptor metadata bit zero clear
@@ -1036,13 +1038,17 @@ all skip the CRT writer, reset current pointer to base, zero pending count
 and return zero. The last case is now recovered using original relocated
 `DS:3244` (12-byte stream records) and `DS:3334` (6-byte file metadata)
 from four independent RAM captures; metadata bit zero set also handles
-nonpositive pending bytes. The nested writer at `RTL:7d64` now also
+nonpositive pending bytes. The nested writer at `RTL:7d64` also
 handles successful binary DOS writes and append mode using relocated
 `DS:2bee/2bf0` handle metadata. A partial write sets stream error bit
-`20h` before the normal pointer/count reset. The DOS probe writes and
-reads seven real bytes through this code, with an independent fourth
-`STRTEST.LOG` PASS witness. Text conversion, writer errors and the outer
-active close still abort; no complete Ctrl-Break shutdown is claimed.
+`20h` before the normal pointer/count reset. Both 128- and 512-byte
+text buffers convert LF to CRLF, with conservative stack guards for
+the different Microsoft C 5.1 frame. The DOS probe now writes, closes,
+reopens and checks 21 real file bytes, including two CRLF conversions
+and a three-byte buffered close flush. Eight source-signed stream/CRT
+PASS witnesses are required. Heap-owned streams, nonzero close-extra
+metadata, CRT error translation and the outer Ctrl-Break handler still
+abort or remain unimplemented; no complete shutdown is claimed.
 
 `msc51-compile-input` adds a real DOS BIOS keyboard/mouse adapter for
 linked `0df2:000a/0030` and `0e48:011b/07fe`. It checks original input

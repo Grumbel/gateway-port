@@ -34,6 +34,7 @@ enum {
     GATE_CONTROL_STREAM_WRITE_MODE = 2,
     GATE_CONTROL_STREAM_MODE_MASK = 3,
     GATE_CONTROL_STREAM_FORCE_WRITE_BIT = 8,
+    GATE_CONTROL_STREAM_HANDLE_OFFSET = 11,
 };
 
 /* Source identities are ORIGINAL GATE.RTL file offsets.  These functions
@@ -55,8 +56,9 @@ uint16_t gate_rtl_write_resource_elements(uint16_t handle, GateFarPtr source,
                        uint16_t element_size, uint16_t count);
 void gate_rtl_close_resource_file(uint16_t handle);
 
-/* First Ctrl-Break FAR callee RTL:15706. Currently verified for already
- * closed/inactive stream descriptors; active CRT flush/close aborts. */
+/* First Ctrl-Break FAR callee RTL:15706. Closed/inactive and successful
+ * active CRT close without heap buffer or file postprocessing are supported;
+ * unsupported active descriptor and DOS error paths abort. */
 void gate_linked_shutdown_intro_stream(void);
 
 /* CRT descriptor writer RTL:7d64..7eab. Successful binary writes,

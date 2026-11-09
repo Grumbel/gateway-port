@@ -1716,11 +1716,12 @@ negative. Otherwise they push the stream descriptor pointer at linked
 The nested stream-close routine checks descriptor byte `+0ah` against
 `83h`, and has a second bypass test against `40h`. Either `(flags & 83h)
 == 0` or `(flags & 40h) != 0` reaches `RTL:6716`, which zeroes that byte
-without issuing file I/O. For other descriptor flags it invokes more
-CRT buffering and DOS file-close machinery; those states have **not**
-been reconstructed. The recovered `gate_linked_shutdown_intro_stream`
-therefore implements exactly the two quiet branches plus the already-
-closed early exit, and aborts rather than silently skipping active flushes.
+without issuing file I/O. The remaining active branch first calls the
+verified stream flush `RTL:6eb8`, then buffer release `RTL:6cd2`, then
+DOS handle close `RTL:7a30`. The recovered
+`gate_linked_shutdown_intro_stream` implements the two quiet branches,
+already-closed early exit, and the bounded active route without heap-owned
+buffers or post-close processing. Unreconstructed variants abort.
 
 The new `msc51-compile-stream` compiles that source into the actual
 recovered launcher `M11.OBJ` under Microsoft C 5.1 `/AL /Od`, links it
@@ -1730,8 +1731,49 @@ already-closed state, both quiet descriptor masks, 16-bit FAR-offset
 wraparound, and both original DS state writes. The observed
 `STRTEST.LOG` witness is `Original stream quiet-close DOS probe: PASS`;
 `STRSIG.LOG` rejects stale results after source changes. Native tests
-add fail-closed active-buffer coverage. This still does not reconstruct
+add fail-closed owned-buffer coverage. This still does not reconstruct
 the outer `_gate_linked_handle_control_key` or the executable `_main`.
+
+### Bounded active CRT stream close through real DOS
+
+The original `RTL:6640..6724` calls the stream flush at `RTL:6663`, then
+the descriptor buffer-release helper at `RTL:668e`, and the signed-byte
+handle closer at `RTL:669f`. The genuine 500ms RAM capture resolves those
+three to `12a5:17da` (`RTL:6eb8`), `12a5:15f4` (`RTL:6cd2`), and
+`12a5:2352` (`RTL:7a30`) in the validated resident `02a5` bank.
+The complete `RTL:6640..6724` body matches **193 invariant bytes of
+229** after excluding exactly seven linked FAR operands and four linked
+data WORDs. Its two newly entered callees are independently source-matched:
+**64 of 68** invariant bytes for `RTL:6cd2..6d15` (one FAR operand), and
+**28 of 32** for `RTL:7a30..7a4f` (two data WORD operands). These are
+read-only comparisons against the genuine `at-500.bin` snapshot, not a
+claim that the as-yet-unreconstructed branches were executed.
+`RTL:6cd2` does nothing if stream flag bit `08h` is clear; when set, it
+frees a FAR heap buffer and zeros stream buffer metadata, which remains
+outside the supported subset. `RTL:7a30` checks the relocated descriptor
+limit, invokes DOS `INT 21h/AH=3eh` and, on success, clears the handle's
+linked flag byte at `DS:2bf0 + handle`. The parent reads a WORD at file
+record `+4`, linked to `DS:3338 + 6*index`. A nonzero value enters more
+post-close pathname logic; its purpose and side effects remain unverified.
+
+The new source-C path is restricted to bit `08h` clear, that additional
+WORD zero, a valid sign-extended descriptor handle, a fully successful
+buffer flush, and a successful DOS close. It retains the original
+signed `IDIV 12` stream index, resets the stream's current pointer/count
+through `RTL:6eb8`, zeros the CRT handle flag, then clears the stream
+control byte and updates both linked open-state words in the original
+order. Unmapped buffer release, post-close operations, flush errors and
+DOS close errors abort rather than claim original error handling.
+
+Host tests exercise both active mode-1 no-write and mode-2 buffered-write
+closes, validate the complete state reset, and force each unsupported
+branch to abort. A newly built Microsoft C 5.1/DOSBox `STRCHK.EXE` writes
+three additional bytes through the original-buffer flush and close path,
+checks that another `INT 21h/AH=3eh` fails on the closed handle, reopens
+the file and reads all **21 exact bytes** (including both previous CRLF
+conversions). The source-signed `Original active stream flush-close DOS
+probe: PASS` witness is mandatory. This covers a real successful CRT
+close, not a complete executable shutdown or temporary-file cleanup.
 
 ### Nested stream flush: source-verified no-write paths
 

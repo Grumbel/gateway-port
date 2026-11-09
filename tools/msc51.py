@@ -1548,6 +1548,8 @@ def validate_stream_probe(output: Path) -> None:
         raise ValueError("Original CRT text LF high-stack DOS probe returned no PASS witness")
     if "Original CRT text LF low-stack DOS probe: PASS" not in log.read_text(errors="replace"):
         raise ValueError("Original CRT text LF low-stack DOS probe returned no PASS witness")
+    if "Original active stream flush-close DOS probe: PASS" not in log.read_text(errors="replace"):
+        raise ValueError("Original active stream flush-close DOS probe returned no PASS witness")
     signature = locate_case_insensitive(output, "STRSIG.LOG")
     if signature is None or signature.read_text().strip() != stream_source_signature(output):
         raise ValueError("Original stream cleanup source changed since DOS test")
@@ -2212,12 +2214,11 @@ def main(argv: list[str] | None = None) -> int:
                   file=sys.stderr)
             print_stream_diagnostics(output)
             return 1
-        print("Microsoft C 5.1 executed the Ctrl-Break quiet-close, nested "
-              "RTL:6eb8 stream flush, and bounded RTL:7d64 CRT writer "
-              "from the actual launcher M11.OBJ with real DOS memory/files; "
-              "128/512-byte stack-buffer CR/LF conversion passed; "
-              "insufficient-stack recovery, CRT errno paths and active close "
-              "remain unsupported.")
+        print("Microsoft C 5.1 executed Ctrl-Break quiet-close and bounded "
+              "active flush-close, RTL:6eb8 stream flush, and RTL:7d64 CRT "
+              "writer from the real launcher M11.OBJ with DOS memory/files; "
+              "128/512-byte stack-buffer CR/LF conversion passed; heap-owned "
+              "buffers, file postprocessing and CRT errno paths remain unsupported.")
         return 0
     if args.command == "compile-input":
         try:

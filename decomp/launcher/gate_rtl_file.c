@@ -210,7 +210,7 @@ uint16_t gate_linked_flush_intro_stream(GateFarPtr stream)
                     (uint16_t)(stream.offset + GATE_CONTROL_STREAM_BASE_SEGMENT));
                 written = gate_linked_write_crt_descriptor(
                     (uint16_t)(int16_t)(int8_t)gate_far_byte(stream.segment,
-                         (uint16_t)(stream.offset + 11u)), source, pending);
+                         (uint16_t)(stream.offset + GATE_CONTROL_STREAM_HANDLE_OFFSET)), source, pending);
                 if (written != pending) {
                     gate_far_set_byte(stream.segment, field,
                                       (uint8_t)(flags | 0x20u));
@@ -236,11 +236,17 @@ uint16_t gate_linked_flush_intro_stream(GateFarPtr stream)
 /* First Ctrl-Break FAR callee, RTL:15706..15729, linked 221b:021f.
  * DS:156e/1570 hold a signed open flag and companion word; DS:6150/6152
  * hold the stream descriptor FAR pointer (a distinct relocation group).
- * The nested RTL:6640 close clears descriptor byte +0a without any DOS/CRT
- * operations if (flags & 83h) == 0 or (flags & 40h) != 0. Only those two
- * original quiet exits are supported here. An active stream would enter
- * RTL:6eb8's buffered flush and a much larger DOS CRT close path; refusing
- * it prevents a silently missing flush or leaked file descriptor. */
+ * Nested RTL:6640 clears byte +0a without I/O if (flags & 83h) == 0 or
+ * (flags & 40h) != 0. Its active route first calls RTL:6eb8 to flush,
+ * then RTL:6cd2 to release the buffer (a no-op unless bit 08h is set),
+ * then RTL:7a30 to close the signed-byte handle from descriptor +0bh.
+ * These FAR targets are visible as 12a5:17da, :15f4 and :2352 in the
+ * 500ms original RAM capture. The successful CRT close resets the linked
+ * DS:2bf0 handle flag; the parent only post-processes if the six-byte
+ * file record's +4 WORD is nonzero. Only the no-buffer/no-postprocess,
+ * successful-flush-and-close branch is reconstructed. Heap and post-close
+ * branches abort before mutation; DOS errors abort without fabricating
+ * the original CRT errno side effects. */
 void gate_linked_shutdown_intro_stream(void)
 {
     GateFarPtr stream;
@@ -255,8 +261,39 @@ void gate_linked_shutdown_intro_stream(void)
     flags = gate_far_byte(stream.segment,
                           (uint16_t)(stream.offset + GATE_CONTROL_STREAM_FLAGS_OFFSET));
     if ((flags & GATE_CONTROL_STREAM_ACTIVE_MASK) != 0 &&
-        (flags & GATE_CONTROL_STREAM_BYPASS_BIT) == 0)
-        abort();
+        (flags & GATE_CONTROL_STREAM_BYPASS_BIT) == 0) {
+        int16_t delta;
+        int16_t index;
+        uint16_t file_record;
+        uint16_t handle;
+        GateDosFileResult close_result;
+
+        /* RTL:668e's buffer-release call does nothing without bit 08h.
+         * Leave the heap-owned branch untouched until its allocator is
+         * understood in the original runtime's DOS context. */
+        if ((flags & GATE_CONTROL_STREAM_FORCE_WRITE_BIT) != 0)
+            abort();
+
+        delta = (int16_t)(uint16_t)(stream.offset - GATE_DS_CRT_STREAMS);
+        index = (int16_t)(delta / GATE_CRT_STREAM_STRIDE);
+        file_record = (uint16_t)(GATE_DS_CRT_DESCRIPTOR_FLAGS +
+            (uint16_t)(index * GATE_CRT_FILE_STRIDE));
+        if (gate_far_word(gate_ds_segment(), (uint16_t)(file_record +
+                    GATE_CRT_FILE_CLOSE_EXTRA_WORD_OFFSET)) != 0)
+            abort();
+
+        handle = (uint16_t)(int16_t)(int8_t)gate_far_byte(stream.segment,
+            (uint16_t)(stream.offset + GATE_CONTROL_STREAM_HANDLE_OFFSET));
+        if (handle >= gate_ds_word(GATE_DS_CRT_HANDLE_LIMIT))
+            abort();
+        if (gate_linked_flush_intro_stream(stream) != 0)
+            abort();
+        close_result = gate_dos_file_close(handle);
+        if (close_result.carry)
+            abort();
+        gate_far_set_byte(gate_ds_segment(),
+            (uint16_t)(GATE_DS_CRT_HANDLE_FLAGS + handle), 0u);
+    }
 
     gate_far_set_byte(stream.segment,
                       (uint16_t)(stream.offset + GATE_CONTROL_STREAM_FLAGS_OFFSET), 0);

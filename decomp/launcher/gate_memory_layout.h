@@ -69,15 +69,16 @@ enum {
     GATE_CRT_DEVICE_BIT = 0x40,
     GATE_CRT_TEXT_BIT = 0x80,
     GATE_CRT_DOS_CTRL_Z = 0x1a,
-    /* The two RTL:6eb8 operands link to these bases in the 100, 350,
+    /* The RTL:6eb8 operands link to these bases in the 100, 350,
      * 500 and 1500ms originals: 20 stream records of 12 bytes, followed
-     * by 6-byte DOS descriptor records. Only byte 0 of the latter is
-     * currently used by the recovered quiet-flush branch. */
+     * by six-byte DOS descriptor records. RTL:6681 additionally reads
+     * a WORD at record +4 (live DS:3338) before post-close processing. */
     GATE_DS_CRT_STREAMS = 0x3244,
     GATE_DS_CRT_DESCRIPTOR_FLAGS = 0x3334,
     GATE_CRT_STREAM_STRIDE = 12,
     GATE_CRT_FILE_STRIDE = 6,
     GATE_CRT_FILE_WRITE_BIT = 1,
+    GATE_CRT_FILE_CLOSE_EXTRA_WORD_OFFSET = 4,
     GATE_DS_CRT_CHAR_CLASS_TABLE = 0x33f7,
     GATE_DS_TIMEZONE_ENV_NAME = 0x352c,
     GATE_DS_TIMEZONE_OFFSET_LOW = 0x3538,
