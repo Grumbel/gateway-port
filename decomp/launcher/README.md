@@ -1153,6 +1153,14 @@ and the full Microsoft LINK checkpoint exports the handler. This is not
 an exact translation of original `RTL:621e` CRT atexit/descriptor/IRQ
 shutdown, and the source-C DOS `_main` is still absent.
 
+The original resident bank's startup callback also requires separate
+source-C recovery: its runtime `1000:0030` address is initially data,
+then becomes a relocated copy of original `GATE.EXE:0bca`. Run
+`tools/inspect_msc51_exe_callback.py` against `GATE.EXE` and the
+0/10/100/500/1500ms snapshots to verify the first 137-byte prefix and
+eleven FAR-call segment relocations. The BOOT probes' callback contexts
+are deliberately nonexecutable and are not a valid new `_main` handoff.
+
 The independent `msc51-compile-picture-dcl` stage now provides a bounded
 streaming version of the image decompression service from the tested native
 PKWARE DCL codec. `PICTDCL.OBJ` reads the original DOS resource handle,

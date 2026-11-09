@@ -41,6 +41,39 @@ must still bind resident original resources and transfer into the intro;
 the rebuilt full DOS executable does **not** link or play yet. The
 two-name checkpoint below records the **earlier 2026-11-08 stage**.
 
+## Original EXE callback required before a genuine source-C `_main`
+
+The first reconstructed RTL resident bank makes one FAR call to the
+observed original MZ-load address `1000:0030`. That address initially
+holds **data**, not a static executable callback: at 0ms it matches only
+3 of 115 invariant bytes in the actual code prefix. The loader has
+installed a function copied from `GATE.EXE:0bca` there by 10ms. Its
+original-file prefix `0bca..0c52` contains eleven immediate FAR calls.
+All other 115 bytes match the 10ms snapshot, while six segment words are
+already relocated by `+1000h` and five still carry original image-relative
+segments. By 100ms all eleven have been relocated, and all 115 invariant
+bytes remain identical through 500ms and 1500ms. This is independently
+checkable against the original executable and user-provided snapshots:
+
+```sh
+python3 tools/inspect_msc51_exe_callback.py \
+  --exe ../gateway-dos/GATE.EXE \
+  --snapshot-dir build/msc51-startup
+```
+
+The location `1000:0030` is specific to that observed DOS load. The
+corresponding original file offset `EXE:0bca` is the durable routine
+identity. Unlike the five already reconstructed prologue writes at
+`EXE:1309`, this callback is a larger original code body with further
+resident/library callees; the bounded 137-byte evidence does not
+reconstruct those callees or its return convention. The current
+`BOOTCHK.EXE` and `BOOTPREP.EXE` intentionally pass callback *contexts*
+that are never executed, including the original RTL return-opcode
+preimage. Installing those nonexecutable placeholder pointers into a
+new `main()` would give a falsely linked, unsafe executable. The next
+entry-point step must reconstruct real callable C behavior and the
+original return-boundary ABI before it transfers control into the intro.
+
 ## Verify unresolved names against compiled DOS OMF objects
 
 The Microsoft LINK report listed `_gate_linked_print_intr_b006848b` as
