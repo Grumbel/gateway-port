@@ -26,19 +26,22 @@ callback placeholder only on the new source executable path. Its modes are:
 
 - `/CHECK`: original-file preparation, segment bindings and VGA initialization;
 - `/PICTURE`: the same checks plus original first-splash load and draw;
+- `/SECOND`: original second-splash load and draw;
+- `/TITLE`: source-C title interlude with startup globals and no-music initialization;
 - `/INTRO` (default): attempt the full original-derived intro schedule.
 
-The first two modes **passed under DOSBox 0.74**, with original files
-mounted read-only. After compiling the prerequisites and linking, reproduce
-them on DOSBox Staging with:
+The four isolated verification modes **passed under DOSBox 0.74**, with
+original files mounted read-only, in the same session as all compiler/link
+stages. To reproduce on DOSBox Staging:
 
 ```sh
-gateway-msc51 link-launcher
+gateway-msc51 compile-all --original-game-dir ../gateway-dos
 gateway-msc51 test-dos-entry --original-game-dir ../gateway-dos
 ```
 
-The new `ENTRY.BAT` checks both real DOS program exit codes, validates fresh
-`ENTRY.LOG` and `PICTURE.LOG` text and writes `ENTRYOK.LOG`. `/INTRO` is
+`ENTRY.BAT` checks all four real DOS program exit codes, validates fresh
+`ENTRY.LOG`, `PICTURE.LOG`, `SECOND.LOG`, and `TITLE.LOG` text and writes
+`ENTRYOK.LOG` only after all four pass. `/INTRO` is
 **not yet verified as a complete playable intro**: a longer trial exited
 abnormally, and original audio/IRQ and resident callback behaviors remain
 incomplete.

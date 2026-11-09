@@ -1107,6 +1107,10 @@ def stage_launcher(output: Path) -> list[str]:
         "IF ERRORLEVEL 1 GOTO FAILED",
         "D:\\GATEWAY.EXE /PICTURE > D:\\PICTURE.LOG",
         "IF ERRORLEVEL 1 GOTO FAILED",
+        "D:\\GATEWAY.EXE /SECOND > D:\\SECOND.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED",
+        "D:\\GATEWAY.EXE /TITLE > D:\\TITLE.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED",
         "ECHO Gateway source-C DOS entry passed > D:\\ENTRYOK.LOG",
         "GOTO DONE", ":FAILED",
         "ECHO Gateway source-C DOS entry failed > D:\\ENTRYFAIL.LOG",
@@ -1788,6 +1792,34 @@ def remove_launcher_link_outputs(output: Path) -> None:
 # DOS emulator only once for the user-facing rebuilt game. Every generated
 # stage batch ends with EXIT for its standalone invocation; the combined
 # session uses call-safe copies that return to the master batch at EOF.
+DOS_ENTRY_PASS_MARKERS = (
+    ("ENTRY.LOG", "Gateway DOS source-C entry: PASS"),
+    ("PICTURE.LOG", "Gateway DOS first splash: PASS"),
+    ("SECOND.LOG", "Gateway DOS second splash: PASS"),
+    ("TITLE.LOG", "Gateway DOS: title interlude returned"),
+)
+
+
+def remove_dos_entry_outputs(output: Path) -> None:
+    for name in ("ENTRYOK.LOG", "ENTRYFAIL.LOG", *(name for name, _ in DOS_ENTRY_PASS_MARKERS)):
+        previous = locate_case_insensitive(output, name)
+        if previous is not None:
+            previous.unlink()
+
+
+def dos_entry_failures(output: Path) -> list[str]:
+    failures = []
+    if locate_case_insensitive(output, "ENTRYOK.LOG") is None:
+        failures.append("ENTRYOK.LOG absent")
+    if locate_case_insensitive(output, "ENTRYFAIL.LOG") is not None:
+        failures.append("ENTRYFAIL.LOG present")
+    for name, marker in DOS_ENTRY_PASS_MARKERS:
+        log = locate_case_insensitive(output, name)
+        if log is None or marker not in log.read_text(errors="replace"):
+            failures.append(f"{name} missing expected result")
+    return failures
+
+
 LAUNCHER_BUILD_STAGES = (
     ("compile-launcher", "COMPILE.BAT", "SUCCESS.LOG", "BUILDFAIL.LOG"),
     ("compile-memory", "MEMORY.BAT", "MEMOK.LOG", "MEMFAIL.LOG"),
@@ -1821,11 +1853,11 @@ def prepare_full_launcher_build(output: Path, objects: list[str]) -> None:
                     remove_input_outputs, remove_clock_outputs, remove_crt_outputs,
                     remove_static_data_outputs, remove_launcher_link_outputs):
         remover(output)
-    for name in ("ALLSTART.LOG", "ALLSTEP.LOG", "ALLDONE.LOG", "ALLFAIL.LOG",
-                 "ENTRY.LOG", "PICTURE.LOG", "ENTRYOK.LOG", "ENTRYFAIL.LOG"):
+    for name in ("ALLSTART.LOG", "ALLSTEP.LOG", "ALLDONE.LOG", "ALLFAIL.LOG"):
         previous = locate_case_insensitive(output, name)
         if previous is not None:
             previous.unlink()
+    remove_dos_entry_outputs(output)
     batch = ["@ECHO OFF", "ECHO Gateway combined DOS build started > ALLSTART.LOG"]
     for index, (step, filename, success, failure) in enumerate(LAUNCHER_BUILD_STAGES):
         source = (output / filename).read_text().splitlines()
@@ -1858,13 +1890,9 @@ def validate_full_launcher_build(output: Path, objects: list[str]) -> None:
             locate_case_insensitive(output, "LINKFAIL.LOG") is not None or
             exe is None or executable_format(exe.read_bytes()) != "DOS MZ"):
         raise ValueError("Microsoft LINK did not produce a valid real-mode GATEWAY.EXE")
-    entry = locate_case_insensitive(output, "ENTRY.LOG")
-    picture = locate_case_insensitive(output, "PICTURE.LOG")
-    if (locate_case_insensitive(output, "ENTRYOK.LOG") is None or
-            locate_case_insensitive(output, "ENTRYFAIL.LOG") is not None or
-            entry is None or "Gateway DOS source-C entry: PASS" not in entry.read_text(errors="replace") or
-            picture is None or "Gateway DOS first splash: PASS" not in picture.read_text(errors="replace")):
-        raise ValueError("Real-mode DOS entry or first-picture verification failed")
+    failures = dos_entry_failures(output)
+    if failures:
+        raise ValueError("Real-mode DOS entry verification failed: " + ", ".join(failures))
 
 
 def print_full_launcher_build_diagnostics(output: Path) -> None:
@@ -1894,7 +1922,7 @@ def print_full_launcher_build_diagnostics(output: Path) -> None:
     if last in diagnostics:
         diagnostics[last](output)
     if last == "test-dos-entry":
-        for name in ("ENTRY.LOG", "PICTURE.LOG", "ENTRYFAIL.LOG"):
+        for name in (*[name for name, _ in DOS_ENTRY_PASS_MARKERS], "ENTRYFAIL.LOG"):
             path = locate_case_insensitive(output, name)
             content = path.read_text(errors="replace") if path else "(not created)"
             print(f"--- {name} ---\n{content[-8_000:].rstrip()}", file=sys.stderr)
@@ -2247,10 +2275,7 @@ def main(argv: list[str] | None = None) -> int:
         remove_launcher_link_outputs(output)
         command.append("--exit")
     elif args.command == "test-dos-entry":
-        for name in ("ENTRY.LOG", "PICTURE.LOG", "ENTRYOK.LOG", "ENTRYFAIL.LOG"):
-            previous = locate_case_insensitive(output, name)
-            if previous is not None:
-                previous.unlink()
+        remove_dos_entry_outputs(output)
         command.append("--exit")
     print("DOSBox CPU: " + (" ".join(performance_args) or "user configuration"), flush=True)
     print("DOSBox commands: " + " ; ".join(commands), flush=True)
@@ -2530,21 +2555,16 @@ def main(argv: list[str] | None = None) -> int:
               "Use test-dos-entry to verify actual DOS startup and first-picture drawing.")
         return 0
     if args.command == "test-dos-entry":
-        success = locate_case_insensitive(output, "ENTRYOK.LOG")
-        failed = locate_case_insensitive(output, "ENTRYFAIL.LOG")
-        entry = locate_case_insensitive(output, "ENTRY.LOG")
-        picture = locate_case_insensitive(output, "PICTURE.LOG")
-        entry_text = entry.read_text(errors="replace") if entry is not None else ""
-        picture_text = picture.read_text(errors="replace") if picture is not None else ""
-        if (success is None or failed is not None or
-                "Gateway DOS source-C entry: PASS" not in entry_text or
-                "Gateway DOS first splash: PASS" not in picture_text):
-            print("Gateway source-C DOS entry or first-picture smoke test failed.", file=sys.stderr)
-            print(f"ENTRY.LOG: {entry_text.strip() or '(missing)'}", file=sys.stderr)
-            print(f"PICTURE.LOG: {picture_text.strip() or '(missing)'}", file=sys.stderr)
+        failures = dos_entry_failures(output)
+        if failures:
+            print("Gateway source-C DOS entry tests failed: " + ", ".join(failures), file=sys.stderr)
+            for name, _ in DOS_ENTRY_PASS_MARKERS:
+                log = locate_case_insensitive(output, name)
+                contents = log.read_text(errors="replace").strip() if log else "(missing)"
+                print(f"{name}: {contents}", file=sys.stderr)
             return 1
         print("Real-mode GATEWAY.EXE passed source-C boot, mode-12 VGA setup, "
-              "first splash picture load/draw and BIOS restoration under DOSBox. "
+              "both splash pictures, title interlude and BIOS restoration under DOSBox. "
               "The full timed intro remains unverified.")
         return 0
     if args.command == "compile-launcher":

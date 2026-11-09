@@ -60,11 +60,15 @@ class MSC51Tests(unittest.TestCase):
             (output / "SUCCESS.LOG").write_text("old")
             (output / "ALLDONE.LOG").write_text("old")
             (output / "ENTRYOK.LOG").write_text("old")
+            (output / "SECOND.LOG").write_text("old")
+            (output / "TITLE.LOG").write_text("old")
             (output / "RTLHW.OBJ").write_bytes(b"old")
             msc51.prepare_full_launcher_build(output, objects)
             self.assertFalse((output / "SUCCESS.LOG").exists())
             self.assertFalse((output / "ALLDONE.LOG").exists())
             self.assertFalse((output / "ENTRYOK.LOG").exists())
+            self.assertFalse((output / "SECOND.LOG").exists())
+            self.assertFalse((output / "TITLE.LOG").exists())
             self.assertFalse((output / "RTLHW.OBJ").exists())
             master = (output / "BUILDALL.BAT").read_text()
             self.assertEqual(master.count("CALL B"), 18)
@@ -121,7 +125,9 @@ class MSC51Tests(unittest.TestCase):
             batch = (output / "ENTRY.BAT").read_text()
             self.assertIn("D:\\GATEWAY.EXE /CHECK > D:\\ENTRY.LOG", batch)
             self.assertIn("D:\\GATEWAY.EXE /PICTURE > D:\\PICTURE.LOG", batch)
-            self.assertEqual(batch.count("IF ERRORLEVEL 1 GOTO FAILED"), 2)
+            self.assertIn("D:\\GATEWAY.EXE /SECOND > D:\\SECOND.LOG", batch)
+            self.assertIn("D:\\GATEWAY.EXE /TITLE > D:\\TITLE.LOG", batch)
+            self.assertEqual(batch.count("IF ERRORLEVEL 1 GOTO FAILED"), 4)
             self.assertIn("ENTRYFAIL.LOG", batch)
             self.assertNotIn("/INTRO", batch)
             link = (output / "LINK.RSP").read_text()
@@ -131,6 +137,28 @@ class MSC51Tests(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     msc51.main(["test-dos-entry", "--output", str(output)])
             self.assertIn("requires --original-game-dir", diagnostic.getvalue())
+
+    def test_dos_entry_requires_all_four_fresh_success_witnesses(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            output = Path(scratch)
+            (output / "ENTRYOK.LOG").write_text("passed")
+            for name, marker in msc51.DOS_ENTRY_PASS_MARKERS:
+                (output / name).write_text(marker + "\n")
+            self.assertEqual(msc51.dos_entry_failures(output), [])
+            for name, _ in msc51.DOS_ENTRY_PASS_MARKERS:
+                log = output / name
+                original = log.read_text()
+                log.write_text("unrelated DOS output\n")
+                self.assertEqual(msc51.dos_entry_failures(output),
+                                 [f"{name} missing expected result"])
+                log.write_text(original)
+            (output / "ENTRYFAIL.LOG").write_text("failure")
+            self.assertEqual(msc51.dos_entry_failures(output), ["ENTRYFAIL.LOG present"])
+            msc51.remove_dos_entry_outputs(output)
+            for name, _ in msc51.DOS_ENTRY_PASS_MARKERS:
+                self.assertFalse((output / name).exists())
+            self.assertFalse((output / "ENTRYOK.LOG").exists())
+            self.assertFalse((output / "ENTRYFAIL.LOG").exists())
 
     def test_optional_original_rtl_fixup_words_are_unrelocated_zero(self):
         original = REPO.parent / "gateway-dos" / "GATE.RTL"

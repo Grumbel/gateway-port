@@ -1223,7 +1223,8 @@ nix run .#gateway-hybrid -- ../gateway-dos
 
 `gateway-dos` automatically fetches the pinned Microsoft C 5.1 toolchain
 through Nix, compiles the original-derived source and DOS service adapters,
-links `GATEWAY.EXE`, checks the DOS startup/picture in headless DOSBox, and
+links `GATEWAY.EXE`, checks the DOS startup, both splash pictures and title
+interlude in headless DOSBox, and
 then launches the requested mode in interactive DOSBox Staging. The initial
 build runs all 18 stages inside one headless DOSBox session; later launches reuse the
 executable in `$XDG_CACHE_HOME/gateway-port/msc51` (or
@@ -1232,8 +1233,8 @@ change. Set `GATEWAY_MSC51_BUILD_DIR` to use another writable directory,
 or `GATEWAY_DOS_REBUILD=1` to force rebuilding. The original game assets
 remain in `../gateway-dos` and are mounted read-only. Compiler sessions
 use a temporary Xvfb display (supplied by Nix) to avoid the SDL dummy-video
-startup failure in DOSBox Staging 0.82.2. The `/CHECK` and
-`/PICTURE` modes are verified, but the full DOS `/INTRO` currently fails
+startup failure in DOSBox Staging 0.82.2. The `/CHECK`, `/PICTURE`, `/SECOND`
+and `/TITLE` modes are verified under DOSBox 0.74, but the full DOS `/INTRO` currently fails
 before completing. See [DOS link checkpoint](docs/msc51-link-closure.md).
 
 Other intro previews, captures, Ghidra, and Microsoft C diagnostic tools are

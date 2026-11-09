@@ -31,13 +31,14 @@ gateway-msc51 link-launcher
 gateway-msc51 test-dos-entry --original-game-dir ../gateway-dos --headless
 ```
 
-The last command runs real DOS `GATEWAY.EXE /CHECK` and `/PICTURE`, verifies
-both process exit codes and their `ENTRY.LOG`/`PICTURE.LOG` success text,
-and rejects stale success markers. Both passed on independently installed
-DOSBox 0.74 with the real Microsoft C 5.1-built EXE. The supported Nix
-toolchain uses DOSBox Staging. `/INTRO` is callable from the original-files
-drive as `D:\GATEWAY.EXE /INTRO` but **has not completed correctly** in the
-current tests. See [link closure](msc51-link-closure.md) for precise scope.
+The last command runs real DOS `GATEWAY.EXE` in four isolated modes:
+`/CHECK`, `/PICTURE`, `/SECOND`, and `/TITLE`. It checks each process exit
+code and the fresh success text in `ENTRY.LOG`, `PICTURE.LOG`, `SECOND.LOG`,
+and `TITLE.LOG`. All four passed under independently installed DOSBox 0.74
+with the real Microsoft C 5.1-built EXE. The supported Nix toolchain uses
+DOSBox Staging. `/INTRO` is callable from the original-files drive as
+`D:\GATEWAY.EXE /INTRO` but **has not completed correctly** in the current
+tests. See [link closure](msc51-link-closure.md) for precise scope.
 
 ## Portable Linux build checked in an external test environment
 
