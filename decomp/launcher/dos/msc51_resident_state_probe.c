@@ -254,6 +254,30 @@ int main(void)
                                  (uint16_t)(30u * 320u + 31u)),
                    0u, "mode-13 VFX XOR restore");
 
+    /* Original RTL:189ca uses REP MOVSW followed by a possible trailing
+     * MOVSB. Check odd row widths and a source stride wider than the row
+     * directly against actual A000h bytes under DOSBox. */
+    gate_far_set_word(image.segment, image.offset + 0x2cu, 3u);
+    gate_far_set_word(image.segment, image.offset + 0x2eu, 2u);
+    gate_far_set_word(image.segment, image.offset + 0x30u, 3u);
+    gate_far_set_word(image.segment, image.offset + 0x14u, 4u);
+    gate_far_set_byte(image.segment, 0x0800u, 0x11u);
+    gate_far_set_byte(image.segment, 0x0801u, 0x22u);
+    gate_far_set_byte(image.segment, 0x0802u, 0x33u);
+    gate_far_set_byte(image.segment, 0x0804u, 0x44u);
+    gate_far_set_byte(image.segment, 0x0805u, 0x55u);
+    gate_far_set_byte(image.segment, 0x0806u, 0x66u);
+    gate_linked_blit_vfx_picture(0u, 32u, 31u, 0u, image);
+    valid &= check(gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                                 (uint16_t)(32u * 320u + 31u)),
+                   0x11u, "mode-13 original row copy even byte");
+    valid &= check(gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                                 (uint16_t)(32u * 320u + 33u)),
+                   0x33u, "mode-13 original row copy odd byte");
+    valid &= check(gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                                 (uint16_t)(33u * 320u + 32u)),
+                   0x55u, "mode-13 original row stride");
+
     /* The 640x480 branch uses real BIOS planar pixels rather than treating
      * A000 as a linear 4-bit buffer. Test only one pixel to avoid replacing
      * the original resident rasterizer's fast path with a slow bulk test. */
@@ -269,6 +293,8 @@ int main(void)
     valid &= check((uint16_t)(out.h.al & 15u), 0x0bu, "planar VGA pixel");
 
     gate_far_set_word(image.segment, image.offset + 0x14u, 1u);
+    gate_far_set_word(image.segment, image.offset + 0x2cu, 2u);
+    gate_far_set_word(image.segment, image.offset + 0x2eu, 1u);
     gate_far_set_byte(image.segment, image.offset + 0x12u, 4u);
     gate_far_set_byte(image.segment, image.offset + 0x13u, 1u);
     gate_far_set_byte(image.segment, 0x0800u, 0x80u);

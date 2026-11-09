@@ -114,6 +114,8 @@ class FlakeLayoutTests(unittest.TestCase):
             self.assertEqual(run.returncode, 0, run.stderr)
             self.assertEqual(calls_file.read_text().splitlines(), ["compile-all"])
             self.assertEqual(args_file.read_text().splitlines(), [
+                "--set", "core=dynamic",
+                "--set", "cpu_cycles=max",
                 "-c", f'mount e "{game}" -ro',
                 "-c", f'mount d "{build}"',
                 "-c", "e:",

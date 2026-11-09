@@ -25,6 +25,17 @@ void gate_linked_initialize_intro_services(void);
 uint16_t gate_rtl_set_video_mode(int16_t requested_mode);
 void gate_rtl_clear_video_display(void);
 uint16_t gate_rtl_show_picture(uint16_t resource, uint16_t placement);
+uint32_t gate_linked_exe_elapsed_milliseconds(void);
+
+/* This is a diagnostic hold, not an original EXE timing constant. The
+ * palette of GATE_300.PIC #0 starts black: drawing it alone cannot prove
+ * that mode 13h is visible. Show the next full-color backdrop as well. */
+static void gate_entry_hold_scene_preview(void)
+{
+    uint32_t start = gate_linked_exe_elapsed_milliseconds();
+    while ((uint32_t)(gate_linked_exe_elapsed_milliseconds() - start) < 4000ul)
+        ;
+}
 
 /* The original RTL:4bc9 callback only RETFs. A far C function performs
  * that same stack operation on return. Call it once before installing its
@@ -164,7 +175,13 @@ int main(int argc, char **argv)
                 fputs("Gateway DOS: first mode-13 picture failed to load/draw\n", stderr);
                 return 1;
             }
-            puts("Gateway DOS first 320x200 picture: PASS (mode 13, clear, picture)");
+            if (gate_rtl_show_picture(GATE_INTRO_PICTURE_CAPTIONS_01_02, 0u) != 1u) {
+                fputs("Gateway DOS: first full-color mode-13 picture failed to load/draw\n", stderr);
+                return 1;
+            }
+            puts("Gateway DOS first 320x200 picture: PASS (mode 13, clear, black title, color backdrop)");
+            fflush(stdout);
+            gate_entry_hold_scene_preview();
             return 0;
         }
         puts("Gateway DOS transition: PASS (VGA mode 13 and display clear)");

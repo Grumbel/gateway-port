@@ -8,6 +8,7 @@ never copied into the repository or encoded in generated test fixtures.
 """
 
 from pathlib import Path
+import hashlib
 import struct
 import unittest
 
@@ -16,6 +17,55 @@ ROOT = Path(__file__).resolve().parents[1]
 SNAPSHOT = ROOT / 'build/intro-analysis/at-22000.bin'
 MODE12_SNAPSHOT = ROOT / 'build/intro-analysis/at-1000.bin'
 VFX_DS = 0x2a7a * 16
+ORIGINAL_RTL = ROOT.parent / 'gateway-dos/GATE.RTL'
+ORIGINAL_RTL_SHA256 = 'c187f5ee7be86482cff89e668d934dc961ac50e960df7baa98965910f1ea9566'
+
+
+class OriginalRtlVfxRasterizer(unittest.TestCase):
+    """Read the original RTL, not a missing or assumed private RAM snapshot."""
+
+    @classmethod
+    def setUpClass(cls):
+        if not ORIGINAL_RTL.is_file():
+            raise unittest.SkipTest('original GATE.RTL unavailable')
+        cls.rtl = ORIGINAL_RTL.read_bytes()
+        if hashlib.sha256(cls.rtl).hexdigest() != ORIGINAL_RTL_SHA256:
+            raise unittest.SkipTest('GATE.RTL does not match the pinned executable')
+
+    def test_mode13_original_row_copy_and_raster_branches(self):
+        # GATE.RTL:184e8 sets bp-0a = row bytes, bp-08 = row count,
+        # bp-1a = source row skip, bp-1c = VGA destination row skip.
+        self.assertEqual(self.rtl[0x18565:0x18571],
+                         bytes.fromhex('8b44328946e28b44308946f6'))
+        self.assertEqual(self.rtl[0x185d2:0x185eb],
+                         bytes.fromhex('8b44148946f22b46f68946e6268b451c8946f42b46f68946e4'))
+        # Native linked 24a7:04c4 is the corresponding original RTL:189a0
+        # handler. Mode zero is NOT a byte-by-byte read/modify/write loop:
+        # SHR width, REP MOVSW, RCL width, REP MOVSB handles the odd byte.
+        self.assertEqual(self.rtl[0x189b6:0x189ca],
+                         bytes.fromhex('8b460c3d0000740c3d0300741d3d0100742deb40'))
+        self.assertEqual(self.rtl[0x189ca:0x189de],
+                         bytes.fromhex('8b4ef6d1e9f3a5d1d1f3a403f203fbff4ef875ec'))
+        self.assertEqual(self.rtl[0x189e3:0x189e8],
+                         bytes.fromhex('ac26300547'))  # XOR
+        self.assertEqual(self.rtl[0x189f8:0x189fd],
+                         bytes.fromhex('ac26200547'))  # AND
+        self.assertEqual(self.rtl[0x18a0d:0x18a12],
+                         bytes.fromhex('ac26080547'))  # OR
+
+    def test_mode12_uses_vga_hardware_rasterizer_not_bios_pixels(self):
+        # Original RTL:187da (resident 24a7:02fe) selects VGA GC mode 3,
+        # sets its bit mask and uses the sequencer map mask per plane.
+        self.assertEqual(self.rtl[0x187e9:0x187fd],
+                         bytes.fromhex('b005bace03ee42b008eeb007bace03ee42b000ee'))
+        # RTL:1885b shifts the raster operation left three bits and writes
+        # Graphics Controller register 3, unlike our BIOS-pixel adapter.
+        self.assertEqual(self.rtl[0x1885b:0x18869],
+                         bytes.fromhex('b103d3e3b003bace03ee428ac3ee'))
+        # The byte-aligned source path consumes one source byte and
+        # touches one VGA byte (eight pixels) per iteration.
+        self.assertEqual(self.rtl[0x18870:0x18881],
+                         bytes.fromhex('81f900ff753e578b4ef6ac26200547e2f9'))
 
 
 class NativeVfxProvenance(unittest.TestCase):

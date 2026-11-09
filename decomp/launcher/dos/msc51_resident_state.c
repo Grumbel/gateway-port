@@ -9,6 +9,7 @@
 #include "RTLIMAC.H"
 #include <conio.h>
 #include <dos.h>
+#include <memory.h>
 #include <stdlib.h>
 
 /* 25a3:011e stores the low WORD at DS:29de+0c. */
@@ -173,11 +174,13 @@ void gate_rtl_background_rect(uint16_t style, uint16_t bottom,
     gate_ds_set_word(GATE_DS_DRAW_LINE_WIDTH, saved_width);
 }
 
-/* 24a7:000c resident VFX draw bridge. The original performs direct VGA
- * writes; this bounded DOS host implementation follows the already
- * tested src/intro_host_vfx.c for the introductory mode-12h and mode-13h
- * CA00 image layouts. Header offsets are from gate_rtl_image.h, and
- * must remain fixed for compatibility with the original C record loader. */
+/* 24a7:000c resident VFX draw bridge. Original RTL:184e8 selects the video
+ * backend; RTL:189a0..18a2c is its mode-13h byte-per-pixel callback. Its
+ * copy branch (189ca..189de) moves whole words and then the odd byte with
+ * REP MOVSW/MOVSB; XOR/AND/OR use byte operations. This implementation
+ * retains that row-copy distinction, using MSC 5.1 movedata for its native
+ * segment:offset transfer. Mode-12h remains a bounded BIOS adapter, not a
+ * decompilation of the original RTL:187da VGA register rasterizer. */
 enum {
     DOS_VFX_SIGNATURE = 0x00,
     DOS_VFX_PLANES = 0x12,
@@ -344,14 +347,23 @@ void gate_linked_blit_vfx_picture(uint16_t zero, uint16_t y, uint16_t x,
         if (width < original_width)
             copy_bytes = width;
         for (row = 0u; row < height; ++row) {
-            for (col = 0u; col < copy_bytes; ++col) {
-                uint16_t address = (uint16_t)(dest + col);
-                uint8_t pixel = gate_far_byte(source.segment,
-                    (uint16_t)(source.offset + col));
-                uint8_t old = gate_far_byte(
-                    GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT, address);
-                gate_far_set_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
-                    address, vfx_raster_byte(pixel, old, operation));
+            if (operation == 0u) {
+                /* Original RTL:189ca..189d3 uses SHR CX,1; REP MOVSW;
+                 * RCL CX,1; REP MOVSB, preserving the odd trailing byte.
+                 * It intentionally does not read any destination pixels. */
+                movedata(source.segment, source.offset,
+                         GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT, dest,
+                         copy_bytes);
+            } else {
+                for (col = 0u; col < copy_bytes; ++col) {
+                    uint16_t address = (uint16_t)(dest + col);
+                    uint8_t pixel = gate_far_byte(source.segment,
+                        (uint16_t)(source.offset + col));
+                    uint8_t old = gate_far_byte(
+                        GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT, address);
+                    gate_far_set_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                        address, vfx_raster_byte(pixel, old, operation));
+                }
             }
             source.offset = (uint16_t)(source.offset + stride);
             dest = (uint16_t)(dest + 320u);

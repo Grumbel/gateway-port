@@ -2461,3 +2461,43 @@ offset macros, so rerun `msc51-compile-rtl-state` before this new probe.
 Once the linker reports zero missing names, the next milestone is *actual
 DOS execution* through the original intro sequence with deterministic
 input/frame comparisons. A linked `GATEWAY.EXE` is insufficient by itself.
+
+### Original VFX rasterizer byte-copy recovered (2026-11-09)
+
+The SHA-256-pinned original `GATE.RTL` contains the mode-13h VFX drawing
+callback at file offset `rtl:189a0..18a2c`, matching the already captured
+resident `24a7:04c4` opcode witnesses. Its shared setup at `rtl:184e8`
+computes the signed clipped row width/count and both row skips:
+
+- `BP-0Ah` is the width in bytes; `BP-08h` is the number of rows.
+- `BP-1Ah` is source stride minus that width; `BP-1Ch` is destination
+  descriptor pitch minus that width.
+- `rtl:189ca..189de` copies a row via `SHR CX,1; REP MOVSW; RCL CX,1;
+  REP MOVSB`, then advances source SI and VGA destination DI by their
+  respective skips. The odd-byte path is part of the original code.
+- The three other branches at `rtl:189e0`, `189f5`, and `18a0a` use bytewise
+  XOR, AND, and OR respectively. No destination read occurs in copy mode.
+
+The real MS-DOS adapter now expresses that *original* distinction: a single
+MSC 5.1 `movedata` segmented transfer per copy row, with unchanged 16-bit
+source/destination row advancement, while retaining separate bytewise
+non-copy operations. This is not a new custom optimization algorithm. A
+host C89 memory fixture verifies even/odd row widths and all existing
+raster operations. The updated genuine Microsoft C 5.1 `RESCHK.EXE` also
+passes independent real DOS/A000h readback of an odd 3-byte row with a
+4-byte source stride. Microsoft C 5.1 compiled the updated
+`RESSTATE.OBJ` and Overlay Linker 3.65 linked the updated executable;
+local DOSBox 0.74 `/CHECK`, `/PICTURE`, and `/SCENE` completed with their
+expected markers. This confirms execution and output contracts, **not**
+visual equivalence to the original under DOSBox Staging 0.82.2.
+
+More importantly for the slow 640x480 splash, the original mode-12h
+callback is recoverable from `rtl:187da..1899d` (resident `24a7:02fe`).
+It sets VGA Graphics Controller mode/bit-mask/ALU registers and the
+sequencer's plane mask, then processes **one source byte per eight pixels**;
+the aligned path begins at `rtl:18870`. Our current mode-12h DOS adapter
+still uses two BIOS pixel interrupts per displayed pixel. Replacing that
+adapter requires a faithful translation of the original direct-VGA path,
+including unaligned writes and plane changes, followed by independent VGA
+pixel comparisons. Compiler optimization switches and arbitrary altered
+intro delays are not substitutes for that recovery.

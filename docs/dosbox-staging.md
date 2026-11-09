@@ -112,6 +112,17 @@ software GL, and passes `--noprimaryconf`, `--nolocalconf`,
 `mouse_capture=nomouse`, `mididevice=none`, `output=texture`, and
 `texture_renderer=software`. Its existing
 `--dosbox` argument also accepts an absolute path to the portable executable.
+
+The visible `nix run .#gateway-dos -- ../gateway-dos` gameplay process is
+separate from the compiler process. It now explicitly passes
+`--set core=dynamic --set cpu_cycles=max` too; earlier it relied on
+DOSBox's runtime defaults even though compilation used these settings.
+This affects only emulator throughput, not the recovered original timing
+constants, source-C routine order or VGA algorithms. In particular,
+it does **not** resolve the remaining slow BIOS-per-pixel mode-12h video
+adapter, whose original direct-VGA equivalent is documented in
+`msc51-link-closure.md`.
+
 For example, when a complete Microsoft C 5.1 installation is available:
 
 ```sh

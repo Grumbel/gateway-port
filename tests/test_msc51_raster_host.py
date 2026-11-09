@@ -39,6 +39,7 @@ class MSC51RasterHostTests(unittest.TestCase):
             original_layout = (REPO / "decomp/launcher/gate_memory_layout.h").read_text()
             (scratch / "RTLLAY.H").write_text(re.sub(r",(\s*})", r"\1", original_layout))
             (scratch / "conio.h").write_text("int inp(unsigned int port);\nint outp(unsigned int port, int value);\n")
+            (scratch / "memory.h").write_text("void movedata(unsigned int srcseg, unsigned int srcoff, unsigned int dstseg, unsigned int dstoff, unsigned int count);\n")
             (scratch / "dos.h").write_text("""
 union REGS {
     struct { unsigned short ax, bx, cx, dx; } x;
@@ -60,6 +61,8 @@ static uint16_t video_mode = 3u;
 static uint16_t current_ds = 0x3000u;
 static unsigned int mouse_hides;
 static unsigned int mouse_shows;
+static unsigned int movedata_calls;
+static unsigned int movedata_bytes;
 
 uint16_t gate_ds_segment(void) { return current_ds; }
 uint8_t gate_far_byte(uint16_t segment, uint16_t offset)
@@ -81,6 +84,18 @@ void gate_far_set_word(uint16_t segment, uint16_t offset, uint16_t value)
 {
     gate_far_set_byte(segment, offset, (uint8_t)value);
     gate_far_set_byte(segment, (uint16_t)(offset + 1u), (uint8_t)(value >> 8));
+}
+/* Model MSC 5.1 movedata's 16-bit segment:offset copying for the original
+ * RTL:189ca REP MOVSW plus odd-byte REP MOVSB. */
+void movedata(unsigned int srcseg, unsigned int srcoff,
+              unsigned int dstseg, unsigned int dstoff, unsigned int count)
+{
+    unsigned int i;
+    ++movedata_calls;
+    movedata_bytes += count;
+    for (i = 0u; i < count; ++i)
+        gate_far_set_byte((uint16_t)dstseg, (uint16_t)(dstoff + i),
+                          gate_far_byte((uint16_t)srcseg, (uint16_t)(srcoff + i)));
 }
 uint16_t gate_ds_word(uint16_t offset) { return gate_far_word(current_ds, offset); }
 void gate_ds_set_word(uint16_t offset, uint16_t value)
@@ -265,6 +280,7 @@ int main(int argc, char **argv)
     gate_far_set_byte(0x6100u, 0x0203u, 0x46u);
     gate_ds_set_word(GATE_DS_RENDERER_MODE, 3u);
     gate_linked_blit_vfx_picture(0u, 20u, 30u, 0u, image);
+    assert(movedata_calls == 2u && movedata_bytes == 4u);
     assert(pixel13(30u, 20u) == 0x13u);
     assert(pixel13(31u, 20u) == 0x24u);
     assert(pixel13(30u, 21u) == 0x35u);
@@ -272,6 +288,26 @@ int main(int argc, char **argv)
     gate_linked_blit_vfx_picture(0u, 20u, 30u, 3u, image);
     assert(pixel13(30u, 20u) == 0u);
     assert(pixel13(31u, 21u) == 0u);
+    assert(movedata_calls == 2u); /* XOR must not use the copy branch. */
+
+    /* Original RTL:189d1..189d3 also copies odd row widths. Verify that
+     * each row still starts at the image stride and screen pitch. */
+    gate_far_set_word(image.segment, image.offset + 0x2cu, 3u);
+    gate_far_set_word(image.segment, image.offset + 0x30u, 3u);
+    gate_far_set_word(image.segment, image.offset + 0x14u, 4u);
+    gate_far_set_byte(0x6100u, 0x0200u, 0x51u);
+    gate_far_set_byte(0x6100u, 0x0201u, 0x52u);
+    gate_far_set_byte(0x6100u, 0x0202u, 0x53u);
+    gate_far_set_byte(0x6100u, 0x0204u, 0x61u);
+    gate_far_set_byte(0x6100u, 0x0205u, 0x62u);
+    gate_far_set_byte(0x6100u, 0x0206u, 0x63u);
+    gate_linked_blit_vfx_picture(0u, 22u, 32u, 0u, image);
+    assert(movedata_calls == 4u && movedata_bytes == 10u);
+    assert(pixel13(32u, 22u) == 0x51u);
+    assert(pixel13(33u, 22u) == 0x52u);
+    assert(pixel13(34u, 22u) == 0x53u);
+    assert(pixel13(32u, 23u) == 0x61u);
+    assert(pixel13(34u, 23u) == 0x63u);
 
     gate_ds_set_word(GATE_DS_RENDERER_MODE, 2u);
     gate_far_set_word(image.segment, image.offset + 0x2eu, 1u);

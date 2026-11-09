@@ -69,7 +69,13 @@ fi
 flock -u 9
 exec 9>&-
 
+# Match the explicit CPU settings of the verified Microsoft C 5.1 build
+# session. The original DOS program has no host CPU-cycle calibration: the
+# DOSBox Staging default can otherwise make the reproduced VGA routines
+# appear dramatically slower without any change to the recovered delays.
 exec "$dosbox_bin" \
+  --set core=dynamic \
+  --set cpu_cycles=max \
   -c "mount e \"$dos_dir\" -ro" \
   -c "mount d \"$launcher_dir\"" \
   -c 'e:' \
