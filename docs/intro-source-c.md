@@ -475,6 +475,50 @@ pixels**, strictly within x=24..293 and y=81..118. A regression test checks
 the entire 320×200 output fingerprint with private game data. This is an
 image-path diagnostic, **not the original animation schedule**.
 
+## Recompiled DOS intro timing and video checkpoints
+
+The complete `GATEWAY.EXE /INTRO` was instrumented **temporarily** in a local
+Microsoft C 5.1/DOSBox 0.74 test (9 November 2026). The instrumented image
+advanced well past the mode-13 transition. Closed marker files recorded these
+elapsed wall-clock checkpoints, relative to entry into the intro:
+
+| Time | Source-C checkpoint |
+| ---: | --- |
+| 0.0 s | Enter `gate_exe_play_intro` |
+| 14.3 s | Both 640×400 splash/title stages finished |
+| 16.0 s | 320×200 picture `GATE_300.PIC` #0 drawn |
+| 26.5 s | Seven red palette bars revealed |
+| 32.2 s | Red `GATEWAY` animation completed |
+| 38.2 s | Frederik Pohl credit completed |
+| 40.4 s | First full-color Venus background faded in |
+| 62.6 s | First caption completed |
+| 242.5 s | Tenth caption completed; intro still advancing |
+
+The original caption routine waits **2,000 ms + 45 ms per character** after
+printing each caption; the first caption includes nearly 400 characters.
+Thus an arbitrary 60-, 95-, 180- or even 250-second timeout is not evidence
+of a stalled complete intro. The two splash screens also include palette
+uploads synchronized to vertical retrace, in addition to explicit waits.
+
+To check the *visible* DOS output as well as the control flow, a temporary
+probe read VGA DAC colors through ports `3c7h`/`3c9h` and the 64,000-byte
+`A000h` framebuffer at selected checkpoints. The resulting 320×200 images
+show the expected black initial frame, seven red bars, animated red GATEWAY
+wordmark, white Frederik Pohl credit, full-color Venus background and text
+caption. This was a diagnostic only: the proprietary frame captures and
+the tracing code are not committed to the repository.
+
+These results establish progression and visible image output **in DOSBox
+0.74**, not in the user's DOSBox Staging 0.82.2. The latter must still be
+checked if it appears to freeze. The `gateway-dos` launcher accepts `/TRANS`
+and `/SCENE` to isolate its mode-13 initialization and first picture without
+waiting for the whole presentation:
+
+```console
+nix run .#gateway-dos -- ../gateway-dos /TRANS
+nix run .#gateway-dos -- ../gateway-dos /SCENE
+```
+
 ## Remaining limitations
 
 - The original `GATE.RTL:8cc8` DOS timezone initializer is now recovered as

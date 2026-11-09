@@ -126,6 +126,14 @@ class FlakeLayoutTests(unittest.TestCase):
             self.assertEqual(run.returncode, 0, run.stderr)
             self.assertEqual(calls_file.read_text().splitlines(), ["compile-all"])
             self.assertIn(r"D:\GATEWAY.EXE /INTRO", args_file.read_text())
+            for probe in ("/TRANS", "/SCENE"):
+                run = subprocess.run(["bash", "-c", dos_launcher_script(), "--",
+                                      str(game), probe], env=env,
+                                     text=True, capture_output=True, check=False)
+                self.assertEqual(run.returncode, 0, run.stderr)
+                self.assertIn("-c\n" + rf"D:\GATEWAY.EXE {probe}" + "\n",
+                              args_file.read_text())
+                self.assertEqual(calls_file.read_text().splitlines(), ["compile-all"])
             rebuild_env = dict(env, GATEWAY_DOS_REBUILD="1")
             run = subprocess.run(["bash", "-c", dos_launcher_script(), "--",
                                   str(game), "/CHECK"], env=rebuild_env,

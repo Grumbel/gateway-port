@@ -12,11 +12,11 @@ if [ "$#" -gt 0 ]; then shift; fi
 mode="${1:-/INTRO}"
 if [ "$#" -gt 0 ]; then shift; fi
 if [ "$#" -gt 0 ]; then
-  echo 'usage: gateway-dos [DOS-DIR [/INTRO|/CHECK|/PICTURE|/SECOND|/TITLE]]' >&2
+  echo 'usage: gateway-dos [DOS-DIR [/INTRO|/CHECK|/PICTURE|/SECOND|/TITLE|/TRANS|/SCENE]]' >&2
   exit 2
 fi
 case "$mode" in
-  /INTRO|/CHECK|/PICTURE|/SECOND|/TITLE) ;;
+  /INTRO|/CHECK|/PICTURE|/SECOND|/TITLE|/TRANS|/SCENE) ;;
   *) echo "unsupported GATEWAY.EXE mode: $mode" >&2; exit 2 ;;
 esac
 
