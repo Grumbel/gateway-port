@@ -1018,6 +1018,18 @@ occupied slots, and the active font pointer changes even for empty slots.
 `FNTTEST.LOG` and the staged-source signature guard the result. This
 establishes no missing outer Ctrl-Break handler or DOS executable entry.
 
+`msc51-compile-stream` exercises the first Ctrl-Break FAR callee at
+`GATE.RTL:15706..15729` directly from the staged `M11.OBJ` with genuine
+Microsoft C 5.1 and DOSBox. The descriptor pointer uses relocated
+`DS:6150/6152`, separate from the signed state at `DS:156e/1570`.
+The nested original CRT stream-close routine at `RTL:6640` has two
+no-I/O exits: `(flags & 83h) == 0` or `(flags & 40h) != 0`. Those clear
+descriptor byte `+0ah` and invalidate the open-state word; an already
+negative word skips everything. The native code aborts on active streams
+requiring the unrecovered flush/close sequence. The DOS probe links the
+real `M11.OBJ`, DOS file and runtime adapters, with a source signature
+and `STRTEST.LOG` PASS witness. It does not prove active file closure.
+
 `msc51-compile-input` adds a real DOS BIOS keyboard/mouse adapter for
 linked `0df2:000a/0030` and `0e48:011b/07fe`. It checks original input
 state at linked DS:133e/1340, queries INT 16h/AH=01h through Microsoft C's

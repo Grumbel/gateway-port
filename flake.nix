@@ -215,6 +215,15 @@
                 --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
             '';
           };
+          msc51-compile-stream = pkgs.writeShellApplication {
+            name = "gateway-msc51-compile-stream";
+            runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
+            text = ''
+              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
+              exec ${pkgs.python3}/bin/python3 ${source}/tools/msc51.py compile-stream \
+                --dosbox ${pkgs.dosbox-staging}/bin/dosbox-staging "$@"
+            '';
+          };
           msc51-compile-input = pkgs.writeShellApplication {
             name = "gateway-msc51-compile-input";
             runtimeInputs = [ pkgs.python3 pkgs.dosbox-staging ];
@@ -482,6 +491,11 @@
           program = "${self.packages.${system}.msc51-compile-font}/bin/gateway-msc51-compile-font";
           meta.description = "Run recovered RTL font-cache cleanup from a Microsoft C 5.1 launcher object with real DOS heap ownership";
         };
+        msc51-compile-stream = {
+          type = "app";
+          program = "${self.packages.${system}.msc51-compile-stream}/bin/gateway-msc51-compile-stream";
+          meta.description = "Verify the original Ctrl-Break stream quiet-close branch with Microsoft C 5.1 and DOSBox";
+        };
         msc51-compile-input = {
           type = "app";
           program = "${self.packages.${system}.msc51-compile-input}/bin/gateway-msc51-compile-input";
@@ -672,6 +686,7 @@ except Exception:
                          self.packages.${system}.msc51-compile-resident-state
                          self.packages.${system}.msc51-compile-heap
                          self.packages.${system}.msc51-compile-font
+                         self.packages.${system}.msc51-compile-stream
                          self.packages.${system}.msc51-compile-input
                          self.packages.${system}.msc51-compile-clock
                          self.packages.${system}.msc51-compile-crt

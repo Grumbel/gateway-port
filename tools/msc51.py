@@ -272,6 +272,8 @@ RESIDENT_STATE_SOURCES = ("GATEMEM.H", "STDINT.H", "RTLLAY.H", "RTLIMAC.H",
 HEAP_SOURCES = ("GATEMEM.H", "STDINT.H", "HEAP.C", "HEAPCHK.C", "MEMORY.C")
 FONT_SOURCES = ("GATEMEM.H", "STDINT.H", "RTLLAY.H", "M13.C", "FONTCHK.C",
                 "HEAP.C", "MEMORY.C")
+STREAM_SOURCES = ("GATEMEM.H", "STDINT.H", "RTLLAY.H", "M11.C", "STRCHK.C",
+                  "STRBRDG.C", "STRDOS.H", "DOSFILE.C", "MEMORY.C")
 INPUT_SOURCES = ("GATEMEM.H", "STDINT.H", "RTLLAY.H", "INP.C", "INPCHK.C",
                  "MEMORY.C")
 CLOCK_SOURCES = ("GATEMEM.H", "STDINT.H", "RTLLAY.H", "CLOCK.C",
@@ -379,6 +381,14 @@ def font_source_signature(output: Path) -> str:
     # M13.C transitively includes other staged Hxx headers; fingerprint
     # them all rather than silently accept a changed shared definition.
     names = (*FONT_SOURCES, *(path.name for path in sorted(output.glob("H[0-9][0-9].H"))))
+    for name in names:
+        digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
+    return digest.hexdigest()[:16]
+
+
+def stream_source_signature(output: Path) -> str:
+    digest = hashlib.sha256(b"MS C 5.1 /AL /Od original intro stream close v1\n")
+    names = (*STREAM_SOURCES, *(path.name for path in sorted(output.glob("H[0-9][0-9].H"))))
     for name in names:
         digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
     return digest.hexdigest()[:16]
@@ -507,6 +517,7 @@ def stage_launcher(output: Path) -> list[str]:
     # need not be rebuilt for each adapter iteration.
     (output / "GATEMEM.H").write_text(
         "/* Microsoft C 5.1 DOS host adapter; not original game code. */\n"
+        "#ifndef GATE_MSC51_MEMORY_ADAPTER_H\n#define GATE_MSC51_MEMORY_ADAPTER_H\n"
         '#include "STDINT.H"\n'
         "typedef struct GateFarPtr { uint16_t segment; uint16_t offset; } GateFarPtr;\n"
         "void gate_dos_bind_ds(uint16_t segment);\n"
@@ -518,6 +529,7 @@ def stage_launcher(output: Path) -> list[str]:
         "uint16_t gate_far_word(uint16_t segment, uint16_t offset);\n"
         "void gate_far_set_word(uint16_t segment, uint16_t offset, uint16_t value);\n"
         "GateFarPtr gate_stack_pointer(void *buffer);\n"
+        "#endif\n"
     )
     for dos_name, staged_name in (("msc51_memory.c", "MEMORY.C"),
                                   ("msc51_memory_probe.c", "MEMCHK.C")):
@@ -882,6 +894,44 @@ def stage_launcher(output: Path) -> list[str]:
         ":DONE", "EXIT",
     ]
     (output / "FONT.BAT").write_text("\r\n".join(font_batch) + "\r\n")
+    # Separate genuine-DOS probe for the quiet RTL:15706 stream cleanup.
+    # Recompile M11 from exactly this staging snapshot: it is also the
+    # resource wrapper object used by the original launcher link.
+    (output / "STRCHK.C").write_text(msc51_rename_identifiers(
+        (source_dir / "dos/msc51_stream_probe.c").read_text(), shortened))
+    # Use the same recovered DOS-call bridge as the host runner, linked to
+    # the real MSC INT 21h adapter. It is not part of the original M11 source.
+    stream_bridge = (source_dir / "gate_dos_file_runtime.c").read_text()
+    stream_bridge = stream_bridge.replace('#include "gate_rtl_file.h"',
+                                          f'#include "{aliases["gate_rtl_file.h"]}"')
+    stream_bridge = stream_bridge.replace('#include "gate_dos_file_runtime.h"',
+                                          '#include "STRDOS.H"')
+    # The recovered launcher headers already define GateFarPtr; the DOS
+    # adapter's standalone GATEMEM.H would define it a second time.
+    (output / "STRDOS.H").write_text(
+        (output / "GATEDOS.H").read_text().replace('#include "GATEMEM.H"\n', ''))
+    (output / "STRBRDG.C").write_text(msc51_rename_identifiers(
+        stream_bridge, shortened))
+    stream_object = aliases["gate_rtl_file.c"].replace(".C", ".OBJ")
+    stream_signature = stream_source_signature(output)
+    stream_batch = [
+        "@ECHO OFF", "ECHO MS C 5.1 original RTL stream quiet close > STRSTART.LOG",
+        "SET PATH=C:\\BIN;C:\\", "SET INCLUDE=C:\\INCLUDE;C:\\",
+        "SET LIB=C:\\LIB;C:\\", "SET TEMP=D:\\", "SET TMP=D:\\",
+        f"CL /AL /Od /c {aliases['gate_rtl_file.c']} > STRBUILD.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED", f"IF NOT EXIST {stream_object} GOTO FAILED",
+        "CL /AL /Od /c STRBRDG.C >> STRBUILD.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST STRBRDG.OBJ GOTO FAILED",
+        f"CL /AL /Od STRCHK.C {stream_object} STRBRDG.OBJ RTFILE.OBJ DOSFILE.OBJ MEMORY.OBJ /FeSTRCHK.EXE /link LLIBCR.LIB LIBH.LIB/NOD >> STRBUILD.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST STRCHK.EXE GOTO FAILED",
+        "STRCHK.EXE > STRTEST.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        f"ECHO {stream_signature} > STRSIG.LOG",
+        "ECHO Original RTL stream quiet-close DOS probe passed > STROK.LOG",
+        "GOTO DONE", ":FAILED",
+        "ECHO Original RTL stream quiet-close DOS probe failed > STRFAIL.LOG",
+        ":DONE", "EXIT",
+    ]
+    (output / "STREAM.BAT").write_text("\r\n".join(stream_batch) + "\r\n")
     for original, staged in (("msc51_input.c", "INP.C"),
                              ("msc51_input_probe.c", "INPCHK.C")):
         (output / staged).write_text(msc51_rename_identifiers(
@@ -1477,6 +1527,38 @@ def print_font_diagnostics(output: Path) -> None:
     print(f"DOS font-cache workspace: {output}", file=sys.stderr)
 
 
+def validate_stream_probe(output: Path) -> None:
+    if (any(locate_case_insensitive(output, name) is None
+            for name in ("STRCHK.EXE", "STRSTART.LOG", "STROK.LOG", "STRTEST.LOG")) or
+            locate_case_insensitive(output, "STRFAIL.LOG") is not None):
+        raise ValueError("Original RTL stream quiet-close DOS probe has not passed. "
+                         "Run msc51-compile-stream first.")
+    log = locate_case_insensitive(output, "STRTEST.LOG")
+    if "Original stream quiet-close DOS probe: PASS" not in log.read_text(errors="replace"):
+        raise ValueError("Original stream quiet-close DOS probe returned no PASS witness")
+    signature = locate_case_insensitive(output, "STRSIG.LOG")
+    if signature is None or signature.read_text().strip() != stream_source_signature(output):
+        raise ValueError("Original stream cleanup source changed since DOS test")
+
+
+def remove_stream_outputs(output: Path) -> None:
+    names = {"STRSTART.LOG", "STROK.LOG", "STRFAIL.LOG", "STRBUILD.LOG",
+             "STRSIG.LOG", "STRTEST.LOG", "STRCHK.EXE", "STRCHK.OBJ",
+             "STRBRDG.OBJ"}
+    if output.is_dir():
+        for entry in output.iterdir():
+            if entry.is_file() and entry.name.upper() in names:
+                entry.unlink()
+
+
+def print_stream_diagnostics(output: Path) -> None:
+    for name in ("STRFAIL.LOG", "STRBUILD.LOG", "STRTEST.LOG", "STROK.LOG"):
+        path = locate_case_insensitive(output, name)
+        content = path.read_text(errors="replace") if path else "(not created)"
+        print(f"--- {name} ---\n{content[-8_000:].rstrip()}", file=sys.stderr)
+    print(f"DOS stream-quiet-close workspace: {output}", file=sys.stderr)
+
+
 def validate_input_adapter(output: Path) -> None:
     if (any(locate_case_insensitive(output, name) is None
             for name in ("INP.OBJ", "INPSTART.LOG", "INPOK.LOG")) or
@@ -1704,6 +1786,7 @@ def main(argv: list[str] | None = None) -> int:
                                             "compile-resident-state",
                                             "compile-heap",
                                             "compile-font",
+                                            "compile-stream",
                                             "compile-input",
                                             "compile-clock",
                                             "compile-crt",
@@ -1739,6 +1822,7 @@ def main(argv: list[str] | None = None) -> int:
                                 "compile-resident-state",
                                 "compile-heap",
                                 "compile-font",
+                                "compile-stream",
                                 "compile-input",
                                 "compile-clock",
                                 "compile-crt",
@@ -1796,6 +1880,10 @@ def main(argv: list[str] | None = None) -> int:
             if args.command == "compile-font":
                 validate_launcher_objects(output, objects)
                 validate_heap_adapter(output)
+            if args.command == "compile-stream":
+                validate_launcher_objects(output, objects)
+                validate_dos_file_adapter(output)
+                validate_runtime_file_adapter(output)
             if not args.compiler:
                 parser.error("set GATEWAY_MSC51_DIR or pass --compiler /path/to/installed/MSC51")
             compiler = validate_compiler(Path(args.compiler))
@@ -1809,6 +1897,7 @@ def main(argv: list[str] | None = None) -> int:
                                  "compile-resident-state",
                                  "compile-heap",
                                  "compile-font",
+                                 "compile-stream",
                                  "compile-input",
                                  "compile-clock",
                                  "compile-crt",
@@ -1824,6 +1913,7 @@ def main(argv: list[str] | None = None) -> int:
                  "RESST.BAT" if args.command == "compile-resident-state" else
                  "HEAP.BAT" if args.command == "compile-heap" else
                  "FONT.BAT" if args.command == "compile-font" else
+                 "STREAM.BAT" if args.command == "compile-stream" else
                  "INPUT.BAT" if args.command == "compile-input" else
                  "CLOCK.BAT" if args.command == "compile-clock" else
                  "CRT.BAT" if args.command == "compile-crt" else
@@ -1892,6 +1982,9 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "compile-font":
         remove_font_outputs(output)
         command.append("--exit")
+    elif args.command == "compile-stream":
+        remove_stream_outputs(output)
+        command.append("--exit")
     elif args.command == "compile-input":
         remove_input_outputs(output)
         remove_launcher_link_outputs(output)
@@ -1944,6 +2037,8 @@ def main(argv: list[str] | None = None) -> int:
             print_heap_diagnostics(output)
         elif args.command == "compile-font":
             print_font_diagnostics(output)
+        elif args.command == "compile-stream":
+            print_stream_diagnostics(output)
         elif args.command == "compile-input":
             print_input_diagnostics(output)
         elif args.command == "compile-clock":
@@ -2096,6 +2191,18 @@ def main(argv: list[str] | None = None) -> int:
         print("Microsoft C 5.1 executed the original recovered font-cache cleanup "
               "from the launcher object with real DOS heap ownership; "
               "font-selection dependencies were fail-closed probe stubs.")
+        return 0
+    if args.command == "compile-stream":
+        try:
+            validate_stream_probe(output)
+        except ValueError as error:
+            print(f"Microsoft C did not verify the original stream quiet close: {error}",
+                  file=sys.stderr)
+            print_stream_diagnostics(output)
+            return 1
+        print("Microsoft C 5.1 executed the original recovered first Ctrl-Break "
+              "quiet-stream cleanup from the launcher object with real DOS memory; "
+              "active buffered streams remain unsupported.")
         return 0
     if args.command == "compile-input":
         try:

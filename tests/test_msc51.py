@@ -1096,6 +1096,33 @@ class MSC51Tests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "not passed"):
                 msc51.validate_font_probe(output)
 
+    def test_stream_probe_links_recovered_file_wrapper_and_rejects_stale_results(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            output = Path(scratch)
+            msc51.stage_launcher(output)
+            wrapper = msc51.launcher_source_alias(output, "gate_rtl_file.c")
+            stream_batch = (output / "STREAM.BAT").read_text()
+            self.assertIn(f"CL /AL /Od /c {wrapper}", stream_batch)
+            self.assertIn("CL /AL /Od /c STRBRDG.C", stream_batch)
+            self.assertIn(f"STRCHK.C {wrapper.replace('.C', '.OBJ')} "
+                          "STRBRDG.OBJ RTFILE.OBJ DOSFILE.OBJ MEMORY.OBJ", stream_batch)
+            self.assertIn("STRCHK.EXE > STRTEST.LOG", stream_batch)
+            self.assertIn("GATE_DS_CONTROL_STREAM_AUX",
+                          (output / "STRCHK.C").read_text())
+            with self.assertRaisesRegex(ValueError, "not passed"):
+                msc51.validate_stream_probe(output)
+            for name in ("STRCHK.EXE", "STRSTART.LOG", "STROK.LOG"):
+                (output / name).write_text("built\n")
+            (output / "STRTEST.LOG").write_text("Original stream quiet-close DOS probe: PASS\n")
+            (output / "STRSIG.LOG").write_text(msc51.stream_source_signature(output))
+            msc51.validate_stream_probe(output)
+            (output / wrapper).write_text((output / wrapper).read_text() + "/* changed */\n")
+            with self.assertRaisesRegex(ValueError, "source changed"):
+                msc51.validate_stream_probe(output)
+            msc51.remove_stream_outputs(output)
+            with self.assertRaisesRegex(ValueError, "not passed"):
+                msc51.validate_stream_probe(output)
+
     def test_c89_compatibility_transformations_preserve_large_constants(self):
         staged = msc51.msc51_enums_to_macros("enum { ONE = 1, SPACE = 0xfffff, FLAG = (1ul << 31) };")
         self.assertIn("#define SPACE (0xfffff)", staged)

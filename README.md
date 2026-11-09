@@ -236,6 +236,7 @@ nix run -L .#msc51-compile-runtime-files       # compile/probe FAR strings, reso
 nix run -L .#msc51-compile-resident-state       # compile/probe resident video mode and drawing DS words
 nix run -L .#msc51-compile-heap                 # DOS heap for font/VFX, including buffers >64KiB
 nix run -L .#msc51-compile-font                 # original font-cache teardown in the actual launcher M13.OBJ
+nix run -L .#msc51-compile-stream               # first Ctrl-Break quiet-stream cleanup in the actual launcher M11.OBJ
 nix run -L .#msc51-compile-input                # BIOS keyboard and mouse services, buffered key state
 nix run -L .#msc51-compile-clock                # real DOS wall-clock and delay services
 nix run -L .#msc51-compile-crt                  # Microsoft C 5.1 FAR getenv() and atol()
@@ -693,6 +694,15 @@ replaced in the actual launcher.
 The predicted unresolved count falls further to **37** if all pending
 adapters compile and link successfully.
 
+`msc51-compile-stream` recompiles the recovered resource/stream wrapper
+`M11.OBJ` and tests its first Ctrl-Break FAR callee (`GATE.RTL:15706`).
+The real DOS `STRCHK.EXE` verifies already-closed state, quiet descriptor
+close and bypass-flag close, including a descriptor crossing the 16-bit
+offset boundary. The nested CRT close only bypasses actual file I/O in
+those cases; active buffered streams intentionally abort until the flush
+and file-close branch is recovered. `STRSIG.LOG` ties the PASS witness to
+the staged launcher object and DOS adapters.
+
 `msc51-compile-input` adds five BIOS-backed keyboard/mouse and animation
 input boundaries.
 The keyboard status uses INT 16h/AH=01h plus the recovered linked-DS
@@ -739,6 +749,7 @@ nix run -L .#msc51-compile-runtime-files
 nix run -L .#msc51-compile-resident-state
 nix run -L .#msc51-compile-heap
 nix run -L .#msc51-compile-font
+nix run -L .#msc51-compile-stream
 nix run -L .#msc51-compile-input
 nix run -L .#msc51-compile-clock
 nix run -L .#msc51-compile-crt

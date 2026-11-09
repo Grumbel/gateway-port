@@ -2,6 +2,38 @@
 /* SPDX-License-Identifier: LicenseRef-Gateway-Derived */
 
 #include "gate_rtl_file.h"
+#include <stdlib.h>
+
+/* First Ctrl-Break FAR callee, RTL:15706..15729, linked 221b:021f.
+ * DS:156e/1570 hold a signed open flag and companion word; DS:6150/6152
+ * hold the stream descriptor FAR pointer (a distinct relocation group).
+ * The nested RTL:6640 close clears descriptor byte +0a without any DOS/CRT
+ * operations if (flags & 83h) == 0 or (flags & 40h) != 0. Only those two
+ * original quiet exits are supported here. An active stream would enter
+ * RTL:6eb8's buffered flush and a much larger DOS CRT close path; refusing
+ * it prevents a silently missing flush or leaked file descriptor. */
+void gate_linked_shutdown_intro_stream(void)
+{
+    GateFarPtr stream;
+    uint8_t flags;
+    if ((int16_t)gate_ds_word(GATE_DS_CONTROL_STREAM_OPEN) < 0)
+        return;
+
+    stream.offset = gate_ds_word(GATE_DS_CONTROL_STREAM_OFFSET);
+    stream.segment = gate_ds_word(GATE_DS_CONTROL_STREAM_SEGMENT);
+    if (stream.segment == 0)
+        abort();
+    flags = gate_far_byte(stream.segment,
+                          (uint16_t)(stream.offset + GATE_CONTROL_STREAM_FLAGS_OFFSET));
+    if ((flags & GATE_CONTROL_STREAM_ACTIVE_MASK) != 0 &&
+        (flags & GATE_CONTROL_STREAM_BYPASS_BIT) == 0)
+        abort();
+
+    gate_far_set_byte(stream.segment,
+                      (uint16_t)(stream.offset + GATE_CONTROL_STREAM_FLAGS_OFFSET), 0);
+    gate_ds_set_word(GATE_DS_CONTROL_STREAM_OPEN, 0xffffu);
+    gate_ds_set_word(GATE_DS_CONTROL_STREAM_AUX, 0);
+}
 
 /* GATE.RTL:0xe4ff..0xe510, 0c33:000e.  Keep the source's order of both
  * DS global writes.  The matching original caller may set this base once. */

@@ -1694,9 +1694,38 @@ probe-only exports, not implementations for the launcher. Native font-cache
 and staging regression tests also pass.
 
 This is **one original Ctrl-Break callee**, not an implementation of
-`_gate_linked_handle_control_key`. The first file/stream cleanup callee,
-the handler's remaining branches and actual DOS entry `_main` still need
-reconstruction. Do not count `FONTCHK.EXE` as a playable Gateway intro.
+`_gate_linked_handle_control_key`. The first file/stream cleanup's active
+branches, the handler's remaining branches and actual DOS entry `_main`
+still need reconstruction. Do not count `FONTCHK.EXE` as a playable intro.
+
+### First Ctrl-Break FAR callee: verified quiet stream close
+
+The original handler first invokes `GATE.RTL:15706..15729` (runtime
+`221b:021f`). Its independently matched relocated instructions test the
+signed stream-open flag at linked `DS:156e`, returning immediately when
+negative. Otherwise they push the stream descriptor pointer at linked
+`DS:6150/6152` and call `RTL:6640`. On return they write `ffffh` to
+`DS:156e` and zero the companion word at `DS:1570`.
+
+The nested stream-close routine checks descriptor byte `+0ah` against
+`83h`, and has a second bypass test against `40h`. Either `(flags & 83h)
+== 0` or `(flags & 40h) != 0` reaches `RTL:6716`, which zeroes that byte
+without issuing file I/O. For other descriptor flags it invokes more
+CRT buffering and DOS file-close machinery; those states have **not**
+been reconstructed. The recovered `gate_linked_shutdown_intro_stream`
+therefore implements exactly the two quiet branches plus the already-
+closed early exit, and aborts rather than silently skipping active flushes.
+
+The new `msc51-compile-stream` compiles that source into the actual
+recovered launcher `M11.OBJ` under Microsoft C 5.1 `/AL /Od`, links it
+with real DOS file, runtime-string and memory adapters, and executes
+`STRCHK.EXE` under headless DOSBox Staging. Its DOS-memory fixture checks
+already-closed state, both quiet descriptor masks, 16-bit FAR-offset
+wraparound, and both original DS state writes. The observed
+`STRTEST.LOG` witness is `Original stream quiet-close DOS probe: PASS`;
+`STRSIG.LOG` rejects stale results after source changes. Native tests
+add fail-closed active-buffer coverage. This still does not reconstruct
+the outer `_gate_linked_handle_control_key` or the executable `_main`.
 
 Three additional diagnostic callees now have strong original entry
 boundaries, not merely byte-window guesses:
@@ -1738,7 +1767,7 @@ reads a device descriptor and dispatches at least
 two numbered requests; `rtl:621e` performs multiple near calls; `rtl:f827`
 branches on a resident mode selector; `rtl:8aca` initializes a FAR buffer
 descriptor and passes it to another formatter. Actual DOS side effects,
-the downstream behavior of the now source-matched `221b:021f` branch, and
+the active buffered-close behavior of the now source-matched `221b:021f` branch, and
 the remaining diagnostic input-polling behavior have yet to be established. None of these
 observations justifies replacing
 the Ctrl-Break or diagnostic routines with a stub.
@@ -1801,6 +1830,7 @@ nix run -L .#msc51-compile-picture-dcl
 nix run -L .#msc51-compile-resident-state
 nix run -L .#msc51-compile-heap
 nix run -L .#msc51-compile-font
+nix run -L .#msc51-compile-stream
 nix run -L .#msc51-compile-input
 nix run -L .#msc51-compile-clock
 nix run -L .#msc51-compile-crt

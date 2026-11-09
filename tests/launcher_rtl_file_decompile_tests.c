@@ -7,8 +7,15 @@
 #include <setjmp.h>
 #include <stdio.h>
 #include <string.h>
+#ifndef _WIN32
+#include <signal.h>
+#include <sys/resource.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 
 static uint16_t ds_words[0x10000];
+static uint8_t stream_bytes[0x10000];
 static void *stack_address;
 static int stack_calls;
 static int formatter_calls;
@@ -43,6 +50,16 @@ static uint16_t write_zero_element_size(void)
 
 uint16_t gate_ds_word(uint16_t offset) { return ds_words[offset]; }
 void gate_ds_set_word(uint16_t offset, uint16_t value) { ds_words[offset] = value; }
+uint8_t gate_far_byte(uint16_t segment, uint16_t offset)
+{
+    assert(segment == 0x9876u);
+    return stream_bytes[offset];
+}
+void gate_far_set_byte(uint16_t segment, uint16_t offset, uint8_t value)
+{
+    assert(segment == 0x9876u);
+    stream_bytes[offset] = value;
+}
 uint16_t gate_ds_segment(void) { return 0x4567; }
 GateFarPtr gate_stack_pointer(void *pointer)
 {
@@ -215,11 +232,67 @@ static void test_writes_and_close(void)
     assert(stack_calls >= 6);
 }
 
+static void test_first_ctrl_break_stream_cleanup_quiet_branches(void)
+{
+    uint16_t offset = 0xfffdu; /* descriptor +0ah wraps to 0007h */
+    uint16_t flag_offset = (uint16_t)(offset + GATE_CONTROL_STREAM_FLAGS_OFFSET);
+    int prior_closes = close_calls;
+    int prior_writes = write_calls;
+
+    /* A negative signed flag takes RTL:1570b directly to RETF, without
+     * even loading the stream descriptor. */
+    ds_words[GATE_DS_CONTROL_STREAM_OPEN] = 0xffffu;
+    ds_words[GATE_DS_CONTROL_STREAM_AUX] = 0xbeefu;
+    ds_words[GATE_DS_CONTROL_STREAM_SEGMENT] = 0;
+    gate_linked_shutdown_intro_stream();
+    assert(ds_words[GATE_DS_CONTROL_STREAM_OPEN] == 0xffffu);
+    assert(ds_words[GATE_DS_CONTROL_STREAM_AUX] == 0xbeefu);
+
+    ds_words[GATE_DS_CONTROL_STREAM_SEGMENT] = 0x9876u;
+    ds_words[GATE_DS_CONTROL_STREAM_OFFSET] = offset;
+    ds_words[GATE_DS_CONTROL_STREAM_OPEN] = 0u;
+    stream_bytes[flag_offset] = 0x04u; /* flags & 83h == 0 */
+    gate_linked_shutdown_intro_stream();
+    assert(stream_bytes[flag_offset] == 0u);
+    assert(ds_words[GATE_DS_CONTROL_STREAM_OPEN] == 0xffffu);
+    assert(ds_words[GATE_DS_CONTROL_STREAM_AUX] == 0u);
+
+    ds_words[GATE_DS_CONTROL_STREAM_OPEN] = 0x7fffu;
+    ds_words[GATE_DS_CONTROL_STREAM_AUX] = 0xabceu;
+    stream_bytes[flag_offset] = 0xc3u; /* 40h bit bypasses active close */
+    gate_linked_shutdown_intro_stream();
+    assert(stream_bytes[flag_offset] == 0u);
+    assert(ds_words[GATE_DS_CONTROL_STREAM_OPEN] == 0xffffu);
+    assert(ds_words[GATE_DS_CONTROL_STREAM_AUX] == 0u);
+    assert(close_calls == prior_closes && write_calls == prior_writes);
+
+#ifndef _WIN32
+    /* The busy descriptor would enter original CRT flushing and writing.
+     * Never claim that the quiet-path wrapper handled it. */
+    ds_words[GATE_DS_CONTROL_STREAM_OPEN] = 0u;
+    stream_bytes[flag_offset] = 0x81u;
+    {
+        pid_t child = fork();
+        int status = 0;
+        assert(child >= 0);
+        if (child == 0) {
+            struct rlimit limit = {0, 0};
+            (void)setrlimit(RLIMIT_CORE, &limit);
+            gate_linked_shutdown_intro_stream();
+            _exit(0);
+        }
+        assert(waitpid(child, &status, 0) == child);
+        assert(WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT);
+    }
+#endif
+}
+
 int main(void)
 {
     test_base_and_path();
     test_reads();
     test_writes_and_close();
+    test_first_ctrl_break_stream_cleanup_quiet_branches();
     puts("intro RTL file wrappers: ok");
     return 0;
 }

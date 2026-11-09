@@ -45,6 +45,12 @@ enum {
     GATE_DS_VFX_STATE_FLAGS = 0x13d2,
     GATE_DS_RESOURCE_SCALARS_BASE = 0x1416,
 
+    /* Ctrl-Break's first FAR cleanup, RTL:15706..15729. The two flag
+     * words share a +1558h original-image relocation; the descriptor
+     * pointer words have their own +614eh relocation. */
+    GATE_DS_CONTROL_STREAM_OPEN = 0x156e,
+    GATE_DS_CONTROL_STREAM_AUX = 0x1570,
+
     GATE_DS_RENDERER_MODE = 0x15cc,
     GATE_DS_RENDERER_ENABLED = 0x15ce,
     GATE_DS_RENDERER_STATUS = 0x15d0,
@@ -157,6 +163,8 @@ enum {
      * these two live DS addresses in the 22-second snapshot. */
     GATE_DS_CONTROL_VFX_IMAGE_FIRST = 0x555c,
     GATE_DS_CONTROL_VFX_IMAGE_SECOND = 0x55dc,
+    GATE_DS_CONTROL_STREAM_OFFSET = 0x6150,
+    GATE_DS_CONTROL_STREAM_SEGMENT = 0x6152,
     GATE_DS_TIMEZONE_INITIALIZED = 0x6470,
 };
 

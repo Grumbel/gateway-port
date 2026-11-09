@@ -19,6 +19,11 @@ enum {
     GATE_DOS_FILE_CREATE_FLAG = 0x80,
     GATE_RESOURCE_FILE_BYTE_READ_FAILURE = 0xffff,
     GATE_DOS_FILE_SEEK_FAILURE = 0xffff,
+    /* Original RTL:6640 tests these flags at FAR descriptor byte +0ah.
+     * The two early exits do not touch a DOS descriptor or file. */
+    GATE_CONTROL_STREAM_FLAGS_OFFSET = 0x0a,
+    GATE_CONTROL_STREAM_ACTIVE_MASK = 0x83,
+    GATE_CONTROL_STREAM_BYPASS_BIT = 0x40,
 };
 
 /* Source identities are ORIGINAL GATE.RTL file offsets.  These functions
@@ -39,6 +44,10 @@ uint16_t gate_rtl_write_resource_bytes(uint16_t handle, GateFarPtr source, uint1
 uint16_t gate_rtl_write_resource_elements(uint16_t handle, GateFarPtr source,
                        uint16_t element_size, uint16_t count);
 void gate_rtl_close_resource_file(uint16_t handle);
+
+/* First Ctrl-Break FAR callee RTL:15706. Currently verified for already
+ * closed/inactive stream descriptors; active CRT flush/close aborts. */
+void gate_linked_shutdown_intro_stream(void);
 
 /* The original low-level runtime/DOS calls retain their FAR identities.
  * Their complete implementations and ABI have not been recovered yet. */
