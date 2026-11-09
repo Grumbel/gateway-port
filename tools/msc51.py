@@ -1115,7 +1115,7 @@ def validate_static_data_probe(output: Path, *, require_original: bool = False) 
             raise ValueError("DOS source-C intro video layout verification is missing or failed.")
         live = locate_case_insensitive(output, "BVIDREAL.LOG")
         if live is None or re.search(
-                r"^DOS intro live VGA probe: PASS \(RTL:f14d \+ resident 2409 mode 13; A000 pixel; prior BIOS mode restored\)\s*$",
+                r"^DOS intro live VGA probe: PASS \(RTL:f14d \+ resident 2409 mode 13; A000 pixel, clear and rectangle; prior BIOS mode restored\)\s*$",
                 live.read_text(), re.MULTILINE) is None:
             raise ValueError("DOS source-C and resident VGA mode/restore verification is missing or failed.")
 
@@ -1884,8 +1884,9 @@ def main(argv: list[str] | None = None) -> int:
                  "writes, the RTL no-music initializer return, the RTL "
                  "invalid-video-mode guard and mode-3 descriptor setup "
                  "with simulated BIOS callbacks; BOOTVGA.EXE exercised "
-                 "the real reconstructed resident mode-13 switch, pixel "
-                 "write and prior-BIOS-mode restoration without entering "
+                 "the real reconstructed resident mode-13 switch, A000 "
+                 "pixel, full display clear, rectangle drawing and "
+                 "prior-BIOS-mode restoration without entering "
                  "original resident code or installing IRQs"
                  if original_game_dir is not None
                  else "; BOOT.OBJ was built but its original-file probes were not run")

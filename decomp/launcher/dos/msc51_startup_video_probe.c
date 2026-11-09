@@ -25,6 +25,11 @@ void gate_exe_prepare_intro_globals(void);
 uint16_t gate_rtl_set_video_mode(int16_t requested_mode);
 uint16_t gate_rtl_mode_start(uint16_t enabled);
 void gate_rtl_plot_pixel(uint16_t color, uint16_t y, uint16_t x);
+uint16_t gate_linked_clear_resident_display(uint16_t page, uint16_t color);
+void gate_rtl_background_setup(uint16_t pattern, uint16_t color,
+                               uint16_t transparent);
+void gate_rtl_background_rect(uint16_t style, uint16_t bottom,
+                              uint16_t right, uint16_t top, uint16_t left);
 
 /* RTL:f473 is reached only by the 16-color VGA palette branch, never
  * by the mode-3 path under test. M23.OBJ nevertheless references the
@@ -129,6 +134,33 @@ int main(void)
             good = 0;
     }
 
+    if (good) {
+        /* The first intro scene clears its display and draws rectangles.
+         * Exercise these already reconstructed resident services against
+         * the SAME relocated original mode descriptor, not a test-only
+         * descriptor or hand-filled A000 image. Check both the final row
+         * and the pixels surrounding the bounded solid rectangle. */
+        if (gate_linked_clear_resident_display(0u, 0x17u) != 0u ||
+            gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT, 0u) != 0x17u ||
+            gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                          (uint16_t)(4u * 320u + 9u)) != 0x17u ||
+            gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT, 63999u) != 0x17u)
+            good = 0;
+    }
+    if (good) {
+        gate_rtl_background_setup(0u, 0x2cu, 0u);
+        gate_rtl_background_rect(2u, 5u, 11u, 4u, 9u);
+        if (gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                          (uint16_t)(4u * 320u + 9u)) != 0x2cu ||
+            gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                          (uint16_t)(5u * 320u + 11u)) != 0x2cu ||
+            gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                          (uint16_t)(4u * 320u + 8u)) != 0x17u ||
+            gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                          (uint16_t)(6u * 320u + 9u)) != 0x17u)
+            good = 0;
+    }
+
     /* The original disabled path explicitly switches to text mode 3.
      * Finally restore the exact pre-probe mode, even if it was not 3. */
     if (good && (gate_rtl_mode_start(0u) != 0u ||
@@ -144,9 +176,9 @@ int main(void)
         good = 0;
 
     if (!good) {
-        puts("DOS intro live VGA probe: FAIL mode 13, pixel or text restore");
+        puts("DOS intro live VGA probe: FAIL mode 13, pixel, clear, rectangle or text restore");
         return 1;
     }
-    puts("DOS intro live VGA probe: PASS (RTL:f14d + resident 2409 mode 13; A000 pixel; prior BIOS mode restored)");
+    puts("DOS intro live VGA probe: PASS (RTL:f14d + resident 2409 mode 13; A000 pixel, clear and rectangle; prior BIOS mode restored)");
     return 0;
 }

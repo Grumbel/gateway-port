@@ -330,9 +330,10 @@ class MSC51Tests(unittest.TestCase):
             env["TEST_VIDEO_ONLY"] = "1"
             result = subprocess.run([str(executable)], env=env, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("RTL:f14d + resident 2409 mode 13; A000 pixel; prior BIOS mode restored",
+            self.assertIn("RTL:f14d + resident 2409 mode 13; A000 pixel, clear and rectangle; prior BIOS mode restored",
                           result.stdout)
-            for rejected_var in ("TEST_VIDEO_BAD_PIXEL", "TEST_VIDEO_NOT_VGA",
+            for rejected_var in ("TEST_VIDEO_BAD_PIXEL", "TEST_VIDEO_BAD_CLEAR",
+                                 "TEST_VIDEO_BAD_RECTANGLE", "TEST_VIDEO_NOT_VGA",
                                  "TEST_VIDEO_FAIL_RESTORE"):
                 with self.subTest(rejected_var=rejected_var):
                     rejected_env = env.copy()
@@ -472,7 +473,7 @@ class MSC51Tests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "resident VGA mode/restore verification"):
                 msc51.validate_static_data_probe(output, require_original=True)
             (output / "BVIDREAL.LOG").write_text(
-                "DOS intro live VGA probe: PASS (RTL:f14d + resident 2409 mode 13; A000 pixel; prior BIOS mode restored)\n")
+                "DOS intro live VGA probe: PASS (RTL:f14d + resident 2409 mode 13; A000 pixel, clear and rectangle; prior BIOS mode restored)\n")
             msc51.validate_static_data_probe(output, require_original=True)
             (output / "DATA.C").write_text((output / "DATA.C").read_text() + "/* stale */\n")
             with self.assertRaisesRegex(ValueError, "source changed"):

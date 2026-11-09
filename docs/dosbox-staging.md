@@ -114,9 +114,10 @@ input, clock, CRT) passed with the historical compiler. The original-game
 `DATREAL.LOG` verified the 15,616-byte resident CRC32 `F332BF93` and
 19,690-byte prepared-data CRC32 `5A991491`; owner, entry-prologue, audio,
 video guard/layout and **live mode-13 VGA** probes also passed. In particular,
-`BVIDREAL.LOG` confirmed an A000 pixel write and prior BIOS video mode
-restoration. None of the probes executes original resident code or installs
-IRQs. A fresh Microsoft LINK 3.65 launcher diagnostic still reports exactly
+`BVIDREAL.LOG` confirmed an A000 pixel write, full mode-13 framebuffer
+clear, opaque rectangle with unchanged surrounding pixels, and prior BIOS
+video mode restoration. None of the probes executes original resident code
+or installs IRQs. A fresh Microsoft LINK 3.65 launcher diagnostic still reports exactly
 two missing symbols, `_main` and `_gate_linked_handle_control_key`, confirmed
 by a 42/42-input OMF audit; the full game remains unlinked.
 
@@ -130,7 +131,7 @@ by a 42/42-input OMF audit; the full game remains unlinked.
 | Source-only Microsoft C staging and FAT-floppy tests with local mtools | PASS; no mtools skip |
 | Full Python test discovery, including the real DOSBox smoke | 134/134 passed, no skips |
 | Decompilation tracker | `tracker ok: 1798 routines` |
-| `BOOTPREP.EXE`, `BOOTVGA.EXE` with actual Microsoft C 5.1/DOSBox | PASS; relocated startup data, original-derived mode-3 layout, live mode-13 pixel and BIOS restoration |
+| `BOOTPREP.EXE`, `BOOTVGA.EXE` with actual Microsoft C 5.1/DOSBox | PASS; relocated startup data, original-derived mode-3 layout, live mode-13 pixel, clear, rectangle and BIOS restoration |
 | Full launcher LINK using the real compiler and linker | 42/42 objects parse; blocked by exactly `_main` and `_gate_linked_handle_control_key` |
 
 The original `GATE.EXE` mode transition is proof of a running DOS executable,

@@ -249,7 +249,7 @@ and leaves the adapter and SVGA status words alone. A strict success line
 and synthetic C89 host fixture reject a preinitialized mode, mismatched
 selector and a video-state write by the audio initializer.
 
-**Next graphics state branch (DOS run pending).** `BOOTPREP.EXE` now calls
+**Next graphics state branch (DOS verified).** `BOOTPREP.EXE` now calls
 `gate_rtl_set_video_mode(3)` on the same loaded original EXE/RTL data. It
 performs the original adapter capability query (INT 10h AX=1a00, read-only),
 then records and checks the intended BIOS mode and video start requests
@@ -258,12 +258,12 @@ instead of actually switching modes. The original mode-3 data tables (at
 319×199 inclusive coordinates, 40-byte stride and 25-line grouping. The
 source-C setup should write the corresponding 320×200 descriptors to the
 allocated **lower** segment, not the shifted data segment, with 8 rows,
-4 half-rows and 255 max pen color. The real hardware implementation and
+4 half-rows and 255 max pen color. Complete hardware initialization and
 startup `_main` remain unimplemented; this isolated step does not draw,
 install IRQs, prove a call to `gate_exe_play_intro`, or make the launcher
 playable.
 
-**Live VGA integration (DOS run pending).** `DATA.BAT` additionally builds a
+**Live VGA integration (DOS verified).** `DATA.BAT` additionally builds a
 *different* original-file probe, `BOOTVGA.EXE`, from the same source-C mode
 setter and the existing reconstructed `RESSTATE.OBJ`. This one intentionally
 invokes the real resident mode selector (`2409:0008`) and video start
@@ -278,18 +278,22 @@ ordinary failures leave the DOSBox console usable. This probe contains no
 original resident code or playable `_main`, does not call IRQ/music setup,
 and is not a substitute for linking the resident bank loader. Its separate
 `BVIDREAL.LOG` must have the exact
-`DOS intro live VGA probe: PASS (RTL:f14d + resident 2409 mode 13; A000 pixel; prior BIOS mode restored)`
-witness. The C89 host test verifies success plus bad-pixel, rejected-adapter
-and failed-restore cases with synthetic BIOS callbacks. No Microsoft C 5.1
-or DOSBox binaries are installed here; actual guest execution is pending.
+`DOS intro live VGA probe: PASS (RTL:f14d + resident 2409 mode 13; A000 pixel, clear and rectangle; prior BIOS mode restored)`
+witness. The new original-data-integrated check also exercises the reconstructed
+resident full-frame clear (first, previously written, and final A000 pixels)
+and an opaque style-2 rectangle (opposite corners and unchanged neighbors).
+The host fixture rejects deliberately incorrect pixel, clear, rectangle,
+adapter and restore results. The full Microsoft C 5.1/DOSBox probe passed
+locally on 2026-11-09, using the original images mounted read-only. These
+calls do not constitute playable intro execution.
 The first user-side `BOOTVGA.EXE` link failed with one missing public:
 `_gate_rtl_wait_vertical_retrace` referenced by the original-derived
 `M23.OBJ`. The source-C mode 3 cannot enter that palette branch, but
 MS LINK still requires its symbol. `BOOTVGA.C` now implements an explicit
 unreachable-branch guard that calls `exit(87)` rather than `abort()`, so
 the video-restoration `atexit` handler gets control if the guard is ever
-reached. The host fixture no longer hides this missing definition; a new
-real Microsoft LINK run is required to confirm the closure.
+reached. The host fixture no longer hides this missing definition; the
+subsequent real Microsoft LINK and `BOOTVGA.EXE` runs confirmed closure.
 
 **Microsoft C 5.1 identifier compatibility:** The user's first real
 `DATA.BAT` run failed at `DATA.C` compilation, not during the probe:
