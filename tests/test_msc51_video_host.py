@@ -53,6 +53,13 @@ void gate_ds_set_word(uint16_t offset, uint16_t value);
 """)
             (scratch / "conio.h").write_text("int inp(unsigned int port);\nint outp(unsigned int port, int value);\n")
             (scratch / "dos.h").write_text("""
+/* Host-only compatibility declarations: the real Microsoft C 5.1
+ * interrupt FAR pointer is exercised by HWCHK.EXE in DOSBox, not here. */
+#define interrupt
+#define far
+#define FP_SEG(pointer) (((unsigned short *)&(pointer))[1])
+#define FP_OFF(pointer) (((unsigned short *)&(pointer))[0])
+void _dos_setvect(unsigned int number, void (*handler)(void));
 union REGS {
     struct { unsigned short ax, bx, cx, dx; } x;
     struct { unsigned char al, ah, bl, bh, cl, ch, dl, dh; } h;
@@ -74,6 +81,12 @@ static unsigned char bios_display_combination = 1u;
 static unsigned char bios_svga_signature = 0u;
 static unsigned char bank_port = 0x12u, crtc_index = 0x21u, crtc_33 = 0x83u;
 static unsigned char bank_writable = 0u, crtc_writable = 0u;
+
+void _dos_setvect(unsigned int number, void (*handler)(void))
+{
+    (void)number;
+    (void)handler;
+}
 
 uint16_t gate_ds_segment(void) { return 0x4000u; }
 

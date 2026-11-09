@@ -30,6 +30,7 @@ GateFarPtr gate_linked_transform_picture_palette_rgb(GateFarPtr source);
 GateFarPtr gate_linked_transform_picture_palette_indexed(GateFarPtr source);
 void gate_linked_initialize_intro_services(void);
 void gate_linked_shutdown_audio(void);
+void gate_linked_dos_setvect(uint16_t vector, GateFarPtr target);
 
 static int check(uint16_t actual, uint16_t expected, const char *label)
 {
@@ -53,6 +54,36 @@ int main(void)
     uint16_t i;
     unsigned int rtl_segment = 0;
     int valid = 1;
+    int vectors_ok = 1;
+    GateFarPtr original_vector, replacement_vector;
+    void (interrupt far *dos_vector)(void);
+
+    /* The original RTL:9288 helper uses DOS INT 21h/AH=25h. Test its
+     * FAR-pointer layout and low-byte vector index without executing the
+     * handler. INT 60h is a private software-vector slot under DOSBox;
+     * always put back the previous entry, even after a failed comparison.
+     * Borrow the already installed INT 1Ch callback as a valid target. */
+    dos_vector = _dos_getvect(0x60u);
+    original_vector.segment = (uint16_t)FP_SEG(dos_vector);
+    original_vector.offset = (uint16_t)FP_OFF(dos_vector);
+    dos_vector = _dos_getvect(0x1cu);
+    replacement_vector.segment = (uint16_t)FP_SEG(dos_vector);
+    replacement_vector.offset = (uint16_t)FP_OFF(dos_vector);
+    gate_linked_dos_setvect(0x0160u, replacement_vector);
+    dos_vector = _dos_getvect(0x60u);
+    vectors_ok &= check((uint16_t)FP_SEG(dos_vector),
+                        replacement_vector.segment, "DOS vector set segment");
+    vectors_ok &= check((uint16_t)FP_OFF(dos_vector),
+                        replacement_vector.offset, "DOS vector set offset");
+    gate_linked_dos_setvect(0x60u, original_vector);
+    dos_vector = _dos_getvect(0x60u);
+    vectors_ok &= check((uint16_t)FP_SEG(dos_vector),
+                        original_vector.segment, "DOS vector restore segment");
+    vectors_ok &= check((uint16_t)FP_OFF(dos_vector),
+                        original_vector.offset, "DOS vector restore offset");
+    if (vectors_ok)
+        puts("Hardware original DOS vector setter: PASS");
+    valid &= vectors_ok;
 
     if (_dos_allocmem(0x1000u, &segment) != 0) {
         puts("Hardware probe: DOS segment allocation failed");

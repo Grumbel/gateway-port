@@ -1127,6 +1127,16 @@ place of resident register-optimized drawing. Host and DOS probe fixtures
 check both modes; these are **not** proof of instruction-equivalent VFX
 behavior. One further projected symbol is removed, leaving **10**.
 
+The independent DOS `RTLHW.OBJ` now also exposes the verified original
+`RTL:9288` `_dos_setvect` boundary used by the fifth Ctrl-Break cleanup
+callee `RTL:11e5f`. `HWCHK.EXE` temporarily sets INT `60h` to a valid
+existing handler, validates its FAR vector including original low-byte
+vector-index behavior, and restores the previous handler. The mandatory
+source-signed witness is `Hardware original DOS vector setter: PASS`.
+The surrounding conditional INT `1ch` / unconditional `1bh` and `23h`
+restore sequence is documented but not linked: saved vector words may be
+uninitialized, and the parent has an unresolved additional FAR callee.
+
 The independent `msc51-compile-picture-dcl` stage now provides a bounded
 streaming version of the image decompression service from the tested native
 PKWARE DCL codec. `PICTDCL.OBJ` reads the original DOS resource handle,

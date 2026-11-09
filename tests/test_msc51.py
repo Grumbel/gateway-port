@@ -1318,7 +1318,9 @@ class MSC51Tests(unittest.TestCase):
             (output / "rtlhw.obj").write_bytes(b"DOS hardware")
             (output / "hwstart.log").write_text("tested")
             (output / "hwok.log").write_text("passed")
-            (output / "hwtest.log").write_text("Hardware Ctrl-Break silent audio: PASS")
+            (output / "hwtest.log").write_text(
+                "Hardware Ctrl-Break silent audio: PASS\n"
+                "Hardware original DOS vector setter: PASS")
             (output / "hwsig.log").write_text(msc51.hardware_source_signature(output))
             with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
                  mock.patch.object(msc51.subprocess, "run") as run, \
@@ -1690,7 +1692,8 @@ class MSC51Tests(unittest.TestCase):
                 (output / "RTLHW.OBJ").write_bytes(b"compiled")
                 (output / "HWOK.LOG").write_text("passed")
                 (output / "HWTEST.LOG").write_text(
-                    "Hardware Ctrl-Break silent audio: PASS\nHardware probe: PASS")
+                    "Hardware Ctrl-Break silent audio: PASS\n"
+                    "Hardware original DOS vector setter: PASS\nHardware probe: PASS")
                 (output / "HWSIG.LOG").write_text(msc51.hardware_source_signature(output))
                 return mock.Mock(returncode=0)
 
@@ -1702,6 +1705,11 @@ class MSC51Tests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "silent-audio shutdown"):
                 msc51.validate_hardware_adapter(output)
             (output / "HWTEST.LOG").write_text("Hardware Ctrl-Break silent audio: PASS")
+            with self.assertRaisesRegex(ValueError, "interrupt-vector setter"):
+                msc51.validate_hardware_adapter(output)
+            (output / "HWTEST.LOG").write_text(
+                "Hardware Ctrl-Break silent audio: PASS\n"
+                "Hardware original DOS vector setter: PASS")
 
             (output / "RTLHW.C").write_text((output / "RTLHW.C").read_text() + "/* changed */\n")
             with self.assertRaisesRegex(ValueError, "source has changed"):

@@ -45,6 +45,21 @@ void gate_linked_shutdown_audio(void)
     gate_ds_set_word(GATE_DS_MUSIC_STARTUP_FLAGS, (uint16_t)(flags & 0x0008u));
 }
 
+/* Microsoft C 5.1's original CRT helper GATE.RTL:9288..929c, linked at
+ * 12a5:3baa, takes (vector, FAR handler), sets AH=25h and calls INT 21h.
+ * Its AH assignment discards the high byte of the vector argument.
+ * RTL:11e5f uses it to restore INT 1Ch (conditionally), 1Bh and 23h
+ * during Ctrl-Break cleanup. This adapter supplies only that primitive:
+ * the caller still has to establish which saved vectors are initialized
+ * and must not restore uninitialized DS words as real interrupt targets. */
+void gate_linked_dos_setvect(uint16_t vector, GateFarPtr target)
+{
+    void (interrupt far *handler)(void);
+    FP_SEG(handler) = target.segment;
+    FP_OFF(handler) = target.offset;
+    _dos_setvect((unsigned int)(uint8_t)vector, handler);
+}
+
 /* The text-mode RTL bank's DS is NOT the EXE's relocated DS. The original
  * GATE.RTL:f8eb..fbf3 directly addresses offsets 0000, 0002, 0004, 0006,
  * 001a and 030e through its own DS. The eventual DOS launcher entry must

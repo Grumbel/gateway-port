@@ -1336,6 +1336,10 @@ def validate_hardware_adapter(output: Path) -> None:
             test_log.read_text(errors="replace"):
         raise ValueError("Cannot link launcher: RTL hardware silent-audio shutdown "
                          "was not verified. Run msc51-compile-hardware again.")
+    if "Hardware original DOS vector setter: PASS" not in \
+            test_log.read_text(errors="replace"):
+        raise ValueError("Cannot link launcher: original DOS interrupt-vector setter "
+                         "was not verified. Run msc51-compile-hardware again.")
 
 
 def remove_hardware_outputs(output: Path) -> None:

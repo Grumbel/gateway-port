@@ -1704,6 +1704,43 @@ This is **one original Ctrl-Break callee**, not an implementation of
 branches, the handler's remaining branches and actual DOS entry `_main`
 still need reconstruction. Do not count `FONTCHK.EXE` as a playable intro.
 
+**Fifth Ctrl-Break callee: DOS vector-restore service (2026-11-09,
+DOS verified primitive).** The original RTL `11e5f..11ec5` is linked at
+`1f10:035a` in the real 500ms conventional-memory capture. Its live
+disassembly checks the video-mode WORD through selector `DS:4dce` and
+restores saved INT `1ch` only when that mode word is nonzero. It then
+unconditionally restores saved INT `1bh` and `23h` handlers from FAR
+pointers at `DS:56ac/56ae` and `DS:568e/5690`, respectively. The
+conditional INT `1ch` FAR pointer is at `DS:56b0/56b2`. All three calls
+reach live `12a5:3baa`, mapped to original `GATE.RTL:9288..929c`.
+Its **21 bytes match the untouched RTL exactly**: argument at `[bp+6]`,
+`LDS DX,[bp+8]`, `MOV AH,25h`, `INT 21h`, then `XOR AX,AX` and FAR return.
+That is Microsoft C's `_dos_setvect`, including the original 8-bit vector
+selection: `MOV AH,25h` overwrites the argument's upper byte.
+
+`RTLHW.OBJ` now supplies `gate_linked_dos_setvect` using the real Microsoft
+C 5.1 `_dos_setvect` function and the lvalue `FP_SEG`/`FP_OFF` macros.
+`HWCHK.EXE` saves unused software vector INT `60h`, uses a current INT
+`1ch` FAR target to install it as INT `60h` (passing `0160h` to verify
+high-byte truncation), checks both FAR words, then **restores the original
+INT `60h` vector regardless of comparison success** and checks it. A
+fresh headless DOSBox Staging run of the genuine Microsoft C 5.1 object
+reported `Hardware original DOS vector setter: PASS`; the source-signed
+link gate now requires that witness separately from the silent-audio one.
+
+This implements **only the independently tested DOS service**. The next
+RTL call passes `ES:[005a]` from resource selector `DS:4dd6` to the
+separately recovered file close (`RTL:e68b`); a further branch when the
+fifth callee's argument is nonzero calls the **already implemented**
+resident video-mode enabler `2409:003e` with zero, resetting the BIOS to
+text mode 3 through `gate_rtl_mode_start(0)`. Its target entry is visible
+at physical `240ce` in the same 500ms capture; the disable branch sets
+`DS:15ce/15d0` to zero and executes INT `10h`/AH=`00h`, AL=`03h`.
+The original 500ms saved vector words were zero, so blindly invoking the
+parent cleanup before real startup would install null interrupt handlers.
+No combined fifth callee, outer Ctrl-Break handler or process termination
+is yet linked.
+
 ### First Ctrl-Break FAR callee: verified quiet stream close
 
 The original handler first invokes `GATE.RTL:15706..15729` (runtime
