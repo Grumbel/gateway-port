@@ -153,6 +153,27 @@ int main(void)
             good = 0;
     }
 
+    if (good) {
+        /* The planar clear writes all four A000 planes, unlike the
+         * byte-addressed mode-13 clear. BIOS pixel readback checks all
+         * corners including the bottom-right of the 480th scanline. */
+        if (gate_linked_clear_resident_display(0u, 0x03u) != 0u ||
+            bios_read_pixel(0u, 0u) != 0x03u ||
+            bios_read_pixel(9u, 4u) != 0x03u ||
+            bios_read_pixel(639u, 479u) != 0x03u)
+            good = 0;
+    }
+    if (good) {
+        gate_rtl_background_setup(0u, 0x0cu, 0u);
+        gate_rtl_background_rect(2u, 5u, 11u, 4u, 9u);
+        if (bios_read_pixel(9u, 4u) != 0x0cu ||
+            bios_read_pixel(11u, 5u) != 0x0cu ||
+            bios_read_pixel(8u, 4u) != 0x03u ||
+            bios_read_pixel(9u, 6u) != 0x03u ||
+            bios_read_pixel(639u, 479u) != 0x03u)
+            good = 0;
+    }
+
     /* The next test still exercises the genuine mode-13 resident path. */
     if (good && (gate_rtl_set_video_mode(3) != 1u ||
         gate_ds_word(GATE_DS_GRAPHICS_MODE) != 3u ||
@@ -218,6 +239,7 @@ int main(void)
         return 1;
     }
     puts("DOS intro live 16-color VGA: PASS (RTL:f14d mode 2; BIOS 12h, 639x479 descriptors, planar pixel 0a)");
+    puts("DOS intro live 16-color drawing: PASS (BIOS 12h full clear, rectangle and planar pixel readback)");
     puts("DOS intro live VGA probe: PASS (RTL:f14d + resident 2409 mode 13; A000 pixel, clear and rectangle; prior BIOS mode restored)");
     return 0;
 }

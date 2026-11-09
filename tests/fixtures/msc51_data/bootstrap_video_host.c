@@ -11,7 +11,9 @@
 #include <stdio.h>
 
 static uint8_t mock_video_mode = 3u;
-static uint8_t mock_planar_pixel;
+/* Mock the observable BIOS 12h framebuffer, not the real VGA plane layout.
+ * Only the DOS probe links the actual sequencer/graphics-controller writer. */
+static uint8_t mock_planar_pixels[640ul * 480ul];
 static unsigned mode_requests;
 static unsigned starts;
 static unsigned retrace_waits;
@@ -32,8 +34,8 @@ int int86(int interrupt_number, union REGS *in, union REGS *out)
     if (ax == 0x0f00u) {
         out->h.al = mock_video_mode;
     } else if (ax == 0x0d00u) {
-        require(mock_video_mode == 0x12u && in->x.cx == 9u && in->x.dx == 4u);
-        out->h.al = mock_planar_pixel;
+        require(mock_video_mode == 0x12u && in->x.cx < 640u && in->x.dx < 480u);
+        out->h.al = mock_planar_pixels[(uint32_t)in->x.dx * 640ul + in->x.cx];
     } else if ((ax & 0xff00u) == 0u) {
         if (getenv("TEST_VIDEO_FAIL_RESTORE") == 0 || (ax & 0xffu) != 3u)
             mock_video_mode = (uint8_t)ax;
@@ -74,8 +76,12 @@ uint16_t gate_rtl_mode_start(uint16_t enabled)
 void gate_rtl_plot_pixel(uint16_t color, uint16_t y, uint16_t x)
 {
     if (mock_video_mode == 0x12u) {
-        require(color == 0x0au && y == 4u && x == 9u);
-        mock_planar_pixel = getenv("TEST_VIDEO_BAD_PLANAR_PIXEL") != 0 ? 0x0bu : 0x0au;
+        require(x < 640u && y < 480u &&
+                ((color == 0x0au && x == 9u && y == 4u) ||
+                 (color == 0x0cu && x >= 9u && x <= 11u &&
+                  y >= 4u && y <= 5u)));
+        mock_planar_pixels[(uint32_t)y * 640ul + x] =
+            getenv("TEST_VIDEO_BAD_PLANAR_PIXEL") != 0 ? 0x0bu : (uint8_t)color;
         return;
     }
     require(color == 0x42u && y == 4u && x == 9u && mock_video_mode == 0x13u);
@@ -86,6 +92,14 @@ void gate_rtl_plot_pixel(uint16_t color, uint16_t y, uint16_t x)
 uint16_t gate_linked_clear_resident_display(uint16_t page, uint16_t color)
 {
     uint32_t offset;
+    if (mock_video_mode == 0x12u) {
+        require(page == 0u && color == 0x03u);
+        for (offset = 0ul; offset < 640ul * 480ul; ++offset)
+            mock_planar_pixels[offset] = 0x03u;
+        if (getenv("TEST_VIDEO_BAD_PLANAR_CLEAR") != 0)
+            mock_planar_pixels[640ul * 480ul - 1ul] = 0u;
+        return 0u;
+    }
     require(mock_video_mode == 0x13u && page == 0u && color == 0x17u);
     for (offset = 0ul; offset < 64000ul; ++offset)
         gate_far_set_byte(0xa000u, (uint16_t)offset, (uint8_t)color);
@@ -97,8 +111,9 @@ uint16_t gate_linked_clear_resident_display(uint16_t page, uint16_t color)
 void gate_rtl_background_setup(uint16_t pattern, uint16_t color,
                                uint16_t transparent)
 {
-    require(mock_video_mode == 0x13u && pattern == 0u &&
-            color == 0x2cu && transparent == 0u);
+    require((mock_video_mode == 0x12u && color == 0x0cu) ||
+            (mock_video_mode == 0x13u && color == 0x2cu));
+    require(pattern == 0u && transparent == 0u);
     gate_ds_set_word(GATE_DS_DRAW_FILL_PATTERN, pattern);
     gate_ds_set_word(GATE_DS_DRAW_FILL_COLOR, color);
     gate_ds_set_word(GATE_DS_DRAW_FILL_TRANSPARENT, transparent);
@@ -108,12 +123,21 @@ void gate_rtl_background_rect(uint16_t style, uint16_t bottom,
                               uint16_t right, uint16_t top, uint16_t left)
 {
     uint16_t y, x;
-    require(mock_video_mode == 0x13u && style == 2u && bottom == 5u &&
-            right == 11u && top == 4u && left == 9u &&
-            gate_ds_word(GATE_DS_DRAW_FILL_COLOR) == 0x2cu);
-    for (y = top; y <= bottom; ++y)
-        for (x = left; x <= right; ++x)
-            gate_far_set_byte(0xa000u, (uint16_t)(y * 320u + x), 0x2cu);
-    if (getenv("TEST_VIDEO_BAD_RECTANGLE") != 0)
-        gate_far_set_byte(0xa000u, (uint16_t)(5u * 320u + 11u), 0x17u);
+    require(style == 2u && bottom == 5u && right == 11u && top == 4u && left == 9u);
+    if (mock_video_mode == 0x12u) {
+        require(gate_ds_word(GATE_DS_DRAW_FILL_COLOR) == 0x0cu);
+        for (y = top; y <= bottom; ++y)
+            for (x = left; x <= right; ++x)
+                gate_rtl_plot_pixel(0x0cu, y, x);
+        if (getenv("TEST_VIDEO_BAD_PLANAR_RECTANGLE") != 0)
+            mock_planar_pixels[5ul * 640ul + 11ul] = 0x03u;
+    } else {
+        require(mock_video_mode == 0x13u &&
+                gate_ds_word(GATE_DS_DRAW_FILL_COLOR) == 0x2cu);
+        for (y = top; y <= bottom; ++y)
+            for (x = left; x <= right; ++x)
+                gate_far_set_byte(0xa000u, (uint16_t)(y * 320u + x), 0x2cu);
+        if (getenv("TEST_VIDEO_BAD_RECTANGLE") != 0)
+            gate_far_set_byte(0xa000u, (uint16_t)(5u * 320u + 11u), 0x17u);
+    }
 }

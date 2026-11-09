@@ -310,6 +310,24 @@ host-injected wrong planar pixels and a snapshot-based mode-2 oracle
 prevent accidentally accepting the older mode-13-only test. This is
 still not an executable `_main` or a playable intro.
 
+**Original 16-color full-frame drawing (2026-11-09, DOS verified):** The
+same read-only-original-file `BOOTVGA.EXE` now calls the reconstructed
+`RESSTATE.OBJ` planar clear under BIOS mode `12h`, while the relocated
+original mode-2 descriptor is active. Its VGA sequencer selects and fills
+all four planes; independent BIOS 10h/AH=0Dh pixel reads verify `(0,0)`,
+the previously drawn `(9,4)` pixel and the bottom-right `(639,479)` pixel
+are all color 3. The probe then sets a solid pattern/color 12 through the
+resident background service, draws the inclusive rectangle `(9,4)` to
+`(11,5)`, and verifies both corners and three unchanged neighbors. It
+still separately exercises mode 13h clear/rectangle and restores the prior
+BIOS mode. The DOS-run `BVIDREAL.LOG` now needs an additional exact
+`DOS intro live 16-color drawing: PASS` witness; the C89 host fixture
+injects a bad planar-clear last pixel or a bad rectangle corner, each of
+which correctly fails the probe. The **Microsoft C 5.1 build and actual
+headless DOSBox Staging run passed** against read-only `GATE.EXE` and
+`GATE.RTL`. No original resident code or IRQ setup is invoked, and this
+does not implement playable startup.
+
 **Microsoft C 5.1 identifier compatibility:** The user's first real
 `DATA.BAT` run failed at `DATA.C` compilation, not during the probe:
 the compiler sees only 31 identifier characters and treats distinct

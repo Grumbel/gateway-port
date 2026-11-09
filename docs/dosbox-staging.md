@@ -113,10 +113,14 @@ data, RTL state, hardware, runtime files, picture DCL, resident state, heap,
 input, clock, CRT) passed with the historical compiler. The original-game
 `DATREAL.LOG` verified the 15,616-byte resident CRC32 `F332BF93` and
 19,690-byte prepared-data CRC32 `5A991491`; owner, entry-prologue, audio,
-video guard/layout and **live mode-13 VGA** probes also passed. In particular,
-`BVIDREAL.LOG` confirmed an A000 pixel write, full mode-13 framebuffer
-clear, opaque rectangle with unchanged surrounding pixels, and prior BIOS
-video mode restoration. None of the probes executes original resident code
+video guard/layout and **live mode-12 and mode-13 VGA** probes also passed.
+In mode 12h, `BVIDREAL.LOG` independently verifies the 16-color pixel, a
+full four-plane clear including the final `(639,479)` pixel, and an opaque
+rectangle with unchanged surrounding pixels through BIOS 10h pixel reads.
+In mode 13h it verifies an A000 pixel write, full framebuffer clear, opaque
+rectangle and prior BIOS video mode restoration. The exact mode-12 drawing
+log line is mandatory, so an older pixel-only log cannot pass validation.
+None of the probes executes original resident code
 or installs IRQs. A fresh Microsoft LINK 3.65 launcher diagnostic still reports exactly
 two missing symbols, `_main` and `_gate_linked_handle_control_key`, confirmed
 by a 42/42-input OMF audit; the full game remains unlinked.

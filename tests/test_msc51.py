@@ -340,9 +340,12 @@ class MSC51Tests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("RTL:f14d mode 2; BIOS 12h, 639x479 descriptors, planar pixel 0a",
                           result.stdout)
+            self.assertIn("BIOS 12h full clear, rectangle and planar pixel readback",
+                          result.stdout)
             self.assertIn("RTL:f14d + resident 2409 mode 13; A000 pixel, clear and rectangle; prior BIOS mode restored",
                           result.stdout)
             for rejected_var in ("TEST_RESOURCE_BAD_SEGMENT", "TEST_VIDEO_BAD_PLANAR_PIXEL",
+                                 "TEST_VIDEO_BAD_PLANAR_CLEAR", "TEST_VIDEO_BAD_PLANAR_RECTANGLE",
                                  "TEST_VIDEO_BAD_PIXEL", "TEST_VIDEO_BAD_CLEAR",
                                  "TEST_VIDEO_BAD_RECTANGLE", "TEST_VIDEO_NOT_VGA",
                                  "TEST_VIDEO_FAIL_RESTORE"):
@@ -536,6 +539,11 @@ class MSC51Tests(unittest.TestCase):
             (output / "BVIDREAL.LOG").write_text(
                 (output / "BVIDREAL.LOG").read_text() +
                 "DOS intro live 16-color VGA: PASS (RTL:f14d mode 2; BIOS 12h, 639x479 descriptors, planar pixel 0a)\n")
+            with self.assertRaisesRegex(ValueError, "planar full-frame drawing verification"):
+                msc51.validate_static_data_probe(output, require_original=True)
+            (output / "BVIDREAL.LOG").write_text(
+                (output / "BVIDREAL.LOG").read_text() +
+                "DOS intro live 16-color drawing: PASS (BIOS 12h full clear, rectangle and planar pixel readback)\n")
             msc51.validate_static_data_probe(output, require_original=True)
             (output / "DATA.C").write_text((output / "DATA.C").read_text() + "/* stale */\n")
             with self.assertRaisesRegex(ValueError, "source changed"):

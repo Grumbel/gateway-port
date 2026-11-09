@@ -1133,6 +1133,10 @@ def validate_static_data_probe(output: Path, *, require_original: bool = False) 
                 r"^DOS intro live 16-color VGA: PASS \(RTL:f14d mode 2; BIOS 12h, 639x479 descriptors, planar pixel 0a\)\s*$",
                 live.read_text(), re.MULTILINE) is None:
             raise ValueError("DOS original-file resident 16-color VGA verification is missing or failed.")
+        if re.search(
+                r"^DOS intro live 16-color drawing: PASS \(BIOS 12h full clear, rectangle and planar pixel readback\)\s*$",
+                live.read_text(), re.MULTILINE) is None:
+            raise ValueError("DOS original-file resident planar full-frame drawing verification is missing or failed.")
         if live is None or re.search(
                 r"^DOS intro live VGA probe: PASS \(RTL:f14d \+ resident 2409 mode 13; A000 pixel, clear and rectangle; prior BIOS mode restored\)\s*$",
                 live.read_text(), re.MULTILINE) is None:
@@ -1904,8 +1908,9 @@ def main(argv: list[str] | None = None) -> int:
                  "pointers, the RTL no-music initializer return, the RTL "
                  "invalid-video-mode guard and mode-3 descriptor setup "
                  "with simulated BIOS callbacks; BOOTVGA.EXE exercised "
-                 "the original mode-2 BIOS 12h/16-color retrace and "
-                 "planar-pixel path, then the reconstructed mode-13 A000 "
+                 "the original mode-2 BIOS 12h/16-color retrace, "
+                 "planar pixel, full clear and opaque rectangle path, "
+                 "then the reconstructed mode-13 A000 "
                  "pixel, full display clear, rectangle drawing and "
                  "prior-BIOS-mode restoration without entering "
                  "original resident code or installing IRQs"
