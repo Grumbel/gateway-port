@@ -34,20 +34,19 @@ static void gate_crt_flush_text_buffer(uint16_t handle, GateFarPtr source,
     *pending = 0;
 }
 
-/* RTL:7dc3..7e6e uses a 512-byte SS buffer when the stack-space helper
- * returns at least 0228h bytes. The C89 compiler has a different frame
- * size, so accept only a comfortably larger margin (0300h) and check the
- * actual allocated buffer remains above the original stack limit. The
- * original 128-byte low-stack path is deliberately not enabled yet.
+/* RTL:7dc3..7e6e uses a 128-byte SS buffer for stack space in
+ * (0a8h,0228h) and a 512-byte SS buffer for at least 0228h bytes.
+ * The C89 compiler has a different frame size, so require a deliberately
+ * larger margin (0180h or 0300h respectively), then check the actual
+ * allocated SS buffer remains above the original stack limit.
  *
  * RTL:7de3..7e08 emits LF as CR LF and flushes a full buffer BEFORE the
  * next byte. RTL:7e18..7e38 resets DI to the buffer start. RTL:7e63
  * returns the total DOS count minus inserted CR bytes (modulo 16 bits).
  * Original carry/zero-result errno paths still abort. */
-static uint16_t gate_crt_write_text_lf_512(uint16_t handle,
-                                           GateFarPtr source, uint16_t count)
+static uint16_t gate_crt_write_text_lf_buffer(uint16_t handle,
+        GateFarPtr source, uint16_t count, uint8_t *buffer, uint16_t capacity)
 {
-    uint8_t buffer[512];
     GateFarPtr stack_buffer;
     uint16_t stack_limit = gate_ds_word(GATE_DS_CRT_STACK_LIMIT);
     uint16_t offset = source.offset;
@@ -68,13 +67,13 @@ static uint16_t gate_crt_write_text_lf_512(uint16_t handle,
         uint8_t byte = gate_far_byte(source.segment, offset);
         offset = (uint16_t)(offset + 1u);
         if (byte == 0x0au) {
-            if (pending == sizeof buffer)
+            if (pending == capacity)
                 gate_crt_flush_text_buffer(handle, stack_buffer, &pending,
                                             &written);
             buffer[pending++] = 0x0du;
             ++inserted;
         }
-        if (pending == sizeof buffer)
+        if (pending == capacity)
             gate_crt_flush_text_buffer(handle, stack_buffer, &pending,
                                         &written);
         buffer[pending++] = byte;
@@ -82,6 +81,22 @@ static uint16_t gate_crt_write_text_lf_512(uint16_t handle,
     }
     gate_crt_flush_text_buffer(handle, stack_buffer, &pending, &written);
     return (uint16_t)(written - inserted);
+}
+
+static uint16_t gate_crt_write_text_lf_128(uint16_t handle,
+                                           GateFarPtr source, uint16_t count)
+{
+    uint8_t buffer[128];
+    return gate_crt_write_text_lf_buffer(handle, source, count,
+                                          buffer, (uint16_t)sizeof buffer);
+}
+
+static uint16_t gate_crt_write_text_lf_512(uint16_t handle,
+                                           GateFarPtr source, uint16_t count)
+{
+    uint8_t buffer[512];
+    return gate_crt_write_text_lf_buffer(handle, source, count,
+                                          buffer, (uint16_t)sizeof buffer);
 }
 
 uint16_t gate_linked_write_crt_descriptor(uint16_t handle, GateFarPtr source,
@@ -121,11 +136,19 @@ uint16_t gate_linked_write_crt_descriptor(uint16_t handle, GateFarPtr source,
         uint8_t stack_probe;
         GateFarPtr probe;
         uint16_t limit = gate_ds_word(GATE_DS_CRT_STACK_LIMIT);
+        uint16_t available;
         probe = gate_stack_pointer(&stack_probe);
-        if (probe.offset <= limit ||
-            (uint16_t)(probe.offset - limit) < 0x300u)
+        if (probe.offset <= limit)
             abort();
-        return gate_crt_write_text_lf_512(handle, source, count);
+        available = (uint16_t)(probe.offset - limit);
+        if (available >= 0x0228u) {
+            if (available < 0x0300u)
+                abort();
+            return gate_crt_write_text_lf_512(handle, source, count);
+        }
+        if (available < 0x0180u)
+            abort();
+        return gate_crt_write_text_lf_128(handle, source, count);
     }
 
     result = gate_dos_file_write(handle, source, count);

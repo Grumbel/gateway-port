@@ -60,8 +60,8 @@ void gate_rtl_close_resource_file(uint16_t handle);
 void gate_linked_shutdown_intro_stream(void);
 
 /* CRT descriptor writer RTL:7d64..7eab. Successful binary writes,
- * text-mode writes without LF, high-stack 512-byte CR/LF conversion and
- * zero-length paths are supported. The low-stack 128-byte conversion,
+ * text-mode writes without LF, conservative 128/512-byte SS-buffer CR/LF
+ * conversion and zero-length paths are supported. Insufficient stack,
  * invalid handles, failed DOS operations and ambiguous results abort. */
 uint16_t gate_linked_write_crt_descriptor(uint16_t handle, GateFarPtr source,
                                           uint16_t count);

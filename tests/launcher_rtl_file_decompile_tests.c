@@ -391,23 +391,93 @@ static void test_original_crt_descriptor_writer_lf_high_stack(void)
     assert(memcmp(crt_captured, "A\r\n", 3) == 0);
 
 #ifndef _WIN32
-    /* The original may take its 128-byte route below 0228h; the
-     * reconstructed high-stack-only writer must refuse that state. */
+    /* The original 128-byte route needs room for a distinct C89 frame;
+     * insufficient space still fails before touching DOS. The exact 0228h
+     * boundary selects the larger original buffer; our C frame cannot
+     * safely allocate that yet unless at least 0300h is available. */
     {
-        pid_t child = fork();
-        int status = 0;
-        assert(child >= 0);
-        if (child == 0) {
-            struct rlimit limit = {0, 0};
-            (void)setrlimit(RLIMIT_CORE, &limit);
-            crt_stack_offset = 0x71ffu;
-            (void)gate_linked_write_crt_descriptor(3u, source, 3u);
-            _exit(0);
+        unsigned branch;
+        for (branch = 0; branch < 2; ++branch) {
+            pid_t child = fork();
+            int status = 0;
+            assert(child >= 0);
+            if (child == 0) {
+                struct rlimit limit = {0, 0};
+                (void)setrlimit(RLIMIT_CORE, &limit);
+                crt_stack_offset = branch == 0 ? 0x717fu : 0x7228u;
+                (void)gate_linked_write_crt_descriptor(3u, source, 3u);
+                _exit(0);
+            }
+            assert(waitpid(child, &status, 0) == child);
+            assert(WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT);
         }
-        assert(waitpid(child, &status, 0) == child);
-        assert(WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT);
     }
 #endif
+
+    crt_stack_writes = 0u;
+    crt_stack_short_write = 0u;
+    crt_stack_offset = 1u;
+    ds_bytes[GATE_DS_CRT_HANDLE_FLAGS + 3u] = 0u;
+}
+
+static void test_original_crt_descriptor_writer_lf_low_stack(void)
+{
+    GateFarPtr source = {0x9876u, 0x1000u};
+    unsigned i;
+    ds_words[GATE_DS_CRT_HANDLE_LIMIT] = 20u;
+    ds_words[GATE_DS_CRT_STACK_LIMIT] = 0x7000u;
+    ds_bytes[GATE_DS_CRT_HANDLE_FLAGS + 3u] = GATE_CRT_TEXT_BIT;
+    /* Free space 0210h selects RTL:7dd5's 0080h buffer, not 0200h. */
+    crt_stack_offset = 0x7210u;
+    crt_stack_writes = 1u;
+    crt_stack_short_write = 0u;
+
+    stream_bytes[0x1000] = 'L';
+    stream_bytes[0x1001] = 0x0au;
+    stream_bytes[0x1002] = 'R';
+    crt_captured_count = 0;
+    crt_batch_count = 0;
+    assert(gate_linked_write_crt_descriptor(3u, source, 3u) == 3u);
+    assert(crt_batch_count == 1 && crt_batch_sizes[0] == 4u);
+    assert(crt_captured_count == 4u);
+    assert(memcmp(crt_captured, "L\r\nR", 4) == 0);
+
+    /* 0227h is still the 128-byte route; 0228h instead selects 512. */
+    crt_stack_offset = 0x7227u;
+    crt_captured_count = 0;
+    crt_batch_count = 0;
+    assert(gate_linked_write_crt_descriptor(3u, source, 3u) == 3u);
+    assert(crt_batch_count == 1 && crt_batch_sizes[0] == 4u);
+    crt_stack_offset = 0x7210u;
+
+    /* The 128-byte branch must flush before accepting the LF after CR
+     * at its boundary; one extra byte follows in the final chunk. */
+    for (i = 0; i < 127; ++i)
+        stream_bytes[0x1000u + i] = 'Q';
+    stream_bytes[0x1000u + 127u] = 0x0au;
+    stream_bytes[0x1000u + 128u] = 'Z';
+    crt_captured_count = 0;
+    crt_batch_count = 0;
+    assert(gate_linked_write_crt_descriptor(3u, source, 129u) == 129u);
+    assert(crt_batch_count == 2);
+    assert(crt_batch_sizes[0] == 128u && crt_batch_sizes[1] == 2u);
+    assert(crt_captured_count == 130u);
+    for (i = 0; i < 127; ++i)
+        assert(crt_captured[i] == 'Q');
+    assert(crt_captured[127] == 0x0du && crt_captured[128] == 0x0au &&
+           crt_captured[129] == 'Z');
+
+    /* The common flush helper preserves the original DOS return count
+     * even when the DOS call writes one fewer byte than requested. */
+    stream_bytes[0x1000] = 'L';
+    stream_bytes[0x1001] = 0x0au;
+    stream_bytes[0x1002] = 'R';
+    crt_stack_short_write = 1u;
+    crt_captured_count = 0;
+    crt_batch_count = 0;
+    assert(gate_linked_write_crt_descriptor(3u, source, 3u) == 2u);
+    assert(crt_captured_count == 3u);
+    assert(memcmp(crt_captured, "L\r\n", 3) == 0);
 
     crt_stack_writes = 0u;
     crt_stack_short_write = 0u;
@@ -720,6 +790,7 @@ int main(void)
     test_writes_and_close();
     test_original_crt_descriptor_writer_binary();
     test_original_crt_descriptor_writer_lf_high_stack();
+    test_original_crt_descriptor_writer_lf_low_stack();
     test_first_ctrl_break_stream_cleanup_quiet_branches();
     test_original_stream_flush_without_writer();
     puts("intro RTL file wrappers: ok");

@@ -1824,15 +1824,18 @@ rewound, and checked for all ten expected bytes without translation.
 The high-stack LF test rewinds first, selects append mode, then adds source
 bytes `X`, LF, `Y`; it rewinds again and verifies fourteen actual bytes,
 with CR inserted immediately before LF and no earlier data overwritten.
+The subsequent low-stack branch appends `Q` LF `R` through the 128-byte
+buffer, then reads back all eighteen bytes including the second CR insertion.
 `Original CRT binary descriptor DOS probe: PASS` and
 `Original CRT text no-LF DOS probe: PASS` and
 `Original CRT text LF high-stack DOS probe: PASS` are required `STRTEST.LOG`
-witnesses; the staged-source signature rejects stale results.
+witnesses, along with `Original CRT text LF low-stack DOS probe: PASS`;
+the staged-source signature rejects stale results.
 Native tests cover full and short writes, append calls, Ctrl-Z device
 semantics, 16-bit scan wrapping, maximum-length termination, text stream
-flush and fail-closed low-stack/error branches.
+flush and fail-closed insufficient-stack/error branches.
 
-### CRT newline conversion: recovered 512-byte high-stack branch
+### CRT newline conversion: recovered 128/512-byte stack-buffer branches
 
 The original `RTL:7db5..7db7` branch enters conversion only when it
 encounters a line feed. The original helper at `RTL:7eae..7ec1` compares
@@ -1848,23 +1851,28 @@ Disassembly of `RTL:7dc3..7e6e` shows the available stack check rejects
 (larger when `AX >= 0228h`), expands each LF to CR LF and flushes
 intermediate chunks with DOS AH=40h. The success result is accumulated
 bytes actually reported by DOS **minus the number of CR insertions**.
-The C reconstruction now implements the **successful 512-byte buffer
-branch**. It uses the linked `DS:2c24` limit, requires a deliberately
-conservative `0300h`-byte margin at its C frame (the Microsoft C source
-recompile does not have the original assembly's frame layout), and checks
-that the allocated 512-byte SS buffer remains at least `0080h` above that
-limit. It expands LF to CR LF, flushes with actual DOS AH=40h in the
-original chunk order, and computes the same 16-bit return count even for
-short positive writes. No guest errno side effect is invented.
+The C reconstruction implements **both successful buffer branches** using
+separate 128- and 512-byte local SS buffers sharing the same translation
+loop. The original selection threshold remains `0228h`, but the Microsoft
+C 5.1 recompile has a different call frame: it conservatively requires
+`0180h` free for the small buffer and `0300h` for the large one, then
+checks the actual buffer is at least `0080h` above the linked `DS:2c24`
+stack limit. Thus some originally acceptable near-limit frames still abort
+before writing. LF expands to CR LF, full buffers flush via actual DOS
+AH=40h in the original order, and the 16-bit result includes DOS-reported
+short positive writes minus inserted CR bytes. No guest errno side effect
+is invented.
 
-Native tests cover one LF, insertion at the 512-byte chunk boundary,
-16-bit FAR source wrapping and positive short writes. A fresh Microsoft C
-5.1/DOSBox `STRCHK.EXE` probe performed the actual `X` LF `Y` conversion
-into the existing temporary DOS file and verified every resulting byte.
+Native tests cover one LF, insertion at both 128- and 512-byte chunk
+boundaries, the exact `0227h`/`0228h` selection threshold, 16-bit FAR
+source wrapping and positive short writes. A fresh Microsoft C 5.1/DOSBox
+`STRCHK.EXE` probe performed `X` LF `Y` with the large buffer, then `Q` LF
+`R` with the small buffer in the same actual DOS file, verifying all
+eighteen bytes including two CR insertions and both append seeks.
 The synthetic test sets a known safe stack bound based on its own frame;
 it does **not** claim that a newly rebuilt Gateway `_main` would configure
-the original stack exactly. The 128-byte low-stack path, insufficient-stack
-error behavior, CRT errno paths and active stream close still abort.
+the original stack exactly. Insufficient-stack error behavior, CRT errno
+paths and active stream close still abort.
 
 Three additional diagnostic callees now have strong original entry
 boundaries, not merely byte-window guesses:

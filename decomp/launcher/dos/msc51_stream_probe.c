@@ -19,7 +19,7 @@ static int probe_crt_binary_write(void)
 {
     char filename[11];
     unsigned char payload[7];
-    unsigned char observed[14];
+    unsigned char observed[18];
     unsigned char text_bytes[3];
     GateFarPtr filename_pointer;
     GateFarPtr payload_pointer;
@@ -161,6 +161,31 @@ static int probe_crt_binary_write(void)
                        "CRT LF-converted text leaves seven binary bytes");
         valid &= check(memcmp(observed + 7u, "DOSX\r\nY", 7u) == 0, 1u,
                        "CRT LF-converted text actual CR LF bytes");
+
+        /* This time place the linked DS stack limit close enough to the
+         * probe frame to select RTL:7dd5's 128-byte SS buffer. The real
+         * Microsoft C 5.1 frame and the actual returned stack pointer
+         * determine the remaining margin; no original startup state is
+         * presumed in this self-contained DOS executable. */
+        gate_ds_set_word(GATE_DS_CRT_STACK_LIMIT,
+                         (uint16_t)(stack_probe.offset - 0x0220u));
+        text_bytes[0] = 'Q';
+        text_bytes[1] = 0x0au;
+        text_bytes[2] = 'R';
+        io = gate_dos_file_seek(handle, 0u, 0ul);
+        valid &= check(io.carry, 0u, "CRT low-stack append pre-rewind");
+        valid &= check(gate_linked_write_crt_descriptor(handle, text_pointer, 3u),
+                       3u, "CRT low-stack LF-converted write");
+        io = gate_dos_file_seek(handle, 0u, 0ul);
+        valid &= check(io.carry, 0u, "CRT low-stack verify rewind");
+        memset(observed, 0, sizeof observed);
+        io = gate_dos_file_read(handle, observed_pointer, 18u);
+        valid &= check(io.carry, 0u, "CRT low-stack read carry");
+        valid &= check(io.ax, 18u, "CRT low-stack read length");
+        valid &= check(memcmp(payload, observed, 7u) == 0, 1u,
+                       "CRT low-stack leaves seven binary bytes");
+        valid &= check(memcmp(observed + 7u, "DOSX\r\nYQ\r\nR", 11u) == 0, 1u,
+                       "CRT low-stack actual appended CR LF bytes");
     }
     io = gate_dos_file_close(handle);
     valid &= check(io.carry, 0u, "CRT binary close");
@@ -171,6 +196,8 @@ static int probe_crt_binary_write(void)
                  "Original CRT text no-LF DOS probe: FAIL");
     puts(valid ? "Original CRT text LF high-stack DOS probe: PASS" :
                  "Original CRT text LF high-stack DOS probe: FAIL");
+    puts(valid ? "Original CRT text LF low-stack DOS probe: PASS" :
+                 "Original CRT text LF low-stack DOS probe: FAIL");
     return valid;
 }
 
