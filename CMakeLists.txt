@@ -264,6 +264,11 @@ if(BUILD_TESTING)
   target_include_directories(launcher-break-cleanup-decompile-tests PRIVATE decomp/launcher)
   target_compile_definitions(launcher-break-cleanup-decompile-tests PRIVATE GATE_BREAK_CLEANUP_HOST_TEST=1)
   add_test(NAME launcher-break-cleanup-decompile COMMAND launcher-break-cleanup-decompile-tests)
+  add_executable(launcher-break-outer-decompile-tests
+    decomp/launcher/dos/msc51_break_outer.c
+    tests/launcher_break_outer_decompile_tests.c)
+  target_compile_definitions(launcher-break-outer-decompile-tests PRIVATE GATE_BREAK_OUTER_HOST_TEST=1)
+  add_test(NAME launcher-break-outer-decompile COMMAND launcher-break-outer-decompile-tests)
   add_executable(launcher-intro-native-font-tests
     decomp/launcher/gate_rtl_font.c decomp/launcher/gate_rtl.c
     decomp/launcher/gate_rtl_file.c

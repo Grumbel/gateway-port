@@ -836,14 +836,15 @@ class MSC51Tests(unittest.TestCase):
 
             self.assertNotIn("/Fe", batch)  # No complete DOS executable yet.
             response = (output / "LINK.RSP").read_text().splitlines()
-            self.assertEqual(response[:43],
+            self.assertEqual(response[:45],
                              [f"M{index:02d}.OBJ+" for index in range(28)] +
                              ["MEMORY.OBJ+", "DOSFILE.OBJ+", "RTLIMG.OBJ+",
                               "RTLTEXT.OBJ+", "RTLPAL.OBJ+", "RTLGR.OBJ+",
                               "RTLHW.OBJ+", "RTFILE.OBJ+", "RESSTATE.OBJ+",
-                              "HEAP.OBJ+", "CTRL.OBJ+", "INP.OBJ+", "CLOCK.OBJ+", "CRTENV.OBJ+",
+                              "HEAP.OBJ+", "CTRL.OBJ+", "BREAK.OBJ+", "BREXIT.OBJ+",
+                              "INP.OBJ+", "CLOCK.OBJ+", "CRTENV.OBJ+",
                               "PICTDCL.OBJ"])
-            self.assertEqual(response[43:], ["GATEWAY.EXE", "GATEWAY.MAP",
+            self.assertEqual(response[45:], ["GATEWAY.EXE", "GATEWAY.MAP",
                                              "LLIBCR.LIB LIBH.LIB /NOD", ";"])
             memory_batch = (output / "MEMORY.BAT").read_text()
             self.assertIn("CL /AL /Od /c MEMORY.C", memory_batch)
@@ -1110,6 +1111,15 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("CL /AL /Od /c CTRL.C", stream_batch)
             self.assertIn("C:\\BIN\\LINK.EXE @CTRL.RSP", stream_batch)
             self.assertIn("CTRLCHK.EXE > CTRLTEST.LOG", stream_batch)
+            self.assertIn("CL /AL /Od /c BREAK.C", stream_batch)
+            self.assertIn("CL /AL /Od /c BREXIT.C", stream_batch)
+            self.assertIn("C:\\BIN\\LINK.EXE @BRK.RSP", stream_batch)
+            self.assertIn("BRKCHK.EXE > BRKTEST.LOG", stream_batch)
+            self.assertIn("IF ERRORLEVEL 2 GOTO FAILED", stream_batch)
+            self.assertIn("IF NOT ERRORLEVEL 1 GOTO FAILED", stream_batch)
+            self.assertIn("BREAK.OBJ+", (output / "LINK.RSP").read_text())
+            self.assertIn("M13.OBJ+", (output / "BRK.RSP").read_text())
+            self.assertIn("gate_linked_handle_control_key", (output / "BREAK.C").read_text())
             self.assertIn("CTRL.OBJ+", (output / "LINK.RSP").read_text())
             self.assertIn("RESSTATE.OBJ+", (output / "CTRL.RSP").read_text())
             self.assertIn("gate_rtl_control_teardown", (output / "CTRL.C").read_text())
@@ -1121,10 +1131,13 @@ class MSC51Tests(unittest.TestCase):
                 msc51.validate_stream_probe(output)
             for name in ("STRCHK.EXE", "STRSTART.LOG", "STROK.LOG"):
                 (output / name).write_text("built\n")
-            for name in ("CTRL.OBJ", "CTRLCHK.EXE"):
+            for name in ("CTRL.OBJ", "CTRLCHK.EXE", "BREAK.OBJ", "BREXIT.OBJ",
+                         "BRKCHK.EXE"):
                 (output / name).write_text("built\n")
             (output / "CTRLTEST.LOG").write_text(
                 "Original Ctrl-Break fifth cleanup DOS probe: PASS\n")
+            (output / "BRKTEST.LOG").write_text(
+                "Ctrl-Break outer six-call DOS probe: entered\n")
             (output / "STRTEST.LOG").write_text("Original stream quiet-close DOS probe: PASS\n")
             with self.assertRaisesRegex(ValueError, "no-write flush"):
                 msc51.validate_stream_probe(output)
@@ -1177,6 +1190,11 @@ class MSC51Tests(unittest.TestCase):
                 msc51.validate_stream_probe(output)
             (output / "CTRLTEST.LOG").write_text(
                 "Original Ctrl-Break fifth cleanup DOS probe: PASS\n")
+            (output / "BRKTEST.LOG").write_text("no entry\n")
+            with self.assertRaisesRegex(ValueError, "outer six-call"):
+                msc51.validate_stream_probe(output)
+            (output / "BRKTEST.LOG").write_text(
+                "Ctrl-Break outer six-call DOS probe: entered\n")
             (output / "STRSIG.LOG").write_text(msc51.stream_source_signature(output))
             msc51.validate_stream_probe(output)
             (output / wrapper).write_text((output / wrapper).read_text() + "/* changed */\n")
@@ -1393,6 +1411,33 @@ class MSC51Tests(unittest.TestCase):
             (output / "heapstrt.log").write_text("tested")
             (output / "heapok.log").write_text("passed")
             (output / "heapsig.log").write_text(msc51.heap_source_signature(output))
+            with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
+                 mock.patch.object(msc51.subprocess, "run") as run, \
+                 redirect_stderr(io.StringIO()) as error:
+                with self.assertRaises(SystemExit):
+                    msc51.main(args)
+                run.assert_not_called()
+            self.assertIn("gateway-msc51 compile-stream", error.getvalue())
+            for name in ("strchk.exe", "strstart.log", "strok.log", "ctrl.obj",
+                         "ctrlchk.exe", "break.obj", "brexit.obj", "brkchk.exe"):
+                (output / name).write_text("built\n")
+            witnesses = (
+                "Original stream quiet-close DOS probe: PASS",
+                "Original stream no-write flush DOS probe: PASS",
+                "Original stream descriptor-table DOS probe: PASS",
+                "Original CRT binary descriptor DOS probe: PASS",
+                "Original CRT text no-LF DOS probe: PASS",
+                "Original CRT text LF high-stack DOS probe: PASS",
+                "Original CRT text LF low-stack DOS probe: PASS",
+                "Original active stream flush-close DOS probe: PASS",
+                "Original owned CRT stream buffer DOS probe: PASS",
+            )
+            (output / "strtest.log").write_text("\n".join(witnesses))
+            (output / "ctrltest.log").write_text(
+                "Original Ctrl-Break fifth cleanup DOS probe: PASS\n")
+            (output / "brktest.log").write_text(
+                "Ctrl-Break outer six-call DOS probe: entered\n")
+            (output / "strsig.log").write_text(msc51.stream_source_signature(output))
             with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
                  mock.patch.object(msc51.subprocess, "run") as run, \
                  redirect_stderr(io.StringIO()) as error:

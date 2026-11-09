@@ -9,6 +9,38 @@ plain `nix develop`. The historical `msc51-*` Nix app entry points were
 consolidated into that one development-shell command; the compiler and
 original DOS game files remain outside Git.
 
+## Current link checkpoint (2026-11-09): only `_main` remains
+
+The recovered outer Ctrl-Break handler at `GATE.RTL:157b8..157e4` now
+builds into `BREAK.OBJ`, and its Microsoft C `exit(1)` adapter builds into
+`BREXIT.OBJ`. The source-signed `msc51-compile-stream` probe links these
+with the five recovered callees and runs `BRKCHK.EXE` in real DOSBox.
+Its batch verifies exit status **exactly 1**, checks the disposable resource
+file existed and deletes it, and saves `BRKTEST.LOG` with
+`Ctrl-Break outer six-call DOS probe: entered`. Strict host C89 tests
+check the six calls in original order and both final arguments.
+
+After recompiling stale dependencies and running the actual Microsoft
+Overlay Linker 3.65, the OMF auditor inspected **45/45** input objects,
+found `_gate_linked_handle_control_key` exported from `BREAK.OBJ`, and
+confirmed that LINK reports **exactly one** `L2029`: the missing CRT
+`_main`. Reproduce the independent audit with:
+
+```sh
+python3 tools/msc51_object_symbols.py \
+  --stage build/msc51-launcher \
+  --symbol _gate_linked_handle_control_key \
+  --symbol _main \
+  --expect-unresolved _main
+```
+
+This is a bounded shutdown, not an exact recreation of original
+`RTL:621e..62bb` CRT exit processing (atexit callbacks, DOS descriptor
+cleanup and interrupt-vector restoration). The genuinely missing `main`
+must still bind resident original resources and transfer into the intro;
+the rebuilt full DOS executable does **not** link or play yet. The
+two-name checkpoint below records the **earlier 2026-11-08 stage**.
+
 ## Verify unresolved names against compiled DOS OMF objects
 
 The Microsoft LINK report listed `_gate_linked_print_intr_b006848b` as
@@ -94,8 +126,9 @@ Microsoft LINK 3.65 run supplied by the user on 2026-11-08 confirmed
 `M04.OBJ(M04.C)`. `LINKDONE.LOG` was absent. This is a linker-closure
 milestone, **not** a linked or playable DOS executable.
 
-The new optional checkpoint validates the *fresh* `LINK.LOG` and actual
-OMF objects for exactly those two errors:
+The earlier optional checkpoint validated the then-fresh `LINK.LOG` and
+actual OMF objects for exactly those two errors (superseded by the
+current one-name checkpoint above):
 
 ```sh
 python3 tools/msc51_object_symbols.py \
@@ -106,9 +139,9 @@ python3 tools/msc51_object_symbols.py \
 
 It rejects unexpected or missing unresolved names, stale `L2029` reports
 for now-exported publics, other Microsoft LINK errors and missing or
-malformed objects. When either missing routine is finally implemented,
-update/remove this two-name checkpoint; it is not a substitute for the
-implementations.
+malformed objects. This historical command will now intentionally reject
+the newly linked handler; it is retained to document the earlier linker
+state, not as the current build command.
 
 **Independent local reproduction (2026-11-09):** After unpacking the
 hash-pinned Microsoft C 5.1 compiler from the uploaded floppy-image archive,
@@ -1753,6 +1786,29 @@ is `CTRLTEST.LOG`: `Original Ctrl-Break fifth cleanup DOS probe: PASS`.
 This does not reconstruct the outer Ctrl-Break entry or `_main`.
 No combined fifth callee, outer Ctrl-Break handler or process termination
 is yet linked.
+
+**Later outer-handler closure (2026-11-09, genuine DOS verified).**
+The original 45-byte wrapper `RTL:157b8..157e4`, live at `123f:0004`
+in the 22-second snapshot, has exactly six FAR calls. In order they
+enter `RTL:15706` (stream), `c391` (silent audio), `10da1` (VFX),
+`e771` (font), `11e5f` (saved vectors, resource handle, BIOS mode; argument
+`1`), and `621e` (CRT exit; argument `1`). `BREAK.OBJ` now defines the
+originally missing `_gate_linked_handle_control_key` from these six
+calls. The first five dispatch to the recovered C89 DOS implementations;
+the sixth dispatches through `BREXIT.OBJ` to genuine Microsoft C `exit(1)`.
+The original CRT routine's own atexit/descriptor/IRQ exit machinery is
+still a separately identified unimplemented boundary.
+
+The source-signed `msc51-compile-stream` stage now builds these extra
+objects and `BRKCHK.EXE`. A fresh real Microsoft C 5.1/DOSBox Staging
+run installed *actual* saved IVT pointers, created a disposable DOS file,
+ran the six-call wrapper and asserted its process terminated with exit
+status **exactly 1**. `BRKTEST.LOG` contains the entry witness and the
+test removed its disposable resource file. Host-only strict C89 tests
+separately check call ordering and arguments. After recompiling the
+changed-layout prerequisites, a fresh MS LINK run reports only `_main`;
+the 45-object OMF audit confirms `BREAK.OBJ` exports the missing handler.
+Neither this test nor its success supplies a working original-data `_main`.
 
 ### First Ctrl-Break FAR callee: verified quiet stream close
 

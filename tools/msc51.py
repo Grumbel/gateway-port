@@ -274,7 +274,8 @@ FONT_SOURCES = ("GATEMEM.H", "STDINT.H", "RTLLAY.H", "M13.C", "FONTCHK.C",
                 "HEAP.C", "MEMORY.C")
 STREAM_SOURCES = ("GATEMEM.H", "STDINT.H", "RTLLAY.H", "M11.C", "STRCHK.C",
                   "STRBRDG.C", "STRDOS.H", "DOSFILE.C", "MEMORY.C",
-                  "CTRL.C", "CTRLCHK.C", "CTRL.RSP", "RTLHW.C", "RESSTATE.C")
+                  "CTRL.C", "CTRLCHK.C", "CTRL.RSP", "RTLHW.C", "RESSTATE.C",
+                  "BREAK.C", "BREXIT.C", "BRKCHK.C", "BRK.RSP", "M13.C")
 INPUT_SOURCES = ("GATEMEM.H", "STDINT.H", "RTLLAY.H", "INP.C", "INPCHK.C",
                  "MEMORY.C")
 CLOCK_SOURCES = ("GATEMEM.H", "STDINT.H", "RTLLAY.H", "CLOCK.C",
@@ -914,7 +915,10 @@ def stage_launcher(output: Path) -> list[str]:
     (output / "STRBRDG.C").write_text(msc51_rename_identifiers(
         stream_bridge, shortened))
     for original, staged in (("msc51_break_cleanup.c", "CTRL.C"),
-                             ("msc51_break_cleanup_probe.c", "CTRLCHK.C")):
+                             ("msc51_break_cleanup_probe.c", "CTRLCHK.C"),
+                             ("msc51_break_outer.c", "BREAK.C"),
+                             ("msc51_break_exit.c", "BREXIT.C"),
+                             ("msc51_break_outer_probe.c", "BRKCHK.C")):
         (output / staged).write_text(msc51_rename_identifiers(
             (source_dir / "dos" / original).read_text(), shortened))
     # Avoid COMMAND.COM's command-length limit with the original MS LINK
@@ -925,6 +929,14 @@ def stage_launcher(output: Path) -> list[str]:
                         "MEMORY.OBJ", "CTRLCHK.EXE", "NUL.MAP",
                         "LLIBCR.LIB LIBH.LIB /NOD", ";"]
     (output / "CTRL.RSP").write_text("\r\n".join(control_response) + "\r\n")
+    font_cleanup_object = aliases["gate_rtl_font.c"].replace(".C", ".OBJ")
+    break_response = ["BRKCHK.OBJ+", "BREAK.OBJ+", "BREXIT.OBJ+",
+                      "CTRL.OBJ+", "M11.OBJ+", font_cleanup_object + "+",
+                      "STRBRDG.OBJ+", "RTLHW.OBJ+", "RESSTATE.OBJ+",
+                      "HEAP.OBJ+", "RTFILE.OBJ+", "DOSFILE.OBJ+",
+                      "MEMORY.OBJ", "BRKCHK.EXE", "NUL.MAP",
+                      "LLIBCR.LIB LIBH.LIB /NOD", ";"]
+    (output / "BRK.RSP").write_text("\r\n".join(break_response) + "\r\n")
     stream_object = aliases["gate_rtl_file.c"].replace(".C", ".OBJ")
     stream_signature = stream_source_signature(output)
     stream_batch = [
@@ -945,6 +957,21 @@ def stage_launcher(output: Path) -> list[str]:
         "C:\\BIN\\LINK.EXE @CTRL.RSP >> STRBUILD.LOG",
         "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST CTRLCHK.EXE GOTO FAILED",
         "CTRLCHK.EXE > CTRLTEST.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        f"CL /AL /Od /c {aliases['gate_rtl_font.c']} >> STRBUILD.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED",
+        f"IF NOT EXIST {font_cleanup_object} GOTO FAILED",
+        "CL /AL /Od /c BREAK.C >> STRBUILD.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST BREAK.OBJ GOTO FAILED",
+        "CL /AL /Od /c BREXIT.C >> STRBUILD.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST BREXIT.OBJ GOTO FAILED",
+        "CL /AL /Od /c BRKCHK.C >> STRBUILD.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST BRKCHK.OBJ GOTO FAILED",
+        "C:\\BIN\\LINK.EXE @BRK.RSP >> STRBUILD.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST BRKCHK.EXE GOTO FAILED",
+        "BRKCHK.EXE > BRKTEST.LOG", "IF ERRORLEVEL 2 GOTO FAILED",
+        "IF NOT ERRORLEVEL 1 GOTO FAILED",
+        "IF NOT EXIST BRKFILE.TMP GOTO FAILED",
+        "DEL BRKFILE.TMP", "IF EXIST BRKFILE.TMP GOTO FAILED",
         f"ECHO {stream_signature} > STRSIG.LOG",
         "ECHO Original RTL stream quiet-close DOS probe passed > STROK.LOG",
         "GOTO DONE", ":FAILED",
@@ -1043,6 +1070,7 @@ def stage_launcher(output: Path) -> list[str]:
     response = ([f"{name}+" for name in objects] + ["MEMORY.OBJ+", "DOSFILE.OBJ+",
                 "RTLIMG.OBJ+", "RTLTEXT.OBJ+", "RTLPAL.OBJ+", "RTLGR.OBJ+",
                 "RTLHW.OBJ+", "RTFILE.OBJ+", "RESSTATE.OBJ+", "HEAP.OBJ+", "CTRL.OBJ+",
+                "BREAK.OBJ+", "BREXIT.OBJ+",
                 "INP.OBJ+", "CLOCK.OBJ+", "CRTENV.OBJ+", "PICTDCL.OBJ",
                 "GATEWAY.EXE", "GATEWAY.MAP", "LLIBCR.LIB LIBH.LIB /NOD", ";"])
     (output / "LINK.RSP").write_text("\r\n".join(response) + "\r\n")
@@ -1109,6 +1137,7 @@ def validate_link_prerequisites(output: Path, objects: list[str]) -> None:
         ("msc51-compile-picture-dcl", lambda: validate_picture_dcl_adapter(output)),
         ("msc51-compile-resident-state", lambda: validate_resident_state_adapter(output)),
         ("msc51-compile-heap", lambda: validate_heap_adapter(output)),
+        ("msc51-compile-stream", lambda: validate_stream_probe(output)),
         ("msc51-compile-input", lambda: validate_input_adapter(output)),
         ("msc51-compile-clock", lambda: validate_clock_adapter(output)),
         ("msc51-compile-crt", lambda: validate_crt_adapter(output)),
@@ -1554,7 +1583,8 @@ def print_font_diagnostics(output: Path) -> None:
 def validate_stream_probe(output: Path) -> None:
     if (any(locate_case_insensitive(output, name) is None
             for name in ("STRCHK.EXE", "STRSTART.LOG", "STROK.LOG", "STRTEST.LOG",
-                         "CTRL.OBJ", "CTRLCHK.EXE", "CTRLTEST.LOG")) or
+                         "CTRL.OBJ", "CTRLCHK.EXE", "CTRLTEST.LOG",
+                         "BREAK.OBJ", "BREXIT.OBJ", "BRKCHK.EXE", "BRKTEST.LOG")) or
             locate_case_insensitive(output, "STRFAIL.LOG") is not None):
         raise ValueError("Original RTL stream quiet-close DOS probe has not passed. "
                          "Run gateway-msc51 compile-stream first.")
@@ -1580,6 +1610,9 @@ def validate_stream_probe(output: Path) -> None:
     control_log = locate_case_insensitive(output, "CTRLTEST.LOG")
     if "Original Ctrl-Break fifth cleanup DOS probe: PASS" not in control_log.read_text(errors="replace"):
         raise ValueError("Original Ctrl-Break fifth cleanup DOS probe returned no PASS witness")
+    break_log = locate_case_insensitive(output, "BRKTEST.LOG")
+    if "Ctrl-Break outer six-call DOS probe: entered" not in break_log.read_text(errors="replace"):
+        raise ValueError("Original Ctrl-Break outer six-call DOS probe returned no entry witness")
     signature = locate_case_insensitive(output, "STRSIG.LOG")
     if signature is None or signature.read_text().strip() != stream_source_signature(output):
         raise ValueError("Original stream cleanup source changed since DOS test")
@@ -1589,7 +1622,8 @@ def remove_stream_outputs(output: Path) -> None:
     names = {"STRSTART.LOG", "STROK.LOG", "STRFAIL.LOG", "STRBUILD.LOG",
              "STRSIG.LOG", "STRTEST.LOG", "STRCHK.EXE", "STRCHK.OBJ",
              "STRBRDG.OBJ", "CTRL.OBJ", "CTRLCHK.OBJ", "CTRLCHK.EXE",
-             "CTRLTEST.LOG"}
+             "CTRLTEST.LOG", "BREAK.OBJ", "BREXIT.OBJ", "BRKCHK.OBJ",
+             "BRKCHK.EXE", "BRKTEST.LOG"}
     if output.is_dir():
         for entry in output.iterdir():
             if entry.is_file() and entry.name.upper() in names:
@@ -1598,6 +1632,7 @@ def remove_stream_outputs(output: Path) -> None:
 
 def print_stream_diagnostics(output: Path) -> None:
     for name in ("STRFAIL.LOG", "STRBUILD.LOG", "STRTEST.LOG", "CTRLTEST.LOG",
+                 "BRKTEST.LOG",
                  "STROK.LOG"):
         path = locate_case_insensitive(output, name)
         content = path.read_text(errors="replace") if path else "(not created)"
@@ -2252,8 +2287,10 @@ def main(argv: list[str] | None = None) -> int:
               "flush-close and owned-buffer header marking from M11.OBJ "
               "and the fifth Ctrl-Break callee from CTRL.OBJ with real DOS "
               "interrupt-vector, file-handle and BIOS-mode checks; 128/512-byte "
-              "CR/LF conversion passed. Outer Ctrl-Break handler and CRT errno "
-              "remain unsupported.")
+              "CR/LF conversion passed. BREAK.OBJ executed the recovered outer "
+              "six-call sequence, terminating through MS C's exit(1) with "
+              "DOS status 1. Original RTL CRT shutdown and CRT errno paths "
+              "remain unimplemented.")
         return 0
     if args.command == "compile-input":
         try:

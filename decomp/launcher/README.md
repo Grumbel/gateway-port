@@ -1145,7 +1145,13 @@ reset. `Original Ctrl-Break fifth cleanup DOS probe: PASS` is a mandatory
 source-signed stream-stage witness. The source rejects null saved vectors,
 invalid relocated selectors and standard handles before touching the IVT;
 the untouched 500ms original snapshot has uninitialized saved vectors.
-The outer Ctrl-Break handler and DOS `_main` are still absent.
+The outer Ctrl-Break handler at `GATE.RTL:157b8..157e4` is now recovered
+as a bounded six-call sequence in `BREAK.OBJ`, linked with the five
+reconstructed teardown callees and the `BREXIT.OBJ` Microsoft C `exit(1)`
+adapter. The real MS C 5.1 `BRKCHK.EXE` probe verified process status 1,
+and the full Microsoft LINK checkpoint exports the handler. This is not
+an exact translation of original `RTL:621e` CRT atexit/descriptor/IRQ
+shutdown, and the source-C DOS `_main` is still absent.
 
 The independent `msc51-compile-picture-dcl` stage now provides a bounded
 streaming version of the image decompression service from the tested native
