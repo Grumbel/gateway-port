@@ -26,6 +26,7 @@ int main(void)
     unsigned descriptor_segment = 0;
     uint16_t offset = 0xfffdu; /* field +0ah wraps around the 16-bit offset */
     uint16_t flags_offset = 7u;
+    GateFarPtr flush_stream;
     int valid = 1;
 
     if (_dos_allocmem(0x0620u, &data_segment) != 0) {
@@ -67,6 +68,39 @@ int main(void)
                    "bypass open flag invalidated");
     valid &= check(gate_ds_word(GATE_DS_CONTROL_STREAM_AUX), 0u,
                    "bypass companion reset");
+
+    /* The nested RTL:6eb8 buffer-flush resets current FAR pointer and
+     * pending count even when it does not need to call the CRT writer. */
+    flush_stream.segment = (uint16_t)descriptor_segment;
+    flush_stream.offset = 0x0010u;
+    gate_far_set_byte(flush_stream.segment, 0x001au, 0x01u);
+    gate_far_set_word(flush_stream.segment, 0x0010u, 0x1234u);
+    gate_far_set_word(flush_stream.segment, 0x0012u, 0x5678u);
+    gate_far_set_word(flush_stream.segment, 0x0014u, 0x9999u);
+    gate_far_set_word(flush_stream.segment, 0x0016u, 0x4000u);
+    gate_far_set_word(flush_stream.segment, 0x0018u, 0x5000u);
+    valid &= check(gate_linked_flush_intro_stream(flush_stream), 0u,
+                   "nonwriting mode flush result");
+    valid &= check(gate_far_word(flush_stream.segment, 0x0010u), 0x4000u,
+                   "nonwriting mode current offset reset");
+    valid &= check(gate_far_word(flush_stream.segment, 0x0012u), 0x5000u,
+                   "nonwriting mode current segment reset");
+    valid &= check(gate_far_word(flush_stream.segment, 0x0014u), 0u,
+                   "nonwriting mode count reset");
+    valid &= check(gate_far_byte(flush_stream.segment, 0x001au), 0x01u,
+                   "nonwriting mode flags unchanged");
+
+    gate_far_set_byte(flush_stream.segment, 0x001au, 0x0au);
+    gate_far_set_word(flush_stream.segment, 0x0010u, 0x3ffeu);
+    gate_far_set_word(flush_stream.segment, 0x0014u, 0x7777u);
+    valid &= check(gate_linked_flush_intro_stream(flush_stream), 0u,
+                   "mode-2 no-pending flush result");
+    valid &= check(gate_far_word(flush_stream.segment, 0x0010u), 0x4000u,
+                   "mode-2 signed pending offset reset");
+    valid &= check(gate_far_word(flush_stream.segment, 0x0014u), 0u,
+                   "mode-2 pending count reset");
+    puts(valid ? "Original stream no-write flush DOS probe: PASS" :
+                 "Original stream no-write flush DOS probe: FAIL");
 
     valid &= check((uint16_t)_dos_freemem(descriptor_segment), 0u,
                    "release descriptor allocation");

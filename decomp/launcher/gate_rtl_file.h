@@ -24,6 +24,16 @@ enum {
     GATE_CONTROL_STREAM_FLAGS_OFFSET = 0x0a,
     GATE_CONTROL_STREAM_ACTIVE_MASK = 0x83,
     GATE_CONTROL_STREAM_BYPASS_BIT = 0x40,
+    /* RTL:6eb8 stream structure: current FAR pointer at +0, pending
+     * count at +4, base FAR pointer at +6, control flags at +0ah. */
+    GATE_CONTROL_STREAM_CURRENT_OFFSET = 0,
+    GATE_CONTROL_STREAM_CURRENT_SEGMENT = 2,
+    GATE_CONTROL_STREAM_PENDING_COUNT = 4,
+    GATE_CONTROL_STREAM_BASE_OFFSET = 6,
+    GATE_CONTROL_STREAM_BASE_SEGMENT = 8,
+    GATE_CONTROL_STREAM_WRITE_MODE = 2,
+    GATE_CONTROL_STREAM_MODE_MASK = 3,
+    GATE_CONTROL_STREAM_FORCE_WRITE_BIT = 8,
 };
 
 /* Source identities are ORIGINAL GATE.RTL file offsets.  These functions
@@ -48,6 +58,11 @@ void gate_rtl_close_resource_file(uint16_t handle);
 /* First Ctrl-Break FAR callee RTL:15706. Currently verified for already
  * closed/inactive stream descriptors; active CRT flush/close aborts. */
 void gate_linked_shutdown_intro_stream(void);
+
+/* Nested RTL:6eb8..6f45 buffered-flush routine. Implements the branches
+ * that do not enter the unresolved CRT descriptor writer. Unsupported
+ * writing and relocated descriptor-table branches abort explicitly. */
+uint16_t gate_linked_flush_intro_stream(GateFarPtr stream);
 
 /* The original low-level runtime/DOS calls retain their FAR identities.
  * Their complete implementations and ABI have not been recovered yet. */

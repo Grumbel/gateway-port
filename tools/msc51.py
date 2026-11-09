@@ -1536,6 +1536,8 @@ def validate_stream_probe(output: Path) -> None:
     log = locate_case_insensitive(output, "STRTEST.LOG")
     if "Original stream quiet-close DOS probe: PASS" not in log.read_text(errors="replace"):
         raise ValueError("Original stream quiet-close DOS probe returned no PASS witness")
+    if "Original stream no-write flush DOS probe: PASS" not in log.read_text(errors="replace"):
+        raise ValueError("Original stream no-write flush DOS probe returned no PASS witness")
     signature = locate_case_insensitive(output, "STRSIG.LOG")
     if signature is None or signature.read_text().strip() != stream_source_signature(output):
         raise ValueError("Original stream cleanup source changed since DOS test")
@@ -2200,9 +2202,9 @@ def main(argv: list[str] | None = None) -> int:
                   file=sys.stderr)
             print_stream_diagnostics(output)
             return 1
-        print("Microsoft C 5.1 executed the original recovered first Ctrl-Break "
-              "quiet-stream cleanup from the launcher object with real DOS memory; "
-              "active buffered streams remain unsupported.")
+        print("Microsoft C 5.1 executed the first Ctrl-Break quiet-close and "
+              "nested RTL:6eb8 no-write flush from the actual launcher M11.OBJ "
+              "with real DOS memory; buffered writes and active close remain unsupported.")
         return 0
     if args.command == "compile-input":
         try:

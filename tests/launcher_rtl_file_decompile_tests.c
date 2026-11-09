@@ -60,6 +60,16 @@ void gate_far_set_byte(uint16_t segment, uint16_t offset, uint8_t value)
     assert(segment == 0x9876u);
     stream_bytes[offset] = value;
 }
+uint16_t gate_far_word(uint16_t segment, uint16_t offset)
+{
+    return (uint16_t)(gate_far_byte(segment, offset) |
+           ((uint16_t)gate_far_byte(segment, (uint16_t)(offset + 1u)) << 8));
+}
+void gate_far_set_word(uint16_t segment, uint16_t offset, uint16_t value)
+{
+    gate_far_set_byte(segment, offset, (uint8_t)value);
+    gate_far_set_byte(segment, (uint16_t)(offset + 1u), (uint8_t)(value >> 8));
+}
 uint16_t gate_ds_segment(void) { return 0x4567; }
 GateFarPtr gate_stack_pointer(void *pointer)
 {
@@ -287,12 +297,74 @@ static void test_first_ctrl_break_stream_cleanup_quiet_branches(void)
 #endif
 }
 
+static void test_original_stream_flush_without_writer(void)
+{
+    GateFarPtr stream = {0x9876u, 0x0110u};
+    uint16_t f = stream.offset;
+    int old_writes = write_calls;
+    int old_closes = close_calls;
+
+    /* RTL:6eca skips the CRT writer for descriptor modes other than 2,
+     * but still restores current FAR pointer and zeroes the count. */
+    gate_far_set_byte(stream.segment, (uint16_t)(f + 0x0au), 0x01u);
+    gate_far_set_word(stream.segment, f, 0xabcd);
+    gate_far_set_word(stream.segment, (uint16_t)(f + 2u), 0x1000u);
+    gate_far_set_word(stream.segment, (uint16_t)(f + 4u), 0x4321u);
+    gate_far_set_word(stream.segment, (uint16_t)(f + 6u), 0x4567u);
+    gate_far_set_word(stream.segment, (uint16_t)(f + 8u), 0x3456u);
+    assert(gate_linked_flush_intro_stream(stream) == 0u);
+    assert(gate_far_word(stream.segment, f) == 0x4567u);
+    assert(gate_far_word(stream.segment, (uint16_t)(f + 2u)) == 0x3456u);
+    assert(gate_far_word(stream.segment, (uint16_t)(f + 4u)) == 0u);
+    assert(gate_far_byte(stream.segment, (uint16_t)(f + 0x0au)) == 0x01u);
+
+    /* Mode 2 with bit 08h set computes signed 16-bit cursor-base.
+     * Equal and negative differences skip the CRT writer. */
+    gate_far_set_byte(stream.segment, (uint16_t)(f + 0x0au), 0x0au);
+    gate_far_set_word(stream.segment, f, 0x4567u);
+    gate_far_set_word(stream.segment, (uint16_t)(f + 4u), 0x7777u);
+    assert(gate_linked_flush_intro_stream(stream) == 0u);
+    assert(gate_far_word(stream.segment, (uint16_t)(f + 4u)) == 0u);
+
+    gate_far_set_word(stream.segment, f, 0x4565u); /* signed -2 */
+    gate_far_set_word(stream.segment, (uint16_t)(f + 4u), 3u);
+    assert(gate_linked_flush_intro_stream(stream) == 0u);
+    assert(gate_far_word(stream.segment, f) == 0x4567u);
+    assert(gate_far_word(stream.segment, (uint16_t)(f + 4u)) == 0u);
+    assert(write_calls == old_writes && close_calls == old_closes);
+
+#ifndef _WIN32
+    /* Unsupported write-needed or descriptor-table branches fail closed.
+     * Child failures must leave parent fixture intact. */
+    {
+        int branch;
+        for (branch = 0; branch < 2; ++branch) {
+            pid_t child = fork();
+            int status = 0;
+            assert(child >= 0);
+            if (child == 0) {
+                struct rlimit limit = {0, 0};
+                (void)setrlimit(RLIMIT_CORE, &limit);
+                gate_far_set_byte(stream.segment, (uint16_t)(f + 0x0au),
+                                  branch ? 0x02u : 0x0au);
+                gate_far_set_word(stream.segment, f, 0x4568u);
+                (void)gate_linked_flush_intro_stream(stream);
+                _exit(0);
+            }
+            assert(waitpid(child, &status, 0) == child);
+            assert(WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT);
+        }
+    }
+#endif
+}
+
 int main(void)
 {
     test_base_and_path();
     test_reads();
     test_writes_and_close();
     test_first_ctrl_break_stream_cleanup_quiet_branches();
+    test_original_stream_flush_without_writer();
     puts("intro RTL file wrappers: ok");
     return 0;
 }

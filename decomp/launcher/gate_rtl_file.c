@@ -4,6 +4,51 @@
 #include "gate_rtl_file.h"
 #include <stdlib.h>
 
+/* Nested RTL:6eb8..6f45, linked from the first control-key CRT close.
+ * On EVERY return the original writes the descriptor base FAR pointer
+ * into current (+0/+2) and resets its pending count (+4), even if no
+ * write was needed. Only its nonwriting routes are source-reconstructed.
+ * The mode-2 path without bit 08h reads a separately relocated DOS
+ * descriptor flag table; mode-2 pending data calls the CRT writer at
+ * RTL:7d64. Neither behavior is safe to approximate as a successful
+ * flush, so abort before changing the descriptor in either case. */
+uint16_t gate_linked_flush_intro_stream(GateFarPtr stream)
+{
+    uint16_t field;
+    uint8_t flags;
+    uint16_t base_offset;
+    uint16_t base_segment;
+
+    if (stream.segment == 0)
+        abort();
+    field = (uint16_t)(stream.offset + GATE_CONTROL_STREAM_FLAGS_OFFSET);
+    flags = gate_far_byte(stream.segment, field);
+    if ((flags & GATE_CONTROL_STREAM_MODE_MASK) == GATE_CONTROL_STREAM_WRITE_MODE) {
+        uint16_t cursor;
+        uint16_t base;
+        if ((flags & GATE_CONTROL_STREAM_FORCE_WRITE_BIT) == 0)
+            abort();
+        cursor = gate_far_word(stream.segment, (uint16_t)(stream.offset +
+                               GATE_CONTROL_STREAM_CURRENT_OFFSET));
+        base = gate_far_word(stream.segment, (uint16_t)(stream.offset +
+                             GATE_CONTROL_STREAM_BASE_OFFSET));
+        if ((int16_t)(uint16_t)(cursor - base) > 0)
+            abort();
+    }
+
+    base_offset = gate_far_word(stream.segment, (uint16_t)(stream.offset +
+                                GATE_CONTROL_STREAM_BASE_OFFSET));
+    base_segment = gate_far_word(stream.segment, (uint16_t)(stream.offset +
+                                 GATE_CONTROL_STREAM_BASE_SEGMENT));
+    gate_far_set_word(stream.segment, (uint16_t)(stream.offset +
+                      GATE_CONTROL_STREAM_CURRENT_OFFSET), base_offset);
+    gate_far_set_word(stream.segment, (uint16_t)(stream.offset +
+                      GATE_CONTROL_STREAM_CURRENT_SEGMENT), base_segment);
+    gate_far_set_word(stream.segment, (uint16_t)(stream.offset +
+                      GATE_CONTROL_STREAM_PENDING_COUNT), 0);
+    return 0;
+}
+
 /* First Ctrl-Break FAR callee, RTL:15706..15729, linked 221b:021f.
  * DS:156e/1570 hold a signed open flag and companion word; DS:6150/6152
  * hold the stream descriptor FAR pointer (a distinct relocation group).

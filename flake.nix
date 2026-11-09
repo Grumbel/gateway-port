@@ -494,7 +494,7 @@
         msc51-compile-stream = {
           type = "app";
           program = "${self.packages.${system}.msc51-compile-stream}/bin/gateway-msc51-compile-stream";
-          meta.description = "Verify the original Ctrl-Break stream quiet-close branch with Microsoft C 5.1 and DOSBox";
+          meta.description = "Verify Ctrl-Break quiet stream close and nested no-write flush under Microsoft C 5.1 and DOSBox";
         };
         msc51-compile-input = {
           type = "app";

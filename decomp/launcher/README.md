@@ -1029,6 +1029,13 @@ negative word skips everything. The native code aborts on active streams
 requiring the unrecovered flush/close sequence. The DOS probe links the
 real `M11.OBJ`, DOS file and runtime adapters, with a source signature
 and `STRTEST.LOG` PASS witness. It does not prove active file closure.
+The same stage now also verifies the nested `RTL:6eb8..6f45` no-write
+flush in `M11.OBJ`: mode != 2 or mode 2/bit-08h with nonpositive signed
+cursor-minus-base skips the CRT writer, resets current pointer to base,
+zeros pending count and returns zero. Actual buffered writes and the
+mode-2 descriptor-table branch abort; the outer close still rejects
+active descriptors. `STRTEST.LOG` requires a second independent PASS
+line for the nested flush.
 
 `msc51-compile-input` adds a real DOS BIOS keyboard/mouse adapter for
 linked `0df2:000a/0030` and `0e48:011b/07fe`. It checks original input

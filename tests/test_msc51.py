@@ -1114,6 +1114,11 @@ class MSC51Tests(unittest.TestCase):
             for name in ("STRCHK.EXE", "STRSTART.LOG", "STROK.LOG"):
                 (output / name).write_text("built\n")
             (output / "STRTEST.LOG").write_text("Original stream quiet-close DOS probe: PASS\n")
+            with self.assertRaisesRegex(ValueError, "no-write flush"):
+                msc51.validate_stream_probe(output)
+            (output / "STRTEST.LOG").write_text(
+                "Original stream no-write flush DOS probe: PASS\n"
+                "Original stream quiet-close DOS probe: PASS\n")
             (output / "STRSIG.LOG").write_text(msc51.stream_source_signature(output))
             msc51.validate_stream_probe(output)
             (output / wrapper).write_text((output / wrapper).read_text() + "/* changed */\n")

@@ -1727,6 +1727,36 @@ wraparound, and both original DS state writes. The observed
 add fail-closed active-buffer coverage. This still does not reconstruct
 the outer `_gate_linked_handle_control_key` or the executable `_main`.
 
+### Nested stream flush: source-verified no-write paths
+
+The stream-close call at original `RTL:6663` invokes the independently
+entry-matched `RTL:6eb8..6f45`. Its original 16-bit disassembly tests the
+stream flags byte at descriptor `+0ah`. If `(flags & 03h) != 02h`, it
+branches directly to `RTL:6f27`. For mode 2 with bit `08h` set, it
+computes the **signed 16-bit** difference between the cursor offset
+at `+0` and base offset at `+6`; differences less than or equal to zero
+also reach `RTL:6f27` without a file write. Every such path copies the
+base FAR pointer at `+6/+8` to the current pointer at `+0/+2`, sets
+the pending-count word `+4` to zero, and returns `AX=0`.
+
+The new source-C `gate_linked_flush_intro_stream` reproduces only those
+no-write paths in the same `M11.OBJ` as the quiet close. A mode-2 stream
+without bit `08h` requires the two independently relocated descriptor-
+table words at `RTL:6ed8/6eea`; mode-2 positive pending bytes invoke
+the original CRT descriptor writer at `RTL:6f0f → RTL:7d64`. Both
+unrecovered paths abort **before mutating** the descriptor. The outer
+`gate_linked_shutdown_intro_stream` still rejects active states until
+the complete close/flush/write chain can be handled faithfully.
+
+`STRCHK.EXE` now tests the actual Microsoft C 5.1 implementation against
+real DOS-allocated descriptor memory: both current FAR-pointer words,
+pending count reset, untouched mode bits, and signed negative pending
+arithmetic. A separate mandatory witness
+`Original stream no-write flush DOS probe: PASS` is required alongside
+the earlier quiet-close PASS; the staging signature ties both to the
+same recovered launcher source. Native tests exercise write-needed and
+unresolved descriptor-table rejection using child-process SIGABRT checks.
+
 Three additional diagnostic callees now have strong original entry
 boundaries, not merely byte-window guesses:
 
