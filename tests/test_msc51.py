@@ -1155,6 +1155,11 @@ class MSC51Tests(unittest.TestCase):
             (output / "STRTEST.LOG").write_text(
                 (output / "STRTEST.LOG").read_text() +
                 "Original active stream flush-close DOS probe: PASS\n")
+            with self.assertRaisesRegex(ValueError, "owned CRT stream buffer"):
+                msc51.validate_stream_probe(output)
+            (output / "STRTEST.LOG").write_text(
+                (output / "STRTEST.LOG").read_text() +
+                "Original owned CRT stream buffer DOS probe: PASS\n")
             (output / "STRSIG.LOG").write_text(msc51.stream_source_signature(output))
             msc51.validate_stream_probe(output)
             (output / wrapper).write_text((output / wrapper).read_text() + "/* changed */\n")

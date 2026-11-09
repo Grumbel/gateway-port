@@ -610,25 +610,6 @@ static void test_first_ctrl_break_stream_cleanup_quiet_branches(void)
     assert(ds_words[GATE_DS_CONTROL_STREAM_AUX] == 0u);
     assert(close_calls == prior_closes && write_calls == prior_writes);
 
-#ifndef _WIN32
-    /* The busy descriptor would enter original CRT flushing and writing.
-     * Never claim that the quiet-path wrapper handled it. */
-    ds_words[GATE_DS_CONTROL_STREAM_OPEN] = 0u;
-    stream_bytes[flag_offset] = 0x89u; /* owns heap buffer: not reconstructed */
-    {
-        pid_t child = fork();
-        int status = 0;
-        assert(child >= 0);
-        if (child == 0) {
-            struct rlimit limit = {0, 0};
-            (void)setrlimit(RLIMIT_CORE, &limit);
-            gate_linked_shutdown_intro_stream();
-            _exit(0);
-        }
-        assert(waitpid(child, &status, 0) == child);
-        assert(WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT);
-    }
-#endif
 }
 
 static void test_first_ctrl_break_stream_cleanup_active_branches(void)
@@ -642,8 +623,8 @@ static void test_first_ctrl_break_stream_cleanup_active_branches(void)
     int old_writes = crt_write_calls;
     int old_closes = crt_close_calls;
 
-    /* RTL:6640 first invokes 6eb8, skips 6cd2's buffer release for a
-     * descriptor without bit 08h, then calls the DOS close at 7a30. */
+    /* RTL:6640 invokes 6eb8, skips 6cd2's release without bit 08h,
+     * then calls the DOS close at 7a30. */
     gate_far_set_word(gate_ds_segment(),
         (uint16_t)(file_record + GATE_CRT_FILE_CLOSE_EXTRA_WORD_OFFSET), 0u);
     gate_far_set_byte(gate_ds_segment(), file_record, GATE_CRT_FILE_WRITE_BIT);
@@ -696,12 +677,63 @@ static void test_first_ctrl_break_stream_cleanup_active_branches(void)
     assert(gate_far_word(stream.segment, (uint16_t)(f + 4u)) == 0u);
     assert(ds_bytes[GATE_DS_CRT_HANDLE_FLAGS + 3u] == 0u);
 
+    /* RTL:6cd2 + 7f1a: free of an owned CRT buffer is an OR of bit 0
+     * at ES:[base-2], not DOS AH=49h. Mode 1 never writes on flush. */
+    gate_far_set_byte(source.segment, (uint16_t)(source.offset - 2u), 0x82u);
+    gate_far_set_byte(stream.segment,
+        (uint16_t)(f + GATE_CONTROL_STREAM_FLAGS_OFFSET), 0x09u);
+    gate_far_set_word(stream.segment, (uint16_t)(f + 6u), source.offset);
+    gate_far_set_word(stream.segment, (uint16_t)(f + 8u), source.segment);
+    gate_far_set_word(stream.segment, f, (uint16_t)(source.offset + 2u));
+    gate_far_set_word(stream.segment, (uint16_t)(f + 2u), source.segment);
+    gate_far_set_word(stream.segment, (uint16_t)(f + 4u), 2u);
+    ds_words[GATE_DS_CONTROL_STREAM_OPEN] = 0u;
+    gate_linked_shutdown_intro_stream();
+    assert(crt_write_calls == old_writes + 1);
+    assert(crt_close_calls == old_closes + 3);
+    assert(gate_far_byte(source.segment, (uint16_t)(source.offset - 2u)) == 0x83u);
+    assert(gate_far_word(stream.segment, f) == 0u);
+    assert(gate_far_word(stream.segment, (uint16_t)(f + 2u)) == 0u);
+    assert(gate_far_word(stream.segment, (uint16_t)(f + 4u)) == 0u);
+    assert(gate_far_word(stream.segment, (uint16_t)(f + 6u)) == 0u);
+    assert(gate_far_word(stream.segment, (uint16_t)(f + 8u)) == 0u);
+    assert(gate_far_byte(stream.segment, (uint16_t)(f + 10u)) == 0u);
+    assert(gate_far_byte(stream.segment, (uint16_t)(f + 11u)) == 3u);
+
+    /* The mode-2 owned case writes the pending bytes BEFORE marking the
+     * CRT heap header and zeroing the descriptor's current/base words. */
+    gate_far_set_byte(source.segment, (uint16_t)(source.offset - 2u), 0x04u);
+    gate_far_set_byte(stream.segment, (uint16_t)(f + 10u), 0x0au);
+    gate_far_set_word(stream.segment, (uint16_t)(f + 6u), source.offset);
+    gate_far_set_word(stream.segment, (uint16_t)(f + 8u), source.segment);
+    gate_far_set_word(stream.segment, f, (uint16_t)(source.offset + 3u));
+    gate_far_set_word(stream.segment, (uint16_t)(f + 2u), source.segment);
+    gate_far_set_word(stream.segment, (uint16_t)(f + 4u), 3u);
+    ds_words[GATE_DS_CONTROL_STREAM_OPEN] = 0u;
+    crt_write_result.ax = 3u;
+    gate_linked_shutdown_intro_stream();
+    assert(crt_write_calls == old_writes + 2);
+    assert(crt_close_calls == old_closes + 4);
+    assert(gate_far_byte(source.segment, (uint16_t)(source.offset - 2u)) == 0x05u);
+    assert(gate_far_word(stream.segment, f) == 0u);
+    assert(gate_far_word(stream.segment, (uint16_t)(f + 6u)) == 0u);
+
+    /* The original CRT free skips a 0000:0000 buffer without touching a
+     * header; the surrounding stream still gets reset and closed. */
+    gate_far_set_byte(stream.segment, (uint16_t)(f + 10u), 0x09u);
+    gate_far_set_word(stream.segment, (uint16_t)(f + 6u), 0u);
+    gate_far_set_word(stream.segment, (uint16_t)(f + 8u), 0u);
+    ds_words[GATE_DS_CONTROL_STREAM_OPEN] = 0u;
+    gate_linked_shutdown_intro_stream();
+    assert(crt_close_calls == old_closes + 5);
+    assert(gate_far_byte(source.segment, (uint16_t)(source.offset - 2u)) == 0x05u);
+
 #ifndef _WIN32
-    /* An owned buffer, nonzero close-postprocessing word, invalid signed
-     * byte handle, failed flush or failed DOS close are not reconstructed. */
+    /* Nonzero close-postprocessing word, invalid signed byte handle,
+     * failed flush or failed DOS close are still not reconstructed. */
     {
         int branch;
-        for (branch = 0; branch < 5; ++branch) {
+        for (branch = 0; branch < 4; ++branch) {
             pid_t child = fork();
             int status = 0;
             assert(child >= 0);
@@ -711,21 +743,21 @@ static void test_first_ctrl_break_stream_cleanup_active_branches(void)
                 ds_words[GATE_DS_CONTROL_STREAM_OPEN] = 0u;
                 gate_far_set_byte(stream.segment,
                     (uint16_t)(f + GATE_CONTROL_STREAM_FLAGS_OFFSET),
-                    branch == 0 ? 0x09u : GATE_CONTROL_STREAM_WRITE_MODE);
+                    GATE_CONTROL_STREAM_WRITE_MODE);
                 gate_far_set_word(stream.segment, f, source.offset);
                 gate_far_set_word(stream.segment, (uint16_t)(f + 4u), 0u);
                 gate_far_set_byte(stream.segment,
                     (uint16_t)(f + GATE_CONTROL_STREAM_HANDLE_OFFSET),
-                    branch == 2 ? 0xffu : 3u);
+                    branch == 1 ? 0xffu : 3u);
                 gate_far_set_word(gate_ds_segment(),
                     (uint16_t)(file_record + GATE_CRT_FILE_CLOSE_EXTRA_WORD_OFFSET),
-                    branch == 1 ? 1u : 0u);
-                if (branch == 3) {
+                    branch == 0 ? 1u : 0u);
+                if (branch == 2) {
                     gate_far_set_word(stream.segment, f,
                         (uint16_t)(source.offset + 3u));
                     crt_write_result.ax = 1u;
                 }
-                if (branch == 4)
+                if (branch == 3)
                     crt_close_result.carry = 1u;
                 gate_linked_shutdown_intro_stream();
                 _exit(0);

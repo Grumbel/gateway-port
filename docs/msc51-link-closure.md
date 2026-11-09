@@ -1720,8 +1720,8 @@ without issuing file I/O. The remaining active branch first calls the
 verified stream flush `RTL:6eb8`, then buffer release `RTL:6cd2`, then
 DOS handle close `RTL:7a30`. The recovered
 `gate_linked_shutdown_intro_stream` implements the two quiet branches,
-already-closed early exit, and the bounded active route without heap-owned
-buffers or post-close processing. Unreconstructed variants abort.
+already-closed early exit, and the bounded active routes with or without
+owned CRT buffers but no post-close processing. Unreconstructed variants abort.
 
 The new `msc51-compile-stream` compiles that source into the actual
 recovered launcher `M11.OBJ` under Microsoft C 5.1 `/AL /Od`, links it
@@ -1731,7 +1731,7 @@ already-closed state, both quiet descriptor masks, 16-bit FAR-offset
 wraparound, and both original DS state writes. The observed
 `STRTEST.LOG` witness is `Original stream quiet-close DOS probe: PASS`;
 `STRSIG.LOG` rejects stale results after source changes. Native tests
-add fail-closed owned-buffer coverage. This still does not reconstruct
+add fail-closed close-metadata coverage. This still does not reconstruct
 the outer `_gate_linked_handle_control_key` or the executable `_main`.
 
 ### Bounded active CRT stream close through real DOS
@@ -1749,20 +1749,20 @@ data WORDs. Its two newly entered callees are independently source-matched:
 read-only comparisons against the genuine `at-500.bin` snapshot, not a
 claim that the as-yet-unreconstructed branches were executed.
 `RTL:6cd2` does nothing if stream flag bit `08h` is clear; when set, it
-frees a FAR heap buffer and zeros stream buffer metadata, which remains
-outside the supported subset. `RTL:7a30` checks the relocated descriptor
+marks the CRT FAR buffer as free and zeros stream buffer metadata, now
+covered by the later owned-buffer verification. `RTL:7a30` checks the relocated descriptor
 limit, invokes DOS `INT 21h/AH=3eh` and, on success, clears the handle's
 linked flag byte at `DS:2bf0 + handle`. The parent reads a WORD at file
 record `+4`, linked to `DS:3338 + 6*index`. A nonzero value enters more
 post-close pathname logic; its purpose and side effects remain unverified.
 
-The new source-C path is restricted to bit `08h` clear, that additional
+The initial source-C active-close pass was restricted to bit `08h` clear, that additional
 WORD zero, a valid sign-extended descriptor handle, a fully successful
 buffer flush, and a successful DOS close. It retains the original
 signed `IDIV 12` stream index, resets the stream's current pointer/count
 through `RTL:6eb8`, zeros the CRT handle flag, then clears the stream
 control byte and updates both linked open-state words in the original
-order. Unmapped buffer release, post-close operations, flush errors and
+order. Post-close operations, flush errors and
 DOS close errors abort rather than claim original error handling.
 
 Host tests exercise both active mode-1 no-write and mode-2 buffered-write
@@ -1774,6 +1774,31 @@ the file and reads all **21 exact bytes** (including both previous CRLF
 conversions). The source-signed `Original active stream flush-close DOS
 probe: PASS` witness is mandatory. This covers a real successful CRT
 close, not a complete executable shutdown or temporary-file cleanup.
+
+**Owned CRT buffers (2026-11-09, DOS verified):** The now-recovered
+`RTL:6cd2..6d15` branch requires `(flags & 83h) != 0` and bit `08h` set.
+It calls `RTL:7f1a..7f2e` with the base FAR pointer at descriptor `+6`.
+All **21 of 21 original bytes** at that entry match the 500ms live
+`12a5:283c` code without any additional relocation masking.
+That original CRT `free` **does not invoke DOS `AH=49h`**: it checks
+`segment | offset`, then ORs bit 0 into the byte two bytes preceding
+the pointed-to buffer, with 16-bit offset wraparound. The caller clears
+bit `08h`, current FAR pointer, count, and base FAR pointer, in that
+order. This can now run between the already verified flush and DOS close
+when the file-record close-extra WORD is zero and the DOS calls succeed.
+
+The same `M11.OBJ` was compiled by real Microsoft C 5.1 and executed
+under headless DOSBox Staging. A new probe allocated an actual DOS memory
+block, installed a CRT-style byte header `82h` and a two-byte pending
+stream, then called the original reconstructed close. The header was
+marked `83h`, all five descriptor WORDs became zero, the file was
+reopened and read back exactly, and DOS could still release the original
+allocation afterwards, demonstrating that the CRT free marker did not
+free the DOS block. The new ninth mandatory source-signed witness is
+`Original owned CRT stream buffer DOS probe: PASS`. Host tests also
+exercise the no-write mode and the original `0000:0000` no-op buffer.
+Nonzero post-close metadata, CRT errno paths and the outer Ctrl-Break
+sequence remain unimplemented.
 
 ### Nested stream flush: source-verified no-write paths
 

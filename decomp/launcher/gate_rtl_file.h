@@ -57,8 +57,8 @@ uint16_t gate_rtl_write_resource_elements(uint16_t handle, GateFarPtr source,
 void gate_rtl_close_resource_file(uint16_t handle);
 
 /* First Ctrl-Break FAR callee RTL:15706. Closed/inactive and successful
- * active CRT close without heap buffer or file postprocessing are supported;
- * unsupported active descriptor and DOS error paths abort. */
+ * active CRT closes, including CRT buffer-header free-marking, are supported
+ * without file postprocessing; unsupported metadata and DOS errors abort. */
 void gate_linked_shutdown_intro_stream(void);
 
 /* CRT descriptor writer RTL:7d64..7eab. Successful binary writes,

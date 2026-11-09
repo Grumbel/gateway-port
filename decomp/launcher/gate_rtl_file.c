@@ -241,12 +241,47 @@ uint16_t gate_linked_flush_intro_stream(GateFarPtr stream)
  * then RTL:6cd2 to release the buffer (a no-op unless bit 08h is set),
  * then RTL:7a30 to close the signed-byte handle from descriptor +0bh.
  * These FAR targets are visible as 12a5:17da, :15f4 and :2352 in the
- * 500ms original RAM capture. The successful CRT close resets the linked
+ * 500ms original RAM capture. RTL:6cd2 invokes RTL:7f1a, whose free
+ * operation simply sets bit zero in byte ES:[BX-2] when the FAR pointer
+ * is non-null. It clears current, base and count, not the DOS memory
+ * block. The successful CRT close resets the linked
  * DS:2bf0 handle flag; the parent only post-processes if the six-byte
- * file record's +4 WORD is nonzero. Only the no-buffer/no-postprocess,
- * successful-flush-and-close branch is reconstructed. Heap and post-close
- * branches abort before mutation; DOS errors abort without fabricating
- * the original CRT errno side effects. */
+ * file record's +4 WORD is nonzero. Both CRT buffer-release variants,
+ * without post-close processing and with successful flush/close, are
+ * reconstructed. Unsupported post-close or DOS error paths abort. */
+static void gate_crt_release_stream_buffer(GateFarPtr stream, uint8_t flags)
+{
+    uint16_t field;
+    GateFarPtr base;
+    if ((flags & GATE_CONTROL_STREAM_ACTIVE_MASK) == 0u ||
+        (flags & GATE_CONTROL_STREAM_FORCE_WRITE_BIT) == 0u)
+        return;
+
+    base.offset = gate_far_word(stream.segment, (uint16_t)(stream.offset +
+                     GATE_CONTROL_STREAM_BASE_OFFSET));
+    base.segment = gate_far_word(stream.segment, (uint16_t)(stream.offset +
+                     GATE_CONTROL_STREAM_BASE_SEGMENT));
+    if (base.segment != 0u || base.offset != 0u) {
+        field = (uint16_t)(base.offset - 2u);
+        gate_far_set_byte(base.segment, field,
+            (uint8_t)(gate_far_byte(base.segment, field) | 1u));
+    }
+    /* RTL:6cf9..6d10: the owned-buffer bit is cleared before zeroing
+     * five WORD fields. The handle byte at +0bh is left alone. */
+    gate_far_set_byte(stream.segment, (uint16_t)(stream.offset +
+        GATE_CONTROL_STREAM_FLAGS_OFFSET), (uint8_t)(flags & 0xf7u));
+    gate_far_set_word(stream.segment, (uint16_t)(stream.offset +
+        GATE_CONTROL_STREAM_CURRENT_OFFSET), 0u);
+    gate_far_set_word(stream.segment, (uint16_t)(stream.offset +
+        GATE_CONTROL_STREAM_CURRENT_SEGMENT), 0u);
+    gate_far_set_word(stream.segment, (uint16_t)(stream.offset +
+        GATE_CONTROL_STREAM_PENDING_COUNT), 0u);
+    gate_far_set_word(stream.segment, (uint16_t)(stream.offset +
+        GATE_CONTROL_STREAM_BASE_OFFSET), 0u);
+    gate_far_set_word(stream.segment, (uint16_t)(stream.offset +
+        GATE_CONTROL_STREAM_BASE_SEGMENT), 0u);
+}
+
 void gate_linked_shutdown_intro_stream(void)
 {
     GateFarPtr stream;
@@ -268,12 +303,6 @@ void gate_linked_shutdown_intro_stream(void)
         uint16_t handle;
         GateDosFileResult close_result;
 
-        /* RTL:668e's buffer-release call does nothing without bit 08h.
-         * Leave the heap-owned branch untouched until its allocator is
-         * understood in the original runtime's DOS context. */
-        if ((flags & GATE_CONTROL_STREAM_FORCE_WRITE_BIT) != 0)
-            abort();
-
         delta = (int16_t)(uint16_t)(stream.offset - GATE_DS_CRT_STREAMS);
         index = (int16_t)(delta / GATE_CRT_STREAM_STRIDE);
         file_record = (uint16_t)(GATE_DS_CRT_DESCRIPTOR_FLAGS +
@@ -288,6 +317,7 @@ void gate_linked_shutdown_intro_stream(void)
             abort();
         if (gate_linked_flush_intro_stream(stream) != 0)
             abort();
+        gate_crt_release_stream_buffer(stream, flags);
         close_result = gate_dos_file_close(handle);
         if (close_result.carry)
             abort();

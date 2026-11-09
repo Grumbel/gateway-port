@@ -1026,11 +1026,16 @@ The nested original CRT stream-close routine at `RTL:6640` has two
 no-I/O exits: `(flags & 83h) == 0` or `(flags & 40h) != 0`. Those clear
 descriptor byte `+0ah` and invalidate the open-state word; an already
 negative word skips everything. The native code also handles successful
-active streams without heap-owned buffers or file postprocessing: it
+active streams with and without CRT-owned buffers but no file postprocessing: it
 flushes through the recovered CRT writer, closes the signed-byte DOS
 handle with AH=3eh and clears the linked file flag. The DOS probe links
 the real `M11.OBJ`, DOS file and runtime adapters, with source-signed
 `STRTEST.LOG` PASS witnesses for both quiet and active close.
+The owned-buffer route follows the separate original CRT `RTL:7f1a`
+free operation, which marks bit zero in the byte two bytes preceding
+the buffer and clears all five stream pointer/count WORDs. It never
+calls the independent DOS memory allocator's free service; the real
+DOS probe checks this by releasing the still-owned paragraph afterwards.
 The same stage also verifies the nested `RTL:6eb8..6f45` no-write flush
 in `M11.OBJ`: mode != 2, mode 2/bit-08h with nonpositive signed pending
 bytes, and mode 2/bit-08h clear with descriptor metadata bit zero clear
@@ -1045,8 +1050,9 @@ handles successful binary DOS writes and append mode using relocated
 text buffers convert LF to CRLF, with conservative stack guards for
 the different Microsoft C 5.1 frame. The DOS probe now writes, closes,
 reopens and checks 21 real file bytes, including two CRLF conversions
-and a three-byte buffered close flush. Eight source-signed stream/CRT
-PASS witnesses are required. Heap-owned streams, nonzero close-extra
+and a three-byte buffered close flush. A ninth owned-buffer probe flushes
+two bytes and verifies the CRT header free bit. Nine source-signed stream/CRT
+PASS witnesses are required. Nonzero close-extra
 metadata, CRT error translation and the outer Ctrl-Break handler still
 abort or remain unimplemented; no complete shutdown is claimed.
 

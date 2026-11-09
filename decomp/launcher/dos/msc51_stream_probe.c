@@ -2,8 +2,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-exception */
 
 /* Exercise the original stream cleanup in staged launcher M11.OBJ with
- * real DOS-owned DS and descriptor segments. This is the bounded quiet
- * branch only; active CRT stream close remains explicitly unsupported. */
+ * real DOS-owned DS, descriptors, files and CRT-style buffer headers. */
 #include "GATEMEM.H"
 #include "GATEDOS.H"
 #include "RTLLAY.H"
@@ -14,6 +13,119 @@
 void gate_linked_shutdown_intro_stream(void);
 uint16_t gate_linked_write_crt_descriptor(uint16_t handle, GateFarPtr source,
                                           uint16_t count);
+static int check(uint16_t actual, uint16_t expected, const char *label);
+
+/* This is a genuine DOS AH=40h flush/3eh close with the original
+ * RTL:6cd2/7f1a free-flag update. The buffer lives in its own DOS
+ * paragraph block, but the CRT free must NOT release that block: it
+ * sets bit zero of the header byte two bytes before the data pointer.
+ * Reclaim the probe-owned block separately after checking the result. */
+static int probe_crt_owned_buffer(void)
+{
+    char filename[11];
+    unsigned segment = 0;
+    unsigned char observed[2];
+    GateFarPtr name_ptr;
+    GateFarPtr bytes;
+    GateFarPtr read_ptr;
+    GateFarPtr stream;
+    GateDosFileResult io;
+    FILE *existing;
+    uint16_t handle;
+    int valid = 1;
+
+    strcpy(filename, "STRBUF.TMP");
+    existing = fopen(filename, "rb");
+    if (existing != NULL) {
+        fclose(existing);
+        puts("CRT owned-buffer probe: STRBUF.TMP already exists; refusing overwrite");
+        return 0;
+    }
+    if (_dos_allocmem(0x0010u, &segment) != 0) {
+        puts("CRT owned-buffer probe: DOS paragraph allocation failed");
+        return 0;
+    }
+    bytes.segment = (uint16_t)segment;
+    bytes.offset = 2u;
+    gate_far_set_byte(bytes.segment, 0u, 0x82u);
+    gate_far_set_byte(bytes.segment, bytes.offset, 'C');
+    gate_far_set_byte(bytes.segment, (uint16_t)(bytes.offset + 1u), 'R');
+    name_ptr = gate_stack_pointer(filename);
+    read_ptr = gate_stack_pointer(observed);
+    io = gate_dos_file_open(name_ptr, 2u, 1u);
+    if (io.carry) {
+        puts("CRT owned-buffer probe: DOS file create failed");
+        (void)_dos_freemem(segment);
+        return 0;
+    }
+    handle = io.ax;
+    stream.segment = gate_ds_segment();
+    stream.offset = (uint16_t)(GATE_DS_CRT_STREAMS + GATE_CRT_STREAM_STRIDE);
+    gate_far_set_word(stream.segment, stream.offset,
+                      (uint16_t)(bytes.offset + 2u));
+    gate_far_set_word(stream.segment, (uint16_t)(stream.offset + 2u),
+                      bytes.segment);
+    gate_far_set_word(stream.segment, (uint16_t)(stream.offset + 4u), 2u);
+    gate_far_set_word(stream.segment, (uint16_t)(stream.offset + 6u),
+                      bytes.offset);
+    gate_far_set_word(stream.segment, (uint16_t)(stream.offset + 8u),
+                      bytes.segment);
+    gate_far_set_byte(stream.segment, (uint16_t)(stream.offset + 10u),
+                      0x0au); /* active mode 2 + CRT buffer ownership */
+    gate_far_set_byte(stream.segment, (uint16_t)(stream.offset + 11u),
+                      (uint8_t)handle);
+    gate_ds_set_word(GATE_DS_CRT_HANDLE_LIMIT, 20u);
+    gate_far_set_word(gate_ds_segment(), (uint16_t)
+        (GATE_DS_CRT_DESCRIPTOR_FLAGS + GATE_CRT_FILE_STRIDE +
+         GATE_CRT_FILE_CLOSE_EXTRA_WORD_OFFSET), 0u);
+    gate_far_set_byte(gate_ds_segment(),
+        (uint16_t)(GATE_DS_CRT_HANDLE_FLAGS + handle), 0u);
+    gate_ds_set_word(GATE_DS_CONTROL_STREAM_OPEN, 0u);
+    gate_ds_set_word(GATE_DS_CONTROL_STREAM_AUX, 0x9999u);
+    gate_ds_set_word(GATE_DS_CONTROL_STREAM_OFFSET, stream.offset);
+    gate_ds_set_word(GATE_DS_CONTROL_STREAM_SEGMENT, stream.segment);
+
+    gate_linked_shutdown_intro_stream();
+    valid &= check(gate_far_byte(bytes.segment, 0u), 0x83u,
+                   "CRT owned buffer header free bit");
+    valid &= check(gate_far_word(stream.segment, stream.offset), 0u,
+                   "CRT owned buffer current cleared");
+    valid &= check(gate_far_word(stream.segment, (uint16_t)(stream.offset + 2u)),
+                   0u, "CRT owned buffer current segment cleared");
+    valid &= check(gate_far_word(stream.segment, (uint16_t)(stream.offset + 4u)),
+                   0u, "CRT owned buffer count cleared");
+    valid &= check(gate_far_word(stream.segment, (uint16_t)(stream.offset + 6u)),
+                   0u, "CRT owned buffer base cleared");
+    valid &= check(gate_far_word(stream.segment, (uint16_t)(stream.offset + 8u)),
+                   0u, "CRT owned buffer base segment cleared");
+    valid &= check(gate_far_byte(stream.segment, (uint16_t)(stream.offset + 10u)),
+                   0u, "CRT owned buffer flags cleared");
+    valid &= check(gate_ds_word(GATE_DS_CONTROL_STREAM_OPEN), 0xffffu,
+                   "CRT owned buffer close flag");
+    valid &= check(gate_ds_word(GATE_DS_CONTROL_STREAM_AUX), 0u,
+                   "CRT owned buffer companion flag");
+    io = gate_dos_file_close(handle);
+    valid &= check(io.carry, 1u, "CRT owned buffer handle already closed");
+    io = gate_dos_file_open(name_ptr, 0u, 0u);
+    valid &= check(io.carry, 0u, "CRT owned buffer reopen");
+    if (!io.carry) {
+        handle = io.ax;
+        io = gate_dos_file_read(handle, read_ptr, 2u);
+        valid &= check(io.carry, 0u, "CRT owned buffer readback carry");
+        valid &= check(io.ax, 2u, "CRT owned buffer readback length");
+        valid &= check(memcmp(observed, "CR", 2u) == 0, 1u,
+                       "CRT owned buffer exact two bytes");
+        io = gate_dos_file_close(handle);
+        valid &= check(io.carry, 0u, "CRT owned buffer verification close");
+    }
+    valid &= check((uint16_t)_dos_freemem(segment), 0u,
+                   "CRT owned buffer still DOS-allocated after free mark");
+    valid &= check((uint16_t)remove(filename), 0u,
+                   "CRT owned buffer remove probe file");
+    puts(valid ? "Original owned CRT stream buffer DOS probe: PASS" :
+                 "Original owned CRT stream buffer DOS probe: FAIL");
+    return valid;
+}
 
 static int probe_crt_binary_write(void)
 {
@@ -248,6 +360,7 @@ static int probe_crt_binary_write(void)
         valid &= check(io.carry, 0u, "CRT active close verification handle");
     }
     valid &= check((uint16_t)remove(filename), 0u, "CRT binary remove probe file");
+    valid &= probe_crt_owned_buffer();
     puts(valid ? "Original CRT binary descriptor DOS probe: PASS" :
                  "Original CRT binary descriptor DOS probe: FAIL");
     puts(valid ? "Original CRT text no-LF DOS probe: PASS" :
