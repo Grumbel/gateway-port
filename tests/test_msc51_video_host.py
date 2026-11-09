@@ -8,6 +8,7 @@ selection, offsets, FAR indirection, packet fields and BIOS function numbers.
 """
 
 from pathlib import Path
+import signal
 import shutil
 import subprocess
 import tempfile
@@ -179,12 +180,30 @@ void gate_rtl_mode_query_adapter(uint8_t *adapter);
 uint16_t gate_rtl_mode_svga_variant(void);
 GateFarPtr gate_linked_transform_picture_palette_rgb(GateFarPtr source);
 GateFarPtr gate_linked_transform_picture_palette_indexed(GateFarPtr source);
+void gate_linked_shutdown_audio(void);
 
-int main(void)
+int main(int argc, char **argv)
 {
     uint8_t packet[14];
     GateFarPtr source, colors, indices;
     uint16_t i;
+    if (argc > 1) {
+        /* The active device branches are not reconstructed and must
+         * terminate before any partially simulated shutdown. */
+        gate_ds_set_word(0x0662u, (uint16_t)(argv[1][0] == 'm' ? 0x0004u :
+                           argv[1][0] == 't' ? 0x0020u : 0x0040u));
+        gate_linked_shutdown_audio();
+        return 123;
+    }
+    gate_ds_set_word(0x0660u, 0x0401u);
+    gate_ds_set_word(0x0662u, 0xa08au);
+    gate_linked_shutdown_audio();
+    assert(gate_ds_word(0x0662u) == 0x0008u);
+    assert(gate_ds_word(0x0660u) == 0x0401u);
+    assert(calls == 0u);
+    gate_ds_set_word(0x0662u, 0x8002u);
+    gate_linked_shutdown_audio();
+    assert(gate_ds_word(0x0662u) == 0u && calls == 0u);
     gate_dos_bind_rtl_video_ds(0x5000u);
     gate_far_set_word(0x5000u, 0x0000u, 0x2031u);
     gate_far_set_byte(0x5000u, 0x0002u, 0x7au);
@@ -313,6 +332,12 @@ int main(void)
             self.assertEqual(build.returncode, 0, build.stdout + build.stderr)
             tested = subprocess.run([str(binary)], capture_output=True, text=True)
             self.assertEqual(tested.returncode, 0, tested.stdout + tested.stderr)
+            for active in ("music", "timer", "device"):
+                unsupported = subprocess.run([str(binary), active],
+                                             capture_output=True, text=True,
+                                             cwd=str(scratch))
+                self.assertEqual(unsupported.returncode, -signal.SIGABRT,
+                                 unsupported.stdout + unsupported.stderr)
 
 
 if __name__ == "__main__":

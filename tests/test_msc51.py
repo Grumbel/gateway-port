@@ -926,6 +926,8 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("gate_rtl_mode_svga_variant", hardware)
             self.assertIn("VGA color monitor subtype", (output / "HWCHK.C").read_text())
             self.assertIn("SVGA variant range", (output / "HWCHK.C").read_text())
+            self.assertIn("Hardware Ctrl-Break silent audio: PASS", (output / "HWCHK.C").read_text())
+            self.assertIn("void gate_linked_shutdown_audio(void)", (output / "RTLHW.C").read_text())
             original_hardware = (REPO / "decomp/launcher/dos/msc51_hardware.c").read_text()
             self.assertIn("gate_linked_transform_picture_palette_rgb", original_hardware)
             self.assertIn("gate_linked_transform_picture_palette_indexed", original_hardware)
@@ -1219,6 +1221,7 @@ class MSC51Tests(unittest.TestCase):
             (output / "rtlhw.obj").write_bytes(b"DOS hardware")
             (output / "hwstart.log").write_text("tested")
             (output / "hwok.log").write_text("passed")
+            (output / "hwtest.log").write_text("Hardware Ctrl-Break silent audio: PASS")
             (output / "hwsig.log").write_text(msc51.hardware_source_signature(output))
             with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
                  mock.patch.object(msc51.subprocess, "run") as run, \
@@ -1589,13 +1592,19 @@ class MSC51Tests(unittest.TestCase):
                 (output / "HWSTART.LOG").write_text("started")
                 (output / "RTLHW.OBJ").write_bytes(b"compiled")
                 (output / "HWOK.LOG").write_text("passed")
-                (output / "HWTEST.LOG").write_text("Hardware probe: PASS")
+                (output / "HWTEST.LOG").write_text(
+                    "Hardware Ctrl-Break silent audio: PASS\nHardware probe: PASS")
                 (output / "HWSIG.LOG").write_text(msc51.hardware_source_signature(output))
                 return mock.Mock(returncode=0)
 
             with mock.patch.object(msc51.shutil, "which", return_value="/usr/bin/false"), \
                  mock.patch.object(msc51.subprocess, "run", side_effect=successful_probe):
                 self.assertEqual(msc51.main(args), 0)
+
+            (output / "HWTEST.LOG").write_text("Hardware probe: PASS")
+            with self.assertRaisesRegex(ValueError, "silent-audio shutdown"):
+                msc51.validate_hardware_adapter(output)
+            (output / "HWTEST.LOG").write_text("Hardware Ctrl-Break silent audio: PASS")
 
             (output / "RTLHW.C").write_text((output / "RTLHW.C").read_text() + "/* changed */\n")
             with self.assertRaisesRegex(ValueError, "source has changed"):

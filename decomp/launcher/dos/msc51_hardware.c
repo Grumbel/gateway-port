@@ -29,6 +29,22 @@ void gate_linked_initialize_intro_services(void)
     abort();
 }
 
+/* Original Ctrl-Break audio callee RTL:c391..c3bc (linked 0a46:01c0).
+ * The initial near call at RTL:c75f returns immediately when flags & 60h
+ * are clear. The remaining conditional device-stop/FAR call is skipped
+ * when bit 04h is clear. In that bounded silent case the original ends
+ * with AND WORD PTR [DS:004a],0008h, relocated here to DS:0662.
+ * No sound device, hardware interrupt or ISR is touched on this path.
+ * An active-audio stop still requires the original nested shutdown and
+ * is deliberately rejected before any partial device modification. */
+void gate_linked_shutdown_audio(void)
+{
+    uint16_t flags = gate_ds_word(GATE_DS_MUSIC_STARTUP_FLAGS);
+    if ((flags & 0x0064u) != 0u)
+        abort();
+    gate_ds_set_word(GATE_DS_MUSIC_STARTUP_FLAGS, (uint16_t)(flags & 0x0008u));
+}
+
 /* The text-mode RTL bank's DS is NOT the EXE's relocated DS. The original
  * GATE.RTL:f8eb..fbf3 directly addresses offsets 0000, 0002, 0004, 0006,
  * 001a and 030e through its own DS. The eventual DOS launcher entry must

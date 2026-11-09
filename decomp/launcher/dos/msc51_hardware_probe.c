@@ -29,6 +29,7 @@ uint16_t gate_rtl_mode_svga_variant(void);
 GateFarPtr gate_linked_transform_picture_palette_rgb(GateFarPtr source);
 GateFarPtr gate_linked_transform_picture_palette_indexed(GateFarPtr source);
 void gate_linked_initialize_intro_services(void);
+void gate_linked_shutdown_audio(void);
 
 static int check(uint16_t actual, uint16_t expected, const char *label)
 {
@@ -70,6 +71,19 @@ int main(void)
     gate_linked_initialize_intro_services();
     valid &= check(gate_far_byte((uint16_t)segment, GATE_DS_MUSIC_STARTUP_FLAGS),
                    0x06u, "music unconfigured preserves trigger flags");
+    /* Ctrl-Break RTL:c391 calls the nested stop helper and clears all but
+     * bit 3 of the original 16-bit sound state. Only the silent branch
+     * is safe to exercise without the original device and IRQ services. */
+    gate_ds_set_word(GATE_DS_MUSIC_STARTUP_FLAGS, 0xb08au);
+    gate_linked_shutdown_audio();
+    valid &= check(gate_ds_word(GATE_DS_MUSIC_STARTUP_FLAGS), 0x0008u,
+                   "Ctrl-Break silent audio flags masked");
+    gate_ds_set_word(GATE_DS_MUSIC_STARTUP_FLAGS, 0x8002u);
+    gate_linked_shutdown_audio();
+    valid &= check(gate_ds_word(GATE_DS_MUSIC_STARTUP_FLAGS), 0u,
+                   "Ctrl-Break silent audio flags cleared");
+    if (valid)
+        puts("Hardware Ctrl-Break silent audio: PASS");
     if (_dos_allocmem(0x0040u, &rtl_segment) != 0) {
         puts("Hardware probe: RTL segment allocation failed");
         (void)_dos_freemem(segment);

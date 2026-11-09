@@ -1628,6 +1628,34 @@ After rebuilding all five stale prerequisites from the changed generated
 layout header, a fresh genuine MS LINK 3.65 checkpoint still reports
 **exactly two** unresolved symbols: `_main` from the CRT and
 `_gate_linked_handle_control_key` from `M04.OBJ`.
+
+**Second bounded Ctrl-Break callee, silent audio (2026-11-09, DOS verified).**
+The original handler's second FAR call at `RTL:157bd` projects through
+the previously validated resident bank to the source entry
+`RTL:c391..c3bc`, linked `1a46:01c0` in the 22-second capture. That
+entry first passes `ffffh` to its same-segment stop helper at
+`RTL:c75f`; the helper immediately exits when the low byte of the
+relocated audio flags lacks bits `60h`. The parent skips its device-stop
+near/FAR calls when bit `04h` is also clear, then always executes
+`AND WORD PTR DS:004a,0008h`. The original data relocation maps that
+word to the existing `DS:0662` audio-flags field. This is a *source-bank
+projection and disassembly of the original*, not a new exact live-entry
+byte match for this individual call.
+
+`RTLHW.OBJ` now exposes `gate_linked_shutdown_audio` for precisely the
+**silent** subset `(flags & 0064h) == 0`: it reduces the full audio flags
+word to `flags & 0008h` without device or IRQ access. The active-music,
+timer and hardware-stop branches remain unsupported and abort before
+claiming a successful partial teardown. Genuine Microsoft C 5.1/DOSBox
+`msc51-compile-hardware` verified initial flags `b08ah → 0008h` and
+`8002h → 0000h`, with the new mandatory
+`Hardware Ctrl-Break silent audio: PASS` witness in `HWTEST.LOG`.
+The independent host-memory fixture also verifies configuration
+preservation, zero BIOS calls and fail-closed active branches for bits
+`04h`, `20h` and `40h`. A genuine Microsoft LINK checkpoint still lists
+only `_main` and `_gate_linked_handle_control_key` unresolved. Neither
+this function nor the VFX callee replaces the **outer** handler.
+
 The **outer** `_gate_linked_handle_control_key` remains unresolved, as do
 its other file, audio, stream and exit callees; this is not a complete
 Ctrl-Break handler or a working game entry point.

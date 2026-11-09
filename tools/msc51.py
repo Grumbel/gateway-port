@@ -1244,6 +1244,11 @@ def validate_hardware_adapter(output: Path) -> None:
     if signature is None or signature.read_text().strip() != hardware_source_signature(output):
         raise ValueError("Cannot link launcher: RTL hardware source has changed "
                          "since its test. Run msc51-compile-hardware again.")
+    test_log = locate_case_insensitive(output, "HWTEST.LOG")
+    if test_log is None or "Hardware Ctrl-Break silent audio: PASS" not in \
+            test_log.read_text(errors="replace"):
+        raise ValueError("Cannot link launcher: RTL hardware silent-audio shutdown "
+                         "was not verified. Run msc51-compile-hardware again.")
 
 
 def remove_hardware_outputs(output: Path) -> None:
