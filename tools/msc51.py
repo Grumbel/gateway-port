@@ -1113,6 +1113,10 @@ def validate_static_data_probe(output: Path, *, require_original: bool = False) 
                 r"^DOS intro C video layout: PASS \(RTL:f14d mode 3; 320x200 descriptors; BIOS mode switch simulated\)\s*$",
                 prepared.read_text(), re.MULTILINE) is None:
             raise ValueError("DOS source-C intro video layout verification is missing or failed.")
+        if re.search(
+                r"^DOS intro C resource pointers: PASS \(DS:54c2=3592 and DS:54ca=54ce; both segments rebound\)\s*$",
+                prepared.read_text(), re.MULTILINE) is None:
+            raise ValueError("DOS source-C intro resource pointer verification is missing or failed.")
         live = locate_case_insensitive(output, "BVIDREAL.LOG")
         if live is None or re.search(
                 r"^DOS intro live VGA probe: PASS \(RTL:f14d \+ resident 2409 mode 13; A000 pixel, clear and rectangle; prior BIOS mode restored\)\s*$",
@@ -1881,7 +1885,8 @@ def main(argv: list[str] | None = None) -> int:
                  "; the full-bank original-file CRC check was not requested")
               + ("; BOOTCHK.EXE verified DOS allocation, CRC and cleanup, and "
                  "BOOTPREP.EXE executed the five recovered source-C entry "
-                 "writes, the RTL no-music initializer return, the RTL "
+                 "writes, initialized the observed resource/font FAR "
+                 "pointers, the RTL no-music initializer return, the RTL "
                  "invalid-video-mode guard and mode-3 descriptor setup "
                  "with simulated BIOS callbacks; BOOTVGA.EXE exercised "
                  "the real reconstructed resident mode-13 switch, A000 "

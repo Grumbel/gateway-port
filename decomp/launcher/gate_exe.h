@@ -84,6 +84,7 @@ void gate_exe_reveal_red_bar(int16_t bar);
 void gate_exe_reveal_credit_color(void);
 void gate_exe_play_intro(void);
 void gate_exe_prepare_intro_globals(void); /* extracted source block, not original entry */
+void gate_exe_bind_resource_pointers(void); /* observed 250..350ms startup state, not an original entry */
 void gate_exe_play_title_interlude(void);
 void gate_exe_fade_in_picture(uint16_t image);
 void gate_exe_show_caption(uint16_t left, uint16_t top, uint16_t right, GateFarPtr text);

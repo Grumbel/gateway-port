@@ -322,6 +322,27 @@ A failed or absent log is not a
 successful test. `BOOT.OBJ` is deliberately not included in `LINK.RSP` while
 no valid source-C `_main` can consume it.
 
+**Startup resource-pointer binding (2026-11-09):** The original early RAM
+captures have zero words at `DS:54c2/54c4` and `DS:54ca/54cc` through
+250 ms, then consistently contain `3592:DS` and `54ce:DS` respectively
+from 350 through 1,500 ms. `DS:3592` is the beginning of the verified
+5,976-byte EXE static-data image; `DS:54ce` begins the font-cache record.
+The source-derived `gate_exe_bind_resource_pointers` sets these two FAR
+pointers relative to the newly allocated guest data segment; it is *not*
+claimed to be the disassembled original initializer or the original C
+entry point. `BOOTPREP.EXE` checks all four words after poisoning them,
+and `BOOTVGA.EXE` checks the binding before entering the reconstructed
+mode-13 graphics probe. Both tests passed with Microsoft C 5.1 under
+DOSBox Staging against the original read-only files. This adds no IRQ,
+resident-bank execution, or `_main` implementation.
+
+After recompiling the full set of 28 launcher modules and refreshing the
+six prerequisite DOS probes affected by the changed source fingerprint,
+Microsoft Overlay Linker 3.65 again reported **only** `_main` and
+`_gate_linked_handle_control_key` as unresolved. The OMF audit rechecked
+42/42 linker input objects and accepted the exact two-name checkpoint.
+This was a negative link-closure check, not a successful DOS game link.
+
 The standalone DOS probe supplies **explicitly nonexecutable** FAR callback
 pointers and external segments solely to test code/data placement and CRC
 normalization. These are not wired executable entry points. The owner does

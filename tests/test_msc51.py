@@ -293,8 +293,11 @@ class MSC51Tests(unittest.TestCase):
                           result.stdout)
             self.assertIn("RTL:f14d mode 3; 320x200 descriptors; BIOS mode switch simulated",
                           result.stdout)
+            self.assertIn("DS:54c2=3592 and DS:54ca=54ce; both segments rebound",
+                          result.stdout)
             for invalid in ("TEST_BAD_SELECTOR", "TEST_ALLOC_FAIL",
                             "TEST_MUSIC_ENABLED", "TEST_VIDEO_PREINITIALIZED",
+                            "TEST_RESOURCE_BAD_SEGMENT",
                             "TEST_BAD_VIDEO_SELECTOR", "TEST_VIDEO_MUTATED_BY_AUDIO",
                             "TEST_VIDEO_NOT_VGA", "TEST_MODE_BAD_DIMENSIONS",
                             "TEST_CALLBACK_OPEN_FAIL", "TEST_CALLBACK_SEEK_FAIL",
@@ -332,7 +335,7 @@ class MSC51Tests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("RTL:f14d + resident 2409 mode 13; A000 pixel, clear and rectangle; prior BIOS mode restored",
                           result.stdout)
-            for rejected_var in ("TEST_VIDEO_BAD_PIXEL", "TEST_VIDEO_BAD_CLEAR",
+            for rejected_var in ("TEST_RESOURCE_BAD_SEGMENT", "TEST_VIDEO_BAD_PIXEL", "TEST_VIDEO_BAD_CLEAR",
                                  "TEST_VIDEO_BAD_RECTANGLE", "TEST_VIDEO_NOT_VGA",
                                  "TEST_VIDEO_FAIL_RESTORE"):
                 with self.subTest(rejected_var=rejected_var):
@@ -361,6 +364,29 @@ class MSC51Tests(unittest.TestCase):
                 offset = 0x29 + table + 2 * 3
                 self.assertEqual(int.from_bytes(data[offset:offset + 2], "little"),
                                  expected)
+
+    def test_original_startup_resource_pointers_appear_between_250_and_350ms(self):
+        original = REPO / "build/msc51-startup"
+        fine = REPO / "build/msc51-startup-fine"
+        samples = [(original / "at-0.bin", False),
+                   (original / "at-100.bin", False),
+                   (fine / "at-250.bin", False),
+                   (fine / "at-350.bin", True),
+                   (fine / "at-450.bin", True),
+                   (original / "at-500.bin", True),
+                   (original / "at-1500.bin", True)]
+        if not all(path.is_file() for path, _ in samples):
+            self.skipTest("original startup RAM captures are not present")
+        original_ds = 0x2a7a
+        words = {0x54c2: 0x3592, 0x54c4: original_ds,
+                 0x54ca: 0x54ce, 0x54cc: original_ds}
+        for path, populated in samples:
+            data = path.read_bytes()
+            for offset, expected in words.items():
+                with self.subTest(snapshot=path.name, address=hex(offset)):
+                    address = original_ds * 16 + offset
+                    observed = int.from_bytes(data[address:address + 2], "little")
+                    self.assertEqual(observed, expected if populated else 0)
 
     def test_compile_data_requires_verified_dependencies_and_current_guest_log(self):
         with tempfile.TemporaryDirectory() as scratch:
@@ -466,6 +492,11 @@ class MSC51Tests(unittest.TestCase):
             (output / "BPREAL.LOG").write_text(
                 (output / "BPREAL.LOG").read_text() +
                 "DOS intro C video layout: PASS (RTL:f14d mode 3; 320x200 descriptors; BIOS mode switch simulated)\n")
+            with self.assertRaisesRegex(ValueError, "resource pointer verification"):
+                msc51.validate_static_data_probe(output, require_original=True)
+            (output / "BPREAL.LOG").write_text(
+                (output / "BPREAL.LOG").read_text() +
+                "DOS intro C resource pointers: PASS (DS:54c2=3592 and DS:54ca=54ce; both segments rebound)\n")
             with self.assertRaisesRegex(ValueError, "resident VGA mode/restore verification"):
                 msc51.validate_static_data_probe(output, require_original=True)
             (output / "BVIDREAL.LOG").write_text(

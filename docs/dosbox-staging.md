@@ -121,6 +121,21 @@ or installs IRQs. A fresh Microsoft LINK 3.65 launcher diagnostic still reports 
 two missing symbols, `_main` and `_gate_linked_handle_control_key`, confirmed
 by a 42/42-input OMF audit; the full game remains unlinked.
 
+The next 2026-11-09 startup experiment compared the earlier original RAM
+captures at 0/100/250ms against 350/450/500/1500ms. At linked `DS=2a7a`,
+two initially zero FAR pointers stabilize by 350ms: resource-base
+`[54c2]=3592`, `[54c4]=DS`, and active font `[54ca]=54ce`, `[54cc]=DS`.
+The `3592h` offset is the exact start of the verified EXE static-data copy;
+`54ceh` is the original first font-cache record. The source-level
+`gate_exe_bind_resource_pointers` rebinds these four words to the *new*
+allocated DOS data segment after image preparation, without assuming the
+original snapshot's fixed segment number. `BOOTPREP.EXE` poisons all four
+words, invokes the real compiled helper and checks the exact values;
+`BOOTVGA.EXE` independently checks the same bindings. Both real DOS probes
+passed, and the new `BPREAL.LOG` line is mandatory. This is an observed
+startup-state reconstruction, **not** the unidentified original function
+that performed those writes or a fully initialized font/resource manager.
+
 ## What this verifies (and what it does not)
 
 | Test | Result on 2026-11-09 |

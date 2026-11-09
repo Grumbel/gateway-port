@@ -155,6 +155,10 @@ enum {
     GATE_DS_TIMEZONE_INITIALIZED = 0x6470,
 };
 
+/* Initial EXE static-data copy begins here in the linked DS. The early
+ * startup resource pointer at DS:54c2/54c4 references this exact address. */
+enum { GATE_DS_EXE_STATIC_DATA_BASE = 0x3592 };
+
 /* Fields of the active video-mode descriptor, reached through the live
  * selector WORDs above. These offsets are relative to the selected segment,
  * and must never be confused with absolute DS offsets of the same value. */

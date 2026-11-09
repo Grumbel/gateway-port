@@ -3,6 +3,23 @@
 
 #include "gate_exe.h"
 
+/* The original 250ms snapshot still has zeros in these four words. By
+ * 350ms (and identically at 450, 500 and 1500ms), two FAR pointers have
+ * been initialized: resource base = DS:3592 (the copied EXE static data),
+ * and active font = DS:54ce (the first cache record). Their machine-code
+ * writer has not been identified; this source-level state reconstruction
+ * is not claimed to be an additional original function or a complete CRT
+ * startup. The main() handoff must run it after binding the new DOS DS. */
+void gate_exe_bind_resource_pointers(void)
+{
+    uint16_t ds = gate_ds_segment();
+    gate_ds_set_word(GATE_DS_RESOURCE_PATH_BASE_OFFSET,
+                     GATE_DS_EXE_STATIC_DATA_BASE);
+    gate_ds_set_word(GATE_DS_RESOURCE_PATH_BASE_SEGMENT, ds);
+    gate_ds_set_word(GATE_DS_ACTIVE_FONT_OFFSET, GATE_DS_FONT_CACHE_BASE);
+    gate_ds_set_word(GATE_DS_ACTIVE_FONT_SEGMENT, ds);
+}
+
 /* Source-level extraction of the original straight-line prologue at
  * GATE.EXE:1309..134b. This helper is NOT an additional original function.
  * The following FAR call at 134c belongs to the original enclosing intro.

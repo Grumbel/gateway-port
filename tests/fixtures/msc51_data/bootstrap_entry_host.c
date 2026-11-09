@@ -4,6 +4,7 @@
 /* Synthetic conventional memory for the actual staged C intro prologue.
  * The real DOS original-file test uses BOOT.OBJ and HEAP.OBJ instead. */
 #include "BOOT.H"
+#include "RTLLAY.H"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -81,6 +82,9 @@ uint16_t gate_ds_word(uint16_t offset)
 
 void gate_ds_set_word(uint16_t offset, uint16_t value)
 {
+    if (offset == GATE_DS_ACTIVE_FONT_SEGMENT &&
+        getenv("TEST_RESOURCE_BAD_SEGMENT") != 0)
+        value = 0u;
     gate_far_set_word(MOCK_DATA_SEGMENT, offset, value);
 }
 
@@ -239,12 +243,14 @@ void gate_dos_boot_release(GateDosBootImage *image)
     require(image != 0);
     if (getenv("TEST_VIDEO_ONLY") == 0 &&
         getenv("TEST_BAD_SELECTOR") == 0 &&
+        getenv("TEST_RESOURCE_BAD_SEGMENT") == 0 &&
         getenv("TEST_ALLOC_FAIL") == 0 &&
         getenv("TEST_MUSIC_ENABLED") == 0 &&
         getenv("TEST_VIDEO_PREINITIALIZED") == 0 &&
         getenv("TEST_BAD_VIDEO_SELECTOR") == 0)
         require(no_music_calls == 1u);
     if (getenv("TEST_BAD_SELECTOR") == 0 &&
+        getenv("TEST_RESOURCE_BAD_SEGMENT") == 0 &&
         getenv("TEST_ALLOC_FAIL") == 0 &&
         getenv("TEST_MUSIC_ENABLED") == 0 &&
         getenv("TEST_VIDEO_PREINITIALIZED") == 0 &&

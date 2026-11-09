@@ -11,6 +11,7 @@
  * The valid VGA-mode path records BIOS requests without switching modes. */
 #include "BOOT.H"
 #include "BOOTCB.H"
+#include "RTLLAY.H"
 #include <dos.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,6 +40,7 @@ static uint16_t video_start_calls;
 /* The real reconstructed source object (Mxx.OBJ), not a test substitute,
  * supplies this function. Its original call requests 1000h DOS paragraphs. */
 void gate_exe_prepare_intro_globals(void);
+void gate_exe_bind_resource_pointers(void);
 void gate_linked_initialize_intro_services(void);
 uint16_t gate_rtl_set_video_mode(int16_t requested_mode);
 
@@ -115,6 +117,24 @@ int main(void)
     }
     if (gate_ds_word(0x4e4eu) != data_segment)
         good = 0;
+
+    if (good) {
+        /* Original RAM first shows these two live FAR pointers at 350ms.
+         * They are absent at 250ms and were NOT populated by the static
+         * EXE/RTL data compositor. Deliberately poison all four words to
+         * prove that the recovered startup binder really initializes them. */
+        gate_ds_set_word(GATE_DS_RESOURCE_PATH_BASE_OFFSET, 0xdeadu);
+        gate_ds_set_word(GATE_DS_RESOURCE_PATH_BASE_SEGMENT, 0xdeadu);
+        gate_ds_set_word(GATE_DS_ACTIVE_FONT_OFFSET, 0xdeadu);
+        gate_ds_set_word(GATE_DS_ACTIVE_FONT_SEGMENT, 0xdeadu);
+        gate_exe_bind_resource_pointers();
+        if (gate_ds_word(GATE_DS_RESOURCE_PATH_BASE_OFFSET) !=
+                GATE_DS_EXE_STATIC_DATA_BASE ||
+            gate_ds_word(GATE_DS_RESOURCE_PATH_BASE_SEGMENT) != data_segment ||
+            gate_ds_word(GATE_DS_ACTIVE_FONT_OFFSET) != GATE_DS_FONT_CACHE_BASE ||
+            gate_ds_word(GATE_DS_ACTIVE_FONT_SEGMENT) != data_segment)
+            good = 0;
+    }
 
     if (good) {
         /* A copied original value could accidentally satisfy the test.
@@ -226,6 +246,7 @@ int main(void)
         return 1;
     }
     puts("DOS intro C entry prologue: PASS (five recovered writes, original data/CRC, workspace observed; no intro code entered)");
+    puts("DOS intro C resource pointers: PASS (DS:54c2=3592 and DS:54ca=54ce; both segments rebound)");
     puts("DOS intro C audio guard: PASS (RTL:c3bd no-music return, configuration preserved; no IRQ installed)");
     puts("DOS intro C video preflight: PASS (DS:0fce=ffff invalid; hardware mode setup still required)");
     puts("DOS intro C video guard: PASS (RTL:f14d rejected -1 and 5; no BIOS mode entered)");

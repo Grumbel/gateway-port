@@ -22,6 +22,7 @@ static uint8_t previous_bios_mode;
 static int must_restore_video;
 
 void gate_exe_prepare_intro_globals(void);
+void gate_exe_bind_resource_pointers(void);
 uint16_t gate_rtl_set_video_mode(int16_t requested_mode);
 uint16_t gate_rtl_mode_start(uint16_t enabled);
 void gate_rtl_plot_pixel(uint16_t color, uint16_t y, uint16_t x);
@@ -111,6 +112,15 @@ int main(void)
         return 1;
     }
 
+    gate_exe_bind_resource_pointers();
+    if (gate_ds_word(GATE_DS_RESOURCE_PATH_BASE_OFFSET) !=
+            GATE_DS_EXE_STATIC_DATA_BASE ||
+        gate_ds_word(GATE_DS_RESOURCE_PATH_BASE_SEGMENT) != data_segment ||
+        gate_ds_word(GATE_DS_ACTIVE_FONT_OFFSET) != GATE_DS_FONT_CACHE_BASE ||
+        gate_ds_word(GATE_DS_ACTIVE_FONT_SEGMENT) != data_segment) {
+        puts("DOS intro live VGA probe: FAIL startup resource pointers");
+        return 1;
+    }
     gate_exe_prepare_intro_globals();
     previous_bios_mode = query_bios_video_mode();
     /* The following call reaches the real reconstructed 2409:003e video
