@@ -258,6 +258,12 @@ if(BUILD_TESTING)
     tests/launcher_rtl_font_decompile_tests.c)
   target_include_directories(launcher-rtl-font-decompile-tests PRIVATE decomp/launcher)
   add_test(NAME launcher-rtl-font-decompile COMMAND launcher-rtl-font-decompile-tests)
+  add_executable(launcher-break-cleanup-decompile-tests
+    decomp/launcher/dos/msc51_break_cleanup.c
+    tests/launcher_break_cleanup_decompile_tests.c)
+  target_include_directories(launcher-break-cleanup-decompile-tests PRIVATE decomp/launcher)
+  target_compile_definitions(launcher-break-cleanup-decompile-tests PRIVATE GATE_BREAK_CLEANUP_HOST_TEST=1)
+  add_test(NAME launcher-break-cleanup-decompile COMMAND launcher-break-cleanup-decompile-tests)
   add_executable(launcher-intro-native-font-tests
     decomp/launcher/gate_rtl_font.c decomp/launcher/gate_rtl.c
     decomp/launcher/gate_rtl_file.c

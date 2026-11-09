@@ -185,6 +185,14 @@ enum {
      * these two live DS addresses in the 22-second snapshot. */
     GATE_DS_CONTROL_VFX_IMAGE_FIRST = 0x555c,
     GATE_DS_CONTROL_VFX_IMAGE_SECOND = 0x55dc,
+    /* Original RTL:11e5f Ctrl-Break teardown calls DOS INT 21h/AH=25h
+     * with these three saved FAR interrupt vectors, offset then segment. */
+    GATE_DS_BREAK_INT23_OFFSET = 0x568e,
+    GATE_DS_BREAK_INT23_SEGMENT = 0x5690,
+    GATE_DS_BREAK_INT1B_OFFSET = 0x56ac,
+    GATE_DS_BREAK_INT1B_SEGMENT = 0x56ae,
+    GATE_DS_BREAK_INT1C_OFFSET = 0x56b0,
+    GATE_DS_BREAK_INT1C_SEGMENT = 0x56b2,
     GATE_DS_CONTROL_STREAM_OFFSET = 0x6150,
     GATE_DS_CONTROL_STREAM_SEGMENT = 0x6152,
     GATE_DS_TIMEZONE_INITIALIZED = 0x6470,

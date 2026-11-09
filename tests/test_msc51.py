@@ -836,14 +836,14 @@ class MSC51Tests(unittest.TestCase):
 
             self.assertNotIn("/Fe", batch)  # No complete DOS executable yet.
             response = (output / "LINK.RSP").read_text().splitlines()
-            self.assertEqual(response[:42],
+            self.assertEqual(response[:43],
                              [f"M{index:02d}.OBJ+" for index in range(28)] +
                              ["MEMORY.OBJ+", "DOSFILE.OBJ+", "RTLIMG.OBJ+",
                               "RTLTEXT.OBJ+", "RTLPAL.OBJ+", "RTLGR.OBJ+",
                               "RTLHW.OBJ+", "RTFILE.OBJ+", "RESSTATE.OBJ+",
-                              "HEAP.OBJ+", "INP.OBJ+", "CLOCK.OBJ+", "CRTENV.OBJ+",
+                              "HEAP.OBJ+", "CTRL.OBJ+", "INP.OBJ+", "CLOCK.OBJ+", "CRTENV.OBJ+",
                               "PICTDCL.OBJ"])
-            self.assertEqual(response[42:], ["GATEWAY.EXE", "GATEWAY.MAP",
+            self.assertEqual(response[43:], ["GATEWAY.EXE", "GATEWAY.MAP",
                                              "LLIBCR.LIB LIBH.LIB /NOD", ";"])
             memory_batch = (output / "MEMORY.BAT").read_text()
             self.assertIn("CL /AL /Od /c MEMORY.C", memory_batch)
@@ -1107,12 +1107,24 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn(f"STRCHK.C {wrapper.replace('.C', '.OBJ')} "
                           "STRBRDG.OBJ RTFILE.OBJ DOSFILE.OBJ MEMORY.OBJ", stream_batch)
             self.assertIn("STRCHK.EXE > STRTEST.LOG", stream_batch)
+            self.assertIn("CL /AL /Od /c CTRL.C", stream_batch)
+            self.assertIn("C:\\BIN\\LINK.EXE @CTRL.RSP", stream_batch)
+            self.assertIn("CTRLCHK.EXE > CTRLTEST.LOG", stream_batch)
+            self.assertIn("CTRL.OBJ+", (output / "LINK.RSP").read_text())
+            self.assertIn("RESSTATE.OBJ+", (output / "CTRL.RSP").read_text())
+            self.assertIn("gate_rtl_control_teardown", (output / "CTRL.C").read_text())
+            self.assertIn("Original Ctrl-Break fifth cleanup DOS probe: PASS",
+                          (output / "CTRLCHK.C").read_text())
             self.assertIn("GATE_DS_CONTROL_STREAM_AUX",
                           (output / "STRCHK.C").read_text())
             with self.assertRaisesRegex(ValueError, "not passed"):
                 msc51.validate_stream_probe(output)
             for name in ("STRCHK.EXE", "STRSTART.LOG", "STROK.LOG"):
                 (output / name).write_text("built\n")
+            for name in ("CTRL.OBJ", "CTRLCHK.EXE"):
+                (output / name).write_text("built\n")
+            (output / "CTRLTEST.LOG").write_text(
+                "Original Ctrl-Break fifth cleanup DOS probe: PASS\n")
             (output / "STRTEST.LOG").write_text("Original stream quiet-close DOS probe: PASS\n")
             with self.assertRaisesRegex(ValueError, "no-write flush"):
                 msc51.validate_stream_probe(output)
@@ -1160,6 +1172,11 @@ class MSC51Tests(unittest.TestCase):
             (output / "STRTEST.LOG").write_text(
                 (output / "STRTEST.LOG").read_text() +
                 "Original owned CRT stream buffer DOS probe: PASS\n")
+            (output / "CTRLTEST.LOG").write_text("not passed\n")
+            with self.assertRaisesRegex(ValueError, "fifth cleanup"):
+                msc51.validate_stream_probe(output)
+            (output / "CTRLTEST.LOG").write_text(
+                "Original Ctrl-Break fifth cleanup DOS probe: PASS\n")
             (output / "STRSIG.LOG").write_text(msc51.stream_source_signature(output))
             msc51.validate_stream_probe(output)
             (output / wrapper).write_text((output / wrapper).read_text() + "/* changed */\n")

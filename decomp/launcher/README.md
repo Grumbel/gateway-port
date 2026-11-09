@@ -1133,9 +1133,19 @@ callee `RTL:11e5f`. `HWCHK.EXE` temporarily sets INT `60h` to a valid
 existing handler, validates its FAR vector including original low-byte
 vector-index behavior, and restores the previous handler. The mandatory
 source-signed witness is `Hardware original DOS vector setter: PASS`.
-The surrounding conditional INT `1ch` / unconditional `1bh` and `23h`
-restore sequence is documented but not linked: saved vector words may be
-uninitialized, and the parent has an unresolved additional FAR callee.
+The enclosing original `RTL:11e5f..11ec5` fifth callee now has its own
+bounded source-C `gate_rtl_control_teardown` compiled to `CTRL.OBJ` (not
+an extra M-numbered launcher object). It restores the original INT `1ch`
+conditionally on video mode, always restores INT `1bh` and `23h`, closes
+the resource with `M11.OBJ`, and conditionally disables graphics with
+`RESSTATE.OBJ`. The independent `CTRLCHK.EXE` DOS probe injects *actual*
+saved vectors from the live IVT, uses a fresh disposable file, and checks
+both the mode-zero and graphics-mode branches, handle release and text-mode
+reset. `Original Ctrl-Break fifth cleanup DOS probe: PASS` is a mandatory
+source-signed stream-stage witness. The source rejects null saved vectors,
+invalid relocated selectors and standard handles before touching the IVT;
+the untouched 500ms original snapshot has uninitialized saved vectors.
+The outer Ctrl-Break handler and DOS `_main` are still absent.
 
 The independent `msc51-compile-picture-dcl` stage now provides a bounded
 streaming version of the image decompression service from the tested native

@@ -1705,7 +1705,7 @@ branches, the handler's remaining branches and actual DOS entry `_main`
 still need reconstruction. Do not count `FONTCHK.EXE` as a playable intro.
 
 **Fifth Ctrl-Break callee: DOS vector-restore service (2026-11-09,
-DOS verified primitive).** The original RTL `11e5f..11ec5` is linked at
+DOS verified source-C callee).** The original RTL `11e5f..11ec5` is linked at
 `1f10:035a` in the real 500ms conventional-memory capture. Its live
 disassembly checks the video-mode WORD through selector `DS:4dce` and
 restores saved INT `1ch` only when that mode word is nonzero. It then
@@ -1728,8 +1728,7 @@ fresh headless DOSBox Staging run of the genuine Microsoft C 5.1 object
 reported `Hardware original DOS vector setter: PASS`; the source-signed
 link gate now requires that witness separately from the silent-audio one.
 
-This implements **only the independently tested DOS service**. The next
-RTL call passes `ES:[005a]` from resource selector `DS:4dd6` to the
+The next RTL call passes `ES:[005a]` from resource selector `DS:4dd6` to the
 separately recovered file close (`RTL:e68b`); a further branch when the
 fifth callee's argument is nonzero calls the **already implemented**
 resident video-mode enabler `2409:003e` with zero, resetting the BIOS to
@@ -1738,6 +1737,20 @@ at physical `240ce` in the same 500ms capture; the disable branch sets
 `DS:15ce/15d0` to zero and executes INT `10h`/AH=`00h`, AL=`03h`.
 The original 500ms saved vector words were zero, so blindly invoking the
 parent cleanup before real startup would install null interrupt handlers.
+
+The newly reconstructed standalone `gate_rtl_control_teardown` now combines
+these steps, in their original order, in `CTRL.OBJ`; it deliberately rejects
+null selectors, null required saved FAR vectors and handles below 3 before
+modifying the IVT. The source-C host oracle verifies every call argument,
+conditional path and fail-closed case. The `msc51-compile-stream` stage
+recompiles `CTRL.OBJ`, then links actual `RTLHW.OBJ`, recovered `M11.OBJ`,
+`RESSTATE.OBJ` and DOS adapters into `CTRLCHK.EXE` using MS LINK 3.65.
+A fresh DOSBox Staging probe saved the *real* live IVT vectors rather than
+invented handler addresses, allocated a disposable resource file, exercised
+both mode-zero/no-reset and graphics-mode/reset branches and confirmed the
+DOS file closed and the BIOS returned to mode 3. The source-signed witness
+is `CTRLTEST.LOG`: `Original Ctrl-Break fifth cleanup DOS probe: PASS`.
+This does not reconstruct the outer Ctrl-Break entry or `_main`.
 No combined fifth callee, outer Ctrl-Break handler or process termination
 is yet linked.
 
