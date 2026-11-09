@@ -57,6 +57,7 @@ class MSC51Tests(unittest.TestCase):
             self.assertNotIn("/INTRO", batch)
             link = (output / "LINK.RSP").read_text()
             self.assertIn("MAIN.OBJ+", link)
+            self.assertIn("/STACK:16384", link)
             with redirect_stderr(io.StringIO()) as diagnostic:
                 with self.assertRaises(SystemExit):
                     msc51.main(["test-dos-entry", "--output", str(output)])
@@ -864,7 +865,7 @@ class MSC51Tests(unittest.TestCase):
                               "PICTDCL.OBJ+", "MAIN.OBJ+", "BOOT.OBJ+",
                               "DATA.OBJ+", "SEL.OBJ"])
             self.assertEqual(response[49:], ["GATEWAY.EXE", "GATEWAY.MAP",
-                                             "LLIBCR.LIB LIBH.LIB /NOD", ";"])
+                                             "LLIBCR.LIB LIBH.LIB /NOD /STACK:16384", ";"])
             memory_batch = (output / "MEMORY.BAT").read_text()
             self.assertIn("CL /AL /Od /c MEMORY.C", memory_batch)
             self.assertIn("CL /AL /Od MEMCHK.C MEMORY.OBJ", memory_batch)

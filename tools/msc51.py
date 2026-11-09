@@ -1082,7 +1082,10 @@ def stage_launcher(output: Path) -> list[str]:
                 "BREAK.OBJ+", "BREXIT.OBJ+",
                 "INP.OBJ+", "CLOCK.OBJ+", "CRTENV.OBJ+", "PICTDCL.OBJ+",
                 "MAIN.OBJ+", "BOOT.OBJ+", "DATA.OBJ+", "SEL.OBJ",
-                "GATEWAY.EXE", "GATEWAY.MAP", "LLIBCR.LIB LIBH.LIB /NOD", ";"])
+                # Microsoft LINK's default 0800h-byte stack is smaller than
+                # the original 1100h-byte animation-record frame alone.
+                # Keep enough space for that frame and its nested calls.
+                "GATEWAY.EXE", "GATEWAY.MAP", "LLIBCR.LIB LIBH.LIB /NOD /STACK:16384", ";"])
     (output / "LINK.RSP").write_text("\r\n".join(response) + "\r\n")
     link_batch = [
         "@ECHO OFF", "ECHO Gateway MSC 5.1 link attempt > LNKSTART.LOG",

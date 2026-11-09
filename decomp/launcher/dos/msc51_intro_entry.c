@@ -18,7 +18,10 @@ static uint8_t saved_bios_mode;
 static uint16_t video_restore_armed;
 
 void gate_exe_bind_resource_pointers(void);
+void gate_exe_prepare_intro_globals(void);
 void gate_exe_play_intro(void);
+void gate_exe_play_title_interlude(void);
+void gate_linked_initialize_intro_services(void);
 uint16_t gate_rtl_set_video_mode(int16_t requested_mode);
 uint16_t gate_rtl_show_picture(uint16_t resource, uint16_t placement);
 
@@ -78,13 +81,15 @@ int main(int argc, char **argv)
     int status;
     int check_only = argc > 1 && strcmp(argv[1], "/CHECK") == 0;
     int picture_only = argc > 1 && strcmp(argv[1], "/PICTURE") == 0;
+    int second_only = argc > 1 && strcmp(argv[1], "/SECOND") == 0;
+    int title_only = argc > 1 && strcmp(argv[1], "/TITLE") == 0;
 
     owned_image.lower_segment = 0u;
     owned_image.resident_segment = 0u;
     video_restore_armed = 0u;
-    if (argc > 1 && !check_only && !picture_only) {
+    if (argc > 1 && !check_only && !picture_only && !second_only && !title_only) {
         if (strcmp(argv[1], "/INTRO") != 0) {
-            fputs("Usage: GATEWAY [/CHECK | /PICTURE | /INTRO]\n", stderr);
+            fputs("Usage: GATEWAY [/CHECK | /PICTURE | /SECOND | /TITLE | /INTRO]\n", stderr);
             return 2;
         }
     }
@@ -148,6 +153,23 @@ int main(int argc, char **argv)
             return 1;
         }
         puts("Gateway DOS first splash: PASS (source-C picture load and drawing)");
+        return 0;
+    }
+    if (second_only) {
+        if (gate_rtl_show_picture(GATE_INTRO_PICTURE_SECOND_SPLASH, 1u) != 1u) {
+            fputs("Gateway DOS: second splash picture failed to load/draw\n", stderr);
+            return 1;
+        }
+        puts("Gateway DOS second splash: PASS (source-C picture load and drawing)");
+        return 0;
+    }
+    if (title_only) {
+        gate_exe_prepare_intro_globals();
+        gate_linked_initialize_intro_services();
+        puts("Gateway DOS: entering source-C title interlude");
+        fflush(stdout);
+        gate_exe_play_title_interlude();
+        puts("Gateway DOS: title interlude returned");
         return 0;
     }
 
