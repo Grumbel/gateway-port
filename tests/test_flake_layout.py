@@ -66,6 +66,8 @@ class FlakeLayoutTests(unittest.TestCase):
         self.assertNotRegex(shell, r"(?m)^[ \t]*''[ \t]*$")
         self.assertIn('"" \\\n                    \'Build and run', shell)
         self.assertIn('""\n                  ;;', shell)
+        self.assertNotIn(r"printf '\n%s\n'", shell)
+        self.assertEqual(shell.count(r"printf '%s\n'"), 3)
 
     def test_launcher_shell_syntax(self):
         for filename in ("gateway_dos.sh", "gateway_intro_source_c_full.sh"):

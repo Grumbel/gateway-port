@@ -310,7 +310,7 @@ except Exception:
               export GATEWAY_BUILD_DIR="''${GATEWAY_BUILD_DIR:-/tmp/gateway-port-build}"
               case $- in
                 *i*)
-                  printf '\n%s\n' \
+                  printf '%s\n' \
                     'Gateway development shell' \
                     '=========================' \
                     "Source: $GATEWAY_SOURCE" \
@@ -363,7 +363,7 @@ except Exception:
             shellHook = ''
               case $- in
                 *i*)
-                  printf '\n%s\n' \
+                  printf '%s\n' \
                     'Ghidra reverse engineering' \
                     '--------------------------' \
                     '  gateway-decompile-intro GATE.EXE GATE.RTL --snapshot RAM.bin --output DIR' \
@@ -382,7 +382,7 @@ except Exception:
               export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
               case $- in
                 *i*)
-                  printf '\n%s\n' \
+                  printf '%s\n' \
                     'Microsoft C 5.1 / DOSBox tools' \
                     '-----------------------------' \
                     '  gateway-msc51 --help             List all compiler and probe commands' \
