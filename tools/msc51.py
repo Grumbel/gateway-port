@@ -89,12 +89,26 @@ def validate_compiler(directory: Path) -> Path:
     return directory
 
 
+def msc51_probe_constants(source: str, names: tuple[str, ...]) -> str:
+    """Stage just the original numeric symbols used by the DOS rand probe."""
+    macros = []
+    for name in names:
+        found = re.search(rf"\b{re.escape(name)}\s*=\s*(0x[0-9A-Fa-f]+|[0-9]+)\s*[,}}]", source)
+        if found is None:
+            raise ValueError(f"Missing original rand constant: {name}")
+        macros.append(f"#define {name} ({found.group(1)})")
+    return "\n".join(macros) + "\n"
+
+
 def stage_probe(output: Path) -> None:
     output.mkdir(parents=True, exist_ok=True)
     original_probe = (REPO / "decomp/launcher/dos/intro_probe.c").read_text()
     original_random = (REPO / "decomp/launcher/gate_c_runtime_random.c").read_text()
+    original_constants = (REPO / "decomp/launcher/gate_c_runtime_constants.h").read_text()
+    original_memory_layout = (REPO / "decomp/launcher/gate_memory_layout.h").read_text()
     assert '#include "../gate_exe.h"' in original_probe
     assert '#include "gate_rtl_image.h"' in original_random
+    assert '#include "gate_c_runtime_constants.h"' in original_random
 
     # MSC 5.1 predates C99/stdint.h. Only the includes/types are adapted;
     # all recovered random-generator expressions remain unchanged.
@@ -104,12 +118,18 @@ def stage_probe(output: Path) -> None:
         "typedef unsigned long uint32_t;\n"
         "uint16_t gate_ds_word(uint16_t offset);\n"
         "void gate_ds_set_word(uint16_t offset, uint16_t value);\n"
+        + msc51_probe_constants(original_memory_layout, (
+            "GATE_DS_RANDOM_STATE_LOW", "GATE_DS_RANDOM_STATE_HIGH"))
     )
     (output / "PROBE.C").write_text(
         original_probe.replace('#include "../gate_exe.h"', '#include "GATE.H"', 1)
     )
+    (output / "CONST.H").write_text(msc51_probe_constants(original_constants, (
+        "GATE_CRT_RANDOM_MULTIPLIER", "GATE_CRT_RANDOM_INCREMENT",
+        "GATE_CRT_RANDOM_RESULT_MASK", "GATE_CRT_WORD_BITS")))
     (output / "RANDOM.C").write_text(
         original_random.replace('#include "gate_rtl_image.h"', '#include "GATE.H"', 1)
+                       .replace('#include "gate_c_runtime_constants.h"', '#include "CONST.H"', 1)
     )
     (output / "BUILD.BAT").write_text(
         "@ECHO OFF\r\n"

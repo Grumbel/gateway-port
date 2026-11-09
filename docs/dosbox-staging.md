@@ -74,6 +74,52 @@ memory/selector/file probe prerequisites have passed. It can mount the pinned
 original files on a separate read-only drive using
 `--original-game-dir ../gateway-dos`.
 
+## Reproduced with Microsoft C 5.1 and original game files
+
+On 2026-11-09, the uploaded `Microsoft C 5.1 Optimizing Compiler (5.25).7z`
+was checked against the SHA-512 pinned in `flake.nix`, unpacked using the
+official 7-Zip 26.06 Linux command-line build, and assembled from its DOS
+floppy images with locally built GNU mtools 4.0.49. The real-mode DOS
+`CL.EXE`/compiler passes and `LINK.EXE` were selected; compiler, original
+game data and compiled binaries were kept outside Git.
+
+The first `msc51.py probe` run exposed two missing staged headers, **not**
+an original-code mismatch. `RANDOM.C` referred to the original
+`gate_c_runtime_constants.h`, while its replacement `GATE.H` lacked the
+source-defined `GATE_DS_RANDOM_STATE_LOW/HIGH` offsets. The probe now stages
+only the four needed original random constants in `CONST.H` and the two
+original memory-layout offsets in `GATE.H`, without changing the recovered
+random-generator expressions. Microsoft C 5.1 then compiled and linked
+`INTROCHK.EXE`, whose 32 DOS random steps passed.
+
+With an installed compiler and portable DOSBox executable, the reproduction
+uses the existing command-line workflow (paths below are examples):
+
+```sh
+python3 tools/msc51.py probe \
+  --compiler /path/to/msc51-installed \
+  --dosbox /path/to/dosbox --headless
+python3 tools/msc51.py compile-data \
+  --compiler /path/to/msc51-installed \
+  --dosbox /path/to/dosbox --headless \
+  --original-game-dir ../gateway-dos
+python3 tools/msc51.py link-launcher \
+  --compiler /path/to/msc51-installed \
+  --dosbox /path/to/dosbox --headless
+```
+
+All optional `compile-*` stages (launcher, memory, selectors, DOS files,
+data, RTL state, hardware, runtime files, picture DCL, resident state, heap,
+input, clock, CRT) passed with the historical compiler. The original-game
+`DATREAL.LOG` verified the 15,616-byte resident CRC32 `F332BF93` and
+19,690-byte prepared-data CRC32 `5A991491`; owner, entry-prologue, audio,
+video guard/layout and **live mode-13 VGA** probes also passed. In particular,
+`BVIDREAL.LOG` confirmed an A000 pixel write and prior BIOS video mode
+restoration. None of the probes executes original resident code or installs
+IRQs. A fresh Microsoft LINK 3.65 launcher diagnostic still reports exactly
+two missing symbols, `_main` and `_gate_linked_handle_control_key`, confirmed
+by a 42/42-input OMF audit; the full game remains unlinked.
+
 ## What this verifies (and what it does not)
 
 | Test | Result on 2026-11-09 |
@@ -81,10 +127,11 @@ original files on a separate read-only drive using
 | Official portable archive SHA-256, binary version and shared libraries | PASS |
 | Headless DOSBox runs `VER`, writes host-visible `PROBE.TXT`, exits | PASS |
 | Original `GATE.EXE` from read-only game mount | Enters BIOS VGA mode `12h` (640×480, 16 colors) in a five-second bounded run; terminated by timeout, not a completed game test |
-| Source-only Microsoft C staging tests after adding headless support | 99 run, 98 passed, 1 skipped (`mtools` unavailable) |
-| Full Python test discovery, including the optional real DOSBox smoke | 134 run, 133 passed, 1 skipped (`mtools` unavailable) |
+| Source-only Microsoft C staging and FAT-floppy tests with local mtools | PASS; no mtools skip |
+| Full Python test discovery, including the real DOSBox smoke | 134/134 passed, no skips |
 | Decompilation tracker | `tracker ok: 1798 routines` |
-| `BOOTVGA.EXE` and `BOOTPREP.EXE` with the actual Microsoft C 5.1 runtime | **Not rerun here:** compiler and previously compiled DOS executables are not available in this environment; user-side logs remain the evidence |
+| `BOOTPREP.EXE`, `BOOTVGA.EXE` with actual Microsoft C 5.1/DOSBox | PASS; relocated startup data, original-derived mode-3 layout, live mode-13 pixel and BIOS restoration |
+| Full launcher LINK using the real compiler and linker | 42/42 objects parse; blocked by exactly `_main` and `_gate_linked_handle_control_key` |
 
 The original `GATE.EXE` mode transition is proof of a running DOS executable,
 not proof that its graphics are correct or that the reconstructed launcher
@@ -92,8 +139,6 @@ executes. The dummy renderer has no visible window. Visual comparisons and
 input injection still require the project's private Xvfb workflow, and the
 full C entry/other resident banks remain unreconstructed.
 
-The previously reported user-side `BOOTVGA.EXE` log confirms an additional
-real-mode check: the reconstructed resident mode-13 switch, a pixel write,
-and BIOS mode restoration succeeded without executing original resident
-code or installing IRQs. This report is distinct from the local headless
-smoke tests, which do **not** claim to have reproduced it.
+The live `BOOTVGA.EXE` check was reproduced headlessly with the uploaded
+compiler and original Gateway files. Its DOS log is a hardware-code-path
+witness, **not** a visual screenshot comparison or a playable intro.

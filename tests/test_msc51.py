@@ -2006,11 +2006,24 @@ class MSC51Tests(unittest.TestCase):
             msc51.stage_probe(output)
             original_random = (REPO / "decomp/launcher/gate_c_runtime_random.c").read_text()
             original_probe = (REPO / "decomp/launcher/dos/intro_probe.c").read_text()
+            original_constants = (REPO / "decomp/launcher/gate_c_runtime_constants.h").read_text()
+            original_layout = (REPO / "decomp/launcher/gate_memory_layout.h").read_text()
             self.assertEqual((output / "RANDOM.C").read_text(),
-                             original_random.replace('#include "gate_rtl_image.h"', '#include "GATE.H"', 1))
+                             original_random.replace('#include "gate_rtl_image.h"', '#include "GATE.H"', 1)
+                                            .replace('#include "gate_c_runtime_constants.h"', '#include "CONST.H"', 1))
+            self.assertEqual((output / "CONST.H").read_text(),
+                             msc51.msc51_probe_constants(original_constants, (
+                                 "GATE_CRT_RANDOM_MULTIPLIER", "GATE_CRT_RANDOM_INCREMENT",
+                                 "GATE_CRT_RANDOM_RESULT_MASK", "GATE_CRT_WORD_BITS")))
+            self.assertIn("#define GATE_CRT_RANDOM_MULTIPLIER (0x000343fd)",
+                          (output / "CONST.H").read_text())
             self.assertEqual((output / "PROBE.C").read_text(),
                              original_probe.replace('#include "../gate_exe.h"', '#include "GATE.H"', 1))
             header = (output / "GATE.H").read_text()
+            self.assertIn(msc51.msc51_probe_constants(original_layout, (
+                "GATE_DS_RANDOM_STATE_LOW", "GATE_DS_RANDOM_STATE_HIGH")), header)
+            with self.assertRaisesRegex(ValueError, "Missing original rand constant"):
+                msc51.msc51_probe_constants(original_constants, ("NO_SUCH_RANDOM_CONSTANT",))
             self.assertIn("typedef unsigned long uint32_t;", header)
             self.assertIn("typedef unsigned short uint16_t;", header)
             batch = (output / "BUILD.BAT").read_text()

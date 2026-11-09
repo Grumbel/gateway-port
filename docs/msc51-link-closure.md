@@ -104,6 +104,18 @@ malformed objects. When either missing routine is finally implemented,
 update/remove this two-name checkpoint; it is not a substitute for the
 implementations.
 
+**Independent local reproduction (2026-11-09):** After unpacking the
+hash-pinned Microsoft C 5.1 compiler from the uploaded floppy-image archive,
+all `compile-*` DOS stages and the original-file `BOOTPREP.EXE` and
+`BOOTVGA.EXE` probes passed under DOSBox Staging 0.83.0. A new local
+`link-launcher` run of Microsoft Overlay Linker 3.65 reported only the same
+two `L2029` names. The command above then inspected **42/42** actual OMF
+inputs, found neither public exported, and accepted precisely those two
+unresolved names. The missing `_main` and Ctrl-Break routine are real
+reconstruction gaps, not toolchain availability, missing headers, stale
+object files, or emulator invocation failures. See
+[`dosbox-staging.md`](dosbox-staging.md) for the execution setup and limits.
+
 The historical Microsoft C 5.1 compiler recognizes 31-character C names
 and decorates them with an underscore, giving a **32-character OMF public**;
 the [Microsoft KB Q70249](https://jeffpar.github.io/kbarchive/kb/070/Q70249/)

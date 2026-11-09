@@ -270,6 +270,10 @@ noninteractive probe (for example `nix run -L .#msc51-compile-data --
 video/audio and disables mouse capture; it does not perform visible VGA
 comparisons. See the [verified DOSBox Staging headless setup and smoke
 test](docs/dosbox-staging.md).
+The 2026-11-09 [historical-compiler reproduction](docs/dosbox-staging.md#reproduced-with-microsoft-c-51-and-original-game-files)
+also verifies the full original-file DOS startup and live VGA probe chain on
+a headless machine. Microsoft LINK still needs the reconstructed `_main` and
+Ctrl-Break handler; no playable DOS recompile is claimed.
 See the [DOSBox Staging CPU documentation](https://www.dosbox-staging.org/0.83/manual/system/cpu/)
 for the core and cycle tradeoffs. An unchanged probe result is still
 required; more CPU cycles are not evidence of correct startup behavior.
