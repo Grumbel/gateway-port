@@ -328,6 +328,7 @@ enum {
  * The separate base is documented for cross-checks against 8086 operands;
  * callers should use these absolute field names, not add raw displacements. */
 enum {
+    GATE_DS_DRAW_PAGE_OFFSET = GATE_DS_DRAW_STATE_BASE + 0x0a,
     GATE_DS_DRAW_COLOR = GATE_DS_DRAW_STATE_BASE + 0x0c,
     GATE_DS_DRAW_RECT_STATE = GATE_DS_DRAW_STATE_BASE + 0x10,
     GATE_DS_DRAW_X = GATE_DS_DRAW_STATE_BASE + 0x12,

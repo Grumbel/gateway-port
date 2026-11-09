@@ -278,12 +278,13 @@ int main(void)
                                  (uint16_t)(33u * 320u + 32u)),
                    0x55u, "mode-13 original row stride");
 
-    /* The 640x480 branch uses real BIOS planar pixels rather than treating
-     * A000 as a linear 4-bit buffer. Test only one pixel to avoid replacing
-     * the original resident rasterizer's fast path with a slow bulk test. */
+    /* The 640x480 branch uses the original VGA four-plane write-mode-2
+     * operation. The synthetic DS allocation does not have the original
+     * initialized drawing state; initialize its page origin first. */
     in.x.ax = 0x0012u;
     int86(0x10, &in, &out);
     gate_ds_set_word(GATE_DS_RENDERER_MODE, 2u);
+    gate_ds_set_word(GATE_DS_DRAW_PAGE_OFFSET, 0u);
     gate_rtl_plot_pixel(0x0bu, 4u, 5u);
     in.x.ax = 0x0d00u;
     in.x.bx = 0u;
@@ -291,6 +292,46 @@ int main(void)
     in.x.dx = 4u;
     int86(0x10, &in, &out);
     valid &= check((uint16_t)(out.h.al & 15u), 0x0bu, "planar VGA pixel");
+
+    /* Original resident 25d7:00d6 / RTL:19a69 uses VGA GC write mode 2,
+     * not BIOS pixel read/write. Test all logical operations against an
+     * independent BIOS read, including the adjacent unchanged bit. */
+    gate_ds_set_word(GATE_DS_DRAW_OPERATION, 3u);
+    gate_rtl_plot_pixel(0x07u, 4u, 5u);
+    in.x.ax = 0x0d00u;
+    in.x.cx = 5u;
+    in.x.dx = 4u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 12u,
+                   "original planar GC pixel XOR");
+    gate_ds_set_word(GATE_DS_DRAW_OPERATION, 1u);
+    gate_rtl_plot_pixel(3u, 4u, 5u);
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 0u,
+                   "original planar GC pixel AND");
+    gate_ds_set_word(GATE_DS_DRAW_OPERATION, 2u);
+    gate_rtl_plot_pixel(5u, 4u, 5u);
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 5u,
+                   "original planar GC pixel OR");
+    in.x.cx = 6u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 0u,
+                   "original planar GC pixel neighbor unchanged");
+    /* The original draw-state +0a field moves the destination by bytes,
+     * independently of the active BIOS mode descriptor. */
+    gate_ds_set_word(GATE_DS_DRAW_PAGE_OFFSET, 1u);
+    gate_ds_set_word(GATE_DS_DRAW_OPERATION, 0u);
+    gate_rtl_plot_pixel(9u, 4u, 5u);
+    in.x.cx = 13u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 9u,
+                   "original planar GC page origin byte offset");
+    in.x.cx = 5u;
+    int86(0x10, &in, &out);
+    valid &= check((uint16_t)(out.h.al & 15u), 5u,
+                   "original planar GC page origin leaves prior pixel");
+    gate_ds_set_word(GATE_DS_DRAW_PAGE_OFFSET, 0u);
 
     gate_far_set_word(image.segment, image.offset + 0x14u, 1u);
     gate_far_set_word(image.segment, image.offset + 0x30u, 1u);

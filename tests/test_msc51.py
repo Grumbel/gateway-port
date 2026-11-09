@@ -1104,8 +1104,12 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("fill_vga_planes", (output / "RESSTATE.C").read_text())
             self.assertIn("clear rejects mismatched descriptor", (output / "RESCHK.C").read_text())
             self.assertIn("void gate_rtl_plot_pixel(uint16_t color", (output / "RESSTATE.C").read_text())
-            self.assertIn("in.h.ah = 0x0du", (output / "RESSTATE.C").read_text())
-            self.assertIn("in.h.ah = 0x0cu", (output / "RESSTATE.C").read_text())
+            self.assertIn("gate_ds_word(GATE_DS_DRAW_PAGE_OFFSET)",
+                          (output / "RESSTATE.C").read_text())
+            self.assertIn("outp(0x3ce, 5); outp(0x3cf, 2);",
+                          (output / "RESSTATE.C").read_text())
+            self.assertNotIn("in.h.ah = 0x0du", (output / "RESSTATE.C").read_text())
+            self.assertNotIn("in.h.ah = 0x0cu", (output / "RESSTATE.C").read_text())
             self.assertIn("void gate_rtl_resident_line_to(uint16_t x", (output / "RESSTATE.C").read_text())
             self.assertIn("void gate_rtl_background_rect(uint16_t style", (output / "RESSTATE.C").read_text())
             self.assertIn("mode-13 pixel XOR", (output / "RESCHK.C").read_text())

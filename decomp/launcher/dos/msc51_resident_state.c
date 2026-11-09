@@ -25,16 +25,13 @@ void gate_rtl_resident_move_to(uint16_t x, uint16_t y)
     gate_ds_set_word(GATE_DS_DRAW_Y, y);
 }
 
-/* The original resident 25d7:0004 dispatches modes 1/2 to a VGA planar
- * pixel operation and mode 3 to a linear 320x200 pixel operation. This DOS
- * boundary uses BIOS INT 10h/0c/0d for planar pixels and the real A000
- * aperture for mode 13h. The original clipping and raster operations are
- * reconstructed in src/intro_host_rtl_pixel.c; uncommon modes 0 and 4
- * remain unimplemented and must not silently draw as mode 13h. */
+/* Original resident 25d7:0004 dispatches modes 1/2 to RTL:19a69's
+ * four-plane VGA write-mode-2 pixel operation and mode 3 to RTL:19ac6's
+ * linear 320x200 byte operation. The original clipping is reconstructed
+ * in src/intro_host_rtl_pixel.c. Unsupported modes 0 and 4 abort. */
 void gate_rtl_plot_pixel(uint16_t color, uint16_t y, uint16_t x)
 {
     uint16_t mode, operation;
-    uint8_t incoming, old, result;
     if (gate_ds_word(GATE_DS_DRAW_CLIPPING_ENABLED) == 1u) {
         if ((int16_t)x < (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_LEFT) ||
             (int16_t)y < (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_TOP) ||
@@ -51,8 +48,9 @@ void gate_rtl_plot_pixel(uint16_t color, uint16_t y, uint16_t x)
         return;
 
     operation = (uint16_t)(gate_ds_word(GATE_DS_DRAW_OPERATION) & 0xffu);
-    incoming = (uint8_t)(mode == 3u ? color : (color & 15u));
     if (mode == 3u) {
+        uint8_t incoming = (uint8_t)color;
+        uint8_t old, result;
         uint16_t offset = (uint16_t)(320ul * y + x);
         old = gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT, offset);
         switch (operation) {
@@ -63,25 +61,24 @@ void gate_rtl_plot_pixel(uint16_t color, uint16_t y, uint16_t x)
         }
         gate_far_set_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT, offset, result);
     } else {
-        union REGS in, out;
-        in.x.ax = 0u;
-        in.x.bx = 0u;
-        in.x.cx = x;
-        in.x.dx = y;
-        in.h.ah = 0x0du;
-        int86(0x10, &in, &out);
-        old = (uint8_t)(out.h.al & 0x0fu);
-        switch (operation) {
-        case 0u: result = incoming; break;
-        case 1u: result = (uint8_t)(old & incoming); break;
-        case 3u: result = (uint8_t)(old ^ incoming); break;
-        default: result = (uint8_t)(old | incoming); break;
-        }
-        /* BIOS pixel write's high bit can mean XOR in planar modes; all
-         * our explicitly combined colors are <= 0x0f (copy only). */
-        in.h.ah = 0x0cu;
-        in.h.al = result;
-        int86(0x10, &in, &out);
+        /* RTL:19a78..19ab3, original resident 25d7:00d6. The VGA read
+         * loads its four latches; write mode 2 expands the low color
+         * nibble into the selected planes while GC3 combines against
+         * those latches. GC8 selects only the pixel's one bit. The
+         * draw-state +0a page offset is added to the byte address. The
+         * original relocated SI also reads the raster operation at +16. */
+        uint16_t page_offset = gate_ds_word(GATE_DS_DRAW_PAGE_OFFSET);
+        uint16_t address = (uint16_t)((uint32_t)y * 80u + x / 8u + page_offset);
+        uint8_t mask = (uint8_t)(1u << (7u - (x & 7u)));
+        outp(0x3ce, 8); outp(0x3cf, mask);
+        outp(0x3ce, 5); outp(0x3cf, 2);
+        outp(0x3ce, 3); outp(0x3cf, (uint8_t)(operation << 3));
+        (void)gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT, address);
+        gate_far_set_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                          address, (uint8_t)color);
+        outp(0x3ce, 8); outp(0x3cf, 0xff);
+        outp(0x3ce, 5); outp(0x3cf, 0);
+        outp(0x3ce, 3); outp(0x3cf, 0);
     }
 }
 

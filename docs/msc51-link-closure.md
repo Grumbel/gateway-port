@@ -2309,8 +2309,33 @@ draws and XOR-restores two real mode-13h bytes, then reads back two colors
 from a four-plane mode-12h CA00 image. The host fixture independently
 checks mode-13h 2x2 source stride and copy/XOR plus distinct mode-12h
 plane contributions. The original VFX resident module and other display
-modes have not been decompiled; BIOS-per-pixel drawing is intentionally
-slower than its optimized native VGA-register loop.
+modes have not been decompiled. This paragraph describes the initial
+BIOS-per-pixel milestone; the original VGA VFX loops were subsequently
+recovered, as recorded in the progress log.
+
+### Original resident planar single-pixel operation
+
+`GATE.RTL:19a69..19ac5` maps to the original mode-12h single-pixel FAR
+callback `25d7:00d6`; its coordinate helper `RTL:18e28..18e48` multiplies
+the row by 80, adds `x/8`, and creates a one-bit mask with
+`1 << (7 - (x & 7))`. The pixel callback emits graphics-controller register
+8 (bit mask), register 5 (`02h`, write mode 2), and register 3
+(`draw_operation << 3`). A VGA memory read loads the latches before writing
+the low color byte; the callback then restores registers 8/5/3 to
+`ffh/00h/00h` in that order. The original linked `SI` points to the drawing
+state at `DS:29de`, so `[SI+0a]` is the **drawing-state page byte offset**,
+and `[SI+16]` is the draw operation, not the video's BIOS-mode descriptor.
+
+The DOS source-C adapter follows those register transitions directly. Its
+host VGA fixture tests copy, XOR, AND, OR, page byte offset, untouched
+neighbor pixels and absence of BIOS pixel calls. The MS C 5.1 `RESCHK.EXE`
+under DOSBox 0.74 independently confirms the resulting colors via BIOS
+pixel reads. An early version of the probe failed with page offset `d1dbh`:
+the synthetic DOS data allocation had not initialized this state field.
+Explicitly setting the **synthetic** page offset to zero fixed the probe;
+no fallback to BIOS drawing or newly invented optimization was added.
+Whether every drawing-state relocation and later page-switch path matches
+the original game still requires an original-runtime comparison.
 
 ### Original VFX save/restore state: the remaining evidence
 

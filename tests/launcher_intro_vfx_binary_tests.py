@@ -91,6 +91,28 @@ class OriginalRtlVfxRasterizer(unittest.TestCase):
         self.assertEqual(self.rtl[0x1897a:0x1898e],
                          bytes.fromhex('b002bac403ee42b00feeb003bace03ee42b000ee'))
 
+    def test_original_mode12_single_pixel_uses_gc_write_mode_two(self):
+        # Original resident 25d7:00d6 maps to RTL:19a69. The coordinate
+        # mapper RTL:18e28 computes y*80 + x/8 and CL = 7-(x&7).
+        self.assertEqual(self.rtl[0x18e2b:0x18e39],
+                         bytes.fromhex('ba5000f7e25ad1ebd1ebd1eb03d8'))
+        self.assertEqual(self.rtl[0x18e40:0x18e48],
+                         bytes.fromhex('80e10780f107b401'))
+        # GC8 selects a single pixel; GC5=02h selects write mode 2,
+        # which expands AL's color nibble into all four enabled planes.
+        self.assertEqual(self.rtl[0x19a83:0x19a8f],
+                         bytes.fromhex('d2e4bace03b008efb80502ef'))
+        # The relocated SI structure supplies the page byte offset (+0a)
+        # and raster operation (+16), both from the resident draw state.
+        self.assertEqual(self.rtl[0x19a8f:0x19a95],
+                         bytes.fromhex('be0000035c0a'))
+        # GC3 is the original raster operation <<3. The VGA read loads
+        # all latches, and the write sends AL=color without BIOS INT10h.
+        self.assertEqual(self.rtl[0x19a95:0x19aa8],
+                         bytes.fromhex('8a6416b103d2e4b003ef268a078a4606268807'))
+        self.assertEqual(self.rtl[0x19aa8:0x19ab4],
+                         bytes.fromhex('b808ffefb80500efb80300ef'))
+
 
 class NativeVfxProvenance(unittest.TestCase):
     @classmethod

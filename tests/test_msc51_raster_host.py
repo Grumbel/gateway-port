@@ -92,7 +92,8 @@ static void vga_write(unsigned int offset, uint8_t data)
     unsigned int plane, bit;
     unsigned int logic = (gc_register[3] >> 3) & 3u;
     ++planar_vga_writes;
-    assert(gc_register[5] == 8u && gc_register[7] == 0u);
+    assert((gc_register[5] == 8u && gc_register[7] == 0u) ||
+           gc_register[5] == 2u);
     for (plane = 0u; plane < 4u; ++plane) {
         if ((seq_register[2] & (1u << plane)) == 0u)
             continue;
@@ -100,7 +101,9 @@ static void vga_write(unsigned int offset, uint8_t data)
             unsigned int index = (offset / 80u) * 640u +
                                  (offset % 80u) * 8u + bit;
             uint8_t mask = (uint8_t)(0x80u >> bit);
-            uint8_t src = (data & mask) != 0u;
+            uint8_t src = gc_register[5] == 2u ?
+                (uint8_t)((data & (1u << plane)) != 0u) :
+                (uint8_t)((data & mask) != 0u);
             uint8_t old = (vga_latches[plane] & mask) != 0u;
             uint8_t value = src;
             if (index >= sizeof(planar))
@@ -129,8 +132,12 @@ uint8_t gate_far_byte(uint16_t segment, uint16_t offset)
         unsigned int plane;
         for (plane = 0u; plane < 4u; ++plane)
             vga_latches[plane] = plane_byte(plane, offset);
-        assert(gc_register[5] == 8u && gc_register[7] == 0u);
-        return 0xffu; /* VGA read mode 1 with color-don't-care = 0 */
+        if (gc_register[5] == 8u) {
+            assert(gc_register[7] == 0u);
+            return 0xffu; /* VGA read mode 1, color-don't-care = 0 */
+        }
+        assert(gc_register[5] == 2u);
+        return vga_latches[0]; /* Read mode 0 loads latches; AX discarded. */
     }
     return memory[address];
 }
@@ -341,11 +348,32 @@ int main(int argc, char **argv)
 
     gate_ds_set_word(GATE_DS_RENDERER_MODE, 2u);
     video_mode = 0x12u;
+    /* The original 19a8f SI points at draw state, not the active BIOS
+     * mode descriptor. Deliberately poison the lookalike +0a field. */
+    gate_ds_set_word(GATE_DS_DRAW_PAGE_OFFSET, 0u);
+    gate_far_set_word(current_ds,
+        GATE_RESIDENT_MODE_DESCRIPTOR_BASE +
+        2u * GATE_RESIDENT_MODE_DESCRIPTOR_BYTES + 0x0au, 0x4000u);
     gate_rtl_plot_pixel(0x1bu, 16u, 18u);
     assert(planar[16ul * 640u + 18u] == 0x0bu);
     gate_ds_set_word(GATE_DS_DRAW_OPERATION, 3u);
     gate_rtl_plot_pixel(0x07u, 16u, 18u);
     assert(planar[16ul * 640u + 18u] == 0x0cu);
+    gate_ds_set_word(GATE_DS_DRAW_OPERATION, 1u);
+    gate_rtl_plot_pixel(0x03u, 16u, 18u);
+    assert(planar[16ul * 640u + 18u] == 0u);
+    gate_ds_set_word(GATE_DS_DRAW_OPERATION, 2u);
+    gate_rtl_plot_pixel(0x05u, 16u, 18u);
+    assert(planar[16ul * 640u + 18u] == 5u);
+    gate_ds_set_word(GATE_DS_DRAW_PAGE_OFFSET, 1u);
+    gate_ds_set_word(GATE_DS_DRAW_OPERATION, 0u);
+    gate_rtl_plot_pixel(0x09u, 16u, 18u);
+    assert(planar[16ul * 640u + 18u] == 5u);
+    assert(planar[16ul * 640u + 26u] == 9u);
+    gate_ds_set_word(GATE_DS_DRAW_PAGE_OFFSET, 0u);
+    assert(planar_bios_reads == 0u && planar_bios_writes == 0u);
+    assert(gc_register[5] == 0u && gc_register[3] == 0u);
+    assert(gc_register[8] == 0xffu);
 
     /* A real CA00 VFX image record, first in mode 13h, then 12h.
      * Source pixel buffers are separate from the VGA aperture. */
