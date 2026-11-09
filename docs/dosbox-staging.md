@@ -52,25 +52,35 @@ access are needed to run the unpacked binary.
 
 ## Headless setup
 
-In containers without an X11/Wayland display or audio device, use SDL's
-dummy video/audio backends, disable mouse capture, and explicitly select
-`output=texture` with `texture_renderer=software` for the compiler runs.
-DOSBox Staging 0.82.2 defaults to OpenGL output, which can abort *before*
-running any DOS command when SDL uses its dummy video driver, even after
-DOSBox reports that it is falling back to texture rendering. The software
-renderer selection avoids this OpenGL initialization path. On the tested 0.83.0
-build, `SDL_VIDEODRIVER=dummy` **without** `mouse_capture=nomouse` aborted
-during `SDL_SetRelativeMouseMode` with `Error putting the mouse into relative
-mode`. With that setting, DOSBox fell back from OpenGL to its software SDL
-renderer, ran DOS commands, and shut down cleanly.
+For unattended Microsoft C compilation, use a private Xvfb server rather
+than SDL's dummy video driver. The user's DOSBox Staging **0.82.2** binary
+was observed aborting *before running COMPILE.BAT* with `SDL_VIDEODRIVER=dummy`,
+first with its default OpenGL output and then again with explicit
+`output=texture` and `texture_renderer=software`. This release still probes
+a temporary OpenGL-capable window during startup. Software texture rendering
+alone therefore does **not** make SDL's dummy video driver usable.
+
+`--headless` now wraps DOSBox in `xvfb-run -a --` and selects
+`SDL_VIDEODRIVER=x11`, `SDL_AUDIODRIVER=dummy` and
+`LIBGL_ALWAYS_SOFTWARE=1`. DOSBox uses the temporary private display,
+including its GLX capability, without opening a desktop window. It also
+disables mouse capture and selects the SDL software texture renderer for the
+actual video output. Both `nix run .#gateway-dos` and `nix develop .#msc51`
+provide `xvfb-run` automatically. Outside Nix, install `xvfb-run` and its
+Xvfb/Xauth dependencies before using `--headless`.
+
+For historical comparison, the tested portable Staging 0.83.0 build could
+run with SDL's dummy video driver after disabling mouse capture; without
+`mouse_capture=nomouse` it aborted at `SDL_SetRelativeMouseMode`. The current
+driver uses private Xvfb for reproducible compiler runs across the versions.
 
 The following standalone smoke test creates only an ignored `build/` file:
 
 ```sh
 dosbox=/path/to/dosbox-staging-linux-x86_64-0.83.0-7b400/dosbox
 mkdir -p build/dosbox-smoke
-SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
-  "$dosbox" --noprimaryconf --nolocalconf \
+SDL_VIDEODRIVER=x11 SDL_AUDIODRIVER=dummy LIBGL_ALWAYS_SOFTWARE=1 \
+  xvfb-run -a -- "$dosbox" --noprimaryconf --nolocalconf \
   --set mouse_capture=nomouse --set mididevice=none \
   --set output=texture --set texture_renderer=software \
   --set core=dynamic --set cpu_cycles=max \
@@ -79,17 +89,20 @@ SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
 sed -n '1,3p' build/dosbox-smoke/PROBE.TXT
 ```
 
-The tested result was a clean exit and an actual file written from DOS:
+The previously tested 0.83.0 dummy-video result was a clean exit and an
+actual file written from DOS; the Xvfb variant above still needs a direct
+Staging runtime check in this environment:
 
 ```text
 DOSBox Staging version 0.83.0 (7b400)
 DOS version 5.00
 ```
 
-`tools/msc51.py` now accepts `--headless` for its noninteractive DOS probe
-commands. It sets both SDL dummy backends and passes `--noprimaryconf`,
-`--nolocalconf`, `mouse_capture=nomouse`, `mididevice=none`, `output=texture`,
-and `texture_renderer=software`. Its existing
+`tools/msc51.py` accepts `--headless` for its noninteractive DOS probe
+commands. It starts a private Xvfb/X11 server, selects dummy audio and
+software GL, and passes `--noprimaryconf`, `--nolocalconf`,
+`mouse_capture=nomouse`, `mididevice=none`, `output=texture`, and
+`texture_renderer=software`. Its existing
 `--dosbox` argument also accepts an absolute path to the portable executable.
 For example, when a complete Microsoft C 5.1 installation is available:
 

@@ -272,10 +272,11 @@ The flags apply to all DOSBox-running `gateway-msc51` probe commands handled
 by `tools/msc51.py`.
 For unattended Linux environments without a display, pass `--headless` to a
 noninteractive probe (for example `gateway-msc51 compile-data
---headless --original-game-dir ../gateway-dos`). This selects SDL dummy
-video/audio and disables mouse capture; it does not perform visible VGA
-comparisons. See the [verified DOSBox Staging headless setup and smoke
-test](docs/dosbox-staging.md).
+--headless --original-game-dir ../gateway-dos`). This uses private Xvfb/X11
+with dummy audio and software rendering because Staging 0.82.2 still needs
+an OpenGL-capable temporary window at startup. Nix supplies `xvfb-run`
+automatically. Headless probes do not present VGA output onscreen. See the
+[DOSBox Staging headless setup and historical smoke test](docs/dosbox-staging.md).
 The 2026-11-09 [historical-compiler reproduction](docs/dosbox-staging.md#reproduced-with-microsoft-c-51-and-original-game-files)
 also verifies the full original-file DOS startup and live VGA probe chain on
 a headless machine. Microsoft C 5.1 now links a real-mode source-C entry
@@ -1222,7 +1223,9 @@ executable in `$XDG_CACHE_HOME/gateway-port/msc51` (or
 `~/.cache/gateway-port/msc51`) as long as the Nix source and compiler do not
 change. Set `GATEWAY_MSC51_BUILD_DIR` to use another writable directory,
 or `GATEWAY_DOS_REBUILD=1` to force rebuilding. The original game assets
-remain in `../gateway-dos` and are mounted read-only. The `/CHECK` and
+remain in `../gateway-dos` and are mounted read-only. Compiler sessions
+use a temporary Xvfb display (supplied by Nix) to avoid the SDL dummy-video
+startup failure in DOSBox Staging 0.82.2. The `/CHECK` and
 `/PICTURE` modes are verified, but the full DOS `/INTRO` currently fails
 before completing. See [DOS link checkpoint](docs/msc51-link-closure.md).
 

@@ -1863,7 +1863,7 @@ def dosbox_performance_args(cycles: str = "max", core: str = "dynamic") -> list[
 
 
 def dosbox_headless_args() -> list[str]:
-    """Use SDL's software renderer without a windowing system or OpenGL."""
+    """Use software output and avoid desktop-only capture in private Xvfb."""
     return ["--noprimaryconf", "--nolocalconf",
             "--set", "mouse_capture=nomouse",
             "--set", "mididevice=none",
@@ -1912,7 +1912,7 @@ def main(argv: list[str] | None = None) -> int:
                         choices=("dynamic", "auto", "normal", "simple", "default"),
                         help="DOSBox CPU core: dynamic (default), auto, normal, simple or default (no override)")
     parser.add_argument("--headless", action="store_true",
-                        help="run noninteractive DOS probes with SDL dummy video/audio")
+                        help="run noninteractive DOS probes in private Xvfb with dummy audio")
     parser.add_argument("--install-dir", type=Path,
                         help="writable target for installing the original Microsoft compiler")
     parser.add_argument("--floppy", type=Path, action="append", default=[],
@@ -2046,6 +2046,9 @@ def main(argv: list[str] | None = None) -> int:
     dosbox = shutil.which(args.dosbox)
     if dosbox is None:
         parser.error(f"DOSBox executable not found: {args.dosbox}")
+    xvfb = shutil.which("xvfb-run") if args.headless else None
+    if args.headless and xvfb is None:
+        parser.error("--headless requires xvfb-run (provided by nix develop .#msc51)")
     try:
         performance_args = dosbox_performance_args(args.dosbox_cycles, args.dosbox_core)
     except ValueError as error:
@@ -2128,10 +2131,17 @@ def main(argv: list[str] | None = None) -> int:
         command.append("--exit")
     print("DOSBox CPU: " + (" ".join(performance_args) or "user configuration"), flush=True)
     print("DOSBox commands: " + " ; ".join(commands), flush=True)
+    if args.headless:
+        print("DOSBox display: private Xvfb (SDL X11, software GL)", flush=True)
     guest_env = None
     if args.headless:
         guest_env = os.environ.copy()
-        guest_env.update(SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
+        # Staging 0.82.2 creates an OpenGL-capable temporary window even when
+        # output=texture. SDL's dummy video driver cannot create that window.
+        # Xvfb provides GLX without displaying compiler/probe windows.
+        guest_env.update(SDL_VIDEODRIVER="x11", SDL_AUDIODRIVER="dummy",
+                         LIBGL_ALWAYS_SOFTWARE="1")
+        command = [xvfb, "-a", "--", *command]
     if guest_env is None:
         result = subprocess.run(command, check=False)
     else:

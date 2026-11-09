@@ -39,6 +39,7 @@ class FlakeLayoutTests(unittest.TestCase):
         self.assertIn('tools/gateway_dos.sh', apps)
         self.assertIn('export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"', apps)
         self.assertIn('export GATEWAY_MSC51_SOURCE_DIR="${self}"', apps)
+        self.assertIn('pkgs.dosbox-staging pkgs.xvfb-run', apps)
         self.assertIn('exec "$dosbox_bin"', dos_launcher_script())
         self.assertIn('GATEWAY_MSC51_BUILD_DIR', dos_launcher_script())
         self.assertIn('mount e', dos_launcher_script())
@@ -54,6 +55,7 @@ class FlakeLayoutTests(unittest.TestCase):
             self.assertIn(f"add_executable({name}", cmake)
         self.assertIn('"gateway-intro-source-c-full"', shell)
         self.assertIn('"gateway-msc51"', shell)
+        self.assertIn('pkgs.dosbox-staging pkgs.xvfb-run', shell)
         self.assertIn('"gateway-decompile-intro"', FLAKE)
         for heading in ("Build and run", "Source-C intro development",
                         "Emulation diagnostics and captures", "Specialized tools"):

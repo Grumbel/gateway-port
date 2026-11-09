@@ -2397,7 +2397,9 @@ class MSC51Tests(unittest.TestCase):
                 (compiler / "LIB" / name).touch()
             (compiler / "INCLUDE" / "STDIO.H").touch()
 
-            with mock.patch.object(msc51.shutil, "which", return_value="/dosbox"), \
+            with mock.patch.object(msc51.shutil, "which", side_effect=lambda program: {
+                "dosbox-staging": "/dosbox", "xvfb-run": "/xvfb-run"
+            }.get(program)), \
                  mock.patch.object(msc51.subprocess, "run") as run, \
                  redirect_stderr(io.StringIO()):
                 run.return_value.returncode = 17
@@ -2405,16 +2407,25 @@ class MSC51Tests(unittest.TestCase):
                                      "--output", str(root / "output"), "--headless"])
             self.assertEqual(status, 17)
             command = run.call_args.args[0]
-            self.assertEqual(command[0], "/dosbox")
+            self.assertEqual(command[:4], ["/xvfb-run", "-a", "--", "/dosbox"])
             self.assertIn("--noprimaryconf", command)
             self.assertIn("--nolocalconf", command)
             self.assertIn("mouse_capture=nomouse", command)
             self.assertIn("output=texture", command)
             self.assertIn("texture_renderer=software", command)
             self.assertIn("cpu_cycles=max", command)
-            self.assertEqual(run.call_args.kwargs["env"]["SDL_VIDEODRIVER"], "dummy")
+            self.assertEqual(run.call_args.kwargs["env"]["SDL_VIDEODRIVER"], "x11")
             self.assertEqual(run.call_args.kwargs["env"]["SDL_AUDIODRIVER"], "dummy")
+            self.assertEqual(run.call_args.kwargs["env"]["LIBGL_ALWAYS_SOFTWARE"], "1")
             self.assertIn("--exit", command)
+
+            with mock.patch.object(msc51.shutil, "which", side_effect=lambda program: {
+                "dosbox-staging": "/dosbox"
+            }.get(program)), redirect_stderr(io.StringIO()) as diagnostic:
+                with self.assertRaises(SystemExit):
+                    msc51.main(["probe", "--compiler", str(compiler),
+                                "--output", str(root / "output"), "--headless"])
+            self.assertIn("--headless requires xvfb-run", diagnostic.getvalue())
 
         with self.assertRaises(SystemExit):
             msc51.main(["shell", "--headless"])

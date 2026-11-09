@@ -126,7 +126,8 @@
           };
           dosLauncher = pkgs.writeShellApplication {
             name = "gateway-dos";
-            runtimeInputs = [ pkgs.coreutils pkgs.python3 pkgs.util-linux pkgs.dosbox-staging ];
+            runtimeInputs = [ pkgs.coreutils pkgs.python3 pkgs.util-linux
+                              pkgs.dosbox-staging pkgs.xvfb-run ];
             text = ''
               export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
               export GATEWAY_MSC51_SOURCE_DIR="${self}"
@@ -379,7 +380,7 @@ except Exception:
           };
           msc51 = pkgs.mkShell {
             inputsFrom = [ self.devShells.${system}.default ];
-            packages = [ pkgs.dosbox-staging pkgs.python3 pkgs.mtools
+            packages = [ pkgs.dosbox-staging pkgs.xvfb-run pkgs.python3 pkgs.mtools
                          pkgs._7zz ];
             shellHook = ''
               export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
