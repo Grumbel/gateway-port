@@ -961,7 +961,7 @@ class MSC51Tests(unittest.TestCase):
                                     msc51.msc51_identifiers((output / name).read_text())), name)
             resident_batch = (output / "RESST.BAT").read_text()
             self.assertIn("CL /AL /Od /c RESSTATE.C", resident_batch)
-            self.assertIn("RESCHK.C RESSTATE.OBJ MEMORY.OBJ", resident_batch)
+            self.assertIn("RESCHK.C RESSTATE.OBJ HEAP.OBJ MEMORY.OBJ", resident_batch)
             self.assertIn("RESCHK.EXE > RESTEST.LOG", resident_batch)
             self.assertIn("RESSIG.LOG", resident_batch)
             self.assertIn("RESOK.LOG", resident_batch)
@@ -983,6 +983,11 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("mode-12 VFX four-plane pixel", (output / "RESCHK.C").read_text())
             self.assertIn("int86(0x33, &in, &out)", (output / "RESSTATE.C").read_text())
             self.assertIn("VFX save state accepted", (output / "RESCHK.C").read_text())
+            self.assertIn("Ctrl-Break active VFX state cleared", (output / "RESCHK.C").read_text())
+            self.assertIn("Ctrl-Break first DOS MCB released", (output / "RESCHK.C").read_text())
+            self.assertIn("Ctrl-Break failed image preserved", (output / "RESCHK.C").read_text())
+            self.assertIn("void gate_linked_vfx_shutdown(void)",
+                          (output / "RESSTATE.C").read_text())
             self.assertIn("GATE_DS_VFX_STATE_FLAGS", (output / "RTLLAY.H").read_text())
             for name in ("RESSTATE.C", "RESCHK.C"):
                 self.assertTrue(all(len(identifier) <= 31 for identifier in

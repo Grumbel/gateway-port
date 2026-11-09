@@ -152,6 +152,11 @@ enum {
     GATE_DS_PEN_COLOR = 0x5512,
     GATE_DS_VGA_STATUS_PORT = 0x5514,
     GATE_DS_VIDEO_ADAPTER_TYPE = 0x5516,
+    /* The relocated RTL:10da1 VFX cleanup uses two consecutive 0x80-byte
+     * image records. The source's 0000/0080 immediates were relocated to
+     * these two live DS addresses in the 22-second snapshot. */
+    GATE_DS_CONTROL_VFX_IMAGE_FIRST = 0x555c,
+    GATE_DS_CONTROL_VFX_IMAGE_SECOND = 0x55dc,
     GATE_DS_TIMEZONE_INITIALIZED = 0x6470,
 };
 

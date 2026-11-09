@@ -1601,6 +1601,37 @@ This does **not** establish that the complete Ctrl-Break cleanup is
 implemented: other shutdown calls and original startup state bindings are
 missing.
 
+**First complete Ctrl-Break video callee (2026-11-09, DOS verified).**
+The reconstructed `gate_linked_vfx_shutdown` in `RESSTATE.OBJ` now covers
+the bounded `RTL:10da1..10dc6` branch of the original six-call
+`RTL:157b8..157e4` control-key handler. It invokes the existing
+`gate_linked_save_vfx_draw_state` adapter (original `RTL:11078`), tests
+`DS:13d2 & 000ch`, and on an active image state conditionally releases
+the two in-DS CA00 records at `DS:555c` and `DS:55dc` in that order.
+Each uses the already reconstructed `RTL:180fe` image-release behavior:
+free the separately allocated pixel block using the far segment (the far
+offset is intentionally ignored by DOS `AH=49h`), and overwrite its 128-byte
+header with `ffh` **only** if the release succeeds. The parent VFX flags
+word is always cleared, including the inactive and failed-release paths.
+
+The genuine **Microsoft C 5.1 + Microsoft LINK 3.65 + headless DOSBox
+Staging** `msc51-compile-resident-state` probe now allocates two real DOS
+pixel blocks and validates their MCB owner words before and after release;
+it also checks every byte of both invalidated CA00 records, a nonzero far
+offset for each block, the inactive/no-image branch, and preservation of
+headers with an invalid signature or failed zero-segment release. The
+earlier repeated-free test was not a valid oracle in DOSBox; the direct MCB
+ownership observation is used instead. `RESTEST.LOG` reports
+`Resident state probe: PASS`. The active drawing bit is kept clear in these
+tests: the unresolved live video-buffer save path is still fail-closed.
+After rebuilding all five stale prerequisites from the changed generated
+layout header, a fresh genuine MS LINK 3.65 checkpoint still reports
+**exactly two** unresolved symbols: `_main` from the CRT and
+`_gate_linked_handle_control_key` from `M04.OBJ`.
+The **outer** `_gate_linked_handle_control_key` remains unresolved, as do
+its other file, audio, stream and exit callees; this is not a complete
+Ctrl-Break handler or a working game entry point.
+
 Three additional diagnostic callees now have strong original entry
 boundaries, not merely byte-window guesses:
 

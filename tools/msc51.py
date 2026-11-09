@@ -267,8 +267,8 @@ RUNTIME_FILE_SOURCES = ("GATEMEM.H", "STDINT.H", "RTFILE.C", "RTFCHK.C", "MEMORY
 PICTURE_DCL_SOURCES = ("GATEMEM.H", "GATEDOS.H", "STDINT.H",
                        "RTLIMAC.H", "RTLLAY.H", "PICTDCL.C", "PICCHK.C",
                        "DOSFILE.C", "RTLIMG.C", "MEMORY.C")
-RESIDENT_STATE_SOURCES = ("GATEMEM.H", "STDINT.H", "RTLLAY.H", "RESSTATE.C",
-                          "RESCHK.C", "MEMORY.C")
+RESIDENT_STATE_SOURCES = ("GATEMEM.H", "STDINT.H", "RTLLAY.H", "RTLIMAC.H",
+                          "RESSTATE.C", "RESCHK.C", "MEMORY.C", "HEAP.C")
 HEAP_SOURCES = ("GATEMEM.H", "STDINT.H", "HEAP.C", "HEAPCHK.C", "MEMORY.C")
 INPUT_SOURCES = ("GATEMEM.H", "STDINT.H", "RTLLAY.H", "INP.C", "INPCHK.C",
                  "MEMORY.C")
@@ -700,7 +700,9 @@ def stage_launcher(output: Path) -> list[str]:
     image_constants = msc51_enums_to_macros((source_dir / "gate_rtl_image.h").read_text())
     required_constants = ("GATE_RTL_VIDEO_MODE_OFFSET", "GATE_RTL_FILE_HANDLE_OFFSET",
                           "GATE_RTL_HEADER_OFFSET", "GATE_RTL_SIZE_TABLE_OFFSET",
-                          "GATE_RTL_TRANSFORM_OFFSET", "GATE_PREPARE_STATUS_WORD")
+                          "GATE_RTL_TRANSFORM_OFFSET", "GATE_PREPARE_STATUS_WORD",
+                          "GATE_VFX_IMAGE_PIXELS_OFFSET", "GATE_VFX_IMAGE_PIXELS_SEGMENT",
+                          "GATE_VFX_IMAGE_HEADER_BYTES", "GATE_VFX_IMAGE_SIGNATURE_VALUE")
     image_defines = []
     for name in required_constants:
         match = re.search(rf"(?m)^#define {name} \(([^\n]+)\)$", image_constants)
@@ -815,7 +817,9 @@ def stage_launcher(output: Path) -> list[str]:
         "SET LIB=C:\\LIB;C:\\", "SET TEMP=D:\\", "SET TMP=D:\\",
         "CL /AL /Od /c RESSTATE.C > RESBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
         "IF NOT EXIST RESSTATE.OBJ GOTO FAILED",
-        "CL /AL /Od RESCHK.C RESSTATE.OBJ MEMORY.OBJ /FeRESCHK.EXE /link LLIBCR.LIB LIBH.LIB/NOD >> RESBUILD.LOG",
+        "CL /AL /Od /c HEAP.C >> RESBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        "IF NOT EXIST HEAP.OBJ GOTO FAILED",
+        "CL /AL /Od RESCHK.C RESSTATE.OBJ HEAP.OBJ MEMORY.OBJ /FeRESCHK.EXE /link LLIBCR.LIB LIBH.LIB/NOD >> RESBUILD.LOG",
         "IF ERRORLEVEL 1 GOTO FAILED", "IF NOT EXIST RESCHK.EXE GOTO FAILED",
         "RESCHK.EXE > RESTEST.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
         f"ECHO {resident_state_signature} > RESSIG.LOG",

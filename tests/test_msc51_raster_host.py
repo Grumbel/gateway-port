@@ -87,6 +87,14 @@ void gate_ds_set_word(uint16_t offset, uint16_t value)
 {
     gate_far_set_word(current_ds, offset, value);
 }
+/* This host raster fixture does not allocate DOS heap blocks. The real
+ * destructor is exercised by the independent MSC 5.1 resident-state probe. */
+uint16_t gate_linked_release_vfx_pixels(GateFarPtr pointer)
+{
+    (void)pointer;
+    assert(0 && "Unexpected DOS pixel release in raster-only fixture");
+    return 0xffffu;
+}
 int inp(unsigned int port) { (void)port; return 0u; }
 int outp(unsigned int port, int value) { (void)port; return value; }
 int int86(int number, union REGS *input, union REGS *output)

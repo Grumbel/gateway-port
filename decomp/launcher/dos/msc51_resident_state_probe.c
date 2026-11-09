@@ -4,6 +4,7 @@
 /* Read and write genuine guest DS fields; query BIOS mode under DOSBox. */
 #include "GATEMEM.H"
 #include "RTLLAY.H"
+#include "RTLIMAC.H"
 #include <dos.h>
 #include <stdio.h>
 
@@ -21,6 +22,7 @@ void gate_linked_blit_vfx_picture(uint16_t zero, uint16_t y, uint16_t x,
                                   uint16_t operation, GateFarPtr image);
 uint16_t gate_linked_save_vfx_draw_state(void);
 void gate_linked_restore_vfx_draw_state(uint16_t saved);
+void gate_linked_vfx_shutdown(void);
 
 static int check(uint16_t actual, uint16_t expected, const char *label)
 {
@@ -39,6 +41,8 @@ int main(void)
     union REGS in, out;
     uint8_t original_bios_mode;
     GateFarPtr image;
+    unsigned int first_pixels = 0u, second_pixels = 0u;
+    uint16_t index;
 
     if (_dos_allocmem(0x1000u, &segment) != 0) {
         puts("Resident state probe: DOS memory allocation failed");
@@ -53,6 +57,97 @@ int main(void)
     gate_linked_restore_vfx_draw_state(1u);
     valid &= check(gate_ds_word(GATE_DS_VFX_STATE_FLAGS), 0x8041u,
                    "VFX restored state flag set");
+
+    /* Original RTL:10da1's no-buffer branch clears the complete state
+     * without touching image records. No drawing-save bit is active. */
+    gate_ds_set_word(GATE_DS_VFX_STATE_FLAGS, 0x0400u);
+    gate_far_set_word((uint16_t)segment, GATE_DS_CONTROL_VFX_IMAGE_FIRST, 0x1234u);
+    gate_linked_vfx_shutdown();
+    valid &= check(gate_ds_word(GATE_DS_VFX_STATE_FLAGS), 0u,
+                   "Ctrl-Break inactive VFX state cleared");
+    valid &= check(gate_far_word((uint16_t)segment, GATE_DS_CONTROL_VFX_IMAGE_FIRST),
+                   0x1234u, "Ctrl-Break inactive image preserved");
+
+    /* The original active-buffer branch releases both image allocations,
+     * then overwrites their in-DS CA00 records with 0xff. Real DOS MCB
+     * frees, not a synthetic heap, are independently checked afterward. */
+    if (_dos_allocmem(2u, &first_pixels) != 0u) {
+        puts("Resident state probe: first control image allocation failed");
+        _dos_freemem(segment);
+        return 1;
+    }
+    if (_dos_allocmem(2u, &second_pixels) != 0u) {
+        puts("Resident state probe: second control image allocation failed");
+        _dos_freemem(first_pixels);
+        _dos_freemem(segment);
+        return 1;
+    }
+    /* DOSBox's AH=49h can accept a repeated release of an already free
+     * segment. Check the independent DOS MCB owner WORD instead: nonzero
+     * before shutdown and zero afterward. MCB is at allocation-1:0001. */
+    if (gate_far_word((uint16_t)(first_pixels - 1u), 1u) == 0u ||
+        gate_far_word((uint16_t)(second_pixels - 1u), 1u) == 0u) {
+        puts("Resident state probe: control image MCB owner missing");
+        _dos_freemem(second_pixels);
+        _dos_freemem(first_pixels);
+        _dos_freemem(segment);
+        return 1;
+    }
+    for (index = 0u; index < GATE_VFX_IMAGE_HEADER_BYTES; ++index) {
+        gate_far_set_byte((uint16_t)segment,
+            (uint16_t)(GATE_DS_CONTROL_VFX_IMAGE_FIRST + index), 0x33u);
+        gate_far_set_byte((uint16_t)segment,
+            (uint16_t)(GATE_DS_CONTROL_VFX_IMAGE_SECOND + index), 0x55u);
+    }
+    gate_far_set_word((uint16_t)segment, GATE_DS_CONTROL_VFX_IMAGE_FIRST,
+                      GATE_VFX_IMAGE_SIGNATURE_VALUE);
+    gate_far_set_word((uint16_t)segment, GATE_DS_CONTROL_VFX_IMAGE_SECOND,
+                      GATE_VFX_IMAGE_SIGNATURE_VALUE);
+    gate_far_set_word((uint16_t)segment,
+        (uint16_t)(GATE_DS_CONTROL_VFX_IMAGE_FIRST + GATE_VFX_IMAGE_PIXELS_OFFSET), 7u);
+    gate_far_set_word((uint16_t)segment,
+        (uint16_t)(GATE_DS_CONTROL_VFX_IMAGE_FIRST + GATE_VFX_IMAGE_PIXELS_SEGMENT),
+        (uint16_t)first_pixels);
+    gate_far_set_word((uint16_t)segment,
+        (uint16_t)(GATE_DS_CONTROL_VFX_IMAGE_SECOND + GATE_VFX_IMAGE_PIXELS_OFFSET), 9u);
+    gate_far_set_word((uint16_t)segment,
+        (uint16_t)(GATE_DS_CONTROL_VFX_IMAGE_SECOND + GATE_VFX_IMAGE_PIXELS_SEGMENT),
+        (uint16_t)second_pixels);
+    gate_ds_set_word(GATE_DS_VFX_STATE_FLAGS, 0x000cu);
+    gate_linked_vfx_shutdown();
+    valid &= check(gate_ds_word(GATE_DS_VFX_STATE_FLAGS), 0u,
+                   "Ctrl-Break active VFX state cleared");
+    for (index = 0u; index < GATE_VFX_IMAGE_HEADER_BYTES; ++index) {
+        valid &= check(gate_far_byte((uint16_t)segment,
+            (uint16_t)(GATE_DS_CONTROL_VFX_IMAGE_FIRST + index)), 0xffu,
+            "Ctrl-Break first CA00 record released");
+        valid &= check(gate_far_byte((uint16_t)segment,
+            (uint16_t)(GATE_DS_CONTROL_VFX_IMAGE_SECOND + index)), 0xffu,
+            "Ctrl-Break second CA00 record released");
+    }
+    valid &= check(gate_far_word((uint16_t)(first_pixels - 1u), 1u), 0u,
+                   "Ctrl-Break first DOS MCB released");
+    valid &= check(gate_far_word((uint16_t)(second_pixels - 1u), 1u), 0u,
+                   "Ctrl-Break second DOS MCB released");
+
+    /* A bad signature and a valid header with no allocated pixel segment
+     * must not turn either header into a successful-release marker. The
+     * original destructor reports failure before filling the record. */
+    gate_far_set_word((uint16_t)segment, GATE_DS_CONTROL_VFX_IMAGE_FIRST, 0x1234u);
+    gate_far_set_word((uint16_t)segment, GATE_DS_CONTROL_VFX_IMAGE_SECOND,
+                      GATE_VFX_IMAGE_SIGNATURE_VALUE);
+    gate_far_set_word((uint16_t)segment,
+        (uint16_t)(GATE_DS_CONTROL_VFX_IMAGE_SECOND + GATE_VFX_IMAGE_PIXELS_SEGMENT),
+        0u);
+    gate_ds_set_word(GATE_DS_VFX_STATE_FLAGS, 0x000cu);
+    gate_linked_vfx_shutdown();
+    valid &= check(gate_ds_word(GATE_DS_VFX_STATE_FLAGS), 0u,
+                   "Ctrl-Break failed-release VFX state cleared");
+    valid &= check(gate_far_word((uint16_t)segment, GATE_DS_CONTROL_VFX_IMAGE_FIRST),
+                   0x1234u, "Ctrl-Break invalid image preserved");
+    valid &= check(gate_far_word((uint16_t)segment, GATE_DS_CONTROL_VFX_IMAGE_SECOND),
+                   GATE_VFX_IMAGE_SIGNATURE_VALUE, "Ctrl-Break failed image preserved");
+
     gate_ds_set_word(GATE_DS_RENDERER_MODE, 8u);
     valid &= check(gate_linked_clear_resident_display(0u, 0u), 0xfffau,
                    "clear rejects invalid mode");

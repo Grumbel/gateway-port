@@ -6,6 +6,7 @@
  * implemented. Pixel/line/blitter dispatch remains a separate boundary. */
 #include "GATEMEM.H"
 #include "RTLLAY.H"
+#include "RTLIMAC.H"
 #include <conio.h>
 #include <dos.h>
 #include <stdlib.h>
@@ -259,6 +260,43 @@ void gate_linked_restore_vfx_draw_state(uint16_t saved)
     gate_ds_set_word(GATE_DS_VFX_STATE_FLAGS, (uint16_t)(flags | 1u));
     if ((flags & 0x30u) != 0u)
         vfx_mouse_visibility(1u);
+}
+
+/* The two cleanup calls in original RTL:10da1..10dc6 target the
+ * independently matched CA00 image destructor at RTL:180fe..18153.
+ * In the native launcher the same operation is gate_rtl_graphics_release.
+ * Its FAR pixel block is independently allocated; the header is NOT. */
+uint16_t gate_linked_release_vfx_pixels(GateFarPtr pointer);
+
+static void release_control_vfx_image(uint16_t record)
+{
+    uint16_t ds = gate_ds_segment();
+    GateFarPtr pixels;
+    uint16_t index;
+    if (gate_far_word(ds, record) != GATE_VFX_IMAGE_SIGNATURE_VALUE)
+        return;
+    pixels.offset = gate_far_word(ds, (uint16_t)(record + GATE_VFX_IMAGE_PIXELS_OFFSET));
+    pixels.segment = gate_far_word(ds, (uint16_t)(record + GATE_VFX_IMAGE_PIXELS_SEGMENT));
+    if (gate_linked_release_vfx_pixels(pixels) != 0u)
+        return;
+    for (index = 0u; index < GATE_VFX_IMAGE_HEADER_BYTES; ++index)
+        gate_far_set_byte(ds, (uint16_t)(record + index), 0xffu);
+}
+
+/* RTL:10da1, linked 1e48:0202 in the observed 22-second intro.
+ * The first near call, RTL:11078, saves/hides the active drawing state.
+ * Our save adapter fails closed on the unverified video-buffer save path;
+ * the tested shutdown cases have the active-drawing bit cleared. Then the
+ * original checks flags & 0c, releases the two 0x80-byte image records
+ * in order and clears the entire VFX state word even if release failed. */
+void gate_linked_vfx_shutdown(void)
+{
+    (void)gate_linked_save_vfx_draw_state();
+    if ((gate_ds_word(GATE_DS_VFX_STATE_FLAGS) & 0x000cu) != 0u) {
+        release_control_vfx_image(GATE_DS_CONTROL_VFX_IMAGE_FIRST);
+        release_control_vfx_image(GATE_DS_CONTROL_VFX_IMAGE_SECOND);
+    }
+    gate_ds_set_word(GATE_DS_VFX_STATE_FLAGS, 0u);
 }
 
 void gate_linked_blit_vfx_picture(uint16_t zero, uint16_t y, uint16_t x,
