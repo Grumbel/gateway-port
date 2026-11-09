@@ -55,8 +55,8 @@
             };
           # Explicitly opt-in, SHA-512-pinned historic compiler distribution.
           # This is proprietary Microsoft software: do not commit it to Git or
-          # redistribute the resulting closure. No default package/check
-          # depends on it; only the explicit msc51 dev shell requests it.
+          # redistribute the resulting closure. The normal SDL3 game does
+          # not depend on it; the explicit gateway-dos app and msc51 shell do.
           msc51 = pkgs.runCommand "gateway-microsoft-c-5.1" {
             archive = pkgs.fetchurl {
               name = "microsoft-c-5.1-1988-floppies.7z";
@@ -126,8 +126,10 @@
           };
           dosLauncher = pkgs.writeShellApplication {
             name = "gateway-dos";
-            runtimeInputs = [ pkgs.coreutils pkgs.dosbox-staging ];
+            runtimeInputs = [ pkgs.coreutils pkgs.python3 pkgs.util-linux pkgs.dosbox-staging ];
             text = ''
+              export GATEWAY_MSC51_DIR="${self.packages.${system}.msc51}"
+              export GATEWAY_MSC51_SOURCE_DIR="${self}"
               exec ${pkgs.bash}/bin/bash ${self}/tools/gateway_dos.sh "$@"
             '';
           };
@@ -142,7 +144,7 @@
         gateway-dos = {
           type = "app";
           program = "${dosLauncher}/bin/gateway-dos";
-          meta.description = "Run the recompiled source-C DOS intro in DOSBox Staging (requires locally built GATEWAY.EXE)";
+          meta.description = "Build the source-C DOS executable automatically and play it in DOSBox Staging";
         };
         gateway-decomp = {
           type = "app";
@@ -322,6 +324,7 @@ except Exception:
                     '  ctest --test-dir "$GATEWAY_BUILD_DIR" --output-on-failure' \
                     '  gateway-run ../gateway-dos/GATE.EXE' \
                     '  gateway-run-gdb ../gateway-dos/GATE.EXE' \
+                    '  nix run .#gateway-dos -- ../gateway-dos /INTRO (auto-builds DOS EXE)' \
                     "" \
                     'Source-C intro development' \
                     '  gateway-intro-source-c-live --from-original ../gateway-dos' \

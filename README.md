@@ -227,7 +227,10 @@ gateway-msc51 link-report                     # inspect an existing LINK.LOG
 ```
 
 For actual Microsoft C and DOSBox probes, the separately opt-in shell
-installs the pinned historical compiler (no manual floppy setup required):
+installs the pinned historical compiler (no manual floppy setup required).
+Ordinary players can use `nix run .#gateway-dos` directly; it obtains that
+compiler and performs these steps automatically. The shell commands below
+are for investigating individual compilation stages:
 
 ```sh
 nix develop .#msc51
@@ -1210,9 +1213,15 @@ nix run .#gateway-decomp -- ../gateway-dos
 nix run .#gateway-hybrid -- ../gateway-dos
 ```
 
-`gateway-dos` needs a locally built `build/msc51-launcher/GATEWAY.EXE`
-(override its directory using `GATEWAY_MSC51_BUILD_DIR`). Compile and link
-it with `gateway-msc51` in `nix develop .#msc51`; the original game assets
+`gateway-dos` automatically fetches the pinned Microsoft C 5.1 toolchain
+through Nix, compiles the original-derived source and DOS service adapters,
+links `GATEWAY.EXE`, checks the DOS startup/picture in headless DOSBox, and
+then launches the requested mode in interactive DOSBox Staging. The initial
+build takes several DOSBox compiler sessions; later launches reuse the
+executable in `$XDG_CACHE_HOME/gateway-port/msc51` (or
+`~/.cache/gateway-port/msc51`) as long as the Nix source and compiler do not
+change. Set `GATEWAY_MSC51_BUILD_DIR` to use another writable directory,
+or `GATEWAY_DOS_REBUILD=1` to force rebuilding. The original game assets
 remain in `../gateway-dos` and are mounted read-only. The `/CHECK` and
 `/PICTURE` modes are verified, but the full DOS `/INTRO` currently fails
 before completing. See [DOS link checkpoint](docs/msc51-link-closure.md).
