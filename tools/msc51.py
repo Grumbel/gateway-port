@@ -299,10 +299,15 @@ def static_data_source_signature(output: Path) -> str:
     # headers so changed or renumbered sources cannot pass a stale DOS test.
     additional = tuple(launcher_source_alias(output, name) for name in
                        ("gate_exe_intro_setup.c", "gate_rtl_mode.c",
+                        "gate_rtl_palette.c",
                         "gate_exe.h", "gate_rtl_mode.h", "gate_rtl_palette.h",
                         "gate_memory_layout.h"))
     for name in (*STATIC_DATA_SOURCES, *additional, "SOURCE.MAP"):
         digest.update(name.encode("ascii") + b"\0" + (output / name).read_bytes() + b"\0")
+    # RTLPAL.C is staged later in this script, but the 16-color VGA probe
+    # links its compiled accessors. Fingerprint their original source here.
+    palette_globals = REPO / "src/intro_host_rtl_palette_globals.c"
+    digest.update(b"intro_host_rtl_palette_globals.c\0" + palette_globals.read_bytes() + b"\0")
     return digest.hexdigest()[:16]
 
 
@@ -584,6 +589,8 @@ def stage_launcher(output: Path) -> list[str]:
     entry_source = aliases["gate_exe_intro_setup.c"]
     mode_obj = aliases["gate_rtl_mode.c"].replace(".C", ".OBJ")
     mode_source = aliases["gate_rtl_mode.c"]
+    palette_obj = aliases["gate_rtl_palette.c"].replace(".C", ".OBJ")
+    palette_source = aliases["gate_rtl_palette.c"]
     prep_response = ["BOOTPREP.OBJ+", "BOOT.OBJ+", "DATA.OBJ+", "SEL.OBJ+",
                      "MEMORY.OBJ+", "DOSFILE.OBJ+", "HEAP.OBJ+", "RTLHW.OBJ+",
                      entry_obj + "+", mode_obj,
@@ -591,7 +598,7 @@ def stage_launcher(output: Path) -> list[str]:
     (output / "BPREP.RSP").write_text("\r\n".join(prep_response) + "\r\n")
     video_response = ["BOOTVGA.OBJ+", "BOOT.OBJ+", "DATA.OBJ+", "SEL.OBJ+",
                       "MEMORY.OBJ+", "DOSFILE.OBJ+", "HEAP.OBJ+", "RTLHW.OBJ+",
-                      "RESSTATE.OBJ+", entry_obj + "+", mode_obj,
+                      "RESSTATE.OBJ+", "RTLPAL.OBJ+", entry_obj + "+", mode_obj + "+", palette_obj,
                       "BOOTVGA.EXE", "NUL.MAP", "LLIBCR.LIB LIBH.LIB /NOD", ";"]
     (output / "BVID.RSP").write_text("\r\n".join(video_response) + "\r\n")
     # HEAP.OBJ is also required by the standalone recovered C prologue.
@@ -654,6 +661,10 @@ def stage_launcher(output: Path) -> list[str]:
         # atexit handler that restores the prior BIOS mode before release.
         "CL /AL /Od /c RESSTATE.C >> DATBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
         "IF NOT EXIST RESSTATE.OBJ GOTO FAILED",
+        "CL /AL /Od /c RTLPAL.C >> DATBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        "IF NOT EXIST RTLPAL.OBJ GOTO FAILED",
+        f"CL /AL /Od /c {palette_source} >> DATBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
+        f"IF NOT EXIST {palette_obj} GOTO FAILED",
         "CL /AL /Od /c BOOTVGA.C >> DATBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
         "IF NOT EXIST BOOTVGA.OBJ GOTO FAILED",
         "C:\\BIN\\LINK.EXE @BVID.RSP >> DATBUILD.LOG", "IF ERRORLEVEL 1 GOTO FAILED",
@@ -1118,6 +1129,10 @@ def validate_static_data_probe(output: Path, *, require_original: bool = False) 
                 prepared.read_text(), re.MULTILINE) is None:
             raise ValueError("DOS source-C intro resource pointer verification is missing or failed.")
         live = locate_case_insensitive(output, "BVIDREAL.LOG")
+        if live is None or re.search(
+                r"^DOS intro live 16-color VGA: PASS \(RTL:f14d mode 2; BIOS 12h, 639x479 descriptors, planar pixel 0a\)\s*$",
+                live.read_text(), re.MULTILINE) is None:
+            raise ValueError("DOS original-file resident 16-color VGA verification is missing or failed.")
         if live is None or re.search(
                 r"^DOS intro live VGA probe: PASS \(RTL:f14d \+ resident 2409 mode 13; A000 pixel, clear and rectangle; prior BIOS mode restored\)\s*$",
                 live.read_text(), re.MULTILINE) is None:
@@ -1889,7 +1904,8 @@ def main(argv: list[str] | None = None) -> int:
                  "pointers, the RTL no-music initializer return, the RTL "
                  "invalid-video-mode guard and mode-3 descriptor setup "
                  "with simulated BIOS callbacks; BOOTVGA.EXE exercised "
-                 "the real reconstructed resident mode-13 switch, A000 "
+                 "the original mode-2 BIOS 12h/16-color retrace and "
+                 "planar-pixel path, then the reconstructed mode-13 A000 "
                  "pixel, full display clear, rectangle drawing and "
                  "prior-BIOS-mode restoration without entering "
                  "original resident code or installing IRQs"

@@ -11,8 +11,10 @@
 #include <stdio.h>
 
 static uint8_t mock_video_mode = 3u;
+static uint8_t mock_planar_pixel;
 static unsigned mode_requests;
 static unsigned starts;
+static unsigned retrace_waits;
 
 static void require(int good)
 {
@@ -29,6 +31,9 @@ int int86(int interrupt_number, union REGS *in, union REGS *out)
     ax = in->x.ax;
     if (ax == 0x0f00u) {
         out->h.al = mock_video_mode;
+    } else if (ax == 0x0d00u) {
+        require(mock_video_mode == 0x12u && in->x.cx == 9u && in->x.dx == 4u);
+        out->h.al = mock_planar_pixel;
     } else if ((ax & 0xff00u) == 0u) {
         if (getenv("TEST_VIDEO_FAIL_RESTORE") == 0 || (ax & 0xffu) != 3u)
             mock_video_mode = (uint8_t)ax;
@@ -40,27 +45,40 @@ int int86(int interrupt_number, union REGS *in, union REGS *out)
 
 uint16_t gate_rtl_mode_set_bios(uint16_t mode)
 {
-    require(mode == 3u && ++mode_requests == 1u);
+    ++mode_requests;
+    require((mode == 2u && mode_requests == 1u) ||
+            (mode == 3u && mode_requests == 2u));
     gate_ds_set_word(GATE_DS_RENDERER_MODE, mode);
     return 0u;
+}
+
+void gate_rtl_wait_vertical_retrace(void)
+{
+    require(gate_ds_word(GATE_DS_GRAPHICS_MODE) == 2u);
+    ++retrace_waits;
+    require(retrace_waits == 1u);
 }
 
 uint16_t gate_rtl_mode_start(uint16_t enabled)
 {
     union REGS in, out;
-    require((enabled == 1u && starts == 0u) ||
-            (enabled == 0u && starts == 1u));
+    require((enabled == 1u && starts < 2u) ||
+            (enabled == 0u && starts == 2u));
     ++starts;
     gate_ds_set_word(GATE_DS_RENDERER_ENABLED, enabled);
-    in.x.ax = enabled ? 0x0013u : 0x0003u;
+    in.x.ax = enabled ? (starts == 1u ? 0x0012u : 0x0013u) : 0x0003u;
     int86(0x10, &in, &out);
     return 0u;
 }
 
 void gate_rtl_plot_pixel(uint16_t color, uint16_t y, uint16_t x)
 {
-    require(color == 0x42u && y == 4u && x == 9u &&
-            mock_video_mode == 0x13u);
+    if (mock_video_mode == 0x12u) {
+        require(color == 0x0au && y == 4u && x == 9u);
+        mock_planar_pixel = getenv("TEST_VIDEO_BAD_PLANAR_PIXEL") != 0 ? 0x0bu : 0x0au;
+        return;
+    }
+    require(color == 0x42u && y == 4u && x == 9u && mock_video_mode == 0x13u);
     gate_far_set_byte(0xa000u, (uint16_t)(y * 320u + x),
                       getenv("TEST_VIDEO_BAD_PIXEL") != 0 ? 0x43u : (uint8_t)color);
 }

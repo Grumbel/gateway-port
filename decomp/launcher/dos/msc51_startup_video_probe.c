@@ -3,8 +3,9 @@
 
 /* Isolated original-file VGA integration probe, NOT the game entry point.
  * Unlike BOOTPREP's harmless simulated callbacks, this program links the
- * reconstructed resident video services (RESSTATE.OBJ) and deliberately
- * switches DOSBox to BIOS mode 13h. No original resident machine code runs.
+ * reconstructed resident video and retrace services, deliberately
+ * switching DOSBox to BIOS modes 12h and 13h. No original resident machine
+ * code runs.
  * Restore the initial BIOS video mode before releasing the two data images,
  * including on every ordinary failure path via atexit. */
 #include "BOOT.H"
@@ -32,21 +33,21 @@ void gate_rtl_background_setup(uint16_t pattern, uint16_t color,
 void gate_rtl_background_rect(uint16_t style, uint16_t bottom,
                               uint16_t right, uint16_t top, uint16_t left);
 
-/* RTL:f473 is reached only by the 16-color VGA palette branch, never
- * by the mode-3 path under test. M23.OBJ nevertheless references the
- * symbol, so the isolated executable must provide a link-time callback.
- * Exit rather than abort on unexpected entry: atexit must restore a
- * possibly already-switched BIOS video mode before DOSBox returns. */
-void gate_rtl_wait_vertical_retrace(void)
-{
-    fputs("DOS intro live VGA probe: unexpected retrace branch\n", stderr);
-    exit(87);
-}
-
 static uint8_t query_bios_video_mode(void)
 {
     union REGS in, out;
     in.x.ax = 0x0f00u;
+    int86(0x10, &in, &out);
+    return out.h.al;
+}
+
+static uint8_t bios_read_pixel(uint16_t x, uint16_t y)
+{
+    union REGS in, out;
+    in.x.ax = 0x0d00u;
+    in.x.bx = 0u;
+    in.x.cx = x;
+    in.x.dx = y;
     int86(0x10, &in, &out);
     return out.h.al;
 }
@@ -123,14 +124,41 @@ int main(void)
     }
     gate_exe_prepare_intro_globals();
     previous_bios_mode = query_bios_video_mode();
-    /* The following call reaches the real reconstructed 2409:003e video
-     * start routine, NOT BOOTPREP's callback that only counted requests. */
+    /* The original 350ms capture has mode=2, color mask=0f, VGA port=3da
+     * and 639x479 inclusive descriptor bounds. This branch calls the
+     * actual RTL:f473 retrace wait in M24.OBJ before BIOS mode 12h. */
     must_restore_video = 1;
-    if (gate_rtl_set_video_mode(3) != 1u ||
+    if (gate_rtl_set_video_mode(2) != 1u ||
+        gate_ds_word(GATE_DS_GRAPHICS_MODE) != 2u ||
+        gate_ds_word(GATE_DS_RENDERER_MODE) != 2u ||
+        gate_ds_word(GATE_DS_RENDERER_ENABLED) != 1u ||
+        gate_ds_word(GATE_DS_VIDEO_ADAPTER_TYPE) != 5u ||
+        gate_ds_word(GATE_DS_VGA_STATUS_PORT) != 0x03dau ||
+        gate_ds_word(GATE_DS_PEN_MASK) != 0x000fu ||
+        gate_ds_word(GATE_DS_PEN_COLOR) != 0x000fu ||
+        gate_far_word(gate_ds_word(GATE_DS_VIDEO_WIDTH_SEGMENT),
+                      GATE_MODE_DESC_SCREEN_WIDTH) != 639u ||
+        gate_far_word(gate_ds_word(GATE_DS_VIDEO_HEIGHT_SEGMENT),
+                      GATE_MODE_DESC_SCREEN_HEIGHT) != 479u ||
+        query_bios_video_mode() != 0x12u)
+        good = 0;
+
+    if (good) {
+        /* Read back through BIOS 0Dh, independently of our source-C
+         * planar pixel writer's implementation. */
+        gate_ds_set_word(GATE_DS_DRAW_CLIPPING_ENABLED, 0u);
+        gate_ds_set_word(GATE_DS_DRAW_OPERATION, 0u);
+        gate_rtl_plot_pixel(0x0au, 4u, 9u);
+        if (bios_read_pixel(9u, 4u) != 0x0au)
+            good = 0;
+    }
+
+    /* The next test still exercises the genuine mode-13 resident path. */
+    if (good && (gate_rtl_set_video_mode(3) != 1u ||
         gate_ds_word(GATE_DS_GRAPHICS_MODE) != 3u ||
         gate_ds_word(GATE_DS_RENDERER_MODE) != 3u ||
         gate_ds_word(GATE_DS_RENDERER_ENABLED) != 1u ||
-        query_bios_video_mode() != 0x13u)
+        query_bios_video_mode() != 0x13u))
         good = 0;
 
     if (good) {
@@ -186,9 +214,10 @@ int main(void)
         good = 0;
 
     if (!good) {
-        puts("DOS intro live VGA probe: FAIL mode 13, pixel, clear, rectangle or text restore");
+        puts("DOS intro live VGA probe: FAIL mode 12/13, pixel, clear, rectangle or text restore");
         return 1;
     }
+    puts("DOS intro live 16-color VGA: PASS (RTL:f14d mode 2; BIOS 12h, 639x479 descriptors, planar pixel 0a)");
     puts("DOS intro live VGA probe: PASS (RTL:f14d + resident 2409 mode 13; A000 pixel, clear and rectangle; prior BIOS mode restored)");
     return 0;
 }

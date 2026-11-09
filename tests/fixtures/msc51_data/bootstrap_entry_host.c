@@ -18,12 +18,16 @@ static uint8_t video_bytes[64000];
 static unsigned startup_allocations;
 static unsigned no_music_calls;
 static unsigned adapter_queries, clipped_frames, pen_calls;
+static unsigned attribute_palette_writes;
 static unsigned callback_opens, callback_seeks, callback_reads, callback_closes;
 
 static void require(int condition)
 {
     if (!condition) {
-        fputs("source-C startup test violated memory contract\n", stderr);
+        fprintf(stderr, "source-C startup test violated memory contract: "
+                "adapters=%u clips=%u pens=%u palette=%u mode=%04x\n",
+                adapter_queries, clipped_frames, pen_calls,
+                attribute_palette_writes, gate_ds_word(GATE_DS_GRAPHICS_MODE));
         abort();
     }
 }
@@ -34,7 +38,7 @@ static void require(int condition)
  * terminating stand-ins for the BIOS setter and display starter. */
 void gate_rtl_mode_query_adapter(uint8_t *adapter)
 {
-    require(adapter != 0 && adapter_queries == 0u);
+    require(adapter != 0 && adapter_queries < 2u);
     ++adapter_queries;
     adapter[0] = 5u; /* original VGA display class */
     adapter[1] = getenv("TEST_VIDEO_NOT_VGA") != 0 ? 3u : 5u;
@@ -48,24 +52,25 @@ uint16_t gate_rtl_mode_svga_variant(void)
 
 uint8_t gate_rtl_palette_in(uint16_t port)
 {
-    (void)port;
-    require(0);
+    require(port == 0x03dau && gate_ds_word(GATE_DS_GRAPHICS_MODE) == 2u);
     return 0u;
 }
 
 void gate_rtl_palette_out(uint16_t port, uint8_t value)
 {
-    (void)port;
-    (void)value;
-    require(0);
+    require(port == 0x03c0u && gate_ds_word(GATE_DS_GRAPHICS_MODE) == 2u &&
+            attribute_palette_writes < 33u);
+    require(value <= 32u);
+    ++attribute_palette_writes;
 }
 
 void gate_rtl_mode_clip(uint16_t bottom, uint16_t right,
                         uint16_t top, uint16_t left)
 {
-    require(bottom == 199u && right ==
-            (getenv("TEST_MODE_BAD_DIMENSIONS") != 0 ? 318u : 319u) &&
-            top == 0u && left == 0u);
+    require(top == 0u && left == 0u &&
+            ((bottom == 479u && right == 639u) ||
+             (bottom == 199u && right ==
+              (getenv("TEST_MODE_BAD_DIMENSIONS") != 0 ? 318u : 319u))));
     ++clipped_frames;
 }
 
@@ -224,6 +229,12 @@ int gate_dos_boot_prepare(const GateDosBootConfig *config,
     words[0x4e2au / 2u] = MOCK_DATA_SEGMENT;
     for (i = 0u; i <= (0x4da8u - 0x4d92u) / 2u; ++i)
         words[(0x4d92u / 2u) + i] = MOCK_LOWER_SEGMENT;
+    words[(0x12e2u + 10u) / 2u] = 4u;
+    words[(0x12eeu + 10u) / 2u] = 4u;
+    words[(0x12f8u + 4u) / 2u] = 639u;
+    words[(0x1302u + 4u) / 2u] = 479u;
+    words[(0x130cu + 4u) / 2u] = 80u;
+    words[(0x1316u + 4u) / 2u] = 30u;
     words[(0x12f8u + 6u) / 2u] = getenv("TEST_MODE_BAD_DIMENSIONS") != 0 ? 318u : 319u;
     words[(0x1302u + 6u) / 2u] = 199u;
     words[(0x130cu + 6u) / 2u] = 40u;
@@ -257,7 +268,9 @@ void gate_dos_boot_release(GateDosBootImage *image)
         getenv("TEST_BAD_VIDEO_SELECTOR") == 0 &&
         getenv("TEST_VIDEO_MUTATED_BY_AUDIO") == 0 &&
         getenv("TEST_VIDEO_NOT_VGA") == 0)
-        require(adapter_queries == 1u && clipped_frames == 1u && pen_calls == 1u);
+        require((adapter_queries == 1u && clipped_frames == 1u && pen_calls == 1u) ||
+                (adapter_queries == 2u && clipped_frames == 2u && pen_calls == 2u &&
+                 attribute_palette_writes == 33u));
     image->lower_segment = image->resident_segment = 0u;
 }
 

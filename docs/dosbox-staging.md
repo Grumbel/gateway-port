@@ -136,6 +136,16 @@ passed, and the new `BPREAL.LOG` line is mandatory. This is an observed
 startup-state reconstruction, **not** the unidentified original function
 that performed those writes or a fully initialized font/resource manager.
 
+The next live probe tested the **original mode 2 / BIOS mode 12h** path,
+observed independently in the 350ms original startup capture. It replaces
+the old unreachable-retrace test stub with linked original-derived
+`RTL:f473..f49a` code (`M24.OBJ`), performs real VGA vertical-retrace and
+attribute-controller accesses, checks the original 639×479 inclusive
+descriptor bounds, adapter 5, pen/mask `0fh` and status port `03dah`,
+then writes a planar 4-bit pixel and reads it back using BIOS INT 10h.
+The subsequent mode-13 pixel/clear/rectangle tests and prior BIOS mode
+restoration still succeed. Both original images remain mounted read-only.
+
 ## What this verifies (and what it does not)
 
 | Test | Result on 2026-11-09 |
@@ -144,9 +154,9 @@ that performed those writes or a fully initialized font/resource manager.
 | Headless DOSBox runs `VER`, writes host-visible `PROBE.TXT`, exits | PASS |
 | Original `GATE.EXE` from read-only game mount | Enters BIOS VGA mode `12h` (640×480, 16 colors) in a five-second bounded run; terminated by timeout, not a completed game test |
 | Source-only Microsoft C staging and FAT-floppy tests with local mtools | PASS; no mtools skip |
-| Full Python test discovery, including the real DOSBox smoke | 134/134 passed, no skips |
+| Full Python test discovery, including the real DOSBox smoke | 136/136 passed, no skips |
 | Decompilation tracker | `tracker ok: 1798 routines` |
-| `BOOTPREP.EXE`, `BOOTVGA.EXE` with actual Microsoft C 5.1/DOSBox | PASS; relocated startup data, original-derived mode-3 layout, live mode-13 pixel, clear, rectangle and BIOS restoration |
+| `BOOTPREP.EXE`, `BOOTVGA.EXE` with actual Microsoft C 5.1/DOSBox | PASS; original-derived mode-2 BIOS 12h/retrace and planar pixel, then mode-3 BIOS 13h pixel/clear/rectangle and BIOS restoration |
 | Full launcher LINK using the real compiler and linker | 42/42 objects parse; blocked by exactly `_main` and `_gate_linked_handle_control_key` |
 
 The original `GATE.EXE` mode transition is proof of a running DOS executable,

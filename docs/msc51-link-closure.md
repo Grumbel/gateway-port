@@ -289,11 +289,26 @@ calls do not constitute playable intro execution.
 The first user-side `BOOTVGA.EXE` link failed with one missing public:
 `_gate_rtl_wait_vertical_retrace` referenced by the original-derived
 `M23.OBJ`. The source-C mode 3 cannot enter that palette branch, but
-MS LINK still requires its symbol. `BOOTVGA.C` now implements an explicit
-unreachable-branch guard that calls `exit(87)` rather than `abort()`, so
-the video-restoration `atexit` handler gets control if the guard is ever
-reached. The host fixture no longer hides this missing definition; the
-subsequent real Microsoft LINK and `BOOTVGA.EXE` runs confirmed closure.
+MS LINK still requires its symbol. The initial standalone test supplied
+an explicitly unreachable `exit(87)` guard. That guard is now **removed**:
+`BOOTVGA.EXE` links `M24.OBJ`, containing the original-derived complete
+`RTL:f473..f49a` retrace wait, plus `RTLPAL.OBJ` for the palette globals.
+
+**First original 16-color video mode (2026-11-09, DOS verified):** The
+350ms original startup RAM capture records BIOS mode `12h` in the BIOS
+data area, linked `DS:0fce=2`, active pen/mask `000fh`, status port
+`03dah`, adapter class `5`, and inclusive mode-descriptor bounds
+639×479. The extended `BOOTVGA.EXE` now follows that original branch
+*before* the existing mode-13 test. It exercises genuine VGA retrace
+polling and attribute-controller palette writes in headless DOSBox
+Staging, verifies the original mode-2 descriptor fields and BIOS mode,
+and uses BIOS INT 10h/AH=0Dh to read back a 4-bit pixel written by the
+reconstructed `RESSTATE.OBJ` planar-mode operation. The subsequent
+mode-13 clear, rectangle and prior-BIOS-mode restoration still pass.
+`BVIDREAL.LOG` now requires both the 16-color and 256-color witnesses;
+host-injected wrong planar pixels and a snapshot-based mode-2 oracle
+prevent accidentally accepting the older mode-13-only test. This is
+still not an executable `_main` or a playable intro.
 
 **Microsoft C 5.1 identifier compatibility:** The user's first real
 `DATA.BAT` run failed at `DATA.C` compilation, not during the probe:

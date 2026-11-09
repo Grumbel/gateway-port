@@ -142,6 +142,9 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("CL /AL /Od /c " + entry_object.replace(".OBJ", ".C"), batch)
             mode_object = msc51.launcher_source_alias(output, "gate_rtl_mode.c").replace(".C", ".OBJ")
             self.assertIn("CL /AL /Od /c " + mode_object.replace(".OBJ", ".C"), batch)
+            palette_object = msc51.launcher_source_alias(output, "gate_rtl_palette.c").replace(".C", ".OBJ")
+            self.assertIn("CL /AL /Od /c " + palette_object.replace(".OBJ", ".C"), batch)
+            self.assertIn("CL /AL /Od /c RTLPAL.C", batch)
             self.assertIn("LINK.EXE @BPREP.RSP", batch)
             self.assertIn("IF EXIST E:\\GATE.RTL BOOTPREP.EXE > BPREAL.LOG", batch)
             self.assertIn("CL /AL /Od /c RESSTATE.C >> DATBUILD.LOG", batch)
@@ -151,12 +154,14 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn(mode_object, (output / "BPREP.RSP").read_text())
             self.assertIn("RTLHW.OBJ+", (output / "BPREP.RSP").read_text())
             self.assertIn("RESSTATE.OBJ+", (output / "BVID.RSP").read_text())
+            self.assertIn("RTLPAL.OBJ+", (output / "BVID.RSP").read_text())
             self.assertIn(entry_object, (output / "BVID.RSP").read_text())
             self.assertIn(mode_object, (output / "BVID.RSP").read_text())
+            self.assertIn(palette_object, (output / "BVID.RSP").read_text())
             self.assertNotIn("RESSTATE.OBJ+", (output / "BPREP.RSP").read_text())
+            self.assertNotIn("unexpected retrace branch", (output / "BOOTVGA.C").read_text())
             self.assertIn("void gate_rtl_wait_vertical_retrace(void)",
-                          (output / "BOOTVGA.C").read_text())
-            self.assertIn("exit(87);", (output / "BOOTVGA.C").read_text())
+                          (output / palette_object.replace(".OBJ", ".C")).read_text())
             original_initializer = "gate_linked_initialize_intro_services"
             alias = msc51.msc51_short_names([original_initializer]).get(
                 original_initializer, original_initializer)
@@ -333,9 +338,12 @@ class MSC51Tests(unittest.TestCase):
             env["TEST_VIDEO_ONLY"] = "1"
             result = subprocess.run([str(executable)], env=env, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("RTL:f14d mode 2; BIOS 12h, 639x479 descriptors, planar pixel 0a",
+                          result.stdout)
             self.assertIn("RTL:f14d + resident 2409 mode 13; A000 pixel, clear and rectangle; prior BIOS mode restored",
                           result.stdout)
-            for rejected_var in ("TEST_RESOURCE_BAD_SEGMENT", "TEST_VIDEO_BAD_PIXEL", "TEST_VIDEO_BAD_CLEAR",
+            for rejected_var in ("TEST_RESOURCE_BAD_SEGMENT", "TEST_VIDEO_BAD_PLANAR_PIXEL",
+                                 "TEST_VIDEO_BAD_PIXEL", "TEST_VIDEO_BAD_CLEAR",
                                  "TEST_VIDEO_BAD_RECTANGLE", "TEST_VIDEO_NOT_VGA",
                                  "TEST_VIDEO_FAIL_RESTORE"):
                 with self.subTest(rejected_var=rejected_var):
@@ -387,6 +395,24 @@ class MSC51Tests(unittest.TestCase):
                     address = original_ds * 16 + offset
                     observed = int.from_bytes(data[address:address + 2], "little")
                     self.assertEqual(observed, expected if populated else 0)
+
+    def test_original_350ms_startup_is_16_color_mode_12h(self):
+        sample = REPO / "build/msc51-startup-fine/at-350.bin"
+        if not sample.is_file():
+            self.skipTest("original 350ms RAM capture is not present")
+        data = sample.read_bytes()
+        original_ds = 0x2a7a
+        def word(segment, offset):
+            address = segment * 16 + offset
+            return int.from_bytes(data[address:address + 2], "little")
+        self.assertEqual(data[0x449], 0x12)  # BIOS data area, current video mode
+        for offset, expected in ((0x0fce, 2), (0x5510, 0x000f),
+                                 (0x5512, 0x000f), (0x5514, 0x03da),
+                                 (0x5516, 5)):
+            with self.subTest(offset=hex(offset)):
+                self.assertEqual(word(original_ds, offset), expected)
+        self.assertEqual(word(word(original_ds, 0x4d92), 0x003e), 639)
+        self.assertEqual(word(word(original_ds, 0x4d94), 0x0042), 479)
 
     def test_compile_data_requires_verified_dependencies_and_current_guest_log(self):
         with tempfile.TemporaryDirectory() as scratch:
@@ -497,14 +523,19 @@ class MSC51Tests(unittest.TestCase):
             (output / "BPREAL.LOG").write_text(
                 (output / "BPREAL.LOG").read_text() +
                 "DOS intro C resource pointers: PASS (DS:54c2=3592 and DS:54ca=54ce; both segments rebound)\n")
-            with self.assertRaisesRegex(ValueError, "resident VGA mode/restore verification"):
+            with self.assertRaisesRegex(ValueError, "resident 16-color VGA verification"):
                 msc51.validate_static_data_probe(output, require_original=True)
             (output / "BVIDREAL.LOG").write_text(
                 "DOS intro live VGA probe: PASS (old)\n")
-            with self.assertRaisesRegex(ValueError, "resident VGA mode/restore verification"):
+            with self.assertRaisesRegex(ValueError, "resident 16-color VGA verification"):
                 msc51.validate_static_data_probe(output, require_original=True)
             (output / "BVIDREAL.LOG").write_text(
                 "DOS intro live VGA probe: PASS (RTL:f14d + resident 2409 mode 13; A000 pixel, clear and rectangle; prior BIOS mode restored)\n")
+            with self.assertRaisesRegex(ValueError, "resident 16-color VGA verification"):
+                msc51.validate_static_data_probe(output, require_original=True)
+            (output / "BVIDREAL.LOG").write_text(
+                (output / "BVIDREAL.LOG").read_text() +
+                "DOS intro live 16-color VGA: PASS (RTL:f14d mode 2; BIOS 12h, 639x479 descriptors, planar pixel 0a)\n")
             msc51.validate_static_data_probe(output, require_original=True)
             (output / "DATA.C").write_text((output / "DATA.C").read_text() + "/* stale */\n")
             with self.assertRaisesRegex(ValueError, "source changed"):
