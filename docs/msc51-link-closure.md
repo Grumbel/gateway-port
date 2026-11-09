@@ -2363,6 +2363,32 @@ against actual A000 pixels under DOSBox 0.74. This bounded recovery does
 not assert the remaining Bresenham/planar/patterned line branches are
 equivalent to the original runtime.
 
+### Original vertical and diagonal mode-13h COPY lines
+
+The same `GATE.RTL:1a535..1a628` backend contains an unmasked vertical
+COPY branch at `RTL:1a5a9..1a5cf`: it normalizes the endpoint order by Y,
+computes an **inclusive** iteration count, writes one byte with `STOSB`,
+and adds 319 to DI for a net 320-byte scanline stride. It also contains
+two Bresenham paths at `RTL:1a569..1a617`. The setup swaps endpoints to
+draw left-to-right, negates the 320-byte stride for rising lines, swaps
+major/minor distances for steep lines, and initializes a signed error
+to `2*minor-major`. Each iteration draws its pixel, then advances the
+minor coordinate only when that error is nonnegative. The loops include
+both endpoints, and the 16-bit error step is `2*minor` or
+`2*minor-2*major` respectively.
+
+The DOS source-C adapter now follows those branches for **fully visible,
+single-width, unmasked, mode-13h COPY** lines. It writes the original
+linear `A000h` bytes, preserving the signed error/tie-breaking semantics
+instead of using a replacement line algorithm. The original byte ranges
+are pinned by `launcher_intro_vfx_binary_tests.py`; a C89 host VGA fixture
+checks vertical reversal, shallow/steep diagonals, both Y directions and
+pixel neighbors, and `RESCHK.EXE` reads back the same classes of lines
+from genuine DOS mode-13h video memory using MS C 5.1 under DOSBox 0.74.
+Clipped diagonals, wide or masked lines, non-COPY operations and planar
+line loops remain outside this recovered branch. The animation's overall
+timing and palette transitions still require original-runtime comparison.
+
 ### Original VFX save/restore state: the remaining evidence
 
 The previously missing `gate_linked_save_vfx_draw_state` and

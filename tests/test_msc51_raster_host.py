@@ -383,6 +383,66 @@ int main(int argc, char **argv)
     assert(pixel13(51u, 40u) == 0x11u);
     gate_ds_set_word(GATE_DS_DRAW_OPERATION, 0u);
 
+    /* RTL:1a5a9 is the inclusive vertical STOSB/stride-320 branch.
+     * Reverse endpoints must produce the same vertical pixel sequence. */
+    gate_ds_set_word(GATE_DS_DRAW_COLOR, 0x61u);
+    gate_rtl_resident_move_to(15u, 20u);
+    gate_rtl_resident_line_to(15u, 23u);
+    assert(pixel13(15u, 19u) == 0u);
+    assert(pixel13(15u, 20u) == 0x61u);
+    assert(pixel13(15u, 22u) == 0x61u);
+    assert(pixel13(15u, 23u) == 0x61u);
+    assert(pixel13(15u, 24u) == 0u);
+    gate_ds_set_word(GATE_DS_DRAW_COLOR, 0x62u);
+    gate_rtl_resident_line_to(15u, 20u);
+    assert(pixel13(15u, 20u) == 0x62u);
+    assert(pixel13(15u, 23u) == 0x62u);
+
+    /* Exact 1a5e8/1a600 Bresenham error-step rules, including ties:
+     * shallow and steep positive slopes, reversed endpoints and a
+     * steep negative slope with the Y increment reversed. */
+    gate_ds_set_word(GATE_DS_DRAW_COLOR, 0x63u);
+    gate_rtl_resident_move_to(1u, 1u);
+    gate_rtl_resident_line_to(7u, 3u);
+    assert(pixel13(1u, 1u) == 0x63u);
+    assert(pixel13(2u, 1u) == 0x63u);
+    assert(pixel13(3u, 2u) == 0x63u);
+    assert(pixel13(4u, 2u) == 0x63u);
+    assert(pixel13(5u, 2u) == 0x63u);
+    assert(pixel13(6u, 3u) == 0x63u);
+    assert(pixel13(7u, 3u) == 0x63u);
+    assert(pixel13(3u, 1u) == 0u);
+    assert(pixel13(6u, 2u) == 0u);
+    gate_ds_set_word(GATE_DS_DRAW_COLOR, 0x64u);
+    gate_rtl_resident_line_to(1u, 1u);
+    assert(pixel13(2u, 1u) == 0x64u);
+    assert(pixel13(6u, 3u) == 0x64u);
+
+    gate_ds_set_word(GATE_DS_DRAW_COLOR, 0x65u);
+    gate_rtl_resident_move_to(20u, 10u);
+    gate_rtl_resident_line_to(22u, 16u);
+    assert(pixel13(20u, 10u) == 0x65u);
+    assert(pixel13(20u, 11u) == 0x65u);
+    assert(pixel13(21u, 12u) == 0x65u);
+    assert(pixel13(21u, 14u) == 0x65u);
+    assert(pixel13(22u, 15u) == 0x65u);
+    assert(pixel13(22u, 16u) == 0x65u);
+    assert(pixel13(20u, 12u) == 0u);
+
+    gate_ds_set_word(GATE_DS_DRAW_COLOR, 0x66u);
+    gate_rtl_resident_move_to(30u, 17u);
+    gate_rtl_resident_line_to(33u, 10u);
+    assert(pixel13(30u, 17u) == 0x66u);
+    assert(pixel13(30u, 16u) == 0x66u);
+    assert(pixel13(31u, 15u) == 0x66u);
+    assert(pixel13(31u, 14u) == 0x66u);
+    assert(pixel13(32u, 13u) == 0x66u);
+    assert(pixel13(32u, 12u) == 0x66u);
+    assert(pixel13(33u, 11u) == 0x66u);
+    assert(pixel13(33u, 10u) == 0x66u);
+    assert(pixel13(30u, 15u) == 0u);
+    assert(span_fills == 6u); /* Only horizontal lines used REP STOSB. */
+
     gate_ds_set_word(GATE_DS_RENDERER_MODE, 2u);
     video_mode = 0x12u;
     /* The original 19a8f SI points at draw state, not the active BIOS

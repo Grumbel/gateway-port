@@ -125,6 +125,21 @@ class OriginalRtlVfxRasterizer(unittest.TestCase):
         self.assertEqual(self.rtl[0x1a73a:0x1a755],
                          bytes.fromhex('c74428ffff8b7e0cff760e57ff760a579a00000000473b7e0876ed'))
 
+    def test_original_mode13_vertical_and_bresenham_lines(self):
+        # RTL:1a5a9 chooses the topmost Y, counts the last pixel and
+        # advances by 320 bytes after each STOSB (DI was incremented by 1).
+        self.assertEqual(self.rtl[0x1a5b1:0x1a5ba],
+                         bytes.fromhex('2bc87d04f7d98bc341'))
+        self.assertEqual(self.rtl[0x1a5c4:0x1a5cf],
+                         bytes.fromhex('8bfb4e8a46dcaa03fee2fb'))
+        # RTL:1a580 initializes Bresenham: twice the minor axis, then
+        # 2*minor-major and 2*minor-2*major; the loops branch at sign 0.
+        self.assertEqual(self.rtl[0x1a580:0x1a58e],
+                         bytes.fromhex('d1e3895ee82bd98bf32bd9895ee6'))
+        self.assertEqual(self.rtl[0x1a5e8:0x1a617], bytes.fromhex(
+            '8a46dcaa0bf679070376e8e2f6eb200376e603fbe2edeb17'
+            '8a46dcaa03fb0bf679080376e84fe2f3eb050376e6e2ec'))
+
 
 class NativeVfxProvenance(unittest.TestCase):
     @classmethod

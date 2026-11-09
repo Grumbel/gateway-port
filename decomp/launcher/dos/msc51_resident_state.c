@@ -102,10 +102,100 @@ static int mode13_copy_span(uint16_t left, uint16_t right, uint16_t y)
     return 1;
 }
 
+/* RTL:1a5a9..1a5cf writes a vertical COPY line with STOSB and advances
+ * DI by 319 after each byte; RTL:1a569..1a617 uses two 16-bit Bresenham
+ * loops for diagonals. Both include their endpoints. In particular the
+ * original starts the error at 2*minor-major, changes the minor coordinate
+ * when that error is nonnegative, and swaps the endpoints to draw left to
+ * right. Only enter the recovered backend for fully visible lines; clipping
+ * still belongs to the separate RTL:19f2d line-router boundary. */
+static int mode13_copy_nonhorizontal(int32_t x0, int32_t y0,
+                                     int32_t x1, int32_t y1,
+                                     uint8_t color)
+{
+    int16_t dx, dy, error, major, minor, stride, i;
+    int32_t tmp;
+    uint16_t address;
+    if (gate_ds_word(GATE_DS_RENDERER_MODE) != 3u ||
+        gate_ds_word(GATE_DS_DRAW_OPERATION) != 0u ||
+        x0 < 0 || x0 >= 320 || x1 < 0 || x1 >= 320 ||
+        y0 < 0 || y0 >= 200 || y1 < 0 || y1 >= 200 ||
+        y0 == y1)
+        return 0;
+    if (gate_ds_word(GATE_DS_DRAW_CLIPPING_ENABLED) == 1u &&
+        (x0 < (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_LEFT) ||
+         x1 < (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_LEFT) ||
+         x0 > (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_RIGHT) ||
+         x1 > (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_RIGHT) ||
+         y0 < (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_TOP) ||
+         y1 < (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_TOP) ||
+         y0 > (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_BOTTOM) ||
+         y1 > (int16_t)gate_ds_word(GATE_DS_DRAW_CLIP_BOTTOM)))
+        return 0;
+
+    if (x0 == x1) {
+        /* Original RTL:1a5b1 first chooses the topmost Y. */
+        if (y0 > y1) { tmp = y0; y0 = y1; y1 = tmp; }
+        address = (uint16_t)(320l * y0 + x0);
+        for (i = (int16_t)y0; i <= (int16_t)y1; ++i) {
+            gate_far_set_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                              address, color);
+            address = (uint16_t)(address + 320u);
+        }
+        return 1;
+    }
+
+    if (x0 > x1) {
+        tmp = x0; x0 = x1; x1 = tmp;
+        tmp = y0; y0 = y1; y1 = tmp;
+    }
+    dx = (int16_t)(x1 - x0);
+    dy = (int16_t)(y1 - y0);
+    stride = dy < 0 ? -320 : 320;
+    if (dy < 0) dy = -dy;
+    address = (uint16_t)(320l * y0 + x0);
+    if (dy <= dx) {
+        /* RTL:1a5e8: the X-major loop's STOSB increments X each time. */
+        major = dx;
+        minor = dy;
+        error = 2 * minor - major;
+        for (i = 0; i <= major; ++i) {
+            gate_far_set_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                              address, color);
+            ++address;
+            if (error < 0)
+                error += 2 * minor;
+            else {
+                error += 2 * minor - 2 * major;
+                address = (uint16_t)(address + stride);
+            }
+        }
+    } else {
+        /* RTL:1a600: each STOSB advances X, undone when Y alone moves. */
+        major = dy;
+        minor = dx;
+        error = 2 * minor - major;
+        for (i = 0; i <= major; ++i) {
+            gate_far_set_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                              address, color);
+            ++address; /* STOSB increments DI even in the Y-major case. */
+            address = (uint16_t)(address + stride);
+            if (error < 0) {
+                error += 2 * minor;
+                --address; /* RTL:1a60d undoes the X step. */
+            } else {
+                error += 2 * minor - 2 * major;
+            }
+        }
+    }
+    return 1;
+}
+
 /* Original 2621:003e first updates the remembered pen, then rasterizes
  * from its prior position. The intro's recovered calls use axis-aligned
- * single-pixel-wide, unmasked edges; diagonal/masked paths are not yet
- * reconstructed and abort instead of drawing an invented line. */
+ * single-pixel-wide, unmasked edges. The mode-13h COPY backend now also
+ * recovers the original vertical and diagonal branches; masked and wide
+ * lines remain unimplemented. */
 void gate_rtl_resident_line_to(uint16_t x, uint16_t y)
 {
     int32_t old_x = (int16_t)gate_ds_word(GATE_DS_DRAW_X);
@@ -118,6 +208,9 @@ void gate_rtl_resident_line_to(uint16_t x, uint16_t y)
     if (gate_ds_word(GATE_DS_DRAW_LINE_WIDTH) != 1u ||
         gate_ds_word(GATE_DS_DRAW_LINE_MASK) != 0xffffu)
         abort();
+    if (mode13_copy_nonhorizontal(old_x, old_y, next_x, next_y,
+                                  (uint8_t)color))
+        return;
     if (old_x == next_x) {
         step = old_y <= next_y ? 1 : -1;
         for (cursor = old_y;; cursor += step) {

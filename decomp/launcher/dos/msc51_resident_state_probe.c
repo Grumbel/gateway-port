@@ -238,6 +238,42 @@ int main(void)
     valid &= check(gate_ds_word(GATE_DS_DRAW_Y), 12u,
                    "outline restores pen Y");
 
+    /* The original RTL:1a5a9 vertical STOSB path and RTL:1a5e8/1a600
+     * signed-error Bresenham paths must write native A000 bytes. */
+    gate_rtl_resident_set_pen_color(0x31u);
+    gate_rtl_resident_move_to(40u, 31u);
+    gate_rtl_resident_line_to(40u, 34u);
+    valid &= check(gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                                 (uint16_t)(31u * 320u + 40u)),
+                   0x31u, "vertical STOSB first");
+    valid &= check(gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                                 (uint16_t)(34u * 320u + 40u)),
+                   0x31u, "vertical STOSB last");
+    gate_rtl_resident_set_pen_color(0x32u);
+    gate_rtl_resident_move_to(42u, 40u);
+    gate_rtl_resident_line_to(48u, 42u);
+    valid &= check(gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                                 (uint16_t)(40u * 320u + 43u)),
+                   0x32u, "shallow Bresenham first run");
+    valid &= check(gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                                 (uint16_t)(41u * 320u + 44u)),
+                   0x32u, "shallow Bresenham middle");
+    valid &= check(gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                                 (uint16_t)(42u * 320u + 48u)),
+                   0x32u, "shallow Bresenham last");
+    gate_rtl_resident_set_pen_color(0x33u);
+    gate_rtl_resident_move_to(50u, 47u);
+    gate_rtl_resident_line_to(52u, 41u);
+    valid &= check(gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                                 (uint16_t)(47u * 320u + 50u)),
+                   0x33u, "steep reverse-Y Bresenham first");
+    valid &= check(gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                                 (uint16_t)(43u * 320u + 51u)),
+                   0x33u, "steep reverse-Y Bresenham middle");
+    valid &= check(gate_far_byte(GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT,
+                                 (uint16_t)(41u * 320u + 52u)),
+                   0x33u, "steep reverse-Y Bresenham last");
+
     image.segment = (uint16_t)segment;
     image.offset = 0x0500u;
     gate_far_set_word(image.segment, image.offset, 0xca00u);
