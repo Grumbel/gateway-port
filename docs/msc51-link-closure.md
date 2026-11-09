@@ -223,7 +223,7 @@ Microsoft C/DOSBox run passed the real `RTLHW.OBJ` no-music return.
 The subsequent run with bundle 079 retained all the original-data,
 allocation, prologue and no-music passes at the faster dynamic CPU setting.
 
-**Next graphics initialization boundary (DOS run pending).** The read-only
+**Graphics initialization boundary (rejected branch DOS-verified).** The read-only
 original `GATE.RTL` data preimage has WORD `ffffh` at file offset `0ff7h`,
 the source for `DS:0fce` in the prepared image. Original
 `GATE.RTL:f14d` begins its video-mode initializer by writing exactly this
@@ -231,13 +231,25 @@ invalid sentinel, and replaces it with a valid mode only after hardware
 setup succeeds. The isolated `BOOTPREP.EXE` now checks that selector
 `DS:4e2a` resolves to the allocated data window, that `DS:0fce` still
 contains `ffffh` following image preparation, and that the no-music call
-leaves the value unchanged. It prints an additional strict success witness,
-and the synthetic host test rejects a preinitialized mode, mismatched
-selector and a video-state write by the audio initializer. These checks
-confirm **why we cannot yet enter intro graphics**: the real video-mode
-initializer, resident hardware preparation and mode descriptors have not
-been executed by this DOS owner. The checks do not initialize VGA, prove a
-call to `gate_exe_play_intro`, or produce a functional launcher `_main`.
+leaves the value unchanged. The user subsequently verified that the real
+reconstructed `gate_rtl_mode.c` Mxx object also rejects mode `-1` and `5`
+and leaves the adapter and SVGA status words alone. A strict success line
+and synthetic C89 host fixture reject a preinitialized mode, mismatched
+selector and a video-state write by the audio initializer.
+
+**Next graphics state branch (DOS run pending).** `BOOTPREP.EXE` now calls
+`gate_rtl_set_video_mode(3)` on the same loaded original EXE/RTL data. It
+performs the original adapter capability query (INT 10h AX=1a00, read-only),
+then records and checks the intended BIOS mode and video start requests
+instead of actually switching modes. The original mode-3 data tables (at
+`DS:12f8`, `1302`, `130c`, `1316`) are checked against the pinned RTL bytes:
+319×199 inclusive coordinates, 40-byte stride and 25-line grouping. The
+source-C setup should write the corresponding 320×200 descriptors to the
+allocated **lower** segment, not the shifted data segment, with 8 rows,
+4 half-rows and 255 max pen color. The real hardware implementation and
+startup `_main` remain unimplemented; this isolated step does not draw,
+install IRQs, prove a call to `gate_exe_play_intro`, or make the launcher
+playable.
 
 **Microsoft C 5.1 identifier compatibility:** The user's first real
 `DATA.BAT` run failed at `DATA.C` compilation, not during the probe:

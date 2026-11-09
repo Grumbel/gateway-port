@@ -12,8 +12,10 @@
 #define MOCK_RESIDENT_SEGMENT 0x4000u
 
 static uint16_t words[0x8000];
+static uint16_t lower_words[0x8000];
 static unsigned startup_allocations;
 static unsigned no_music_calls;
+static unsigned adapter_queries, clipped_frames, pen_calls;
 static unsigned callback_opens, callback_seeks, callback_reads, callback_closes;
 
 static void require(int condition)
@@ -30,8 +32,10 @@ static void require(int condition)
  * terminating stand-ins for the BIOS setter and display starter. */
 void gate_rtl_mode_query_adapter(uint8_t *adapter)
 {
-    (void)adapter;
-    require(0);
+    require(adapter != 0 && adapter_queries == 0u);
+    ++adapter_queries;
+    adapter[0] = 5u; /* original VGA display class */
+    adapter[1] = getenv("TEST_VIDEO_NOT_VGA") != 0 ? 3u : 5u;
 }
 
 uint16_t gate_rtl_mode_svga_variant(void)
@@ -57,17 +61,16 @@ void gate_rtl_palette_out(uint16_t port, uint8_t value)
 void gate_rtl_mode_clip(uint16_t bottom, uint16_t right,
                         uint16_t top, uint16_t left)
 {
-    (void)bottom;
-    (void)right;
-    (void)top;
-    (void)left;
-    require(0);
+    require(bottom == 199u && right ==
+            (getenv("TEST_MODE_BAD_DIMENSIONS") != 0 ? 318u : 319u) &&
+            top == 0u && left == 0u);
+    ++clipped_frames;
 }
 
 void gate_rtl_mode_pen(uint16_t enabled)
 {
-    (void)enabled;
-    require(0);
+    require(enabled == 1u);
+    ++pen_calls;
 }
 
 uint16_t gate_ds_word(uint16_t offset)
@@ -107,14 +110,19 @@ void gate_linked_initialize_intro_services(void)
 
 uint16_t gate_far_word(uint16_t segment, uint16_t offset)
 {
-    require(segment == MOCK_DATA_SEGMENT && (offset & 1u) == 0u);
-    return words[offset / 2u];
+    require((segment == MOCK_DATA_SEGMENT || segment == MOCK_LOWER_SEGMENT) &&
+            (offset & 1u) == 0u);
+    return segment == MOCK_DATA_SEGMENT ? words[offset / 2u] : lower_words[offset / 2u];
 }
 
 void gate_far_set_word(uint16_t segment, uint16_t offset, uint16_t value)
 {
-    require(segment == MOCK_DATA_SEGMENT && (offset & 1u) == 0u);
-    words[offset / 2u] = value;
+    require((segment == MOCK_DATA_SEGMENT || segment == MOCK_LOWER_SEGMENT) &&
+            (offset & 1u) == 0u);
+    if (segment == MOCK_DATA_SEGMENT)
+        words[offset / 2u] = value;
+    else
+        lower_words[offset / 2u] = value;
 }
 
 GateFarPtr gate_stack_pointer(void *source)
@@ -192,6 +200,12 @@ int gate_dos_boot_prepare(const GateDosBootConfig *config,
     for (i = 0u; i < sizeof selectors / sizeof selectors[0]; ++i)
         words[selectors[i] / 2u] = MOCK_DATA_SEGMENT;
     words[0x4e2au / 2u] = MOCK_DATA_SEGMENT;
+    for (i = 0u; i <= (0x4da8u - 0x4d92u) / 2u; ++i)
+        words[(0x4d92u / 2u) + i] = MOCK_LOWER_SEGMENT;
+    words[(0x12f8u + 6u) / 2u] = getenv("TEST_MODE_BAD_DIMENSIONS") != 0 ? 318u : 319u;
+    words[(0x1302u + 6u) / 2u] = 199u;
+    words[(0x130cu + 6u) / 2u] = 40u;
+    words[(0x1316u + 6u) / 2u] = 25u;
     words[0x0fceu / 2u] = getenv("TEST_VIDEO_PREINITIALIZED") != 0 ? 3u : 0xffffu;
     if (getenv("TEST_BAD_VIDEO_SELECTOR") != 0)
         words[0x4e2au / 2u] = 0x3333u;
@@ -211,6 +225,14 @@ void gate_dos_boot_release(GateDosBootImage *image)
         getenv("TEST_VIDEO_PREINITIALIZED") == 0 &&
         getenv("TEST_BAD_VIDEO_SELECTOR") == 0)
         require(no_music_calls == 1u);
+    if (getenv("TEST_BAD_SELECTOR") == 0 &&
+        getenv("TEST_ALLOC_FAIL") == 0 &&
+        getenv("TEST_MUSIC_ENABLED") == 0 &&
+        getenv("TEST_VIDEO_PREINITIALIZED") == 0 &&
+        getenv("TEST_BAD_VIDEO_SELECTOR") == 0 &&
+        getenv("TEST_VIDEO_MUTATED_BY_AUDIO") == 0 &&
+        getenv("TEST_VIDEO_NOT_VGA") == 0)
+        require(adapter_queries == 1u && clipped_frames == 1u && pen_calls == 1u);
     image->lower_segment = image->resident_segment = 0u;
 }
 

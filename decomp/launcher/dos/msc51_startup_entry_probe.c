@@ -3,11 +3,12 @@
 
 /* Optional original-file DOS probe: execute the *reconstructed C* prologue
  * of GATE.EXE:1309..134b, the no-music branch of RTL:c3bd..c3d8,
- * and the rejected-mode branch of RTL:f14d,
+ * and the rejected/accepted mode-state branches of RTL:f14d,
  * not any unknown relocated resident code.
  * The five selector/target addresses are independently pinned by original
  * intro-entry RAM snapshots. No intro graphics/IRQ/RTLink callbacks run.
- * The BOOT image callback addresses here are deliberately nonexecutable. */
+ * The BOOT image callback addresses here are deliberately nonexecutable.
+ * The valid VGA-mode path records BIOS requests without switching modes. */
 #include "BOOT.H"
 #include "BOOTCB.H"
 #include <dos.h>
@@ -32,6 +33,8 @@ static const GateStartupWord startup_words[] = {
 static char original_exe_name[] = "E:\\GATE.EXE";
 static char original_rtl_name[] = "E:\\GATE.RTL";
 static char unused_exe_callback[32];
+static uint16_t bios_mode_calls;
+static uint16_t video_start_calls;
 
 /* The real reconstructed source object (Mxx.OBJ), not a test substitute,
  * supplies this function. Its original call requests 1000h DOS paragraphs. */
@@ -39,23 +42,28 @@ void gate_exe_prepare_intro_globals(void);
 void gate_linked_initialize_intro_services(void);
 uint16_t gate_rtl_set_video_mode(int16_t requested_mode);
 
-/* These three callback bodies exist ONLY in BOOTPREP.EXE. The real mode
- * setter's rejected-mode branch must return before attempting any of them;
- * an accidental fall-through is a test failure, never a BIOS mode change. */
+/* These three callback bodies exist ONLY in BOOTPREP.EXE. The invalid-mode
+ * branch must return before invoking them. The valid mode-3 path records
+ * calls, preserving the hardware boundary while exercising real C writes
+ * to the original loaded data and mode descriptor selectors. */
 uint16_t gate_rtl_mode_set_bios(uint16_t mode)
 {
-    (void)mode;
-    fputs("DOS intro C video guard: unexpected BIOS mode setup\n", stderr);
-    exit(87);
-    return 1u;
+    if (mode != 3u || bios_mode_calls != 0u) {
+        fputs("DOS intro C video layout: invalid BIOS mode request\n", stderr);
+        exit(87);
+    }
+    ++bios_mode_calls;
+    return 0u;
 }
 
 uint16_t gate_rtl_mode_start(uint16_t enabled)
 {
-    (void)enabled;
-    fputs("DOS intro C video guard: unexpected video start\n", stderr);
-    exit(87);
-    return 1u;
+    if (enabled != 1u || bios_mode_calls != 1u || video_start_calls != 0u) {
+        fputs("DOS intro C video layout: invalid video-start request\n", stderr);
+        exit(87);
+    }
+    ++video_start_calls;
+    return 0u;
 }
 
 void gate_rtl_wait_vertical_retrace(void)
@@ -75,6 +83,9 @@ int main(void)
     uint16_t adapter_before = 0u;
     uint16_t svga_before = 0u;
     uint16_t status_port_before = 0u;
+    uint16_t width_segment = 0u;
+    uint16_t height_segment = 0u;
+    uint16_t descriptor_segment = 0u;
     uint16_t i;
     int status;
     int good = 1;
@@ -174,6 +185,35 @@ int main(void)
                 gate_far_word(data_segment, 0x5514u) != status_port_before)
                 good = 0;
         }
+        /* Successful RTL:f14d setup uses the original BIOS adapter QUERY
+         * (INT 10h AX=1a00); the callbacks above intentionally do NOT
+         * execute the BIOS mode switch. On DOSBox's VGA color display the
+         * mode-3 data tables encode 319x199 inclusive pixel coordinates,
+         * 40-byte stride, 25-line grouping and an 8-row descriptor.
+         * The returned C result and all descriptor writes are checked
+         * against the relocated original data rather than a guessed buffer. */
+        if (good) {
+            width_segment = gate_ds_word(0x4d92u);
+            height_segment = gate_ds_word(0x4d94u);
+            descriptor_segment = gate_ds_word(0x4d98u);
+            if (width_segment != image.lower_segment ||
+                height_segment != image.lower_segment ||
+                descriptor_segment != image.lower_segment)
+                good = 0;
+        }
+        if (good) {
+            if (gate_rtl_set_video_mode(3) != 1u ||
+                bios_mode_calls != 1u || video_start_calls != 1u ||
+                gate_far_word(data_segment, 0x0fceu) != 3u ||
+                gate_far_word(width_segment, 0x003eu) != 319u ||
+                gate_far_word(height_segment, 0x0042u) != 199u ||
+                gate_far_word(descriptor_segment, 0x0046u) != 25u ||
+                gate_far_word(gate_ds_word(0x4d96u), 0x0044u) != 40u ||
+                gate_far_word(gate_ds_word(0x4d9au), 0x003cu) != 8u ||
+                gate_far_word(gate_ds_word(0x4d9cu), 0x0048u) != 4u ||
+                gate_far_word(gate_ds_word(0x4da8u), 0x0054u) != 255u)
+                good = 0;
+        }
         /* Do not free a guessed segment if the prologue failed. The
          * original retains the allocation; DOS owns and reclaims it when
          * this one-shot probe exits. */
@@ -189,5 +229,6 @@ int main(void)
     puts("DOS intro C audio guard: PASS (RTL:c3bd no-music return, configuration preserved; no IRQ installed)");
     puts("DOS intro C video preflight: PASS (DS:0fce=ffff invalid; hardware mode setup still required)");
     puts("DOS intro C video guard: PASS (RTL:f14d rejected -1 and 5; no BIOS mode entered)");
+    puts("DOS intro C video layout: PASS (RTL:f14d mode 3; 320x200 descriptors; BIOS mode switch simulated)");
     return 0;
 }

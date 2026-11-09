@@ -1069,6 +1069,10 @@ def validate_static_data_probe(output: Path, *, require_original: bool = False) 
                 r"^DOS intro C video guard: PASS \(RTL:f14d rejected -1 and 5; no BIOS mode entered\)\s*$",
                 prepared.read_text(), re.MULTILINE) is None:
             raise ValueError("DOS source-C intro video rejected-mode guard is missing or failed.")
+        if re.search(
+                r"^DOS intro C video layout: PASS \(RTL:f14d mode 3; 320x200 descriptors; BIOS mode switch simulated\)\s*$",
+                prepared.read_text(), re.MULTILINE) is None:
+            raise ValueError("DOS source-C intro video layout verification is missing or failed.")
 
 
 def remove_static_data_outputs(output: Path) -> None:
@@ -1812,9 +1816,10 @@ def main(argv: list[str] | None = None) -> int:
                  "; the full-bank original-file CRC check was not requested")
               + ("; BOOTCHK.EXE verified DOS allocation, CRC and cleanup, and "
                  "BOOTPREP.EXE executed the five recovered source-C entry "
-                 "writes, the RTL no-music initializer return and the RTL "
-                 "invalid-video-mode guard without entering original resident "
-                 "code, setting a BIOS video mode or installing IRQs"
+                 "writes, the RTL no-music initializer return, the RTL "
+                 "invalid-video-mode guard and mode-3 descriptor setup "
+                 "without entering original resident code, switching a "
+                 "BIOS video mode or installing IRQs"
                  if original_game_dir is not None
                  else "; BOOT.OBJ was built but its original-file probes were not run")
               + ". DATA.OBJ/BOOT.OBJ remain probe-only until executable startup "

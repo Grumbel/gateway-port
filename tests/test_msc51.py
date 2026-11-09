@@ -280,9 +280,12 @@ class MSC51Tests(unittest.TestCase):
                           result.stdout)
             self.assertIn("RTL:f14d rejected -1 and 5; no BIOS mode entered",
                           result.stdout)
+            self.assertIn("RTL:f14d mode 3; 320x200 descriptors; BIOS mode switch simulated",
+                          result.stdout)
             for invalid in ("TEST_BAD_SELECTOR", "TEST_ALLOC_FAIL",
                             "TEST_MUSIC_ENABLED", "TEST_VIDEO_PREINITIALIZED",
                             "TEST_BAD_VIDEO_SELECTOR", "TEST_VIDEO_MUTATED_BY_AUDIO",
+                            "TEST_VIDEO_NOT_VGA", "TEST_MODE_BAD_DIMENSIONS",
                             "TEST_CALLBACK_OPEN_FAIL", "TEST_CALLBACK_SEEK_FAIL",
                             "TEST_CALLBACK_READ_FAIL", "TEST_CALLBACK_CLOSE_FAIL"):
                 with self.subTest(invalid=invalid):
@@ -301,6 +304,16 @@ class MSC51Tests(unittest.TestCase):
         # initial DS:0fce word is an invalid mode, not a usable VGA setup.
         self.assertEqual(rtl.read_bytes()[0x29 + 0x0fce:0x29 + 0x0fd0],
                          b"\xff\xff")
+        # These are inclusive bounds and the source's unusual line-grouping
+        # convention, not conventional (width,height,pitch) framebuffer sizes.
+        data = rtl.read_bytes()
+        mode3_tables = ((0x12f8, 319), (0x1302, 199), (0x130c, 40),
+                        (0x1316, 25))
+        for table, expected in mode3_tables:
+            with self.subTest(table=hex(table)):
+                offset = 0x29 + table + 2 * 3
+                self.assertEqual(int.from_bytes(data[offset:offset + 2], "little"),
+                                 expected)
 
     def test_compile_data_requires_verified_dependencies_and_current_guest_log(self):
         with tempfile.TemporaryDirectory() as scratch:
@@ -401,6 +414,11 @@ class MSC51Tests(unittest.TestCase):
             (output / "BPREAL.LOG").write_text(
                 (output / "BPREAL.LOG").read_text() +
                 "DOS intro C video guard: PASS (RTL:f14d rejected -1 and 5; no BIOS mode entered)\n")
+            with self.assertRaisesRegex(ValueError, "video layout"):
+                msc51.validate_static_data_probe(output, require_original=True)
+            (output / "BPREAL.LOG").write_text(
+                (output / "BPREAL.LOG").read_text() +
+                "DOS intro C video layout: PASS (RTL:f14d mode 3; 320x200 descriptors; BIOS mode switch simulated)\n")
             msc51.validate_static_data_probe(output, require_original=True)
             (output / "DATA.C").write_text((output / "DATA.C").read_text() + "/* stale */\n")
             with self.assertRaisesRegex(ValueError, "source changed"):
