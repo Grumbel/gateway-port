@@ -134,7 +134,8 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("D:\\GATEWAY.EXE /SECOND > D:\\SECOND.LOG", batch)
             self.assertIn("D:\\GATEWAY.EXE /TITLE > D:\\TITLE.LOG", batch)
             self.assertIn("D:\\GATEWAY.EXE /TRANS > D:\\TRANS.LOG", batch)
-            self.assertEqual(batch.count("IF ERRORLEVEL 1 GOTO FAILED"), 5)
+            self.assertIn("D:\\GATEWAY.EXE /SCENE > D:\\SCENE.LOG", batch)
+            self.assertEqual(batch.count("IF ERRORLEVEL 1 GOTO FAILED"), 6)
             self.assertIn("ENTRYBAD.LOG", batch)
             self.assertNotIn("ENTRYFAIL.LOG", batch)
             self.assertIn("BUILDBAD.LOG", (output / "COMPILE.BAT").read_text())
@@ -148,7 +149,7 @@ class MSC51Tests(unittest.TestCase):
                     msc51.main(["test-dos-entry", "--output", str(output)])
             self.assertIn("requires --original-game-dir", diagnostic.getvalue())
 
-    def test_dos_entry_requires_all_five_fresh_success_witnesses(self):
+    def test_dos_entry_requires_all_six_fresh_success_witnesses(self):
         with tempfile.TemporaryDirectory() as scratch:
             output = Path(scratch)
             (output / "ENTRYOK.LOG").write_text("passed")

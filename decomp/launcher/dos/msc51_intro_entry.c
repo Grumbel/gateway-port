@@ -85,14 +85,15 @@ int main(int argc, char **argv)
     int second_only = argc > 1 && strcmp(argv[1], "/SECOND") == 0;
     int title_only = argc > 1 && strcmp(argv[1], "/TITLE") == 0;
     int transition_only = argc > 1 && strcmp(argv[1], "/TRANS") == 0;
+    int scene_only = argc > 1 && strcmp(argv[1], "/SCENE") == 0;
 
     owned_image.lower_segment = 0u;
     owned_image.resident_segment = 0u;
     video_restore_armed = 0u;
     if (argc > 1 && !check_only && !picture_only && !second_only &&
-        !title_only && !transition_only) {
+        !title_only && !transition_only && !scene_only) {
         if (strcmp(argv[1], "/INTRO") != 0) {
-            fputs("Usage: GATEWAY [/CHECK | /PICTURE | /SECOND | /TITLE | /TRANS | /INTRO]\n", stderr);
+            fputs("Usage: GATEWAY [/CHECK | /PICTURE | /SECOND | /TITLE | /TRANS | /SCENE | /INTRO]\n", stderr);
             return 2;
         }
     }
@@ -150,7 +151,7 @@ int main(int argc, char **argv)
         puts("Gateway DOS source-C entry: PASS (images, FAR return, resources, VGA mode 12)");
         return 0;
     }
-    if (transition_only) {
+    if (transition_only || scene_only) {
         if (gate_rtl_set_video_mode(3) != 1u ||
             gate_ds_word(GATE_DS_GRAPHICS_MODE) != 3u ||
             gate_entry_bios_mode() != 0x13u) {
@@ -158,6 +159,14 @@ int main(int argc, char **argv)
             return 1;
         }
         gate_rtl_clear_video_display();
+        if (scene_only) {
+            if (gate_rtl_show_picture(GATE_INTRO_PICTURE_RED_BAR_TITLE, 1u) != 1u) {
+                fputs("Gateway DOS: first mode-13 picture failed to load/draw\n", stderr);
+                return 1;
+            }
+            puts("Gateway DOS first 320x200 picture: PASS (mode 13, clear, picture)");
+            return 0;
+        }
         puts("Gateway DOS transition: PASS (VGA mode 13 and display clear)");
         return 0;
     }

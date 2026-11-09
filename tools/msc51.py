@@ -1113,6 +1113,8 @@ def stage_launcher(output: Path) -> list[str]:
         "IF ERRORLEVEL 1 GOTO FAILED",
         "D:\\GATEWAY.EXE /TRANS > D:\\TRANS.LOG",
         "IF ERRORLEVEL 1 GOTO FAILED",
+        "D:\\GATEWAY.EXE /SCENE > D:\\SCENE.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED",
         "ECHO Gateway source-C DOS entry passed > D:\\ENTRYOK.LOG",
         "GOTO DONE", ":FAILED",
         "ECHO Gateway source-C DOS entry failed > D:\\ENTRYBAD.LOG",
@@ -1801,6 +1803,7 @@ DOS_ENTRY_PASS_MARKERS = (
     ("SECOND.LOG", "Gateway DOS second splash: PASS"),
     ("TITLE.LOG", "Gateway DOS: title interlude returned"),
     ("TRANS.LOG", "Gateway DOS transition: PASS"),
+    ("SCENE.LOG", "Gateway DOS first 320x200 picture: PASS"),
 )
 
 
