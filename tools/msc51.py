@@ -1924,6 +1924,30 @@ def validate_full_launcher_build(output: Path, objects: list[str]) -> None:
         raise ValueError("Real-mode DOS entry verification failed: " + ", ".join(failures))
 
 
+def report_compiled_code_comparison(output: Path, original_game_dir: Path) -> None:
+    """Publish a non-gating original-code comparison after a verified build.
+
+    Different compiled bytes are expected at this stage: only malformed OMF,
+    missing original assets or a failed comparison process is a tool error.
+    """
+    destination = output / "CODECMP.JSON"
+    if destination.exists():
+        destination.unlink()  # Do not retain a stale previous-build witness.
+    command = [sys.executable, str(REPO / "tools" / "msc51_code_compare.py"),
+               "--stage", str(output), "--original-game-dir", str(original_game_dir),
+               "--json", str(destination)]
+    proc = subprocess.run(command, capture_output=True, text=True, check=False)
+    if proc.returncode != 0:
+        raise ValueError("OMF original-code comparison failed: " + proc.stderr.strip())
+    print(proc.stdout, end="")
+
+
+def remove_compiled_code_comparison(output: Path) -> None:
+    report = output / "CODECMP.JSON"
+    if report.is_file():
+        report.unlink()
+
+
 def print_full_launcher_build_diagnostics(output: Path) -> None:
     step = locate_case_insensitive(output, "ALLSTEP.LOG")
     last = step.read_text(errors="replace").strip() if step is not None else "not started"
@@ -2232,6 +2256,7 @@ def main(argv: list[str] | None = None) -> int:
                *(part for line in commands for part in ("-c", line))]
     if args.command == "compile-all":
         try:
+            remove_compiled_code_comparison(output)
             prepare_full_launcher_build(output, objects)
         except ValueError as error:
             parser.error(str(error))
@@ -2304,6 +2329,7 @@ def main(argv: list[str] | None = None) -> int:
         remove_launcher_link_outputs(output)
         command.append("--exit")
     elif args.command == "test-dos-entry":
+        remove_compiled_code_comparison(output)
         remove_dos_entry_outputs(output)
         command.append("--exit")
     print("DOSBox CPU: " + (" ".join(performance_args) or "user configuration"), flush=True)
@@ -2366,6 +2392,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "compile-all":
         try:
             validate_full_launcher_build(output, objects)
+            report_compiled_code_comparison(output, original_game_dir)
         except ValueError as error:
             print(f"Combined Microsoft C 5.1 DOS build failed: {error}", file=sys.stderr)
             print_full_launcher_build_diagnostics(output)
@@ -2591,6 +2618,11 @@ def main(argv: list[str] | None = None) -> int:
                 log = locate_case_insensitive(output, name)
                 contents = log.read_text(errors="replace").strip() if log else "(missing)"
                 print(f"{name}: {contents}", file=sys.stderr)
+            return 1
+        try:
+            report_compiled_code_comparison(output, original_game_dir)
+        except ValueError as error:
+            print(str(error), file=sys.stderr)
             return 1
         print("Real-mode GATEWAY.EXE passed source-C boot, mode-12 VGA setup, "
               "both splash pictures, title interlude and BIOS restoration under DOSBox. "

@@ -45,6 +45,25 @@ def fake_runtime_file_obj(include_diagnostic=True):
 
 
 class MSC51Tests(unittest.TestCase):
+    def test_post_build_code_comparison_reports_differences_without_failing(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            stage = Path(scratch)
+            output = stage / "CODECMP.JSON"
+            output.write_text("stale report")
+            msc51.remove_compiled_code_comparison(stage)
+            self.assertFalse(output.exists())
+            with mock.patch.object(msc51.subprocess, "run", return_value=
+                    subprocess.CompletedProcess([], 0, "different=18\n", "")) as run:
+                msc51.report_compiled_code_comparison(stage, stage / "original")
+            command = run.call_args.args[0]
+            self.assertTrue(command[1].endswith("/tools/msc51_code_compare.py"))
+            self.assertEqual(command[command.index("--stage") + 1], str(stage))
+            self.assertEqual(command[command.index("--json") + 1], str(output))
+            with mock.patch.object(msc51.subprocess, "run", return_value=
+                    subprocess.CompletedProcess([], 2, "", "invalid OMF")):
+                with self.assertRaisesRegex(ValueError, "invalid OMF"):
+                    msc51.report_compiled_code_comparison(stage, stage / "original")
+
     def test_combined_dos_build_calls_all_stages_with_fresh_witnesses(self):
         self.assertEqual([step for step, *_ in msc51.LAUNCHER_BUILD_STAGES], [
             "compile-launcher", "compile-memory", "compile-selectors",
