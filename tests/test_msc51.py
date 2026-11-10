@@ -64,6 +64,7 @@ class MSC51Tests(unittest.TestCase):
             (output / "BUILDFAI.LOG").write_text("old DOS 8.3 failure marker")
             (output / "SECOND.LOG").write_text("old")
             (output / "TITLE.LOG").write_text("old")
+            (output / "PALTIME.LOG").write_text("old")
             (output / "RTLHW.OBJ").write_bytes(b"old")
             msc51.prepare_full_launcher_build(output, objects)
             self.assertFalse((output / "SUCCESS.LOG").exists())
@@ -73,6 +74,7 @@ class MSC51Tests(unittest.TestCase):
             self.assertFalse((output / "BUILDFAI.LOG").exists())
             self.assertFalse((output / "SECOND.LOG").exists())
             self.assertFalse((output / "TITLE.LOG").exists())
+            self.assertFalse((output / "PALTIME.LOG").exists())
             self.assertFalse((output / "RTLHW.OBJ").exists())
             master = (output / "BUILDALL.BAT").read_text()
             self.assertEqual(master.count("CALL B"), 18)
@@ -133,9 +135,10 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("D:\\GATEWAY.EXE /PICTURE > D:\\PICTURE.LOG", batch)
             self.assertIn("D:\\GATEWAY.EXE /SECOND > D:\\SECOND.LOG", batch)
             self.assertIn("D:\\GATEWAY.EXE /TITLE > D:\\TITLE.LOG", batch)
+            self.assertIn("D:\\GATEWAY.EXE /PALTIME > D:\\PALTIME.LOG", batch)
             self.assertIn("D:\\GATEWAY.EXE /TRANS > D:\\TRANS.LOG", batch)
             self.assertIn("D:\\GATEWAY.EXE /SCENE > D:\\SCENE.LOG", batch)
-            self.assertEqual(batch.count("IF ERRORLEVEL 1 GOTO FAILED"), 6)
+            self.assertEqual(batch.count("IF ERRORLEVEL 1 GOTO FAILED"), 7)
             self.assertIn("ENTRYBAD.LOG", batch)
             self.assertNotIn("ENTRYFAIL.LOG", batch)
             self.assertIn("BUILDBAD.LOG", (output / "COMPILE.BAT").read_text())
@@ -149,12 +152,16 @@ class MSC51Tests(unittest.TestCase):
                     msc51.main(["test-dos-entry", "--output", str(output)])
             self.assertIn("requires --original-game-dir", diagnostic.getvalue())
 
-    def test_dos_entry_requires_all_six_fresh_success_witnesses(self):
+    def test_dos_entry_requires_all_seven_fresh_success_witnesses(self):
         with tempfile.TemporaryDirectory() as scratch:
             output = Path(scratch)
             (output / "ENTRYOK.LOG").write_text("passed")
             for name, marker in msc51.DOS_ENTRY_PASS_MARKERS:
                 (output / name).write_text(marker + "\n")
+            (output / "PALTIME.LOG").write_text(
+                "Gateway DOS palette boundary 8101: prepare=0 ms draw=55 ms\n"
+                "Gateway DOS palette boundary 8100: prepare=0 ms draw=220 ms\n"
+                "Gateway DOS palette boundary: PASS\n")
             self.assertEqual(msc51.dos_entry_failures(output), [])
             for name, _ in msc51.DOS_ENTRY_PASS_MARKERS:
                 log = output / name
@@ -163,6 +170,15 @@ class MSC51Tests(unittest.TestCase):
                 self.assertEqual(msc51.dos_entry_failures(output),
                                  [f"{name} missing expected result"])
                 log.write_text(original)
+            (output / "PALTIME.LOG").write_text(
+                "Gateway DOS palette boundary 8101: prepare=0 ms draw=55 ms\n"
+                "Gateway DOS palette boundary: PASS\n")
+            self.assertEqual(msc51.dos_entry_failures(output),
+                             ["PALTIME.LOG missing 8100 timing"])
+            (output / "PALTIME.LOG").write_text(
+                "Gateway DOS palette boundary 8101: prepare=0 ms draw=55 ms\n"
+                "Gateway DOS palette boundary 8100: prepare=0 ms draw=220 ms\n"
+                "Gateway DOS palette boundary: PASS\n")
             (output / "ENTRYBAD.LOG").write_text("failure")
             self.assertEqual(msc51.dos_entry_failures(output), ["ENTRYBAD.LOG present"])
             msc51.remove_dos_entry_outputs(output)

@@ -7,6 +7,7 @@
  * allocations, original files and VGA initialization without playing. */
 #include "BOOT.H"
 #include "RTLLAY.H"
+#include "RTLIMAC.H"
 #include "gate_intro_schedule.h"
 #include <dos.h>
 #include <stdio.h>
@@ -25,6 +26,10 @@ void gate_linked_initialize_intro_services(void);
 uint16_t gate_rtl_set_video_mode(int16_t requested_mode);
 void gate_rtl_clear_video_display(void);
 uint16_t gate_rtl_show_picture(uint16_t resource, uint16_t placement);
+uint16_t gate_rtl_load_picture_record(GateFarPtr work, uint16_t resource, uint16_t placement);
+void gate_rtl_prepare_picture_display(void);
+void gate_rtl_draw_picture_record(GateFarPtr work);
+void gate_rtl_release_picture_record(GateFarPtr work);
 uint32_t gate_linked_exe_elapsed_milliseconds(void);
 
 /* This is a diagnostic hold, not an original EXE timing constant. The
@@ -35,6 +40,34 @@ static void gate_entry_hold_scene_preview(void)
     uint32_t start = gate_linked_exe_elapsed_milliseconds();
     while ((uint32_t)(gate_linked_exe_elapsed_milliseconds() - start) < 4000ul)
         ;
+}
+
+/* DOS-only timing probe around the original RTL:12b19 call sequence.
+ * In particular, RTL:1266f uploads the newly loaded palette BEFORE
+ * RTL:12ed7 draws the image. Report the time when the previous pixels
+ * remain visible under the new DAC without altering the original order.
+ * Do not mistake the probe's diagnostics for original launcher output. */
+static int gate_entry_probe_palette_transition(uint16_t resource)
+{
+    uint8_t record[GATE_PICTURE_RECORD_BYTES];
+    GateFarPtr work;
+    uint32_t begin, prepared, drawn;
+
+    record[GATE_PICTURE_RECORD_ACTIVE] = 0u;
+    work = gate_stack_pointer(record);
+    if (gate_rtl_load_picture_record(work, resource,
+                                     GATE_PICTURE_POSITION_FIRST_PAIR) == 0u)
+        return 0;
+    begin = gate_linked_exe_elapsed_milliseconds();
+    gate_rtl_prepare_picture_display();
+    prepared = gate_linked_exe_elapsed_milliseconds();
+    gate_rtl_draw_picture_record(work);
+    drawn = gate_linked_exe_elapsed_milliseconds();
+    gate_rtl_release_picture_record(work);
+    printf("Gateway DOS palette boundary %04x: prepare=%lu ms draw=%lu ms\n",
+           resource, (unsigned long)(prepared - begin),
+           (unsigned long)(drawn - prepared));
+    return 1;
 }
 
 /* The original RTL:4bc9 callback only RETFs. A far C function performs
@@ -95,6 +128,7 @@ int main(int argc, char **argv)
     int picture_only = argc > 1 && strcmp(argv[1], "/PICTURE") == 0;
     int second_only = argc > 1 && strcmp(argv[1], "/SECOND") == 0;
     int title_only = argc > 1 && strcmp(argv[1], "/TITLE") == 0;
+    int palette_timing = argc > 1 && strcmp(argv[1], "/PALTIME") == 0;
     int transition_only = argc > 1 && strcmp(argv[1], "/TRANS") == 0;
     int scene_only = argc > 1 && strcmp(argv[1], "/SCENE") == 0;
 
@@ -102,9 +136,9 @@ int main(int argc, char **argv)
     owned_image.resident_segment = 0u;
     video_restore_armed = 0u;
     if (argc > 1 && !check_only && !picture_only && !second_only &&
-        !title_only && !transition_only && !scene_only) {
+        !title_only && !palette_timing && !transition_only && !scene_only) {
         if (strcmp(argv[1], "/INTRO") != 0) {
-            fputs("Usage: GATEWAY [/CHECK | /PICTURE | /SECOND | /TITLE | /TRANS | /SCENE | /INTRO]\n", stderr);
+            fputs("Usage: GATEWAY [/CHECK | /PICTURE | /SECOND | /TITLE | /PALTIME | /TRANS | /SCENE | /INTRO]\n", stderr);
             return 2;
         }
     }
@@ -201,6 +235,15 @@ int main(int argc, char **argv)
             return 1;
         }
         puts("Gateway DOS second splash: PASS (source-C picture load and drawing)");
+        return 0;
+    }
+    if (palette_timing) {
+        if (!gate_entry_probe_palette_transition(GATE_INTRO_PICTURE_FIRST_SPLASH) ||
+            !gate_entry_probe_palette_transition(GATE_INTRO_PICTURE_SECOND_SPLASH)) {
+            fputs("Gateway DOS palette boundary: picture load failed\n", stderr);
+            return 1;
+        }
+        puts("Gateway DOS palette boundary: PASS");
         return 0;
     }
     if (title_only) {

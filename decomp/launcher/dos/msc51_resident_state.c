@@ -612,12 +612,46 @@ static void vfx_mode12_and_byte(uint16_t address, uint8_t incoming)
                       (uint8_t)(latched & incoming));
 }
 
+#ifdef _MSC_VER
+/* RTL:1887d's hot loop is a single AND ES:[DI],AL after LODSB. Under
+ * Microsoft C 5.1 /Od, routing EACH VGA latch read and write through two
+ * FAR C service calls leaves the previous image under the new palette for
+ * several video frames. A FAR lvalue retains the same read/modify/write
+ * VGA hardware operation as the recovered original instruction. Host
+ * builds still exercise the segmented-memory oracle above. */
+static volatile uint8_t far *vfx_mode12_screen_pointer(void)
+{
+    volatile uint8_t far *screen;
+    FP_SEG(screen) = GATE_VIDEO_GRAPHICS_APERTURE_SEGMENT;
+    FP_OFF(screen) = 0u;
+    return screen;
+}
+
+static const uint8_t far *vfx_mode12_source_pointer(uint16_t segment)
+{
+    const uint8_t far *data;
+    FP_SEG(data) = segment;
+    FP_OFF(data) = 0u;
+    return data;
+}
+#endif
+
 static uint16_t vfx_rotate_left_word(uint16_t value, uint16_t count)
 {
     if (count == 0u)
         return value;
     return (uint16_t)((value << count) | (value >> (16u - count)));
 }
+
+#ifdef _MSC_VER
+/* In RTL:188de/18923 this is the single 8086 ROL AX,CL instruction,
+ * not a FAR C call for each overlapping source word. */
+#define VFX_ROL16(value, count) \
+    ((count) == 0u ? (value) : \
+        (uint16_t)(((value) << (count)) | ((value) >> (16u - (count)))))
+#else
+#define VFX_ROL16(value, count) vfx_rotate_left_word((value), (count))
+#endif
 
 /* Original RTL:187e9..188b2, byte-aligned mode-12h VFX rasterizer.
  * GC5=08 selects read mode 1 and write mode 0; with GC7=0, VGA reads
@@ -633,6 +667,10 @@ static void vfx_mode12_aligned(uint16_t x, uint16_t y, uint16_t height,
 {
     uint16_t row, plane, col;
     uint16_t destination = (uint16_t)((uint32_t)y * 80u + x / 8u);
+#ifdef _MSC_VER
+    volatile uint8_t far *screen = vfx_mode12_screen_pointer();
+    const uint8_t far *data = vfx_mode12_source_pointer(source.segment);
+#endif
 
     vfx_mode12_ports_start(operation);
 
@@ -647,9 +685,15 @@ static void vfx_mode12_aligned(uint16_t x, uint16_t y, uint16_t height,
             }
             for (col = 0u; col < copy_bytes; ++col) {
                 uint16_t address = (uint16_t)(destination + col);
+#ifdef _MSC_VER
+                /* Source offset wraps at 16 bits; the original instruction
+                 * reads and modifies the VGA byte through its latches. */
+                screen[address] &= data[(uint16_t)(plane_source + col)];
+#else
                 uint8_t incoming = gate_far_byte(source.segment,
                     (uint16_t)(plane_source + col));
                 vfx_mode12_and_byte(address, incoming);
+#endif
             }
         }
         destination = (uint16_t)(destination + 80u);
@@ -677,6 +721,10 @@ static void vfx_mode12_masked(uint16_t x, uint16_t y, uint16_t height,
     uint16_t end_word;
     uint16_t start_word;
     uint8_t start_mask, end_mask1, end_mask2;
+#ifdef _MSC_VER
+    volatile uint8_t far *screen_pixels = vfx_mode12_screen_pointer();
+    const uint8_t far *source_bytes = vfx_mode12_source_pointer(source.segment);
+#endif
 
     if (copy_bytes == 1u) {
         start_word = last_mask;
@@ -705,11 +753,20 @@ static void vfx_mode12_masked(uint16_t x, uint16_t y, uint16_t height,
                 outp(0x3c5, (uint8_t)(1u << plane));
             }
             vfx_mode12_mask(start_mask);
+#ifdef _MSC_VER
+            data = (uint16_t)source_bytes[cursor] |
+                   ((uint16_t)source_bytes[(uint16_t)(cursor + 1u)] << 8);
+#else
             data = gate_far_word(source.segment, cursor);
+#endif
             ++cursor; /* LODSW; DEC SI: sliding 16-bit source window */
             if (shift != 0u) {
-                data = vfx_rotate_left_word(data, shift);
+                data = VFX_ROL16(data, shift);
+#ifdef _MSC_VER
+                screen_pixels[screen++] &= (uint8_t)(data >> 8);
+#else
                 vfx_mode12_and_byte(screen++, (uint8_t)(data >> 8));
+#endif
                 --remaining;
             } else {
                 --remaining;
@@ -720,18 +777,35 @@ static void vfx_mode12_masked(uint16_t x, uint16_t y, uint16_t height,
             vfx_mode12_mask(0xffu);
             --remaining;
             while (remaining > 0) {
+#ifdef _MSC_VER
+                screen_pixels[screen++] &= (uint8_t)data;
+#else
                 vfx_mode12_and_byte(screen++, (uint8_t)data);
+#endif
+#ifdef _MSC_VER
+                data = (uint16_t)source_bytes[cursor] |
+                       ((uint16_t)source_bytes[(uint16_t)(cursor + 1u)] << 8);
+#else
                 data = gate_far_word(source.segment, cursor);
+#endif
                 ++cursor;
-                data = vfx_rotate_left_word(data, shift);
+                data = VFX_ROL16(data, shift);
                 --remaining;
             }
 masked_tail:
             vfx_mode12_mask(end_mask1);
+#ifdef _MSC_VER
+            screen_pixels[screen] &= (uint8_t)data;
+#else
             vfx_mode12_and_byte(screen, (uint8_t)data);
+#endif
             vfx_mode12_mask(end_mask2);
+#ifdef _MSC_VER
+            screen_pixels[(uint16_t)(screen + 1u)] &= (uint8_t)(data >> 8);
+#else
             vfx_mode12_and_byte((uint16_t)(screen + 1u),
                                 (uint8_t)(data >> 8));
+#endif
         }
         destination = (uint16_t)(destination + 80u);
     }
