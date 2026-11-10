@@ -136,9 +136,10 @@ class MSC51Tests(unittest.TestCase):
             self.assertIn("D:\\GATEWAY.EXE /SECOND > D:\\SECOND.LOG", batch)
             self.assertIn("D:\\GATEWAY.EXE /TITLE > D:\\TITLE.LOG", batch)
             self.assertIn("D:\\GATEWAY.EXE /PALTIME > D:\\PALTIME.LOG", batch)
+            self.assertIn("D:\\GATEWAY.EXE /PAL320 > D:\\PAL320.LOG", batch)
             self.assertIn("D:\\GATEWAY.EXE /TRANS > D:\\TRANS.LOG", batch)
             self.assertIn("D:\\GATEWAY.EXE /SCENE > D:\\SCENE.LOG", batch)
-            self.assertEqual(batch.count("IF ERRORLEVEL 1 GOTO FAILED"), 7)
+            self.assertEqual(batch.count("IF ERRORLEVEL 1 GOTO FAILED"), 8)
             self.assertIn("ENTRYBAD.LOG", batch)
             self.assertNotIn("ENTRYFAIL.LOG", batch)
             self.assertIn("BUILDBAD.LOG", (output / "COMPILE.BAT").read_text())
@@ -152,7 +153,7 @@ class MSC51Tests(unittest.TestCase):
                     msc51.main(["test-dos-entry", "--output", str(output)])
             self.assertIn("requires --original-game-dir", diagnostic.getvalue())
 
-    def test_dos_entry_requires_all_seven_fresh_success_witnesses(self):
+    def test_dos_entry_requires_all_eight_fresh_success_witnesses(self):
         with tempfile.TemporaryDirectory() as scratch:
             output = Path(scratch)
             (output / "ENTRYOK.LOG").write_text("passed")
@@ -162,6 +163,10 @@ class MSC51Tests(unittest.TestCase):
                 "Gateway DOS palette boundary 8101: prepare=0 ms draw=55 ms\n"
                 "Gateway DOS palette boundary 8100: prepare=0 ms draw=220 ms\n"
                 "Gateway DOS palette boundary: PASS\n")
+            (output / "PAL320.LOG").write_text(
+                "Gateway DOS 320x200 palette 3105: fade=2250 ms dac-mismatches=0\n"
+                "Gateway DOS 320x200 palette 3100: fade=1980 ms dac-mismatches=0\n"
+                "Gateway DOS 320x200 palette: PASS\n")
             self.assertEqual(msc51.dos_entry_failures(output), [])
             for name, _ in msc51.DOS_ENTRY_PASS_MARKERS:
                 log = output / name
@@ -179,6 +184,16 @@ class MSC51Tests(unittest.TestCase):
                 "Gateway DOS palette boundary 8101: prepare=0 ms draw=55 ms\n"
                 "Gateway DOS palette boundary 8100: prepare=0 ms draw=220 ms\n"
                 "Gateway DOS palette boundary: PASS\n")
+            (output / "PAL320.LOG").write_text(
+                "Gateway DOS 320x200 palette 3105: fade=2250 ms dac-mismatches=1\n"
+                "Gateway DOS 320x200 palette 3100: fade=1980 ms dac-mismatches=0\n"
+                "Gateway DOS 320x200 palette: PASS\n")
+            self.assertEqual(msc51.dos_entry_failures(output),
+                             ["PAL320.LOG missing clean 3105 VGA DAC readback"])
+            (output / "PAL320.LOG").write_text(
+                "Gateway DOS 320x200 palette 3105: fade=2250 ms dac-mismatches=0\n"
+                "Gateway DOS 320x200 palette 3100: fade=1980 ms dac-mismatches=0\n"
+                "Gateway DOS 320x200 palette: PASS\n")
             (output / "ENTRYBAD.LOG").write_text("failure")
             self.assertEqual(msc51.dos_entry_failures(output), ["ENTRYBAD.LOG present"])
             msc51.remove_dos_entry_outputs(output)

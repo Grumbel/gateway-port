@@ -9,6 +9,7 @@
 #include "RTLLAY.H"
 #include "RTLIMAC.H"
 #include "gate_intro_schedule.h"
+#include <conio.h>
 #include <dos.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,6 +23,7 @@ void gate_exe_bind_resource_pointers(void);
 void gate_exe_prepare_intro_globals(void);
 void gate_exe_play_intro(void);
 void gate_exe_play_title_interlude(void);
+void gate_exe_fade_in_picture(uint16_t image);
 void gate_linked_initialize_intro_services(void);
 uint16_t gate_rtl_set_video_mode(int16_t requested_mode);
 void gate_rtl_clear_video_display(void);
@@ -31,6 +33,29 @@ void gate_rtl_prepare_picture_display(void);
 void gate_rtl_draw_picture_record(GateFarPtr work);
 void gate_rtl_release_picture_record(GateFarPtr work);
 uint32_t gate_linked_exe_elapsed_milliseconds(void);
+
+/* Read the actual VGA DAC, not an internal reconstruction of the port
+ * writer. DOSBox's 3c7 read index and 3c9 component port are a useful
+ * independent witness for the mode-13h EXE:0f61 fade boundary. */
+static int gate_entry_check_mode13_palette(uint16_t resource)
+{
+    uint16_t i, mismatches = 0u;
+    uint16_t bank = gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT);
+    uint32_t begin = gate_linked_exe_elapsed_milliseconds();
+    gate_exe_fade_in_picture(resource);
+    outp(0x3c7, 0);
+    for (i = 0; i < GATE_INTRO_PALETTE_RGB_BYTES; ++i) {
+        uint8_t actual = (uint8_t)inp(0x3c9);
+        uint8_t expected = gate_far_byte(bank,
+            (uint16_t)(GATE_INTRO_PALETTE_BANK_OFFSET + i));
+        if (actual != (expected & 0x3fu))
+            ++mismatches;
+    }
+    printf("Gateway DOS 320x200 palette %04x: fade=%lu ms dac-mismatches=%u\n",
+           resource, (unsigned long)(gate_linked_exe_elapsed_milliseconds() - begin),
+           mismatches);
+    return mismatches == 0u;
+}
 
 /* This is a diagnostic hold, not an original EXE timing constant. The
  * palette of GATE_300.PIC #0 starts black: drawing it alone cannot prove
@@ -129,6 +154,7 @@ int main(int argc, char **argv)
     int second_only = argc > 1 && strcmp(argv[1], "/SECOND") == 0;
     int title_only = argc > 1 && strcmp(argv[1], "/TITLE") == 0;
     int palette_timing = argc > 1 && strcmp(argv[1], "/PALTIME") == 0;
+    int palette_320 = argc > 1 && strcmp(argv[1], "/PAL320") == 0;
     int transition_only = argc > 1 && strcmp(argv[1], "/TRANS") == 0;
     int scene_only = argc > 1 && strcmp(argv[1], "/SCENE") == 0;
 
@@ -136,9 +162,9 @@ int main(int argc, char **argv)
     owned_image.resident_segment = 0u;
     video_restore_armed = 0u;
     if (argc > 1 && !check_only && !picture_only && !second_only &&
-        !title_only && !palette_timing && !transition_only && !scene_only) {
+        !title_only && !palette_timing && !palette_320 && !transition_only && !scene_only) {
         if (strcmp(argv[1], "/INTRO") != 0) {
-            fputs("Usage: GATEWAY [/CHECK | /PICTURE | /SECOND | /TITLE | /PALTIME | /TRANS | /SCENE | /INTRO]\n", stderr);
+            fputs("Usage: GATEWAY [/CHECK | /PICTURE | /SECOND | /TITLE | /PALTIME | /PAL320 | /TRANS | /SCENE | /INTRO]\n", stderr);
             return 2;
         }
     }
@@ -196,7 +222,7 @@ int main(int argc, char **argv)
         puts("Gateway DOS source-C entry: PASS (images, FAR return, resources, VGA mode 12)");
         return 0;
     }
-    if (transition_only || scene_only) {
+    if (transition_only || scene_only || palette_320) {
         if (gate_rtl_set_video_mode(3) != 1u ||
             gate_ds_word(GATE_DS_GRAPHICS_MODE) != 3u ||
             gate_entry_bios_mode() != 0x13u) {
@@ -204,6 +230,16 @@ int main(int argc, char **argv)
             return 1;
         }
         gate_rtl_clear_video_display();
+        if (palette_320) {
+            if (gate_rtl_show_picture(GATE_INTRO_PICTURE_RED_BAR_TITLE, 1u) != 1u ||
+                !gate_entry_check_mode13_palette(GATE_INTRO_PICTURE_CAPTIONS_01_02) ||
+                !gate_entry_check_mode13_palette(GATE_INTRO_PICTURE_CAPTIONS_03_04)) {
+                fputs("Gateway DOS 320x200 palette: mismatch or picture load failure\n", stderr);
+                return 1;
+            }
+            puts("Gateway DOS 320x200 palette: PASS");
+            return 0;
+        }
         if (scene_only) {
             if (gate_rtl_show_picture(GATE_INTRO_PICTURE_RED_BAR_TITLE, 1u) != 1u) {
                 fputs("Gateway DOS: first mode-13 picture failed to load/draw\n", stderr);

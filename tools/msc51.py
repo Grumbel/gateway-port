@@ -1116,6 +1116,8 @@ def stage_launcher(output: Path) -> list[str]:
         "IF ERRORLEVEL 1 GOTO FAILED",
         "D:\\GATEWAY.EXE /PALTIME > D:\\PALTIME.LOG",
         "IF ERRORLEVEL 1 GOTO FAILED",
+        "D:\\GATEWAY.EXE /PAL320 > D:\\PAL320.LOG",
+        "IF ERRORLEVEL 1 GOTO FAILED",
         "D:\\GATEWAY.EXE /TRANS > D:\\TRANS.LOG",
         "IF ERRORLEVEL 1 GOTO FAILED",
         "D:\\GATEWAY.EXE /SCENE > D:\\SCENE.LOG",
@@ -1808,6 +1810,7 @@ DOS_ENTRY_PASS_MARKERS = (
     ("SECOND.LOG", "Gateway DOS second splash: PASS"),
     ("TITLE.LOG", "Gateway DOS: title interlude returned"),
     ("PALTIME.LOG", "Gateway DOS palette boundary: PASS"),
+    ("PAL320.LOG", "Gateway DOS 320x200 palette: PASS"),
     ("TRANS.LOG", "Gateway DOS transition: PASS"),
     ("SCENE.LOG", "Gateway DOS first 320x200 picture: PASS"),
 )
@@ -1837,6 +1840,12 @@ def dos_entry_failures(output: Path) -> list[str]:
                 if re.search(rf"(?m)^Gateway DOS palette boundary {image}: "
                              r"prepare=[0-9]+ ms draw=[0-9]+ ms$", contents) is None:
                     failures.append(f"{name} missing {image} timing")
+        elif name == "PAL320.LOG":
+            contents = log.read_text(errors="replace")
+            for image in ("3105", "3100"):
+                if re.search(rf"(?m)^Gateway DOS 320x200 palette {image}: "
+                             r"fade=[0-9]+ ms dac-mismatches=0$", contents) is None:
+                    failures.append(f"{name} missing clean {image} VGA DAC readback")
     return failures
 
 
