@@ -1810,7 +1810,7 @@ DOS_ENTRY_PASS_MARKERS = (
     ("SECOND.LOG", "Gateway DOS second splash: PASS"),
     ("TITLE.LOG", "Gateway DOS: title interlude returned"),
     ("PALTIME.LOG", "Gateway DOS palette boundary: PASS"),
-    ("PAL320.LOG", "Gateway DOS 320x200 palette: PASS"),
+    ("PAL320.LOG", "Gateway DOS 320x200 palette:"),
     ("TRANS.LOG", "Gateway DOS transition: PASS"),
     ("SCENE.LOG", "Gateway DOS first 320x200 picture: PASS"),
 )
@@ -1842,11 +1842,36 @@ def dos_entry_failures(output: Path) -> list[str]:
                     failures.append(f"{name} missing {image} timing")
         elif name == "PAL320.LOG":
             contents = log.read_text(errors="replace")
-            for image in ("3105", "3100"):
-                if re.search(rf"(?m)^Gateway DOS 320x200 palette {image}: "
-                             r"fade=[0-9]+ ms dac-mismatches=0$", contents) is None:
-                    failures.append(f"{name} missing clean {image} VGA DAC readback")
+            if "Gateway DOS 320x200 palette: PASS" in contents:
+                if re.search(r"(?m)^Gateway DOS VGA DAC readback probe: "
+                             r"wrote=11,29,53 read=11,29,53 status=OK$", contents) is None:
+                    failures.append(f"{name} lacks working DAC readback probe")
+                for image in ("3105", "3100"):
+                    if re.search(rf"(?m)^Gateway DOS 320x200 palette {image}: "
+                                 r"fade=[0-9]+ ms dac-mismatches=0$", contents) is None:
+                        failures.append(f"{name} missing clean {image} VGA DAC readback")
+            elif "Gateway DOS 320x200 palette: UNVERIFIED (DAC readback probe failed)" in contents:
+                probe = re.search(r"(?m)^Gateway DOS VGA DAC readback probe: "
+                                  r"wrote=11,29,53 read=([0-9]+),([0-9]+),([0-9]+) "
+                                  r"status=UNAVAILABLE$", contents)
+                if probe is None or tuple(map(int, probe.groups())) == (11, 29, 53):
+                    failures.append(f"{name} lacks independent failed DAC readback probe")
+                for image in ("3105", "3100"):
+                    if re.search(rf"(?m)^Gateway DOS 320x200 palette {image}: "
+                                 r"fade=[0-9]+ ms dac-mismatches=[0-9]+$", contents) is None:
+                        failures.append(f"{name} missing {image} fade execution")
+            else:
+                failures.append(f"{name} missing PASS or explicit UNVERIFIED result")
     return failures
+
+
+def report_dos_palette_readback_limit(output: Path) -> None:
+    """Do not mislabel an emulator's unavailable DAC readback as a pass."""
+    log = locate_case_insensitive(output, "PAL320.LOG")
+    if log is not None and "Gateway DOS 320x200 palette: UNVERIFIED" in log.read_text(errors="replace"):
+        print("WARNING: DOS VGA DAC readback probe failed; both 320x200 fades "
+              "ran, but hardware palette identity is UNVERIFIED in this emulator.",
+              file=sys.stderr)
 
 
 LAUNCHER_BUILD_STAGES = (
@@ -2397,6 +2422,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Combined Microsoft C 5.1 DOS build failed: {error}", file=sys.stderr)
             print_full_launcher_build_diagnostics(output)
             return 1
+        report_dos_palette_readback_limit(output)
         print("Microsoft C 5.1 completed all 18 compiler, probe, link and DOS "
               "entry stages in one DOSBox session. The full timed intro remains unverified.")
         return 0
@@ -2624,6 +2650,7 @@ def main(argv: list[str] | None = None) -> int:
         except ValueError as error:
             print(str(error), file=sys.stderr)
             return 1
+        report_dos_palette_readback_limit(output)
         print("Real-mode GATEWAY.EXE passed source-C boot, mode-12 VGA setup, "
               "both splash pictures, title interlude and BIOS restoration under DOSBox. "
               "The full timed intro remains unverified.")

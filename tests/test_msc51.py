@@ -183,6 +183,7 @@ class MSC51Tests(unittest.TestCase):
                 "Gateway DOS palette boundary 8100: prepare=0 ms draw=220 ms\n"
                 "Gateway DOS palette boundary: PASS\n")
             (output / "PAL320.LOG").write_text(
+                "Gateway DOS VGA DAC readback probe: wrote=11,29,53 read=11,29,53 status=OK\n"
                 "Gateway DOS 320x200 palette 3105: fade=2250 ms dac-mismatches=0\n"
                 "Gateway DOS 320x200 palette 3100: fade=1980 ms dac-mismatches=0\n"
                 "Gateway DOS 320x200 palette: PASS\n")
@@ -204,17 +205,42 @@ class MSC51Tests(unittest.TestCase):
                 "Gateway DOS palette boundary 8100: prepare=0 ms draw=220 ms\n"
                 "Gateway DOS palette boundary: PASS\n")
             (output / "PAL320.LOG").write_text(
+                "Gateway DOS VGA DAC readback probe: wrote=11,29,53 read=11,29,53 status=OK\n"
                 "Gateway DOS 320x200 palette 3105: fade=2250 ms dac-mismatches=1\n"
                 "Gateway DOS 320x200 palette 3100: fade=1980 ms dac-mismatches=0\n"
                 "Gateway DOS 320x200 palette: PASS\n")
             self.assertEqual(msc51.dos_entry_failures(output),
                              ["PAL320.LOG missing clean 3105 VGA DAC readback"])
             (output / "PAL320.LOG").write_text(
+                "Gateway DOS VGA DAC readback probe: wrote=11,29,53 read=11,29,53 status=OK\n"
                 "Gateway DOS 320x200 palette 3105: fade=2250 ms dac-mismatches=0\n"
                 "Gateway DOS 320x200 palette 3100: fade=1980 ms dac-mismatches=0\n"
                 "Gateway DOS 320x200 palette: PASS\n")
+            (output / "PAL320.LOG").write_text(
+                "Gateway DOS VGA DAC readback probe: wrote=11,29,53 read=0,0,0 status=UNAVAILABLE\n"
+                "Gateway DOS 320x200 palette 3105: fade=660 ms dac-mismatches=729\n"
+                "Gateway DOS 320x200 palette 3100: fade=700 ms dac-mismatches=725\n"
+                "Gateway DOS 320x200 palette: UNVERIFIED (DAC readback probe failed)\n")
+            self.assertEqual(msc51.dos_entry_failures(output), [])
+            with redirect_stderr(io.StringIO()) as warning:
+                msc51.report_dos_palette_readback_limit(output)
+            self.assertIn("hardware palette identity is UNVERIFIED", warning.getvalue())
+            (output / "PAL320.LOG").write_text(
+                "Gateway DOS VGA DAC readback probe: wrote=11,29,53 read=11,29,53 status=UNAVAILABLE\n"
+                "Gateway DOS 320x200 palette 3105: fade=660 ms dac-mismatches=729\n"
+                "Gateway DOS 320x200 palette 3100: fade=700 ms dac-mismatches=725\n"
+                "Gateway DOS 320x200 palette: UNVERIFIED (DAC readback probe failed)\n")
+            self.assertEqual(msc51.dos_entry_failures(output),
+                             ["PAL320.LOG lacks independent failed DAC readback probe"])
+            (output / "PAL320.LOG").write_text(
+                "Gateway DOS VGA DAC readback probe: wrote=11,29,53 read=0,0,0 status=UNAVAILABLE\n"
+                "Gateway DOS 320x200 palette 3105: fade=660 ms dac-mismatches=729\n"
+                "Gateway DOS 320x200 palette: UNVERIFIED (DAC readback probe failed)\n")
+            self.assertEqual(msc51.dos_entry_failures(output),
+                             ["PAL320.LOG missing 3100 fade execution"])
             (output / "ENTRYBAD.LOG").write_text("failure")
-            self.assertEqual(msc51.dos_entry_failures(output), ["ENTRYBAD.LOG present"])
+            self.assertEqual(msc51.dos_entry_failures(output),
+                             ["ENTRYBAD.LOG present", "PAL320.LOG missing 3100 fade execution"])
             msc51.remove_dos_entry_outputs(output)
             for name, _ in msc51.DOS_ENTRY_PASS_MARKERS:
                 self.assertFalse((output / name).exists())

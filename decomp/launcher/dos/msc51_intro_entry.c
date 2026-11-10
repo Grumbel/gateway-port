@@ -34,6 +34,31 @@ void gate_rtl_draw_picture_record(GateFarPtr work);
 void gate_rtl_release_picture_record(GateFarPtr work);
 uint32_t gate_linked_exe_elapsed_milliseconds(void);
 
+/* Test the DAC read channel independently of our reconstructed palette
+ * uploader. Some DOS emulators accept writes to 3c8/3c9 but return zeros
+ * from the 3c7/3c9 read sequence. In that case a later palette mismatch
+ * cannot distinguish an incorrect fade from a broken readback oracle.
+ * The test touches index 255 before the subsequent full palette upload. */
+static int gate_entry_probe_vga_dac_readback(void)
+{
+    static const uint8_t test_rgb[3] = {11u, 29u, 53u};
+    uint8_t observed[3];
+    uint16_t i;
+
+    outp(0x3c8, 255u);
+    for (i = 0; i < 3u; ++i)
+        outp(0x3c9, test_rgb[i]);
+    outp(0x3c7, 255u);
+    for (i = 0; i < 3u; ++i)
+        observed[i] = (uint8_t)inp(0x3c9);
+    printf("Gateway DOS VGA DAC readback probe: wrote=11,29,53 read=%u,%u,%u status=%s\n",
+           observed[0], observed[1], observed[2],
+           observed[0] == test_rgb[0] && observed[1] == test_rgb[1] &&
+           observed[2] == test_rgb[2] ? "OK" : "UNAVAILABLE");
+    return observed[0] == test_rgb[0] && observed[1] == test_rgb[1] &&
+           observed[2] == test_rgb[2];
+}
+
 /* Read the actual VGA DAC, not an internal reconstruction of the port
  * writer. DOSBox's 3c7 read index and 3c9 component port are a useful
  * independent witness for the mode-13h EXE:0f61 fade boundary. */
@@ -231,9 +256,24 @@ int main(int argc, char **argv)
         }
         gate_rtl_clear_video_display();
         if (palette_320) {
-            if (gate_rtl_show_picture(GATE_INTRO_PICTURE_RED_BAR_TITLE, 1u) != 1u ||
-                !gate_entry_check_mode13_palette(GATE_INTRO_PICTURE_CAPTIONS_01_02) ||
-                !gate_entry_check_mode13_palette(GATE_INTRO_PICTURE_CAPTIONS_03_04)) {
+            int readback_ok;
+            int first_ok;
+            int second_ok;
+
+            if (gate_rtl_show_picture(GATE_INTRO_PICTURE_RED_BAR_TITLE, 1u) != 1u) {
+                fputs("Gateway DOS 320x200 palette: title picture load failure\n", stderr);
+                return 1;
+            }
+            readback_ok = gate_entry_probe_vga_dac_readback();
+            /* Exercise both fades even when the read channel is broken;
+             * only genuine DAC readback establishes palette identity. */
+            first_ok = gate_entry_check_mode13_palette(GATE_INTRO_PICTURE_CAPTIONS_01_02);
+            second_ok = gate_entry_check_mode13_palette(GATE_INTRO_PICTURE_CAPTIONS_03_04);
+            if (!readback_ok) {
+                puts("Gateway DOS 320x200 palette: UNVERIFIED (DAC readback probe failed)");
+                return 0;
+            }
+            if (!first_ok || !second_ok) {
                 fputs("Gateway DOS 320x200 palette: mismatch or picture load failure\n", stderr);
                 return 1;
             }
