@@ -193,6 +193,16 @@ static void test_attribute_only_adapter(void)
     output_at(op_count - 3, 0x3c0, 0x11);
     output_at(op_count - 2, 0x3c0, 0);
     output_at(op_count - 1, 0x3c0, 0x20);
+
+    /* In the recovered RTL:f61b, even *mode 3* writes no DAC bytes
+     * if the BIOS adapter class is 4 instead of the VGA class 5.
+     * DOSBox Staging may expose a distinct SVGA BIOS display code. */
+    reset(3, 4, 768, 0);
+    status(0, 8, 0, 0);
+    gate_rtl_upload_vga_palette(ptr);
+    assert(input_next == 4 && far_reads == 16);
+    for (i = 0; i < op_count; ++i)
+        assert(operations[i].port != 0x3c8 && operations[i].port != 0x3c9);
 }
 
 int main(void)

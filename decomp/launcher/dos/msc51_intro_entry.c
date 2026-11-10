@@ -33,6 +33,14 @@ void gate_rtl_prepare_picture_display(void);
 void gate_rtl_draw_picture_record(GateFarPtr work);
 void gate_rtl_release_picture_record(GateFarPtr work);
 uint32_t gate_linked_exe_elapsed_milliseconds(void);
+uint16_t gate_rtl_palette_video_type(void);
+uint16_t gate_rtl_palette_mode(void);
+int16_t gate_rtl_palette_color_count(uint16_t offset);
+uint16_t gate_rtl_palette_conversion(void);
+
+/* GATE.RTL:f61b looks up the RGB component count at DS:0fce+4+2*mode.
+ * Preserve the pre-division raw count for the diagnostic output. */
+enum { GATE_ENTRY_PALETTE_MODE3_COUNT_OFFSET = 4 + 2 * 3 };
 
 /* Test the DAC read channel independently of our reconstructed palette
  * uploader. Some DOS emulators accept writes to 3c8/3c9 but return zeros
@@ -65,6 +73,7 @@ static int gate_entry_probe_vga_dac_readback(void)
 static int gate_entry_check_mode13_palette(uint16_t resource)
 {
     uint16_t i, mismatches = 0u;
+    uint16_t expected_nonzero = 0u, observed_nonzero = 0u;
     uint16_t bank = gate_ds_word(GATE_DS_INTRO_PALETTE_SEGMENT);
     uint32_t begin = gate_linked_exe_elapsed_milliseconds();
     gate_exe_fade_in_picture(resource);
@@ -73,9 +82,15 @@ static int gate_entry_check_mode13_palette(uint16_t resource)
         uint8_t actual = (uint8_t)inp(0x3c9);
         uint8_t expected = gate_far_byte(bank,
             (uint16_t)(GATE_INTRO_PALETTE_BANK_OFFSET + i));
+        if ((expected & 0x3fu) != 0u)
+            ++expected_nonzero;
+        if ((actual & 0x3fu) != 0u)
+            ++observed_nonzero;
         if (actual != (expected & 0x3fu))
             ++mismatches;
     }
+    printf("Gateway DOS VGA DAC %04x: expected-nonzero=%u observed-nonzero=%u\n",
+           resource, expected_nonzero, observed_nonzero);
     printf("Gateway DOS 320x200 palette %04x: fade=%lu ms dac-mismatches=%u\n",
            resource, (unsigned long)(gate_linked_exe_elapsed_milliseconds() - begin),
            mismatches);
@@ -151,6 +166,21 @@ static uint8_t gate_entry_bios_mode(void)
     in.x.ax = 0x0f00u;
     int86(0x10, &in, &out);
     return out.h.al;
+}
+
+/* This is the same INT 10h display-combination query used by the
+ * reconstructed original adapter classifier (RTL:17c95), but logs the
+ * unmodified BIOS codes so an SVGA BIOS compatibility issue is visible. */
+static void gate_entry_report_bios_display_codes(void)
+{
+    union REGS in, out;
+    in.x.ax = 0x1a00u;
+    in.x.bx = 0u;
+    in.x.cx = 0u;
+    in.x.dx = 0u;
+    int86(0x10, &in, &out);
+    printf("Gateway DOS BIOS display combination: status=%u active=%u alternate=%u\n",
+           out.h.al, out.h.bl, out.h.bh);
 }
 
 static void gate_entry_cleanup(void)
@@ -264,6 +294,11 @@ int main(int argc, char **argv)
                 fputs("Gateway DOS 320x200 palette: title picture load failure\n", stderr);
                 return 1;
             }
+            printf("Gateway DOS palette route: mode=%u adapter=%u raw-components=%d conversion=%u\n",
+                   gate_rtl_palette_mode(), gate_rtl_palette_video_type(),
+                   gate_rtl_palette_color_count(GATE_ENTRY_PALETTE_MODE3_COUNT_OFFSET),
+                   gate_rtl_palette_conversion());
+            gate_entry_report_bios_display_codes();
             readback_ok = gate_entry_probe_vga_dac_readback();
             /* Exercise both fades even when the read channel is broken;
              * only genuine DAC readback establishes palette identity. */
