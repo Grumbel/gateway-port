@@ -247,6 +247,41 @@ This validates live loading for nine sections and static fixup bounds for all
 research did not compare DOSBox behavior, listen to audio, test room movement
 or save/restore, or execute independently extracted handlers.
 
+## Resident records and GATE.RTL
+
+Read from `RTLINKST.COM` (2026-11-13) and implemented in
+`tools/rtlink_resident.py`. The `GATEMAIN.EXE` load image starts with an
+RTLink header (segment table at `+08`, group table `+0C`, external table
+`+10` with 8-byte entries, first record `+14`, record count `+16`, program id
+`+26`). Records are `seg length offset has_data` varints, data, and fixup
+groups; the record loop is at CS:0898, fixups at CS:09F5/0A37.
+
+Fixup flag word, for format version >= 410:
+
+| Bits | Meaning |
+| --- | --- |
+| `0001` | target-based (frame and target varints follow); else add load segment |
+| `0002` | segment-relative; else self-relative (unused in Gateway) |
+| `001c` | location: 0 low byte, 1 offset word, 2 segment word, 3 far pointer, 4 high byte |
+| `0020` | runs carry an addend (`addend << 1 | counted`) |
+| `01c0` | target method; `0e00` frame method |
+| `1000` | counted sites |
+| `4000` | shift a stored segment word left by 12 before adding |
+
+Methods (CS:0CA4): 0 segment table, 1 group table, 3 absolute paragraph,
+2 and 4 external tables at header `+10`/`+4A`, whose `'R'` entries name a
+group, a segment and an offset. The frame is rounded down to a paragraph;
+offsets are stored relative to it and segment words receive its paragraph
+plus the load segment (not for an absolute frame).
+
+`GATE.RTL` has an 18-byte header (signature `37BAh`, type `S`, program id
+equal to `GATEMAIN.EXE +26`, record count, version 502, header paragraphs)
+and 64 records in the same format that fill the holes of the resident
+address space (`08054`–`0BE0B`, `0C90E`–`1C240`, and some data). Applying
+all 11,147 fixup sites to both files for load segment `1000h` reproduces 103
+of 111 data records of a mid-game RAM snapshot exactly; the other eight
+differ only at non-fixup bytes (runtime variables).
+
 ## Next extraction boundary
 
 Trace the calls leaving the mapped handlers and identify the remaining resident

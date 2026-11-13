@@ -790,6 +790,8 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/extract_pic_tests.py $<TARGET_FILE:gateway-extract>)
     add_test(NAME story-disassembly COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/disassemble_story_tests.py)
+    add_test(NAME rtlink-resident COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/rtlink_resident_tests.py)
     add_test(NAME story-admission-trace COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/summarize_admission_trace_tests.py)
     add_test(NAME story-visibility-trace COMMAND ${Python3_EXECUTABLE}
