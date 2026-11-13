@@ -76,33 +76,33 @@ class IntroFull(unittest.TestCase):
                                     check=True, capture_output=True, text=True)
             self.assertIn('original source-C EXE:1302 completed:', report.stdout)
             self.assertIn('342026 virtual ms', report.stdout)
-            self.assertIn('1561 replay frames', report.stdout)
+            self.assertIn('1531 replay frames', report.stdout)
             self.assertEqual(digest(final),
-                             '6a3f6394fbaac476700dbb54d30a8dd0f9028183493cfa3f416d9e4a7c87a777')
-            self.assertEqual(replay.stat().st_size, 4 + 1561 * (4 + 64000 + 768))
+                             'a95d4cb55feeb7b3ef7c2bd289f32d1ce3105da4e91d71348eb1eaa6dc9adce2')
+            self.assertEqual(replay.stat().st_size, 4 + 1531 * (4 + 64000 + 768))
             self.assertEqual(digest(replay),
-                             '1bfb16e5687ab30e80387d3faeadb0e498146f2308ff15c1fa4c6a8baa8b946c')
+                             '1d16bad00b71b8113dbf62ec6defa5472e2c357ed593174a2b526d53e7e5c516')
             self.assertEqual(final_ram.stat().st_size, 1024 * 1024)
             self.assertEqual(digest(final_ram),
                              '92a31e93f16900c797ea528fdfbd31ed613a7fe7eda51700c47131ea1542d79a')
-            self.assertIn('first-read profile: 6661 guest bytes in 6 pages',
+            self.assertIn('first-read profile: 5893 guest bytes in 5 pages',
                           report.stdout)
             rows = read_deps.read_text().splitlines()
-            self.assertEqual(rows[:7], [
+            self.assertEqual(rows[:6], [
                 '# physical-page first-read-bytes (4096-byte pages)',
-                '00000 768', '2a000 10', '2b000 780',
+                '2a000 10', '2b000 780',
                 '2d000 573', '2e000 4096', '2f000 434',
             ])
-            self.assertEqual(rows[7],
+            self.assertEqual(rows[6],
                              '# first-read physical byte ranges (end exclusive)')
             ranges = [(int(line.split()[1], 16), int(line.split()[2], 16))
-                      for line in rows[8:] if line.startswith('range ')]
+                      for line in rows[7:] if line.startswith('range ')]
             self.assertGreater(len(ranges), 7)
             self.assertTrue(all(0 <= a < b <= 1024 * 1024
                                 for a, b in ranges))
             self.assertTrue(all(a >= prior_b for (_, prior_b), (a, _)
                                 in zip(ranges, ranges[1:])))
-            self.assertEqual(sum(b - a for a, b in ranges), 6661)
+            self.assertEqual(sum(b - a for a, b in ranges), 5893)
 
     def test_sparse_guest_ram_preserves_full_video(self):
         executable, snapshot, assets = self.inputs()
@@ -123,7 +123,7 @@ class IntroFull(unittest.TestCase):
                 for line in profile.read_text().splitlines()
                 if line and not line.startswith(('#', 'range '))
             }
-            self.assertEqual(len(page_offsets), 6)
+            self.assertEqual(len(page_offsets), 5)
             ram = bytearray(Path(snapshot).read_bytes())
             self.assertEqual(len(ram), 1024 * 1024)
             blank = bytes(4096)
@@ -136,10 +136,10 @@ class IntroFull(unittest.TestCase):
                            check=True, capture_output=True, text=True)
             self.assertEqual(digest(result), digest(baseline))
             self.assertEqual(digest(result),
-                             '6a3f6394fbaac476700dbb54d30a8dd0f9028183493cfa3f416d9e4a7c87a777')
+                             'a95d4cb55feeb7b3ef7c2bd289f32d1ce3105da4e91d71348eb1eaa6dc9adce2')
             self.assertEqual(digest(sparse_record), digest(baseline_record))
             self.assertEqual(digest(sparse_record),
-                             '1bfb16e5687ab30e80387d3faeadb0e498146f2308ff15c1fa4c6a8baa8b946c')
+                             '1d16bad00b71b8113dbf62ec6defa5472e2c357ed593174a2b526d53e7e5c516')
 
             # Prove that the largest guest input block can be restored
             # from the user's original EXE rather than a Unicorn capture.
@@ -308,7 +308,7 @@ class IntroFull(unittest.TestCase):
                 (0x2fcb4, 0x2fcb8),
             ):
                 guest[start:end] = bytes(end - start)
-            self.assertEqual(sum(value != 0 for value in guest), 22)
+            self.assertEqual(sum(value != 0 for value in guest), 0)
             minimal.write_bytes(guest)  # Private, never distributed.
 
             subprocess.run([executable, str(minimal), assets,
@@ -319,11 +319,13 @@ class IntroFull(unittest.TestCase):
                             '--record', str(restored_record)],
                            check=True, capture_output=True, text=True)
             self.assertEqual(digest(restored_final),
-                             '6a3f6394fbaac476700dbb54d30a8dd0f9028183493cfa3f416d9e4a7c87a777')
+                             'a95d4cb55feeb7b3ef7c2bd289f32d1ce3105da4e91d71348eb1eaa6dc9adce2')
             self.assertEqual(digest(restored_record),
-                             '1bfb16e5687ab30e80387d3faeadb0e498146f2308ff15c1fa4c6a8baa8b946c')
+                             '1d16bad00b71b8113dbf62ec6defa5472e2c357ed593174a2b526d53e7e5c516')
 
-            # Rebuild the last 22 nonzero guest bytes as linked DOS vectors.
+            # The minimal capture is now entirely zero (the 22 bytes formerly
+            # kept were interrupt vectors read as a palette).
+            # Rebuilding the linked DOS vectors must change nothing.
             # A completely zero 1 MiB source (with the original files beside
             # it) must reproduce the entire pinned source-C replay.
             empty = directory / 'zero-memory.bin'
@@ -350,11 +352,11 @@ class IntroFull(unittest.TestCase):
                  '--full', '--record', str(replay)],
                 check=True, capture_output=True, text=True)
             self.assertIn('342026 virtual ms', report.stdout)
-            self.assertIn('1561 replay frames', report.stdout)
+            self.assertIn('1531 replay frames', report.stdout)
             self.assertEqual(digest(final),
-                             '6a3f6394fbaac476700dbb54d30a8dd0f9028183493cfa3f416d9e4a7c87a777')
+                             'a95d4cb55feeb7b3ef7c2bd289f32d1ce3105da4e91d71348eb1eaa6dc9adce2')
             self.assertEqual(digest(replay),
-                             '1bfb16e5687ab30e80387d3faeadb0e498146f2308ff15c1fa4c6a8baa8b946c')
+                             '1d16bad00b71b8113dbf62ec6defa5472e2c357ed593174a2b526d53e7e5c516')
 
             # An actual cold start must read the original assets, not
             # silently fall back to any previous 1 MiB Unicorn capture.

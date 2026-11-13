@@ -244,8 +244,13 @@ fingerprints. A separate asset-backed integration test checks the 4-second
 that the 320×200 callback is reached after the BIOS mode transition. It also
 checks a partial red title reveal at 14 seconds and the 1,382 white credit
 pixels visible at 18 seconds.
-Escape is injected as an original DOS key event: the recovered C code
-takes its own interruption and cleanup branches. Space, Return, Backspace
+Escape is injected as one original DOS key event: the recovered C code
+takes its own interruption and cleanup branches, and the window stays open
+until its fade-out has finished. The host previously reported a pending key
+forever once it was closing, so the final `gate_linked_flush_keyboard()`
+loop never returned and both `gateway-decomp` and `gateway-hybrid` hung on
+Escape. Escape during the 640×480 opening skips the mode-13h switch; the
+host's end-of-run check now accepts that path instead of aborting. Space, Return, Backspace
 and printable keys are also forwarded to the recovered C handler, including
 its non-Escape prompt branch. P pauses the host clock and F9 toggles
 filtering. Mouse input and extended DOS scan codes are not forwarded yet.
@@ -348,7 +353,7 @@ result/bin/gateway-intro-source-c-composite \
 
 The private `GVR1` format consists of four signature bytes followed by
 records of: 32-bit little-endian virtual timestamp (ms), 64,000 VGA mode-13h
-pixel indices, and 768 six-bit DAC components. Its 1,561 frames span 342,026
+pixel indices, and 768 six-bit DAC components. Its 1,531 frames span 342,026
 simulated milliseconds on the pinned native startup; two consecutive headless
 runs produced byte-identical recordings. The source-only Nix package does
 not require SDL3 or Unicorn. `--dump-memory` saves the complete **1 MiB RAM
@@ -375,11 +380,40 @@ tests verify isolated image palettes, not every live SDL palette transition.
 Original `GATE_303` frame #3/#7/#35 palettes also match its backdrop #0;
 there is no resource-side palette discrepancy in those inspected frames.
 
-The corrected full C recording retains **1,561 frames**, **342,026ms** of
-virtual duration, and the same final RGB screenshot, with GVR1 SHA-256
-`1bfb16e5687ab30e80387d3faeadb0e498146f2308ff15c1fa4c6a8baa8b946c`.
-The RAM SHA above changed because released image buffers retain the corrected
-packed pixel layout.
+The corrected full C recording has **1,531 frames** and **342,026ms** of
+virtual duration, with GVR1 SHA-256
+`1d16bad00b71b8113dbf62ec6defa5472e2c357ed593174a2b526d53e7e5c516`
+(see the fade-out correction below; it was 1,561 frames,
+`1bfb16e5…946c`, before). The RAM SHA above changed because released
+image buffers retain the corrected packed pixel layout.
+
+### Fade-out palette pointer (2026-11-13)
+
+Every source-C fade-out ended with a one-retrace flash: a purple frame
+before the Venus picture, and similar frames at each later scene change.
+`RTL:12823` (clear the palette buffer), the mode-1 branch of `RTL:12893`
+(fade out) and the mode-1 branch of `RTL:12773` (fade in) push
+`mov ax,0 / mov dx,0` before calling the palette uploader `RTL:f61b`. In
+`GATE.RTL` these immediates are RTLink fixups (offset and segment of target
+2 + `0f9a`), the same `[DS:0018]` palette buffer the routines have just
+zeroed or modified. The C read the unrelocated placeholders as
+`0000:0000` and uploaded the interrupt vector table to the DAC.
+`gate_rtl_graphics_palette_upload(NULL)` in `gate_rtl_linkage.c` now
+passes the buffer.
+
+Consequences: the replay loses 30 flash frames (1,561 to 1,531); the
+first-read profile loses page `00000` (768 bytes; now 5,893 bytes in five
+pages); and the 22 nonzero "interrupt-vector" bytes the sparse-RAM test
+kept were the palette read, so the minimal capture is now entirely zero.
+The final PPM is black instead of being drawn with the vector-table
+palette.
+
+`gateway-intro-source-c-frames DOS-DIR` runs the live hooks on a virtual
+clock in about ten seconds. `--dump DIR [--from MS] [--to MS]` writes each
+distinct frame as a PPM; `--check-flashes` fails on a non-black frame shown
+for under 10ms between black frames; `--escape-at MS` injects one Escape
+and fails if the intro keeps running. CTest runs the flash check and Escape
+at 1, 9 and 60 seconds.
 
 ### Check against actual DOS frames
 

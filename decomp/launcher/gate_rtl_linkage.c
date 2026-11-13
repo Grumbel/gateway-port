@@ -53,13 +53,24 @@ void gate_linked_draw_intro_caption_frame(uint16_t left, uint16_t top, uint16_t 
 
 /* The original graphics code passes SS:offset of its local palette array,
  * while host C represents that stack storage as a native pointer. Keep
- * this source-level FAR-pointer translation at the link boundary. */
+ * this source-level FAR-pointer translation at the link boundary.
+ *
+ * Null stands for the other original argument: at RTL:1287d, 12907 and
+ * the mode-1 branch of 12773, `mov ax,0 / mov dx,0` are RTLink offset and
+ * segment fixups (target 2, addend 0f9a), not a 0000:0000 pointer. They
+ * address the [DS:0018] palette buffer those routines just modified,
+ * i.e. the bytes gate_rtl_graphics_byte() reads. Passing 0000:0000
+ * uploaded the interrupt vector table to the DAC at the end of every
+ * fade-out. */
 void gate_rtl_graphics_palette_upload(const uint8_t *palette)
 {
     GateFarPtr original_pointer;
-    original_pointer = palette != 0
-        ? gate_stack_pointer((void *)palette)
-        : (GateFarPtr){0, 0};
+    if (palette != 0) {
+        original_pointer = gate_stack_pointer((void *)palette);
+    } else {
+        original_pointer.segment = gate_rtl_image_transform_segment();
+        original_pointer.offset = GATE_RTL_TRANSFORM_OFFSET;
+    }
     gate_rtl_upload_vga_palette(original_pointer);
 }
 

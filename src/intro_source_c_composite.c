@@ -464,7 +464,14 @@ static int run_intro(const char *snapshot, const char *dos_dir,
         /* The real EXE:1302 must invoke the relocated RTL:f14d C routine
          * once through its linked FAR alias, rather than silently relying
          * on a preselected host display mode. */
-        if (video.mode_changes != (hooks && hooks->original_video_start ? 2u : 1u) ||
+        /* Escape during the mode-12h opening takes the original
+         * `goto cleanup` before EXE:1302 ever selects mode 13h. */
+        const int interrupted_in_opening = hooks && hooks->original_video_start &&
+            video.mode_changes == 1u && video.start_calls == 1u &&
+            video.clip_calls == 1u && video.clipping_enabled;
+        if (interrupted_in_opening)
+            ;
+        else if (video.mode_changes != (hooks && hooks->original_video_start ? 2u : 1u) ||
             video.start_calls != (hooks && hooks->original_video_start ? 2u : 1u) ||
             video.clip_calls != (hooks && hooks->original_video_start ? 2u : 1u) ||
             video.requested_bios_mode != 3 ||

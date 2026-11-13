@@ -37,8 +37,10 @@ void gate_rtl_graphics_set_byte(uint16_t index, uint8_t value);
 
 /* Real, independently observed linked call sites. The first is
  * GATE.RTL:0xf61b (linked 0cdc:04d2), still awaiting its own decompile.
- * A null pointer represents the original 0000:0000 FAR argument; non-null
- * points to the original stack-local palette bytes. Its byte count is
+ * A null pointer represents the relocated FAR pointer to the [DS:0018]
+ * palette buffer (fixups target 2 + 0f9a; the file holds 0000:0000
+ * placeholders); non-null points to the original stack-local palette
+ * bytes. Its byte count is
  * determined by the original hardware mode, not passed on the stack. */
 void gate_rtl_graphics_palette_upload(const uint8_t *palette);
 void gate_rtl_graphics_delay(uint32_t delay); /* linked 123f:00b6 */

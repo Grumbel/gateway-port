@@ -90,16 +90,20 @@ void wait_ms(void *userdata, std::uint32_t duration) {
         std::this_thread::sleep_for(5ms);
 }
 
+// Escape is one DOS key event: pending until the recovered C reads it.
+// Do not report a key as pending merely because the host is closing:
+// the original cleanup ends in gate_linked_flush_keyboard(), which reads
+// keys until none is pending, and would then never return.
 std::uint16_t key_pending(void *userdata) {
     auto &state = *static_cast<LiveState *>(userdata);
-    if (state.escape_pending.load() || state.closing.load()) return 1;
+    if (state.escape_pending.load()) return 1;
     std::lock_guard lock(state.input_mutex);
     return !state.keys.empty();
 }
 
 std::uint16_t read_key(void *userdata) {
     auto &state = *static_cast<LiveState *>(userdata);
-    if (state.escape_pending.exchange(false) || state.closing.load()) return 27;
+    if (state.escape_pending.exchange(false)) return 27;
     std::lock_guard lock(state.input_mutex);
     if (state.keys.empty()) return 0;
     const auto key = state.keys.front();
@@ -249,7 +253,7 @@ int main(int argc, char **argv) try {
         });
 
         bool running = true, nearest = true, window_closed = false;
-        std::optional<Clock::time_point> completion_time;
+        std::optional<Clock::time_point> completion_time, escape_time;
         std::uint64_t previous_generation = 0;
         std::uint32_t previous_second = UINT32_MAX;
         bool previous_paused = false, previous_completed = false;
@@ -267,8 +271,10 @@ int main(int argc, char **argv) try {
                     }
                     if (event.type != SDL_EVENT_KEY_DOWN || event.key.repeat) continue;
                     if (event.key.key == SDLK_ESCAPE) {
+                        // Keep presenting: the recovered C fades the
+                        // palette out before it returns.
                         state.escape_pending.store(true);
-                        running = false;
+                        if (!escape_time) escape_time = Clock::now();
                     } else if (event.key.key == SDLK_P) {
                         toggle_pause(state);
                         if (audio) {
@@ -319,6 +325,12 @@ int main(int argc, char **argv) try {
                 }
                 const auto second = elapsed_ms(state) / 1000;
                 const bool completed = state.completed.load();
+                if (escape_time) {
+                    if (completed) running = false;
+                    // Fallback: skip remaining delays if cleanup is slow.
+                    else if (Clock::now() - *escape_time >= 2s)
+                        state.closing.store(true);
+                }
                 if (completed && exit_on_complete) {
                     if (!completion_time) completion_time = Clock::now();
                     if (Clock::now() - *completion_time >= 250ms)

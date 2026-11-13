@@ -606,6 +606,34 @@ target_link_libraries(gateway-intro-dump PRIVATE gateway_core)
 install(TARGETS gateway-intro-dump RUNTIME DESTINATION bin)
 add_executable(gateway-story-check tools/check_action_matrix.cpp)
 target_link_libraries(gateway-story-check PRIVATE gateway_core)
+# Headless virtual-clock driver for the live hooks: frame dumps and the
+# Escape/termination regression, without SDL.
+add_executable(gateway-intro-source-c-frames
+  ${GATEWAY_INTRO_SOURCE_C_COMPOSITE_SOURCES}
+  src/intro_source_c_frames.cpp)
+target_include_directories(gateway-intro-source-c-frames PRIVATE decomp/launcher src)
+target_compile_definitions(gateway-intro-source-c-frames PRIVATE
+  GATE_SOURCE_C_LIBRARY)
+target_link_libraries(gateway-intro-source-c-frames PRIVATE
+  gateway_intro_pic_host gateway_core)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos/GATE.EXE" AND
+   EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos/GATE.RTL" AND
+   EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos/GATE_301.PIC")
+  # Fade-outs must not show the interrupt vector table as a palette.
+  add_test(NAME intro-source-c-no-palette-flash COMMAND
+    gateway-intro-source-c-frames ${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos
+    --check-flashes)
+  set_tests_properties(intro-source-c-no-palette-flash PROPERTIES TIMEOUT 120)
+  # Escape in the mode-12h opening, the mode-13h title and a caption
+  # scene must end the intro, including the final keyboard flush.
+  foreach(escape_ms 1000 9000 60000)
+    add_test(NAME intro-source-c-escape-${escape_ms} COMMAND
+      gateway-intro-source-c-frames ${CMAKE_CURRENT_SOURCE_DIR}/../gateway-dos
+      --escape-at ${escape_ms})
+    set_tests_properties(intro-source-c-escape-${escape_ms} PROPERTIES TIMEOUT 60)
+  endforeach()
+endif()
+
 if(GATEWAY_WITH_SDL)
   find_package(SDL3 CONFIG REQUIRED)
   find_package(Threads REQUIRED)
