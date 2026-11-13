@@ -51,6 +51,9 @@ parser.add_argument('--trace-rtlink-calls', action='store_true',
 parser.add_argument('--trace-rtlink-target', action='append', metavar='SECTION:CS:IP',
                     help='native-only sampled RTLink arguments, returns and object-record deltas '
                          '(repeatable, up to 256 combined calls; requires --trace-rtlink-calls)')
+parser.add_argument('--lift', type=pathlib.Path, metavar='MODULE.so',
+                    help='native-only: run with an instruction-level lifted module (docs/lifter.md)')
+parser.add_argument('--lift-mode', choices=['verify', 'run'], default='verify')
 parser.add_argument('--research-poke16-at', action='append', metavar='MS:ADDRESS:OLD:NEW',
                     help='controlled native-only guest RAM word change; address/words in hex')
 args = parser.parse_args()
@@ -131,6 +134,8 @@ if args.scenario in ['drawer', 'objects', 'puzzle']:
         parser.error(f'{args.probe} lacks RTLink call census support; run gateway-build')
     if args.trace_rtlink_target and b'rtlink-events selected=' not in probe_bytes:
         parser.error(f'{args.probe} lacks RTLink event tracing; run gateway-build')
+if args.lift and not args.native_only:
+    parser.error('--lift requires --native-only')
 args.output.mkdir(parents=True, exist_ok=True)
 if custom_commands:
     print('Scripted commands: ' + ' | '.join(custom_commands))
@@ -221,6 +226,8 @@ for mode in (['native'] if args.native_only else ['native', 'verify', 'hle']):
         command += ['--object-state', 'verify']
     if mode == 'native' and args.trace_object_writes:
         command += ['--trace-object-writes', f'{watched:x}']
+    if args.lift and mode == 'native':
+        command += ['--lift', str(args.lift.resolve()), '--lift-mode', args.lift_mode]
     for time, key in keys:
         command += ['--key-at', f'{time}:{key:04x}']
     if args.verify_overlays:
@@ -281,6 +288,12 @@ for mode in (['native'] if args.native_only else ['native', 'verify', 'hle']):
         service_sequences.append([(line.split()[0], line.split(' object=', 1)[1])
                                for line in prefix.with_suffix('.trace').read_text().splitlines()
                                if line.startswith('object-')])
+    if args.lift and mode == 'native':
+        lift = [line for line in prefix.with_suffix('.dos').read_text().splitlines()
+                if line.startswith('lift ')]
+        if not lift:
+            raise RuntimeError('lifted module summary missing; see the .dos log')
+        print(lift[-1])
     digest = hashlib.sha256(prefix.with_suffix('.ppm').read_bytes()).hexdigest()
     hashes.append(digest)
     regs = dict(line.split('=') for line in prefix.with_suffix('.regs').read_text().splitlines())

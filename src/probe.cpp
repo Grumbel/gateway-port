@@ -12,6 +12,7 @@
 #include "debug_state.hpp"
 #include "debug_ui.hpp"
 #include "mouse.hpp"
+#include "lift_runtime.hpp"
 #include "mz.hpp"
 #include "object_flags.hpp"
 #include "opl.hpp"
@@ -147,6 +148,7 @@ struct State {
         std::uint16_t ip, cs, sp, value;
     };
     std::optional<FarReturn> hle_return;
+    std::unique_ptr<gateway::LiftRuntime> lift;
     struct Search {
         std::vector<gateway::DosDirectoryEntry> entries;
         std::size_t next = 0;
@@ -414,6 +416,17 @@ bool dispatch(uc_engine *uc, unsigned number) {
     set(uc, UC_X86_REG_CS, vector[1]);
     set(uc, UC_X86_REG_IP, vector[0]);
     return true;
+}
+
+// Instruction-level lifted functions: stop at their entries and resume points;
+// the main loop then runs or verifies the lifted step (src/lift_runtime.hpp).
+void lift_hook(uc_engine *uc, std::uint64_t address, std::uint32_t, void *opaque) noexcept {
+    auto &state = *static_cast<State *>(opaque);
+    try {
+        state.lift->on_code(uc, address);
+    } catch (const std::exception &e) {
+        hardware_failure(uc, state, e.what());
+    }
 }
 
 // Experimental section-body replacement and comparison at native load completion.
@@ -2500,6 +2513,7 @@ int main(int argc, char **argv) {
     std::multimap<unsigned, ResearchPoke16> scheduled_pokes;
     std::uint16_t injected_key = 0;
     std::uint64_t breakpoint = 0;
+    std::string lift_module, lift_mode = "verify";
     auto usage = [] {
         std::cout << "Usage: gateway[-probe] <DOS executable> [--headless] "
                      "[--milliseconds N] [--dump-prefix PATH] [--game-args TEXT] [--press KEY] "
@@ -2522,6 +2536,7 @@ int main(int argc, char **argv) {
                      "[--research-poke16-at MS:LINEARHEX:OLDHEX:NEWHEX ...] "
                      "[--deterministic-clock] "
                      "[--object-flags verify|hle | --object-state verify|hle] [--verify-overlays] "
+                     "[--lift MODULE.so [--lift-mode verify|run]] "
                      "[--hle-overlays] [--trace-video] [--trace-timing] [--adlib-driver] "
                      "[--trace-object-writes OBJECT-HEX] [--trace-byte-write LINEARHEX ...] "
                      "[--aspect-ratio native|W:H] [--ui-layout original|widescreen] "
@@ -2579,6 +2594,15 @@ int main(int argc, char **argv) {
             }
         } else if (option == "--verify-overlays")
             verify_overlays = true;
+        else if (option == "--lift" && i + 1 < argc)
+            lift_module = argv[++i];
+        else if (option == "--lift-mode" && i + 1 < argc) {
+            lift_mode = argv[++i];
+            if (lift_mode != "verify" && lift_mode != "run") {
+                usage();
+                return 2;
+            }
+        }
         else if ((option == "--object-flags" || option == "--object-state") && i + 1 < argc) {
             if (!object_flags_mode.empty()) {
                 usage();
@@ -3131,10 +3155,18 @@ int main(int argc, char **argv) {
         }
         state.object_flags_mode = object_flags_mode;
         state.object_state_services = object_state_services;
+        if (!lift_module.empty())
+            state.lift = std::make_unique<gateway::LiftRuntime>(
+                lift_module,
+                lift_mode == "run" ? gateway::LiftRuntime::Mode::Run
+                                   : gateway::LiftRuntime::Mode::Verify,
+                0x1000);
         if (!research_path.empty()) {
             state.research_trace.open(research_path);
             if (!state.research_trace)
                 throw std::runtime_error("cannot open research trace");
+            if (state.lift)
+                state.lift->set_trace(&state.research_trace);
         }
         if (injected_key)
             state.keys.push_back(injected_key);
@@ -3356,6 +3388,11 @@ int main(int argc, char **argv) {
                                       object_services[i].exit, object_services[i].exit));
             }
         }
+        uc_hook lift_hook_id;
+        if (state.lift)
+            check(uc_hook_add(engine.uc, &lift_hook_id, UC_HOOK_CODE,
+                              reinterpret_cast<void *>(lift_hook), &state,
+                              state.lift->hook_begin(), state.lift->hook_end()));
         uc_hook overlay_hook, overlay_host_hook;
         if (verify_overlays)
             check(uc_hook_add(engine.uc, &overlay_hook, UC_HOOK_CODE,
@@ -3513,6 +3550,18 @@ int main(int argc, char **argv) {
                 set(engine.uc, UC_X86_REG_CS, 0x2c24);
                 set(engine.uc, UC_X86_REG_IP, 0x447);
                 continue;
+            }
+            if (state.lift && state.failure.empty() && status == UC_ERR_OK) {
+                bool stepped = false;
+                try {
+                    stepped = state.lift->after_stop(engine.uc);
+                } catch (const std::exception &e) {
+                    state.failure = e.what();
+                }
+                if (stepped)
+                    continue;
+                if (!state.failure.empty())
+                    break;
             }
             if (state.hle_return && state.failure.empty() && status == UC_ERR_OK) {
                 const auto result = *state.hle_return;
@@ -3807,6 +3856,8 @@ int main(int argc, char **argv) {
         }
         if (hle_overlays)
             std::cerr << "RTLink host loads: " << std::dec << state.overlay_host_loads << '\n';
+        if (state.lift)
+            std::cerr << state.lift->summary() << '\n';
         if (probe_adlib)
             std::cerr << "AdLib interface calls: " << std::dec << state.adlib_calls
                       << ", synthesized notes: " << state.adlib.played_notes()

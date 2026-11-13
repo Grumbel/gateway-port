@@ -784,6 +784,24 @@ def coverage(unit):
                 unresolved=len(unit.unresolved))
 
 
+def analyze(exe, ovl, manifest, rtl=None, tracker=None, ghidra=None):
+    """Load and traverse the program; returns (Program, Traversal, skipped seeds)."""
+    prog = Program(exe, ovl, json.loads(pathlib.Path(manifest).read_text()), rtl)
+    trav = Traversal(prog)
+    trav.add(prog.startup, prog.entry, prog.entry_cs, 'MZ entry', function=True)
+    trav.run()
+    seeds, skipped = load_seeds(prog, tracker, ghidra)
+
+    # Runtime-confirmed overlay entries first, then the rest, Ghidra last.
+    def rank(seed):
+        source, unit, off, name = seed
+        return (source != 'tracker', unit.section is None, off)
+    for source, unit, off, name in sorted(seeds, key=rank):
+        cs = unit.cs_guess(off)
+        trav.speculate(unit, off, cs, source + (' ' + name if name else ''))
+    return prog, trav, skipped
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('exe')
@@ -800,19 +818,8 @@ def main(argv=None):
                     help='assemble every unit and compare with the original bytes')
     args = ap.parse_args(argv)
 
-    prog = Program(args.exe, args.ovl, json.loads(pathlib.Path(args.manifest).read_text()),
-                   args.rtl)
-    trav = Traversal(prog)
-    trav.add(prog.startup, prog.entry, prog.entry_cs, 'MZ entry', function=True)
-    trav.run()
-    seeds, skipped = load_seeds(prog, args.tracker, args.ghidra_functions)
-    # Runtime-confirmed overlay entries first, then the rest, Ghidra last.
-    def rank(seed):
-        source, unit, off, name = seed
-        return (source != 'tracker', unit.section is None, off)
-    for source, unit, off, name in sorted(seeds, key=rank):
-        cs = unit.cs_guess(off)
-        trav.speculate(unit, off, cs, source + (' ' + name if name else ''))
+    prog, trav, skipped = analyze(args.exe, args.ovl, args.manifest, args.rtl, args.tracker,
+                                  args.ghidra_functions)
     out = pathlib.Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     (out / 'prelude.inc').write_text(X.NASM_PRELUDE)
