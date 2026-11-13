@@ -16,6 +16,9 @@ committed.
 
 ## Reproduce
 
+`tools/regen_build_sources.sh ../gateway-dos ovl-038` regenerates the
+manifest, the disassembly and `build/lift/ovl-038.{c,so}`. Step by step:
+
 ```sh
 python3 tools/lift_x86.py ../gateway-dos/GATEMAIN.EXE ../gateway-dos/GATEMAIN.OVL \
     --rtl ../gateway-dos/GATE.RTL \

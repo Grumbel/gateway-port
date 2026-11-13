@@ -4,6 +4,11 @@
 listing of the whole program as the base for later mechanical translation.
 Its output contains original code and stays under `build/`.
 
+`tools/regen_build_sources.sh [DOS-DIR] [UNIT...]` (inside `nix develop`)
+rebuilds the RTLink manifest, this disassembly and the lifted C
+([lifter.md](lifter.md)) in one step, byte-identical to earlier runs, so
+deleting `build/` loses nothing.
+
 ```sh
 nix develop
 python3 tools/disassemble_gateway.py ../gateway-dos/GATEMAIN.EXE \

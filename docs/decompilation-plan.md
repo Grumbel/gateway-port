@@ -69,7 +69,10 @@ These extend `AGENTS.md`; on conflict, `AGENTS.md` wins.
    - game text, including object names and messages.
 
    Generated material lives under `build/`. Tests that need the game must
-   skip cleanly when the data is absent.
+   skip cleanly when the data is absent. Generated sources that contain
+   original code (manifest, NASM base, lifted C) are rebuilt by
+   `tools/regen_build_sources.sh`; hand-written reconstructions belong in
+   `decomp/` or `src/story/`, never only in `build/`.
 2. **Reconstructed game logic is derived work, not GPL.** It goes only into
    `src/story/` (C++) and `decomp/` (tracker and notes), both
    `LicenseRef-Gateway-Derived`. Engine services that reimplement DOS,
