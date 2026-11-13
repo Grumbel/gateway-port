@@ -397,6 +397,7 @@ class Traversal:
                 linear = ins.far.seg * 16 + ins.far.off
                 if sec.contains_linear(linear):
                     ins.extra['trampoline'] = sid
+                    ins.extra['far_ref'] = (sec, linear - sec.linear_base)
                     self.far_edge(sec, linear - sec.linear_base,
                                   ins.far.seg * 16 - sec.linear_base, 'trampoline',
                                   ((unit.name, ins.offset), 'trampoline'))
@@ -405,6 +406,7 @@ class Traversal:
             unit.unresolved.append(('far %04x:%04x' % (ins.far.seg, ins.far.off), ins.offset))
             return
         ins.extra['far_target'] = target.ident(off)
+        ins.extra['far_ref'] = (target, off)
         self.far_edge(target, off, ins.far.seg * 16 - target.linear_base,
                       'far call' if ins.flow == 'callfar' else 'far jump',
                       ((unit.name, ins.offset), 'far'))
@@ -690,6 +692,89 @@ def provenance(unit, off, limit=4000):
     return path[-6:]
 
 
+TERMINAL = ('jmp', 'ret', 'stop', 'jmpind', 'jmpfar')
+
+
+def function_body(unit, entry, entries):
+    """Instruction offsets reachable from ``entry`` without following calls.
+    A jump to another function entry is a tail call, not part of the body."""
+    body, todo, tails = set(), [entry], set()
+    while todo:
+        off = todo.pop()
+        if off in body or off not in unit.insns:
+            continue
+        body.add(off)
+        ins = unit.insns[off]
+        nxt = []
+        if ins.flow not in TERMINAL and not (ins.mnemonic == 'int'
+                                             and ins.operands[0].value == 0x20):
+            nxt.append(ins.end)
+        if ins.flow in ('jcc', 'jmp') and ins.target is not None:
+            if ins.flow == 'jmp' and ins.target in entries and ins.target != entry:
+                tails.add((off, ins.target))
+            else:
+                nxt.append(ins.target)
+        if ins.flow == 'jmpind':
+            for table, (_, targets, src, _) in unit.tables.items():
+                if src == off:
+                    nxt.extend(targets)
+        todo.extend(nxt)
+    return body, tails
+
+
+def trampoline_target(unit, off):
+    """A resident RTLink stub ``CALL gate; JMP FAR x; DW sid``: its section target."""
+    ins = unit.insns.get(off)
+    if ins is None or ins.flow != 'call':
+        return None
+    nxt = unit.insns.get(ins.end)
+    if nxt is None or nxt.extra.get('trampoline') is None:
+        return None
+    return nxt.extra['far_ref']
+
+
+def call_graph(prog):
+    """Static function-level call graph over all units (see docs/disassembly.md)."""
+    def key(unit, off):
+        return '%s:%x' % (unit.name, off)
+
+    functions, edges = {}, collections.defaultdict(list)
+    for unit in prog.units:
+        entries = {o for o in unit.functions if o in unit.insns}
+        for entry in sorted(entries):
+            body, tails = function_body(unit, entry, entries)
+            rets = sorted({unit.insns[o].mnemonic for o in body
+                           if unit.insns[o].flow == 'ret'})
+            stub = trampoline_target(unit, entry)
+            fn = dict(id=key(unit, entry), unit=unit.name, section=unit.section,
+                      ident=unit.ident(entry), label=unit.label('F', entry),
+                      instructions=len(body),
+                      bytes=sum(unit.insns[o].length for o in body), returns=rets,
+                      indirect_calls=0, indirect_jumps=0)
+            if stub is not None:
+                fn['trampoline_to'] = key(*stub)
+            functions[fn['id']] = fn
+            for off in sorted(body):
+                ins = unit.insns[off]
+                site = unit.ident(off)
+                if ins.flow == 'call' and ins.target in unit.insns:
+                    edges[(fn['id'], key(unit, ins.target), 'near')].append(site)
+                elif ins.flow in ('callfar', 'jmpfar') and 'far_ref' in ins.extra:
+                    kind = 'far' if ins.flow == 'callfar' else (
+                        'trampoline' if ins.extra.get('trampoline') is not None else 'farjmp')
+                    edges[(fn['id'], key(*ins.extra['far_ref']), kind)].append(site)
+                elif ins.flow == 'callind':
+                    fn['indirect_calls'] += 1
+                elif ins.flow == 'jmpind' and not any(
+                        t[2] == off for t in unit.tables.values()):
+                    fn['indirect_jumps'] += 1
+            for off, target in tails:
+                edges[(fn['id'], key(unit, target), 'tail')].append(unit.ident(off))
+    return dict(functions=list(functions.values()),
+                edges=[dict(caller=a, callee=b, kind=k, sites=v)
+                       for (a, b, k), v in sorted(edges.items())])
+
+
 def coverage(unit):
     code = sum(i.length for i in unit.insns.values())
     table = sum(2 * len(t[1]) for t in unit.tables.values())
@@ -807,6 +892,7 @@ def main(argv=None):
             total[k] += cov[k]
     report['total'] = dict(total)
     report['rejected_seeds'] = trav.rejected
+    (out / 'callgraph.json').write_text(json.dumps(call_graph(prog), indent=1) + '\n')
     (out / 'report.json').write_text(json.dumps(report, indent=1, default=str) + '\n')
     print(json.dumps(dict(total=report['total'], verified=report.get('verified'),
                           rejected_seeds=len(trav.rejected),

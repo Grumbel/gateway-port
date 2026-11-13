@@ -25,6 +25,7 @@ bytes; the run fails if any file differs.
 | `ovl-NNN.asm` | one RTLink overlay section in its unrelocated on-disk form |
 | `prelude.inc` | `rr` macro for MSC's reg-reg direction-bit encodings (`8B`/`03` forms) |
 | `report.json` | coverage, rejected seeds, unresolved edges, encoding checks |
+| `callgraph.json` | functions with bodies, sizes and return kinds; near, far, tail and trampoline edges (see [call-graph.md](call-graph.md)) |
 
 Each resident or library record is a NASM section with `start` = file offset
 and `vstart` = linked linear address (load segment 0), so labels and near
