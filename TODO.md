@@ -148,6 +148,8 @@ playability.
 
 ## Research handoff
 
+**Latest (2026-11-13):** decompilation now goes through the mechanical x86→C lifter. A trial lifted all units (98.8 % of functions compile), but lifted resident `exe` code times out on replays. Resume from [lifter.md, "Plan to lift the whole program"](docs/lifter.md#plan-to-lift-the-whole-program), step 1. The 2026-10-30 notes below are older.
+
 State at the end of 2026-10-30. Format findings are in
 [data-files](docs/data-files.md), [Spellcasting](docs/spellcasting.md), and
 [ScummVM](docs/scummvm-legend.md). `gateway-extract` converts all PIC files of

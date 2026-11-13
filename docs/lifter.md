@@ -103,9 +103,92 @@ return address is skipped. With `--keep DIR` the build is kept, and
 `build/lift-check DIR/lifted.so DIR/code.bin DIR/entries.txt 3000` runs a
 longer check (about 5 minutes, 0 failing, 2 trials skipped).
 
+## Whole-program lift (trial, 2026-11-13)
+
+Every unit was lifted and compiled once to see how far the lifter reaches
+beyond section 38. The output went to a scratch directory, not `build/lift`;
+`regen_build_sources.sh` still lifts only `ovl-038` by default. Reproduce
+with:
+
+```sh
+D=../gateway-dos O=build/lift
+for u in exe exe-startup $(seq -f 'ovl-%03g' 0 57); do
+  python3 tools/lift_x86.py $D/GATEMAIN.EXE $D/GATEMAIN.OVL --rtl $D/GATE.RTL \
+      --manifest build/handler-coverage/rtlink-manifest.json \
+      --unit $u --output $O/$u.c &&
+  cc -std=c99 -O1 -Wall -Wextra -Wno-unused-label -fPIC -shared -Isrc \
+      -o $O/$u.so $O/$u.c
+done
+```
+
+(or `tools/regen_build_sources.sh ../gateway-dos exe exe-startup ovl-000 …`,
+which uses `-O2` and is slower on the 124k-line `exe.c`).
+
+### Results
+
+- **All 60 units lift and compile with no warnings**: `exe`, `exe-startup`,
+  `ovl-000`–`ovl-057`, about 488k lines of C in total (`exe.c` 124k).
+- **2,153 of 2,180 functions lift (98.8 %).** Every overlay section lifts
+  completely. The 27 refused functions are all resident:
+
+  | Reason | Functions |
+  | --- | --- |
+  | fixup in a memory operand (15) | `exe:0x00bd9c` `0x00bf1c` `0x00d54f` `0x00d559` `0x00d563` `0x00d5a9` `0x00d5bd` `0x00d5d1` `0x00d5ef` `0x00d635` `0x00d63f` `0x00dc2e` `0x01006f` `0x015c42` `0x016ab0` |
+  | fixup outside an immediate word (8) | `exe:0x00c0f4` `0x00d649` `0x01003d` `0x010051` `0x01005b` `0x01614a` `0x01647b` `0x01d897` |
+  | body spans several CS bases (3) | `rtl:0x004378` `exe:0x0084c3` `exe:0x0097ea` |
+  | unknown CS base (1) | `exe:0x00059e` |
+
+- The generated code leaves 543 sites to the emulator (`GW_LIFT_EMULATE`).
+- `drawer` replay, `ovl-016` and `ovl-021` in verify mode: the modules load,
+  but none of their functions is entered (0 steps). Drawer exercises only a
+  few overlays, so these are **untested, not failing**.
+- `drawer` replay, `exe` in **verify** mode: **timed out** at the default
+  180 s. Verify mode snapshots 640 KB per lifted step, and resident engine
+  code is entered constantly.
+- `drawer` replay, `exe` in **run** mode: **also timed out** at 180 s; the
+  log ended in normal file reads and mouse polls, with no abort message.
+  **Hypothesis, not confirmed:** a lifted step costs no guest instructions,
+  so virtual time barely advances, and a loop that polls the timer spins
+  forever. The per-step `uc_emu_stop`/restart overhead may add to it. Run
+  mode would also abort on the first video write at or above `0xa0000`.
+
+## Plan to lift the whole program
+
+Rough estimate: 2–5 working days until everything is lifted and runs.
+Verification has no fixed end: it covers only what replays reach.
+
+1. **Make lifted `exe` usable** (1–3 days, do first; the overlays call
+   resident code constantly, so they gain little until it runs lifted):
+   - Find the actual cause of the run-mode timeout: trace the `lift-run`
+     lines, look for a hot loop, and check the virtual-time hypothesis.
+   - Charge each lifted step an instruction count (for example the number
+     of original instructions it executed) so timer state advances as in
+     native.
+   - Call lifted functions directly from lifted code instead of exiting
+     to the emulator on every call and return.
+   - Route lifted writes at or above `0xa0000` through the emulator's
+     memory hooks instead of aborting.
+   - Make verify mode cheaper, for example by comparing pages dirtied
+     during the step instead of all 640 KB, or by sampling one step in N.
+2. **Load several modules at once** (about ½ day): `--lift` takes one
+   `.so` now (`src/probe.cpp`, `src/lift_runtime.cpp`). Either accept the
+   option more than once or link all units into one module.
+3. **Lift the 27 refused functions** (½–1 day): handle fixups in memory
+   operands and in non-immediate words with the same run-time read as
+   immediates, and split bodies that span several CS bases.
+4. **Coverage** (open-ended): run every module in verify mode on the
+   `look`, `drawer`, `objects` and `puzzle` replays and on the walkthrough
+   and golden replays (`tools/run_walkthrough.py`, `tools/run_golden.py`).
+   Record per unit which functions were verified. Add replays until each
+   section is entered.
+5. Only after that: readable C. Naming the call-graph services and
+   cleaning up into `src/story/` is a separate, larger job.
+
 ## Open items
 
-- Only section 38 is lifted; its resident callees still run emulated.
+- `regen_build_sources.sh` lifts only section 38 by default, and no lifted
+  module other than section 38 has passed verify mode on any replay. The
+  whole-program trial above shows that all units compile.
 - 16 functions `ovl:0x053019`–`ovl:0x053373` are reached only through data
   (probably region or picture-condition tables); they lift but no replay
   has exercised them.
